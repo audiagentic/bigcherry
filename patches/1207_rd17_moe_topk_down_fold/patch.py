@@ -214,10 +214,12 @@ _APPLY_NEW = """                if constexpr (has_fusion) {
                     }"""
 
 _HAS_FUSION_OLD = """    const bool has_fusion = fusion.gate != nullptr || fusion.x_bias != nullptr || fusion.gate_bias != nullptr ||
-                            fusion.x_scale != nullptr || fusion.gate_scale != nullptr;"""
+                            fusion.x_scale != nullptr || fusion.gate_scale != nullptr;
+    if constexpr (c_ncols_dst == 1) {"""
 
 _HAS_FUSION_NEW = """    const bool has_fusion = fusion.gate != nullptr || fusion.x_bias != nullptr || fusion.gate_bias != nullptr ||
-                            fusion.x_scale != nullptr || fusion.gate_scale != nullptr || fusion.x_scale_channel_dst;"""
+                            fusion.x_scale != nullptr || fusion.gate_scale != nullptr || fusion.x_scale_channel_dst;
+    if constexpr (c_ncols_dst == 1) {"""
 
 # The two comment lines are blanks in the noise-stripped anchor view, so the
 # anchor covers them with space-run classes (same convention as 1206).
