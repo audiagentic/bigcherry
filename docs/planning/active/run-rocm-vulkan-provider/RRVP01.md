@@ -69,12 +69,15 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO once abs
 
 STRONGLY CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): checked CampaignRequest, CampaignLane, CampaignLaneSelector, and lane_id() directly -- none currently contain any stack selection/identity. RO01's BackendStack config already exists and is unused downstream, so this item is exactly the missing threading layer, not speculative work. Execution order shifts to #5 in the revised sequence.
 
+PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, but implementation is paused. This item's design remains as reviewed above (GO once absence semantics explicit); a partial implementation was started (CampaignLane.stack_name, CampaignRequest.stack, _resolve_stack() fail-closed validation, lane_id() including stack) and then REVERTED uncommitted rather than landed, specifically because making stack mandatory on every plan() call has a real blast radius across cli/build.py, profiling/workflow.py, tuning/workflow.py, and two test files that needs its own deliberate pass -- not something to rush through under a paused-scope directive. Do not resume implementation until Vulkan work is unpaused; the design/order above stays valid for when it is.
+
 ## Change Log
 
 - 2026-09-09T10:59:42.884350+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:46.946452+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.515849+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +88,6 @@ STRONGLY CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): checke
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.393549+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:18:55.355103+00:00 (updated-by): Updated: order=5, section:notes
+- 2026-09-10T00:25:54.282915+00:00 (updated-by): Updated: section:notes
+- chg_20260910_002605_paused-all-vulkan-provider-imp_6846
+- 2026-09-10T00:26:05.819568+00:00 (updated-by): Updated: section:ledger-events

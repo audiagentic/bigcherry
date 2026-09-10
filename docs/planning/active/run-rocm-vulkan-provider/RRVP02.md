@@ -69,12 +69,15 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): FREEZE WIRE
 
 CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): architecture (ResolvedStackIdentity vs CapabilitySnapshot split) remains right, but "CapabilitySnapshot" collides in name with this project's EXISTING tuning CapabilityMask128/HIP producer-capability system, which describes a different thing (producer semantic-compatibility bits, not runtime device/API/provider facts). Rename this item's concept to RuntimeCapabilitySnapshot (or similarly disambiguated) before implementing, to avoid two same-named-but-different capability concepts in the codebase. Execution order shifts to #6 in the revised sequence.
 
+PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, implementation is paused. Design above (freeze wire model, rename to RuntimeCapabilitySnapshot) stands for when resumed.
+
 ## Change Log
 
 - 2026-09-09T10:59:48.032974+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:51.254873+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.519983+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +88,6 @@ CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): architecture 
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.400828+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:18:57.949636+00:00 (updated-by): Updated: order=6, section:notes
+- 2026-09-10T00:25:55.832992+00:00 (updated-by): Updated: section:notes
+- chg_20260910_002605_paused-all-vulkan-provider-imp_6846
+- 2026-09-10T00:26:05.841918+00:00 (updated-by): Updated: section:ledger-events

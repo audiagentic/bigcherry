@@ -69,12 +69,15 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): PROTOCOL FR
 
 IMPORTANT CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): do NOT build a parallel evidence-acceptance subsystem. BigCherry already has ExecutionIdentity, ExecutionAttestation, fail-closed comparators, process-bound KFD observation, and AttestedServerSession as the structural "cannot measure without attesting" seam. RRVP03's provider-stack attestation must EXTEND/COMPOSE WITH that existing seam, not create a second one. Also: TRVP01 is already the RO06 successor owning manifest/DB/run-identity persistence -- RRVP03 must stop at attestation protocol/comparison and hand off to TRVP01 for persistence, not implement persistence itself. If HIP provider-report source instrumentation is genuinely needed, note that existing PRVP01/02 are CM1-specific and do NOT own this -- create or split a separate patching-owned item rather than putting patch content inside this run-* item. Execution order shifts to #8 in the revised sequence, still after BRVP01.
 
+PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, implementation is paused. Design above (extend existing ExecutionAttestation seam, hand off to TRVP01 for persistence) stands for when resumed.
+
 ## Change Log
 
 - 2026-09-09T10:59:58.197113+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:17:00.063504+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +88,6 @@ IMPORTANT CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): do 
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.413059+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:19:03.493536+00:00 (updated-by): Updated: order=8, section:notes
+- 2026-09-10T00:25:58.470366+00:00 (updated-by): Updated: section:notes
+- chg_20260910_002605_paused-all-vulkan-provider-imp_6846
+- 2026-09-10T00:26:05.854516+00:00 (updated-by): Updated: section:ledger-events
