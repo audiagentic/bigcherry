@@ -33,6 +33,7 @@ import json
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -125,7 +126,10 @@ def main() -> int:
         work_root=None, upstream_repo=Path(args.llama_root) if args.llama_root else None
     )
     store = ArtifactStore(context.work_root / "artifacts-store")
-    run_id = args.run_id or "bump-validation"
+    # Every invocation needs a fresh run_id: run-scoped paths under
+    # context.work_root are keyed on it alone, and a stale one collides
+    # with a prior (even failed) attempt's immutable published artifacts.
+    run_id = args.run_id or f"bump-validation-{uuid.uuid4().hex[:12]}"
 
     build_id, binary = _build_once(context, store, run_id)
     print(f"bump-validation: built build_id={build_id} binary={binary}")
