@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-Direct RMS-norm Q8_1 production remains planning-only and dependent on proving RD09's cache contract.
+Evaluate direct Q8_1 production in RMS norm only after PRBE05's cache contract and correctness gates are proven.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Prove PRBE05 cache correctness and capture lifecycle first; do not evaluate this child against raw baseline.
+- Port direct RMS-norm Q8_1 production with explicit source and format identity, preserving the standalone quantizer/reference path.
+- Compare B+PRBE05 against B+PRBE05+PRBE06 so the marginal effect is causal.
+- Cover qualifying and nonqualifying patterns, graph/non-graph, numerical output and Q8 block identity, including native fallback.
+- Measure quantization launches, memory and graph effects with balanced repeats and record rejection if the marginal result is not positive.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+PRBE06 is a dependent producer optimization, not a replacement cache design. Direct output must be equivalent to the registered Q8_1 format and must publish only after enqueue; all unsupported shapes use the existing native path.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd10.md
+RMS-norm HIP producer seam; PRBE05 cache API; Q8 block/reference fixtures; graph/non-graph campaign artifacts and marginal evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+PRBE05 prerequisite; numerical equality; exact Q8 block identity; graph/non-graph; fallback patterns; launch/memory accounting; causal B+PRBE05 vs B+PRBE05+PRBE06 performance.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Dependent causal arm; fallback preservation; exact output evidence; fail closed on cache or numerical uncertainty.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No direct producer is enabled before PRBE05 passes; all qualifying outputs match reference and unsupported patterns fall back; only a statistically supported marginal improvement without quality or memory regression can be promoted.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd10
 - 2026-09-09T11:58:01.152218+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.829930+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:32:14.424353+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023232_the-next-three-rdna-successors_5807
+- 2026-09-10T02:32:32.993441+00:00 (updated-by): Updated: section:ledger-events

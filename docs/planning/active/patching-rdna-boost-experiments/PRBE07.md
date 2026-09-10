@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly records RD101 as not started and still an open third-party MTP sidecar candidate.
+Investigate the BridgeSpec third-party HIP MTP/DFlash sidecar and gfx1100 MMVQ tuning as an unvalidated candidate, not as production evidence.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Read the pinned README, benchmark README/CSV, integration patches and MMVQ tuning code in full; record source commit and license.
+- Compare verification-width 2-8 techniques against THA05/RD-series dispatch without importing unverified claims.
+- Assess sidecar ABI, host-mediated KV state, vocabulary slicing/remap, dual-XTX applicability and VRAM co-residency risks for our MTP work.
+- Treat published numbers as directional only; define a reproducible local 9B/27B probe with acceptance and fallback gates before any adoption claim.
+- Conclude adopt/adapt, inspiration-only, or not applicable with explicit evidence and provenance.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+This is research triage for a third-party preview. Keep sidecar architecture and MMVQ tuning separate, preserve our existing runtime-profile VRAM preflight, and do not generalize single-GPU Vulkan/HIP results to dual-XTX tensor-split production.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd101.md
+pinned BridgeSpec source/README/benchmarks; integration patch review notes; THA05/RD-series comparison; reproducibility probe recipe and evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Source/license review; controlled local reproduction where authorized; acceptance-rate, throughput and memory-budget measurements; single/dual topology controls; no promotion without independent evidence.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Third-party research-preview provenance; never fabricate promotion evidence; separate controlled A/B from high-water claims; preserve memory-safety and VRAM-budget gates.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A written recommendation identifies concrete transferable technique or explicitly rejects applicability; no third-party benchmark is represented as BigCherry evidence; any adopted change receives its own patch and qualification item.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-rdna-boost-experiments-rd101
 - 2026-09-09T11:58:01.160426+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.848976+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:32:20.227395+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023232_the-next-three-rdna-successors_5807
+- 2026-09-10T02:32:33.005493+00:00 (updated-by): Updated: section:ledger-events
