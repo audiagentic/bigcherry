@@ -75,8 +75,11 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): CONFIRMED P
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.731253+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:59.576114+00:00 (updated-by): Updated: section:notes
 - chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
 - 2026-09-10T00:08:28.898595+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.162086+00:00 (updated-by): Updated: section:ledger-events

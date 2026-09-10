@@ -97,8 +97,11 @@ Migration: capability-rebaseline-v3-2026-09
 ## Ledger-events
 
 
+
 - Pending: ag-ledger MCP unavailable in authoring session.
 - 2026-09-09T11:24:35.925666+00:00 (updated-by): Updated: section:notes
 - 2026-09-09T11:42:42.936100+00:00 (state-transition): State: pending → superseded
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:57:59.839272+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:36.928826+00:00 (updated-by): Updated: section:ledger-events

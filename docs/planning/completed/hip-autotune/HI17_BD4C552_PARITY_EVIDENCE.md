@@ -1,3 +1,7 @@
+---
+state: completed
+---
+
 # HI17 `bd4c552` parity reduction
 
 This is an offline reduction of the three existing Brutus tune artifacts. No
@@ -42,3 +46,7 @@ median(native medians)`. The table reports median/p95/MAD in microseconds.
 All 12 cells pass. The earlier large-K non-parity artifact remains historical
 diagnostic evidence; it is not the prescribed same-representative acceptance
 matrix and does not block HI17 after this reduction.
+
+## Change Log
+
+- 2026-09-10T00:13:16.977146+00:00 (state-transition): State: pending → completed

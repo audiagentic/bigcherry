@@ -72,5 +72,8 @@ Successor key: tuning-rocm-vulkan-provider-ro07
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.537408+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:44.795090+00:00 (updated-by): Updated: section:ledger-events

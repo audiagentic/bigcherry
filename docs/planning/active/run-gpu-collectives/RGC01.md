@@ -77,6 +77,7 @@ REAL HARDWARE RESULT 2026-09-10 (crash-scope classification, per this item's own
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.775870+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:26.075341+00:00 (updated-by): Updated: section:notes
@@ -86,3 +87,5 @@ REAL HARDWARE RESULT 2026-09-10 (crash-scope classification, per this item's own
 - 2026-09-10T00:13:42.062040+00:00 (updated-by): Updated: section:notes
 - chg_20260910_001348_confirmed-on-real-hardware-tha_5870
 - 2026-09-10T00:13:48.233417+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.238883+00:00 (updated-by): Updated: section:ledger-events

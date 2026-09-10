@@ -75,9 +75,12 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): PROTOCOL FR
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:47.119856+00:00 (updated-by): Updated: section:notes
 - 2026-09-10T00:08:08.151672+00:00 (updated-by): Updated: order=9, priority='P2'
 - chg_20260910_000828_reviewed-and-re-planned-all-pe_3612
 - 2026-09-10T00:08:28.968864+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:43.413059+00:00 (updated-by): Updated: section:ledger-events

@@ -72,5 +72,8 @@ Successor key: patching-rocm-vulkan-provider-ro20
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.596999+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:47.462256+00:00 (updated-by): Updated: section:ledger-events

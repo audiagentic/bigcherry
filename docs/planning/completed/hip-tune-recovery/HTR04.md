@@ -72,6 +72,7 @@ Migration: capability-rebaseline-v3-2026-09
 ## Ledger-events
 
 
+
 - chg_20260829_134919_the-tuning-system-can-now-reco_8101
 - 2026-08-29T13:49:19.493979+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T13:56:45.718981+00:00 (updated-by): Updated: section:notes
@@ -79,3 +80,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-09T11:41:56.177350+00:00 (state-transition): State: pending → superseded
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:57:59.769045+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:36.820590+00:00 (updated-by): Updated: section:ledger-events

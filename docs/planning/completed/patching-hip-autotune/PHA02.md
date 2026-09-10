@@ -74,6 +74,7 @@ Supersedes: HI137\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: p
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.823035+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:33:37.333128+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
@@ -90,3 +91,5 @@ Supersedes: HI137\nMigration: capability-rebaseline-v3-2026-09\nSuccessor key: p
 - 2026-09-09T14:29:03.776178+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_142913_closed-the-rccl-source-dispatc_5240
 - 2026-09-09T14:29:13.427571+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.315270+00:00 (updated-by): Updated: section:ledger-events

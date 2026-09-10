@@ -76,6 +76,7 @@ Successor key: patching-code-cleanup-co02
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.735328+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:10:37.489854+00:00 (state-transition): State: pending → in_progress
@@ -87,3 +88,5 @@ Successor key: patching-code-cleanup-co02
 - chg_20260909_151742_aligned-the-remaining-package_2235
 - 2026-09-09T15:17:43.006339+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T15:18:01.335366+00:00 (state-transition): State: in_progress → completed
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.175993+00:00 (updated-by): Updated: section:ledger-events

@@ -182,6 +182,7 @@ This is a smaller, more modest, but now genuinely trustworthy result than the th
 ## Ledger-events
 
 
+
 - chg_20260829_132841_planned-the-next-improvement-t_2822
 - 2026-08-29T13:28:41.371872+00:00 (updated-by): Updated: section:ledger-events
 - 2026-08-29T13:47:39.236165+00:00 (updated-by): Updated: section:notes
@@ -205,3 +206,5 @@ This is a smaller, more modest, but now genuinely trustworthy result than the th
 - 2026-08-29T23:44:36.094025+00:00 (state-transition): State: pending → completed
 - chg_20260829_234447_after-three-rounds-of-a-second_2086
 - 2026-08-29T23:44:47.559636+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:40.198205+00:00 (updated-by): Updated: section:ledger-events

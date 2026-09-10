@@ -97,6 +97,7 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.913234+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T14:05:55.347465+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
@@ -125,3 +126,5 @@ This is deliberately a thin runtime-placement layer, not a second campaign engin
 - 2026-09-09T17:57:26.040769+00:00 (state-transition): State: in_progress → completed
 - chg_20260909_175737_rha06-is-complete-configurabl_4198
 - 2026-09-09T17:57:38.014317+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260910_001436_completed-the-planning-rebasel_5794
+- 2026-09-10T00:14:42.476927+00:00 (updated-by): Updated: section:ledger-events
