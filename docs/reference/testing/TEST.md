@@ -317,6 +317,48 @@ bench-config content, cache digest, per-cell order and metrics, work-equivalence
 evidence, and shutdown result. Production timing and diagnostic observations
 must be stored with explicit roles; never transfer a companion's throughput
 to a production claim or treat companion activation as same-cell proof.
+
+### Declarative runtime matrices (RHA06)
+
+The runtime-placement layer can be driven without writing a new campaign
+harness. Put the requested cells in a JSON document and select the host/model
+registries from configuration; each cell delegates to an existing worker
+command. The resolver rejects unknown models, invalid devices, duplicate cells,
+and replay cells without a cache before any worker is launched.
+
+```json
+{
+  "host": "build-server",
+  "cells": [{
+    "cell_id": "9b-gpu0-native",
+    "model_id": "tierB-qwen9b-q6k",
+    "devices": [0],
+    "topology": "single",
+    "runtime_profile": "production-safe-single",
+    "arm": "native",
+    "build_id": "<completed-build-id>",
+    "binary": "<absolute-server-binary>",
+    "workload": {
+      "delegate_argv": ["<existing-worker>", "--config", "<cell-config>"]
+    }
+  }]
+}
+```
+
+Resolve without touching a GPU:
+
+```bash
+PYTHONPATH=tools python3 -m bigcherry runtime-matrix \
+  --config matrix.json --output artifacts/runtime-matrix/run-1 --dry-run
+```
+
+Without `--dry-run`, the configured worker is run serially for each resolved
+cell, with canonical `ROCR_VISIBLE_DEVICES`/`HIP_VISIBLE_DEVICES` and the
+immutable descriptor in `BIGCHERRY_RUNTIME_CELL_JSON`. The output directory
+contains `resolved-matrix.json`, atomic `status.json`, and sanitized,
+append-only `events.jsonl`; these files are sufficient for polling a UI at this
+stage. Worker stdout/stderr are retained as bounded child results, and a
+non-zero worker exit fails the matrix without upgrading its verdict.
 Production activation admission remains HI168 work; this profile alone is
 not an executable benchmark campaign.
 
