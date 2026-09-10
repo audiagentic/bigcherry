@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Decouple Vulkan FA occupancy tuning from the hard shared-memory legality check while ensuring no illegal shader launch.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Identify the affected AMD driver capability reports; separate legal shared-memory limit checks from occupancy heuristic selection; test reported 32/64KiB limits, genuinely undersized devices, non-AMD controls and explicit overrides; measure FA PP/TG before/after.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Use architecture/driver-aware occupancy tuning independent of exact maxComputeSharedMemorySize==64KiB, but retain a hard legality gate based on actual shader requirements. Never select a shader exceeding device limits.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd82.md
+Vulkan FA tuning selector and legality predicate; capability/override tests; AMD/non-AMD PP/TG evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+No illegal launch; FA PP/TG before/after across capability reports and controls.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Separate heuristic from legality, with no shader over-limit and repeatable occupancy benefit on affected devices; fallback on uncertain capability.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd82
 - 2026-09-09T11:58:01.420235+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.247665+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:17:38.400709+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031805_repaired-four-more-graph-and-v_2834
+- 2026-09-10T03:18:05.338956+00:00 (updated-by): Updated: section:ledger-events

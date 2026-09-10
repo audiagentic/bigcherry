@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly retains RD81 as pending research/strategic work with no patch.
+Audit redundant RADV/ACO scalar waits in Q4_K/Q8_0 GEMV shaders and choose shader rewrite versus Mesa issue based on ISA and runtime evidence.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Capture RADV/ACO ISA for Q4_K and Q8_0 GEMV, compare proprietary-driver equivalents and unaffected kernels, count waits/effective bandwidth/TG, test minimal source transformations across compiler versions, and port only a rewrite that reliably changes codegen; otherwise file/track a Mesa issue.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Treat this as research-oracle work. Determine whether waits arise from shader structure or ACO; do not alter source without proving compiler output changes and runtime benefit.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd81.md
+RADV shader capture/ISA comparison, minimal shader experiments, benchmark evidence, or Mesa issue record.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Output parity; ISA wait count, effective bandwidth and TG versus controls.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Port only a minimal rewrite with reliable ACO codegen and runtime improvement; otherwise preserve code and record a reproducible Mesa issue.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd81
 - 2026-09-09T11:58:01.415531+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.240506+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:17:31.880934+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031805_repaired-four-more-graph-and-v_2834
+- 2026-09-10T03:18:05.321494+00:00 (updated-by): Updated: section:ledger-events

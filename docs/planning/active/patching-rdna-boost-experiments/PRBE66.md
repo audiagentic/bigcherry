@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Add the narrowest HIP graph bypass for unstable long-context FA shapes on gfx1201, while preferring PRBE67 recapture if root cause is proven.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Reproduce R9700 100K+ FA graph failure and log graph shape/stream/capture state; compare short context, other ops, and graphs-off controls; implement a narrow eligibility bypass only for the failing kernel family/depth; verify no crash/output drift and measure PP/TG/graph overhead; hand off root-cause evidence to PRBE67.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Disable graph capture only where stale/unstable long-context FA is proven to fail. Preserve graph benefits globally and make the predicate shape/depth/backend specific.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd83.md
+HIP graph eligibility/cache bypass; reproduction/instrumentation logs; long-context correctness and performance evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+No crash and output parity; PP/TG, graph overhead, capture/recapture events, repeated 100K+ runs.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Use the narrowest bypass that eliminates reproducible failure without broad graph regression; prefer PRBE67 when robust recapture fixes the root cause.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd83
 - 2026-09-09T11:58:01.426062+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.254495+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:17:45.266636+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031805_repaired-four-more-graph-and-v_2834
+- 2026-09-10T03:18:05.350207+00:00 (updated-by): Updated: section:ledger-events
