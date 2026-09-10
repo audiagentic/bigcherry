@@ -15,21 +15,19 @@ priority: P1
 
 ## Description
 
-RD89 reconciliation records NRO11 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Add ctx_other model devices to speculative scheduler backends as an orchestration correctness fix for shared tensors.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Reproduce target/draft device-list mismatch with shared tensors under speculative configuration.
+- Enumerate model_other->devices, deduplicate by backend device handle, and initialize only missing backends after ordinary model devices.
+- Preserve backend ordering relative to ACCEL/CPU and verify ownership/destruction of added instances.
+- Test same-device no-op, subset/superset/disjoint lists, Meta-wrapped tensor split and single-GPU cases.
+- Verify shared tensors schedule on an allocator-valid backend with output parity and no unexpected copies; initialization failure must be explicit.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Device identity comes from the initialized other model, not CLI guesses. This is not a speed patch; backend lifetime/order and shared allocation validity are the acceptance boundary.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro11.md
+src/llama-context.cpp context backend construction; speculative ctx_other setup; scheduler/shared-tensor integration tests; device-list fixtures.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Mismatched-device control vs subject; same-device/no-op; subset/superset/disjoint; Meta split; single GPU; output/copy topology and lifetime checks.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Affirmative scheduler/output evidence; fail explicitly on missing required backend; no throughput claim.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Shared tensors execute on valid allocation backends under mismatch; no duplicate backend or lifetime leak; controls remain unchanged.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro11
 - 2026-09-09T11:58:01.094454+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.745657+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:44:11.869473+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024433_three-more-nasone-successors-n_7555
+- 2026-09-10T02:44:33.151338+00:00 (updated-by): Updated: section:ledger-events

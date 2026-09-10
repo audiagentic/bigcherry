@@ -15,21 +15,19 @@ priority: P1
 
 ## Description
 
-RD89 reconciliation records NRO12 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Replicate lm_head for DFlash2/DSpark full-vocabulary ranking under tensor split, preserving non-replication controls and explicit VRAM limits.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Detect draft architecture/capability from GGUF metadata before target load, not filename.
+- Carry explicit output_replicated through model parameters/construction and mark output weight and bias mirrored in Meta split state.
+- Enable it only when selector/Markov metadata proves full-output ranking and the draft lacks its own output.weight.
+- Cover shared-target lm_head and draft-owned lm_head; the latter must not force target replication.
+- Test 2+ GPU tensor split, layer-split, ordinary MTP/Eagle/no-spec controls, candidate selection vs single-GPU/reference, and VRAM fit failure.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Full-vocabulary ranking cannot use a single shard without distributed top-k; this fix chooses replication. Weight and bias mirror states must stay coherent. Replication cost is an operational correctness constraint; distributed top-k is separate future work.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro12.md
+Speculative model params/load; Meta split-state; DFlash model loading/selector metadata; lm_head weight+bias placement; TP/reference tests; VRAM accounting.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: NRO11.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (0) on predecessor.
+Exact candidate selection under TP; full output on every rank; bias placement; no replication when draft owns output; layer/no-spec controls; VRAM delta and fit rejection.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (2); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Architecture metadata, not names; topology proof; exact selection correctness; resource accounting.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Full-vocabulary ranking matches reference under TP; unnecessary replication is absent; weight+bias states are coherent; memory cost is within declared limit or load fails clearly.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 - 2026-09-09T11:58:01.099464+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.751906+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:44:19.935492+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024433_three-more-nasone-successors-n_7555
+- 2026-09-10T02:44:33.164554+00:00 (updated-by): Updated: section:ledger-events
