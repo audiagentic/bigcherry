@@ -15,13 +15,15 @@ priority: null
 
 ## Description
 
-Only the standalone subset materialized; flash-attention and post-fix MMVQ portions remain composition-gated and full-cluster bit-identity acceptance is unfinished.
+Complete the coordinated decode/speculative-verify bit-identity cluster. Standalone subset exists; attention and post-fix MMVQ portions remain composition-gated.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Treat all five source commits as one determinism property: flash attention, non-flash attention, CPU, RDNA4 MMVQ/SSM and RDNA3 MMVQ.
+- Keep standalone materialized subset explicit; port fattn portions only after PRBE02/03/06 retained and in the required family order.
+- Port RDNA4/RDNA3 portions from branch-tip post-fix state under PRBE19; do not create half-deterministic composition.
+- Run decode vs speculative-verify on identical inputs and compare byte identity across reachable gfx1100/RDNA4 paths and CPU cluster.
+- Preserve native controls and record any determinism cost; no performance promotion is implied.
 
 ## Detailed Solution & Technical Design
 
@@ -37,15 +39,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd26.md
+attention fattn sources; ggml-cuda.cu; mmvq.cu; CPU sgemm; PRBE19 post-fix regions; patch 1210; exact decode/verify fixtures and campaign evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD08.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (6); preserve historical references (1) on predecessor.
+All five commit identities; dependency/order checks; byte-identical outputs; native control; gfx1100 and reachable RDNA4/RDNA3; graph/capture where applicable; no unintended performance regression.
 
 ## Effort & Risk
 
@@ -53,11 +51,11 @@ Reference handling: Rewrite forward references (6); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Coordinated determinism change; no half-cluster acceptance; branch-tip post-fix provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Full cluster, not only standalone subset, produces byte-identical decode/verify outputs under declared paths; composition dependencies are satisfied; partial ports are not promoted.
 
 ## Notes
 
@@ -77,3 +75,6 @@ Successor key: patching-rdna-boost-experiments-rd26
 - 2026-09-09T11:58:01.219018+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.935699+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:51:52.755045+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_025218_rdna-successors-prbe2022-now_5714
+- 2026-09-10T02:52:18.396789+00:00 (updated-by): Updated: section:ledger-events
