@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "Audumla",
+  "patch_digest": "6264f98955ea18304caab4092af3e95e702f10673cd22537ecf2e17e4742511a",
+  "patch_id": "1207_rd17_moe_topk_down_fold",
+  "reason": "Upstream PR #27621 (CUDA: extend MOE fusion to specdec) added a second identical has_fusion computation in a new multi-token MoE launcher in mmvq.cu, causing the anchor to match twice instead of once. RD17's x_scale_channel_dst fusion widening not present upstream. Not selected by any production patch-set (rdna-boosts/untested) -- disposition per pin-bump's own guidance rather than editing an unused experimental patch mid-bump.",
+  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "tracking_item": "RHA12"
+}

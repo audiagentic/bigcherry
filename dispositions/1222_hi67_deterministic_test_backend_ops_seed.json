@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "Audumla",
+  "patch_digest": "28509d1fc6fd1939897cb8528589eb8ddc17dc2ccc946987ef047bd3434c72d1",
+  "patch_id": "1222_hi67_deterministic_test_backend_ops_seed",
+  "reason": "Upstream PR #28325 (tests: use less threads for data initialization) changed the n_threads calculation line in init_tensor_uniform() in test-backend-ops.cpp, breaking the anchor. The nondeterministic std::default_random_engine(std::random_device{}()) HI67 patches around remains present and unfixed upstream -- HI67's determinism fix is still needed. This patch ALSO transitively blocks 4 other BigCherry patches (1223, 1236, 1238, 1239, 1240) via dependency chain. Not selected by any production patch-set (core/untested) -- disposition per pin-bump's own guidance; real rebase work should be prioritized for this one given its blocking radius.",
+  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "tracking_item": "RHA12"
+}

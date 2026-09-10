@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "Audumla",
+  "patch_digest": "11aec58ef2ed2c076ad219a2b59c0667c04af9efccb7bb90943e7376dfea14c7",
+  "patch_id": "1205_rd12_paired_mmvq_dual_output",
+  "reason": "Upstream PR #27930 (ggml: add SWIGLU_CLAMP) added GGML_GLU_OP_SWIGLU_CLAMP to the gate switch and glu_limit to GGML_UNUSED_VARS in mmvq.cu, breaking both edits. RD12's dst_gate behavior not present upstream. Not selected by any production patch-set (rdna-boosts/untested) -- disposition per pin-bump's own guidance rather than editing an unused experimental patch mid-bump.",
+  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "tracking_item": "RHA12"
+}

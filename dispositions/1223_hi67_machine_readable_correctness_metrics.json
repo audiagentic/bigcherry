@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "BLOCKED_BY_DEPENDENCY",
+  "owner": "Audumla",
+  "patch_digest": "b0cb56598fd934291531892e04983af63c9085593b6cad6b0808ba0f6066ea9d",
+  "patch_id": "1223_hi67_machine_readable_correctness_metrics",
+  "reason": "Transitively blocked by 1222_hi67_deterministic_test_backend_ops_seed's own anchor break (upstream PR #28325). Not selected by any production patch-set (core/untested) -- disposition follows its blocking dependency's disposition.",
+  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "tracking_item": "RHA12"
+}
