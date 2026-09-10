@@ -1,6 +1,6 @@
 ---
 id: RRBC01
-order: 5
+order: 4
 plan: run-reusable-build-campaign
 state: pending
 created-at: '2026-09-09T10:58:54.395708+00:00'
@@ -67,14 +67,14 @@ Successor key: run-reusable-build-campaign-re31
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, design sufficient as-is. CampaignLane.backend is the authoritative source of which visibility variable to emit; caller supplies a backend-neutral visibility selection and the adapter emits exactly one backend visibility env var. Reject conflicting inherited HIP/Vulkan visibility state rather than guessing which one wins. Re-derive current Vulkan<->HIP device-enumeration-order mapping fresh on real hardware before acceptance (do not trust the stale RE30-era mapping). Execution order: ranked #5 (removes the first concrete HIP-only assumption from build smoke; prerequisite for RRBC02/RRVP01 lane work).
 
+CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): real gap verified against current code -- planner/lane has smoke_environment but no backend-neutral device-visibility adapter yet. One additional constraint to preserve: RE15's existing selector rule that HIP smoke deliberately sets HIP_VISIBLE_DEVICES only, not simultaneous HIP+ROCR selectors -- do not silently start setting both. Execution order shifts to #4 in the revised sequence.
+
 ## Change Log
 
 - 2026-09-09T10:58:54.395708+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:03.776505+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.471692+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +84,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, design 
 - 2026-09-10T00:08:28.943223+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.320402+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:18:53.401546+00:00 (updated-by): Updated: order=4, section:notes

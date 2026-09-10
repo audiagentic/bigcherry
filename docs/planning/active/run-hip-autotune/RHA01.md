@@ -1,6 +1,6 @@
 ---
 id: RHA01
-order: 3
+order: 10
 plan: run-hip-autotune
 state: pending
 created-at: '2026-09-09T10:48:34.167227+00:00'
@@ -65,14 +65,14 @@ Evaluated against the completed RHA04/RHA10/RHA11 production admission path. Thi
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO after a tiny contract freeze — design is settled enough to implement now. Freeze before coding: (1) configured direct perf binary path + explicit sudo policy (per this item's own prior verified findings: /usr/lib/linux-tools-6.8.0-139/perf with sudo); (2) normalized perf artifact schema including tool-version/command capture; (3) a failed sampling pass is failed diagnostic evidence, never silently replaced by the control run. Keep perf and rocprofv3 mutually exclusive per the existing design. THA16 (dispatch-resolver-overhead question) confirmed as the right first real validation target. Execution order: ranked #3.
 
+CORRECTION from deeper repo-validated dev-gpt review (2026-09-10, checked against planning-refactor HEAD 429134745b04b7b96c2e86ad1c18625cbcbb4ff3): the prior GO verdict understated two real problems. (1) This item's own Description says perf is unblocked while its Validation/older Notes still say Brutus has no usable perf -- self-contradictory as currently written, fix before treating as implementation-ready. (2) The prior review's "THA16 is the right first validation target" claim is NOT well-supported by the repo: THA16 is primarily the already-existing GPU trace/tuning-divergence investigation built on HI132 primitives, not a CPU-attribution question this item's perf capability was designed to answer. RETRACT that specific target; instead validate perf.py against a concrete, currently-unresolved CPU-attribution question (not yet identified -- pick one when implementing, do not default back to THA16 without re-justifying it). Execution order DROPS to #10 (after RRBC02), not #3 -- the original priority reflected an unsupported blocker claim.
+
 ## Change Log
 
 - 2026-09-09T10:48:34.167227+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:04:37.889270+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.818915+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +85,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO after a 
 - 2026-09-10T00:08:28.930653+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.306685+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:18:48.452755+00:00 (updated-by): Updated: order=10, section:notes

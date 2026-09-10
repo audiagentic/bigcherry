@@ -67,14 +67,14 @@ Successor key: run-docs-reference-dr01
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, after RDR01. Design (the 5-step prose/path migration already specified) is sufficient as-is. Add one explicit rule not previously stated: migration applies to MAINTAINED/LIVE docs only, not to immutable historical evidence/archive/campaign artifacts whose literal host/path/IP values are themselves provenance — those may legitimately keep Brutus-identity statements. No backward-compat aliases for old hardcoded paths (project doctrine: migrate up fully). Execution order: ranked #12, last — depends on RDR01 first establishing which files are live vs immutable evidence, so the mechanical pass doesn't touch the wrong set.
 
+CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): still valid after RDR01, but do NOT blindly reuse the original occurrence counts (83x 'brutus', 64x '/mnt/vault', etc.) quoted in DR01 -- those are stale. Recount against current HEAD before scoping the mechanical pass. Execution order stays #12 (unchanged), last.
+
 ## Change Log
 
 - 2026-09-09T10:47:27.966718+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:28.103636+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.745382+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +84,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): GO, after R
 - 2026-09-10T00:08:28.911837+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.190357+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:19:10.765467+00:00 (updated-by): Updated: section:notes

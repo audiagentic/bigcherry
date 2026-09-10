@@ -1,6 +1,6 @@
 ---
 id: RRBC02
-order: 10
+order: 9
 plan: run-reusable-build-campaign
 state: pending
 created-at: '2026-09-09T10:59:03.207047+00:00'
@@ -67,14 +67,14 @@ Successor key: run-reusable-build-campaign-re33
 
 External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): RE-SCOPE BEFORE CODING. The predecessor (RE33) content wrongly mixes declarative platform constraints, observed software identity, and device capabilities into one item. Re-scope this item to own ONLY Vulkan platform constraints/selection policy (vendor/device-class constraints, ICD selection policy, minimum Vulkan API/capability requirements) — it must consume RRVP02's identity/capability outputs, never invent a parallel Vulkan identity digest. New dependency added: RRBC02 -> RRVP02 (this item cannot start before RRVP02 is frozen). Remove the Vulkan `targets` config field entirely rather than retaining it as a compatibility placeholder (project doctrine: no legacy shims). RRBC02 references RRVP02 fingerprints/snapshots directly. Naming resolution: keep RRBC02 for the RE33 lineage and RRVP02 for the RO03 lineage — do not rename/merge one into the other, they are genuinely separate authorities (RRBC02 = declarative constraint/policy; RRVP02 = probed ResolvedStackIdentity + CapabilitySnapshot). Experiment corpora must retain an explicit ICD/driver identity partition per EC15's folded-in requirement — never pool across ICDs. Execution order: ranked #10, after RRVP02/BRVP01/RRVP03 (moved later than RE33's original position since it now depends on RRVP02).
 
+CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): the prior "remove targets entirely" recommendation was incomplete/wrong. Platform.targets currently feeds BOTH _resolve_architectures() / candidate-generation identity AND HIP compile targets -- it is not a pure legacy placeholder that can simply be deleted. This item therefore needs a backend-aware CONFIG SCHEMA MIGRATION that separates HIP compile/catalog architectures from Vulkan platform/device constraints, not a field removal. RRVP02 remains the sole probed runtime/software identity authority (that overlap resolution still holds); this item still owns declarative Vulkan platform constraints/policy and still depends on RRVP02. Execution order shifts to #9 in the revised sequence (after RRVP03, before RHA01).
+
 ## Change Log
 
 - 2026-09-09T10:59:03.207047+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:16:11.720645+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.480385+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +84,4 @@ External dev-gpt holistic review (2026-09-10, req_9f60aaa2ae5f4b88): RE-SCOPE BE
 - 2026-09-10T00:08:28.947678+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.333474+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T00:19:06.494411+00:00 (updated-by): Updated: order=9, section:notes
