@@ -163,6 +163,36 @@ window; bump one, record, then bump the other.
    record stage tells the truth (`tuned`, `production`), and the tag must
    not run ahead of it.
 
+8. **Record a ledger event for the bump as a whole** (`ag-ledger`
+   `record_change_event`, `change-class: release`), even though `pin-bump`
+   auto-commits the pin flip and release record themselves — those commits
+   are structured evidence, not a narrative record of what a human/agent
+   actually had to *decide* during the bump. The ledger event's
+   `technical-summary` must include, for every patch `patch-rebase-check`
+   reported as `FAILED_NEEDS_RECONCILIATION` / `BLOCKED_BY_DEPENDENCY` /
+   `QUARANTINED`:
+
+   - the exact upstream commit(s)/PR(s) that broke it (cite SHAs, not just
+     "upstream changed"),
+   - whether the patch's underlying fix is still needed at the new pin, or
+     superseded (name the specific upstream change that makes it redundant
+     if superseded — never guess),
+   - what was actually done about it: re-anchored (link the fix), disposed
+     as `known_broken` (name the disposition file), or left broken with a
+     stated reason,
+   - whether it is selected by a production patch-set (`framework` /
+     `validated-enhancements`) — a disposition on a non-selected
+     experimental patch is routine; a disposition on a selected one is not,
+     and must say why that was still the right call.
+
+   This is the durable record of the *investigation*, not just its
+   outcome — a future bump hitting the same upstream commit range should be
+   able to find this event and reuse the analysis instead of re-deriving
+   it. Link the ledger event to the tracking plan item (`plan-item-ids`).
+   Preserve — never overwrite — the disposition files and previous ledger
+   events from earlier bumps; each bump's investigation is its own record,
+   even when the same patch breaks again at a later pin.
+
 ## The revision-bound invalidation list
 
 Everything here is keyed, directly or transitively, to the upstream
