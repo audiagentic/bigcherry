@@ -15,21 +15,19 @@ priority: P2
 
 ## Description
 
-RD89 reconciliation records NRO15 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Retain the RDNA3.5 D=256 FlashAttention occupancy row as a future-hardware candidate; current gfx1100/gfx1201 must not select it.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Check upstream landing when gfx1151 hardware/source is available.
+- If absent, port only GGML_CUDA_FATTN_TILE_CONFIG_CASE(256,256,32,256,4,64,64) and RDNA3.5 host/device selection.
+- Build and run non-selection controls on gfx1100/gfx1201.
+- On gfx1151 with rocWMMA disabled, measure D=256/ncols=32 across prompt lengths with correctness, LDS/VGPR/occupancy evidence.
+- Promote only on positive gfx1151 evidence; similar geometry on other architectures requires separate qualification.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Use a distinct RDNA3.5 config function delegating other shapes to the generic table; no graph-opt or cross-architecture default rides along.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro15.md
+FA tile config source/table; host/device RDNA3.5 selector; build/non-selection tests; gfx1151 campaign/profiler evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Upstream/patch ancestry; gfx1100/gfx1201 non-selection; gfx1151 D=256/ncols=32 correctness/perf; LDS/VGPR/occupancy.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Architecture-scoped evidence; no extrapolation.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Correct host/device table selection; no non-RDNA3.5 selection; positive gfx1151 prefill effect with unchanged correctness, otherwise retain deferred status.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro15
 - 2026-09-09T11:58:01.111896+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.772814+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:46:10.318015+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024630_the-remaining-nasone-successor_5195
+- 2026-09-10T02:46:30.073220+00:00 (updated-by): Updated: section:ledger-events

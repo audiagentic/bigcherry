@@ -15,21 +15,20 @@ priority: P2
 
 ## Description
 
-RD89 reconciliation records NRO16 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Evaluate dequant-float MMVDQ for Q4_K/Q5_K/Q6_K decode as a separate algorithm family, beginning with plain matvec before fused SwiGLU.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Cross-reference AMD PR #61 and nasone 670512... ancestry; avoid duplicate kernel families.
+- Extract only MMVDQ; exclude nasone graph-optimization defaults.
+- Implement explicit opt-in Q4_K/Q5_K/Q6_K kernels for ne11==1 contiguous/non-batched layouts with GGML_CUDA_DQ_MMV/DQ_Q6K/DQ_ROWS controls.
+- Keep ordinary MMVQ as fallback; validate dequant math against canonical reference on adversarial blocks/scales and ncols=1.
+- Measure removed Q8_1 launch/time against added float math/memory; sweep rows-per-block and architecture separately.
+- Evaluate dense fused SwiGLU only after plain MMVDQ correctness and performance are established.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+MMVDQ trades activation quantization for float activation/dequant work; assess against F32 reference and model quality, not only native MMVQ. It is not an MMVQ geometry candidate and must retain architecture-specific opt-in.
 
 ## Code Samples & Guidance
 
@@ -37,15 +36,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro16.md
+MMVDQ HIP/CUDA kernels; quant-format dequant fixtures; selector/env controls; plain matvec tests; optional fused GLU child; call-weighted decode campaign.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (1); preserve historical references (0) on predecessor.
+Q4_K/Q5_K/Q6_K reference and block edges; ncols=1; nonqualifying dense/MoE fallback; fused/unfused GLU; architecture controls; Q8 launch accounting; quality and decode timing.
 
 ## Effort & Risk
 
@@ -53,11 +48,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Cross-source deduplication; plain MMVDQ before fused GLU; explicit opt-in/architecture selector; quality gate.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+All three formats meet tolerance; nonqualifying layouts fall back; at least one target architecture has repeatable decode gain without quality regression; graph-opt defaults remain outside.
 
 ## Notes
 
@@ -77,3 +72,6 @@ Successor key: patching-nasone-rdna-optimizations-nro16
 - 2026-09-09T11:58:01.116971+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.779729+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:46:16.757889+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024630_the-remaining-nasone-successor_5195
+- 2026-09-10T02:46:30.083528+00:00 (updated-by): Updated: section:ledger-events
