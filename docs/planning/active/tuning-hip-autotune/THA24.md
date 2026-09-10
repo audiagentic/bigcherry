@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Readiness foundation exists; future custom-kernel stages remain unimplemented.
+Implement a bounded gfx1100 Q8_0×Q8_1 WMMA custom-kernel readiness/qualification path for K=5120,M=6144,N=512, without speculative enablement.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Keep custom_kernel opt-in; validate architecture mask/stable identity, distinct correctness reference, SHA-256 architecture-matched resource report, and passed benchmark evidence; add offline regression tests and preserve native candidates; only then consider source/dispatch implementation.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Readiness contract precedes any cherrypips kernel. Malformed custom candidates must fail before catalog/registry generation; no broad external RDNA candidates substitute for exact gfx1100 objective.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi25.md
+Custom candidate schema/validator, catalog/registry tests, future kernel package only after evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI04,HI12,HI17.
-
-Active dependencies: Frozen dependencies: HI04.
-
-Reference handling: Rewrite forward references (1); preserve historical references (3) on predecessor.
+HI25 readiness tests/full suite; identity/mask/reference/resource/benchmark digest checks.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No custom kernel reaches runtime/catalog without complete architecture, identity, correctness, resource, and benchmark evidence; native remains default.
 
 ## Notes
 
@@ -78,3 +68,6 @@ Successor key: tuning-hip-autotune-hi25
 - 2026-09-09T12:09:25.332102+00:00 (updated-by): Updated: section:title
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.550547+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:33:19.585135+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033345_repaired-three-more-tuning-suc_6484
+- 2026-09-10T03:33:45.427767+00:00 (updated-by): Updated: section:ledger-events

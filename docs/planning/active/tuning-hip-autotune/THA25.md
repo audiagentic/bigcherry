@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-RD89 reconciliation explicitly retains HI26 as a real internally designed kernel candidate; implementation/qualification remains outstanding.
+Investigate Q8_1 activation reuse, K-tile/barrier variants, and fused gate+up integer-MMQ prefill for gfx1100 dense models with causal, graph, and multi-GPU evidence.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Instrument Q8_1 launches/source identity/grouping and weighted node timing; add prepacked native entry and execution-scoped planner with compatibility/lifetime; clone exact gfx1100 shapes; measure occupancy/I/thread/tile/LDS variants independently; only after stability evaluate fused gate/up prefill; require production replay evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Separate three hypotheses: shared activation packing, K-tile/barrier schedule, and fused integer-MMQ gate/up at N=512. Preserve native fallback and graph-safe arena lifetime; never combine candidates without attribution.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi26.md
+MMQ quantization wrapper/prepacked executor/planner; gfx1100 kernels; tuner/catalog/evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI30.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (1) on predecessor.
+Q8_1 counter/identity telemetry, graph lifetime, correctness, workspace, multi-GPU and causal kernel/E2E evidence; production candidates require graph/correctness/workspace/provenance records.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Promote only independently correct, graph-safe candidates with causal performance evidence; no production replay candidate without complete evidence contract.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi26
 - 2026-09-09T11:58:00.970279+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.558248+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:33:26.685942+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033345_repaired-three-more-tuning-suc_6484
+- 2026-09-10T03:33:45.447148+00:00 (updated-by): Updated: section:ledger-events
