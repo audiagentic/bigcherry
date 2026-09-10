@@ -146,9 +146,7 @@ window; bump one, record, then bump the other.
    and-completes-correctly gate that `patch-rebase-check`/`patch-lint`
    cannot provide, since none of the static gates ever launch a server. A
    failing cell is a bump blocker; investigate before declaring the bump
-   complete. Note: this tool currently needs `bigcherry runtime-matrix`
-   (tools/bigcherry/campaign/runtime_matrix.py + cli/runtime.py), which
-   is not yet on this branch -- see RHA12 for the backport.
+   complete.
 
 6. **Walk the invalidation list below.** Every entry is a question:
    *is there an artifact of this kind that the next step will consume, that

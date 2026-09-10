@@ -499,6 +499,7 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 | Path | Disposition | Owner and rationale |
 |---|---|---|
 | `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
+| `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
 
 ## Exit status
 

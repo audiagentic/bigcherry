@@ -142,7 +142,7 @@ class ToolingBoundaryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         rows = [match.groupdict() for line in registry.splitlines() if (match := DISPOSITION_ROW.match(line))]
 
-        self.assertEqual(len(rows), 405)
+        self.assertEqual(len(rows), 406)
         paths = {row["path"] for row in rows}
         self.assertEqual(len(paths), len(rows))
         self.assertTrue(
