@@ -4,7 +4,7 @@
   "owner": "Audumla",
   "patch_digest": "b6aa5023ceeac32f0236aab49613283788c5fcefaefd22f4f097b30e39489f02",
   "patch_id": "1202_rd04_bf16_flash_attn_tile",
-  "reason": "Upstream PR #27970 (sparse-fa for DSV4/GLM) added a use_sparse bool param to launch_fattn() before warp_size in hunks 24/25 of fattn-tile.cuh, breaking the anchor. RD04's native-BF16 behavior is not adopted upstream at b10883. Not selected by any production patch-set (rdna-boosts/untested, rd04-only experiment only) -- disposition per pin-bump's own guidance rather than editing an unused experimental patch mid-bump.",
-  "target_revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+  "reason": "Same finding as the b10883 disposition, re-recorded at b10884 because pin-bump correctly invalidates a revision-bound disposition on ANY revision move, even a CI-only diff (b10883->b10884 touches only .github/workflows/*.yml, verified via git diff --stat). Underlying patch status is unchanged. Original: upstream PR #27970 added a use_sparse param to launch_fattn().",
+  "target_revision": "434ddbbc0e30522e897670681e503b797c12b7c1",
   "tracking_item": "RHA12"
 }
