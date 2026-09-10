@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-rmsnorm/norm candidate search is explicitly not started and blocked on HI174.
+After THA18 proves the non-matmul hook, authorize rmsnorm/norm candidate search only after determining real internal variants versus new kernel authoring.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Wait for THA18; inspect norm.cu variants and identity; if variants exist extend hook/telemetry and HI67/HI143/HTR01 pipeline, otherwise create separate kernel-authoring scope; validate native first and preserve matmul.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Rmsnorm is a simple pilot alternative to RoPE. Do not invent candidate variants before THA18 determines decomposition versus authoring.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi176.md
+norm.cu dispatch, THA18 hook/identity, telemetry, tests/evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI67,HTR01.
-
-Active dependencies: Frozen dependencies: HI174,HI175,HI177,HI178,HI179.
-
-Reference handling: Rewrite forward references (7); preserve historical references (2) on predecessor.
+Native correctness/telemetry and candidate evidence only after foundation; full suite and gfx1100.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+No work before THA18; proceed only with justified real variants, stable identity, and full correctness/behavioral/E2E gates.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi176
 - 2026-09-09T11:58:00.944455+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.521841+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:31:41.118746+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033234_repaired-four-non-matmul-tunin_4268
+- 2026-09-10T03:32:34.816162+00:00 (updated-by): Updated: section:ledger-events

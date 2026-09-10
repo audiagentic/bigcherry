@@ -15,21 +15,15 @@ priority: P3
 
 ## Description
 
-Flash-attention candidate search is explicitly not started and blocked on HI174 plus a simpler pilot-op cycle.
+After THA18 and a simpler pilot, investigate flash-attention candidate search with attention-specific identity and safety.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Wait for THA18 plus a completed RoPE/rmsnorm pilot; inspect fattn/flash-attention-ext variants, KV-cache/mask/precision structure; choose hook/identity extension; add native telemetry first, then candidate search only with correctness/behavioral gates.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Highest-risk non-matmul class; do not assume matmul identity transfers. Separate candidate dimensions for mask/cache/precision/sequence and preserve native fallback.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi177.md
+fattn*.cu, attention-specific hook/identity, telemetry, correctness and behavioral tests.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: HI174,HI175,HI176,HI178,HI179.
-
-Reference handling: Rewrite forward references (6); preserve historical references (0) on predecessor.
+Native and candidate reference/PPL correctness, cache/mask/precision coverage, real record telemetry and positive E2E.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Remain blocked until THA18 pilot proves foundation; promote only exact attention-safe variants with full correctness and E2E evidence.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi177
 - 2026-09-09T11:58:00.950375+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.529403+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:32:05.001893+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_033234_repaired-four-non-matmul-tunin_4268
+- 2026-09-10T03:32:34.839312+00:00 (updated-by): Updated: section:ledger-events
