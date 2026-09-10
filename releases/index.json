@@ -1,7 +1,16 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-08-31T05:42:56.454593+00:00",
+  "generated_at": "2026-09-10T05:28:33.179889+00:00",
   "releases": [
+    {
+      "audit_passed": true,
+      "manifest_hash": "",
+      "release_tag": "b10883",
+      "revision": "91f6a6cf361385700bbe15981f0f39909df77498",
+      "slug": "b10883",
+      "stage": "patched",
+      "updated_at": "2026-09-10T05:28:33.168524+00:00"
+    },
     {
       "audit_passed": true,
       "manifest_hash": "b9e8510b11665a55ee625a209e7bde8b",
