@@ -15,21 +15,19 @@ priority: P0
 
 ## Description
 
-RD89 reconciliation records NRO07 within the nasone NRO set as pending; no implementation or terminal disposition is recorded.
+Port and qualify nasone hybrid HIP TOP_K selection as an independent foundation before wave32 tuning. Preserve CUDA/CUB behavior and native fallback.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Freeze source 7f3e1e4d... and audit dispatch against b10705 top-k.cu.
+- Add HIP-only TOP_K selection kernels with ordered-float NaN/Inf/tie policy, TOP-1 reduction, n-ary/radix paths and bitonic fallback for unsupported shapes.
+- Keep selection opt-in/traceable; do not invent a matmul candidate ID or replace HIP TOP_K globally before exact-index correctness.
+- Build CPU/reference fixtures for k/nrows/ncols, ties, negative values, infinities and duplicates; verify caller ordering semantics.
+- Capture real MoE/QSA signatures and compare hybrid against bitonic at k=1 and routing k=2/4/8/10; keep PNRO07 disabled for causal attribution.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The optimization changes algorithmic complexity and temporary storage, not just geometry. Exact index/tie semantics are load-bearing; any stable-order divergence requires an explicit policy. Keep HIP-only containment and native fallback.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-nasone-rdna-optimizations-nro07.md
+patches/1256_nro07_topk_hybrid/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING.md}; top-k.cu; shared NRO static tests; CPU/reference TOP_K fixture runner; real signature campaign artifacts.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: none extracted.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (4); preserve historical references (0) on predecessor.
+Non-HIP preprocessor preservation; idempotent apply; exact index/order fixtures k=1..ncols and multi-row; unsupported fallback; gfx1100 real MoE/QSA signatures; kernel/scratch/end-to-end call-weighted performance.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (4); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Exact routing correctness before performance; HIP-only containment; native fallback; no conflation with downstream routing fusion.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Reference and routing correctness pass; non-HIP builds unchanged; unsupported shapes fall back; at least one real gfx1100 high-cost signature shows repeatable win without model regression; PNRO07 remains separate.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 - 2026-09-09T11:58:01.075875+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.719952+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:42:40.812059+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_024304_three-nasone-successors-now-pr_2691
+- 2026-09-10T02:43:04.858380+00:00 (updated-by): Updated: section:ledger-events
