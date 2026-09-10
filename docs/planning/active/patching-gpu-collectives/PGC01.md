@@ -15,21 +15,19 @@ priority: null
 
 ## Description
 
-RCCL 2.27.7, hierarchical bridge, and pinned-host fallback candidates still require real-hardware disposition against META.
+Investigate safe and performant fallbacks for device-3/PCI-atomics-incapable topologies. A candidate ships only if it beats META/layer-split on the exact topology; a measured negative result is valid closure.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+- Probe RCCL 2.27.7 structurally and then through GP07's hardened qualification, measuring real latency/bandwidth rather than treating structural admission as success.
+- Prototype the hierarchical safe-subset bridge at GP10 base level: measure {0,3} as a single-GPU target separately from {0,1,3}/{0,1,2,3} multi-GPU subsets.
+- Measure general pinned-host N-way only as the last-resort candidate, with correctness and memory accounting.
+- Promote to a BigCherry patch only after base-level evidence shows it can beat META/layer-split; qualify exact topology and preserve native/META fallbacks.
+- If no candidate clears the bar, close each topology with real numbers and retain META/layer-split as authoritative.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Execution order is RCCL probe, hierarchical bridge, pinned-host fallback; expected performance priority is bridge first, pinned-host last. Device 3 must never join an RCCL communicator when the topology is unsafe. For {0,3}, bridge to one GPU; do not assume the multi-GPU subset design transfers.
 
 ## Code Samples & Guidance
 
@@ -37,15 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-gpu-collectives-gp09.md
+GP07 RCCL qualification; GP10 base harness; topology-specific bridge/pinned-host prototypes; META/layer-split controls; per-topology campaign evidence and negative disposition.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: GP01,GP02,GP06,GP07,GP08,GP10,HI138.
-
-Active dependencies: Frozen dependencies: GP01,GP02,GP06,GP10.
-
-Reference handling: Rewrite forward references (1); preserve historical references (7) on predecessor.
+Structural metadata and real probes; {0,3}/{0,1,3}/{0,1,2,3}; correctness; latency/bandwidth; memory; candidate vs META/layer-split; exact topology/revision provenance.
 
 ## Effort & Risk
 
@@ -53,11 +47,11 @@ Reference handling: Rewrite forward references (1); preserve historical referenc
 
 ## Standards
 
-Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
+Fail closed on AtomicOps admission; measure before patching; no slower-but-safe production fallback; preserve negative evidence.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+A fallback is promotable only when real hardware numbers beat META/layer-split for its exact topology with correctness intact. Otherwise record a topology-specific negative result and retain META/layer-split; safety alone is insufficient.
 
 ## Notes
 
@@ -77,3 +71,6 @@ Successor key: patching-gpu-collectives-gp09
 - 2026-09-09T11:58:00.767507+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.226021+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:37:38.846667+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
+- chg_20260910_023824_the-gpu-collective-successors_5773
+- 2026-09-10T02:38:24.253696+00:00 (updated-by): Updated: section:ledger-events

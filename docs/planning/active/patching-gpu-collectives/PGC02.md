@@ -40,15 +40,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-gpu-collectives-gp11.md
+patch 1244 source/metadata and SUMMARY; N-way AllReduce qualification harness; RCCL/native baseline; root/topology/size soak artifacts; patch 1245 retained negative evidence; K-COLLECTIVE-03/04/05 disposition records.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: GP01,GP02,GP03,GP04,GP05,GP06,GP08,GP10+1.
-
-Active dependencies: Frozen dependencies: GP01,GP03,GP09,GP10.
-
-Reference handling: Rewrite forward references (6); preserve historical references (9) on predecessor.
+Correctness before performance; N=3 boundary and supported N-way regimes; root/topology/size matrix; soak; native baseline; 1245 negative evidence; conditional K-item dispositions; exact patch/revision provenance.
 
 ## Effort & Risk
 
@@ -60,7 +56,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Patch 1244 has correctness, soak, root/topology/size coverage, baseline comparison, and a final promotion decision; 1245 remains retained negative evidence; conditional K items are explicitly dispositioned.
+Patch 1244 has correctness, soak, root/topology/size coverage and a provenance-bound promotion decision; patch 1245 remains retained negative evidence; conditional K items are explicitly dispositioned.
 
 ## Notes
 
@@ -87,3 +83,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T00:53:05.364557+00:00 (updated-by): Updated: section:description, section:steps, section:acceptance_criteria, section:notes
 - chg_20260910_005948_legacy-planning-folders-now-co_1240
 - 2026-09-10T00:59:49.055704+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T02:38:05.053695+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria
+- chg_20260910_023824_the-gpu-collective-successors_5773
+- 2026-09-10T02:38:24.269287+00:00 (updated-by): Updated: section:ledger-events
