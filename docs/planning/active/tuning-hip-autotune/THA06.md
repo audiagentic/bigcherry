@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Cross-revision retention and delta-retune remain explicitly open.
+Retain promoted winners across llama.cpp revision bumps using explicit per-model/profile projection and retune only affected signatures.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Respect HI125→HI127→HI128→HI129 sequencing; add explicit --retain-from receipt; run tuning-free record-only on new build; build target through normal planner/admission; project prior measurements via replay_projection; use per-candidate identity rather than whole-manifest hash; quarantine failed re-attestation and retune only changed candidates.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+No global cross-model store, global revision-match disable, production misses as primary discovery, or duplicate orchestrator. Reuse existing capability and implementation-equivalence projection, with explicit operator-selected prior generation and target provenance.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi131.md
+workflow refresh path and CLI; replay_projection; catalog/candidate identity; retention tests and A→B evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI121,HI127,HI128,HI129,PA13,PA16.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (6); preserve historical references (6) on predecessor.
+Revision A tune/promote, unrelated revision B change, prove untouched winners replay and changed signatures retune; provenance/capability mismatch rejects.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Retain only per-candidate compatible winners from explicit prior receipt, flag affected candidates for retune, and never silently reuse incompatible or unverified history.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi131
 - 2026-09-09T11:58:00.814804+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.299901+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:27:06.082906+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032737_repaired-four-major-tuning-suc_7897
+- 2026-09-10T03:27:37.903243+00:00 (updated-by): Updated: section:ledger-events

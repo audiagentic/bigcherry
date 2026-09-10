@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The hypothesis was narrowed, but the four-way discriminator and phase-tagged dispatch instrumentation remain unexecuted.
+Determine whether the HI141 w4:nw8:rpb1:sk0 candidate's numerical defect is amplified by coupled target/draft MTP contexts.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Map Qwen3.8-27B MTP target ctx_tgt versus separate draft ctx_dft graph and hidden-state handoff; inspect which context emits signature ne1=[5120,4,1,1]; determine shared-trunk versus head-specific operation; correlate candidate routing/defect with acceptance collapse and inform HI143 corpus/gate design.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: tuning
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Correct the mental model: target and draft contexts execute separately, but target hidden states feed the draft MTP head. A global signature-keyed cache can route identical signatures in either context to the same candidate, so test correlation through the actual handoff rather than assuming shared trunk execution.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/tuning-hip-autotune-hi144.md
+MTP graph construction/server speculative path; dispatch signature traces per context; HI141 candidate evidence; HI143 behavioral-gate inputs.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: HI136,HI141.
-
-Active dependencies: Frozen dependencies: none recorded.
-
-Reference handling: Rewrite forward references (2); preserve historical references (2) on predecessor.
+Real MTP traces identify context/producer, candidate parity and acceptance behavior; independent/head-specific result determines whether correlation hypothesis survives.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Close with an evidence-backed shared/independent classification and updated HI141/HI143 gate; do not infer causality from signature equality alone.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: tuning-hip-autotune-hi144
 - 2026-09-09T11:58:00.838080+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.342125+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:27:21.489000+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032737_repaired-four-major-tuning-suc_7897
+- 2026-09-10T03:27:37.926185+00:00 (updated-by): Updated: section:ledger-events
