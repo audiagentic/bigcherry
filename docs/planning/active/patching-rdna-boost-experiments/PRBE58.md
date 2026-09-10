@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Evaluate removing redundant four-copy Vulkan MTP handoff after coupled RD71/RD72 analysis, preserving correctness and PP/VRAM budgets.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Recheck source commit 1fcc05da and MrLordCat registry; diff with RD71 commit 41a8ca78 before implementation; measure copy path variants, staging alternatives, draft depth and context on dual RDNA4 Vulkan; compare single-GPU controls; verify hidden-state/output identity and record copy count/bytes/time and effective TG.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Reduce Vulkan MTP handoff copies where NextN/output placement and pipeline-parallel choices allow it. Determine whether RD71 supersedes/overlaps this path before porting. Keep host staging and original four-copy fallback when correctness or VRAM/PP cost changes.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd72.md
+Vulkan MTP scheduler/copy path; topology and pipeline controls; hidden-state/output tests; dual-RDNA4 copy and E2E evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD69.
-
-Active dependencies: Frozen dependencies: RD69
-
-Reference handling: RD71.
+Hidden-state/output identity; copy count/bytes/time, effective TG, PP and VRAM across path variants, draft depths and contexts.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Promote only if copies fall without hidden-state/output changes, PP/VRAM cost increase, or acceptance loss; retain fallback otherwise.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd72
 - 2026-09-09T11:58:01.389761+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.197952+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:13:26.102767+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031346_repaired-four-more-migrated-pa_4345
+- 2026-09-10T03:13:46.510818+00:00 (updated-by): Updated: section:ledger-events

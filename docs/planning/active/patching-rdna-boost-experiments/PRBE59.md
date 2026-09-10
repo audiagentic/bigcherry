@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-Matching upstream candidate identified; port and validation remain pending.
+Research-compare restored rocWMMA FlashAttention on RDNA4 for deep-context workloads; keep conditional and experimental unless stablely superior.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Recheck source commit 5aa2f049 and build integration; implement only the low-risk build/kernel selection needed to compare rocWMMA; test R9700 Qwen long-context BF16/Q8 KV at 32K/64K/128K against current FA, decode, gfx1100, and graph on/off controls; run FA backend tests/PPL/long stability; report PP/TG, VRAM/scratch, compile/runtime stability and crash/graph interactions.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Compare rocWMMA FA against current generic/native kernels on selected RDNA4 head/KV shapes rather than automatically reverting upstream decisions. Gate by head size, q_rows, depth, KV type and graph state; retain current kernel fallback.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd76.md
+HIP FA kernel selection/build integration; backend correctness/PPL tests; deep-context replay and stability evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD69,RD73.
-
-Active dependencies: Frozen dependencies: RD69.
-
-Reference handling: Rewrite forward references (3); preserve historical references (2) on predecessor.
+FA tests, PPL, long-run stability; PP/TG, VRAM/scratch, compile/runtime and graph/crash evidence.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Keep only as a conditional experimental path if correctness, stability, and clear deep-context PP benefit are repeatable; otherwise retain current FA path.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd76
 - 2026-09-09T11:58:01.393793+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.204866+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:13:33.193064+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031346_repaired-four-more-migrated-pa_4345
+- 2026-09-10T03:13:46.522718+00:00 (updated-by): Updated: section:ledger-events

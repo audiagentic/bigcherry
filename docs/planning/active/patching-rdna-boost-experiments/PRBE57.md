@@ -15,21 +15,15 @@ priority: null
 
 ## Description
 
-The frozen item retains executable implementation/qualification work and has no terminal completion or deprecation disposition in current lineage.
+Qualify independent NextN/MTP tensor placement by topology transfer cost, with coupled analysis against PRBE58 before deciding patch shape.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Register/recheck the MrLordCat source and diff commits 41a8ca78 and 1fcc05da together; map overlap before choosing one patch, ordered pair, or supersession; test NextN owner on first/last/main target GPU and device order on dual XTX/R9700; compare single GPU and MTP-off controls; measure copies/token, TG and PP cost with temp-0 identity/acceptance.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Place NextN tensors according to speculative handoff cost rather than output placement. Treat RD71 and RD72 as a coupled investigation, not predetermined coupling; preserve topology-aware fallback and explicit device-order semantics.
 
 ## Code Samples & Guidance
 
@@ -37,15 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-successor-specs/patching-rdna-boost-experiments-rd71.md
+Vulkan/HIP multi-GPU NextN placement; topology/copy-cost selector; temp-0/acceptance tests; coupled RD71/RD72 comparison and dual-GPU evidence.
 
 ## Validation
 
-Historical evidence and constraints: Preserve frozen notes/reviews/evidence on predecessor; IDs: RD69.
-
-Active dependencies: Frozen dependencies: RD69
-
-Reference handling: RD72.
+Correctness: temp-0 identity and MTP acceptance. Performance: copies/token, TG, PP cost for owner alternatives, device orders, single-GPU and MTP-off controls.
 
 ## Effort & Risk
 
@@ -57,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Select placement only after coupled RD71/RD72 overlap analysis and repeatable lowest total transfer cost with no acceptance regression; otherwise preserve existing placement.
 
 ## Notes
 
@@ -77,3 +67,6 @@ Successor key: patching-rdna-boost-experiments-rd71
 - 2026-09-09T11:58:01.384830+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:43.190479+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-10T03:13:19.105683+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_031346_repaired-four-more-migrated-pa_4345
+- 2026-09-10T03:13:46.500792+00:00 (updated-by): Updated: section:ledger-events
