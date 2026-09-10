@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-Actual-loaded runtime attestation implementation is pending.
+Capture actual loaded HIP/Vulkan runtime stack before accepted samples, compare against expected identity, and persist fail-closed attestations.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Freeze backend-neutral attestation schema/comparator; implement actual loaded HIP reporter and Vulkan adapter; collect after provider-exercising initialization/warmup before timed work; reject missing/malformed/substituted/lazy-loaded provider identities; thread reports through record/tune/verifier/correctness/replay receipts and persistence; normalize effective visibility/ICD state.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Report loaded modules, provider fingerprints and effective runtime state, not PATH/ROCM_PATH/LD_LIBRARY_PATH guesses. Keep software identity out of hardware key; compare requested/build/actual and fail before evidence acceptance on mismatch.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-PAUSED (Vulkan) -- when resumed: extend existing ExecutionIdentity/ExecutionAttestation/AttestedServerSession seam (do not build a parallel evidence-acceptance path); src/ggml/src/ggml-cuda/hip-autotune-stack.{h,cpp} only if existing metadata transport cannot expose actual-loaded HIP providers; hand off persistence to TRVP01 (RO06 successor), do not implement persistence in this item.
+hip-autotune-stack h/cpp; workflow ServerRunner stages; runtime/attestation tests and report transport.
 
 ## Validation
 
-PAUSED (Vulkan). Attestation finalized/refreshed after untimed provider-exercising warmup and before first accepted sample. Requested/build/actual mismatch, missing/malformed report, substitution, or lazy-load incompleteness all fail closed before evidence is accepted. Freeze wire schema before any source instrumentation.
+Build under one stack/launch another; DSO/ICD substitution, visibility reorder, missing/malformed/lazy provider tests; report refreshed after provider-exercising warmup; actual identity persisted per run.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Production evidence cannot be accepted without deterministic pre-sample actual-runtime attestation matching expected stack; hardware identity remains separate.
 
 ## Notes
 
@@ -74,6 +68,7 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:47.119856+00:00 (updated-by): Updated: section:notes
@@ -87,3 +82,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.854516+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:56.083117+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T03:28:57.809162+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032911_repaired-three-providerrun-su_5934
+- 2026-09-10T03:29:12.009995+00:00 (updated-by): Updated: section:ledger-events

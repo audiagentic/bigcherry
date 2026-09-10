@@ -15,21 +15,15 @@ priority: P2
 
 ## Description
 
-Canonical backend identity/probing implementation is pending; acceptance is unchecked.
+Define backend-neutral canonical resolved software/provider identity and HIP/Vulkan probes with deterministic stack fingerprints.
 
 ## Steps
 
-1. Implement the still-valid future scope.
-2. Run the stated acceptance and evidence gates.
-3. Preserve predecessor provenance and record successor evidence under this ID.
+Define versioned ProviderIdentity/ResolvedBackendStack/CapabilitySnapshot/provenance; probe compiler, SDK, runtime, provider and ICD identities; canonicalize stable semantic fields with missing/unknown states; exclude timestamps/hostnames/BDF/ordinals/paths; add mocked/real probes and visibility reorder tests.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: run
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Use sorted canonical serialization and blake2b bigcherry/backend-stack/v1 fingerprint. Keep semantic software identity separate from capability and provenance; HIP captures HIP/rocBLAS/hipBLASLt/CK, Vulkan loader/driver/ICD/extensions/features/subgroups/coopmat/compiler.
 
 ## Code Samples & Guidance
 
@@ -37,11 +31,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-PAUSED (Vulkan) -- when resumed: tools/bigcherry/backend/{__init__,stack,hip_probe,vulkan_probe}.py (new), plus renamed RuntimeCapabilitySnapshot per the naming-collision correction above.
+tools/bigcherry/backend/{stack,hip_probe,vulkan_probe}.py and backend tests.
 
 ## Validation
 
-PAUSED (Vulkan). Probe twice -> byte-identical JSON/fingerprint; provider-binary swap -> fingerprint changes; device-visibility/ordinal reordering -> fingerprint UNCHANGED; missing/unknown/unsupported states round-trip explicitly (never inferred).
+Repeated probes byte-identical; provider binary change alters fingerprint; equivalent paths/ordinals remain equal; volatile fields do not; missing states round-trip; common HIP/Vulkan envelope.
 
 ## Effort & Risk
 
@@ -53,7 +47,7 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 ## Acceptance Criteria
 
-Close the recorded gap and pass the frozen scope's stated implementation, correctness, performance, or evidence gate.
+Canonical software identity is backend-neutral, deterministic and provider-scoped, with capability/provenance separated and no volatile identity fields.
 
 ## Notes
 
@@ -74,6 +68,7 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.519983+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:41.712289+00:00 (updated-by): Updated: section:notes
@@ -87,3 +82,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_002605_paused-all-vulkan-provider-imp_6846
 - 2026-09-10T00:26:05.841918+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:27:50.126765+00:00 (updated-by): Updated: section:files, section:validation
+- 2026-09-10T03:28:51.350912+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- chg_20260910_032911_repaired-three-providerrun-su_5934
+- 2026-09-10T03:29:11.998186+00:00 (updated-by): Updated: section:ledger-events
