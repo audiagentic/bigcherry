@@ -124,6 +124,18 @@ All three steps: full offline suite clean (only the 3 confirmed pre-existing/unr
 
 Remaining steps per the revised order: 4 (--run-performance-benchmark CLI with its own early path bypassing legacy --model/--manifest/--amdgpu-targets requirements, execution_identity/attestation turned on here for the first time), 5 (real model/topology resolution -- ModelSpec/registry loader + Ministral models.toml entry + ordered device-pool semantics -- does not exist yet, ​not just a TOML row), 6 (legacy aliases, RD08's through its own adapter), 7 (RD58/RD73 wired onto the visibility helper as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
 
+
+
+STEPS 4 & 5 DONE (commits 228c785d, 4dab7efe) plus a real-hardware-caught bugfix (commit 2923cef0), 2026-09-11:
+Step 4: --run-performance-benchmark CLI added (own early path, skips legacy --model/--manifest/--amdgpu-targets requirements; --amdgpu-targets changed from required=True to conditionally-required so the legacy flow still enforces it). execution_identity/require_device_visibility turned on for the first time in this module. _run_performance_benchmark() materializes control/subject source once, builds one control/subject llama-bench per applicable architecture, iterates model cells with explicit skip-with-reason for inapplicable ones, writes performance-matrix.json.
+Step 5: ResolvedBenchmarkModel/resolve_benchmark_model() (real file-existence + size-match verification, topology never defaulted), resolve_device_pool()/parse_device_map() (ordered device-pool semantics), tierM-ministral14b-q4km added to config/models.toml with benchmark-topology="single", benchmark-topology added to tierB-qwen9b-q6k ("single") and tierL-qwen27b-q8 ("tensor-2").
+
+BUG FOUND ON FIRST REAL-HARDWARE SMOKE TEST, FIXED (commit 2923cef0): ran --run-performance-benchmark for real on Brutus (gfx1100, tierM-ministral14b-q4km, single device) immediately after step 4 landed -- both control and subject llama-bench binaries built successfully for real, then hit NameError: require_device_visibility used in _run_performance_benchmark() but never imported (only `from bigcherry.experiment import attestation` and `from bigcherry.patch import source as psi` were present). None of the 9 CLI tests written for step 4 caught this -- all 9 were parser-only or source-inspection-only, none actually reached that line. Fixed the missing import, then added OrchestrationLogicTests (3 new tests) that mock build_tree/generate_registry/source-materialization/resolve_benchmark_wiring/resolve_benchmark_model so the real orchestration logic -- device resolution, require_device_visibility()/ExecutionIdentity construction, skip-cell handling -- actually runs hardware-free, closing this coverage gap for future changes to this function. Full offline suite clean (only the 3 confirmed pre-existing/unrelated failures), patch-lint/check clean.
+
+Re-ran the real-hardware smoke test on Brutus after the fix: full end-to-end success -- both binaries built, require_device_visibility()/ExecutionIdentity resolved correctly, 1 cell executed with 0 skipped, real decode/prefill bootstrap stats captured (decode ~+3.7%, prefill ~-7.5% ci geometric_effect_pct for this single-pair informal smoke -- NOT a promotion-grade measurement, pairs=2, purely a plumbing confirmation). Pushed to main/planning-refactor, synced to Brutus.
+
+Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--run-rd08-lanes onto the generic path, RD08's through its own Contract adapter), 7 (RD58/RD73 wired onto require_device_visibility as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -134,3 +146,9 @@ Remaining steps per the revised order: 4 (--run-performance-benchmark CLI with i
 - 2026-09-11T07:28:55.652156+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:notes
 - 2026-09-11T07:59:38.514248+00:00 (updated-by): Updated: section:notes
 - 2026-09-11T08:18:36.275347+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T09:12:57.017255+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
+- 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
