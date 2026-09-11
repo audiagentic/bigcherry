@@ -11,24 +11,36 @@ work: M
 priority: P2
 ---
 
-# Split framework/upstream-fixes patch-sets and tighten group/kind taxonomy
+# Add an enumerated, sparse `tags` field; fix kind mislabels and framework/upstream-fix composition bug
 
 ## Description
 
-The current `[patch-set.framework]` in config/recipes.toml (15 patches) silently bundles two different kinds of patch: 14 genuine BigCherry-authored core/dispatch/measurement plumbing (`group = "core"`, `kind = "framework"`, `origin = "local"`, permanent) and 1 upstream correctness backport (`1000_rdna4_mmq_q2k_q6k_fix`, `group = "upstream-fixes"`, `kind = "upstream-backport"`, carries `upstream-ref`/`retirement` fields marking it as temporary until PR #25940 lands upstream). These are semantically different things -- one is permanent BigCherry-owned scaffolding, the other is a stopgap for someone else's bug -- and bundling them in one patch-set with one `required-state` obscures that.
+Design settled through discussion (2026-09-11), superseding earlier drafts of this item:
 
-Separately, the `group`/`kind` metadata fields themselves have drifted from what they're actually used for. A full catalog survey (2026-09-11) found: 28 patches carry `group = "core"`, but only 14 of those are in `[patch-set.framework]` -- the other 14 (mostly HI67/HI18/HI85/HI119/HI81/HI14/HI134-series correctness/diagnostic/test tooling) are labeled "core" but selected nowhere, so the tag and the shipped set have silently diverged. Additionally one patch is tagged `kind = "upstream-backport"` with `group = "rdna-boosts"` instead of the otherwise-consistent `group = "upstream-fixes"` pairing every other upstream-backport patch uses -- the same class of mislabeling as the framework/upstream-fixes bundling issue above, just at the individual-patch level.
+**`kind` stays the primary, small, fixed field builds key off**: `framework` / `diagnostic` / `upstream-backport` / `enhancement`. This is what patch-set composition actually selects on.
 
-Full group/kind combination census across all 68 patches: 28x (core, framework), 19x (rdna-boosts, enhancement), 8x (nasone-rdna, enhancement), 6x (upstream-fixes, upstream-backport), 2x (gpu-collectives, enhancement), 1x (rdna-boosts, upstream-backport) [the mismatch], 1x (_template, unset).
+**`group` is dropped**, not collapsed. Once provenance (`origin`+`external-source`, already exist) and subsystem (`subsystems`, already exists) are recognized as the fields that actually carry that information, `group` had nothing left to encode that wasn't already redundant with `kind` -- keeping two fields in lockstep for the same information was worse than one. Real confirming case: `1234_rd58_pin_state_buffer_multigpu_restore` is `group="rdna-boosts"` + `kind="upstream-backport"` -- a legitimate external-PR backport (external-source="davetha-llama-cpp") that is part of the rdna-boosts experimental initiative. This is not a mislabel; it shows a single named initiative can legitimately contain patches of more than one kind, which is exactly why a strict group<->kind bijection (an earlier draft of this item) was the wrong model.
+
+**New: an enumerated, sparse, multi-valued `tags` list field**, for BigCherry's own cross-cutting classification/analysis -- not a build-selection input. Applied only where genuinely true and specific, never exhaustively: an architecture-independent optimization gets no architecture tag; something genuinely RDNA4-only gets `rdna4` and nothing else. The enum is expected to grow as new patch types appear, same as any other living vocabulary -- this is a starting point derived from the real patch set (2026-09-11 survey), not a closed list.
+
+Initial vocabulary, derived from real data already in the catalog (most of these fields are currently populated on only 4-8 of 68 patches, confirming this needs real backfill, not just a schema addition):
+- Purpose: `fix`, `optimization`, `enhancement`, `tuning`, `diagnostic`, `framework`
+- Architecture: `gfx1100`, `gfx1101`, `gfx1151`, `gfx1201`, `rdna3`, `rdna3.5`, `rdna4`, `dual-gpu`, `peer-access`
+- Subsystem: `allreduce`, `tensor-parallel`, `p2p`, `meta-backend`, `graph-fusion`, `gated-delta-net`, `mtp`, `state-snapshots`, `wmma`, `prefill`, `speculative-decoding`, `top-k`, `moe-routing`, `wave32`, `flash-attention`, `mmvq`, `mmq`, `mmvf`, `quantization`, `kv-cache`, `dispatch`
+
+Two real, narrower bugs found during the survey remain in scope (neither is a group/kind labeling problem after this redesign):
+1. 14 patches (0840_hybrid_allreduce_dispatch, 0850_ordered_speculative_trace, and the HI67/HI18/HI85/HI81/HI14/HI105/HI119(x3)/HI134 series) are currently `group="core"` -- under the new scheme they should be `kind="diagnostic"`, not `kind="framework"` (they are correctness-probe/test/tracing tooling, not build/dispatch plumbing).
+2. `1000_rdna4_mmq_q2k_q6k_fix` is correctly tagged `kind="upstream-backport"` but is nonetheless listed in `[patch-set.framework]` in config/recipes.toml -- the composition doesn't match its own kind. This is a recipes.toml bug, not a patch.toml mislabel.
 
 ## Steps
 
-1. Add a new `[patch-set.upstream-fixes]` in config/recipes.toml and move `1000_rdna4_mmq_q2k_q6k_fix` into it, out of `[patch-set.framework]`.
-2. Update BOTH `[source.bigcherry-native]` and `[source.bigcherry]` to include `patch-sets = ["framework", "upstream-fixes", ...]` -- upstream correctness fixes ride along in every real build (native and full), since a correctness bug is never optional the way an enhancement is. `bigcherry-native` becomes framework + upstream-fixes (the core/correct baseline); `bigcherry` stays framework + upstream-fixes + validated-enhancements (the full optimized build). This matches the existing native-vs-full composition axis already in recipes.toml -- confirmed 2026-09-11: `[source.bigcherry-native]` currently has `patch-sets = ["framework"]` and `[source.bigcherry]` has `patch-sets = ["framework", "validated-enhancements"]`; upstream-fixes needs to be added to both, not just one.
-3. Audit the 14 `group = "core"` patches that are NOT in `[patch-set.framework]` (0840_hybrid_allreduce_dispatch, 0850_ordered_speculative_trace, and the HI67/HI18/HI85/HI81/HI14/HI105/HI119(x3)/HI134 series) -- for each, decide and record: relabel to a more accurate group (they look like correctness-probe/diagnostic/test tooling, not core framework plumbing), or genuinely belong in `[patch-set.framework]` and were just missed.
-4. Fix the single `(rdna-boosts, upstream-backport)` mismatched patch to `group = "upstream-fixes"` to match every other upstream-backport patch's pairing.
-5. Add a `patch-lint` rule (or extend cross_check) that fails closed on: (a) group/kind pairing inconsistency against the established combinations, (b) any `kind = "upstream-backport"` patch missing `upstream-ref` or `retirement` fields, (c) any `upstream-fixes`-group patch not present in every source's patch-sets (native and full alike) -- to catch a correctness fix silently becoming optional, (d) optionally, a `group = "core"` patch not present in any patch-set (to catch future drift like finding #2 above before it accumulates again).
-6. Re-run patch-lint, check, and the full offline test suite after all relabeling to confirm nothing regresses, and confirm both `bigcherry-native` and `bigcherry` builds still compose correctly (no correctness fix silently dropped from either).
+1. Remove the `group` field from patches/_template/patch.toml and the patch schema/validation code that reads it; migrate every patch's existing `group` value out (most map directly to the `kind` they already had, since group and kind were redundant for the vast majority of patches -- only the rdna-boosts/nasone-rdna/gpu-collectives-labeled ones need review to confirm their `kind` value is independently correct, not just inherited from the removed group).
+2. Add a `tags` list field to the patch schema (empty list default, no requirement to populate). Add the enumerated vocabulary above as the initial allowed set in whatever validates patch.toml (patch_catalog.py / patch_registry.py) -- fail closed on an unrecognized tag, but never require any tags be present.
+3. Fix the 14 misfiled patches' `kind` from `framework` to `diagnostic` (see bug #1 above).
+4. Fix config/recipes.toml: create `[patch-set.upstream-fixes]`, move `1000_rdna4_mmq_q2k_q6k_fix` out of `[patch-set.framework]` into it, and add `upstream-fixes` to the patch-sets of BOTH `[source.bigcherry-native]` and `[source.bigcherry]` (a correctness fix should never be optional the way an enhancement is -- see bug #2 above).
+5. Backfill `tags` on at least the patches already touched by this item (the 14 diagnostic ones, the upstream-fixes ones, and any patch whose title/content makes an architecture or subsystem tag unambiguous) as a real starting population, not a placeholder.
+6. Add/extend a patch-lint rule that fails closed on any `tags` entry outside the enumerated vocabulary, and confirms `kind="upstream-backport"` patches carry `upstream-ref`+`retirement`.
+7. Re-run patch-lint, check, and the full offline test suite; confirm both `bigcherry-native` and `bigcherry` still compose correctly with `1000_rdna4_mmq_q2k_q6k_fix` reachable via upstream-fixes in both.
 
 ## Detailed Solution & Technical Design
 
@@ -56,7 +68,7 @@ Full group/kind combination census across all 68 patches: 28x (core, framework),
 
 ## Acceptance Criteria
 
-config/recipes.toml's framework patch-set contains only group=core/kind=framework patches; upstream-fixes patches are tracked in their own set and still compose into a real production build; every group=core patch is either in a patch-set or has its group corrected to reflect its actual role; the (rdna-boosts, upstream-backport) mismatch is fixed; a patch-lint rule enforces group/kind consistency going forward; full test suite passes.
+`group` field removed from the patch schema and every patch.toml. New `tags` list field exists, is optional/sparse, and is validated against an enumerated vocabulary (fail closed on unknown tags, never required to be non-empty). The 14 misfiled diagnostic patches carry `kind="diagnostic"`. `1000_rdna4_mmq_q2k_q6k_fix` is composed via a new `upstream-fixes` patch-set present in both bigcherry-native and bigcherry sources, not `[patch-set.framework]`. patch-lint enforces the tag vocabulary and upstream-backport field requirements. Full test suite passes.
 
 ## Notes
 
@@ -64,8 +76,15 @@ This is a metadata/taxonomy cleanup, not a behavior change to any patch's actual
 
 Raised during a 2026-09-11 user-led survey of "which patches are validated vs which are core vs optimizations" that surfaced the framework/upstream-fixes bundling as a real, unprompted finding (not something either party set out looking for).
 
+This is a metadata/taxonomy change, not a behavior change to any patch's actual transform -- do not touch patch.py anchors as part of this item.
+
+Design history for context: an early draft proposed collapsing `group` to 4 values matching `kind` 1:1 (rejected as pure redundancy once spotted); a middle draft proposed keeping `group` as an independent, kind-crossing initiative label (rejected once it became clear provenance/subsystem already cover that need via existing fields, making a THIRD field for the same purpose unnecessary). The final design removes `group` and adds `tags` as a genuinely new, sparse, non-required axis that doesn't duplicate `kind`, `origin`/`external-source`, or `subsystems`.
+
+Raised during a 2026-09-11 user-led survey of "which patches are validated vs core vs optimizations" that surfaced all of the above as real, unprompted findings.
+
 ## Change Log
 
 - 2026-09-11T04:52:15.819930+00:00 (created-by): Created by agent
 - 2026-09-11T04:52:34.707749+00:00 (updated-by): Updated: priority='P2', section:description, section:steps, section:acceptance_criteria, section:notes
 - 2026-09-11T04:54:16.836438+00:00 (updated-by): Updated: section:steps
+- 2026-09-11T05:04:26.715764+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:acceptance_criteria, section:notes
