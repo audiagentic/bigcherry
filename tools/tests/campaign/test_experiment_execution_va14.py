@@ -263,5 +263,118 @@ class EndToEndRD08StyleCompositionTests(unittest.TestCase):
         self.assertGreater(aggregated["target_kernel_gain_pct"], 0)
 
 
+class RequireDeviceVisibilityTests(unittest.TestCase):
+    """PVPS02 step 1: require_device_visibility() extracted from RD58's
+    original inline guard, unit-tested standalone. Nothing production
+    calls this yet -- see the function's own docstring."""
+
+    def test_both_selectors_set_and_matching_is_accepted(self) -> None:
+        dv = ex.require_device_visibility(
+            context="t", env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+        )
+        self.assertEqual(dv.device_ids, ("0", "1"))
+        self.assertEqual(dv.gpu_count, 2)
+        self.assertEqual(
+            dv.document(),
+            {"hip_visible_devices": ["0", "1"], "rocr_visible_devices": ["0", "1"], "gpu_count": 2},
+        )
+
+    def test_order_is_preserved_not_sorted(self) -> None:
+        dv = ex.require_device_visibility(
+            context="t", env={"HIP_VISIBLE_DEVICES": "1,0", "ROCR_VISIBLE_DEVICES": "1,0"},
+        )
+        self.assertEqual(dv.device_ids, ("1", "0"))
+
+    def test_missing_hip_visible_devices_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(context="t", env={"ROCR_VISIBLE_DEVICES": "0"})
+
+    def test_missing_rocr_visible_devices_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(context="t", env={"HIP_VISIBLE_DEVICES": "0"})
+
+    def test_both_missing_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(context="t", env={})
+
+    def test_blank_value_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "", "ROCR_VISIBLE_DEVICES": ""},
+            )
+
+    def test_stray_comma_produces_a_blank_entry_and_is_rejected(self) -> None:
+        # Stricter than RD58's original inline check, which silently
+        # dropped blank entries via a filtered split.
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "0,,1", "ROCR_VISIBLE_DEVICES": "0,,1"},
+            )
+
+    def test_trailing_comma_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "0,1,", "ROCR_VISIBLE_DEVICES": "0,1,"},
+            )
+
+    def test_mismatched_lists_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "1,0"},
+            )
+
+    def test_mismatched_order_rejected_even_with_same_set(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "1,0"},
+            )
+
+    def test_duplicate_device_id_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", env={"HIP_VISIBLE_DEVICES": "0,0", "ROCR_VISIBLE_DEVICES": "0,0"},
+            )
+
+    def test_below_minimum_count_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", minimum_count=2,
+                env={"HIP_VISIBLE_DEVICES": "0", "ROCR_VISIBLE_DEVICES": "0"},
+            )
+
+    def test_meeting_minimum_count_is_accepted(self) -> None:
+        dv = ex.require_device_visibility(
+            context="t", minimum_count=2,
+            env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+        )
+        self.assertEqual(dv.gpu_count, 2)
+
+    def test_exact_count_mismatch_rejected(self) -> None:
+        with self.assertRaises(ex.DeviceVisibilityError):
+            ex.require_device_visibility(
+                context="t", exact_count=1,
+                env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+            )
+
+    def test_exact_count_match_is_accepted(self) -> None:
+        dv = ex.require_device_visibility(
+            context="t", exact_count=2,
+            env={"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+        )
+        self.assertEqual(dv.gpu_count, 2)
+
+    def test_defaults_to_reading_real_os_environ_when_env_not_given(self) -> None:
+        import os
+        old = dict(os.environ)
+        try:
+            os.environ["HIP_VISIBLE_DEVICES"] = "3"
+            os.environ["ROCR_VISIBLE_DEVICES"] = "3"
+            dv = ex.require_device_visibility(context="t")
+            self.assertEqual(dv.device_ids, ("3",))
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+
 if __name__ == "__main__":
     unittest.main()
