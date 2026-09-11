@@ -23,11 +23,12 @@ Full group/kind combination census across all 68 patches: 28x (core, framework),
 
 ## Steps
 
-1. Add a new `[patch-set.upstream-fixes]` in config/recipes.toml (or equivalent composition point) and move `1000_rdna4_mmq_q2k_q6k_fix` into it, out of `[patch-set.framework]`. Confirm `[source.bigcherry]`'s composition still includes both sets for a real build (this must not silently drop the fix from production).
-2. Audit the 14 `group = "core"` patches that are NOT in `[patch-set.framework]` (0840_hybrid_allreduce_dispatch, 0850_ordered_speculative_trace, and the HI67/HI18/HI85/HI81/HI14/HI105/HI119(x3)/HI134 series) -- for each, decide and record: relabel to a more accurate group (they look like correctness-probe/diagnostic/test tooling, not core framework plumbing), or genuinely belong in `[patch-set.framework]` and were just missed.
-3. Fix the single `(rdna-boosts, upstream-backport)` mismatched patch to `group = "upstream-fixes"` to match every other upstream-backport patch's pairing.
-4. Add a `patch-lint` rule (or extend cross_check) that fails closed on: (a) group/kind pairing inconsistency against the established combinations, (b) any `kind = "upstream-backport"` patch missing `upstream-ref` or `retirement` fields, (c) optionally, a `group = "core"` patch not present in any patch-set (to catch future drift like finding #2 above before it accumulates again).
-5. Re-run patch-lint, check, and the full offline test suite after all relabeling to confirm nothing regresses.
+1. Add a new `[patch-set.upstream-fixes]` in config/recipes.toml and move `1000_rdna4_mmq_q2k_q6k_fix` into it, out of `[patch-set.framework]`.
+2. Update BOTH `[source.bigcherry-native]` and `[source.bigcherry]` to include `patch-sets = ["framework", "upstream-fixes", ...]` -- upstream correctness fixes ride along in every real build (native and full), since a correctness bug is never optional the way an enhancement is. `bigcherry-native` becomes framework + upstream-fixes (the core/correct baseline); `bigcherry` stays framework + upstream-fixes + validated-enhancements (the full optimized build). This matches the existing native-vs-full composition axis already in recipes.toml -- confirmed 2026-09-11: `[source.bigcherry-native]` currently has `patch-sets = ["framework"]` and `[source.bigcherry]` has `patch-sets = ["framework", "validated-enhancements"]`; upstream-fixes needs to be added to both, not just one.
+3. Audit the 14 `group = "core"` patches that are NOT in `[patch-set.framework]` (0840_hybrid_allreduce_dispatch, 0850_ordered_speculative_trace, and the HI67/HI18/HI85/HI81/HI14/HI105/HI119(x3)/HI134 series) -- for each, decide and record: relabel to a more accurate group (they look like correctness-probe/diagnostic/test tooling, not core framework plumbing), or genuinely belong in `[patch-set.framework]` and were just missed.
+4. Fix the single `(rdna-boosts, upstream-backport)` mismatched patch to `group = "upstream-fixes"` to match every other upstream-backport patch's pairing.
+5. Add a `patch-lint` rule (or extend cross_check) that fails closed on: (a) group/kind pairing inconsistency against the established combinations, (b) any `kind = "upstream-backport"` patch missing `upstream-ref` or `retirement` fields, (c) any `upstream-fixes`-group patch not present in every source's patch-sets (native and full alike) -- to catch a correctness fix silently becoming optional, (d) optionally, a `group = "core"` patch not present in any patch-set (to catch future drift like finding #2 above before it accumulates again).
+6. Re-run patch-lint, check, and the full offline test suite after all relabeling to confirm nothing regresses, and confirm both `bigcherry-native` and `bigcherry` builds still compose correctly (no correctness fix silently dropped from either).
 
 ## Detailed Solution & Technical Design
 
@@ -67,3 +68,4 @@ Raised during a 2026-09-11 user-led survey of "which patches are validated vs wh
 
 - 2026-09-11T04:52:15.819930+00:00 (created-by): Created by agent
 - 2026-09-11T04:52:34.707749+00:00 (updated-by): Updated: priority='P2', section:description, section:steps, section:acceptance_criteria, section:notes
+- 2026-09-11T04:54:16.836438+00:00 (updated-by): Updated: section:steps
