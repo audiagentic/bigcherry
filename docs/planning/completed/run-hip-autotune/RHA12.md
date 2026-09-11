@@ -61,7 +61,7 @@ No legacy/backward-compat shims (project doctrine) -- if any patch needs real re
 
 ## Acceptance Criteria
 
-config/recipes.toml pinned=b10901 (moved b10705->b10883->b10884->b10901 across this item's full run), every currently-selected bigcherry patch clean at the current pin (no dispositions needed for the b10900->b10901 leg), patch-verify-evidence path exercised, real-hardware smoke passed 5/5 cells at b10901 via the standing bump-validation tool, pin-status --complete PASS on the required Brutus tree, and the full procedure documented across three real bumps as a repeatable record. MET.
+config/recipes.toml pinned=b10901 (moved b10705->b10883->b10884->b10901 across this item's full run), every currently-selected bigcherry patch clean at the current pin (no dispositions needed for the b10900->b10901 leg), patch-verify-evidence path exercised, real-hardware smoke passed 5/5 cells at b10901 via the standing bump-validation tool, pin-status --complete --all-remotes PASS (the real gate, run from a controller/tree that can genuinely reach the required Brutus tree), and the full procedure documented across three real bumps as a repeatable record. MET.
 
 ## Notes
 
@@ -104,6 +104,14 @@ With Brutus's tree finally reachable and consistent, ran a THIRD real bump on th
 
 FINAL STATE: config/recipes.toml pinned=b10901 on planning-refactor, pushed to origin. Every acceptance criterion in this item is now met for real: patch reconciliation clean, patch-verify-evidence path exercised across three real bumps, real-hardware smoke passed, pin-status --complete PASS, and the full procedure has now been proven repeatable across three separate real bumps (b10883, b10884, b10901) including recovering from a real infrastructure failure (archived tree path) without any manual code changes to the orchestrator itself.
 
+GPT DEEP-REVIEW CORRECTION (2026-09-11): an external GPT deep-review of this branch caught a real defect in how this item's completion was recorded. The notes below (marked "RESOLVED 2026-09-11") originally closed this item against `pin-status --complete` WITHOUT `--all-remotes`, run on Brutus itself, citing a host-key self-SSH artifact as the reason to accept the weaker gate. That was wrong: PIN_BUMP.md's actual completion rule (step 7) requires `--complete --all-remotes`, and `cmd_pin_status()` sets `trees=[]` when `--all-remotes` is omitted, so the recorded PASS only ever checked the local checkout, not the required Brutus tree via independent verification. The release record's claim that its output was "verbatim" pin-status output was also inaccurate (it omitted the local/remote/aggregate sections the real command emits).
+
+Fix applied: root-caused the self-SSH failure (Brutus's own SSH key was never added to its own authorized_keys, so the self-referential "brutus" remote-probe entry in config/recipes.toml failed host-key/auth when the check ran from Brutus itself) and fixed it by adding Brutus's own public key to its own authorized_keys. Re-ran the real gate on Brutus with self-probe now working: `pin-status --complete --all-remotes` reports local VERDICT consistent, brutus (remote) VERDICT consistent, AGGREGATE converged, COMPLETION PASS. This real, complete verbatim output replaced the incomplete one previously stored in releases/b10901.json's notes field. Two further minor issues from the same review (a stale release-record timestamp/missing trailing newline, and a present-tense sentence in patches/1209_rd22.../SUMMARY.md that contradicted its own Superseded section) were also fixed.
+
+--- Original (now-corrected) completion notes below, preserved for history ---
+
+
+
 ## Change Log
 
 - 2026-09-10T04:51:00.813381+00:00 (created-by): Created by agent
@@ -123,3 +131,4 @@ FINAL STATE: config/recipes.toml pinned=b10901 on planning-refactor, pushed to o
 - 2026-09-11T03:00:04.712201+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T03:00:28.437415+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-09-11T03:00:36.767401+00:00 (state-transition): State: pending → completed
+- 2026-09-11T03:40:45.447600+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
