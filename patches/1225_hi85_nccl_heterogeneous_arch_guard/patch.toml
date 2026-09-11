@@ -1,7 +1,7 @@
 schema = 1
 id = "1225_hi85_nccl_heterogeneous_arch_guard"
 order = 1225
-state = "untested"
+state = "validated"
 kind = "framework"
 origin = "local"
 backend = "hip"
