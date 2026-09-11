@@ -57,13 +57,26 @@ Same topic as PVPS01 (the standard Patch Qualification Matrix, 4 arms x N archit
 
 ## Acceptance Criteria
 
+Additional real requirement (user, 2026-09-11): the generic harness must exercise ALL applicable real architectures, not just one. Brutus's real, confirmed hardware (rocminfo, 2026-09-11): gfx1030 (RX 6900 XT, 16GiB), gfx1100 (RX 7900 XTX x2, 24GiB each), gfx1201 (32GiB). config/recipes.toml's platform.linux-multi already declares targets = ["gfx1100", "gfx1201", "gfx1030"] -- the generic harness should default to this same set (or whatever subset a given patch's own validation-architectures narrows it to), not a single hardcoded arch.
 
+Standard model set (user-specified, 2026-09-11), with tensor-split where the model requires more than one device:
+- Mistral family: Ministral-3-14B-Instruct-2512-Q4_K_M.gguf (used directly by path in the RD04 bench so far; NOT YET registered in config/models.toml -- needs a real models.toml entry, e.g. tierM-ministral14b or similar, following the existing tierA/tierB/tierL id convention). ~8-9GB Q4_K_M, should fit all three real architectures single-GPU (including the 16GiB gfx1030) -- confirm this against real GGUF file size before assuming, don't guess.
+- Qwen 9B: already registered as tierB-qwen9b-q6k (Qwen3.5-9B-Q6_K.gguf) -- an existing, deliberately-designed cross-architecture reference lane (its own models.toml note explains it was sized specifically to fit gfx1030/gfx1100/gfx1201 with headroom, dense + MTP-capable, stock Q6_K to avoid an unusual quant as a hidden variable). Reuse this lane as-is, do not create a duplicate.
+- Qwen 3.8 27B: already registered as tierL-qwen27b-q8 (Qwen3.8-27B-Q8_0.gguf) -- the real production dual-XTX model, requires tensor split (-sm tensor) across 2+ devices per the project's own dual-XTX baseline memory; too large for gfx1030 alone (29GB vs 16GiB). Use the existing production-dual-xtx runtime-profile's tensor-split config, do not invent a new one.
+
+Documentation requirement (user, 2026-09-11): if a patch's validation needs a specific model/quant not already covered by the standard set above, document the exact model/quant requirement in that patch's own docs (README.md/SUMMARY.md), and source it preferring unsloth or another mainstream GGUF publisher on Hugging Face -- do not invent a bespoke/obscure quant source without documenting why the standard set doesn't cover the need.
 
 ## Notes
 
 This item is being handed to dev-gpt-agent for a full design + implementation + refactor/regression plan BEFORE any code is written -- do not implement ad hoc. GPT should read the real current implementation (tools/bigcherry/patch/validation_campaign.py's run_rd04_benchmark_evidence/run_rd08_validation_lanes and the run() dispatcher's --run-rdNN-* gates, tools/bigcherry/experiment/execution.py's run_paired_lane, and the RD58 HIP_VISIBLE_DEVICES enforcement block for the safety-contract shape to generalize) before proposing an API.
 
+This item is being handed to dev-gpt-agent for a full design + implementation + refactor/regression plan BEFORE any code is written -- do not implement ad hoc. GPT should read the real current implementation (tools/bigcherry/patch/validation_campaign.py's run_rd04_benchmark_evidence/run_rd08_validation_lanes and the run() dispatcher's --run-rdNN-* gates, tools/bigcherry/experiment/execution.py's run_paired_lane, and the RD58 HIP_VISIBLE_DEVICES enforcement block for the safety-contract shape to generalize) before proposing an API.
+
+Confirmed 2026-09-11: Ministral-3-14B-Instruct-2512-Q4_K_M.gguf is 7.7GB on disk -- comfortably fits all three real architectures single-GPU (including 16GiB gfx1030), same sizing logic as the existing tierB-qwen9b-q6k cross-architecture reference lane. Needs a real config/models.toml entry (not yet registered) before the generic harness can reference it by model id rather than raw path.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
 - 2026-09-11T06:35:12.354368+00:00 (updated-by): Updated: section:description, section:notes
+- 2026-09-11T06:48:37.813026+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-09-11T06:48:51.301259+00:00 (updated-by): Updated: section:notes
