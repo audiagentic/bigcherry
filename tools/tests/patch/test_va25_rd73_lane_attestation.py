@@ -112,12 +112,63 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
                 ]
                 self.assertTrue(session_calls, f"{name}: no AttestedServerSession call found")
                 for call in session_calls:
-                    kwarg_names = {kw.arg for kw in call.keywords}
-                    self.assertIn(
-                        "env_unset", kwarg_names,
+                    env_unset_kw = next((kw for kw in call.keywords if kw.arg == "env_unset"), None)
+                    self.assertIsNotNone(
+                        env_unset_kw,
                         f"{name}: an AttestedServerSession call has no env_unset kwarg -- "
                         "ambient ROCR_VISIBLE_DEVICES would leak through",
                     )
+                    # GPT review follow-up (req_d1ef22d846854960, 2026-09-11):
+                    # a bare env_unset= kwarg is not enough -- env_unset=()
+                    # would satisfy the check above while unsetting nothing.
+                    # Resolve what the value actually names: either the
+                    # shared _ROCR_VISIBLE_DEVICES_UNSET constant (verified
+                    # separately below) or a literal tuple/list containing
+                    # the string "ROCR_VISIBLE_DEVICES".
+                    value = env_unset_kw.value
+                    if isinstance(value, ast.Name):
+                        self.assertEqual(
+                            value.id, "_ROCR_VISIBLE_DEVICES_UNSET",
+                            f"{name}: env_unset references {value.id!r}, not the shared "
+                            "_ROCR_VISIBLE_DEVICES_UNSET constant -- verify it separately "
+                            "names ROCR_VISIBLE_DEVICES",
+                        )
+                    elif isinstance(value, (ast.Tuple, ast.List)):
+                        literal_strings = {
+                            elt.value for elt in value.elts
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                        }
+                        self.assertIn(
+                            "ROCR_VISIBLE_DEVICES", literal_strings,
+                            f"{name}: env_unset={ast.dump(value)} does not name "
+                            "ROCR_VISIBLE_DEVICES",
+                        )
+                    else:
+                        self.fail(
+                            f"{name}: env_unset value is neither a Name nor a literal "
+                            f"tuple/list ({ast.dump(value)}) -- cannot verify it unsets "
+                            "ROCR_VISIBLE_DEVICES"
+                        )
+
+    def test_rocr_visible_devices_unset_constant_actually_names_it(self) -> None:
+        # The structural check above trusts _ROCR_VISIBLE_DEVICES_UNSET by
+        # name when a call references it -- verify that trust is warranted.
+        source = VALIDATION_CAMPAIGN_PATH.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(VALIDATION_CAMPAIGN_PATH))
+        assigns = [
+            node for node in ast.walk(module)
+            if isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "_ROCR_VISIBLE_DEVICES_UNSET"
+        ]
+        self.assertTrue(assigns, "_ROCR_VISIBLE_DEVICES_UNSET constant not found")
+        value = assigns[0].value
+        self.assertIsInstance(value, ast.Tuple)
+        literal_strings = {
+            elt.value for elt in value.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        }
+        self.assertEqual(literal_strings, {"ROCR_VISIBLE_DEVICES"})
 
     def test_every_rd73_server_lane_requires_expected_execution(self) -> None:
         # The parameter that carries the caller's declared identity into
