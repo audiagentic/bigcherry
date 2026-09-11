@@ -59,6 +59,8 @@ Supersedes: RD07
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd07
 
+2026-09-11: started a real gfx1201 build+bench campaign for patch 1203 (same in-flight run as PRBE02/PRBE03). CAVEAT, important for this item specifically: this initial pass does NOT include PEF01's specific illegal-memory/safety gates or HI71's dense-shape eligibility verification, both of which this item's acceptance criteria mark as mandatory before any timing claim. Do not treat a clean PPL/bench result from this run as satisfying PRBE04 -- the PEF01 quarantine check and HI71 eligibility check are separate, not-yet-done, and higher-priority than the timing number given this item's own 'PEF01 quarantine mandatory... never relax EX02' standard.
+
 ## Change Log
 
 - 2026-09-09T10:53:43.516065+00:00 (created-by): Created by capability-rebaseline-v3
@@ -74,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd07
 - 2026-09-10T02:30:25.570783+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023037_three-rdna-boost-successors-no_6965
 - 2026-09-10T02:30:37.095824+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T23:50:33.415840+00:00 (updated-by): Updated: section:notes
+- chg_20260911_235103_caught-myself-running-a-real-h_5912
+- 2026-09-11T23:51:03.386145+00:00 (updated-by): Updated: section:ledger-events
