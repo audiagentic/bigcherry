@@ -14,7 +14,7 @@
   "bigcherry_revision": "dc5c9039fb650bc741e0ca07b5eea3f708995158",
   "first_seen": "2026-09-11T02:37:56.207426+00:00",
   "manifest_hash": "1602e0385875242bd04911cdc0f702de",
-  "notes": "\n\npin-status --complete (2026-09-11, on brutus workspaces/main):\npin           b10901 -> 28ff0958291c\nvendor HEAD   28ff0958291c (tag b10901)\nVERDICT       consistent\nCOMPLETION    PASS\n\nReal-hardware bump-validation smoke matrix (5/5 cells passed): 4 single-GPU\nnative smoke launches (tierB-qwen9b-q6k) + 1 dual-XTX MTP speculative-decode\nlaunch (tierL-qwen27b-q8) all built, launched, completed a real generation,\nand shut down cleanly. Framework-configuration evidence for\n0100_cmake_options and 0700_coverage_counters regenerated via real GPU\ncompiles on gfx1100 and gfx1201 after this bump invalidated the prior\nevidence identity.\n",
+  "notes": "pin-status --complete --all-remotes (2026-09-11, real completion gate,\nre-run after fixing brutus self-SSH host-key trust -- an earlier record in\nthis same field incorrectly used --complete without --all-remotes as a\nweaker substitute; corrected per GPT deep-review finding):\n\npin-status: local\n  pin           b10901 -> 28ff0958291c\n  vendor HEAD   28ff0958291c (tag b10901)\n  releases      0adcc3bb5710 broken, 22dc605c4ead patched, 2578138397d7 generated, 28ff0958291c generated, 370cb12e8bb7 patched, 434ddbbc0e30 patched, 50182a53fa2c generated, 6ea215d171fd patched, 91f6a6cf3613 patched, abc123 validated, c841aeeb8bb2 patched, d7bd3bfcad3e patched\n  descriptors   28ff0958291c, 50182a53fa2c\n  bigcherry     4087a26fa1be\n  VERDICT       consistent  (content-unverified: 15 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\npin-status: brutus (remote)\n  vendor HEAD   28ff0958291c\n  pin           b10901 -> 28ff0958291c\n  bigcherry     4087a26fa1be\n  VERDICT       consistent\n\nAGGREGATE  converged\n\nCOMPLETION  PASS\n\nReal-hardware bump-validation smoke matrix (5/5 cells passed): 4 single-GPU\nnative smoke launches (tierB-qwen9b-q6k) + 1 dual-XTX MTP speculative-decode\nlaunch (tierL-qwen27b-q8) all built, launched, completed a real generation,\nand shut down cleanly. Framework-configuration evidence for\n0100_cmake_options and 0700_coverage_counters regenerated via real GPU\ncompiles on gfx1100 and gfx1201 after this bump invalidated the prior\nevidence identity.\n",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
@@ -110,5 +110,5 @@
   "revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
   "stage": "generated",
   "tree_state": "",
-  "updated_at": "2026-09-11T02:51:12.659215+00:00"
+  "updated_at": "2026-09-11T03:40:27.098963+00:00"
 }
