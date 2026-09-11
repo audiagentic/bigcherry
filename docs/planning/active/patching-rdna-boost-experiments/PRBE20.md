@@ -81,6 +81,7 @@ PRBE20's full acceptance criteria (the real cross-batch bit-identity property ac
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.219018+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -91,3 +92,5 @@ PRBE20's full acceptance criteria (the real cross-batch bit-identity property ac
 - 2026-09-11T16:37:09.158298+00:00 (updated-by): Updated: section:notes
 - chg_20260911_163714_real-hardware-test-confirms-no_2191
 - 2026-09-11T16:37:14.220103+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260911_212645_documented-two-more-optimizati_8645
+- 2026-09-11T21:26:45.055158+00:00 (updated-by): Updated: section:ledger-events
