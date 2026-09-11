@@ -1,9 +1,9 @@
 ---
-id: RE49
+id: BRBC03
 order: 0
-plan: reusable-build-campaign
+plan: build-reusable-build-campaign
 state: pending
-created-at: '2026-09-11T04:32:25.488510+00:00'
+created-at: '2026-09-11T04:38:44.621798+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
@@ -59,5 +59,5 @@ GPT's specific technical notes from reviewing the old attempt, worth keeping in 
 
 ## Change Log
 
-- 2026-09-11T04:32:25.488510+00:00 (created-by): Created by agent
-- 2026-09-11T04:32:34.592667+00:00 (updated-by): Updated: priority='P3', section:description, section:acceptance_criteria, section:notes
+- 2026-09-11T04:38:44.621798+00:00 (created-by): Created by agent
+- 2026-09-11T04:38:51.393239+00:00 (updated-by): Updated: priority='P3', section:description, section:acceptance_criteria, section:notes
