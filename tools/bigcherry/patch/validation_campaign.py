@@ -2647,10 +2647,16 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     architecture tune/replay/stock/control/subject flow run() otherwise
     builds -- that flow is keyed to exactly one amdgpu-targets value and
     a single --model, neither of which fits a cross-architecture,
-    cross-model matrix. This materializes source ONCE (architecture-
-    independent) and builds one control/subject llama-bench binary PER
-    APPLICABLE ARCHITECTURE, reused across every model cell for that
-    architecture.
+    cross-model matrix. This materializes source ONCE and builds ONE
+    control/subject llama-bench binary pair covering every applicable
+    architecture (AMDGPU_TARGETS=";".join(architectures), a single fat
+    multi-ISA build -- cmake/HIP natively support a semicolon-separated
+    target list), reused across every architecture/model cell instead of
+    rebuilding per architecture. User direction (2026-09-11, after the
+    prior per-architecture-build version's real-hardware merge gate
+    passed on all 3 architectures): device SELECTION is still per-cell
+    via HIP_VISIBLE_DEVICES (see the real-hardware finding on that
+    mechanism above this function), only the BUILD is now shared.
 
     execution_identity/device-visibility enforcement is turned on here
     for the FIRST time in this module (steps 1-3 deliberately left it
@@ -2711,46 +2717,49 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     build_root: Path = (args.build_root or args.workdir) / subject_src.name
     exe = ".exe" if sys.platform == "win32" else ""
     build_env = _hip_env(args.hip_path)
-    for architecture in architectures:
-        # GPT review (req_e608313764834497, 2026-09-11): the legacy
-        # validation path builds control and validation-subject with
-        # IDENTICAL extra_cmake_args=[] and asserts that parity
-        # (assert_validation_subject_parity) precisely because differing
-        # build instrumentation would confound a measured patch effect
-        # with build-configuration noise. An earlier version of this
-        # function gave subject an extra
-        # -DGGML_HIP_AUTOTUNE_GENERATED_DIR=... cmake arg control never
-        # got -- fixed to match the legacy parity contract: both binaries
-        # here are plain, symmetric, autotune-instrumentation-free builds.
-        control_bin = build_tree(
-            name=f"perf-control-{architecture}", hip_path=args.hip_path,
-            amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
-            source=control_src, extra_cmake_args=[],
-        )
-        subject_bin = build_tree(
-            name=f"perf-subject-{architecture}", hip_path=args.hip_path,
-            amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
-            source=subject_src, extra_cmake_args=[],
-        )
-        control_binary = control_bin / f"llama-bench{exe}"
-        subject_binary = subject_bin / f"llama-bench{exe}"
-        control_cmake_args = _full_requested_cmake_args(
-            hip_path=args.hip_path, amdgpu_targets=architecture, extra_cmake_args=[],
-        )
-        control_build_evidence = capture_completed_build_evidence(
-            build_root / f"perf-control-{architecture}", source_root=control_src,
-            architecture=architecture, binary=control_binary,
-            requested_cmake_args=control_cmake_args, build_env=build_env,
-        )
-        subject_build_evidence = capture_completed_build_evidence(
-            build_root / f"perf-subject-{architecture}", source_root=subject_src,
-            architecture=architecture, binary=subject_binary,
-            requested_cmake_args=control_cmake_args, build_env=build_env,
-        )
-        assert_validation_subject_parity(
-            control_build_evidence, subject_build_evidence, patch_id=args.patch,
-        )
 
+    # User direction (2026-09-11): ONE fat multi-ISA control/subject
+    # build covering every applicable architecture, not a separate build
+    # per architecture -- AMDGPU_TARGETS accepts a semicolon-separated
+    # list natively. GPT review (req_e608313764834497, 2026-09-11): the
+    # legacy validation path builds control and validation-subject with
+    # IDENTICAL extra_cmake_args=[] and asserts that parity
+    # (assert_validation_subject_parity) precisely because differing
+    # build instrumentation would confound a measured patch effect with
+    # build-configuration noise -- both binaries here remain plain,
+    # symmetric, autotune-instrumentation-free builds, just built once
+    # for the joined target list instead of once per architecture.
+    joined_targets = ";".join(architectures)
+    control_bin = build_tree(
+        name="perf-control", hip_path=args.hip_path,
+        amdgpu_targets=joined_targets, workdir=build_root, targets=["llama-bench"],
+        source=control_src, extra_cmake_args=[],
+    )
+    subject_bin = build_tree(
+        name="perf-subject", hip_path=args.hip_path,
+        amdgpu_targets=joined_targets, workdir=build_root, targets=["llama-bench"],
+        source=subject_src, extra_cmake_args=[],
+    )
+    control_binary = control_bin / f"llama-bench{exe}"
+    subject_binary = subject_bin / f"llama-bench{exe}"
+    control_cmake_args = _full_requested_cmake_args(
+        hip_path=args.hip_path, amdgpu_targets=joined_targets, extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        build_root / "perf-control", source_root=control_src,
+        architecture=joined_targets, binary=control_binary,
+        requested_cmake_args=control_cmake_args, build_env=build_env,
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        build_root / "perf-subject", source_root=subject_src,
+        architecture=joined_targets, binary=subject_binary,
+        requested_cmake_args=control_cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id=args.patch,
+    )
+
+    for architecture in architectures:
         for model_id in model_ids:
             cell: dict[str, object] = {"architecture": architecture, "model": model_id}
             try:
