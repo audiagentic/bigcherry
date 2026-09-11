@@ -67,6 +67,7 @@ Successor key: patching-rdna-boost-experiments-rd09
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.147212+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -74,3 +75,5 @@ Successor key: patching-rdna-boost-experiments-rd09
 - 2026-09-10T02:31:39.715349+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023232_the-next-three-rdna-successors_5807
 - 2026-09-10T02:32:32.971906+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260911_221341_documented-the-real-status-of_8365
+- 2026-09-11T22:13:41.602225+00:00 (updated-by): Updated: section:ledger-events
