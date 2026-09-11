@@ -11,9 +11,9 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "1ca520117b7f748d6da4716309fc40047220fa90",
+  "bigcherry_revision": "dc5c9039fb650bc741e0ca07b5eea3f708995158",
   "first_seen": "2026-09-11T02:37:56.207426+00:00",
-  "manifest_hash": "",
+  "manifest_hash": "1602e0385875242bd04911cdc0f702de",
   "notes": "",
   "patches": {
     "applied_cleanly": true,
@@ -108,7 +108,7 @@
   "promotion": null,
   "release_tag": "b10901",
   "revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
-  "stage": "patched",
+  "stage": "generated",
   "tree_state": "",
-  "updated_at": "2026-09-11T02:38:37.156895+00:00"
+  "updated_at": "2026-09-11T02:51:12.659215+00:00"
 }
