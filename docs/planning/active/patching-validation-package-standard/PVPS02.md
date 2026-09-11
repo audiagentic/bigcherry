@@ -177,6 +177,20 @@ NOT YET real-hardware-verified: RD58/RD73's changed selector plumbing has not be
 
 All 7 implementation steps are now complete. Remaining: the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine) -- the full standard model/architecture matrix plus the RD58/RD73 minimal real-execution checks -- before this item can be marked completed.
 
+
+
+REAL-HARDWARE MERGE GATE: CRITICAL BUG FOUND AND FIXED (2026-09-11). Running the full architecture/model matrix on Brutus surfaced a real, previously-unknown bug in require_device_visibility()'s core contract -- not gfx1201-specific as first suspected (see PNRO17, now completed, for the full root-cause writeup).
+
+Root cause: require_device_visibility() required HIP_VISIBLE_DEVICES and ROCR_VISIBLE_DEVICES set to the SAME value. Setting both to an identical non-zero absolute device index double-filters -- ROCR_VISIBLE_DEVICES re-indexes the system device list first (to 0..N-1), then HIP_VISIBLE_DEVICES indexes INTO that already-filtered pool, not the original list. Confirmed directly on real hardware (gfx1100/gfx1201/gfx1030, all architectures): the mismatch causes llama-bench to silently fall back to CPU while still printing a `backend: ROCm` result row (~8.4 t/s CPU speed vs ~75 t/s real GPU speed on the identical binary/model). This is exactly why PVPS02's own _require_real_gpu_execution() fail-closed check exists -- it caught this and aborted the matrix run rather than recording bad evidence.
+
+Fix (tools/bigcherry/experiment/execution.py): require_device_visibility()/DeviceVisibility now validate and set ONLY HIP_VISIBLE_DEVICES; the ROCR_VISIBLE_DEVICES requirement and cross-check are removed entirely. HIP_VISIBLE_DEVICES alone was directly confirmed correct for every architecture/topology tested. All PVPS02 call sites (generic matrix env_overrides, RD73's selector_env) updated to stop setting ROCR_VISIBLE_DEVICES. RequireDeviceVisibilityTests rewritten for the corrected HIP-only contract.
+
+Full offline suite clean (3254 tests, same 3 confirmed pre-existing/unrelated failures), patch-lint/check clean.
+
+Separately (NOT fixed, NOT blocking -- documented in PNRO17): llama-bench's own `-dev` CLI flag segfaults when selecting gfx1201/gfx1030 with all 4 heterogeneous GPUs simultaneously visible (a different, still-unexplained crash during full-fleet enumeration). The working fix avoids this entirely by restricting visibility via HIP_VISIBLE_DEVICES before process start, so ggml only ever enumerates the single relevant device.
+
+NEXT: re-run the real-hardware merge gate matrix with the fix -- full gfx1100/gfx1201/gfx1030 x tierM/tierB/tierL matrix should now pass on gfx1201/gfx1030 too (single-GPU cells), not just gfx1100.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -191,7 +205,6 @@ All 7 implementation steps are now complete. Remaining: the consolidated real-ha
 
 ## Ledger-events
 
-
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
@@ -203,3 +216,4 @@ All 7 implementation steps are now complete. Remaining: the consolidated real-ha
 - 2026-09-11T10:19:41.204885+00:00 (updated-by): Updated: section:notes
 - chg_20260911_101947_finished-wiring-the-last-two-p_5873
 - 2026-09-11T10:19:47.335057+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T11:00:29.130272+00:00 (updated-by): Updated: section:notes
