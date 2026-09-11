@@ -1,7 +1,7 @@
 schema = 1
 id = "1224_hi18_reduce_correctness_probe"
 order = 1224
-state = "untested"
+state = "validated"
 kind = "diagnostic"
 origin = "local"
 backend = "hip"
