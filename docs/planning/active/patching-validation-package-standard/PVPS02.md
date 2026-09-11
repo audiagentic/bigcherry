@@ -201,6 +201,17 @@ RD04's generic --run-performance-benchmark matrix is now real-hardware-confirmed
 
 STILL REMAINING before this item is fully done: (1) RD58/RD73's changed selector plumbing has not yet been exercised on real hardware since step 7's rewiring -- needs minimal real execution through each changed lane per the design's revised merge-gate scope (warmup=0/measured=1, decode pairs=1, minimal resource burst); (2) the RD04 legacy --run-rd04-benchmark alias has not been re-run against the same arch/model for a direct comparison to the generic path's evidence.
 
+
+
+REMAINING REAL-HARDWARE CHECKS DONE (2026-09-11):
+RD58 minimal check: real end-to-end run on Brutus (gfx1100, dual-GPU, tierA-qwen4b-q6k) -- correctness=pass, activation=executed, controls=pass, contract correctness gate passed. Confirms step 7's require_device_visibility() rewiring works correctly on real hardware, not just in the 13 hardware-free Rd58CliWiringTests.
+
+RD04 legacy-alias comparison: --run-rd04-benchmark (the original, unrefactored CLI entry point) re-run for real on Brutus (gfx1100, tierM-ministral14b-q4km) -- produced real performance.json evidence, passed=True, decode geometric_effect_pct=3.53% (95% CI [3.14, 3.78]), prefill 0.25% -- consistent in magnitude/sign with this session's earlier RD04 evidence and with the generic --run-performance-benchmark path's own gfx1100/tierM decode measurements (~3.7-5.8% across runs). Confirms step 2's extraction (run_rd04_benchmark_evidence as a compatibility wrapper over the shared primitive) preserved real behavior, not just passing the existing unit tests. 'blocked'/'ineligible' correctness-gate outcome is the documented expected result for this diagnostic-only mode (no correctness/activation proof attempted), not a regression.
+
+DELIBERATELY NOT DONE: RD73's real-hardware minimal check (warmup=0/measured=1 through each changed lane). No CLI hook exists for a cheap partial RD73 run -- the only path through the existing --run-rd73-contract CLI is the full ~15-minute dual-GPU 27B qualification (decode_pairs=10/warmup_pairs=2/measured_pairs=10 hardcoded, no override flags). RD73's step-7 change was pure selector-validate-once-and-copy-into-env-overrides plumbing, already exercised by 35 passing hardware-free tests with real selector env-vars set (RunRd73ContractQualificationTests + Va25 attestation tests) -- judged lower-risk than RD58's inline-guard-to-shared-primitive change (which WAS real-hardware verified). Left open as a real, explicit gap rather than silently claimed done; a full RD73 real run would additionally re-confirm/contradict RD73's own known 2026-09-05 regression finding (HI162), which is a separate concern from this plumbing check.
+
+PVPS02 STATUS: all 7 implementation steps done, hardened per GPT review, real-hardware-verified for the generic matrix (all 3 architectures) and RD58; RD04 legacy alias real-hardware-confirmed unchanged. RD73's real-hardware confirmation remains open. Full offline suite clean throughout, patch-lint/check clean. All work committed/pushed/synced.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -231,3 +242,6 @@ STILL REMAINING before this item is fully done: (1) RD58/RD73's changed selector
 - 2026-09-11T11:25:51.174223+00:00 (updated-by): Updated: section:notes
 - chg_20260911_112556_the-new-cross-gpu-benchmark-ha_7225
 - 2026-09-11T11:25:56.545599+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T11:41:58.996810+00:00 (updated-by): Updated: section:notes
+- chg_20260911_114209_finished-the-real-hardware-ver_2602
+- 2026-09-11T11:42:09.161413+00:00 (updated-by): Updated: section:ledger-events
