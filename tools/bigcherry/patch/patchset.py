@@ -148,7 +148,7 @@ def discover_modules(root: Path) -> list[Path]:
 
 
 def describe(directory=None) -> list[PatchInfo]:
-    """Describe every patch (name, group, state, upstream) without importing.
+    """Describe every patch (name, state, upstream) without importing.
 
     RS02: backed by the registry, so packaged patches describe the same way
     flat ones do. For legacy modules this is exactly the old output.
@@ -196,7 +196,7 @@ def catalog(directory=None) -> list[PatchModule]:
 
     RS02: built from the registry's normalized descriptors; for today's flat
     tree this is field-for-field identical to the previous output (same IDs,
-    order, groups, states, upstream refs, requires/conflicts, content hashes,
+    order, states, upstream refs, requires/conflicts, content hashes,
     and duplicate rejection). Packaged patches simply appear as extra entries
     once they exist.
     """

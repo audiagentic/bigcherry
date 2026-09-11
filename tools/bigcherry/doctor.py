@@ -108,7 +108,7 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
             ],
             "promoted_enhancements": [],
             "classification_status": "owner-review-required",
-            "reason": "validated state/group alone does not establish enhancement promotion",
+            "reason": "validated state/kind alone does not establish enhancement promotion",
         },
         "source_plans": recipes_report,
         "pin_status": _pin_status_section(context),

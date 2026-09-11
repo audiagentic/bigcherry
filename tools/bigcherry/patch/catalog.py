@@ -3,11 +3,11 @@
 Packaged patches carry their descriptive metadata in ``patch.toml`` alongside
 their implementation. ``patches/catalog.toml`` remains a compatibility
 catalog for synthetic/legacy flat fixtures and is empty in the production
-package-only tree. The package metadata answers questions that ``GROUP``/
-``STATE`` alone cannot: patch kind/origin, backend, upstream provenance,
+package-only tree. The package metadata answers questions that ``STATE``
+alone cannot: patch kind/origin, backend, upstream provenance,
 retirement, plan linkage, and validation obligations.
 
-GROUP/STATE, recipes.toml membership, and patchset.py remain authoritative
+STATE, recipes.toml membership, and patchset.py remain authoritative
 for patch COMPOSITION: this module never adds, removes, substitutes, or
 silently skips patches in an already-resolved patch set.
 
@@ -93,6 +93,7 @@ class CatalogEntry:
     backends: tuple[str, ...] = ()
     subsystems: tuple[str, ...] = ()
     hardware: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
     # HI83: which GPU architecture(s) must have a current, qualifying
     # patch_validation_evidence record before this patch may claim global
     # STATE="validated" -- a distinct policy field from `hardware` (free-form
@@ -497,7 +498,7 @@ def cross_check(
 @dataclass(frozen=True)
 class CatalogSnapshot:
     """RE39 (external patch-management review, 2026-08-20): one immutable
-    read of BOTH catalogs -- ``patchset.catalog()`` (GROUP/STATE/REQUIRES/
+    read of BOTH catalogs -- ``patchset.catalog()`` (STATE/REQUIRES/
     CONFLICTS, authoritative for selection) and ``patch_catalog.load_catalog()``
     (kind/origin/backend/plan_ids/..., descriptive metadata) -- bundled
     together and keyed consistently by patch_id, so one command/campaign
@@ -567,6 +568,7 @@ def catalog_entry_from_descriptor(descriptor) -> "CatalogEntry | None":
         backends=descriptor.backends,
         subsystems=descriptor.subsystems,
         hardware=descriptor.hardware,
+        tags=descriptor.tags,
         validation_architectures=descriptor.validation_architectures,
     )
 

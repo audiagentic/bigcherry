@@ -101,7 +101,7 @@ REPRESENTATION_PACKAGED = "packaged"
 # Mirrors every existing flat module filename (0100_..., 1204_...).
 _PATCH_ID_PATTERN = re.compile(r"^(\d{2,})_[0-9A-Za-z_]+$")
 
-_PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "state"})
+_PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "state", "kind"})
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
     "plan-ids", "requires", "conflicts", "requires-options", "forbids-options",
     "subsystems", "hardware", "validation-architectures", "backends",
