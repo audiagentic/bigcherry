@@ -120,3 +120,4 @@ vendor/llama.cpp-stock-b10327-linux
 # tools/lab/bump-validation's own --output default and similar ad hoc
 # working directories -- never committed, per-run scratch only.
 /work/
+.nodeterm/
