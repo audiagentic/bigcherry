@@ -2257,9 +2257,9 @@ def run_rd73_contract_qualification(
         backend="ROCm", architectures=(amdgpu_targets, amdgpu_targets),
     )
 
-    # PVPS02 step 7 (2026-09-11): validate the real HIP/ROCR selector
-    # ONCE here (the same fail-closed contract RD58/the generic matrix
-    # use), then copy those validated values into every lane's own
+    # PVPS02 step 7 (2026-09-11): validate the real HIP_VISIBLE_DEVICES
+    # selector ONCE here (the same fail-closed contract RD58/the generic
+    # matrix use), then copy that validated value into every lane's own
     # server-session env overrides below -- ServerRunner starts each
     # server from ambient env then applies overrides, so this makes the
     # selector explicit for every process this qualification launches
@@ -2267,16 +2267,19 @@ def run_rd73_contract_qualification(
     # remains the separate architecture/device-count attestation this
     # was already doing; selector validation and attestation are
     # deliberately two different checks, not merged into one.
+    #
+    # Real-hardware finding (2026-09-11, PNRO17): only HIP_VISIBLE_DEVICES
+    # is set here -- also setting ROCR_VISIBLE_DEVICES to the same value
+    # actively breaks non-prefix-from-0 device selection (confirmed on
+    # real gfx1100/gfx1201/gfx1030 hardware; see require_device_visibility()
+    # and DeviceVisibility's own docstrings for the full mechanism).
     try:
         rd73_visibility = _require_device_visibility(
             context=f"--run-rd73-contract ({amdgpu_targets})", exact_count=2,
         )
     except _DeviceVisibilityError as exc:
         raise PatchCampaignError(str(exc)) from exc
-    rd73_selector_env = {
-        "HIP_VISIBLE_DEVICES": rd73_visibility.hip_visible_devices,
-        "ROCR_VISIBLE_DEVICES": rd73_visibility.rocr_visible_devices,
-    }
+    rd73_selector_env = {"HIP_VISIBLE_DEVICES": rd73_visibility.hip_visible_devices}
 
     mtp = run_rd73_mtp_server_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
@@ -2767,10 +2770,14 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
                 cells.append(cell)
                 continue
 
-            env_overrides = {
-                "HIP_VISIBLE_DEVICES": ",".join(device_ids),
-                "ROCR_VISIBLE_DEVICES": ",".join(device_ids),
-            }
+            # Real-hardware finding (2026-09-11, PNRO17): only
+            # HIP_VISIBLE_DEVICES is set here -- also setting
+            # ROCR_VISIBLE_DEVICES to the same value actively breaks
+            # non-prefix-from-0 device selection (confirmed on real
+            # gfx1100/gfx1201/gfx1030 hardware during this matrix's own
+            # merge-gate run). See require_device_visibility()/
+            # DeviceVisibility's docstrings for the full mechanism.
+            env_overrides = {"HIP_VISIBLE_DEVICES": ",".join(device_ids)}
             visibility = require_device_visibility(
                 context=f"performance-benchmark {architecture}/{model_id}",
                 env=env_overrides, exact_count=resolved_model.device_count,

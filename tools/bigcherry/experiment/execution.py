@@ -66,13 +66,32 @@ class DeviceVisibilityError(ValueError):
 @dataclass(frozen=True)
 class DeviceVisibility:
     """A validated, ordered device-SELECTOR declaration -- the explicit
-    HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES token pool a paired-benchmark
-    cell was launched against. PVPS02 (2026-09-11, dev-gpt-agent design +
-    self-critique, docs/planning/active/
-    patching-validation-package-standard/PVPS02.md): extracted from
-    run_rd58_state_restore_evidence()'s original inline HIP_VISIBLE_DEVICES/
-    ROCR_VISIBLE_DEVICES guard so every paired-benchmark path can share one
-    fail-closed contract instead of reimplementing it per patch.
+    HIP_VISIBLE_DEVICES token pool a paired-benchmark cell was launched
+    against. PVPS02 (2026-09-11, dev-gpt-agent design + self-critique,
+    docs/planning/active/patching-validation-package-standard/PVPS02.md):
+    extracted from run_rd58_state_restore_evidence()'s original inline
+    HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES guard so every paired-
+    benchmark path can share one fail-closed contract instead of
+    reimplementing it per patch.
+
+    Real-hardware finding on Brutus (2026-09-11, during PVPS02's merge-
+    gate run -- see PNRO17): requiring HIP_VISIBLE_DEVICES and
+    ROCR_VISIBLE_DEVICES to both be set to the SAME absolute device
+    index is actively WRONG, not just redundant -- ROCR_VISIBLE_DEVICES
+    filters and re-indexes the system device list first (to 0..N-1),
+    and HIP_VISIBLE_DEVICES then indexes INTO that already-filtered
+    pool, not into the original absolute device list. Setting both to
+    identical non-zero values double-filters: e.g. HIP=1/ROCR=1 asks
+    for index 1 of a 1-item pool ROCR already narrowed to device 1 ->
+    out of range -> llama-bench silently falls back to CPU while still
+    printing a "backend: ROCm" result row (confirmed directly on real
+    hardware: ~8.4 t/s, matching CPU-only speed, vs. ~75 t/s on the same
+    binary/model with only HIP_VISIBLE_DEVICES set). HIP_VISIBLE_DEVICES
+    alone, with ROCR_VISIBLE_DEVICES left unset, was directly confirmed
+    correct for every architecture on Brutus (gfx1100/gfx1201/gfx1030,
+    single and multi-device). So this class validates HIP_VISIBLE_DEVICES
+    only now -- explicit, sufficient, and the one setting confirmed not
+    to conflict with itself.
 
     GPT review correction (req_e608313764834497, 2026-09-11): this proves
     LAUNCH INTENT (which selector tokens were passed to the child process),
@@ -90,7 +109,6 @@ class DeviceVisibility:
 
     device_ids: tuple[str, ...]
     hip_visible_devices: str
-    rocr_visible_devices: str
 
     @property
     def gpu_count(self) -> int:
@@ -99,7 +117,10 @@ class DeviceVisibility:
     def document(self) -> dict[str, object]:
         """The same observed_devices shape run_rd58_state_restore_evidence()
         already records today -- kept identical so a future caller can
-        adopt this primitive without changing evidence schema."""
+        adopt this primitive without changing evidence schema. Still
+        records a "rocr_visible_devices" key for schema continuity, but
+        it is no longer a real selector this class sets or validates --
+        see the class docstring's real-hardware finding for why."""
         return {
             "hip_visible_devices": list(self.device_ids),
             "rocr_visible_devices": list(self.device_ids),
@@ -114,22 +135,22 @@ def require_device_visibility(
     exact_count: int | None = None,
     minimum_count: int = 1,
 ) -> DeviceVisibility:
-    """Fail closed before any hardware use unless HIP_VISIBLE_DEVICES and
-    ROCR_VISIBLE_DEVICES are both explicitly set, consistent with each
-    other, free of duplicates, and declare enough distinct selector tokens
-    (not independently verified against physically-present hardware --
-    see DeviceVisibility's own docstring for what this class can and
-    cannot prove).
+    """Fail closed before any hardware use unless HIP_VISIBLE_DEVICES is
+    explicitly set, free of duplicates, and declares enough distinct
+    selector tokens (not independently verified against physically-
+    present hardware -- see DeviceVisibility's own docstring for what
+    this class can and cannot prove).
 
-    PVPS02 step 1 (see DeviceVisibility's own docstring): a standalone,
-    unit-tested extraction only. Nothing calls this yet -- RD58's own
-    inline guard and RD73's lane functions are deliberately NOT wired to
-    it in this change; wiring them is its own later, dedicated,
-    regression-tested step (several existing tests depend on RD58's
-    producer function staying callable WITHOUT selector validation, and
-    RD73's hardware-free lane tests call functions without HIP/ROCR setup
-    at all -- rewiring either now would break currently-passing tests for
-    no functional gain yet).
+    Real-hardware finding (2026-09-11, see DeviceVisibility's docstring
+    and PNRO17): this used to also require ROCR_VISIBLE_DEVICES set
+    identically to HIP_VISIBLE_DEVICES. That combination actively
+    double-filters and silently breaks any non-prefix-from-0 device
+    selection (confirmed on real gfx1100/gfx1201/gfx1030 hardware) --
+    HIP_VISIBLE_DEVICES alone is explicit, sufficient, and was directly
+    confirmed correct in every case tested. Dropped the ROCR requirement
+    and the cross-check entirely rather than attempt to reconcile two
+    env vars whose indexing semantics do not compose the way callers of
+    this function (reasonably) assumed.
 
     This intentionally goes stricter than RD58's original inline check:
     it also rejects a blank entry inside the list (e.g. "0,,1" or a
@@ -139,12 +160,11 @@ def require_device_visibility(
     source = os.environ if env is None else env
 
     hip_raw = source.get("HIP_VISIBLE_DEVICES")
-    rocr_raw = source.get("ROCR_VISIBLE_DEVICES")
-    if not hip_raw or not rocr_raw:
+    if not hip_raw:
         raise DeviceVisibilityError(
-            f"{context}: HIP_VISIBLE_DEVICES and ROCR_VISIBLE_DEVICES must "
-            "both be explicitly set (an unset/ambient-default device list "
-            "cannot be trusted for a real-hardware measurement)"
+            f"{context}: HIP_VISIBLE_DEVICES must be explicitly set "
+            "(an unset/ambient-default device list cannot be trusted for "
+            "a real-hardware measurement)"
         )
 
     def _parse(name: str, raw: str) -> tuple[str, ...]:
@@ -157,36 +177,24 @@ def require_device_visibility(
         return tuple(part.strip() for part in parts)
 
     hip_ids = _parse("HIP_VISIBLE_DEVICES", hip_raw)
-    rocr_ids = _parse("ROCR_VISIBLE_DEVICES", rocr_raw)
 
-    if hip_ids != rocr_ids:
-        raise DeviceVisibilityError(
-            f"{context}: HIP_VISIBLE_DEVICES ({hip_raw!r}) and "
-            f"ROCR_VISIBLE_DEVICES ({rocr_raw!r}) must match exactly, "
-            "including order"
-        )
     if len(set(hip_ids)) != len(hip_ids):
         raise DeviceVisibilityError(
-            f"{context}: HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES "
-            f"({hip_raw!r}) contains duplicate device ids -- this does not "
-            "declare distinct device selector tokens"
+            f"{context}: HIP_VISIBLE_DEVICES ({hip_raw!r}) contains duplicate "
+            "device ids -- this does not declare distinct device selector tokens"
         )
     if len(hip_ids) < minimum_count:
         raise DeviceVisibilityError(
             f"{context}: requires {minimum_count}+ GPUs; "
-            f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose only "
-            f"{len(hip_ids)} ({hip_raw!r})"
+            f"HIP_VISIBLE_DEVICES exposes only {len(hip_ids)} ({hip_raw!r})"
         )
     if exact_count is not None and len(hip_ids) != exact_count:
         raise DeviceVisibilityError(
             f"{context}: requires exactly {exact_count} GPU(s); "
-            f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose "
-            f"{len(hip_ids)} ({hip_raw!r})"
+            f"HIP_VISIBLE_DEVICES exposes {len(hip_ids)} ({hip_raw!r})"
         )
 
-    return DeviceVisibility(
-        device_ids=hip_ids, hip_visible_devices=hip_raw, rocr_visible_devices=rocr_raw,
-    )
+    return DeviceVisibility(device_ids=hip_ids, hip_visible_devices=hip_raw)
 
 
 def metric_for_workload(workload: str) -> str:

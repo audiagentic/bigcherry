@@ -33,6 +33,11 @@ EXPECTED = {
 # namespace. Patch manifests retain their historical NRO plan IDs for
 # provenance, so the test keeps both identities explicit instead of silently
 # treating a renamed document as a missing package.
+#
+# PNRO17 (2026-09-11) was a real-hardware finding filed from PVPS02's
+# merge-gate run, root-caused and fixed the same day, then marked
+# completed -- it now lives under docs/planning/completed/ rather than
+# this PLANS (active) directory, so it is correctly absent from this glob.
 EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 16)}
 
 
