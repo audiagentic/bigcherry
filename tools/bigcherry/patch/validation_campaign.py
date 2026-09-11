@@ -868,6 +868,112 @@ def run_rd08_contract_correctness(
     }
 
 
+def _load_rd17_correctness_module() -> object:
+    """Dynamically load the real RD17 correctness producer (patches/
+    1207_rd17_moe_topk_down_fold/validation/rd17_correctness.py) --
+    orchestrated here, never reimplemented, same division of labor as
+    _load_rd08_correctness_module()."""
+    module_path = (
+        REPO_ROOT / "patches" / "1207_rd17_moe_topk_down_fold" / "validation" / "rd17_correctness.py"
+    )
+    if not module_path.is_file():
+        raise PatchCampaignError(f"rd17 correctness producer not found at {module_path}")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bigcherry_rd17_correctness", module_path)
+    if spec is None or spec.loader is None:
+        raise PatchCampaignError(f"cannot load rd17 correctness producer at {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_rd17_ppl_check(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, model: Path, corpus: Path, run_dir: Path, _module: object | None = None,
+) -> dict[str, object]:
+    """RD17's real ppl_equality correctness producer, orchestrated.
+    materialize_rd17_variants() builds its OWN isolated fusion-subject/
+    no-fusion-control worktrees (a source-level A/B distinct from this
+    campaign's generic control/validation-subject trees), which this
+    function then builds symmetrically (llama-perplexity, extra_cmake_
+    args=[] on both) and hands to require_rd17_ppl_equality() -- the
+    real PPL-based correctness proof (see rd17_correctness.py's own
+    docstring for why ppl_equality, not bit_identical, is the right bar
+    for this fusion).
+
+    Diagnostic-only: does not attempt performance/trigger proof or
+    contract promotion -- mirrors run_rd08_contract_correctness()'s own
+    "only Rd17CorrectnessError becomes passed=False; everything else is
+    a hard campaign error" discipline."""
+    rd17_correctness = _module or _load_rd17_correctness_module()
+    subject_src, control_src = rd17_correctness.materialize_rd17_variants(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root, base_revision=base_revision,
+    )
+    exe = ".exe" if sys.platform == "win32" else ""
+    ppl_build_root = build_root / "rd17-ppl-check"
+
+    subject_bin = build_tree(
+        name="rd17-ppl-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name="rd17-ppl-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
+        extra_cmake_args=[],
+    )
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd17-ppl-subject", source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd17-ppl-control", source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id="1207_rd17_moe_topk_down_fold",
+    )
+
+    def _ppl_runner(argv, **kwargs):
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
+    try:
+        comparison = rd17_correctness.require_rd17_ppl_equality(
+            subject_binary=subject_bin / f"llama-perplexity{exe}",
+            control_binary=control_bin / f"llama-perplexity{exe}",
+            model=model, corpus=corpus, runner=_ppl_runner,
+        )
+        result = {"check": "ppl_equality", "passed": True, "detail": "within tolerance"}
+    except rd17_correctness.Rd17CorrectnessError as exc:
+        comparison = None
+        result = {"check": "ppl_equality", "passed": False, "detail": str(exc)}
+
+    from bigcherry.patch import source as psi
+
+    doc = {
+        **result,
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "comparison": rd17_correctness.comparison_to_dict(comparison) if comparison else None,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd17-ppl-check.json", doc)
+    _print(
+        f"rd17 ppl_equality: {'PASS' if result['passed'] else 'FAIL'} -- {artifact_ref['path']}"
+    )
+    return {"result": result, "artifact": artifact_ref}
+
+
 def run_rd08_contract_trigger(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
