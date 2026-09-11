@@ -1,10 +1,24 @@
 # 1205_rd12_paired_mmvq_dual_output: fuse paired mmvq matmuls over a shared activation (RD12)
 
-Patch id: `1205_rd12_paired_mmvq_dual_output`. Plan item: `RD12`. No
-Experiment Contract is bound yet -- this patch has no `experiment-contract`
-field in `patch.toml` and no bespoke correctness producer under
-`validation/`, unlike RD04/RD08/RD58/RD73. Its `validation.toml` wires only
-`apply`/`build`/`activation` checks.
+Patch id: `1205_rd12_paired_mmvq_dual_output`. Original plan item `RD12` is
+superseded by `PRBE11` (docs/planning/active/patching-rdna-boost-experiments/PRBE11.md,
+capability-rebaseline-v3-2026-09) -- PRBE11 is the authoritative tracking
+item now, not RD12. No Experiment Contract is bound yet -- this patch has
+no `experiment-contract` field in `patch.toml` and no bespoke correctness
+producer under `validation/`, unlike RD04/RD08/RD58/RD73. Its
+`validation.toml` wires only `apply`/`build`/`activation` checks.
+
+**HARD PREREQUISITE, not yet met (PRBE11's own steps)**: RD25's batch-vs-seq
+consistency fix (fork commit `8cdf1ab08`) must land first -- the frozen
+paired-mmvq code this patch ports is known to carry that inconsistency, and
+PRBE11 explicitly requires it be "resolved" before qualification. RD25 has
+not been ported as a standalone patch yet (it is currently only a bake-in
+rule referenced in this patch's own provenance notes). **Do not run a real
+qualification campaign for a promotion decision on this patch until RD25 is
+resolved** -- the generic S1-S7 campaign below (apply/build/activation) is
+still safe to run for basic package-health/activation confirmation, but its
+result cannot stand in for the real correctness/performance qualification
+PRBE11 actually requires.
 
 ## Scope
 
@@ -56,8 +70,8 @@ a benchmark ran without crashing.
 Bringing this patch to RD08's level of qualification (a real bit-identical
 correctness producer proving the fork's own claim, a bound Experiment
 Contract, and real performance evidence) is separate, not-yet-done
-authoring work -- see the patching-validation-package-standard campaign
-notes.
+authoring work tracked under PRBE11 -- blocked on the RD25 prerequisite
+above before that work is meaningful.
 
 ## Known limitations
 
