@@ -161,6 +161,22 @@ Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--
 
 STEP 6 CORRECTED, WITHOUT CODE CHANGE (2026-09-11): the original design notes called this "legacy aliases" / "deprecated aliases onto the generic path," which was imprecise and, per this project's own CLAUDE.md doctrine (no legacy/backward-compat shims; migrate up, don't preserve old behavior behind a flag), would have been the wrong framing to implement literally. Checked for real callers per that doctrine's own bar (a real external consumer OUTSIDE this repo, not just any reference): none exist (no .github/workflows, no external CI). But that isn't the deciding fact -- the deciding fact is that --run-rd04-benchmark and --run-rd08-lanes are not duplicating something the generic tool replaces. run_rd08_validation_lanes() is called directly by tools/bigcherry/campaign/qualification_rd08.py's real qualification pipeline (not just reachable via the CLI flag); both patch READMEs (1202_rd04_bf16_flash_attn_tile, 1204_rd08_q6k_mmvq_vdr2) document these runs as required steps; both are documented in docs/reference/testing/PATCH_VALIDATION.md and .claude/skills/bigcherry-patch-qualification/SKILL.md as the current interface. --run-performance-benchmark deliberately produces a DIFFERENT evidence shape (generic diagnostic performance-matrix.json, never contract_promotions) -- it was never meant to replace RD04/RD08's contract-bound evidence producers, so there is no legacy interface here to migrate away from. Step 6 is complete as of step 2's extraction (run_rd04_benchmark_evidence/run_rd08_validation_lanes already share run_paired_llama_benchmark()); corrected the steps/detailed_solution text to stop implying a removal/deprecation action that was never warranted.
 
+
+
+STEP 7 DONE (commit 89d4d56c), 2026-09-11:
+RD58: inline HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES guard in run() (which hand-reimplemented require_device_visibility()'s exact contract) replaced with a direct call at the same orchestration/preflight boundary; DeviceVisibility.document() feeds the existing observed_devices= evidence field. run_rd58_state_restore_evidence() itself unchanged.
+RD73: added optional selector_env to all three lane functions (run_rd73_mtp_server_lane/run_rd73_decode_control_lane/run_rd73_resource_burst_session); run_rd73_contract_qualification() now validates HIP/ROCR selectors ONCE via require_device_visibility(exact_count=2) before any lane runs and copies the validated values into every lane's AttestedServerSession env_overrides. ExecutionIdentity attestation (architecture/device-count) retained as a separate, independent check from selector validation, per the design's own distinction.
+
+As the design anticipated, this broke 2 existing hardware-free test assumptions, both fixed:
+- Rd58CliWiringTests' brittle source-inspection test for the old inline duplicate-id check replaced with one proving RD58 reaches the shared primitive (duplicate-id behavior itself already covered by RequireDeviceVisibilityTests).
+- RunRd73ContractQualificationTests (all 3 lane functions mocked) now sets fake HIP_VISIBLE_DEVICES=0,1/ROCR_VISIBLE_DEVICES=0,1 around the call so it reaches the new validation successfully.
+
+Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated failures), patch-lint/check clean. Pushed to main/planning-refactor, synced to Brutus.
+
+NOT YET real-hardware-verified: RD58/RD73's changed selector plumbing has not been exercised on real hardware yet (RD58 needs its test-save-load-state dual-GPU build; RD73 needs the 27B/dual-GPU/-sm-tensor server lanes) -- per the design's own REVISED real-hardware merge gate, this is MINIMAL real execution through each changed lane (warmup=0/measured=1, decode pairs=1, minimal resource burst), folded into the consolidated real-hardware merge gate below, not a separate hardware session.
+
+All 7 implementation steps are now complete. Remaining: the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine) -- the full standard model/architecture matrix plus the RD58/RD73 minimal real-execution checks -- before this item can be marked completed.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -175,6 +191,7 @@ STEP 6 CORRECTED, WITHOUT CODE CHANGE (2026-09-11): the original design notes ca
 
 ## Ledger-events
 
+
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
@@ -183,3 +200,6 @@ STEP 6 CORRECTED, WITHOUT CODE CHANGE (2026-09-11): the original design notes ca
 - 2026-09-11T09:51:17.593094+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T10:05:42.255411+00:00 (updated-by): Updated: section:steps
 - 2026-09-11T10:05:50.237138+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T10:19:41.204885+00:00 (updated-by): Updated: section:notes
+- chg_20260911_101947_finished-wiring-the-last-two-p_5873
+- 2026-09-11T10:19:47.335057+00:00 (updated-by): Updated: section:ledger-events
