@@ -81,6 +81,7 @@ Honest scope note: this proves RD43 does not crash and does not regress output f
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -91,3 +92,5 @@ Honest scope note: this proves RD43 does not crash and does not regress output f
 - 2026-09-11T15:32:01.953695+00:00 (updated-by): Updated: section:notes
 - chg_20260911_153207_real-hardware-test-confirms-a_1251
 - 2026-09-11T15:32:07.442514+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260911_212645_documented-two-more-optimizati_8645
+- 2026-09-11T21:26:45.045884+00:00 (updated-by): Updated: section:ledger-events

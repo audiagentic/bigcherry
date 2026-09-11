@@ -79,6 +79,7 @@ Remaining real work: real activation-trace verification (has real markers alread
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.183883+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -89,3 +90,5 @@ Remaining real work: real activation-trace verification (has real markers alread
 - 2026-09-11T14:55:48.900915+00:00 (updated-by): Updated: section:notes
 - chg_20260911_145554_ran-the-first-ever-real-correc_4120
 - 2026-09-11T14:55:54.334136+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260911_212428_finished-documenting-one-more_3069
+- 2026-09-11T21:24:28.100057+00:00 (updated-by): Updated: section:ledger-events
