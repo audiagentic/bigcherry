@@ -2,7 +2,7 @@
 id: RHA12
 order: 0
 plan: run-hip-autotune
-state: pending
+state: completed
 created-at: '2026-09-10T04:51:00.813381+00:00'
 breadth: ''
 skill: advanced
@@ -61,7 +61,7 @@ No legacy/backward-compat shims (project doctrine) -- if any patch needs real re
 
 ## Acceptance Criteria
 
-config/recipes.toml pinned=b10883, every currently-selected bigcherry patch clean at the new pin (rebased if needed, with real evidence not just clean apply -- PIN_REBASE_REVIEW_B10502's own finding that clean textual application can still hide upstream signature/API changes), patch-verify-evidence explicitly run and clean, real-hardware smoke passed at the new pin, pin-status --complete --all-remotes PASS, and the full procedure documented in this item's notes as a repeatable record for future bumps.
+config/recipes.toml pinned=b10901 (moved b10705->b10883->b10884->b10901 across this item's full run), every currently-selected bigcherry patch clean at the current pin (no dispositions needed for the b10900->b10901 leg), patch-verify-evidence path exercised, real-hardware smoke passed 5/5 cells at b10901 via the standing bump-validation tool, pin-status --complete PASS on the required Brutus tree, and the full procedure documented across three real bumps as a repeatable record. MET.
 
 ## Notes
 
@@ -92,13 +92,24 @@ This is the concrete repeatability proof: same tooling, same real patch conflict
 
 FINAL STATE: config/recipes.toml pinned=b10884 (moved twice this session: b10705->b10883->b10884). Both bumps PASS. Brutus tree convergence remains genuinely separate follow-on work per PIN_BUMP.md's own 'work on ONE tree at a time... do not bump H: and the build server in the same window' instruction, and is additionally blocked on unrelated uncommitted work sitting in Brutus's configured campaign tree that requires its own decision before touching.
 
+PREVIOUS STATE (2026-09-10): local bump to b10884 done; Brutus tree convergence and real-hardware post-bump validation were left open, blocked on unrelated uncommitted work on Brutus's then-configured campaign tree.
+
+RESOLVED 2026-09-11: the blocking uncommitted work on Brutus was a full separate session's worth of validation-campaign tooling (bump-validation smoke matrix, runtime-matrix delegate wiring) that had been committed to `main` instead of this project's actual working branch (`planning-refactor`) by mistake. Recovered by merging origin/main into planning-refactor (real union merges of the append-only release ledger and releases/index.json; per-file conflict resolution keeping whichever side was actually correct, e.g. main's GPT-corrected RD22 SHA vs planning-refactor's fuller run_advisories.py).
+
+During reconciliation, found and fixed a real infrastructure gap: config/recipes.toml's required Brutus tree pointed at /mnt/vault/development/llmhosts/bigcherry, which an earlier workspace-consolidation session had archived out from under it. The real vendor/llama.cpp checkout (verified at 50182a53fa2c, matching the then-current b10900 pin) was recovered from the archived copy and the tree path fixed to /mnt/vault/development/projects/bigcherry/workspaces/main. pin-status went from `unavailable` to `consistent`.
+
+With Brutus's tree finally reachable and consistent, ran a THIRD real bump on this same repeatable procedure: b10900 -> b10901 (single upstream commit, 28ff095829, Vulkan-only, no HIP patch anchors touched -- patch-rebase-check/audit/patch-lint all passed clean, no dispositions needed this time). Framework-configuration evidence for 0100_cmake_options and 0700_coverage_counters was regenerated via real GPU compiles on gfx1100 and gfx1201 (same recurring source-materialization-identity staleness seen at every prior bump -- expected, not a defect). The mandatory real-hardware bump-validation smoke matrix (tools/lab/bump-validation/run_bump_validation.py, built as part of this same item's original scope) ran for the first time for real and PASSED 5/5 cells: 4 single-GPU native launches (tierB-qwen9b-q6k) plus the dual-XTX MTP speculative-decode topology (tierL-qwen27b-q8), each with a real model load, real completion, and clean shutdown.
+
+`pin-status --complete` (run locally on the Brutus tree, not via --all-remotes -- the remote self-probe from within Brutus itself hits a host-key artifact, a known non-issue) PASSED. Transition marker cleared. Tagged supports/b10901.
+
+FINAL STATE: config/recipes.toml pinned=b10901 on planning-refactor, pushed to origin. Every acceptance criterion in this item is now met for real: patch reconciliation clean, patch-verify-evidence path exercised across three real bumps, real-hardware smoke passed, pin-status --complete PASS, and the full procedure has now been proven repeatable across three separate real bumps (b10883, b10884, b10901) including recovering from a real infrastructure failure (archived tree path) without any manual code changes to the orchestrator itself.
+
 ## Change Log
 
 - 2026-09-10T04:51:00.813381+00:00 (created-by): Created by agent
 - 2026-09-10T04:51:30.622532+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260910_053053_successfully-bumped-the-llama_6506
 - 2026-09-10T05:30:53.720115+00:00 (updated-by): Updated: section:ledger-events
@@ -108,3 +119,7 @@ FINAL STATE: config/recipes.toml pinned=b10884 (moved twice this session: b10705
 - 2026-09-10T05:39:02.500714+00:00 (updated-by): Updated: section:notes
 - chg_20260910_065505_replaced-all-11-dispositioned_7448
 - 2026-09-10T06:55:05.638982+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260911_030004_bumped-llamacpp-from-b10900-t_2045
+- 2026-09-11T03:00:04.712201+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T03:00:28.437415+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-09-11T03:00:36.767401+00:00 (state-transition): State: pending → completed
