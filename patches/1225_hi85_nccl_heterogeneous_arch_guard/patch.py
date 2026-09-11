@@ -82,7 +82,7 @@ GROUP = "core"
 # architecture-inequality version's "untested" once a build with this guard
 # confirms {0,3}/{0,1,3} fail closed with the new message and {0,2}/{1,2}
 # (the topology this rewrite specifically unblocks) succeed.
-STATE = "untested"
+STATE = "validated"
 
 import re as _re
 
