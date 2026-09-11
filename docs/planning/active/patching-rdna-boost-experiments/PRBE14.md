@@ -88,6 +88,14 @@ FIXED (commit d6e3e46e), same session: restored the fork's single-column constra
 
 Re-verification of the fix on real hardware is in progress as of this note. Patch state remains "untested" throughout -- this is a real negative-then-fixed result being preserved as evidence, never a silent promotion. PRBE14's own acceptance criteria (destination-channel scale semantics/shape, expert routing, false-positive fallback, fused/unfused correctness) are NOT yet fully satisfied -- this closes one real correctness gap found by the first real execution, not the full PRBE14 scope (which still needs the multi-token/batched extension GPT described as a separate, not-yet-attempted kernel change, plus performance qualification, plus the 1205/1207 PKC02 composition-conflict validation).
 
+
+
+FIX RE-VERIFIED ON REAL HARDWARE (2026-09-11/12): re-ran run_rd17_ppl_check() for real on Brutus (same gfx1201/Qwen3.6-35B-A3B/wikitext2 setup) after the single-column-constraint fix. Result: PASS. Both subject (fusion-active) and control (no-fusion) binaries built and ran to completion without crashing -- subject PPL=6.8272+/-0.01595, control PPL=6.8272+/-0.01595, delta=0.0, sigma=0.0. Full artifact: artifacts/rd17-ppl-check.json under the run dir, real build identities recorded for both binaries.
+
+HONEST CAVEAT, recorded rather than overclaimed: this PASS proves the fix eliminates the crash and introduces no PPL regression -- it does NOT prove the (now more narrowly single-column-scoped) fusion still activates during THIS workload. llama-perplexity processes multi-token batches per forward pass; the fix's restored single-column constraint means the fusion path likely never triggers for batched perplexity computation at all, so subject and control plausibly took the identical unfused code path here (consistent with the exact PPL match). This check proves safety (no regression, no crash), not that the real decode-time benefit the fork originally claimed is still reachable/exercised. Proving activation would need a real single-token decode workload with a trace marker (RD17 currently has none, unlike RD12/RD13's BIGCHERRY_PATCH_HIT markers) -- a real, separate gap, not yet closed.
+
+Summary of RD17's real status: first-ever real execution found and fixed a genuine crash bug (restored a lost porting constraint); the fix is now real-hardware-verified safe (no crash, no PPL regression). Still NOT validated: real activation proof for the (now-narrower) single-column fusion path, the real performance claim (kernel-count reduction / decode timing), and PRBE14's full remaining scope (batched-shape kernel extension if ever wanted, PKC02 composition-conflict validation with 1205/RD12). Patch state remains "untested" -- this real progress is preserved as evidence, not a promotion.
+
 ## Change Log
 
 - 2026-09-09T10:54:26.498754+00:00 (created-by): Created by capability-rebaseline-v3
@@ -112,3 +120,6 @@ Re-verification of the fix on real hardware is in progress as of this note. Patc
 - 2026-09-11T13:45:40.613857+00:00 (updated-by): Updated: section:notes
 - chg_20260911_134546_found-and-fixed-a-real-crash-b_5091
 - 2026-09-11T13:45:46.308829+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T14:29:22.214547+00:00 (updated-by): Updated: section:notes
+- chg_20260911_142926_confirmed-on-real-hardware-tha_3426
+- 2026-09-11T14:29:26.549077+00:00 (updated-by): Updated: section:ledger-events
