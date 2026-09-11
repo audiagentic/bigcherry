@@ -17,6 +17,13 @@ id = "performance"
 capability = "performance"
 validator = "benchmark"
 required = true
+# PVPS02: generic --run-performance-benchmark wiring (docs/planning/
+# active/patching-validation-package-standard/PVPS02.md). benchmark-args
+# reproduces RD04's own historical -fa/-ctk/-ctv flags exactly -- see
+# run_rd04_benchmark_evidence()'s docstring for why the legacy flag
+# still exists as a compatibility path.
+benchmark-executor = "paired-llama-bench-v1"
+benchmark-extra-args = ["-fa", "on", "-ctk", "bf16", "-ctv", "bf16"]
 
 [[check]]
 id = "controls"

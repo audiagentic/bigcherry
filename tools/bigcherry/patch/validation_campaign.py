@@ -1011,6 +1011,71 @@ class PairedBenchmarkOutcome:
     raw_logs: list[dict[str, object]]
 
 
+# PVPS02 step 3: the closed vocabulary of recognized benchmark executors.
+# One entry today (the shared paired-llama-bench primitive); a genuinely
+# new execution shape (e.g. a server-based benchmark) gets a new name
+# here, never a silent branch on patch id.
+BENCHMARK_EXECUTORS: frozenset[str] = frozenset({"paired-llama-bench-v1"})
+
+
+@dataclass(frozen=True)
+class BenchmarkWiring:
+    """PVPS02 step 3: one patch's resolved performance-benchmark wiring,
+    read from its validation.toml -- never a hardcoded per-patch branch."""
+
+    executor: str
+    patch_args: tuple[str, ...]
+
+
+def resolve_benchmark_wiring(
+    descriptor: "patch_registry.PatchDescriptor", *, root: "str | Path | None" = None,
+) -> BenchmarkWiring:
+    """A patch is generically benchmarkable iff exactly one of its
+    REQUIRED capability="performance" checks declares a recognized
+    benchmark-executor in its validation.toml config. Zero, more than
+    one, or an unrecognized executor is a configuration error -- fail
+    closed, never guess which check/executor was meant.
+
+    ``root`` matches build_plan_for_patch()'s own parameter (default:
+    the real patches/ tree) -- exposed here purely so this can be
+    unit-tested against isolated fixtures without touching real patches."""
+    from bigcherry.patch import validation as patch_validation
+
+    plan = patch_validation.build_plan_for_patch(descriptor, root=root)
+    if plan is None:
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: no validation plan (no bound contract and no "
+            "validation.toml adapter) -- cannot resolve benchmark wiring"
+        )
+    wired = [
+        check for check in plan.checks_for("performance")
+        if check.required and check.config.get("benchmark-executor") is not None
+    ]
+    if not wired:
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: no required performance check declares a "
+            "benchmark-executor in validation.toml"
+        )
+    if len(wired) > 1:
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: {len(wired)} required performance checks declare a "
+            "benchmark-executor -- ambiguous wiring, exactly one is required"
+        )
+    check = wired[0]
+    executor = check.config["benchmark-executor"]
+    if executor not in BENCHMARK_EXECUTORS:
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: unknown benchmark-executor {executor!r} "
+            f"(known: {sorted(BENCHMARK_EXECUTORS)})"
+        )
+    extra_args = check.config.get("benchmark-extra-args", [])
+    if not isinstance(extra_args, list) or not all(isinstance(a, str) for a in extra_args):
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: benchmark-extra-args must be a list of strings"
+        )
+    return BenchmarkWiring(executor=executor, patch_args=tuple(extra_args))
+
+
 def run_paired_llama_benchmark(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
     workloads: tuple[str, ...] = ("decode", "prefill"),
