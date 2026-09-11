@@ -1017,6 +1017,14 @@ class PairedBenchmarkOutcome:
 # here, never a silent branch on patch id.
 BENCHMARK_EXECUTORS: frozenset[str] = frozenset({"paired-llama-bench-v1"})
 
+# GPT review (req_e608313764834497, 2026-09-11): resolve_benchmark_wiring()
+# validated wiring.executor against BENCHMARK_EXECUTORS but nothing actually
+# dispatched on it -- _run_performance_benchmark() always called
+# run_paired_llama_benchmark() directly, harmless with one executor but a
+# silent-wrong-implementation trap the moment a second is added. Populated
+# after run_paired_llama_benchmark() is defined, below.
+BENCHMARK_EXECUTOR_FUNCS: dict[str, object] = {}
+
 
 @dataclass(frozen=True)
 class BenchmarkWiring:
@@ -1076,16 +1084,37 @@ def resolve_benchmark_wiring(
     return BenchmarkWiring(executor=executor, patch_args=tuple(extra_args))
 
 
-# PVPS02 step 5: the closed vocabulary of benchmark topologies a
-# models.toml entry can declare, and how many real devices each needs.
-BENCHMARK_TOPOLOGY_DEVICE_COUNT: dict[str, int] = {"single": 1, "tensor-2": 2}
+# PVPS02 step 5 (hardened after GPT review req_e608313764834497, 2026-09-11:
+# tensor-2 selected 2 devices but never passed llama-bench's -sm tensor flag,
+# so the dual-GPU cell silently ran with llama-bench's default split mode
+# instead of the declared topology): the closed vocabulary of benchmark
+# topologies a models.toml entry can declare, owning BOTH how many real
+# devices it needs AND which runtime args select that split mode -- so a
+# topology can never again own a device count without the args that make
+# that count meaningful.
+BENCHMARK_TOPOLOGIES: dict[str, "BenchmarkTopology"] = {}
+
+
+@dataclass(frozen=True)
+class BenchmarkTopology:
+    device_count: int
+    runtime_args: tuple[str, ...]
+
+
+BENCHMARK_TOPOLOGIES["single"] = BenchmarkTopology(device_count=1, runtime_args=())
+BENCHMARK_TOPOLOGIES["tensor-2"] = BenchmarkTopology(device_count=2, runtime_args=("-sm", "tensor"))
+
+# Preserved for any external/test code still keying off device count alone.
+BENCHMARK_TOPOLOGY_DEVICE_COUNT: dict[str, int] = {
+    name: topo.device_count for name, topo in BENCHMARK_TOPOLOGIES.items()
+}
 
 
 @dataclass(frozen=True)
 class ResolvedBenchmarkModel:
     """PVPS02 step 5: one config/models.toml entry resolved against a real
     host's model root -- real file path, real verified size, real
-    topology-derived device count."""
+    topology-derived device count and runtime args."""
 
     id: str
     path: Path
@@ -1094,7 +1123,11 @@ class ResolvedBenchmarkModel:
 
     @property
     def device_count(self) -> int:
-        return BENCHMARK_TOPOLOGY_DEVICE_COUNT[self.topology]
+        return BENCHMARK_TOPOLOGIES[self.topology].device_count
+
+    @property
+    def runtime_args(self) -> tuple[str, ...]:
+        return BENCHMARK_TOPOLOGIES[self.topology].runtime_args
 
 
 def resolve_benchmark_model(
@@ -1124,19 +1157,32 @@ def resolve_benchmark_model(
             f"unknown benchmark model id {model_id!r} (not in {resolved_registry})"
         )
     topology = entry.get("benchmark-topology")
-    if topology not in BENCHMARK_TOPOLOGY_DEVICE_COUNT:
+    if topology not in BENCHMARK_TOPOLOGIES:
         raise PatchCampaignError(
             f"{model_id}: benchmark-topology must be one of "
-            f"{sorted(BENCHMARK_TOPOLOGY_DEVICE_COUNT)}, got {topology!r} -- a models.toml "
+            f"{sorted(BENCHMARK_TOPOLOGIES)}, got {topology!r} -- a models.toml "
             "entry with no (or an unrecognized) benchmark-topology is not eligible for the "
             "generic performance-benchmark matrix"
         )
-    model_path = model_root / entry["path"]
+    path_value = entry.get("path")
+    if not isinstance(path_value, str) or not path_value:
+        raise PatchCampaignError(f"{model_id}: models.toml entry has no valid 'path'")
+    model_path = model_root / path_value
     if not model_path.is_file():
         raise PatchCampaignError(f"{model_id}: model file not found at {model_path}")
+    # GPT review (req_e608313764834497, 2026-09-11): size-bytes verification
+    # must be fail-closed, not skip-if-absent-or-malformed -- a missing or
+    # non-integer size-bytes silently bypassed the "wrong file/quantisation"
+    # check this exists for, contradicting PVPS02's explicit requirement of
+    # real file-size verification.
     declared_size = entry.get("size-bytes")
+    if not isinstance(declared_size, int) or isinstance(declared_size, bool) or declared_size <= 0:
+        raise PatchCampaignError(
+            f"{model_id}: models.toml entry must declare a positive integer size-bytes "
+            f"(got {declared_size!r})"
+        )
     real_size = model_path.stat().st_size
-    if isinstance(declared_size, int) and real_size != declared_size:
+    if real_size != declared_size:
         raise PatchCampaignError(
             f"{model_id}: real file size {real_size} does not match models.toml's declared "
             f"size-bytes={declared_size} at {model_path} -- wrong file or quantisation?"
@@ -1270,6 +1316,9 @@ def run_paired_llama_benchmark(
         commands[workload] = {"control": control_cmd, "subject": subject_cmd}
 
     return PairedBenchmarkOutcome(runs=runs, commands=commands, raw_logs=raw_logs)
+
+
+BENCHMARK_EXECUTOR_FUNCS["paired-llama-bench-v1"] = run_paired_llama_benchmark
 
 
 def run_rd04_benchmark_evidence(
@@ -2614,9 +2663,19 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
 
     cells: list[dict[str, object]] = []
     build_root: Path = (args.build_root or args.workdir) / subject_src.name
+    exe = ".exe" if sys.platform == "win32" else ""
+    build_env = _hip_env(args.hip_path)
     for architecture in architectures:
-        generated_dir = build_root / architecture / "generated"
-        generate_registry(source=subject_src, amdgpu_targets=architecture, generated_dir=generated_dir)
+        # GPT review (req_e608313764834497, 2026-09-11): the legacy
+        # validation path builds control and validation-subject with
+        # IDENTICAL extra_cmake_args=[] and asserts that parity
+        # (assert_validation_subject_parity) precisely because differing
+        # build instrumentation would confound a measured patch effect
+        # with build-configuration noise. An earlier version of this
+        # function gave subject an extra
+        # -DGGML_HIP_AUTOTUNE_GENERATED_DIR=... cmake arg control never
+        # got -- fixed to match the legacy parity contract: both binaries
+        # here are plain, symmetric, autotune-instrumentation-free builds.
         control_bin = build_tree(
             name=f"perf-control-{architecture}", hip_path=args.hip_path,
             amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
@@ -2625,11 +2684,26 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
         subject_bin = build_tree(
             name=f"perf-subject-{architecture}", hip_path=args.hip_path,
             amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
-            source=subject_src, extra_cmake_args=[f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}"],
+            source=subject_src, extra_cmake_args=[],
         )
-        exe = ".exe" if sys.platform == "win32" else ""
         control_binary = control_bin / f"llama-bench{exe}"
         subject_binary = subject_bin / f"llama-bench{exe}"
+        control_cmake_args = _full_requested_cmake_args(
+            hip_path=args.hip_path, amdgpu_targets=architecture, extra_cmake_args=[],
+        )
+        control_build_evidence = capture_completed_build_evidence(
+            build_root / f"perf-control-{architecture}", source_root=control_src,
+            architecture=architecture, binary=control_binary,
+            requested_cmake_args=control_cmake_args, build_env=build_env,
+        )
+        subject_build_evidence = capture_completed_build_evidence(
+            build_root / f"perf-subject-{architecture}", source_root=subject_src,
+            architecture=architecture, binary=subject_binary,
+            requested_cmake_args=control_cmake_args, build_env=build_env,
+        )
+        assert_validation_subject_parity(
+            control_build_evidence, subject_build_evidence, patch_id=args.patch,
+        )
 
         for model_id in model_ids:
             cell: dict[str, object] = {"architecture": architecture, "model": model_id}
@@ -2661,10 +2735,12 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
             execution_identity = attestation.ExecutionIdentity(
                 backend="ROCm", architectures=(architecture,) * resolved_model.device_count,
             )
-            outcome = run_paired_llama_benchmark(
+            executor_func = BENCHMARK_EXECUTOR_FUNCS[wiring.executor]
+            outcome = executor_func(
                 control_binary=control_binary, subject_binary=subject_binary,
                 model=resolved_model.path, hip_path=args.hip_path,
-                patch_args=wiring.patch_args, pairs=args.bench_repetitions,
+                patch_args=wiring.patch_args, runtime_args=resolved_model.runtime_args,
+                pairs=args.bench_repetitions,
                 log_context=f"performance-benchmark {architecture}/{model_id}",
                 env_overrides=env_overrides, execution_identity=execution_identity,
             )

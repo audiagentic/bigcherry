@@ -65,18 +65,28 @@ class DeviceVisibilityError(ValueError):
 
 @dataclass(frozen=True)
 class DeviceVisibility:
-    """A validated, ordered real-GPU selector -- the explicit device pool
-    a paired-benchmark cell was launched against. PVPS02 (2026-09-11,
-    dev-gpt-agent design + self-critique, docs/planning/active/
+    """A validated, ordered device-SELECTOR declaration -- the explicit
+    HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES token pool a paired-benchmark
+    cell was launched against. PVPS02 (2026-09-11, dev-gpt-agent design +
+    self-critique, docs/planning/active/
     patching-validation-package-standard/PVPS02.md): extracted from
     run_rd58_state_restore_evidence()'s original inline HIP_VISIBLE_DEVICES/
     ROCR_VISIBLE_DEVICES guard so every paired-benchmark path can share one
     fail-closed contract instead of reimplementing it per patch.
 
+    GPT review correction (req_e608313764834497, 2026-09-11): this proves
+    LAUNCH INTENT (which selector tokens were passed to the child process),
+    not physical-device identity -- the runtime's own ROCm attestation
+    (parse_rocm_attestation()) never carries a device locator, so nothing
+    downstream of this class can confirm which physical card a given
+    selector token actually resolved to. Earlier wording here claimed more
+    than that; corrected.
+
     device_ids is ORDERED and that order is load-bearing: an N-device cell
     consumes the first N ids, so e.g. "1,0" deliberately differs from "0,1"
-    for a tensor-split cell (which physical card ends up in which tensor-
-    split slot)."""
+    -- for a tensor-split cell this determines DECLARED SELECTOR ORDER
+    (which token becomes tensor-split slot 0 vs 1), not a proven physical
+    mapping."""
 
     device_ids: tuple[str, ...]
     hip_visible_devices: str
@@ -106,7 +116,10 @@ def require_device_visibility(
 ) -> DeviceVisibility:
     """Fail closed before any hardware use unless HIP_VISIBLE_DEVICES and
     ROCR_VISIBLE_DEVICES are both explicitly set, consistent with each
-    other, free of duplicates, and expose enough real devices.
+    other, free of duplicates, and declare enough distinct selector tokens
+    (not independently verified against physically-present hardware --
+    see DeviceVisibility's own docstring for what this class can and
+    cannot prove).
 
     PVPS02 step 1 (see DeviceVisibility's own docstring): a standalone,
     unit-tested extraction only. Nothing calls this yet -- RD58's own
@@ -139,7 +152,7 @@ def require_device_visibility(
         if any(not part.strip() for part in parts):
             raise DeviceVisibilityError(
                 f"{context}: {name}={raw!r} contains a blank device id "
-                "(e.g. a stray comma) -- every entry must be a real device id"
+                "(e.g. a stray comma) -- every entry must be a non-blank device selector token"
             )
         return tuple(part.strip() for part in parts)
 
@@ -156,7 +169,7 @@ def require_device_visibility(
         raise DeviceVisibilityError(
             f"{context}: HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES "
             f"({hip_raw!r}) contains duplicate device ids -- this does not "
-            "expose distinct real GPUs"
+            "declare distinct device selector tokens"
         )
     if len(hip_ids) < minimum_count:
         raise DeviceVisibilityError(
