@@ -59,6 +59,16 @@ Supersedes: RD12
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd12
 
+
+
+DEEPER BLOCKER DISCOVERED (2026-09-11/12): attempted to unblock this item by porting RD25 (its declared hard prerequisite) for real. Fetched RD25's real commit (8cdf1ab081384aa1786bfff3a45e0ec341f9fd52, stew675-rdna-boosts, branch rdna-boosts) from the tracked fork -- a real, bounded 104-line diff to ggml-cuda/mmvq.cu. But RD25's diff MODIFIES three kernel functions (ssm_gate_beta_fused_q8_0, ssm_conv_l2_gatebeta_fused, shexp_down_gated_q8_0) that do NOT EXIST anywhere in this project's current pinned vendor tree, nor in any existing or planned BigCherry patch (grep-verified against both, real search, not assumption).
+
+Root cause found via git log -S (pickaxe search) against the fork's full history: those three kernels were introduced by a DIFFERENT, completely untracked fork commit -- 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb, "rdna-boosts: block 08: fused-core prefill kernels and GPU bit-identical" -- which is NOT in config/external-sources.toml's tracked list at all. This is a real, substantial, previously-unknown prerequisite: 1585 insertions across 10 files (common.cuh, fattn-tile.cuh, fattn.cu, ggml-cuda.cu +527, mmvq.cu +670, mmvq.cuh, norm.cu/.cuh, unary.cu/.cuh) -- an order of magnitude larger than RD25 itself, and has never been reviewed, tracked, or assessed by this project.
+
+DECISION: did not attempt to port "block 08" or RD25 in this session. Forcing either through with guessed/unreviewed anchors against a 1585-line untracked commit this project has never even audited would violate the real rigor this project's own patch-authoring standards require (verified anchors, no invented provenance, real review before code). This is genuinely new, substantial work -- first track+audit "block 08" via `python -m bigcherry sources check`-style real review (a new [[sources.tracked]] entry, real commit content review, real scope assessment of what it does and whether it's even wanted), THEN port it as its own dedicated patch (likely several patch-sized pieces given its size), THEN port RD25 on top, THEN this item's own RD12 qualification work.
+
+PRBE11 (and therefore RD12) remains genuinely blocked -- now documented with the REAL, complete dependency chain rather than the previously-understated "needs RD25" note. Filed as new prerequisite scope here rather than a new plan item, since it is squarely in this item's own critical path.
+
 ## Change Log
 
 - 2026-09-09T10:54:15.041193+00:00 (created-by): Created by capability-rebaseline-v3
@@ -74,3 +84,6 @@ Successor key: patching-rdna-boost-experiments-rd12
 - 2026-09-10T02:47:35.743786+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024759_three-rdna-fusion-successors-n_3469
 - 2026-09-10T02:47:59.451164+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T16:41:04.517699+00:00 (updated-by): Updated: section:notes
+- chg_20260911_164110_investigated-why-an-experiment_2332
+- 2026-09-11T16:41:10.876945+00:00 (updated-by): Updated: section:ledger-events
