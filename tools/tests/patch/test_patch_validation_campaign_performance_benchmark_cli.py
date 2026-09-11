@@ -184,10 +184,11 @@ class OrchestrationLogicTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _run_with_patches(self, *, device_count: int = 1):
+    def _run_with_patches(self, *, device_count: int = 1, runtime_args: tuple = ()):
         wiring = mock.Mock(executor="paired-llama-bench-v1", patch_args=())
         resolved_model = mock.Mock(
             path=self.tmp_path / "model.gguf", device_count=device_count,
+            runtime_args=runtime_args,
         )
         composition = mock.Mock()
         materialized = mock.Mock()
@@ -196,12 +197,19 @@ class OrchestrationLogicTests(unittest.TestCase):
             commands=[], raw_logs=[], runs={"decode": mock.Mock(stats={}, runs=[])},
         )
 
+        executor_func = mock.Mock(return_value=outcome)
+
         patches = [
             mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring),
             mock.patch.object(vc, "resolve_benchmark_model", return_value=resolved_model),
             mock.patch.object(vc, "generate_registry", return_value=None),
             mock.patch.object(vc, "build_tree", return_value=self.tmp_path / "bin"),
-            mock.patch.object(vc, "run_paired_llama_benchmark", return_value=outcome),
+            mock.patch.object(vc, "run_paired_llama_benchmark", executor_func),
+            mock.patch.dict(
+                vc.BENCHMARK_EXECUTOR_FUNCS, {"paired-llama-bench-v1": executor_func},
+            ),
+            mock.patch.object(vc, "capture_completed_build_evidence", return_value=mock.Mock()),
+            mock.patch.object(vc, "assert_validation_subject_parity", return_value=None),
             mock.patch(
                 "bigcherry.patch.source.resolve_source_composition",
                 return_value=("deadbeef" * 5, composition),
@@ -220,27 +228,110 @@ class OrchestrationLogicTests(unittest.TestCase):
                 )
             )
             result = vc._run_performance_benchmark(self.args, self.descriptor, self.cfg)
-        return result, require_visibility
+        return result, require_visibility, executor_func
 
     def test_reaches_and_calls_require_device_visibility(self) -> None:
-        result, require_visibility = self._run_with_patches()
+        result, require_visibility, _ = self._run_with_patches()
         require_visibility.assert_called_once()
         _, kwargs = require_visibility.call_args
         self.assertEqual(kwargs["exact_count"], 1)
         self.assertIn("HIP_VISIBLE_DEVICES", kwargs["env"])
 
     def test_successful_cell_returns_zero(self) -> None:
-        result, _ = self._run_with_patches()
+        result, _, _ = self._run_with_patches()
         self.assertEqual(result, 0)
 
     def test_device_pool_shortfall_skips_the_cell_without_crashing(self) -> None:
         # device-map only offers 1 id but the model needs 2 -- must be
         # recorded as a skipped cell (not an uncaught exception).
-        result, require_visibility = self._run_with_patches(device_count=2)
+        result, require_visibility, _ = self._run_with_patches(device_count=2)
         require_visibility.assert_not_called()
         self.assertEqual(result, 1)
         matrix = json.loads((self.args.workdir / "performance-matrix.json").read_text())
         self.assertEqual(matrix["cells"][0]["status"], "skipped")
+
+    def test_topology_runtime_args_reach_the_executor(self) -> None:
+        # GPT review (req_e608313764834497, 2026-09-11): tensor-2 selected
+        # 2 devices but never passed llama-bench's -sm tensor flag through
+        # to the executor -- this is the exact gap that finding closed.
+        self.args.device_map = ["gfx1100=0,1"]
+        _, _, executor_func = self._run_with_patches(
+            device_count=2, runtime_args=("-sm", "tensor"),
+        )
+        executor_func.assert_called_once()
+        _, kwargs = executor_func.call_args
+        self.assertEqual(kwargs["runtime_args"], ("-sm", "tensor"))
+
+    def test_executor_is_looked_up_via_the_dispatch_table_not_hardcoded(self) -> None:
+        # GPT review: wiring.executor was validated but never actually
+        # dispatched on -- _run_performance_benchmark() always called
+        # run_paired_llama_benchmark() directly regardless of wiring.
+        # Prove it really goes through BENCHMARK_EXECUTOR_FUNCS[executor]
+        # by making the dict entry a DIFFERENT mock than the module-level
+        # run_paired_llama_benchmark name -- only the dispatch-table path
+        # would reach the dict's mock.
+        import argparse
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            args = argparse.Namespace(
+                patch="1202_rd04_bf16_flash_attn_tile",
+                hip_path=tmp_path / "hip", workdir=tmp_path / "workdir",
+                worktree_root=tmp_path / "worktrees", build_root=None,
+                model_root=tmp_path / "models", benchmark_architecture=["gfx1100"],
+                benchmark_model=["test-model"], device_map=["gfx1100=0"],
+                bench_repetitions=2, baseline_source="bigcherry",
+            )
+            args.workdir.mkdir(parents=True, exist_ok=True)
+            descriptor = mock.Mock(
+                patch_id="1202_rd04_bf16_flash_attn_tile", validation_architectures=("gfx1100",),
+            )
+            cfg = mock.Mock()
+            cfg.pinned = "deadbeef"
+            cfg.platforms = {"linux-multi": mock.Mock(targets=("gfx1100",))}
+
+            wiring = mock.Mock(executor="paired-llama-bench-v1", patch_args=())
+            resolved_model = mock.Mock(
+                path=tmp_path / "model.gguf", device_count=1, runtime_args=(),
+            )
+            composition = mock.Mock()
+            materialized = mock.Mock()
+            materialized.name = "src-deadbeef"
+            dispatch_outcome = mock.Mock(
+                commands=[], raw_logs=[], runs={"decode": mock.Mock(stats={}, runs=[])},
+            )
+            dispatch_func = mock.Mock(return_value=dispatch_outcome)
+            wrong_func = mock.Mock(side_effect=AssertionError(
+                "run_paired_llama_benchmark called directly, bypassing BENCHMARK_EXECUTOR_FUNCS"
+            ))
+
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring))
+                stack.enter_context(mock.patch.object(vc, "resolve_benchmark_model", return_value=resolved_model))
+                stack.enter_context(mock.patch.object(vc, "generate_registry", return_value=None))
+                stack.enter_context(mock.patch.object(vc, "build_tree", return_value=tmp_path / "bin"))
+                stack.enter_context(mock.patch.object(vc, "run_paired_llama_benchmark", wrong_func))
+                stack.enter_context(mock.patch.dict(
+                    vc.BENCHMARK_EXECUTOR_FUNCS, {"paired-llama-bench-v1": dispatch_func},
+                ))
+                stack.enter_context(mock.patch.object(vc, "capture_completed_build_evidence", return_value=mock.Mock()))
+                stack.enter_context(mock.patch.object(vc, "assert_validation_subject_parity", return_value=None))
+                stack.enter_context(mock.patch(
+                    "bigcherry.patch.source.resolve_source_composition",
+                    return_value=("deadbeef" * 5, composition),
+                ))
+                stack.enter_context(mock.patch(
+                    "bigcherry.patch.source.materialize_composition", return_value=materialized,
+                ))
+                stack.enter_context(mock.patch(
+                    "bigcherry.experiment.execution.require_device_visibility",
+                    return_value=mock.Mock(document=lambda: {}),
+                ))
+                vc._run_performance_benchmark(args, descriptor, cfg)
+
+            dispatch_func.assert_called_once()
+            wrong_func.assert_not_called()
 
 
 if __name__ == "__main__":

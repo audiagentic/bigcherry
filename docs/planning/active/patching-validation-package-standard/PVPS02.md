@@ -90,7 +90,9 @@ SECOND-ROUND VALIDATED DESIGN (2026-09-11, same GPT session, self-critique pass,
 
 ## Acceptance Criteria
 
-All items in the real-hardware merge gate pass for real on Brutus. performance.json records architecture/model/device-visibility for every planned applicable cell and an explicit skip-reason for every inapplicable one. RD04 produces identical commands/evidence via the legacy alias and the new generic entry point on the same arch/model. RD08's Contract adapter receives identical LaneEffects post-refactor. RD58/RD73 regression-tested unaffected by the visibility-primitive extraction. Full offline test suite green. Generic-mode artifacts never populate contract_promotions.
+All items in the real-hardware merge gate pass for real on Brutus. The generic --run-performance-benchmark entry point writes performance-matrix.json (workdir-scoped, distinct from RD04's own per-run performance.json evidence artifact) recording architecture/model/device-visibility for every planned applicable cell and an explicit skip-reason for every inapplicable one. RD04 produces identical commands/evidence via the legacy alias and the new generic entry point on the same arch/model. RD08's Contract adapter receives identical LaneEffects post-refactor. RD58/RD73 regression-tested unaffected by the visibility-primitive extraction. Full offline test suite green. Generic-mode artifacts never populate contract_promotions.
+
+(Corrected 2026-09-11 per GPT review req_e608313764834497, which flagged the original wording -- "performance.json" -- as ambiguous against the real implementation's performance-matrix.json; this is a plan-doc correction, not an implementation change, since the matrix JSON legitimately differs in shape from RD04's own per-patch evidence artifact and should not be conflated with it.)
 
 ## Notes
 
@@ -152,3 +154,4 @@ Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--
 
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
