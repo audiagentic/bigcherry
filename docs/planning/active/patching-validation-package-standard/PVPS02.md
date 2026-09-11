@@ -32,8 +32,8 @@ Same topic as PVPS01 (standard Patch Qualification Matrix) -- coordinate rather 
 3. Add the validation.toml wiring resolver (benchmark-executor/benchmark-extra-args on the performance check); add real metadata to RD04 and RD08's validation.toml.
 4. Add --run-performance-benchmark itself (generic dispatch on wiring, never on patch id/contract name); build the standard model/architecture matrix with explicit skip-with-reason for inapplicable cells.
 5. Add tierM-ministral14b-q4km to config/models.toml with real inspected file metadata. Add the tensor-split benchmark-only projection for tierL-qwen27b-q8.
-6. Add --run-rd04-benchmark/--run-rd08-lanes as deprecated aliases onto the generic path; leave --run-rd08-contract/--run-rd58-state-restore/--run-rd73-contract bespoke, only adopting the visibility primitive.
-7. Migrate/rewrite the regression suite per the plan above (replace brittle source-string assertions with behavioral tests).
+6. (CORRECTED 2026-09-11, see notes) NOT a removal or deprecation step. --run-rd04-benchmark/--run-rd08-lanes are real, documented, currently-required entry points (patch READMEs state the run is required; run_rd08_validation_lanes() is called directly by tools/bigcherry/campaign/qualification_rd08.py; both are documented in PATCH_VALIDATION.md and the bigcherry-patch-qualification skill) producing evidence shapes (RD04's performance.json, RD08's Contract-bound LaneEffects) that --run-performance-benchmark structurally does not and should not produce. They already share the generic execution primitive via step 2's extraction -- that is the full scope of this step; it is already done. No CLI removal, no alias, no deprecation label.
+7. RD58/RD73 wired onto require_device_visibility as its own dedicated, regression-tested step (keeping enforcement at the orchestration/preflight boundary for RD58 via observed_devices=, copying validated values into RD73's AttestedServerSession.env_overrides).
 8. Run the full real-hardware merge gate on Brutus (7 real-hardware checks listed above) before considering this item done.
 
 ## Detailed Solution & Technical Design
@@ -157,6 +157,10 @@ Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated fa
 
 Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--run-rd08-lanes onto the generic path, RD08 through its own Contract adapter), 7 (RD58/RD73 wired onto require_device_visibility), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
 
+
+
+STEP 6 CORRECTED, WITHOUT CODE CHANGE (2026-09-11): the original design notes called this "legacy aliases" / "deprecated aliases onto the generic path," which was imprecise and, per this project's own CLAUDE.md doctrine (no legacy/backward-compat shims; migrate up, don't preserve old behavior behind a flag), would have been the wrong framing to implement literally. Checked for real callers per that doctrine's own bar (a real external consumer OUTSIDE this repo, not just any reference): none exist (no .github/workflows, no external CI). But that isn't the deciding fact -- the deciding fact is that --run-rd04-benchmark and --run-rd08-lanes are not duplicating something the generic tool replaces. run_rd08_validation_lanes() is called directly by tools/bigcherry/campaign/qualification_rd08.py's real qualification pipeline (not just reachable via the CLI flag); both patch READMEs (1202_rd04_bf16_flash_attn_tile, 1204_rd08_q6k_mmvq_vdr2) document these runs as required steps; both are documented in docs/reference/testing/PATCH_VALIDATION.md and .claude/skills/bigcherry-patch-qualification/SKILL.md as the current interface. --run-performance-benchmark deliberately produces a DIFFERENT evidence shape (generic diagnostic performance-matrix.json, never contract_promotions) -- it was never meant to replace RD04/RD08's contract-bound evidence producers, so there is no legacy interface here to migrate away from. Step 6 is complete as of step 2's extraction (run_rd04_benchmark_evidence/run_rd08_validation_lanes already share run_paired_llama_benchmark()); corrected the steps/detailed_solution text to stop implying a removal/deprecation action that was never warranted.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -171,10 +175,11 @@ Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--
 
 ## Ledger-events
 
-
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-09-11T09:51:11.031759+00:00 (updated-by): Updated: section:notes
 - chg_20260911_095117_a-second-round-review-of-the-n_2912
 - 2026-09-11T09:51:17.593094+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T10:05:42.255411+00:00 (updated-by): Updated: section:steps
+- 2026-09-11T10:05:50.237138+00:00 (updated-by): Updated: section:notes
