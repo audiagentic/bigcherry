@@ -2,7 +2,7 @@
 id: PPS03
 order: 0
 plan: patching-patch-system
-state: pending
+state: completed
 created-at: '2026-09-11T04:52:15.819930+00:00'
 breadth: ''
 skill: intermediate
@@ -103,6 +103,8 @@ Design history for context: an early draft proposed collapsing `group` to 4 valu
 
 Raised during a 2026-09-11 user-led survey of "which patches are validated vs core vs optimizations" that surfaced all of the above as real, unprompted findings -- not something either party set out looking for.
 
+IMPLEMENTED 2026-09-11 (commit e48b6488 on main/planning-refactor). Full scope delivered: group field removed from registry.py schema/PatchDescriptor/all parsing paths and every consumer (catalog.py, patchset.py, docs.py, cli/patch.py, doctor.py); PATCH_TAGS constant added as single source of truth; PATCH_KINDS gained diagnostic; the 14 misfiled diagnostic patches relabeled; 1000_rdna4_mmq_q2k_q6k_fix moved to a new [patch-set.upstream-fixes] composed into both bigcherry-native and bigcherry; PATCH_AUTHORING.md's ## Tags section added with a doc-vs-code drift test (test_patch_tags_registry.py); every one of the 65 real SUMMARY.md files plus the template had their Group header removed; ~20 test files with group-bearing fixtures updated. Two real, pre-existing gaps surfaced and fixed while touching the same files: RD22's already-established superseded state was never added to test_external_sources.py's retired/superseded allowlists. Full offline test suite, patch-lint, and check all pass; 3 unrelated pre-existing failures (telemetry, HI104) confirmed untouched by this change and left alone. Sent for GPT deep review next.
+
 ## Change Log
 
 - 2026-09-11T04:52:15.819930+00:00 (created-by): Created by agent
@@ -111,3 +113,5 @@ Raised during a 2026-09-11 user-led survey of "which patches are validated vs co
 - 2026-09-11T05:04:26.715764+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:acceptance_criteria, section:notes
 - 2026-09-11T05:26:26.411628+00:00 (updated-by): Updated: section:description, section:steps
 - 2026-09-11T05:26:35.436207+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-09-11T06:02:07.748673+00:00 (state-transition): State: pending → completed
+- 2026-09-11T06:02:13.929926+00:00 (updated-by): Updated: section:notes
