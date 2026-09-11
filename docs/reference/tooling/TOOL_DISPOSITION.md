@@ -6,7 +6,7 @@
 
 ## Description
 
-This is the current 424-row control-plane registry for in-scope tooling. The
+This is the current 457-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
 registered GP10 lab tools, four HI168 investigation tools, and the
 planning-capability-rebaseline-v3 migration pack and scripts. It is
@@ -484,6 +484,7 @@ ownership.
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **TRANSITIONAL** | Migration-local advisory GPT evidence importer; never approves dispositions, allocates IDs, or mutates plan files. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **TRANSITIONAL** | Migration-local independent-review reconciliation report; never selects dispositions or allocates IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **TRANSITIONAL** | Migration-local field-by-field reconciliation of independent semantic reviews; never selects a winner or allocates IDs. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_semantic_carryforward.py` | **TRANSITIONAL** | Migration-local carryforward validator for the v3 semantic review pack; never selects a winner or allocates IDs. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/approve_semantic_review.py` | **TRANSITIONAL** | Explicit semantic evidence gate; requires a scoped approval basis and exact 200-row active coverage before setting approval state. |
@@ -551,12 +552,6 @@ ownership.
 | `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **TRANSITIONAL** | RD87: extracts deduped real GEMM/MMVQ dispatch shapes + native timing from a tune-campaign measurements.jsonl; answered/negative-finding, retained as investigation provenance. |
 | `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **TRANSITIONAL** | RD87: drives `hipblaslt-bench` (heuristic vs all-solutions) over the extracted real shapes on Brutus; answered/negative-finding, retained as investigation provenance. |
 
-## RHA12 pin-bump validation
-
-| Path | Disposition | Owner and rationale |
-|---|---|---|
-| `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
-
 Inventory count: 403 script/tool files (vendor, build/cache, and artifacts excluded).
 
 ## Baseline blockers: reviewed and dispositioned (2026-08-25)
@@ -565,6 +560,13 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 - `overlay.vendor_sync` (default/full check): remains a live, unrelated finding — 7 `ggml-cuda/hip-autotune-*` files differ between `src/` and the compiled `vendor/llama.cpp` tree at review time, consistent with in-progress uncommitted edits elsewhere in this working tree. Not a TR00 defect; not repaired here.
 - Legacy flat subject-digest test failure (`test_legacy_flat_without_state_uses_implementation_identity`): root-caused and fixed. It was a Windows-only test-fixture bug — the fixture wrote its file via `path.write_text(...)`, which Windows silently translates `\n` to `\r\n` on disk, desyncing the raw-byte comparison (`_sha256_file`) from `patch_validation_subject_digest`'s text-mode (universal-newline) read. Fixed by writing the fixture with `path.write_bytes(...)` instead; no change to `patch_validation_subject_digest` itself. Full module (25 tests) now passes.
 - Windows symlink-privilege error (`test_rv80_symlink_escape_rejected`): confirmed pre-existing and environment-specific (also independently logged in RD30.md); left as-is, not a TR00 concern.
+
+## RHA12 pin-bump validation
+
+| Path | Disposition | Owner and rationale |
+|---|---|---|
+| `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
+| `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
 
 ## Exit status
 

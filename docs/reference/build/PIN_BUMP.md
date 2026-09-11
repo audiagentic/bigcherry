@@ -142,7 +142,7 @@ window; bump one, record, then bump the other.
    pin and launches it under the real production runtime-profiles across
    every real GPU individually (`production-safe-single`,
    `tierB-qwen9b-q6k`) plus the real dual-XTX multi-GPU topology
-   (`production-dual-xtx`, `tierL-qwen27b-q8`) — a real-server-launches-
+   (`production-dual-xtx`, `tierL-qwen27b-q8`) -- a real-server-launches-
    and-completes-correctly gate that `patch-rebase-check`/`patch-lint`
    cannot provide, since none of the static gates ever launch a server. A
    failing cell is a bump blocker; investigate before declaring the bump

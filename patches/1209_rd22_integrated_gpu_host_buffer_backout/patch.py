@@ -75,12 +75,12 @@ Maintenance (future pin bumps / fork movement):
     restructure the block). Re-derive from the tracked fork commit in
     external-sources.toml; run `python -m bigcherry sources check`.
 
-SUPERSEDED (2026-09-10, pin bump to b10884): exactly the maintenance
-check this docstring has always asked for found a real result. Upstream
-commit d4389a4dd920522899e5b46f1bd3b39592b1f0f7 (PR #28604, "Revert
+SUPERSEDED (2026-09-10, pin bump to b10884, reconfirmed at b10900): exactly the
+maintenance check this docstring has always asked for found a real result.
+Upstream commit d4389a4dd920d24c9592f1dc3badbd69be23bd09 (PR #28604, "Revert
 'ggml-cuda : restore prop.integrated on HIP builds (#24233)'") reverts
 the very PR #24233 this fork's divergence exists to work around.
-Verified directly against the real vendored source at b10884
+Verified directly against the real vendored source at b10900
 (ggml/src/ggml-cuda/ggml-cuda.cu:307): the HIP branch now reads
 `info.devices[id].integrated = false; // Temporarily disabled due to
 issues with corrupted output (e.g. #15034)` unconditionally -- the
