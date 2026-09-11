@@ -30,11 +30,12 @@ continues to be the only one that fires.
 """
 
 GROUP = "core"
-# Real source read (this file, both branches) confirms the mechanism; not
-# yet hardware-validated on Windows with GGML_HIP_UNSAFE_MATH=ON --
-# promote to "validated" once `ninja -t commands` on Windows shows
-# -funsafe-math-optimizations in the real compile line.
-STATE = "untested"
+# Real source read (this file, both branches) confirms the mechanism, and
+# hardware-validated on Windows/gfx1100/ROCm 7.1/Ninja: `ninja -t commands`
+# shows -funsafe-math-optimizations in the real compile line when
+# GGML_HIP_UNSAFE_MATH=ON, correctly absent when OFF, ggml-hip.dll builds
+# clean either way. See README.md.
+STATE = "validated"
 
 import re as _re
 
