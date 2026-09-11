@@ -14,7 +14,7 @@ On the fork author's Strix Halo iGPU, the host-buffer path corrupts full-model r
 
 ## Upstream / provenance
 
-Ported verbatim from stew675-rdna-boosts fork commit 507f2e267 (https://github.com/stew675/llama.cpp), a deliberate divergence away from mainline PR #24233 -- a pin bump does not absorb this, it would re-enable the broken path.
+Ported verbatim from stew675-rdna-boosts fork commit 507f2e267 (https://github.com/stew675/llama.cpp), a deliberate divergence away from mainline PR #24233. At the time of porting, a pin bump did not absorb this fix -- see Superseded below for the upstream change that later did.
 
 ## Superseded (2026-09-10, pin bump to b10900)
 
