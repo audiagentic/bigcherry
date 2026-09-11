@@ -35,6 +35,11 @@ psi = importlib.import_module("bigcherry.patch.source")
 
 RD17_PATCH_STACK: tuple[str, ...] = ("1207_rd17_moe_topk_down_fold",)
 
+
+class Rd17CorrectnessError(RuntimeError):
+    """RD17 correctness evidence could not be produced, or failed to validate."""
+
+
 # Exactly RD17's own ggml-cuda.cu detection-block insertion (patch.py's
 # _DETECT_ANCHOR/_DETECT_BLOCK), reverted back to the bare anchor. This is
 # the ONLY site that ever sets x_scale_channel_dst=true -- reverting it
@@ -42,50 +47,33 @@ RD17_PATCH_STACK: tuple[str, ...] = ("1207_rd17_moe_topk_down_fold",)
 # rest of the patch's struct/kernel edits compiled (matching what RD08's
 # control does: revert the minimum that disables the behavior, not undo
 # every hunk).
-_DETECT_ANCHOR = """    fused_mul_mat_vec = false;
-    fused_node_count  = 0;"""
+# Imported directly from the real patch.py rather than duplicated here --
+# an earlier version of this file hand-copied _DETECT_BLOCK/_DETECT_ANCHOR,
+# and a real-hardware-driven fix to patch.py's copy (2026-09-11, GPT root-
+# cause req_6cf169798c784380) silently desynced this control-reversion
+# copy, which would have made apply_no_fusion_control() either fail its
+# own anchor-count check or, worse, revert the WRONG (pre-fix) text. A
+# single source of truth eliminates that whole bug class.
+def _load_patch_module() -> object:
+    import importlib.util
 
-_DETECT_BLOCK = """    // MoE: ffn_moe_weighted = moe_down * topk_weights. The down projection
-    // output is scaled per token (the topk softmax weights); fold the MUL into
-    // the matmul epilogue. The pattern is [MUL_MAT_ID, MUL] with the MUL's
-    // src1 being a contiguous per-channel F32 vector (a view of the
-    // normalized weights).
-    if (i + 1 < cgraph->n_nodes && cgraph->nodes[i]->op == GGML_OP_MUL_MAT_ID) {
-        ggml_tensor * mm_node  = cgraph->nodes[i];
-        ggml_tensor * mul_node = cgraph->nodes[i + 1];
+    patch_path = Path(__file__).resolve().parent.parent / "patch.py"
+    spec = importlib.util.spec_from_file_location("_bigcherry_rd17_patch_module", patch_path)
+    if spec is None or spec.loader is None:
+        raise Rd17CorrectnessError(f"cannot load RD17 patch module at {patch_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-        const int out_nodes[] = { i + 1 };
-        if (mul_node->op == GGML_OP_MUL &&
-                mul_node->src[0] == mm_node &&
-                (mm_node->flags & GGML_TENSOR_FLAG_COMPUTE) &&
-                (mul_node->flags & GGML_TENSOR_FLAG_COMPUTE) &&
-                ggml_cuda_check_fusion_memory_ranges(cgraph, i, 2, out_nodes, 1)) {
-            const ggml_tensor * weights = mul_node->src[1];
-            if (weights->type == GGML_TYPE_F32 && ggml_is_contiguous(weights) &&
-                    weights->ne[0] == 1 && weights->ne[1] == mm_node->ne[1] &&
-                    ggml_are_same_shape(mm_node, mul_node) &&
-                    ggml_cuda_should_fuse_mul_mat_vec_q(mm_node)) {
-                ggml_cuda_mm_fusion_args_host fusion_data{};
-                fusion_data.x_scale             = weights;
-                fusion_data.x_scale_channel_dst = true;
 
-                ggml_cuda_mul_mat_vec_q(*cuda_ctx, mm_node->src[0], mm_node->src[1], mm_node->src[2], mul_node, &fusion_data);
-                return 1;
-            }
-        }
-    }
-
-"""
-
+_patch_module = _load_patch_module()
+_DETECT_ANCHOR = _patch_module._DETECT_ANCHOR
+_DETECT_BLOCK = _patch_module._DETECT_BLOCK
 _DETECT_NEW = _DETECT_BLOCK + _DETECT_ANCHOR
 
 _CONTROL_EDITS: tuple[tuple[Path, str, str], ...] = (
     (Path("ggml/src/ggml-cuda/ggml-cuda.cu"), _DETECT_NEW, _DETECT_ANCHOR),
 )
-
-
-class Rd17CorrectnessError(RuntimeError):
-    """RD17 correctness evidence could not be produced, or failed to validate."""
 
 
 def apply_no_fusion_control(source_dir: Path) -> None:
