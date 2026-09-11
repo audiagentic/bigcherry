@@ -59,6 +59,8 @@ Supersedes: RD06
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd06
 
+2026-09-11: started a real gfx1201 build+bench campaign for patch 1203 (see PRBE02's notes for the same in-flight run -- same build, both items' evidence come from it). CAVEAT: this is a single-shape decode/PPL pass via llama-bench/llama-perplexity, not yet the per-shape/softcap matrix with balanced repeats and explicit gfx1100 non-selection controls this item's own acceptance criteria require. First real signal only, not closure.
+
 ## Change Log
 
 - 2026-09-09T10:53:39.131985+00:00 (created-by): Created by capability-rebaseline-v3
@@ -74,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd06
 - 2026-09-10T02:30:18.912456+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023037_three-rdna-boost-successors-no_6965
 - 2026-09-10T02:30:37.084094+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T23:50:30.925613+00:00 (updated-by): Updated: section:notes
+- chg_20260911_235103_caught-myself-running-a-real-h_5912
+- 2026-09-11T23:51:03.373803+00:00 (updated-by): Updated: section:ledger-events

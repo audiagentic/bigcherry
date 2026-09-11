@@ -59,6 +59,8 @@ Supersedes: RD05
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd05
 
+2026-09-11: started a real gfx1201 build+correctness campaign for patch 1203 (isolated scratch clone, resolve_source_composition/materialize_composition methodology, pin 28ff0958291ce3465fabd7bd679d4b0edd742bd9, HIP_VISIBLE_DEVICES=2 for the real gfx1201/R9700 device). Building llama-perplexity + llama-bench for BC-baseline (1203 excluded) and BC+1203 -- currently in progress, not yet complete. IMPORTANT CAVEAT recorded honestly before results land: this initial pass is a generic PPL-equality correctness check + llama-bench timing, NOT yet the specific targeted-head-size (192/256/320/512/576) graph/non-graph/loaded correctness matrix this item's own acceptance criteria require. Treat this run as a first real signal, not closure of PRBE02 -- the full targeted correctness matrix remains separate, not-yet-done work regardless of this pass's outcome.
+
 ## Change Log
 
 - 2026-09-09T10:53:35.078709+00:00 (created-by): Created by capability-rebaseline-v3
@@ -74,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd05
 - 2026-09-10T02:30:13.076053+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023037_three-rdna-boost-successors-no_6965
 - 2026-09-10T02:30:37.067104+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T23:50:28.466918+00:00 (updated-by): Updated: section:notes
+- chg_20260911_235103_caught-myself-running-a-real-h_5912
+- 2026-09-11T23:51:03.367650+00:00 (updated-by): Updated: section:ledger-events
