@@ -66,6 +66,7 @@ quantisation = "Q8_0"
 parameters = "27B"
 size-bytes = 29047086048
 mtp = true
+benchmark-topology = "tensor-2"
 notes = "Large tier, dual-GPU (-sm tensor) only: ~13GB/GPU, so control and subject servers cannot run concurrently on 24.5GB cards. RD73's lane. Q8_0 rather than a K-quant so quantisation error is not confounded with the effect under test."
 
 [[models]]
@@ -86,4 +87,16 @@ quantisation = "Q6_K"
 parameters = "9B"
 size-bytes = 7684551008
 mtp = true
+benchmark-topology = "single"
 notes = "CROSS-ARCHITECTURE REFERENCE lane, added 2026-09-05. Its job is to be the model held CONSTANT while architecture varies, so an architecture-transfer result is not confounded by also changing the model. That requires fitting the SMALLEST supported card: gfx1030 (RX 6900 XT) has 16GiB, so tierL-qwen27b-q8 at 29GB is impossible there and cannot serve this role. At 7.7GB this fits gfx1030, gfx1100 and gfx1201 with real headroom for KV. Dense and MTP-capable, so it exercises the same speculative-verify workload the existing lanes use. Stock Q6_K deliberately -- not a UD/APEX derived quant -- because a reference lane should not carry an unusual quantisation as a hidden variable."
+
+[[models]]
+id = "tierM-ministral14b-q4km"
+family = "ministral-3-14b"
+path = "ministral-3-14b/gguf/Ministral-3-14B-Instruct-2512-Q4_K_M.gguf"
+quantisation = "Q4_K_M"
+parameters = "14B"
+size-bytes = 8239067840
+mtp = false
+benchmark-topology = "single"
+notes = "PVPS02 (2026-09-11): standard benchmark-matrix Mistral-family lane, real file size confirmed on Brutus (not invented). 7.7GiB fits gfx1030/gfx1100/gfx1201 single-GPU with headroom for KV, same sizing logic as tierB-qwen9b-q6k. Not MTP-capable -- decode/prefill paired benchmarking only, no speculative-verify workload."
