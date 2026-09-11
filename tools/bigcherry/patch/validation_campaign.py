@@ -1324,6 +1324,123 @@ def run_rd19_ppl_check(
     return {"result": result, "artifact": artifact_ref}
 
 
+def _load_rd26_correctness_module() -> object:
+    """Dynamically load the real RD26 correctness producer (patches/
+    1210_rd26_bitidentical_decode_verify_standalone/validation/rd26_correctness.py)."""
+    module_path = (
+        REPO_ROOT / "patches" / "1210_rd26_bitidentical_decode_verify_standalone"
+        / "validation" / "rd26_correctness.py"
+    )
+    if not module_path.is_file():
+        raise PatchCampaignError(f"rd26 correctness producer not found at {module_path}")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bigcherry_rd26_correctness", module_path)
+    if spec is None or spec.loader is None:
+        raise PatchCampaignError(f"cannot load rd26 correctness producer at {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_rd26_ppl_check(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, model: Path, corpus: Path, run_dir: Path, _module: object | None = None,
+) -> dict[str, object]:
+    """RD26's real correctness producer, orchestrated -- see rd26_correctness.py's
+    own module docstring for the real, honestly-stated scope limit: this
+    proves no ordinary-decode regression from the two ported kernel-
+    routing hunks, NOT the patch's actual cross-batch-size determinism
+    claim (decode vs speculative-verify logits), which needs a materially
+    different test structure not implemented here. No bespoke control-
+    variant worktree needed (same reasoning as RD13/RD19/RD43)."""
+    from bigcherry.patch import source as psi
+
+    rd26_correctness = _module or _load_rd26_correctness_module()
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", focal="1210_rd26_bitidentical_decode_verify_standalone",
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError("rd26 ppl check: control and subject resolved different base revisions")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    ppl_build_root = build_root / "rd26-ppl-check"
+    subject_bin = build_tree(
+        name="rd26-ppl-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name="rd26-ppl-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
+        extra_cmake_args=[],
+    )
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd26-ppl-subject", source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd26-ppl-control", source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence,
+        patch_id="1210_rd26_bitidentical_decode_verify_standalone",
+    )
+
+    def _ppl_runner(argv, **kwargs):
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
+    try:
+        comparison = rd26_correctness.require_ppl_equality(
+            subject_binary=subject_bin / f"llama-perplexity{exe}",
+            control_binary=control_bin / f"llama-perplexity{exe}",
+            model=model, corpus=corpus, runner=_ppl_runner,
+        )
+        result = {"check": "ppl_equality", "passed": True, "detail": "within tolerance (ordinary-decode regression check only -- see scope limit)"}
+    except rd26_correctness.PerplexityError as exc:
+        comparison = None
+        result = {"check": "ppl_equality", "passed": False, "detail": str(exc)}
+
+    doc = {
+        **result,
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "comparison": rd26_correctness.comparison_to_dict(comparison) if comparison else None,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd26-ppl-check.json", doc)
+    _print(
+        f"rd26 ppl_equality (ordinary-decode regression only): "
+        f"{'PASS' if result['passed'] else 'FAIL'} -- {artifact_ref['path']}"
+    )
+    return {"result": result, "artifact": artifact_ref}
+
+
 def run_rd08_contract_trigger(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
