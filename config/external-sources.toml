@@ -564,7 +564,7 @@ commit = "8cdf1ab081384aa1786bfff3a45e0ec341f9fd52"
 title = "cuda : fix MTP batch-vs-seq consistency for fused kernels and gfx1151 mmvq"
 plan-item = "RD25"
 status = "planned"
-note = "new in snapshot v2; CORRECTNESS fix, touches mmvq.cu - required before porting RD12/RD21 (and audit RD08)"
+note = "new in snapshot v2; CORRECTNESS fix, touches mmvq.cu - required before porting RD12/RD21 (and audit RD08). REAL BLOCKER FOUND (2026-09-11, PRBE11 investigation): this commit's diff modifies 3 kernel functions (ssm_gate_beta_fused_q8_0, ssm_conv_l2_gatebeta_fused, shexp_down_gated_q8_0) that do not exist anywhere in this project's pinned vendor tree, tracked sources, or any existing/planned patch (grep-verified). Root cause (git log -S against the fork's full history): those kernels were introduced by a SEPARATE, completely untracked fork commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb (\"rdna-boosts: block 08: fused-core prefill kernels and GPU bit-identical\", stew675-rdna-boosts/rdna-boosts) -- 1585 insertions across 10 files, an order of magnitude larger than RD25 itself, never tracked/reviewed. RD25 genuinely CANNOT be ported until \"block 08\" is tracked, reviewed, and ported first, as its own dedicated multi-session effort -- do not attempt to guess anchors against it."
 
 [[sources.tracked]]
 commit = "93510434f34ef48194e8d2e6fcc4a22289c3b8d8"
