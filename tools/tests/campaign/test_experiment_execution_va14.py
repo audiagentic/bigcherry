@@ -290,7 +290,10 @@ class RequireDeviceVisibilityTests(unittest.TestCase):
         self.assertEqual(dv.gpu_count, 2)
         self.assertEqual(
             dv.document(),
-            {"hip_visible_devices": ["0", "1"], "rocr_visible_devices": ["0", "1"], "gpu_count": 2},
+            # GPT review (req_8429aa8e0d35496e): rocr_visible_devices must
+            # NOT fabricate a copy of the HIP value -- this class never
+            # sets/validates ROCR, so the honest value is None.
+            {"hip_visible_devices": ["0", "1"], "rocr_visible_devices": None, "gpu_count": 2},
         )
 
     def test_order_is_preserved_not_sorted(self) -> None:

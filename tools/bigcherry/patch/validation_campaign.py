@@ -50,6 +50,14 @@ from bigcherry.campaign.bench_runner import (  # noqa: F401
 )
 from bigcherry.experiment.attestation import ExecutionIdentity
 from bigcherry.experiment.server_execution import AttestedServerSession
+
+# GPT review (req_8429aa8e0d35496e, 2026-09-11): every RD73 server session
+# governed by this module's HIP-only selector contract (require_device_
+# visibility()/DeviceVisibility, see PNRO17) must explicitly unset an
+# inherited ROCR_VISIBLE_DEVICES, not merely avoid setting one -- ambient
+# env still reaches ServerRunner.launch() (dict(os.environ) + env_unset,
+# then env_overrides) otherwise, reproducing the double-filtering bug.
+_ROCR_VISIBLE_DEVICES_UNSET: tuple[str, ...] = ("ROCR_VISIBLE_DEVICES",)
 from bigcherry.patch.activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -1273,6 +1281,15 @@ def run_paired_llama_benchmark(
     for key in list(clean_env):
         if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
             clean_env.pop(key, None)
+    # GPT review (req_8429aa8e0d35496e, 2026-09-11): sanitize_environment()
+    # does not strip ROCR_VISIBLE_DEVICES, so an ambient value inherited
+    # from the invoking shell (e.g. left over from an earlier command)
+    # would otherwise reach this measured process even though this
+    # module's whole selector contract is HIP-only now (require_device_
+    # visibility()/DeviceVisibility, see PNRO17) -- reproducing the exact
+    # double-filtering bug that contract exists to prevent. Unconditional:
+    # ROCR_VISIBLE_DEVICES has no purpose in this harness any more.
+    clean_env.pop("ROCR_VISIBLE_DEVICES", None)
     if env_overrides:
         clean_env.update(env_overrides)
 
@@ -1419,13 +1436,23 @@ def run_rd58_state_restore_evidence(
 
     # GPT direction (session ses_5bbee8ce5c9a4265): preserve ambient
     # dual-GPU visibility -- unlike RD04/RD08's single-GPU producers,
-    # this must NOT restrict HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES
-    # (sanitize_environment() never touches those; it only strips stale
-    # GGML_HIP_DISPATCH_*/FORCE_*/TUNE_* overrides, same as RD04/RD08).
+    # this must NOT restrict HIP_VISIBLE_DEVICES (sanitize_environment()
+    # never touches it; it only strips stale GGML_HIP_DISPATCH_*/
+    # FORCE_*/TUNE_* overrides, same as RD04/RD08).
     env = sanitize_environment(_hip_env(hip_path), mode="stock")
     for key in list(env):
         if key.startswith("BIGCHERRY_"):
             env.pop(key, None)
+    # GPT review (req_8429aa8e0d35496e, 2026-09-11): this call's own
+    # preflight (require_device_visibility() in run(), see VA05/GPT
+    # round 2) validates only HIP_VISIBLE_DEVICES now (see PNRO17) --
+    # an ambient ROCR_VISIBLE_DEVICES left over from an unrelated
+    # earlier command, inconsistent with the ambient HIP selection,
+    # would otherwise reach this launch unchecked and reproduce the
+    # double-filtering bug. HIP_VISIBLE_DEVICES alone already exposes
+    # the real dual-GPU visibility this function needs; ROCR adds no
+    # value, only risk -- strip it unconditionally.
+    env.pop("ROCR_VISIBLE_DEVICES", None)
     env["GGML_CUDA_REGISTER_HOST"] = "1"
 
     def _command(binary: Path) -> list[str]:
@@ -1907,6 +1934,7 @@ def run_rd73_mtp_server_lane(
             binary=binaries[arm], model=model, expected=expected_execution,
             host=host, port=ports[arm],
             extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
+            env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
         )
         with session:
             transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
@@ -2009,6 +2037,7 @@ def run_rd73_decode_control_lane(
             host=host, port=ports[arm],
             extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
             env_overrides=(dict(selector_env) if selector_env else None),
+            env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
         )
         with session:
             metrics = run_bench_runner_server_bench(
@@ -2107,6 +2136,7 @@ def run_rd73_resource_burst_session(
         binary=subject_binary, model=model, expected=expected_execution,
         host=host, port=port,
         extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
+        env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
     )
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
     config = sc.SessionConfig(
