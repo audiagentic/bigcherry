@@ -31,6 +31,12 @@ class _FakeRow:
         self.shape_name = shape_name
         self.seed = seed
         self.ok = ok
+        self.subject_status = "ok"
+        self.control_status = "ok" if ok else "ok"
+        self.subject_digest = None
+        self.control_digest = None
+        self.subject_metric = None
+        self.control_metric = None
 
 
 class _Rd08CorrectnessError(RuntimeError):
@@ -42,7 +48,14 @@ class _FakeRd08CorrectnessModule:
 
     def __init__(self, *, fail: bool = False) -> None:
         self._fail = fail
-        self.rows = tuple(_FakeRow(f"shape{i}", seed, True) for i in range(2) for seed in (1, 2))
+        ok_rows = tuple(_FakeRow(f"shape{i}", seed, True) for i in range(2) for seed in (1, 2))
+        self.rows = ok_rows
+        # GPT review (req_3c98f154389148bb): run_rd08_contract_correctness()
+        # now derives pass/fail from collect_all_rd08_correctness_rows()
+        # directly (never raises) rather than from a raising call -- the
+        # fake mirrors that: a failing run returns all rows with the FIRST
+        # one not-ok, matching the real module's non-raising collector.
+        self.failing_rows = (_FakeRow("shape0", 1, False),) + ok_rows[1:]
 
     def materialize_rd08_variants(self, *, base_repo, worktree_root, base_revision):
         return Path("subject_src"), Path("control_src")
@@ -51,6 +64,17 @@ class _FakeRd08CorrectnessModule:
         if self._fail:
             raise self.Rd08CorrectnessError("mismatch at shape=shape0 seed=1")
         return self.rows
+
+    def collect_all_rd08_correctness_rows(self, *, subject_binary, control_binary, runner=None):
+        return self.failing_rows if self._fail else self.rows
+
+    def row_to_diagnostic_dict(self, row):
+        return {
+            "shape": row.shape_name, "seed": row.seed, "ok": row.ok,
+            "subject_status": row.subject_status, "control_status": row.control_status,
+            "subject_input_digest": None, "control_input_digest": None,
+            "subject_metric": None, "control_metric": None,
+        }
 
 
 class _FakeBuildEvidence:
@@ -143,7 +167,21 @@ class RunRd08ContractCorrectnessTests(unittest.TestCase):
             build_env={}, run_dir=run_dir, _module=_FakeRd08CorrectnessModule(fail=True),
         )
         self.assertFalse(result["results"]["bit_identical"].passed)
-        self.assertIn("mismatch", result["results"]["bit_identical"].detail)
+        # GPT review (req_3c98f154389148bb): the detail now comes from the
+        # first non-.ok row in collect_all_rd08_correctness_rows()'s
+        # results, not a raised exception's message -- this fake's
+        # failing_rows puts shape0/seed=1 first, matching the real
+        # module's require_rd08_correctness_evidence() failure-message
+        # shape (same wording, generated the same way at the call site).
+        detail = result["results"]["bit_identical"].detail
+        self.assertIn("shape0", detail)
+        self.assertIn("failed", detail)
+        # And the rows persisted in the artifact must be the FULL set
+        # (all 4 fake rows), not truncated at the first failure -- the
+        # whole point of this review finding.
+        import json
+        artifact_doc = json.loads((run_dir / "artifacts" / "rd08-correctness.json").read_text())
+        self.assertEqual(len(artifact_doc["rows"]), 4)
 
 
 class RunRd08ContractTriggerTests(unittest.TestCase):

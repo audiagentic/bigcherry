@@ -319,5 +319,84 @@ class RequireRd08CorrectnessEvidenceTests(unittest.TestCase):
         self.assertIn("seed=1", message)
 
 
+class CollectAllRd08CorrectnessRowsTests(unittest.TestCase):
+    """GPT review (req_3c98f154389148bb, 2026-09-11): collect_all_rd08_
+    correctness_rows() must run every (shape, seed) pair and never raise,
+    even when an early row fails -- the whole point being to retain full
+    diagnostic data for every row a real run actually executes, not just
+    stop at the first mismatch."""
+
+    def test_never_raises_and_returns_every_row_even_with_an_early_mismatch(self):
+        mismatching_stderr_subject = _digest_line(digest="abc") + _metric_line(
+            backend1_digest="deadbeef", backend2_digest="cafef00d"
+        )
+        mismatching_stderr_control = _digest_line(digest="abc") + _metric_line(
+            backend1_digest="00000000", backend2_digest="cafef00d"
+        )
+        passing_stderr = _digest_line(digest="abc") + _metric_line(
+            backend1_digest="cafecafe", backend2_digest="beefbeef"
+        )
+
+        def runner(argv, **kwargs):
+            seed = kwargs.get("env", {}).get("BIGCHERRY_TEST_DETERMINISTIC_SEED")
+            binary = argv[0]
+            if seed == "1":
+                if binary == "subject-binary":
+                    return _completed(0, mismatching_stderr_subject)
+                return _completed(0, mismatching_stderr_control)
+            return _completed(0, passing_stderr)
+
+        rows = rd08.collect_all_rd08_correctness_rows(
+            subject_binary=Path("subject-binary"),
+            control_binary=Path("control-binary"),
+            shapes=(rd08.RD08_SHAPES[0],),
+            seeds=(1, 2, 3),
+            runner=runner,
+        )
+        self.assertEqual(len(rows), 3)
+        self.assertFalse(rows[0].ok)
+        self.assertTrue(rows[1].ok)
+        self.assertTrue(rows[2].ok)
+
+
+class RowToDiagnosticDictTests(unittest.TestCase):
+    def test_includes_full_numerical_metrics_not_just_ok(self):
+        stderr_subject = _digest_line(digest="abc") + _metric_line(
+            backend1_digest="deadbeef", backend2_digest="cafef00d", err="1e-05", max_abs="0.002",
+        )
+        stderr_control = _digest_line(digest="abc") + _metric_line(
+            backend1_digest="deadbeef", backend2_digest="00000000", err="2e-06", max_abs="0.001",
+        )
+
+        def runner(argv, **kwargs):
+            return _completed(0, stderr_subject if argv[0] == "subject-binary" else stderr_control)
+
+        row = rd08.compare_one_shape_seed(
+            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0], seed=1, runner=runner,
+        )
+        doc = rd08.row_to_diagnostic_dict(row)
+        self.assertEqual(doc["shape"], "ffn")
+        self.assertEqual(doc["seed"], 1)
+        self.assertTrue(doc["ok"])
+        self.assertIsNotNone(doc["subject_metric"])
+        self.assertIsNotNone(doc["control_metric"])
+        self.assertAlmostEqual(doc["subject_metric"]["err"], 1e-05)
+        self.assertAlmostEqual(doc["control_metric"]["err"], 2e-06)
+        self.assertAlmostEqual(doc["subject_metric"]["max_abs"], 0.002)
+        self.assertEqual(doc["subject_metric"]["backend1_digest"], "deadbeef")
+
+    def test_handles_missing_metric_without_crashing(self):
+        row = rd08.compare_one_shape_seed(
+            subject_binary=Path("subject-binary"), control_binary=Path("control-binary"),
+            shape=rd08.RD08_SHAPES[0], seed=1,
+            runner=lambda argv, **kwargs: _completed(1, "no digests here"),
+        )
+        doc = rd08.row_to_diagnostic_dict(row)
+        self.assertIsNone(doc["subject_metric"])
+        self.assertIsNone(doc["control_metric"])
+        self.assertFalse(doc["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

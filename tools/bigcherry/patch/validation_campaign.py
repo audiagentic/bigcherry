@@ -815,22 +815,42 @@ def run_rd08_contract_correctness(
         env = {**os.environ, **(kwargs.pop("env", None) or {})}
         return subprocess.run(argv, env=env, **kwargs)
 
-    try:
-        rows = rd08_correctness.require_rd08_correctness_evidence(
-            subject_binary=subject_bin / f"test-backend-ops{exe}",
-            control_binary=control_bin / f"test-backend-ops{exe}",
-            runner=_correctness_runner,
-        )
+    # GPT review (req_3c98f154389148bb, 2026-09-11): run every (shape,
+    # seed) pair exactly once via the non-raising collector -- not once
+    # for the gate and again for diagnostics, which would double real
+    # hardware time -- and derive the SAME pass/fail semantics
+    # require_rd08_correctness_evidence() would have raised on (first
+    # non-.ok row) from those results, while retaining every row's full
+    # numerical metrics (err/max_abs/threshold/n, not just a bool) even
+    # when the run fails early. The gate itself is unchanged: still
+    # exact per-row .ok (bit-identical digest equality); this only stops
+    # discarding the rows that already ran successfully before a later
+    # failure, or that ran cleanly alongside one.
+    all_rows = rd08_correctness.collect_all_rd08_correctness_rows(
+        subject_binary=subject_bin / f"test-backend-ops{exe}",
+        control_binary=control_bin / f"test-backend-ops{exe}",
+        runner=_correctness_runner,
+    )
+    rows_doc = [rd08_correctness.row_to_diagnostic_dict(r) for r in all_rows]
+    failing = next((r for r in all_rows if not r.ok), None)
+    if failing is None:
         result = experiment_contract.CorrectnessResult(
             check="bit_identical", passed=True,
-            detail=f"{len(rows)} (shape,seed) pairs bit-identical",
+            detail=f"{len(all_rows)} (shape,seed) pairs bit-identical",
         )
-        rows_doc = [{"shape": r.shape_name, "seed": r.seed, "ok": r.ok} for r in rows]
-    except rd08_correctness.Rd08CorrectnessError as exc:
+    else:
         result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False, detail=str(exc),
+            check="bit_identical", passed=False,
+            detail=(
+                f"RD08 correctness evidence failed for shape={failing.shape_name!r} "
+                f"seed={failing.seed}: subject_status={failing.subject_status} "
+                f"control_status={failing.control_status} "
+                f"subject_input_digest={failing.subject_digest.digest if failing.subject_digest else None} "
+                f"control_input_digest={failing.control_digest.digest if failing.control_digest else None} "
+                f"subject_output_digest={failing.subject_metric.backend1_digest if failing.subject_metric else None} "
+                f"control_output_digest={failing.control_metric.backend1_digest if failing.control_metric else None}"
+            ),
         )
-        rows_doc = []
 
     correctness_doc = {
         "check": "bit_identical", "passed": result.passed, "detail": result.detail,
