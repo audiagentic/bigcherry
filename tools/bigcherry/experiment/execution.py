@@ -23,8 +23,10 @@ just the patch.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable
 
@@ -53,6 +55,125 @@ WORKLOAD_METRIC: dict[str, str] = {
     # scoping, session ses_1e0bd1ea53db4311).
     "mtp_verify": "mtp_wall_tps",
 }
+
+
+class DeviceVisibilityError(ValueError):
+    """Raised by require_device_visibility() on any unsafe device-selector
+    state. A ValueError subclass, not LaneExecutionError -- this fires
+    before any process launch, not during/after one."""
+
+
+@dataclass(frozen=True)
+class DeviceVisibility:
+    """A validated, ordered real-GPU selector -- the explicit device pool
+    a paired-benchmark cell was launched against. PVPS02 (2026-09-11,
+    dev-gpt-agent design + self-critique, docs/planning/active/
+    patching-validation-package-standard/PVPS02.md): extracted from
+    run_rd58_state_restore_evidence()'s original inline HIP_VISIBLE_DEVICES/
+    ROCR_VISIBLE_DEVICES guard so every paired-benchmark path can share one
+    fail-closed contract instead of reimplementing it per patch.
+
+    device_ids is ORDERED and that order is load-bearing: an N-device cell
+    consumes the first N ids, so e.g. "1,0" deliberately differs from "0,1"
+    for a tensor-split cell (which physical card ends up in which tensor-
+    split slot)."""
+
+    device_ids: tuple[str, ...]
+    hip_visible_devices: str
+    rocr_visible_devices: str
+
+    @property
+    def gpu_count(self) -> int:
+        return len(self.device_ids)
+
+    def document(self) -> dict[str, object]:
+        """The same observed_devices shape run_rd58_state_restore_evidence()
+        already records today -- kept identical so a future caller can
+        adopt this primitive without changing evidence schema."""
+        return {
+            "hip_visible_devices": list(self.device_ids),
+            "rocr_visible_devices": list(self.device_ids),
+            "gpu_count": self.gpu_count,
+        }
+
+
+def require_device_visibility(
+    *,
+    context: str,
+    env: Mapping[str, str] | None = None,
+    exact_count: int | None = None,
+    minimum_count: int = 1,
+) -> DeviceVisibility:
+    """Fail closed before any hardware use unless HIP_VISIBLE_DEVICES and
+    ROCR_VISIBLE_DEVICES are both explicitly set, consistent with each
+    other, free of duplicates, and expose enough real devices.
+
+    PVPS02 step 1 (see DeviceVisibility's own docstring): a standalone,
+    unit-tested extraction only. Nothing calls this yet -- RD58's own
+    inline guard and RD73's lane functions are deliberately NOT wired to
+    it in this change; wiring them is its own later, dedicated,
+    regression-tested step (several existing tests depend on RD58's
+    producer function staying callable WITHOUT selector validation, and
+    RD73's hardware-free lane tests call functions without HIP/ROCR setup
+    at all -- rewiring either now would break currently-passing tests for
+    no functional gain yet).
+
+    This intentionally goes stricter than RD58's original inline check:
+    it also rejects a blank entry inside the list (e.g. "0,,1" or a
+    trailing comma), which the original split-and-filter silently
+    tolerated.
+    """
+    source = os.environ if env is None else env
+
+    hip_raw = source.get("HIP_VISIBLE_DEVICES")
+    rocr_raw = source.get("ROCR_VISIBLE_DEVICES")
+    if not hip_raw or not rocr_raw:
+        raise DeviceVisibilityError(
+            f"{context}: HIP_VISIBLE_DEVICES and ROCR_VISIBLE_DEVICES must "
+            "both be explicitly set (an unset/ambient-default device list "
+            "cannot be trusted for a real-hardware measurement)"
+        )
+
+    def _parse(name: str, raw: str) -> tuple[str, ...]:
+        parts = raw.split(",")
+        if any(not part.strip() for part in parts):
+            raise DeviceVisibilityError(
+                f"{context}: {name}={raw!r} contains a blank device id "
+                "(e.g. a stray comma) -- every entry must be a real device id"
+            )
+        return tuple(part.strip() for part in parts)
+
+    hip_ids = _parse("HIP_VISIBLE_DEVICES", hip_raw)
+    rocr_ids = _parse("ROCR_VISIBLE_DEVICES", rocr_raw)
+
+    if hip_ids != rocr_ids:
+        raise DeviceVisibilityError(
+            f"{context}: HIP_VISIBLE_DEVICES ({hip_raw!r}) and "
+            f"ROCR_VISIBLE_DEVICES ({rocr_raw!r}) must match exactly, "
+            "including order"
+        )
+    if len(set(hip_ids)) != len(hip_ids):
+        raise DeviceVisibilityError(
+            f"{context}: HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES "
+            f"({hip_raw!r}) contains duplicate device ids -- this does not "
+            "expose distinct real GPUs"
+        )
+    if len(hip_ids) < minimum_count:
+        raise DeviceVisibilityError(
+            f"{context}: requires {minimum_count}+ GPUs; "
+            f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose only "
+            f"{len(hip_ids)} ({hip_raw!r})"
+        )
+    if exact_count is not None and len(hip_ids) != exact_count:
+        raise DeviceVisibilityError(
+            f"{context}: requires exactly {exact_count} GPU(s); "
+            f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose "
+            f"{len(hip_ids)} ({hip_raw!r})"
+        )
+
+    return DeviceVisibility(
+        device_ids=hip_ids, hip_visible_devices=hip_raw, rocr_visible_devices=rocr_raw,
+    )
 
 
 def metric_for_workload(workload: str) -> str:
