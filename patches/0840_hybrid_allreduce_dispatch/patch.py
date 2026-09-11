@@ -74,7 +74,7 @@ adoption.
 """
 
 GROUP = "core"
-STATE = "untested"
+STATE = "validated"
 
 from bigcherry.patcher import Edit, FilePatch
 
