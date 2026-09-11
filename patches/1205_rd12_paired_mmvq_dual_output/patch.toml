@@ -9,3 +9,4 @@ external-source = "stew675-rdna-boosts"
 plan-ids = ["RD12"]
 requires = []
 conflicts = ["1207_rd17_moe_topk_down_fold"]
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]

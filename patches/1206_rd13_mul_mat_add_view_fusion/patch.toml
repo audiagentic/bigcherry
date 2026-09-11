@@ -9,3 +9,4 @@ external-source = "stew675-rdna-boosts"
 plan-ids = ["RD13"]
 requires = []
 conflicts = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
