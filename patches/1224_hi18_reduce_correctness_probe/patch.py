@@ -36,10 +36,11 @@ GROUP = "core"
 # Mechanism compiled and hardware-validated on Brutus (63/63 synthetic
 # RCCL/META/AUTO executions across 6 numerical patterns, 3 seeds, and
 # swapped device order -- see docs/planning/active/hip-autotune/HI18.md).
-# STATE remains "untested" under the HI83 patch-validation contract until
-# the required tracked validation record exists AND the real recorded
-# production signatures (not this synthetic stand-in shape) have been run.
-STATE = "untested"
+# GP04 (2026-09-02) closed the remaining gate this comment named: all 10
+# real recorded production reduction signatures (9 from a real Qwen3.8-27B
+# MTP dual-XTX capture plus RV59's signature) run across all 3 providers,
+# 540/540 real hardware executions, zero failures, D=2 scope. See README.md.
+STATE = "validated"
 
 from bigcherry.patcher import Edit, FilePatch
 
