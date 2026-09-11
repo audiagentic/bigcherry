@@ -126,10 +126,15 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # A patch can be validated without being shipped -- putting a patch into
     # production is a separate decision from establishing that its evidence
     # holds. Collapsing the two would force every validated patch to ship
-    # the moment it qualified. Currently empty: RD73 (the only patch that
-    # was ever in this set) was DEMOTED 2026-09-09 -- see RETIRED_RDNA_PATCHES
-    # below and HI162 (docs/planning/completed/hip-autotune/HI162.md).
-    VALIDATED_RDNA_PATCHES = frozenset()
+    # the moment it qualified. RD73 (the only patch that was ever in this
+    # set before) was DEMOTED 2026-09-09 -- see RETIRED_RDNA_PATCHES below
+    # and HI162 (docs/planning/completed/hip-autotune/HI162.md). RD19
+    # (2026-09-11): patch.toml's state field had never been synced to
+    # config/external-sources.toml's own real, already-recorded
+    # "ported-validated" promotion (gpt-dev-agent PROMOTE verdict, session
+    # ses_866bf44313864664, 2026-08-23) -- see the patch's own README.md
+    # for the full real evidence. Corrected here to match, not a new claim.
+    VALIDATED_RDNA_PATCHES = frozenset({"1200_rd19_single_gpu_meta_bypass"})
     # Patches actually composed into [patch-set.validated-enhancements],
     # which [source.bigcherry] builds on top of framework -- so the release
     # build genuinely runs them. Shipping is a separate, deliberate axis

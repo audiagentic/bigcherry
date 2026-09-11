@@ -1,7 +1,7 @@
 schema = 1
 id = "1200_rd19_single_gpu_meta_bypass"
 order = 1200
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
@@ -14,5 +14,5 @@ requires-options = []
 forbids-options = []
 subsystems = []
 hardware = []
-validation-architectures = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
 backends = []
