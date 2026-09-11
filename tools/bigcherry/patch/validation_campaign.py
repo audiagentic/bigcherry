@@ -58,6 +58,17 @@ from bigcherry.experiment.server_execution import AttestedServerSession
 # env still reaches ServerRunner.launch() (dict(os.environ) + env_unset,
 # then env_overrides) otherwise, reproducing the double-filtering bug.
 _ROCR_VISIBLE_DEVICES_UNSET: tuple[str, ...] = ("ROCR_VISIBLE_DEVICES",)
+
+
+def _hip_only(env_overrides: "dict[str, str] | None") -> "dict[str, str] | None":
+    """Defense in depth alongside env_unset=_ROCR_VISIBLE_DEVICES_UNSET:
+    strip ROCR_VISIBLE_DEVICES from a caller-supplied overrides dict too,
+    so a future direct caller passing it through selector_env/env_overrides
+    cannot reintroduce the double-filtering hazard via override-ordering
+    (ServerRunner.launch() applies env_unset BEFORE env_overrides)."""
+    if not env_overrides:
+        return None
+    return {k: v for k, v in env_overrides.items() if k != "ROCR_VISIBLE_DEVICES"}
 from bigcherry.patch.activation import ActivationEvidence, verdict, write_activation_json
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -1267,13 +1278,16 @@ def run_paired_llama_benchmark(
     ``env_overrides`` (step 4): applied on top of the sanitized/stripped
     environment for THIS call's own subprocesses only -- never mutates
     the real process-global os.environ, so a multi-cell caller (the
-    generic matrix) can give each cell its own HIP_VISIBLE_DEVICES/
-    ROCR_VISIBLE_DEVICES without any risk of one cell's selector leaking
-    into the next. ``execution_identity`` (step 4): passed straight
-    through to run_paired_lane(), which attests every measured process
-    before accepting its metric -- proves architecture + device COUNT,
-    not physical card identity (llama-bench's own ROCm attestation never
-    carries a device locator; see DeviceVisibility's docstring)."""
+    generic matrix) can give each cell its own HIP_VISIBLE_DEVICES
+    without any risk of one cell's selector leaking into the next.
+    ROCR_VISIBLE_DEVICES is never a real selector here (see below) --
+    a caller must not pass it in env_overrides either; if one does, it
+    is stripped again, not honored. ``execution_identity`` (step 4):
+    passed straight through to run_paired_lane(), which attests every
+    measured process before accepting its metric -- proves architecture
+    + device COUNT, not physical card identity (llama-bench's own ROCm
+    attestation never carries a device locator; see DeviceVisibility's
+    docstring)."""
     from bigcherry.experiment import execution as experiment_execution
     from bigcherry.campaign.benchmark import sanitize_environment
 
@@ -1281,17 +1295,19 @@ def run_paired_llama_benchmark(
     for key in list(clean_env):
         if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
             clean_env.pop(key, None)
-    # GPT review (req_8429aa8e0d35496e, 2026-09-11): sanitize_environment()
-    # does not strip ROCR_VISIBLE_DEVICES, so an ambient value inherited
-    # from the invoking shell (e.g. left over from an earlier command)
-    # would otherwise reach this measured process even though this
-    # module's whole selector contract is HIP-only now (require_device_
-    # visibility()/DeviceVisibility, see PNRO17) -- reproducing the exact
-    # double-filtering bug that contract exists to prevent. Unconditional:
-    # ROCR_VISIBLE_DEVICES has no purpose in this harness any more.
-    clean_env.pop("ROCR_VISIBLE_DEVICES", None)
     if env_overrides:
         clean_env.update(env_overrides)
+    # GPT review (req_8429aa8e0d35496e / follow-up on req_d1ef22d846854960,
+    # 2026-09-11): sanitize_environment() does not strip ROCR_VISIBLE_DEVICES,
+    # so an ambient value inherited from the invoking shell would otherwise
+    # reach this measured process even though this module's whole selector
+    # contract is HIP-only now (require_device_visibility()/DeviceVisibility,
+    # see PNRO17) -- reproducing the exact double-filtering bug that
+    # contract exists to prevent. Stripped AFTER env_overrides is applied
+    # (not just before) so a caller cannot reintroduce the hazard by
+    # explicitly passing ROCR_VISIBLE_DEVICES in env_overrides either --
+    # this key has no purpose in this harness any more, full stop.
+    clean_env.pop("ROCR_VISIBLE_DEVICES", None)
 
     raw_logs: list[dict[str, object]] = []
 
@@ -1890,7 +1906,7 @@ def run_rd73_mtp_server_lane(
     # -- see patches/1233.../README.md's "Historical evidence" section).
     #
     # PVPS02 step 7 (2026-09-11): ``selector_env`` carries the already-
-    # validated HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES pair from
+    # validated HIP_VISIBLE_DEVICES value from
     # run_rd73_contract_qualification()'s single require_device_visibility()
     # call (validate ONCE, not per-lane/per-request) -- ServerRunner
     # starts each server from ambient env then applies these overrides,
@@ -1899,6 +1915,12 @@ def run_rd73_mtp_server_lane(
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
     if selector_env:
         rd73_env.update(selector_env)
+    # GPT review follow-up (req_d1ef22d846854960, 2026-09-11): defense in
+    # depth alongside env_unset=_ROCR_VISIBLE_DEVICES_UNSET below -- a
+    # future direct caller passing ROCR_VISIBLE_DEVICES via selector_env
+    # must not be able to reintroduce it through env_overrides ordering
+    # (ServerRunner.launch() applies env_unset BEFORE env_overrides).
+    rd73_env.pop("ROCR_VISIBLE_DEVICES", None)
     ports = {"control": control_port, "subject": subject_port}
     binaries = {"control": control_binary, "subject": subject_binary}
     per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
@@ -2036,7 +2058,7 @@ def run_rd73_decode_control_lane(
             binary=binaries[arm], model=model, expected=expected_execution,
             host=host, port=ports[arm],
             extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
-            env_overrides=(dict(selector_env) if selector_env else None),
+            env_overrides=_hip_only(selector_env),
             env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
         )
         with session:
@@ -2132,6 +2154,12 @@ def run_rd73_resource_burst_session(
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
     if selector_env:
         rd73_env.update(selector_env)
+    # GPT review follow-up (req_d1ef22d846854960, 2026-09-11): defense in
+    # depth alongside env_unset=_ROCR_VISIBLE_DEVICES_UNSET below -- a
+    # future direct caller passing ROCR_VISIBLE_DEVICES via selector_env
+    # must not be able to reintroduce it through env_overrides ordering
+    # (ServerRunner.launch() applies env_unset BEFORE env_overrides).
+    rd73_env.pop("ROCR_VISIBLE_DEVICES", None)
     session = AttestedServerSession(
         binary=subject_binary, model=model, expected=expected_execution,
         host=host, port=port,
