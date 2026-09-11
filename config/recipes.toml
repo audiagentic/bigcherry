@@ -580,7 +580,7 @@ required = false
 [[trees]]
 name = "brutus"
 alias = "brutus"
-path = "/mnt/vault/development/llmhosts/bigcherry"
+path = "/mnt/vault/development/projects/bigcherry/workspaces/main"
 role = "campaign"
 required = true
 expected-tooling-revision = ""
