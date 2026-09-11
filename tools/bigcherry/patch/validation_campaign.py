@@ -1198,8 +1198,10 @@ def run_paired_llama_benchmark(
     workloads: tuple[str, ...] = ("decode", "prefill"),
     patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
     pairs: int = 3, log_context: str,
+    env_overrides: dict[str, str] | None = None,
+    execution_identity: "object | None" = None,
 ) -> PairedBenchmarkOutcome:
-    """PVPS02 step 2: the shared execution shape behind
+    """PVPS02 step 2/4: the shared execution shape behind
     run_rd04_benchmark_evidence()/run_rd08_validation_lanes() -- a pure,
     semantics-preserving extraction of their duplicated clean-env/runner/
     command/raw-log/paired-run logic (docs/planning/active/
@@ -1208,9 +1210,16 @@ def run_paired_llama_benchmark(
     do their own result-shaping (performance.json vs validation-lanes.json
     + LaneEffects) -- their own callers/tests see no behavior change.
 
-    Deliberately does NOT yet turn on execution_identity/attestation
-    (step 4) and does NOT yet read wiring from validation.toml (step 3) --
-    callers still pass patch_args/runtime_args explicitly."""
+    ``env_overrides`` (step 4): applied on top of the sanitized/stripped
+    environment for THIS call's own subprocesses only -- never mutates
+    the real process-global os.environ, so a multi-cell caller (the
+    generic matrix) can give each cell its own HIP_VISIBLE_DEVICES/
+    ROCR_VISIBLE_DEVICES without any risk of one cell's selector leaking
+    into the next. ``execution_identity`` (step 4): passed straight
+    through to run_paired_lane(), which attests every measured process
+    before accepting its metric -- proves architecture + device COUNT,
+    not physical card identity (llama-bench's own ROCm attestation never
+    carries a device locator; see DeviceVisibility's docstring)."""
     from bigcherry.experiment import execution as experiment_execution
     from bigcherry.campaign.benchmark import sanitize_environment
 
@@ -1218,6 +1227,8 @@ def run_paired_llama_benchmark(
     for key in list(clean_env):
         if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
             clean_env.pop(key, None)
+    if env_overrides:
+        clean_env.update(env_overrides)
 
     raw_logs: list[dict[str, object]] = []
 
@@ -1254,7 +1265,7 @@ def run_paired_llama_benchmark(
             metric=_PAIRED_BENCH_METRIC_NAME[workload],
             control_command=control_cmd, subject_command=subject_cmd,
             pattern=_PAIRED_BENCH_METRIC_PATTERN[workload], pairs=pairs,
-            runner=_make_runner(workload),
+            runner=_make_runner(workload), execution_identity=execution_identity,
         )
         commands[workload] = {"control": control_cmd, "subject": subject_cmd}
 
@@ -2360,6 +2371,8 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         "run_rd58_state_restore", "run_rd73_contract", "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
+    if args.amdgpu_targets is None:
+        raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
     targets = tuple(target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip())
     if not targets or any(not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets):
         raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
@@ -2527,6 +2540,161 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     return 0 if record["eligible_for_validated_state"] else 1
 
 
+_STANDARD_BENCHMARK_MODEL_IDS: tuple[str, ...] = (
+    "tierM-ministral14b-q4km", "tierB-qwen9b-q6k", "tierL-qwen27b-q8",
+)
+
+
+def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int:
+    """PVPS02 step 4: the generic --run-performance-benchmark entry point.
+
+    Deliberately does NOT go through the legacy --model/--manifest/one-
+    architecture tune/replay/stock/control/subject flow run() otherwise
+    builds -- that flow is keyed to exactly one amdgpu-targets value and
+    a single --model, neither of which fits a cross-architecture,
+    cross-model matrix. This materializes source ONCE (architecture-
+    independent) and builds one control/subject llama-bench binary PER
+    APPLICABLE ARCHITECTURE, reused across every model cell for that
+    architecture.
+
+    execution_identity/device-visibility enforcement is turned on here
+    for the FIRST time in this module (steps 1-3 deliberately left it
+    off) -- every cell fails closed before launch on a missing/
+    insufficient/malformed --device-map entry for its architecture, and
+    every measured process is attested for real architecture + device
+    count (not physical card identity -- see DeviceVisibility's own
+    docstring for why that distinction is load-bearing, never
+    overclaimed in evidence)."""
+    from bigcherry.experiment import attestation
+    from bigcherry.patch import source as psi
+
+    wiring = resolve_benchmark_wiring(descriptor)
+
+    requested_arches = tuple(args.benchmark_architecture or ())
+    if requested_arches:
+        architectures = requested_arches
+    else:
+        platform_targets = tuple(cfg.platforms["linux-multi"].targets)
+        architectures = tuple(
+            arch for arch in platform_targets if arch in descriptor.validation_architectures
+        )
+    if not architectures:
+        raise PatchCampaignError(
+            f"{descriptor.patch_id}: no applicable architecture -- pass --benchmark-architecture "
+            "explicitly, or declare validation-architectures overlapping "
+            "config/recipes.toml's platform.linux-multi targets"
+        )
+
+    model_ids = tuple(args.benchmark_model or _STANDARD_BENCHMARK_MODEL_IDS)
+    device_map = parse_device_map(list(args.device_map or ()))
+    model_root: Path = args.model_root
+
+    baseline_source = getattr(args, "baseline_source", "bigcherry")
+    control_revision, control_composition = psi.resolve_source_composition(
+        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        baseline_source, focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise RuntimeError("control and subject source plans resolved different base revisions")
+    base_revision = subject_revision
+    _print(f"performance benchmark: materializing control/subject source @ {base_revision[:12]} ...")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "control",
+        resolved_revision=base_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "subject",
+        resolved_revision=base_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+    )
+
+    cells: list[dict[str, object]] = []
+    build_root: Path = (args.build_root or args.workdir) / subject_src.name
+    for architecture in architectures:
+        generated_dir = build_root / architecture / "generated"
+        generate_registry(source=subject_src, amdgpu_targets=architecture, generated_dir=generated_dir)
+        control_bin = build_tree(
+            name=f"perf-control-{architecture}", hip_path=args.hip_path,
+            amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
+            source=control_src, extra_cmake_args=[],
+        )
+        subject_bin = build_tree(
+            name=f"perf-subject-{architecture}", hip_path=args.hip_path,
+            amdgpu_targets=architecture, workdir=build_root, targets=["llama-bench"],
+            source=subject_src, extra_cmake_args=[f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}"],
+        )
+        exe = ".exe" if sys.platform == "win32" else ""
+        control_binary = control_bin / f"llama-bench{exe}"
+        subject_binary = subject_bin / f"llama-bench{exe}"
+
+        for model_id in model_ids:
+            cell: dict[str, object] = {"architecture": architecture, "model": model_id}
+            try:
+                resolved_model = resolve_benchmark_model(
+                    model_id, model_root=model_root,
+                )
+            except PatchCampaignError as exc:
+                cell.update(status="skipped", reason=f"model resolution failed: {exc}")
+                cells.append(cell)
+                continue
+            try:
+                device_ids = resolve_device_pool(
+                    device_map, architecture, resolved_model.device_count,
+                )
+            except PatchCampaignError as exc:
+                cell.update(status="skipped", reason=str(exc))
+                cells.append(cell)
+                continue
+
+            env_overrides = {
+                "HIP_VISIBLE_DEVICES": ",".join(device_ids),
+                "ROCR_VISIBLE_DEVICES": ",".join(device_ids),
+            }
+            visibility = require_device_visibility(
+                context=f"performance-benchmark {architecture}/{model_id}",
+                env=env_overrides, exact_count=resolved_model.device_count,
+            )
+            execution_identity = attestation.ExecutionIdentity(
+                backend="ROCm", architectures=(architecture,) * resolved_model.device_count,
+            )
+            outcome = run_paired_llama_benchmark(
+                control_binary=control_binary, subject_binary=subject_binary,
+                model=resolved_model.path, hip_path=args.hip_path,
+                patch_args=wiring.patch_args, pairs=args.bench_repetitions,
+                log_context=f"performance-benchmark {architecture}/{model_id}",
+                env_overrides=env_overrides, execution_identity=execution_identity,
+            )
+            cell.update(
+                status="executed", device_visibility=visibility.document(),
+                commands=outcome.commands, raw_logs=outcome.raw_logs,
+                metrics={
+                    workload: {"stats": run.stats, "runs": list(run.runs)}
+                    for workload, run in outcome.runs.items()
+                },
+            )
+            cells.append(cell)
+
+    performance_doc = {
+        "patch_id": descriptor.patch_id, "executor": wiring.executor,
+        "architectures": list(architectures), "models": list(model_ids),
+        "cells": cells,
+    }
+    performance_path = args.workdir / "performance-matrix.json"
+    _atomic_write_json(performance_path, performance_doc)
+    executed = [c for c in cells if c["status"] == "executed"]
+    skipped = [c for c in cells if c["status"] == "skipped"]
+    _print(
+        f"performance benchmark matrix: {len(executed)} executed, {len(skipped)} skipped "
+        f"(of {len(cells)} planned cells) -- {performance_path}"
+    )
+    for cell in skipped:
+        _print(f"  skipped {cell['architecture']}/{cell['model']}: {cell['reason']}")
+    return 0 if executed else 1
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -2584,6 +2752,9 @@ def run(args: argparse.Namespace) -> int:
 
     if getattr(args, "framework_configuration", False):
         return _run_framework_configuration(args, descriptor, cfg)
+
+    if getattr(args, "run_performance_benchmark", False):
+        return _run_performance_benchmark(args, descriptor, cfg)
 
     worktree_root: Path = args.worktree_root
     # RV80/B6: the baseline is the source's EXPLICIT named composition from
@@ -3787,7 +3958,13 @@ def main(argv: list[str] | None = None) -> int:
                               "baseline; dependencies/conflicts remain enforced.")
     parser.add_argument("--model", type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
-    parser.add_argument("--amdgpu-targets", required=True, help="e.g. gfx1100 or gfx1201")
+    parser.add_argument(
+        "--amdgpu-targets", default=None,
+        help="e.g. gfx1100 or gfx1201 -- required for every mode EXCEPT "
+             "--run-performance-benchmark, which resolves its own architecture list "
+             "(--benchmark-architecture or the recipes/validation-architectures "
+             "intersection) per cell.",
+    )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--workdir", required=True, type=Path,
                          help="per-run campaign output (record/tune/promote/replay/bench/report)")
@@ -3871,9 +4048,55 @@ def main(argv: list[str] | None = None) -> int:
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
              "(bench/server_completion.py's load_corpus() format).",
     )
+    parser.add_argument(
+        "--run-performance-benchmark", action="store_true", default=False,
+        help="PVPS02: the generic paired-benchmark entry point for ANY patch whose "
+             "validation.toml wires a recognized benchmark-executor on its required "
+             "performance check -- not RD04/RD08/etc-specific. Builds one control/subject "
+             "llama-bench per applicable architecture and runs the standard (or "
+             "--benchmark-model-selected) model matrix across them. Diagnostic-only for "
+             "eligibility, same as the legacy per-patch modes -- never populates "
+             "contract_promotions. Mutually exclusive with the RD04/RD08/RD58/RD73 modes; "
+             "does NOT require --model/--manifest/--amdgpu-targets (those are for the "
+             "legacy single-architecture flow).",
+    )
+    parser.add_argument(
+        "--model-root", type=Path, default=None,
+        help="PVPS02: host model root config/models.toml paths are relative to (e.g. "
+             "/mnt/vault/llm-models on Brutus). Required with --run-performance-benchmark.",
+    )
+    parser.add_argument(
+        "--benchmark-model", action="append", default=None,
+        help="PVPS02: a config/models.toml id to benchmark (repeatable). Omit for the "
+             "standard model set (tierM-ministral14b-q4km, tierB-qwen9b-q6k, "
+             "tierL-qwen27b-q8).",
+    )
+    parser.add_argument(
+        "--benchmark-architecture", action="append", default=None,
+        help="PVPS02: an amdgpu target to benchmark (repeatable). Omit to default to the "
+             "intersection of config/recipes.toml's platform.linux-multi targets and the "
+             "patch's own validation-architectures.",
+    )
+    parser.add_argument(
+        "--device-map", action="append", default=None,
+        help="PVPS02: ARCH=ID[,ID...] (repeatable) -- the real, ordered device pool for "
+             "one architecture. Required with --run-performance-benchmark; never inferred.",
+    )
     args = parser.parse_args(argv)
-    if not args.framework_configuration and (args.model is None or args.manifest is None):
-        parser.error("runtime qualification requires --model and --manifest")
+    if (
+        not args.framework_configuration
+        and not args.run_performance_benchmark
+        and (args.model is None or args.manifest is None or args.amdgpu_targets is None)
+    ):
+        parser.error("runtime qualification requires --model, --manifest, and --amdgpu-targets")
+    if args.run_performance_benchmark:
+        if args.model_root is None or not args.device_map:
+            parser.error("--run-performance-benchmark requires --model-root and --device-map")
+        if any(getattr(args, name, False) for name in (
+            "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
+            "run_rd58_state_restore", "run_rd73_contract",
+        )):
+            parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)
 
 
