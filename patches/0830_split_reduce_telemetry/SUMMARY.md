@@ -1,7 +1,6 @@
 # 0830_split_reduce_telemetry: Observe actual SPLIT_REDUCE provider and meta handoff (HI58)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

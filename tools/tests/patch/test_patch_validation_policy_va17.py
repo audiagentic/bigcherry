@@ -84,7 +84,6 @@ def _patch_toml(*, validation_architectures: str) -> str:
 schema = 1
 id = "9999_va17_policy_test"
 order = 9999
-group = "test"
 state = "validated"
 kind = "enhancement"
 origin = "external-fork"

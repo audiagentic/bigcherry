@@ -1,7 +1,6 @@
 schema = 1
 id = "1001_hip_internal_allreduce"
 order = 1001
-group = "upstream-fixes"
 state = "validated"
 kind = "upstream-backport"
 origin = "upstream-pr"

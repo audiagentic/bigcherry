@@ -1,7 +1,6 @@
 # 0500_mmf_forced_nwarps: MMF forced-nwarps dispatch (HI08)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

@@ -37,7 +37,6 @@ from .apply import FilePatch
 STATES: tuple[str, ...] = patch_registry.STATES
 RETIRED_STATES: tuple[str, ...] = patch_registry.RETIRED_STATES
 DEFAULT_STATE = "untested"
-DEFAULT_GROUP = "core"
 
 
 def _load_module(path: Path) -> ModuleType:
@@ -67,11 +66,6 @@ def _load_module(path: Path) -> ModuleType:
     return module
 
 
-def module_group(path: Path) -> str:
-    """The group a patch module belongs to, without fully loading it."""
-    return patch_registry.module_group(path)
-
-
 def module_state(path: Path) -> str:
     """The state (validated/rejected/untested) of a patch module."""
     return patch_registry.module_state(path)
@@ -87,7 +81,6 @@ class PatchInfo:
     """Metadata about a single patch module."""
     name: str
     path: Path
-    group: str
     state: str
     upstream: str | None
 
@@ -103,13 +96,12 @@ class PatchModule:
     patch_id: str
     path: Path
     order: int
-    group: str
     state: str
     upstream: str | None
     content_hash: str
     requires: tuple[str, ...] = ()
     conflicts: tuple[str, ...] = ()
-    group_explicit: bool = True
+    tags: tuple[str, ...] = ()
     # RE30 phase 1: carried explicitly so callers resolving a nested (future
     # backend-scoped) catalog don't have to infer the catalog root from
     # ``catalog[0].path.parent`` -- that inference silently points at a
@@ -173,7 +165,6 @@ def describe(directory=None) -> list[PatchInfo]:
         PatchInfo(
             name=descriptor.patch_id,
             path=root / descriptor.implementation_path,
-            group=descriptor.group,
             state=descriptor.state,
             upstream=descriptor.upstream,
         )
@@ -188,16 +179,12 @@ def _module_from_descriptor(descriptor, root: Path) -> PatchModule:
         patch_id=descriptor.patch_id,
         path=path,
         order=descriptor.order,
-        group=descriptor.group,
         state=descriptor.state,
         upstream=descriptor.upstream,
         content_hash=descriptor.implementation_digest,
         requires=descriptor.requires,
         conflicts=descriptor.conflicts,
-        group_explicit=(
-            True if descriptor.representation == patch_registry.REPRESENTATION_PACKAGED
-            else patch_registry.group_is_explicit(path)
-        ),
+        tags=descriptor.tags,
         catalog_root=root,
         relative_path=descriptor.implementation_path,
     )
@@ -453,7 +440,6 @@ def parse_filter(arg: str | None) -> frozenset[str] | None:
 def load_patches(
     directory: Path | None = None,
     *,
-    groups: frozenset[str] | None = None,
     states: frozenset[str] | None = None,
 ) -> list[FilePatch]:
     """Load every patch module matching the given criteria, in filename order.
@@ -464,7 +450,6 @@ def load_patches(
 
     Args:
         directory: path to patches directory (default: paths.PATCHES)
-        groups: if given, only load patches in these groups (None = all groups)
         states: if given, only load patches in these states (None = all states)
     """
     directory = directory or paths.PATCHES
@@ -474,8 +459,6 @@ def load_patches(
     registry = patch_registry.load_registry(directory)
     patches: list[FilePatch] = []
     for descriptor in registry.descriptors:
-        if groups is not None and descriptor.group not in groups:
-            continue
         if states is not None and descriptor.state not in states:
             continue
         patches.extend(patch_registry.load_implementation(descriptor, root=registry.root))

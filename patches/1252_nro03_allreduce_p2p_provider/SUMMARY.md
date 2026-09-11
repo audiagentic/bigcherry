@@ -1,7 +1,6 @@
 # 1252_nro03_allreduce_p2p_provider
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO03
 
 ## What it does

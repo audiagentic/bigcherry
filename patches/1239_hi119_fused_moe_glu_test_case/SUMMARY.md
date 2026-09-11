@@ -1,7 +1,6 @@
 # 1239_hi119_fused_moe_glu_test_case: New registered test_case for the fused MUL_MAT_ID(gate)+MUL_MAT_ID(up)+GLU subgraph (HI119)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI119
 
 ## What it does

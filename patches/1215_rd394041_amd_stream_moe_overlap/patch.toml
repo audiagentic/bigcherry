@@ -1,7 +1,6 @@
 schema = 1
 id = "1215_rd394041_amd_stream_moe_overlap"
 order = 1215
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

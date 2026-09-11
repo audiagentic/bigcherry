@@ -1,7 +1,6 @@
 # 1254_nro05_gdn_mtp_prefix_tail
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO05
 
 ## What it does

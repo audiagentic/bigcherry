@@ -1,7 +1,6 @@
 # 0810_replay_hit_diagnostics: Optional, compile-time replay hit diagnostics
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

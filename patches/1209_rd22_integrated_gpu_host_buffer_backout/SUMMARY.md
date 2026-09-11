@@ -1,7 +1,6 @@
 # 1209_rd22_integrated_gpu_host_buffer_backout: Back out integrated-GPU host buffers on HIP (RD22, fork divergence from PR #24233)
 
 **Status:** superseded
-**Group:** rdna-boosts
 **Plan item:** RD22
 
 ## What it does

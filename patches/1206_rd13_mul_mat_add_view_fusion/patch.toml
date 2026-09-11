@@ -1,7 +1,6 @@
 schema = 1
 id = "1206_rd13_mul_mat_add_view_fusion"
 order = 1206
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

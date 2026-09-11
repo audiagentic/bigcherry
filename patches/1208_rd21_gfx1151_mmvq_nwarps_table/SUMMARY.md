@@ -1,7 +1,6 @@
 # 1208_rd21_gfx1151_mmvq_nwarps_table: gfx1151 (RDNA3_5) MMVQ table with nwarps=2 for Q8_0 decode (RD21)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD21
 
 ## What it does

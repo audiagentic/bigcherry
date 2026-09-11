@@ -1,7 +1,6 @@
 schema = 1
 id = "1217_rd44_graph_opt_default_rdna35"
 order = 1217
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

@@ -1,7 +1,6 @@
 # 1100_hi70_direct_op_evidence: Deterministic direct-op correctness corpus for hard-to-reach candidates (HI70)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

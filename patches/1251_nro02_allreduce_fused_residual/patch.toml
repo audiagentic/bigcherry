@@ -1,7 +1,6 @@
 schema = 1
 id = "1251_nro02_allreduce_fused_residual"
 order = 1251
-group = "nasone-rdna"
 state = "untested"
 kind = "enhancement"
 origin = "local"

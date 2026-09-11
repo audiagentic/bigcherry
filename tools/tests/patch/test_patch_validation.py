@@ -65,7 +65,6 @@ def _descriptor(patch_id: str = "1201_test") -> patch_registry.PatchDescriptor:
         implementation_path=Path(f"{patch_id}.py"),
         package_root=None,
         metadata_path=None,
-        group="test",
         state="untested",
         kind="experiment",
         origin="local",

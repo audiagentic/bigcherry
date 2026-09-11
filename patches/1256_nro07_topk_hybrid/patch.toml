@@ -1,7 +1,6 @@
 schema = 1
 id = "1256_nro07_topk_hybrid"
 order = 1256
-group = "nasone-rdna"
 state = "untested"
 kind = "enhancement"
 origin = "local"

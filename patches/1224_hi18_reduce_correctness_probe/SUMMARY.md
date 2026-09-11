@@ -1,7 +1,6 @@
 # 1224_hi18_reduce_correctness_probe: Standalone SPLIT_REDUCE correctness probe, test-hip-reduce (HI18)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI18
 
 ## What it does

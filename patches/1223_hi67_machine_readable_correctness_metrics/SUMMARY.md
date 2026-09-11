@@ -1,7 +1,6 @@
 # 1223_hi67_machine_readable_correctness_metrics: Machine-readable per-tensor correctness metrics from test-backend-ops (HI67 slice 2b)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI67
 
 ## What it does

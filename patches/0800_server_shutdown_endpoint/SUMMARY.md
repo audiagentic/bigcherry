@@ -1,7 +1,6 @@
 # 0800_server_shutdown_endpoint: Opt-in HTTP shutdown endpoint for graceful automation cleanup
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

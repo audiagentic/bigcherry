@@ -1,7 +1,6 @@
 # 1257_nro08_topk_wave32
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO08
 
 ## What it does

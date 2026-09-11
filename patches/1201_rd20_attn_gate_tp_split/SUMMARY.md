@@ -1,7 +1,6 @@
 # 1201_rd20_attn_gate_tp_split: Align attn_gate tensor-parallel split granularity with attn_q (RD20)
 
 **Status:** superseded
-**Group:** rdna-boosts
 **Plan item:** RD20
 
 ## What it does

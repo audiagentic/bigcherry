@@ -1,7 +1,6 @@
 # 0850_ordered_speculative_trace: Ordered per-verify-step speculative-decode acceptance trace
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI166
 
 ## What it does

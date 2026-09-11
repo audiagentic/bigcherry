@@ -10,7 +10,7 @@ from typing import cast
 
 from .core import config as campaign_config, paths
 from .release import pin_status
-from .patch import patchset
+from .patch import patchset, registry as patch_registry
 from .core.context import ProjectContext
 
 
@@ -38,16 +38,21 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
     raw = tomllib.loads(context.config_path.read_text(encoding="utf-8"))
     version = raw.get("version", 1)
     catalog = patchset.catalog(context.patches_root)
+    kind_by_id = {
+        d.patch_id: d.kind
+        for d in patch_registry.load_registry(context.patches_root).descriptors
+    }
     patch_rows = [
         {
             "patch_id": item.patch_id,
             "order": item.order,
-            "group": item.group,
+            "kind": kind_by_id.get(item.patch_id),
             "state": item.state,
             "upstream": item.upstream,
             "content_hash": item.content_hash,
             "requires": list(item.requires),
             "conflicts": list(item.conflicts),
+            "tags": list(item.tags),
         }
         for item in catalog
     ]
@@ -91,15 +96,15 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
             "framework_candidates": [
                 item.patch_id for item in catalog if item.state == "validated"
             ],
-            "validated_core_group": [
+            "validated_framework_kind": [
                 item.patch_id
                 for item in catalog
-                if item.group == "core" and item.state == "validated"
+                if kind_by_id.get(item.patch_id) == "framework" and item.state == "validated"
             ],
-            "validated_noncore_group": [
+            "validated_nonframework_kind": [
                 item.patch_id
                 for item in catalog
-                if item.group != "core" and item.state == "validated"
+                if kind_by_id.get(item.patch_id) != "framework" and item.state == "validated"
             ],
             "promoted_enhancements": [],
             "classification_status": "owner-review-required",

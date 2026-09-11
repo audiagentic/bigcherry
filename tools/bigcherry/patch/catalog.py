@@ -51,7 +51,7 @@ from ..core import paths
 from . import patchset
 from . import validation_policy
 
-KINDS = ("framework", "upstream-backport", "enhancement")
+KINDS = ("framework", "diagnostic", "upstream-backport", "enhancement")
 ORIGINS = ("local", "upstream-commit", "upstream-pr", "external-fork")
 BACKENDS = ("hip", "vulkan", "agnostic")
 
@@ -645,7 +645,6 @@ class PatchExplanation:
 
     patch_id: str
     content_hash: str
-    group: str
     state: str
     kind: str | None
     origin: str | None
@@ -659,6 +658,7 @@ class PatchExplanation:
     selected_by_patch_sets: tuple[str, ...]
     selected_by_experiments: tuple[str, ...]
     files_touched: tuple[str, ...] = field(default_factory=tuple)
+    tags: tuple[str, ...] = ()
 
 
 def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplanation:
@@ -703,7 +703,6 @@ def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplan
     return PatchExplanation(
         patch_id=patch_id,
         content_hash=module.content_hash,
-        group=module.group,
         state=module.state,
         kind=entry.kind if entry else None,
         origin=entry.origin if entry else None,
@@ -717,6 +716,7 @@ def explain(patch_id: str, snapshot: "CatalogSnapshot", cfg=None) -> PatchExplan
         selected_by_patch_sets=tuple(sorted(selected_patch_sets)),
         selected_by_experiments=tuple(sorted(selected_experiments)),
         files_touched=files_touched,
+        tags=module.tags,
     )
 
 
@@ -724,7 +724,7 @@ def render_explanation(info: PatchExplanation) -> str:
     lines = [
         f"patch:          {info.patch_id}",
         f"content hash:   {info.content_hash}",
-        f"group / state:  {info.group} / {info.state}",
+        f"state:          {info.state}",
         f"kind:           {info.kind or 'unknown (not in patches/catalog.toml)'}",
         f"origin:         {info.origin or 'unknown'}",
         f"backend:        {info.backend or 'unknown'}",
@@ -739,6 +739,8 @@ def render_explanation(info: PatchExplanation) -> str:
     ]
     if info.files_touched:
         lines.append(f"files touched:  {', '.join(info.files_touched)}")
+    if info.tags:
+        lines.append(f"tags:           {', '.join(info.tags)}")
     return "\n".join(lines)
 
 

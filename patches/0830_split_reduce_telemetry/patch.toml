@@ -1,7 +1,6 @@
 schema = 1
 id = "0830_split_reduce_telemetry"
 order = 830
-group = "core"
 state = "validated"
 kind = "framework"
 origin = "local"

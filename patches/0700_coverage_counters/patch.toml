@@ -1,7 +1,6 @@
 schema = 1
 id = "0700_coverage_counters"
 order = 700
-group = "core"
 state = "validated"
 kind = "framework"
 origin = "local"

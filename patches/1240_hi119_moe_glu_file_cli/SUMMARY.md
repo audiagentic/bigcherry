@@ -1,7 +1,6 @@
 # 1240_hi119_moe_glu_file_cli: --moe-glu-file CLI hook for the fused MoE GLU test case (HI119)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI119
 
 ## What it does

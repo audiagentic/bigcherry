@@ -111,7 +111,6 @@ PACKAGE_TOML = """\
 schema = 1
 id = "{patch_id}"
 order = {order}
-group = "core"
 state = "untested"
 kind = "enhancement"
 origin = "local"

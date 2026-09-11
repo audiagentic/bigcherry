@@ -1,7 +1,6 @@
 # 1235_rd09_q81_activation_cache_foundation: Per-graph Q8_1 activation-quantization cache, foundation only (RD09 stage 1)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD09
 
 ## What it does

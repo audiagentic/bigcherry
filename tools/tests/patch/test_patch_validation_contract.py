@@ -68,7 +68,6 @@ PATCH_TOML = """\
 schema = 1
 id = "1201_test"
 order = 1201
-group = "test"
 state = "untested"
 kind = "framework"
 origin = "local"

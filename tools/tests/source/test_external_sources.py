@@ -7,6 +7,7 @@ commit in external-sources.toml, and the two must agree.
 
 from __future__ import annotations
 
+import re
 import sys
 import tomllib
 import unittest
@@ -17,10 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 ROOT = Path(__file__).resolve().parents[3]
 from bigcherry.patch import patchset as _patchset # noqa: E402
+from bigcherry.patch import registry as _patch_registry # noqa: E402
 from bigcherry.source import sources as _sources # noqa: E402
 
 src: Any = _sources
 patchset: Any = _patchset
+patch_registry: Any = _patch_registry
 
 
 class TestRegistryStructure(unittest.TestCase):
@@ -75,7 +78,10 @@ class TestRegistryStructure(unittest.TestCase):
         # successor). RD20 is superseded independently -- by upstream
         # ggml-org/llama.cpp PR #27574, not by another RD item -- found via
         # the 2026-08-30 sources-check pass on the b10502->b10680 bump.
-        self.assertEqual(superseded, {"RD14", "RD16", "RD20"})
+        # RD22 is superseded by upstream PR #28604 (reverts PR #24233,
+        # making integrated=false HIP's own unconditional default) -- see
+        # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
+        self.assertEqual(superseded, {"RD14", "RD16", "RD20", "RD22"})
         # The excluded MTP feature commits are declared, not silently dropped.
         excluded = [e for e in rdna["tracked"] if e["status"] == "excluded"]
         self.assertGreaterEqual(len(excluded), 2)
@@ -152,28 +158,37 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     RETIRED_RDNA_PATCHES = frozenset({
         "1201_rd20_attn_gate_tp_split",
         "1233_rd73_stable_graph_cache_key",
+        # RD22: superseded by upstream PR #28604 (reverts PR #24233, making
+        # integrated=false HIP's own unconditional default) -- see
+        # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
+        "1209_rd22_integrated_gpu_host_buffer_backout",
     })
 
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
-        """The first-sweep isolation contract: rdna-boosts patches must NOT be
-        pullable by the production groups, so a native build cannot pick them
-        up accidentally -- except for patches that have since been promoted
-        or retired (superseded/rejected)."""
-        for info in patchset.describe():
-            if info.group != "rdna-boosts":
+        """The first-sweep isolation contract: rdna-boost-experiments (the
+        legacy "RD"-numbered plan; PPS03 dropped the group field this test
+        used to key off, so this now matches the same real patch family by
+        the "_rd<digits>_" id-segment convention every RD-plan patch in this
+        file already uses) patches must NOT be pullable by the production
+        groups, so a native build cannot pick them up accidentally -- except
+        for patches that have since been promoted or retired (superseded/
+        rejected)."""
+        registry = patch_registry.load_registry(ROOT / "patches")
+        for descriptor in registry.descriptors:
+            if not re.search(r"_rd\d+_", descriptor.patch_id):
                 continue
-            if info.name in self.RETIRED_RDNA_PATCHES:
+            if descriptor.patch_id in self.RETIRED_RDNA_PATCHES:
                 self.assertIn(
-                    info.state, ("rejected", "superseded"),
-                    f"{info.name}: expected a retired state",
+                    descriptor.state, ("rejected", "superseded"),
+                    f"{descriptor.patch_id}: expected a retired state",
                 )
-            elif info.name in self.VALIDATED_RDNA_PATCHES:
+            elif descriptor.patch_id in self.VALIDATED_RDNA_PATCHES:
                 self.assertEqual(
-                    info.state, "validated", f"{info.name}: expected validated"
+                    descriptor.state, "validated", f"{descriptor.patch_id}: expected validated"
                 )
             else:
                 self.assertEqual(
-                    info.state, "untested", f"{info.name}: expected untested"
+                    descriptor.state, "untested", f"{descriptor.patch_id}: expected untested"
                 )
 
     def test_rdna_patches_not_in_production_patch_sets(self):

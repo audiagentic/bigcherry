@@ -1,7 +1,6 @@
 # 0100_cmake_options: CMake options for HIP measured dispatch (HI02)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

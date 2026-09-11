@@ -1,7 +1,6 @@
 schema = 1
 id = "1210_rd26_bitidentical_decode_verify_standalone"
 order = 1210
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

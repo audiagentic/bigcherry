@@ -1,7 +1,6 @@
 # 1205_rd12_paired_mmvq_dual_output: Fuse paired mmvq matmuls over a shared activation (RD12, dual-output)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD12
 
 ## What it does

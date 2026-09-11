@@ -1,7 +1,6 @@
 # 1238_hi119_deterministic_init_mul_mat_id_tensors: Deterministic expert-ID routing for the registered test_case classes' shared initializer (HI119)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI119
 
 ## What it does

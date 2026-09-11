@@ -1,7 +1,6 @@
 # 1001_hip_internal_allreduce: Upstream backport: enable the internal (non-RCCL) AllReduce on HIP
 
 **Status:** validated
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

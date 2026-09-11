@@ -1,7 +1,6 @@
 # 0400_mmvf_forced_block: MMVF forced block-size and accumulator-mode dispatch (HI07)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

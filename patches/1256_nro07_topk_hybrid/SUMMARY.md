@@ -1,7 +1,6 @@
 # 1256_nro07_topk_hybrid
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO07
 
 ## What it does

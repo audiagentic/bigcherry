@@ -1,7 +1,6 @@
 # 1250_nro01_allreduce_q8_wire
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO01
 
 ## What it does

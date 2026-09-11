@@ -1,7 +1,6 @@
 # 1231_hi14_graph_capture_lifecycle_evidence: Real graph capture-lifecycle activation evidence (HI14)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI14
 
 ## What it does

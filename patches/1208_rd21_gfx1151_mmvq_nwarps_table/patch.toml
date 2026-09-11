@@ -1,7 +1,6 @@
 schema = 1
 id = "1208_rd21_gfx1151_mmvq_nwarps_table"
 order = 1208
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

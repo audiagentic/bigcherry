@@ -1,7 +1,6 @@
 # 1206_rd13_mul_mat_add_view_fusion: Fuse mul_mat + add through a view (reshape) node (RD13)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD13
 
 ## What it does

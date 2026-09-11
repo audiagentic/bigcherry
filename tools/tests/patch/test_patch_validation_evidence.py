@@ -79,12 +79,12 @@ class SubjectDigestTests(unittest.TestCase):
         implementation.write_text('"""implementation"""\n', encoding="utf-8")
         (package / "patch.toml").write_text(
             'schema = 1\nid = "9999_packaged"\norder = 9999\n'
-            'group = "g"\nstate = "untested"\n', encoding="utf-8",
+            'state = "untested"\n', encoding="utf-8",
         )
         first = pve.patch_validation_subject_digest(implementation)
         (package / "patch.toml").write_text(
             'schema = 1\nid = "9999_packaged"\norder = 9999\n'
-            'group = "g"\nstate = "validated"\n', encoding="utf-8",
+            'state = "validated"\n', encoding="utf-8",
         )
         self.assertEqual(first, pve.patch_validation_subject_digest(implementation))
 
@@ -275,7 +275,7 @@ class VerifyValidatedPatchTests(unittest.TestCase):
 
     def _module(self, *, state="validated", content_hash="deadbeef" * 8):
         return patchset.PatchModule(
-            patch_id="9999_example", path=self.patch_path, order=0, group="g", state=state,
+            patch_id="9999_example", path=self.patch_path, order=0, state=state,
             upstream=None, content_hash=content_hash,
         )
 

@@ -1,7 +1,6 @@
 # 1237_rd30_moe_mmq_compact_grid: Compact the MoE MMQ launch grid (RD30, AMD-MOE-001)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD30
 
 ## What it does

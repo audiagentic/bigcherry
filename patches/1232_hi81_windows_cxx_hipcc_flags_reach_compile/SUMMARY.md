@@ -1,7 +1,6 @@
 # 1232_hi81_windows_cxx_hipcc_flags_reach_compile: Make CMAKE_HIP_FLAGS-gated options actually reach the compiler on Windows Ninja+Clang HIP builds (HI81)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI81
 
 ## What it does

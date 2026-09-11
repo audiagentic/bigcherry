@@ -1,7 +1,6 @@
 # 0650_mmvq_native_variant: Route a forced MMVQ geometry to its compiled instance (HI09 part 2)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

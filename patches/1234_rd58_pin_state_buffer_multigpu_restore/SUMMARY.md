@@ -1,7 +1,6 @@
 # 1234_rd58_pin_state_buffer_multigpu_restore: Pin the host state buffer during multi-GPU prompt-cache/checkpoint state restore (RD58, UP-HIP-003)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD58
 
 ## What it does

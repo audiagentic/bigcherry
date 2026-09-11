@@ -1,7 +1,6 @@
 # 1255_nro06_adaptive_mtp_depth
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO06
 
 ## What it does

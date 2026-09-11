@@ -14,11 +14,11 @@ from bigcherry.patch import registry as patch_registry  # noqa: E402
 
 
 def _write_packaged_patch(root: Path, patch_id: str, *,
-                           state: str = "validated", group: str = "core",
+                           state: str = "validated",
                            plan_item: str | None = None,
                            plan_ids: tuple[str, ...] = ()) -> None:
     """Every real production patch is a packaged directory ("<id>/patch.py"
-    + "<id>/patch.toml", patch.toml authoritative for state/group/plan)."""
+    + "<id>/patch.toml", patch.toml authoritative for state/plan)."""
     # order must equal the id's own numeric prefix (registry.py's
     # _packaged_descriptor enforces this) -- derive it, don't hand-pick it.
     order = int(patch_id.split("_", 1)[0])
@@ -30,7 +30,6 @@ def _write_packaged_patch(root: Path, patch_id: str, *,
         "schema = 1\n"
         f'id = "{patch_id}"\n'
         f"order = {order}\n"
-        f'group = "{group}"\n'
         f'state = "{state}"\n'
         'kind = "framework"\n'
         'origin = "local"\n'
@@ -43,10 +42,10 @@ def _write_packaged_patch(root: Path, patch_id: str, *,
     )
 
 
-def _write_summary(root: Path, patch_id: str, *, status: str, group: str,
+def _write_summary(root: Path, patch_id: str, *, status: str,
                     plan_item: str, body: str = "") -> None:
     (root / patch_id / "SUMMARY.md").write_text(
-        f"# {patch_id}\n\n**Status:** {status}\n**Group:** {group}\n"
+        f"# {patch_id}\n\n**Status:** {status}\n"
         f"**Plan item:** {plan_item}\n\n{body}",
         encoding="utf-8",
     )
@@ -139,7 +138,7 @@ class RenderPatchSelectionDocTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_packaged_patch(root, "0100_x")
-            _write_summary(root, "0100_x", status="validated", group="core", plan_item="none")
+            _write_summary(root, "0100_x", status="validated", plan_item="none")
             with self.assertRaises(patch_docs.PatchDocError):
                 patch_docs.render_patch_selection_doc(
                     patch_ids=("0100_x", "ghost-id"),
@@ -150,7 +149,7 @@ class RenderPatchSelectionDocTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_packaged_patch(root, "0100_x")
-            _write_summary(root, "0100_x", status="validated", group="core", plan_item="none",
+            _write_summary(root, "0100_x", status="validated", plan_item="none",
                             body="real content\n")
             doc = patch_docs.render_patch_selection_doc(
                 patch_ids=("0100_x",), pin_info={}, selection_label="test", patches_dir=root,
@@ -160,11 +159,11 @@ class RenderPatchSelectionDocTests(unittest.TestCase):
 
 
 class ParseSummaryHeaderTests(unittest.TestCase):
-    def test_extracts_all_three_fields(self):
+    def test_extracts_both_fields(self):
         header = patch_docs.parse_summary_header(
-            "# x\n\n**Status:** validated\n**Group:** core\n**Plan item:** RD20\n\n## What it does\n"
+            "# x\n\n**Status:** validated\n**Plan item:** RD20\n\n## What it does\n"
         )
-        self.assertEqual(header, {"status": "validated", "group": "core", "plan_item": "RD20"})
+        self.assertEqual(header, {"status": "validated", "plan_item": "RD20"})
 
     def test_returns_none_when_header_is_missing(self):
         self.assertIsNone(patch_docs.parse_summary_header("# x\n\nno header here\n"))
@@ -172,7 +171,7 @@ class ParseSummaryHeaderTests(unittest.TestCase):
     def test_a_blank_line_between_fields_does_not_get_absorbed_into_a_match(self):
         # \s* crossing a newline used to let this still parse; fields are
         # now anchored line-by-line and must be consecutive.
-        text = "**Status:** validated\n\n**Group:** core\n**Plan item:** none\n"
+        text = "**Status:** validated\n\n**Plan item:** none\n"
         self.assertIsNone(patch_docs.parse_summary_header(text))
 
 
@@ -180,15 +179,15 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
     def test_flags_missing_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _write_packaged_patch(root, "0100_x", state="validated", group="core")
+            _write_packaged_patch(root, "0100_x", state="validated")
             problems = patch_docs.check_summary_consistency(root)
             self.assertEqual(problems, ["0100_x: missing SUMMARY.md"])
 
     def test_flags_status_drift(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _write_packaged_patch(root, "0100_x", state="superseded", group="core")
-            _write_summary(root, "0100_x", status="untested", group="core", plan_item="none")
+            _write_packaged_patch(root, "0100_x", state="superseded")
+            _write_summary(root, "0100_x", status="untested", plan_item="none")
             problems = patch_docs.check_summary_consistency(root)
             self.assertEqual(len(problems), 1)
             self.assertIn("Status='untested'", problems[0])
@@ -197,8 +196,8 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
     def test_clean_when_everything_agrees(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _write_packaged_patch(root, "0100_x", state="validated", group="core")
-            _write_summary(root, "0100_x", status="validated", group="core", plan_item="none")
+            _write_packaged_patch(root, "0100_x", state="validated")
+            _write_summary(root, "0100_x", status="validated", plan_item="none")
             self.assertEqual(patch_docs.check_summary_consistency(root), [])
 
     def test_no_plan_item_declared_requires_summary_to_say_none_not_anything(self):
@@ -206,8 +205,8 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
         make ANY SUMMARY.md Plan item value report clean."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _write_packaged_patch(root, "0100_x", state="validated", group="core")
-            _write_summary(root, "0100_x", status="validated", group="core", plan_item="RD999")
+            _write_packaged_patch(root, "0100_x", state="validated")
+            _write_summary(root, "0100_x", status="validated", plan_item="RD999")
             problems = patch_docs.check_summary_consistency(root)
             self.assertEqual(len(problems), 1)
             self.assertIn("Plan item='RD999'", problems[0])
@@ -217,10 +216,10 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_packaged_patch(
-                root, "1215_x", state="untested", group="rdna-boosts",
+                root, "1215_x", state="untested",
                 plan_ids=("RD39", "RD40", "RD41", "RD42"),
             )
-            _write_summary(root, "1215_x", status="untested", group="rdna-boosts",
+            _write_summary(root, "1215_x", status="untested",
                             plan_item="RD39/RD40/RD41/RD42")
             self.assertEqual(patch_docs.check_summary_consistency(root), [])
 
@@ -228,10 +227,10 @@ class CheckSummaryConsistencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _write_packaged_patch(
-                root, "1215_x", state="untested", group="rdna-boosts",
+                root, "1215_x", state="untested",
                 plan_item="RD39", plan_ids=("RD39", "RD40"),
             )
-            _write_summary(root, "1215_x", status="untested", group="rdna-boosts",
+            _write_summary(root, "1215_x", status="untested",
                             plan_item="RD39")  # matches the stale singular field, not plan_ids
             problems = patch_docs.check_summary_consistency(root)
             self.assertEqual(len(problems), 1)

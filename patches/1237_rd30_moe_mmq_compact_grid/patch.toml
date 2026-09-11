@@ -1,7 +1,6 @@
 schema = 1
 id = "1237_rd30_moe_mmq_compact_grid"
 order = 1237
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

@@ -1,7 +1,6 @@
 # 1230_hip_autotune_inspect: Offline cache and registry inspector, hip-autotune-inspect (HI15/HI16)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI15/HI16
 
 ## What it does

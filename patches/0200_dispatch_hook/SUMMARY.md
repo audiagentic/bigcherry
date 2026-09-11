@@ -1,7 +1,6 @@
 # 0200_dispatch_hook: Route the dense matmul selector through measured dispatch (HI04)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

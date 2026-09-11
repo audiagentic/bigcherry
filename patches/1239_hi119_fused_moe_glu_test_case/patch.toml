@@ -1,9 +1,8 @@
 schema = 1
 id = "1239_hi119_fused_moe_glu_test_case"
 order = 1239
-group = "core"
 state = "untested"
-kind = "framework"
+kind = "diagnostic"
 origin = "local"
 backend = "hip"
 plan-item = "HI119"

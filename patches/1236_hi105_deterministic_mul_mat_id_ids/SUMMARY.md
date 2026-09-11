@@ -1,7 +1,6 @@
 # 1236_hi105_deterministic_mul_mat_id_ids: Deterministic, full-expert-range routing for test_generic_op's MUL_MAT_ID initializer (HI105)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI105
 
 ## What it does

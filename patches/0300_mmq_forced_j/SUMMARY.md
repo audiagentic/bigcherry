@@ -1,7 +1,6 @@
 # 0300_mmq_forced_j: MMQ forced-J variant dispatch (HI06)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

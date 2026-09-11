@@ -39,7 +39,6 @@ SUMMARY_FILENAME = "SUMMARY.md"
 # absorbed into a match (gpt-dev-agent review, 2026-08-31).
 _HEADER_PATTERN = re.compile(
     r"^\*\*Status:\*\*[ \t]*(?P<status>\S+)[ \t]*$\n"
-    r"^\*\*Group:\*\*[ \t]*(?P<group>\S+)[ \t]*$\n"
     r"^\*\*Plan item:\*\*[ \t]*(?P<plan_item>\S.*?)[ \t]*$",
     re.MULTILINE,
 )
@@ -89,8 +88,7 @@ def read_patch_summary(descriptor: "patch_registry.PatchDescriptor", patches_roo
     if not summary_path.is_file():
         return (
             f"# {descriptor.patch_id}\n\n"
-            f"**Status:** {descriptor.state}\n"
-            f"**Group:** {descriptor.group}\n\n"
+            f"**Status:** {descriptor.state}\n\n"
             "_No SUMMARY.md found for this patch -- add one under "
             f"`patches/{descriptor.patch_id}/SUMMARY.md` (see "
             "`patches/_template/SUMMARY.md`)._\n"
@@ -99,25 +97,24 @@ def read_patch_summary(descriptor: "patch_registry.PatchDescriptor", patches_roo
 
 
 def parse_summary_header(text: str) -> dict[str, str] | None:
-    """Extract the Status/Group/Plan item header fields, or None if the
+    """Extract the Status/Plan item header fields, or None if the
     required shape (see patches/_template/SUMMARY.md) isn't present."""
     match = _HEADER_PATTERN.search(text)
     if not match:
         return None
     return {
         "status": match.group("status"),
-        "group": match.group("group"),
         "plan_item": match.group("plan_item").strip(),
     }
 
 
 def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
     """Fully mechanical drift check, no judgment involved: every patch's
-    SUMMARY.md Status/Group header must equal patch.toml's own state/group
+    SUMMARY.md Status header must equal patch.toml's own state
     (the sole metadata authority for a packaged patch -- packaged
-    patch.py's STATE/GROUP constants, if present at all, are not read by
-    the registry and are not what this compares against; a legacy flat
-    module's patch.py constants ARE its state/group, since it has no
+    patch.py's STATE constant, if present at all, is not read by
+    the registry and is not what this compares against; a legacy flat
+    module's patch.py constant IS its state, since it has no
     patch.toml). Plan item must equal the canonical value from
     ``_expected_plan_item`` (plan_ids preferred over plan_item, "none" as
     the explicit floor -- never "skip the check"). Returns a list of
@@ -146,18 +143,13 @@ def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
         if header is None:
             problems.append(
                 f"{descriptor.patch_id}: SUMMARY.md is missing the required "
-                "Status/Group/Plan item header (see patches/_template/SUMMARY.md)"
+                "Status/Plan item header (see patches/_template/SUMMARY.md)"
             )
             continue
         if header["status"] != descriptor.state:
             problems.append(
                 f"{descriptor.patch_id}: SUMMARY.md Status={header['status']!r} "
                 f"does not match patch.toml state={descriptor.state!r}"
-            )
-        if header["group"] != descriptor.group:
-            problems.append(
-                f"{descriptor.patch_id}: SUMMARY.md Group={header['group']!r} "
-                f"does not match patch.toml group={descriptor.group!r}"
             )
         expected_plan_item = _expected_plan_item(descriptor)
         if header["plan_item"] != expected_plan_item:

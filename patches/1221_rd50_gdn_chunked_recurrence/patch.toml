@@ -1,7 +1,6 @@
 schema = 1
 id = "1221_rd50_gdn_chunked_recurrence"
 order = 1221
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

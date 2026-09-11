@@ -1,7 +1,6 @@
 schema = 1
 id = "1257_nro08_topk_wave32"
 order = 1257
-group = "nasone-rdna"
 state = "untested"
 kind = "enhancement"
 origin = "local"

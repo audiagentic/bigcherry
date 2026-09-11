@@ -1,7 +1,6 @@
 schema = 1
 id = "1244_gp11_internal_allreduce_nway_root"
 order = 1244
-group = "gpu-collectives"
 state = "untested"
 kind = "enhancement"
 origin = "local"
