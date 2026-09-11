@@ -41,7 +41,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from bigcherry.build.builds import capture_completed_build_evidence
@@ -648,71 +648,27 @@ def run_rd08_validation_lanes(
     Deliberately does NOT touch correctness/promotion/eligibility: this is
     execution + evidence persistence only, per GPT's explicit VA14-B scope
     (bit_identical producer integration, trigger/promotion composition,
-    evaluate_promotion_gate(), and the eligibility cutover are deferred)."""
+    evaluate_promotion_gate(), and the eligibility cutover are deferred).
+
+    PVPS02 step 2: now a compatibility wrapper over run_paired_llama_
+    benchmark() -- same argv shape (rd08_validation_lane_commands' own
+    extra_flags is always empty on this call path, so runtime_args=()
+    reproduces it exactly), same env sanitization, same raw-log capture;
+    only the LaneEffect/Contract-evidence composition below is RD08-
+    specific and stays here."""
     from bigcherry.experiment import contract as experiment_contract
     from bigcherry.experiment import execution as experiment_execution
-    from bigcherry.campaign.benchmark import sanitize_environment
 
-    positive_pattern = re.compile(r"tg128\s*\|\s*([0-9.]+)")
-    control_pattern = re.compile(r"pp512\s*\|\s*([0-9.]+)")
-
-    # GPT round 3 (req_e75c4936e2354351): _hip_env() alone does not strip
-    # inherited GGML_HIP_DISPATCH_*/GGML_HIP_FORCE_*/GGML_HIP_TUNE_*
-    # overrides from the ambient shell -- a validation lane must run in the
-    # same "stock" contamination-free environment sanitize_environment()
-    # already establishes for native campaign arms, plus clearing
-    # BIGCHERRY_*/GGML_CUDA_DISABLE_FUSION which that helper does not touch.
-    clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
-    for key in list(clean_env):
-        if key.startswith("BIGCHERRY_") or key == "GGML_CUDA_DISABLE_FUSION":
-            clean_env.pop(key, None)
-
-    # Raw per-arm stdout/stderr, keyed by (workload, mode, pair) -- VA14-B's
-    # own docstring promises this is retained; run_paired_lane()'s
-    # PairedLaneRun.runs only carries {pair, mode, metrics} (VA14's already-
-    # reviewed contract), so it is captured here, at the runner boundary,
-    # instead of changing that primitive's API.
-    raw_logs: list[dict[str, object]] = []
-
-    def _make_runner(workload: str):
-        def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-            completed = subprocess.run(
-                command, capture_output=True, text=True, check=False, env=clean_env,
-            )
-            raw_logs.append({
-                "workload": workload, "command": command,
-                "returncode": completed.returncode,
-                "stdout": completed.stdout, "stderr": completed.stderr,
-            })
-            if completed.returncode == 0:
-                # A nonzero-returncode run already fails via its own real
-                # signal (LaneExecutionError downstream); GPU-execution
-                # evidence is only meaningful to demand of an apparently
-                # successful run, which is exactly the case that silently
-                # accepted a CPU-fallback result before this fix.
-                _require_real_gpu_execution(
-                    completed.stdout, completed.stderr,
-                    context=f"rd08 {workload} lane ({Path(command[0]).name})",
-                )
-            return experiment_execution.RunnerOutput(
-                returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
-            )
-        return _runner
-
-    decode_control_cmd, decode_subject_cmd = rd08_validation_lane_commands(
-        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="decode",
+    outcome = run_paired_llama_benchmark(
+        control_binary=control_binary, subject_binary=subject_binary, model=model,
+        hip_path=hip_path, pairs=pairs, log_context="rd08",
     )
-    decode_run = experiment_execution.run_paired_lane(
-        metric="tg128", control_command=decode_control_cmd, subject_command=decode_subject_cmd,
-        pattern=positive_pattern, pairs=pairs, runner=_make_runner("decode"),
-    )
-    prefill_control_cmd, prefill_subject_cmd = rd08_validation_lane_commands(
-        control_binary=control_binary, subject_binary=subject_binary, model=model, workload="prefill",
-    )
-    prefill_run = experiment_execution.run_paired_lane(
-        metric="pp512", control_command=prefill_control_cmd, subject_command=prefill_subject_cmd,
-        pattern=control_pattern, pairs=pairs, runner=_make_runner("prefill"),
-    )
+    decode_run, prefill_run = outcome.runs["decode"], outcome.runs["prefill"]
+    decode_control_cmd = outcome.commands["decode"]["control"]
+    decode_subject_cmd = outcome.commands["decode"]["subject"]
+    prefill_control_cmd = outcome.commands["prefill"]["control"]
+    prefill_subject_cmd = outcome.commands["prefill"]["subject"]
+    raw_logs = outcome.raw_logs
     effects = [
         experiment_execution.lane_effect_from_run("positive", "tg128", decode_run),
         experiment_execution.lane_effect_from_run("control", "pp512", prefill_run),
@@ -1012,35 +968,69 @@ def run_rd08_contract_qualification(
     }
 
 
-def run_rd04_benchmark_evidence(
+_PAIRED_BENCH_WORKLOAD_FLAGS: dict[str, tuple[str, ...]] = {
+    "decode": ("-p", "0", "-n", "128"),
+    "prefill": ("-p", "512", "-n", "0"),
+}
+_PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
+_PAIRED_BENCH_METRIC_PATTERN: dict[str, "re.Pattern[str]"] = {
+    "decode": re.compile(r"tg128\s*\|\s*([0-9.]+)"),
+    "prefill": re.compile(r"pp512\s*\|\s*([0-9.]+)"),
+}
+
+
+def _paired_llama_bench_command(
+    binary: Path, model: Path, workload: str, *,
+    patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
+) -> list[str]:
+    """PVPS02 step 2: the one llama-bench command shape both RD04 and
+    RD08's producers build. ``patch_args`` land BEFORE -ngl (RD04's
+    historical position for its -fa/-ctk/-ctv flags); ``runtime_args``
+    land AFTER -ngl (RD08's historical position for e.g. -sm tensor
+    topology flags via rd08_validation_lane_commands' extra_flags) --
+    kept as two distinct insertion points, not one undifferentiated list,
+    specifically so each caller's exact historical argv order is
+    reproducible byte-for-byte."""
+    if workload not in _PAIRED_BENCH_WORKLOAD_FLAGS:
+        raise PatchCampaignError(
+            f"paired llama-bench: no flag mapping for workload {workload!r}"
+        )
+    return [
+        str(binary), "-m", str(model), *_PAIRED_BENCH_WORKLOAD_FLAGS[workload],
+        *patch_args, "-ngl", "99", *runtime_args,
+    ]
+
+
+@dataclass(frozen=True)
+class PairedBenchmarkOutcome:
+    """PVPS02 step 2: the result of running one or more paired llama-bench
+    workloads (decode/prefill) for one control/subject binary pair."""
+
+    runs: dict[str, "experiment_execution.PairedLaneRun"]
+    commands: dict[str, dict[str, list[str]]]
+    raw_logs: list[dict[str, object]]
+
+
+def run_paired_llama_benchmark(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
-    run_dir: Path, campaign_id: str, amdgpu_targets: str,
-    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
-    pairs: int = 3,
-) -> dict[str, object]:
-    """VA04 hardware-free preflight slice (GPT session ses_5bbee8ce5c9a4265,
-    req_da015a1366044ad1): an RD04-scoped validation-domain paired
-    benchmark producer, analogous to RD08's real lanes (run_rd08_
-    validation_lanes()) but deliberately without contract promotion or
-    generalisation -- this slice only proves a real benchmark executed
-    and binds it as evidence; qualification against RD04's real
-    acceptance thresholds is separate, later, real-hardware work. Does
-    NOT depend on the generic S1-S7 campaign succeeding -- that pipeline's
-    own promotion decision is unrelated to RD04's own validation-domain
-    evidence (the exact real bug VA15 found and fixed for RD08).
+    workloads: tuple[str, ...] = ("decode", "prefill"),
+    patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
+    pairs: int = 3, log_context: str,
+) -> PairedBenchmarkOutcome:
+    """PVPS02 step 2: the shared execution shape behind
+    run_rd04_benchmark_evidence()/run_rd08_validation_lanes() -- a pure,
+    semantics-preserving extraction of their duplicated clean-env/runner/
+    command/raw-log/paired-run logic (docs/planning/active/
+    patching-validation-package-standard/PVPS02.md). Both existing public
+    functions now call this and are kept as compatibility wrappers that
+    do their own result-shaping (performance.json vs validation-lanes.json
+    + LaneEffects) -- their own callers/tests see no behavior change.
 
-    ``passed`` means "benchmark evidence executed successfully" (both
-    paired lanes completed with finite statistics), NOT "RD04 met its
-    3.39% target" -- threshold qualification stays separate."""
-    import math
-
+    Deliberately does NOT yet turn on execution_identity/attestation
+    (step 4) and does NOT yet read wiring from validation.toml (step 3) --
+    callers still pass patch_args/runtime_args explicitly."""
     from bigcherry.experiment import execution as experiment_execution
     from bigcherry.campaign.benchmark import sanitize_environment
-
-    rd04_flags = ["-fa", "on", "-ctk", "bf16", "-ctv", "bf16"]
-
-    def _command(binary: Path, workload_flags: list[str]) -> list[str]:
-        return [str(binary), "-m", str(model), *workload_flags, *rd04_flags, "-ngl", "99"]
 
     clean_env = sanitize_environment(_hip_env(hip_path), mode="stock")
     for key in list(clean_env):
@@ -1062,25 +1052,66 @@ def run_rd04_benchmark_evidence(
             if completed.returncode == 0:
                 _require_real_gpu_execution(
                     completed.stdout, completed.stderr,
-                    context=f"rd04 {workload} lane ({Path(command[0]).name})",
+                    context=f"{log_context} {workload} lane ({Path(command[0]).name})",
                 )
             return experiment_execution.RunnerOutput(
                 returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
             )
         return _runner
 
-    decode_control_cmd = _command(control_binary, ["-p", "0", "-n", "128"])
-    decode_subject_cmd = _command(subject_binary, ["-p", "0", "-n", "128"])
-    decode_run = experiment_execution.run_paired_lane(
-        metric="tg128", control_command=decode_control_cmd, subject_command=decode_subject_cmd,
-        pattern=re.compile(r"tg128\s*\|\s*([0-9.]+)"), pairs=pairs, runner=_make_runner("decode"),
+    runs: dict[str, "experiment_execution.PairedLaneRun"] = {}
+    commands: dict[str, dict[str, list[str]]] = {}
+    for workload in workloads:
+        control_cmd = _paired_llama_bench_command(
+            control_binary, model, workload, patch_args=patch_args, runtime_args=runtime_args,
+        )
+        subject_cmd = _paired_llama_bench_command(
+            subject_binary, model, workload, patch_args=patch_args, runtime_args=runtime_args,
+        )
+        runs[workload] = experiment_execution.run_paired_lane(
+            metric=_PAIRED_BENCH_METRIC_NAME[workload],
+            control_command=control_cmd, subject_command=subject_cmd,
+            pattern=_PAIRED_BENCH_METRIC_PATTERN[workload], pairs=pairs,
+            runner=_make_runner(workload),
+        )
+        commands[workload] = {"control": control_cmd, "subject": subject_cmd}
+
+    return PairedBenchmarkOutcome(runs=runs, commands=commands, raw_logs=raw_logs)
+
+
+def run_rd04_benchmark_evidence(
+    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
+    run_dir: Path, campaign_id: str, amdgpu_targets: str,
+    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
+    pairs: int = 3,
+) -> dict[str, object]:
+    """VA04 hardware-free preflight slice (GPT session ses_5bbee8ce5c9a4265,
+    req_da015a1366044ad1): an RD04-scoped validation-domain paired
+    benchmark producer, analogous to RD08's real lanes (run_rd08_
+    validation_lanes()) but deliberately without contract promotion or
+    generalisation -- this slice only proves a real benchmark executed
+    and binds it as evidence; qualification against RD04's real
+    acceptance thresholds is separate, later, real-hardware work. Does
+    NOT depend on the generic S1-S7 campaign succeeding -- that pipeline's
+    own promotion decision is unrelated to RD04's own validation-domain
+    evidence (the exact real bug VA15 found and fixed for RD08).
+
+    ``passed`` means "benchmark evidence executed successfully" (both
+    paired lanes completed with finite statistics), NOT "RD04 met its
+    3.39% target" -- threshold qualification stays separate.
+
+    PVPS02 step 2: now a compatibility wrapper over run_paired_llama_
+    benchmark() -- same argv shape, same performance.json shape, same
+    behavior; the shared execution logic moved, this function's own
+    contract to its callers did not."""
+    import math
+
+    outcome = run_paired_llama_benchmark(
+        control_binary=control_binary, subject_binary=subject_binary, model=model,
+        hip_path=hip_path, patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
+        pairs=pairs, log_context="rd04",
     )
-    prefill_control_cmd = _command(control_binary, ["-p", "512", "-n", "0"])
-    prefill_subject_cmd = _command(subject_binary, ["-p", "512", "-n", "0"])
-    prefill_run = experiment_execution.run_paired_lane(
-        metric="pp512", control_command=prefill_control_cmd, subject_command=prefill_subject_cmd,
-        pattern=re.compile(r"pp512\s*\|\s*([0-9.]+)"), pairs=pairs, runner=_make_runner("prefill"),
-    )
+    decode_run, prefill_run = outcome.runs["decode"], outcome.runs["prefill"]
 
     def _finite(stats: dict[str, object]) -> bool:
         value = stats.get("geometric_effect_pct")
@@ -1094,11 +1125,8 @@ def run_rd04_benchmark_evidence(
         "validation_build_identities": {
             "control": control_build_identity, "subject": subject_build_identity,
         },
-        "commands": {
-            "decode": {"control": decode_control_cmd, "subject": decode_subject_cmd},
-            "prefill": {"control": prefill_control_cmd, "subject": prefill_subject_cmd},
-        },
-        "raw_logs": raw_logs,
+        "commands": outcome.commands,
+        "raw_logs": outcome.raw_logs,
         "metrics": {
             "decode": {"metric": "tg128", "stats": decode_run.stats, "runs": list(decode_run.runs)},
             "prefill": {"metric": "pp512", "stats": prefill_run.stats, "runs": list(prefill_run.runs)},

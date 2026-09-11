@@ -165,10 +165,20 @@ class Rd08LaneCommandsGpuFlagTests(unittest.TestCase):
 
 class Rd04CommandGpuFlagTests(unittest.TestCase):
     def test_rd04_command_includes_ngl_99(self) -> None:
-        import inspect
-
-        source = inspect.getsource(vc.run_rd04_benchmark_evidence)
-        self.assertIn('"-ngl", "99"', source)
+        # PVPS02 step 2: was a source-string inspection of
+        # run_rd04_benchmark_evidence's own body, which broke the moment
+        # its command-building logic moved into the shared
+        # _paired_llama_bench_command() primitive -- exactly the kind of
+        # implementation-detail-encoding test the refactor's own design
+        # flagged for replacement. Now calls the real command builder and
+        # checks its actual output, same pattern as
+        # Rd08LaneCommandsGpuFlagTests above.
+        command = vc._paired_llama_bench_command(
+            Path("control_bin"), Path("m.gguf"), "decode",
+            patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
+        )
+        self.assertIn("-ngl", command)
+        self.assertEqual(command[command.index("-ngl") + 1], "99")
 
 
 if __name__ == "__main__":
