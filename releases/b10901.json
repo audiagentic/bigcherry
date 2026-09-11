@@ -14,7 +14,7 @@
   "bigcherry_revision": "dc5c9039fb650bc741e0ca07b5eea3f708995158",
   "first_seen": "2026-09-11T02:37:56.207426+00:00",
   "manifest_hash": "1602e0385875242bd04911cdc0f702de",
-  "notes": "",
+  "notes": "\n\npin-status --complete (2026-09-11, on brutus workspaces/main):\npin           b10901 -> 28ff0958291c\nvendor HEAD   28ff0958291c (tag b10901)\nVERDICT       consistent\nCOMPLETION    PASS\n\nReal-hardware bump-validation smoke matrix (5/5 cells passed): 4 single-GPU\nnative smoke launches (tierB-qwen9b-q6k) + 1 dual-XTX MTP speculative-decode\nlaunch (tierL-qwen27b-q8) all built, launched, completed a real generation,\nand shut down cleanly. Framework-configuration evidence for\n0100_cmake_options and 0700_coverage_counters regenerated via real GPU\ncompiles on gfx1100 and gfx1201 after this bump invalidated the prior\nevidence identity.\n",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
