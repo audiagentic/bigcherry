@@ -2,7 +2,7 @@
 id: PVPS02
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: completed
 created-at: '2026-09-11T06:35:00.394840+00:00'
 breadth: ''
 skill: advanced
@@ -234,6 +234,14 @@ REAL-HARDWARE RE-VERIFICATION OF THE ROCR-UNSET FIX (commit acbb28ed), 2026-09-1
 
 PVPS02 is now ready for a final GPT re-review to close out the BLOCK verdict from req_8429aa8e0d35496e.
 
+
+
+FINAL GPT RE-REVIEW (req_d1ef22d846854960, 2026-09-11): VERDICT APPROVE WITH FOLLOW-UP. Confirmed the ROCR-unset fix closes the original blocker at every current production path (cited exact line ranges for run_paired_llama_benchmark, RD58, all 3 RD73 launches, DeviceVisibility.document(), the regression tests, and the RD73 waiver). Follow-up requested: harden against explicit ROCR reintroduction via env_overrides/selector_env (ordering issue: strip-then-override meant a caller passing ROCR explicitly could still win), fix a stale docstring, and strengthen the RD73 AST test to check env_unset's actual value, not just its presence.
+
+FOLLOW-UP FIXED (commit 2a2830df), same session: run_paired_llama_benchmark() now strips ROCR_VISIBLE_DEVICES AFTER applying env_overrides (not just before); new _hip_only() helper applied at RD73's decode-control lane's inline env_overrides; both rd73_env dict constructions (MTP lane, resource-burst) explicitly pop ROCR_VISIBLE_DEVICES as defense in depth alongside env_unset; RD73's AST golden-thread test strengthened to resolve what env_unset actually references and verify it really names ROCR_VISIBLE_DEVICES (a bare env_unset=() would now fail it). Full offline suite clean, patch-lint/check clean, pushed, synced to Brutus.
+
+PVPS02 IS NOW COMPLETE. All 7 implementation steps done, twice adversarially reviewed by GPT with every real finding fixed and re-verified (including two rounds of real-hardware confirmation on Brutus -- the original bug, and the adversarial ambient-ROCR scenario from the second review), RD58 and RD04's legacy alias real-hardware-confirmed, RD73's real-hardware omission explicitly waived in acceptance criteria with justification. Marking completed.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -272,3 +280,7 @@ PVPS02 is now ready for a final GPT re-review to close out the BLOCK verdict fro
 - 2026-09-11T12:06:30.218808+00:00 (updated-by): Updated: section:notes
 - chg_20260911_120635_verified-on-real-gpu-hardware_2085
 - 2026-09-11T12:06:35.024942+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T12:24:16.491549+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T12:24:18.561471+00:00 (state-transition): State: pending → completed
+- chg_20260911_122423_the-new-generic-patch-benchmar_9144
+- 2026-09-11T12:24:23.860388+00:00 (updated-by): Updated: section:ledger-events
