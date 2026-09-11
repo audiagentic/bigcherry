@@ -1,7 +1,7 @@
 schema = 1
 id = "0840_hybrid_allreduce_dispatch"
 order = 840
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
