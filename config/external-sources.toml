@@ -514,7 +514,7 @@ title = "cuda : Q6_K mmvq VDR=2 decode kernel"
 plan-item = "RD08"
 status = "ported-untested"
 patch = "1204_rd08_q6k_mmvq_vdr2"
-note = "co-tenants BigCherry 0600/0650; audit whether RD25 (8cdf1ab08) applies to this kernel. Ported 2026-08-18 (7 edits, 4 files); isolated bench pending"
+note = "co-tenants BigCherry 0600/0650. RD25 applicability audited 2026-09-11 (GPT review req_3c98f154389148bb, during RD08's first real-hardware qualification run on gfx1100): RD25 (8cdf1ab08) fixes gfx1151 Q8_0 MMVQ/fused-kernel batch-vs-seq reduction consistency -- it does not modify this Q6_K VDR2 implementation and does not explain RD08's real bit-identical correctness-gate failure on that run. RD08 itself remains state=untested pending a contract-design decision on whether bit-identical is the right bar for this kernel's necessarily-different FP reduction order (VDR=2 changes lane assignment and warp-reduction structure vs VDR=1). Ported 2026-08-18 (7 edits, 4 files)."
 
 [[sources.tracked]]
 commit = "3c48ecd635022522b41a622aae28b565497abef5"

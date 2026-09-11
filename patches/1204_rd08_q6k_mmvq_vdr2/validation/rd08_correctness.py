@@ -282,6 +282,59 @@ def compare_one_shape_seed(
     )
 
 
+def collect_all_rd08_correctness_rows(
+    *,
+    subject_binary: Path,
+    control_binary: Path,
+    shapes: tuple[Rd08Shape, ...] = RD08_SHAPES,
+    seeds: tuple[int, ...] = RD08_SEEDS,
+    runner=subprocess.run,
+) -> tuple[ShapeSeedComparison, ...]:
+    """GPT review (req_3c98f154389148bb, 2026-09-11, first real-hardware
+    RD08 qualification run): require_rd08_correctness_evidence() raises on
+    the FIRST failing row, so a real run that fails early discards every
+    other row's data -- including the full numerical metrics (err/max_abs/
+    threshold/n, not just a digest-equality bool) for rows that never even
+    ran. This is purely diagnostic (never raises, never used as a gate --
+    the gate stays require_rd08_correctness_evidence(), unchanged) so a
+    real run always produces the complete 15-row picture GPT's review
+    asked for, whether or not bit-identical equality holds for every row."""
+    rows: list[ShapeSeedComparison] = []
+    for shape in shapes:
+        for seed in seeds:
+            rows.append(compare_one_shape_seed(
+                subject_binary=subject_binary, control_binary=control_binary,
+                shape=shape, seed=seed, runner=runner,
+            ))
+    return tuple(rows)
+
+
+def row_to_diagnostic_dict(row: ShapeSeedComparison) -> dict[str, Any]:
+    """Full numerical detail for one (shape, seed) row -- not just .ok --
+    so a real run's evidence can distinguish "bit-identical", "numerically
+    close but not identical" (the expected shape for a legitimate FP
+    reduction-order change), and "materially different" without needing
+    to re-run anything (GPT review req_3c98f154389148bb)."""
+
+    def _metric_dict(metric: Any) -> dict[str, Any] | None:
+        if metric is None:
+            return None
+        return {
+            "err": metric.err, "max_abs": metric.max_abs, "threshold": metric.threshold,
+            "n": metric.n, "backend1_digest": metric.backend1_digest,
+            "backend2_digest": metric.backend2_digest,
+        }
+
+    return {
+        "shape": row.shape_name, "seed": row.seed, "ok": row.ok,
+        "subject_status": row.subject_status, "control_status": row.control_status,
+        "subject_input_digest": row.subject_digest.digest if row.subject_digest else None,
+        "control_input_digest": row.control_digest.digest if row.control_digest else None,
+        "subject_metric": _metric_dict(row.subject_metric),
+        "control_metric": _metric_dict(row.control_metric),
+    }
+
+
 def require_rd08_correctness_evidence(
     *,
     subject_binary: Path,
