@@ -1,9 +1,8 @@
 schema = 1
 id = "0840_hybrid_allreduce_dispatch"
 order = 840
-group = "core"
 state = "untested"
-kind = "framework"
+kind = "diagnostic"
 origin = "local"
 backend = "hip"
 plan-item = "GP03"

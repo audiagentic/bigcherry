@@ -63,7 +63,6 @@ PACKAGE_TOML = """\
 schema = 1
 id = "{patch_id}"
 order = {order}
-group = "core"
 state = "validated"
 kind = "framework"
 origin = "local"
@@ -102,7 +101,6 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIsNone(descriptor.package_root)
         self.assertIsNone(descriptor.metadata_path)
         self.assertEqual(descriptor.state, "validated")
-        self.assertEqual(descriptor.group, "core")
 
     def test_nested_patch_toml_discovered(self) -> None:
         package = "rd/1204_rd08_test"
@@ -236,7 +234,7 @@ class PackagedSchemaTests(unittest.TestCase):
 
     def test_missing_required_key_rejected(self) -> None:
         body = PACKAGE_TOML.format(patch_id="1204_rd08_test", order=1204, extra="")
-        self._write_package(body.replace('group = "core"\n', ""))
+        self._write_package(body.replace('state = "validated"\n', ""))
         with self.assertRaisesRegex(patch_registry.PatchRegistryError, "missing required"):
             self._load()
 

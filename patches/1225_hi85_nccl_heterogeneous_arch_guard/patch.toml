@@ -1,9 +1,8 @@
 schema = 1
 id = "1225_hi85_nccl_heterogeneous_arch_guard"
 order = 1225
-group = "core"
 state = "untested"
-kind = "framework"
+kind = "diagnostic"
 origin = "local"
 backend = "hip"
 plan-item = "GP02"

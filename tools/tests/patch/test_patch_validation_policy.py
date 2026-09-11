@@ -28,7 +28,6 @@ PATCH_TOML = """\
 schema = 1
 id = "9999_example_patch"
 order = 9999
-group = "test"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"
@@ -501,7 +500,7 @@ class RegressionTests(unittest.TestCase):
             (package_dir / "patch.py").write_text("STATE = 'validated'\n", encoding="utf-8")
             (package_dir / "patch.toml").write_text(
                 'schema = 1\nid = "9998_framework_example"\norder = 9998\n'
-                'group = "test"\nstate = "validated"\nkind = "framework"\n'
+                'state = "validated"\nkind = "framework"\n'
                 'origin = "local"\nbackend = "hip"\n',
                 encoding="utf-8",
             )

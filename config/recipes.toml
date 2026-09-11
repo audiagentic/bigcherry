@@ -18,8 +18,17 @@ patches = [
   "0820_measurement_signature_shapes",
   "0830_split_reduce_telemetry",
   "0900_pool_workspace_metrics",
-  "1000_rdna4_mmq_q2k_q6k_fix",
   "1100_hi70_direct_op_evidence",
+]
+required-state = "validated"
+
+[patch-set.upstream-fixes]
+# Correctness backports for real upstream bugs, temporary by design (each
+# carries upstream-ref + retirement in its own patch.toml). Composed into
+# BOTH bigcherry-native and bigcherry below -- a correctness fix is never
+# optional the way a performance enhancement is (PPS03).
+patches = [
+  "1000_rdna4_mmq_q2k_q6k_fix",
 ]
 required-state = "validated"
 
@@ -223,12 +232,12 @@ backend = "vulkan"
 [source.bigcherry-native]
 ref = "pinned"
 overlay = true
-patch-sets = ["framework"]
+patch-sets = ["framework", "upstream-fixes"]
 
 [source.bigcherry]
 ref = "pinned"
 overlay = true
-patch-sets = ["framework", "validated-enhancements"]
+patch-sets = ["framework", "upstream-fixes", "validated-enhancements"]
 
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."

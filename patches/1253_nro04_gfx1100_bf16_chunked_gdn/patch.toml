@@ -1,7 +1,6 @@
 schema = 1
 id = "1253_nro04_gfx1100_bf16_chunked_gdn"
 order = 1253
-group = "nasone-rdna"
 state = "untested"
 kind = "enhancement"
 origin = "local"

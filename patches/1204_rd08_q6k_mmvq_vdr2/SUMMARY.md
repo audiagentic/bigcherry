@@ -1,7 +1,6 @@
 # 1204_rd08_q6k_mmvq_vdr2: Q6_K mmvq VDR=2 decode kernel (RD08)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD08
 
 ## What it does

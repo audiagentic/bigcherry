@@ -271,7 +271,6 @@ PACKED_TOML = """\
 schema = 1
 id = "1204_focal"
 order = 1204
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

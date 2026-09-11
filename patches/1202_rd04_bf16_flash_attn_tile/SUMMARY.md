@@ -1,7 +1,6 @@
 # 1202_rd04_bf16_flash_attn_tile: Native-BF16 flash-attn tile kernel series (RD04, net of 7 fork commits)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD04
 
 ## What it does

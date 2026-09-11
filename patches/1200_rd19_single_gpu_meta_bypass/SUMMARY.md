@@ -1,7 +1,6 @@
 # 1200_rd19_single_gpu_meta_bypass: Skip the Meta device wrapper when tensor-splitting a single GPU (RD19)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD19
 
 ## What it does

@@ -1,7 +1,6 @@
 # 1004_rms_norm_mul_rope_fusion: Upstream backport: fuse rms_norm + mul + rope (+ view + set_rows)
 
 **Status:** rejected
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

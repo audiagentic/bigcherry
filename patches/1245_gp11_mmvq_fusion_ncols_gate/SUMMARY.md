@@ -1,7 +1,6 @@
 # 1245: Widen the MMVQ MUL_MAT+GLU fusion gate beyond ncols_dst==1
 
 **Status:** untested
-**Group:** gpu-collectives
 **Plan item:** GP11
 
 > DO NOT PROMOTE. `untested` here means "not contract-qualified", not

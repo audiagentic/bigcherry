@@ -1,7 +1,6 @@
 # 1207_rd17_moe_topk_down_fold: Fold the MoE topk-weights MUL into the down projection (RD17)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD17
 
 ## What it does

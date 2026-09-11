@@ -45,7 +45,6 @@ PKG_TOML = """\
 schema = 1
 id = "1202_dual"
 order = 1202
-group = "core"
 state = "untested"
 kind = "framework"
 origin = "local"
@@ -350,7 +349,7 @@ class Rv80AcceptanceTests(MaterializationTests):
         def _mod(patch_id: str, order: int, requires=()) -> patchset.PatchModule:
             return patchset.PatchModule(
                 patch_id=patch_id, path=Path("/nonexistent") / f"{patch_id}.py",
-                order=order, group="core", state="validated", upstream=None,
+                order=order, state="validated", upstream=None,
                 content_hash="ab" * 32, requires=tuple(requires),
             )
 

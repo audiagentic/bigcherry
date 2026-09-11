@@ -1,7 +1,6 @@
 # 1222_hi67_deterministic_test_backend_ops_seed: Deterministic tensor init for CPU-reference correctness evidence (HI67 slice 2a)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI67
 
 ## What it does

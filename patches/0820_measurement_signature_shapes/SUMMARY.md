@@ -1,7 +1,6 @@
 # 0820_measurement_signature_shapes: Persist canonical signature shapes in tuning measurements
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

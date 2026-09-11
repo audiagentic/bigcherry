@@ -1,7 +1,6 @@
 # 1215_rd394041_amd_stream_moe_overlap: Honor active HIP stream, per-stream cuBLAS handles, dedicated concurrent scratch, and MoE shared-expert overlap (RD39/RD40/RD41/RD42)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD39/RD40/RD41/RD42
 
 ## What it does

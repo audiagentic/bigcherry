@@ -108,7 +108,7 @@ def _module(
     patch_path: Path, *, state: str = "validated", catalog_root: Path | None = None,
 ) -> patchset.PatchModule:
     return patchset.PatchModule(
-        patch_id="9999_example", path=patch_path, order=0, group="g", state=state,
+        patch_id="9999_example", path=patch_path, order=0, state=state,
         upstream=None, content_hash="deadbeef" * 8, catalog_root=catalog_root,
     )
 
@@ -352,7 +352,6 @@ class ContractIdentityResolutionNotSwallowedTests(unittest.TestCase):
             "schema = 1\n"
             'id = "9999_example"\n'
             "order = 9999\n"
-            'group = "test"\n'
             'state = "validated"\n'
             'kind = "enhancement"\n'
             'origin = "external-fork"\n'

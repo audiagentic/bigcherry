@@ -72,19 +72,16 @@ def test_repin_to_the_current_value_is_a_no_op(tmp_path):
 def test_metadata_is_read_without_importing(tmp_path):
     (tmp_path / "0001_x.py").write_text(
         'raise SystemExit("must not import")\n'
-        'GROUP = "upstream-fixes"\n'
         'STATE = "rejected"\n'
         'UPSTREAM = "abc1234def"\n',
         encoding="utf-8")
     info, = patchset.describe(tmp_path)
-    assert (info.group, info.state, info.upstream) == (
-        "upstream-fixes", "rejected", "abc1234def")
+    assert (info.state, info.upstream) == ("rejected", "abc1234def")
 
 
 def test_declared_defaults(tmp_path):
     (tmp_path / "0001_bare.py").write_text("PATCHES = []\n", encoding="utf-8")
     info, = patchset.describe(tmp_path)
-    assert info.group == patchset.DEFAULT_GROUP
     assert info.state == patchset.DEFAULT_STATE == "untested"
     assert info.upstream is None
     assert info.state_valid

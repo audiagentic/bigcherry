@@ -1,7 +1,6 @@
 # 1242_hi134_meta_stage_trace: Attribute META reduction copy activity to its transfer stages (HI134)
 
 **Status:** untested
-**Group:** core
 **Plan item:** HI134
 
 ## What it does

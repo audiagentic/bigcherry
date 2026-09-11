@@ -1,7 +1,6 @@
 schema = 1
 id = "1005_prompt_cache_checkpoint_selection"
 order = 1005
-group = "upstream-fixes"
 state = "untested"
 kind = "upstream-backport"
 origin = "upstream-commit"

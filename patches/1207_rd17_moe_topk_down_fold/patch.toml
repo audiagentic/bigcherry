@@ -1,7 +1,6 @@
 schema = 1
 id = "1207_rd17_moe_topk_down_fold"
 order = 1207
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

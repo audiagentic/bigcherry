@@ -70,7 +70,6 @@ The minimum packaged manifest is:
 schema = 1
 id = "1204_example_patch"
 order = 1204
-group = "rdna-boosts"
 state = "untested"
 
 plan-ids = ["RD08"]
@@ -83,6 +82,7 @@ backend = "hip"
 external-source = "stew675-rdna-boosts"
 validation-architectures = ["gfx1100", "gfx1201"]
 experiment-contract = "RD08-Q6K-MMVQ-VDR2"
+tags = ["optimization", "gfx1201"]
 ```
 
 Rules that the registry enforces:
@@ -106,10 +106,64 @@ Rules that the registry enforces:
   the contract-required set where the contract declares one.
 - `kind`, `origin`, and `backend` use the registry vocabulary. Do not encode
   scientific thresholds, hypotheses, or workload acceptance in this file.
+- `tags` is optional and sparse -- see `## Tags` below. Never required to be
+  non-empty; a patch with nothing genuinely specific to assert carries none.
 
 For a packaged patch, `patch.toml` is the metadata authority. Do not duplicate
-its state, group, order, or dependency fields in `patches/catalog.toml` or in
+its state, order, or dependency fields in `patches/catalog.toml` or in
 `patch.py`.
+
+## Tags
+
+`kind` (`framework` / `diagnostic` / `upstream-backport` / `enhancement`) is
+what patch-set composition actually selects on -- small, fixed, required in
+practice. `tags` is a separate, optional, sparse, multi-valued field for
+BigCherry's own cross-cutting classification and analysis, never a build
+input. Apply a tag only where it is genuinely true and specific: an
+architecture-independent optimization gets no architecture tag; something
+genuinely RDNA4-only gets `rdna4` and nothing else. Most patches carry 0-3
+tags, never one from every category out of habit.
+
+**This is the authoritative list.** `tools/bigcherry/patch/registry.py`'s
+`PATCH_TAGS` constant is validated against this exact table by
+`tools/tests/patch/test_patch_tags_registry.py` -- the two cannot silently
+drift. Check here before inventing a new tag name; if nothing fits, add the
+new value to both `PATCH_TAGS` and this table in the same change, and
+consider a review of the whole list before it grows much further.
+
+| tag | meaning |
+| --- | --- |
+| `optimization` | Makes an existing path faster. Only add when `kind=enhancement` doesn't already say enough. |
+| `tuning` | Improves the autotune/dispatch-selection mechanism itself, not kernel logic. |
+| `gfx1100` / `gfx1101` / `gfx1151` / `gfx1201` | Chip-specific. Use only when the patch is genuinely scoped to that one die, not a whole architecture family. |
+| `rdna3` / `rdna3.5` / `rdna4` | Architecture-family-wide. Never combine with a specific `gfx****` tag for the same patch -- tag the narrowest true scope. |
+| `allreduce` | Touches the internal HIP AllReduce collective path. |
+| `p2p` | Touches direct peer-to-peer GPU access/transport. |
+| `tensor-parallel` | Touches tensor-parallel dispatch. Orthogonal to `split-tensor` below -- `LLAMA_SPLIT_MODE_ROW` can also use tensor parallelism per llama.cpp's own enum comment, so these are not the same fact. |
+| `meta-backend` | Touches the Meta/virtual backend path. |
+| `graph-fusion` | Touches CUDA-graph op fusion. |
+| `gated-delta-net` | Touches the Gated DeltaNet recurrent path. |
+| `mtp` | Touches Multi-Token-Prediction speculative decoding specifically (a specific mechanism within `speculative-decoding`). |
+| `state-snapshots` | Touches recurrent/MTP state capture or restore. |
+| `wmma` | Touches WMMA matrix-core kernel paths. |
+| `prefill` | Touches the prompt-processing (prefill) phase specifically. |
+| `speculative-decoding` | Touches speculative decoding generally (the family `mtp` is one mechanism within). |
+| `top-k` | Touches top-k selection/reduction. |
+| `moe-routing` | Touches MoE expert routing. |
+| `wave32` | Touches wavefront-width-specific (32-lane) execution behavior. |
+| `flash-attention` | Touches flash-attention kernels. |
+| `mmvq` / `mmq` / `mmvf` | Touches the named matrix-vector-quantized / matrix-matrix-quantized / matrix-vector-float kernel path specifically. |
+| `quantization` | Touches quantization format/conversion logic. |
+| `kv-cache` | Touches the KV cache mechanism. |
+| `dispatch` | Touches BigCherry's own dispatch-selection plumbing. |
+| `split-none` / `split-layer` / `split-row` / `split-tensor` | The patch's behavior genuinely differs by `-sm` split mode (llama.cpp's real `enum llama_split_mode`, `include/llama.h`). Only tag the mode(s) that actually matter to this patch, not the one(s) it happens to have been tested under. |
+
+Do not add a tag that only restates another field already present on the
+patch: `dual-gpu`/`peer-access`-shaped assertions belong as the relevant
+subsystem tag (`allreduce`/`tensor-parallel`/`p2p`) since multi-GPU-ness is
+already implied by touching one of those; a tag that only restates `kind`
+(e.g. a `fix` tag on an `upstream-backport` patch) does not belong here
+either.
 
 ## `patch.py`: anchored implementation
 

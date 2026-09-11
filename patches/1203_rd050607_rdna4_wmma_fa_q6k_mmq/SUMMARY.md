@@ -1,7 +1,6 @@
 # 1203_rd050607_rdna4_wmma_fa_q6k_mmq: RDNA4 WMMA flash-attn and Q6_K mmq prefill performance work (RD05/RD06/RD07)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD05/RD06/RD07
 
 ## What it does

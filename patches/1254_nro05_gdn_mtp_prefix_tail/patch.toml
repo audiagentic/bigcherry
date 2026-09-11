@@ -1,7 +1,6 @@
 schema = 1
 id = "1254_nro05_gdn_mtp_prefix_tail"
 order = 1254
-group = "nasone-rdna"
 state = "untested"
 kind = "enhancement"
 origin = "local"

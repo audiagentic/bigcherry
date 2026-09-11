@@ -1,7 +1,6 @@
 schema = 1
 id = "1202_rd04_bf16_flash_attn_tile"
 order = 1202
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

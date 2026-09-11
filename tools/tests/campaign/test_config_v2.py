@@ -215,8 +215,13 @@ states = ["validated"]
         loaded = config.load(paths.RECIPES)
         self.assertTrue(loaded.pinned)
         self.assertEqual(loaded.sources["llama-native"].patch_sets, ())
-        self.assertEqual(loaded.sources["bigcherry-native"].patch_sets, ("framework",))
-        self.assertEqual(loaded.sources["bigcherry"].patch_sets, ("framework", "validated-enhancements"))
+        self.assertEqual(
+            loaded.sources["bigcherry-native"].patch_sets, ("framework", "upstream-fixes")
+        )
+        self.assertEqual(
+            loaded.sources["bigcherry"].patch_sets,
+            ("framework", "upstream-fixes", "validated-enhancements"),
+        )
         self.assertEqual(loaded.builds["control"].options, (("GGML_HIP_AUTOTUNE", "ON"),))
         self.assertEqual(loaded.builds["tune"].needs, frozenset({"inventory"}))
         self.assertEqual(loaded.builds["replay"].needs, frozenset({"inventory", "promoted-winners"}))

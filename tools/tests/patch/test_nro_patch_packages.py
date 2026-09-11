@@ -73,12 +73,11 @@ class NroPackageShapeTests(unittest.TestCase):
             # Experiment Contract and executable correctness producer exist.
             self.assertFalse((package / "validation.toml").exists())
 
-    def test_manifests_pin_group_state_plan_and_dependencies(self):
+    def test_manifests_pin_state_plan_and_dependencies(self):
         for patch_id, (plan_id, requires) in EXPECTED.items():
             manifest = _manifest(patch_id)
             self.assertEqual(manifest["id"], patch_id)
             self.assertEqual(manifest["order"], int(patch_id.split("_", 1)[0]))
-            self.assertEqual(manifest["group"], "nasone-rdna")
             self.assertEqual(manifest["state"], "untested")
             self.assertEqual(manifest["plan-ids"], [plan_id])
             self.assertEqual(manifest["requires"], requires)
@@ -88,7 +87,6 @@ class NroPackageShapeTests(unittest.TestCase):
             text = (PATCHES / patch_id / "SUMMARY.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith(f"# {patch_id}\n\n"))
             self.assertIn("**Status:** untested", text)
-            self.assertIn("**Group:** nasone-rdna", text)
             self.assertIn(f"**Plan item:** {plan_id}", text)
 
     def test_patch_modules_are_valid_python_and_export_patches(self):

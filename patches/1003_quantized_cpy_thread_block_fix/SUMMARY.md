@@ -1,7 +1,6 @@
 # 1003_quantized_cpy_thread_block_fix: Upstream backport: quantized cpy kernels launched with 1 thread per block
 
 **Status:** rejected
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

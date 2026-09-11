@@ -1,7 +1,6 @@
 # 1000_rdna4_mmq_q2k_q6k_fix: Upstream backport: RDNA4 MMQ codegen fixes for Q2_K and Q6_K
 
 **Status:** validated
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

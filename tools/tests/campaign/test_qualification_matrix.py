@@ -37,7 +37,6 @@ def _write_packaged_patch(
         "schema = 1",
         f'id = "{patch_id}"',
         f"order = {order}",
-        'group = "core"',
         f'state = "{state}"',
         f"requires = [{requires_toml}]",
         "conflicts = []",

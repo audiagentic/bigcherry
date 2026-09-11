@@ -1,7 +1,6 @@
 # 1005_prompt_cache_checkpoint_selection: Upstream backport: fix hybrid/recurrent memory checkpoint and prompt-cache entry selection
 
 **Status:** untested
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

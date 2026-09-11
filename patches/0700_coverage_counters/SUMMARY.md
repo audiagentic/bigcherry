@@ -1,7 +1,6 @@
 # 0700_coverage_counters: Family-entry instrumentation and coverage counters (HI13)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

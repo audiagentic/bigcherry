@@ -1,7 +1,6 @@
 # 1251_nro02_allreduce_fused_residual
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO02
 
 ## What it does

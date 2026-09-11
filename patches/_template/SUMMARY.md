@@ -1,7 +1,6 @@
 # <numeric-order>_<patch-name>
 
 **Status:** untested
-**Group:** <group>
 **Plan item:** none
 
 ## What it does

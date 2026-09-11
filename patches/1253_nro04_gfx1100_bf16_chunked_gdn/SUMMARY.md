@@ -1,7 +1,6 @@
 # 1253_nro04_gfx1100_bf16_chunked_gdn
 
 **Status:** untested
-**Group:** nasone-rdna
 **Plan item:** NRO04
 
 ## What it does

@@ -1,6 +1,6 @@
 """RE40: patch-catalog governance checks (external patch-management review,
-2026-08-20) -- REQUIRES/CONFLICTS enforcement, no patch-to-patch imports, and
-no NEW patch relying on the implicit GROUP="core" default."""
+2026-08-20) -- REQUIRES/CONFLICTS enforcement and no patch-to-patch
+imports."""
 
 from __future__ import annotations
 
@@ -12,12 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import catalog as patch_catalog, patchset # noqa: E402
-
-# Patches that predate this rule and are grandfathered -- confirmed via a
-# real scan (2026-08-20) that this is the only current implicit-GROUP
-# module. No new entry may be added here; new patches must set GROUP
-# explicitly.
-GRANDFATHERED_IMPLICIT_GROUP = frozenset()
 
 
 class RequiresConflictsBackfillTests(unittest.TestCase):
@@ -95,21 +89,6 @@ class NoPatchToPatchImportsTests(unittest.TestCase):
                         if last in patch_ids and last != module.patch_id:
                             violations.append(f"{module.patch_id} imports {alias.name!r}")
         self.assertEqual(violations, [], f"patch-to-patch imports found: {violations}")
-
-
-class ImplicitGroupGrandfatherTests(unittest.TestCase):
-    """RE40 P1: the implicit GROUP="core" default (patchset.DEFAULT_GROUP)
-    may stay for grandfathered compatibility fixtures, but production package
-    metadata must declare its group explicitly."""
-
-    def test_only_grandfathered_patches_use_the_implicit_default(self):
-        implicit = {m.patch_id for m in patchset.catalog() if not m.group_explicit}
-        self.assertEqual(
-            implicit, set(GRANDFATHERED_IMPLICIT_GROUP),
-            "a patch is relying on the implicit GROUP default without being "
-            "grandfathered -- set GROUP explicitly, or add it to "
-            "GRANDFATHERED_IMPLICIT_GROUP only if this is confirmed pre-existing",
-        )
 
 
 class CatalogMetadataExtensionTests(unittest.TestCase):

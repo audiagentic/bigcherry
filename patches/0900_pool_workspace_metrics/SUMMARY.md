@@ -1,7 +1,6 @@
 # 0900_pool_workspace_metrics: Measured per-candidate workspace via the pool's own bookkeeping (HI52 part 1)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

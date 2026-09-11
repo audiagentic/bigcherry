@@ -1,7 +1,6 @@
 # 1221_rd50_gdn_chunked_recurrence: Chunked fused GatedDeltaNet recurrence for RDNA3.5 (RD50, subsumes RD51/RD52/RD53)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD50/RD51/RD52/RD53
 
 ## What it does

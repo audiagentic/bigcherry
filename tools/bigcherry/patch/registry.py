@@ -61,9 +61,37 @@ STATES: tuple[str, ...] = ("validated", "rejected", "untested", "superseded")
 # Kept distinct so a lifecycle/registry reader can tell "we rejected this"
 # from "this became unnecessary" instead of collapsing both into one code.
 RETIRED_STATES: tuple[str, ...] = ("rejected", "superseded")
-PATCH_KINDS: tuple[str, ...] = ("framework", "upstream-backport", "enhancement")
+PATCH_KINDS: tuple[str, ...] = ("framework", "diagnostic", "upstream-backport", "enhancement")
 PATCH_ORIGINS: tuple[str, ...] = ("local", "upstream-commit", "upstream-pr", "external-fork")
 PATCH_BACKENDS: tuple[str, ...] = ("hip", "vulkan", "agnostic")
+
+# Sparse, opt-in cross-cutting classification for our own analysis -- never
+# a build-selection input (kind is). Applied only where genuinely true and
+# specific; most patches carry 0-3 tags, never one from every category out
+# of habit. This is the single source of truth: PATCH_AUTHORING.md's
+# "## Tags" section is asserted to match this exact set by
+# tools/tests/patch/test_patch_tags_registry.py, the same pattern
+# TOOL_DISPOSITION.md uses against test_tooling_boundaries.py.
+PATCH_TAGS: frozenset[str] = frozenset({
+    # Purpose refinement -- only values that add information beyond `kind`
+    # itself (kind already distinguishes framework/diagnostic/upstream-
+    # backport/enhancement; these two split "enhancement" further).
+    "optimization", "tuning",
+    # Architecture: chip-specific or family-wide, never both on one patch --
+    # tag the narrowest true scope.
+    "gfx1100", "gfx1101", "gfx1151", "gfx1201", "rdna3", "rdna3.5", "rdna4",
+    # Comm subsystem / feature area.
+    "allreduce", "p2p", "tensor-parallel", "meta-backend", "graph-fusion",
+    "gated-delta-net", "mtp", "state-snapshots", "wmma", "prefill",
+    "speculative-decoding", "top-k", "moe-routing", "wave32",
+    "flash-attention", "mmvq", "mmq", "mmvf", "quantization", "kv-cache",
+    "dispatch",
+    # Split-mode: llama.cpp's real enum llama_split_mode (include/llama.h).
+    # Hyphen-prefixed so a bare "tensor" is never ambiguous against the
+    # subsystem tag "tensor-parallel" -- genuinely orthogonal to it (row
+    # split can also use tensor parallelism per the enum's own comment).
+    "split-none", "split-layer", "split-row", "split-tensor",
+})
 
 PATCH_TOML_SCHEMA = 1
 REPRESENTATION_SIMPLE = "simple"
@@ -73,11 +101,11 @@ REPRESENTATION_PACKAGED = "packaged"
 # Mirrors every existing flat module filename (0100_..., 1204_...).
 _PATCH_ID_PATTERN = re.compile(r"^(\d{2,})_[0-9A-Za-z_]+$")
 
-_PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "group", "state"})
+_PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "state"})
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
     "plan-ids", "requires", "conflicts", "requires-options", "forbids-options",
     "subsystems", "hardware", "validation-architectures", "backends",
-    "experiment-contracts",
+    "experiment-contracts", "tags",
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
     "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
@@ -200,11 +228,6 @@ def _constant_strings(path: Path, name: str) -> tuple[str, ...]:
     raise PatchRegistryError(f"{path.name}: {name} must be a string or list/tuple of strings")
 
 
-def module_group(path: Path) -> str:
-    """The group a legacy patch module declares (default when absent)."""
-    return _constant(path, "GROUP", r"[\w-]+") or "core"
-
-
 def module_state(path: Path) -> str:
     """The state a legacy patch module declares (default when absent)."""
     return _constant(path, "STATE", r"[\w-]+") or "untested"
@@ -213,11 +236,6 @@ def module_state(path: Path) -> str:
 def module_upstream(path: Path) -> str | None:
     """The upstream commit SHA a legacy patch backports from, if any."""
     return _constant(path, "UPSTREAM", r"[0-9a-fA-F]{7,40}")
-
-
-def group_is_explicit(path: Path) -> bool:
-    """Whether a legacy module declares GROUP itself (vs. the default)."""
-    return _literal_constant(path, "GROUP") is not None
 
 
 def _module_order(stem: str) -> int:
@@ -246,7 +264,6 @@ class PatchDescriptor:
     package_root: Path | None
     metadata_path: Path | None
 
-    group: str
     state: str
 
     kind: str | None
@@ -282,6 +299,7 @@ class PatchDescriptor:
     retirement: str | None = None
     plan_item: str | None = None
     backends: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
 
     @property
     def experiment_contract(self) -> str | None:
@@ -329,7 +347,6 @@ def _legacy_descriptor(
         implementation_path=path.relative_to(root),
         package_root=None,
         metadata_path=None,
-        group=module_group(path),
         state=state,
         kind=None,
         origin=None,
@@ -425,10 +442,6 @@ def _parse_patch_toml(
             f"{patch_id.split('_', 1)[0]!r}"
         )
 
-    group = raw["group"]
-    if not isinstance(group, str) or not group:
-        raise PatchRegistryError(f"{where}: group must be a non-empty string")
-
     state = raw["state"]
     if state not in STATES and validate_state:
         raise PatchRegistryError(f"{where}: state must be one of {STATES}, got {state!r}")
@@ -456,6 +469,13 @@ def _parse_patch_toml(
     record = dict(raw)
     for key in _PATCH_TOML_STRING_LIST_KEYS:
         record[key] = _string_list(raw, key, patch_id=patch_id, label="")
+
+    for tag in record["tags"]:
+        if tag not in PATCH_TAGS:
+            raise PatchRegistryError(
+                f"{where}: tags entry {tag!r} is not in the enumerated vocabulary "
+                f"PATCH_TAGS (see docs/reference/patches/PATCH_AUTHORING.md#tags)"
+            )
 
     # VA09A (VA16): experiment-contract (singular, legacy) and
     # experiment-contracts (plural) are mutually exclusive authorities --
@@ -634,7 +654,6 @@ def _packaged_descriptor(
         implementation_path=implementation.relative_to(root),
         package_root=package_dir.relative_to(root),
         metadata_path=toml_path.relative_to(root),
-        group=record["group"],
         state=record["state"],
         kind=record.get("kind"),
         origin=record.get("origin"),
@@ -646,6 +665,7 @@ def _packaged_descriptor(
         external_source=record.get("external-source"),
         plan_ids=record["plan-ids"],
         backends=record["backends"],
+        tags=record["tags"],
         requires=record["requires"],
         conflicts=record["conflicts"],
         requires_options=record["requires-options"],

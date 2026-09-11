@@ -1,7 +1,6 @@
 # 1225_hi85_nccl_heterogeneous_arch_guard: fail closed when a NCCL/RCCL participant lacks PCIe AtomicOps capability (HI85/GP02)
 
 **Status:** untested
-**Group:** core
 **Plan item:** GP02
 
 ## What it does

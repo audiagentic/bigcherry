@@ -1,7 +1,6 @@
 # 1216_rd43_concurrent_join_fusion_guard: Keep a concurrent-region join node out of op-fusion (RD43)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD43
 
 ## What it does

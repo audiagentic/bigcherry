@@ -1,7 +1,6 @@
 # 1002_hip_unsafe_math_opt_in: Upstream backport: make -funsafe-math-optimizations opt-in for HIP builds
 
 **Status:** untested
-**Group:** upstream-fixes
 **Plan item:** none
 
 ## What it does

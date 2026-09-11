@@ -1,7 +1,6 @@
 schema = 1
 id = "1216_rd43_concurrent_join_fusion_guard"
 order = 1216
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

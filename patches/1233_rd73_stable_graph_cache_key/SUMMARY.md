@@ -1,7 +1,6 @@
 # 1233_rd73_stable_graph_cache_key: Replace the HIP/CUDA graph-cache key with a stable FNV-1a shape fingerprint (RD73, re-scoped from FORK-MTP-003)
 
 **Status:** rejected
-**Group:** rdna-boosts
 **Plan item:** RD73
 
 > Promoted 2026-09-05 on 6 pre-registered measurement sessions:

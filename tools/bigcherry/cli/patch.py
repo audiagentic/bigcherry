@@ -435,7 +435,7 @@ def cmd_patches(args: Namespace) -> int:
             (
                 "[x]" if taken else "[ ]",
                 module.patch_id,
-                module.group,
+                ", ".join(module.tags) or "-",
                 module.state,
                 catalog_label,
                 note,

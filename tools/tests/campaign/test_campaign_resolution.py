@@ -47,25 +47,33 @@ class CampaignResolutionTests(unittest.TestCase):
 
     def test_base_is_exactly_the_fifteen_validated_core_modules(self):
         lane = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
-        # Scoped to the framework patch-set's own declared list, not "every
+        # Scoped to the framework + upstream-fixes patch-sets' own declared
+        # lists (bigcherry-native's real composition, PPS03), not "every
         # validated module in the catalog" -- since RD19's promotion
         # (2026-08-24), a validated module can also live in
-        # validated-enhancements, which bigcherry-native's "framework"
-        # patch-set must NOT pull in.
-        framework_patch_ids = frozenset(self.cfg.patch_sets["framework"].patches)
+        # validated-enhancements, which bigcherry-native must NOT pull in.
+        native_patch_ids = frozenset(self.cfg.patch_sets["framework"].patches) | frozenset(
+            self.cfg.patch_sets["upstream-fixes"].patches
+        )
         expected = tuple(
             module.patch_id for module in self.catalog
-            if module.state == "validated" and module.patch_id in framework_patch_ids
+            if module.state == "validated" and module.patch_id in native_patch_ids
         )
         # HI70: patches/1100_hi70_direct_op_evidence/patch.py added a 15th
         # validated core module (deterministic direct-op correctness corpus
-        # for MMQ fb1 / MMF nwarps candidates).
+        # for MMQ fb1 / MMF nwarps candidates). PPS03 (2026-09-11) moved
+        # 1000_rdna4_mmq_q2k_q6k_fix (an upstream correctness backport, not
+        # framework plumbing) out of the framework patch-set into its own
+        # upstream-fixes patch-set, still composed into bigcherry-native --
+        # the total stays 15, now correctly split 14 framework + 1
+        # upstream-fixes instead of bundled as 15 "framework".
         self.assertEqual(len(expected), 15)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
-            sum(module.group == "core" for module in self.catalog
-                if module.state == "validated" and module.patch_id in framework_patch_ids),
-            14,
+            len(self.cfg.patch_sets["framework"].patches), 14,
+        )
+        self.assertEqual(
+            len(self.cfg.patch_sets["upstream-fixes"].patches), 1,
         )
         # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
         # a promoted enhancement. That separation is what makes it usable as

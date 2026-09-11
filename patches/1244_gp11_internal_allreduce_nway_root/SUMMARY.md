@@ -1,7 +1,6 @@
 # 1244: N-way fused-root internal allreduce
 
 **Status:** untested
-**Group:** gpu-collectives
 **Plan item:** GP11
 
 > Do not promote yet. The production integration correctness bugs found during

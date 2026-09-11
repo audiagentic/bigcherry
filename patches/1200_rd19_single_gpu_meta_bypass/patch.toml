@@ -1,7 +1,6 @@
 schema = 1
 id = "1200_rd19_single_gpu_meta_bypass"
 order = 1200
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

@@ -1,7 +1,6 @@
 schema = 1
 id = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
 order = 1203
-group = "rdna-boosts"
 state = "untested"
 kind = "enhancement"
 origin = "external-fork"

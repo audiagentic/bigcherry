@@ -1,7 +1,6 @@
 # 1241_rd33_mmvq_q8_0_f32_decode: Dense Q8_0 decode without activation quantization (RD33, AMD-MMV-001)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD33
 
 ## What it does

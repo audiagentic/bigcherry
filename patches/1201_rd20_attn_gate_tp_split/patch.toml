@@ -1,7 +1,6 @@
 schema = 1
 id = "1201_rd20_attn_gate_tp_split"
 order = 1201
-group = "rdna-boosts"
 state = "superseded"
 kind = "enhancement"
 origin = "external-fork"

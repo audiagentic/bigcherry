@@ -1,7 +1,6 @@
 # 1210_rd26_bitidentical_decode_verify_standalone: Decode vs speculative-verify bit-identity, base-standalone hunks (RD26a)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD26
 
 ## What it does

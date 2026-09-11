@@ -1,7 +1,6 @@
 # 0600_mmvq_geometry: Explicit MMVQ geometry variants (HI09 part 1)
 
 **Status:** validated
-**Group:** core
 **Plan item:** none
 
 ## What it does

@@ -47,7 +47,7 @@ class PortedBenchedTests(unittest.TestCase):
 
     def _module(self) -> patchset.PatchModule:
         return patchset.PatchModule(
-            patch_id="9999_example", path=self.patch_path, order=0, group="g", state="untested",
+            patch_id="9999_example", path=self.patch_path, order=0, state="untested",
             upstream=None, content_hash="deadbeef" * 8,
         )
 
@@ -233,7 +233,7 @@ class DeferredHardwareTests(unittest.TestCase):
 
     def _module(self) -> patchset.PatchModule:
         return patchset.PatchModule(
-            patch_id="9999_example", path=self.patch_path, order=0, group="g", state="untested",
+            patch_id="9999_example", path=self.patch_path, order=0, state="untested",
             upstream=None, content_hash="deadbeef" * 8,
         )
 

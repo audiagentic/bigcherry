@@ -1,7 +1,6 @@
 # 1217_rd44_graph_opt_default_rdna35: Default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5 (RD44)
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD44
 
 ## What it does
