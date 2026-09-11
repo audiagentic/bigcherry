@@ -138,6 +138,25 @@ Re-ran the real-hardware smoke test on Brutus after the fix: full end-to-end suc
 
 Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--run-rd08-lanes onto the generic path, RD08's through its own Contract adapter), 7 (RD58/RD73 wired onto require_device_visibility as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
 
+
+
+HARDENING PASS DONE (commit 7d481338), 2026-09-11, per GPT adversarial review (req_e608313764834497) of steps 4-5:
+Fixed 2 real bugs and 3 lesser gaps before proceeding to step 6:
+1. tensor-2 topology now owns both device_count AND runtime_args (BENCHMARK_TOPOLOGIES/BenchmarkTopology) -- previously selected 2 devices but never passed -sm tensor through, so the dual-GPU cell silently ran with llama-bench's default split mode.
+2. Generic control/subject builds now build with identical extra_cmake_args=[] and go through capture_completed_build_evidence()/assert_validation_subject_parity(), matching the legacy validation path's build-parity invariant (previously subject got an extra -DGGML_HIP_AUTOTUNE_GENERATED_DIR cmake arg control never got -- a build-configuration confound).
+3. resolve_benchmark_model()'s size-bytes verification is now fail-closed on missing/non-int declared size (previously silently skipped).
+4. Added BENCHMARK_EXECUTOR_FUNCS dispatch table so wiring.executor is actually dispatched on, not just validated (latent trap for a future second executor).
+5. DeviceVisibility docstring wording corrected to not overclaim physical-card identity (proves selector launch intent + architecture/device-count attestation only).
+6. Acceptance criteria corrected: real artifact is performance-matrix.json, not performance.json (a genuinely different shape from RD04's own per-patch evidence file).
+
+Real hardware re-verification on Brutus after the fix:
+- Re-ran the single-GPU tierM-ministral14b-q4km cell (regression check on the build-parity change): executed cleanly, assert_validation_subject_parity did not fire.
+- Ran the previously-untested dual-GPU tierL-qwen27b-q8/gfx1100 tensor-split cell for the first time: executed cleanly, device_visibility shows gpu_count=2/['0','1'], and the emitted subject command was directly inspected and confirmed to end in ['-ngl','99','-sm','tensor'] -- the exact fix verified against real hardware, not just unit tests.
+
+Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated failures), patch-lint/check clean. Pushed to main/planning-refactor, synced to Brutus.
+
+Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--run-rd08-lanes onto the generic path, RD08 through its own Contract adapter), 7 (RD58/RD73 wired onto require_device_visibility), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -152,6 +171,10 @@ Remaining steps per the revised order: 6 (legacy aliases --run-rd04-benchmark/--
 
 ## Ledger-events
 
+
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-09-11T09:51:11.031759+00:00 (updated-by): Updated: section:notes
+- chg_20260911_095117_a-second-round-review-of-the-n_2912
+- 2026-09-11T09:51:17.593094+00:00 (updated-by): Updated: section:ledger-events
