@@ -18,6 +18,27 @@ external-sources.toml by tools/tests/test_external_sources.py):
                      ancestral to ggml-org/llama.cpp mainline (fork-only
                      work) and not ancestral to our b10502 pin.
 
+SELECTION HAZARD (GPT chain review, 2026-09-11, session
+ses_b696cd6fe7d144b7, req_3b927154a2554c4e): this patch's own
+patch.toml carries `requires = []` -- BigCherry's composition layer
+will happily select 1215 alone. Doing so in production is unsafe: RD42
+(this patch's own shared-expert-overlap payload, below) introduces the
+exact join-node op-fusion hazard patch 1216
+(1216_rd43_concurrent_join_fusion_guard) exists to prevent (op-fusion
+absorbing the join `add` that rejoins the auxiliary stream, so the aux
+stream never rejoins and CUDA/HIP graph capture aborts with "capturing
+stream has unjoined work"). 1216 already declares
+`requires = ["1215_...`"]` (the correct forward direction -- 1216
+cannot apply without 1215's anchors existing first), but there is no
+registry mechanism for the reverse ("1215 selected implies 1216 must
+also be selected") without creating a REQUIRES cycle, so this is
+recorded here as an operational rule instead: 1215 and 1216 must
+always be treated as one indivisible unit for selection, validation,
+and promotion purposes -- never select, qualify, or promote 1215
+without 1216 alongside it. 1217 (RD44) stays a separate, later-in-chain
+patch so its own gfx1151-hardware-availability blocker does not block
+qualifying the 1215+1216 concurrency/fusion-safety pair.
+
 Why one patch for four plan items:
   RD39 (honor stream), RD40 (per-stream BLAS handles) and RD41 (dedicated
   branch scratch) are declared prerequisites of each other and of RD42 (the
