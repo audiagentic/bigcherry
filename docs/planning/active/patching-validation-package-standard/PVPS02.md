@@ -104,6 +104,15 @@ Recommended status from the second-round validation: KEEP the design, amend befo
 
 This item is now design-validated twice (initial design + self-critique). Before implementation begins, decide whether a third pass is wanted or whether this is sufficient to start coding against -- the user's own call, not to be assumed.
 
+Recommended status from the second-round validation: KEEP the design, amend before coding -- do not redesign the core idea. The central decisions (validation-adapter wiring for benchmark metadata, one shared paired-execution primitive, strict fail-closed selector safety, preserved bespoke correctness/activation paths per patch) hold up under critical review. What needed fixing was sequencing safety and explicit orchestration contracts (CLI early-path, model resolution, device-map topology semantics), not the architecture itself.
+
+This item is now design-validated twice (initial design + self-critique). Before implementation begins, decide whether a third pass is wanted or whether this is sufficient to start coding against -- the user's own call, not to be assumed.
+
+IMPLEMENTATION PROGRESS (2026-09-11):
+Step 1 DONE (commit 1162f617): require_device_visibility()/DeviceVisibility extracted into tools/bigcherry/experiment/execution.py, 16 new unit tests, nothing wired to RD58/RD73 yet (deliberately, per the revised migration order). Full offline suite clean (only the 3 confirmed pre-existing/unrelated failures remain). Pushed to main/planning-refactor, synced to Brutus.
+
+Remaining steps per the revised order: 2 (pure semantics-preserving extraction of the shared execution shape into run_paired_llama_benchmark(), with real translation-preserving compatibility wrappers for run_rd04_benchmark_evidence/run_rd08_validation_lanes and split patch_args/runtime_args), 3 (validation.toml wiring resolver), 4 (--run-performance-benchmark CLI with its own early path, execution_identity turned on here for the first time), 5 (real model/topology resolution -- ModelSpec/registry loader + Ministral models.toml entry + ordered device-pool semantics), 6 (legacy aliases, RD08's through its own adapter), 7 (RD58/RD73 wired onto the visibility helper as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -112,3 +121,4 @@ This item is now design-validated twice (initial design + self-critique). Before
 - 2026-09-11T06:48:51.301259+00:00 (updated-by): Updated: section:notes
 - 2026-09-11T07:17:49.001543+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:acceptance_criteria
 - 2026-09-11T07:28:55.652156+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:notes
+- 2026-09-11T07:59:38.514248+00:00 (updated-by): Updated: section:notes
