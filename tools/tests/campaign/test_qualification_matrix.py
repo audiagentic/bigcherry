@@ -38,6 +38,7 @@ def _write_packaged_patch(
         f'id = "{patch_id}"',
         f"order = {order}",
         f'state = "{state}"',
+        'kind = "enhancement"',
         f"requires = [{requires_toml}]",
         "conflicts = []",
         "requires-options = []",

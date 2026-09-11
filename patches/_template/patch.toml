@@ -2,6 +2,7 @@ schema = 1
 id = "<numeric-order>_<patch-name>"
 order = 9999
 state = "untested"
+kind = "<framework|diagnostic|upstream-backport|enhancement>"
 plan-ids = []
 requires = []
 conflicts = []

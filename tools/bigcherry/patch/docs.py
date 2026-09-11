@@ -2,10 +2,10 @@
 
 Each patch package directory carries a short ``SUMMARY.md`` (see
 ``patches/_template/SUMMARY.md`` for the required shape: What it does / Why
-/ Upstream, plus a Status/Group/Plan item header) -- the human-readable
+/ Upstream, plus a Status/Plan item header) -- the human-readable
 counterpart to ``patch.toml``, which is the sole machine-metadata authority
-for a packaged patch's state/group/plan-item (registry.py's
-``_packaged_descriptor``; ``patch.py``'s own STATE/GROUP constants are only
+for a packaged patch's state/plan-item (registry.py's
+``_packaged_descriptor``; ``patch.py``'s own STATE constant is only
 read for the legacy flat-module shape, not for packaged patches -- see
 ``check_summary_consistency``'s docstring for why this distinction matters).
 This module merges the SUMMARY.md of every patch in a given selection into

@@ -220,14 +220,13 @@ promotion or a pin bump.
 ## `SUMMARY.md`: release-facing description
 
 `SUMMARY.md` is required in the real repository because the lint gate checks
-it and `patch-doc` merges it into release documentation. Its first three
+it and `patch-doc` merges it into release documentation. Its first two
 metadata lines must be contiguous and exactly match `patch.toml`:
 
 ```markdown
 # 1204_example_patch
 
 **Status:** untested
-**Group:** rdna-boosts
 **Plan item:** RD08
 
 ## What it does
@@ -244,8 +243,8 @@ Origin commit or local ownership and any adaptation note.
 ```
 
 The summary is not evidence and must not claim a benchmark result that the
-bound contract/evidence record does not support. After changing `state`,
-`group`, or plan bindings, update this header in the same change and rerun
+bound contract/evidence record does not support. After changing `state`
+or plan bindings, update this header in the same change and rerun
 `patch-lint`.
 
 ## Validation package files

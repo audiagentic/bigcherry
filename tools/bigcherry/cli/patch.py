@@ -447,9 +447,9 @@ def cmd_patches(args: Namespace) -> int:
         return 0
 
     widths = [max(len(r[i]) for r in rows) for i in range(5)]
-    for mark, name, group, state, catalog_label, note in rows:
+    for mark, name, tags, state, catalog_label, note in rows:
         line = (
-            f"{mark} {name:<{widths[1]}}  {group:<{widths[2]}}  "
+            f"{mark} {name:<{widths[1]}}  {tags:<{widths[2]}}  "
             f"{state:<{widths[3]}}  {catalog_label:<{widths[4]}}"
         )
         print(f"{line}  {note}".rstrip())
