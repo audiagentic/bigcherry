@@ -76,6 +76,22 @@ current standardized validation harness (PVPS02) -- reproducing it through
 that harness, rather than resting on the original bench session alone, is
 the honest next step before further promotion decisions build on this.
 
+**Gap found 2026-09-11 (process audit)**: this patch is tagged
+`optimization` and carries `state = "validated"`, but its core performance
+claim (+8.95% decode) was measured only as a BigCherry-internal
+control-vs-treatment A/B -- never against unmodified native llama.cpp. The
+"3-arm bench (base/control/treatment)" listed above proves the multi-GPU
+Meta path is untouched (a no-op check), not a native-llama.cpp performance
+comparison for the single-GPU path this patch actually changes. Per this
+project's own new rule (`docs/reference/patches/PATCH_AUTHORING.md`'s
+"`optimization` carries a real validation obligation"), a validated
+optimization patch needs a real native/BC-baseline/BC+patch 3-arm
+comparison, not only the BigCherry-internal control/subject A/B this patch
+currently has. Flagged for a decision (re-sweep vs. accept the historical
+evidence as sufficient) rather than silently demoted -- demotion is a
+deliberate lifecycle act per this project's own doctrine, not automatic
+from a new gate.
+
 ## Evidence
 
 The compact promotion record lives in `config/external-sources.toml`'s

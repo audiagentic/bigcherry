@@ -545,5 +545,91 @@ class RegressionTests(unittest.TestCase):
                 )
 
 
+class PerformanceEvidenceTests(unittest.TestCase):
+    """2026-09-11 user-directed policy: a validated 'optimization'-tagged
+    patch must have README.md evidence of a real native-llama.cpp 3-arm
+    comparison, not just a BigCherry-internal control/subject A/B."""
+
+    def _write_package(self, root: Path, *, state: str, tags: str, readme: str | None) -> Path:
+        package_dir = root / "9999_example_patch"
+        package_dir.mkdir(parents=True)
+        (package_dir / "patch.py").write_text(PATCH_PY, encoding="utf-8")
+        (package_dir / "patch.toml").write_text(
+            "schema = 1\n"
+            'id = "9999_example_patch"\n'
+            "order = 9999\n"
+            f'state = "{state}"\n'
+            f"{tags}"
+            'kind = "enhancement"\n'
+            'origin = "local"\n'
+            'backend = "hip"\n',
+            encoding="utf-8",
+        )
+        if readme is not None:
+            (package_dir / "README.md").write_text(readme, encoding="utf-8")
+        return package_dir
+
+    def test_validated_optimization_without_readme_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="validated", tags='tags = ["optimization"]\n', readme=None,
+            )
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("no README.md", problems[0])
+
+    def test_validated_optimization_without_baseline_marker_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="validated", tags='tags = ["optimization"]\n',
+                readme="# example\n\nControl vs subject A/B within BigCherry only.\n",
+            )
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(len(problems), 1)
+            self.assertIn("no evidence of a native-llama.cpp baseline", problems[0])
+
+    def test_validated_optimization_with_baseline_marker_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="validated", tags='tags = ["optimization"]\n',
+                readme="# example\n\nCompared against native llama.cpp RCCL.\n",
+            )
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(problems, ())
+
+    def test_untagged_validated_patch_is_not_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(root, state="validated", tags="", readme=None)
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(problems, ())
+
+    def test_marker_split_across_a_line_wrap_still_matches(self) -> None:
+        # Real bug found running this check against its own first real
+        # README: ordinary markdown prose wrapping split "native llama.cpp"
+        # into "native\nllama.cpp", which a naive literal-substring match
+        # missed entirely.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="validated", tags='tags = ["optimization"]\n',
+                readme="# example\n\nCompared against native\nllama.cpp on this hardware.\n",
+            )
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(problems, ())
+
+    def test_untested_optimization_patch_is_not_checked(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="untested", tags='tags = ["optimization"]\n', readme=None,
+            )
+            problems = vp.check_performance_evidence(root=root)
+            self.assertEqual(problems, ())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ schema = 1
 id = "1001_hip_internal_allreduce"
 order = 1001
 state = "validated"
+tags = ["optimization", "allreduce"]
 kind = "upstream-backport"
 origin = "upstream-pr"
 backend = "hip"

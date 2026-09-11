@@ -131,6 +131,33 @@ drift. Check here before inventing a new tag name; if nothing fits, add the
 new value to both `PATCH_TAGS` and this table in the same change, and
 consider a review of the whole list before it grows much further.
 
+### `optimization` carries a real validation obligation (2026-09-11)
+
+Unlike every other tag, `optimization` is not purely a classification aid.
+A patch tagged `optimization` makes a performance claim, and a performance
+claim can only be trusted against a real comparison to unmodified upstream
+llama.cpp -- BigCherry's own internal control-vs-subject A/B (the pattern
+`tools/bigcherry/experiment/perplexity.py`'s correctness producers use, and
+most RD-series correctness/A-B evidence in this repo) proves the patch
+doesn't regress *BigCherry's own baseline*. It does **not** show whether
+that baseline itself already gained or lost ground against upstream --
+which is the actual question "is this patch worth carrying" depends on.
+
+**Rule**: before tagging a patch `optimization` AND setting
+`state = "validated"`, its README.md must document a real 3-arm comparison:
+**native (unmodified) llama.cpp**, **BigCherry baseline** (patch excluded),
+and **BigCherry + this patch**. `tools/bigcherry/patch/validation_policy.py`'s
+`check_performance_evidence()` enforces this structurally in `patch-lint`
+(a literal-substring presence check for a phrase like "native llama.cpp" in
+the README -- it cannot verify the comparison is real or current, only that
+some evidence was written down; a human/GPT reviewer still owns whether
+that evidence is honest and sufficient). A patch that is `kind=enhancement`
+but makes no performance claim (a correctness fix, a safety guard, a
+functional addition) should NOT carry the `optimization` tag and is exempt
+from this rule -- see `kind`'s own framework/diagnostic/upstream-backport/
+enhancement split for the functional-vs-performance distinction that
+doesn't need a tag to express.
+
 | tag | meaning |
 | --- | --- |
 | `optimization` | Makes an existing path faster. Only add when `kind=enhancement` doesn't already say enough. |
