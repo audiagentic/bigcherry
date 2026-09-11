@@ -1,20 +1,34 @@
 """PVPS02 step 4: --run-performance-benchmark CLI wiring. The parser-level
 argument contract is directly testable (no hardware needed, main() exits
-via parser.error() before touching a build); _run_performance_benchmark()
-itself is a real-hardware integration entry point (source materialization,
-per-architecture cmake builds) -- consistent with the project's established
-convention for this class of function (see Rd04CliWiringTests in
-test_patch_validation_campaign_va04.py), its dispatch wiring is proven via
-source inspection rather than mocking the entire build pipeline; real
-end-to-end behavior is covered by PVPS02's real-hardware merge gate on
-Brutus.
+via parser.error() before touching a build). Real end-to-end behavior
+(actual cmake builds, actual llama-bench execution) is covered by
+PVPS02's real-hardware merge gate on Brutus, consistent with the
+project's established convention for this class of function (see
+Rd04CliWiringTests in test_patch_validation_campaign_va04.py).
+
+OrchestrationLogicTests below is a real, deliberate exception to that
+"don't mock the whole pipeline" convention: a first real-hardware smoke
+run of this exact CLI on Brutus (2026-09-11) hit a plain NameError
+(require_device_visibility used without being imported) that every
+test in this file at the time -- all either parser-only or source-
+inspection-only -- was structurally incapable of catching, because none
+of them actually called _run_performance_benchmark() far enough to
+reach that line. Mocking build_tree()/run_paired_llama_benchmark()/
+source materialization is exactly narrow enough to exercise the real
+orchestration logic (device resolution, ExecutionIdentity construction,
+the require_device_visibility() call itself, skip-cell handling)
+hardware-free, without asserting on cmake/llama-bench output shape --
+that stays the real-hardware gate's job.
 """
 
 from __future__ import annotations
 
+import contextlib
+import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -126,6 +140,107 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
 
     def test_inapplicable_cells_are_recorded_skipped_with_a_reason_not_omitted(self) -> None:
         self.assertIn('cell.update(status="skipped", reason=', self.impl_source)
+
+
+class OrchestrationLogicTests(unittest.TestCase):
+    """Hardware-free: mocks build_tree/generate_registry/source
+    materialization/resolve_benchmark_wiring/resolve_benchmark_model so
+    _run_performance_benchmark()'s real orchestration logic -- device
+    resolution, require_device_visibility()/ExecutionIdentity
+    construction, skip-cell handling -- actually runs. This is the test
+    that would have caught the NameError found on the real-hardware
+    smoke run (see module docstring)."""
+
+    def setUp(self) -> None:
+        import argparse
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmp.name)
+
+        self.args = argparse.Namespace(
+            patch="1202_rd04_bf16_flash_attn_tile",
+            hip_path=self.tmp_path / "hip",
+            workdir=self.tmp_path / "workdir",
+            worktree_root=self.tmp_path / "worktrees",
+            build_root=None,
+            model_root=self.tmp_path / "models",
+            benchmark_architecture=["gfx1100"],
+            benchmark_model=["test-model"],
+            device_map=["gfx1100=0"],
+            bench_repetitions=2,
+            baseline_source="bigcherry",
+        )
+        self.args.workdir.mkdir(parents=True, exist_ok=True)
+
+        self.descriptor = mock.Mock(
+            patch_id="1202_rd04_bf16_flash_attn_tile",
+            validation_architectures=("gfx1100",),
+        )
+        self.cfg = mock.Mock()
+        self.cfg.pinned = "deadbeef"
+        self.cfg.platforms = {"linux-multi": mock.Mock(targets=("gfx1100",))}
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _run_with_patches(self, *, device_count: int = 1):
+        wiring = mock.Mock(executor="paired-llama-bench-v1", patch_args=())
+        resolved_model = mock.Mock(
+            path=self.tmp_path / "model.gguf", device_count=device_count,
+        )
+        composition = mock.Mock()
+        materialized = mock.Mock()
+        materialized.name = "src-deadbeef"
+        outcome = mock.Mock(
+            commands=[], raw_logs=[], runs={"decode": mock.Mock(stats={}, runs=[])},
+        )
+
+        patches = [
+            mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring),
+            mock.patch.object(vc, "resolve_benchmark_model", return_value=resolved_model),
+            mock.patch.object(vc, "generate_registry", return_value=None),
+            mock.patch.object(vc, "build_tree", return_value=self.tmp_path / "bin"),
+            mock.patch.object(vc, "run_paired_llama_benchmark", return_value=outcome),
+            mock.patch(
+                "bigcherry.patch.source.resolve_source_composition",
+                return_value=("deadbeef" * 5, composition),
+            ),
+            mock.patch(
+                "bigcherry.patch.source.materialize_composition",
+                return_value=materialized,
+            ),
+        ]
+        with contextlib.ExitStack() as stack:
+            mocks = [stack.enter_context(p) for p in patches]
+            require_visibility = stack.enter_context(
+                mock.patch(
+                    "bigcherry.experiment.execution.require_device_visibility",
+                    return_value=mock.Mock(document=lambda: {}),
+                )
+            )
+            result = vc._run_performance_benchmark(self.args, self.descriptor, self.cfg)
+        return result, require_visibility
+
+    def test_reaches_and_calls_require_device_visibility(self) -> None:
+        result, require_visibility = self._run_with_patches()
+        require_visibility.assert_called_once()
+        _, kwargs = require_visibility.call_args
+        self.assertEqual(kwargs["exact_count"], 1)
+        self.assertIn("HIP_VISIBLE_DEVICES", kwargs["env"])
+
+    def test_successful_cell_returns_zero(self) -> None:
+        result, _ = self._run_with_patches()
+        self.assertEqual(result, 0)
+
+    def test_device_pool_shortfall_skips_the_cell_without_crashing(self) -> None:
+        # device-map only offers 1 id but the model needs 2 -- must be
+        # recorded as a skipped cell (not an uncaught exception).
+        result, require_visibility = self._run_with_patches(device_count=2)
+        require_visibility.assert_not_called()
+        self.assertEqual(result, 1)
+        matrix = json.loads((self.args.workdir / "performance-matrix.json").read_text())
+        self.assertEqual(matrix["cells"][0]["status"], "skipped")
 
 
 if __name__ == "__main__":

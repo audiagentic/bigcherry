@@ -2566,6 +2566,7 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     docstring for why that distinction is load-bearing, never
     overclaimed in evidence)."""
     from bigcherry.experiment import attestation
+    from bigcherry.experiment.execution import require_device_visibility
     from bigcherry.patch import source as psi
 
     wiring = resolve_benchmark_wiring(descriptor)
