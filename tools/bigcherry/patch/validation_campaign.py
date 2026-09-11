@@ -1076,6 +1076,123 @@ def resolve_benchmark_wiring(
     return BenchmarkWiring(executor=executor, patch_args=tuple(extra_args))
 
 
+# PVPS02 step 5: the closed vocabulary of benchmark topologies a
+# models.toml entry can declare, and how many real devices each needs.
+BENCHMARK_TOPOLOGY_DEVICE_COUNT: dict[str, int] = {"single": 1, "tensor-2": 2}
+
+
+@dataclass(frozen=True)
+class ResolvedBenchmarkModel:
+    """PVPS02 step 5: one config/models.toml entry resolved against a real
+    host's model root -- real file path, real verified size, real
+    topology-derived device count."""
+
+    id: str
+    path: Path
+    size_bytes: int
+    topology: str
+
+    @property
+    def device_count(self) -> int:
+        return BENCHMARK_TOPOLOGY_DEVICE_COUNT[self.topology]
+
+
+def resolve_benchmark_model(
+    model_id: str, *, model_root: Path, registry_path: "Path | None" = None,
+) -> ResolvedBenchmarkModel:
+    """Resolve a model id from config/models.toml into a real, verified
+    file path + benchmark topology (docs/planning/active/
+    patching-validation-package-standard/PVPS02.md). Fails closed on: an
+    unknown id, a missing file, a real-vs-declared size mismatch (wrong
+    file/quantisation), or a model with no declared benchmark-topology --
+    deliberately never defaults an undeclared topology to "single", since
+    that would silently under-provision a model that actually needs 2+
+    devices (e.g. tierL-qwen27b-q8)."""
+    import tomllib
+
+    from bigcherry.core import paths as bc_paths
+
+    resolved_registry = registry_path if registry_path is not None else bc_paths.MODELS
+    raw = tomllib.loads(resolved_registry.read_text(encoding="utf-8"))
+    entries = {
+        entry["id"]: entry for entry in raw.get("models", [])
+        if isinstance(entry, dict) and entry.get("id")
+    }
+    entry = entries.get(model_id)
+    if entry is None:
+        raise PatchCampaignError(
+            f"unknown benchmark model id {model_id!r} (not in {resolved_registry})"
+        )
+    topology = entry.get("benchmark-topology")
+    if topology not in BENCHMARK_TOPOLOGY_DEVICE_COUNT:
+        raise PatchCampaignError(
+            f"{model_id}: benchmark-topology must be one of "
+            f"{sorted(BENCHMARK_TOPOLOGY_DEVICE_COUNT)}, got {topology!r} -- a models.toml "
+            "entry with no (or an unrecognized) benchmark-topology is not eligible for the "
+            "generic performance-benchmark matrix"
+        )
+    model_path = model_root / entry["path"]
+    if not model_path.is_file():
+        raise PatchCampaignError(f"{model_id}: model file not found at {model_path}")
+    declared_size = entry.get("size-bytes")
+    real_size = model_path.stat().st_size
+    if isinstance(declared_size, int) and real_size != declared_size:
+        raise PatchCampaignError(
+            f"{model_id}: real file size {real_size} does not match models.toml's declared "
+            f"size-bytes={declared_size} at {model_path} -- wrong file or quantisation?"
+        )
+    return ResolvedBenchmarkModel(id=model_id, path=model_path, size_bytes=real_size, topology=topology)
+
+
+def resolve_device_pool(
+    device_map: dict[str, tuple[str, ...]], architecture: str, device_count: int,
+) -> tuple[str, ...]:
+    """PVPS02 step 5: --device-map defines an ORDERED device pool per
+    architecture; an N-device cell consumes the first N ids from that
+    architecture's pool. Order is load-bearing (which physical card ends
+    up in which tensor-split slot), never sorted/reordered. Fails closed
+    if the architecture has no mapping at all, or its pool has fewer
+    devices than the cell needs -- never silently infers a device index
+    from the architecture name."""
+    pool = device_map.get(architecture)
+    if pool is None:
+        raise PatchCampaignError(
+            f"--device-map has no entry for architecture {architecture!r}"
+        )
+    if len(pool) < device_count:
+        raise PatchCampaignError(
+            f"--device-map {architecture}={','.join(pool)} exposes only {len(pool)} "
+            f"device(s), this cell needs {device_count}"
+        )
+    return pool[:device_count]
+
+
+def parse_device_map(entries: list[str]) -> dict[str, tuple[str, ...]]:
+    """Parse repeated --device-map ARCH=ID[,ID...] CLI values into an
+    ordered-pool-per-architecture dict. Fails closed on a malformed entry
+    or the same architecture given twice (ambiguous which pool wins)."""
+    device_map: dict[str, tuple[str, ...]] = {}
+    for entry in entries:
+        if "=" not in entry:
+            raise PatchCampaignError(
+                f"--device-map {entry!r} is malformed -- expected ARCH=ID[,ID...]"
+            )
+        arch, _, ids_raw = entry.partition("=")
+        arch = arch.strip()
+        if not arch:
+            raise PatchCampaignError(f"--device-map {entry!r}: architecture must not be blank")
+        if arch in device_map:
+            raise PatchCampaignError(f"--device-map: architecture {arch!r} given more than once")
+        ids = tuple(i.strip() for i in ids_raw.split(","))
+        if not ids_raw or any(not i for i in ids):
+            raise PatchCampaignError(
+                f"--device-map {entry!r}: device id list must not be empty or contain a "
+                "blank entry"
+            )
+        device_map[arch] = ids
+    return device_map
+
+
 def run_paired_llama_benchmark(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
     workloads: tuple[str, ...] = ("decode", "prefill"),
