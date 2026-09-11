@@ -395,6 +395,81 @@ def check_validation_packages(
     )
 
 
+# Case-insensitive substrings that, if present anywhere in a performance
+# patch's README.md, are accepted as evidence the required 3-arm comparison
+# (native llama.cpp baseline, BigCherry baseline, BigCherry+patch) was
+# actually run -- not merely a BigCherry-internal control/subject A/B.
+# Deliberately narrow and literal: this is a structural presence check
+# (VA02's own discipline -- static, never evidence content/freshness), not
+# a semantic verifier. A README that merely claims the phrase without real
+# data is a documentation-honesty problem for a human/GPT reviewer to
+# catch, not something this check can detect.
+_NATIVE_LLAMACPP_BASELINE_MARKERS = (
+    "native llama.cpp",
+    "native llamacpp",
+    "vanilla llama.cpp",
+    "true-upstream-native",
+    "upstream baseline",
+)
+
+
+def check_performance_evidence(
+    *, root: Path | None = None, registry_path: Path | None = None,
+) -> tuple[str, ...]:
+    """User-directed policy (2026-09-11): a patch tagged 'optimization'
+    (registry.PATCH_TAGS -- 'makes an existing path faster', the tag that
+    splits kind='enhancement' into performance vs functional work) that
+    carries state='validated' must have README.md evidence of a genuine
+    3-arm performance comparison: native llama.cpp, BigCherry baseline, and
+    BigCherry+patch. A BigCherry-internal control-vs-subject A/B alone
+    (this project's own default composition pattern, e.g. the shared
+    perplexity.py correctness producers) proves the patch doesn't regress
+    BigCherry's own baseline -- it does NOT show whether BigCherry's
+    baseline itself already lost or gained ground against upstream, which
+    is the actual question 'is this patch worth carrying' depends on.
+
+    Returns problem strings (empty tuple = clean), matching
+    check_validation_packages()'s shape so both compose in patch-lint.
+    Never fails closed on a missing/malformed README (that's
+    check_validation_packages()'s job) -- only on a validated+optimization
+    patch whose README exists but lacks the required evidence marker."""
+    resolved_root = root or paths.PATCHES
+    reg = patch_registry.load_registry(registry_path or resolved_root)
+    problems: list[str] = []
+    for descriptor in reg.descriptors:
+        if descriptor.representation != patch_registry.REPRESENTATION_PACKAGED:
+            continue
+        if descriptor.state != "validated":
+            continue
+        if "optimization" not in descriptor.tags:
+            continue
+        package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
+        readme_path = package_root / "README.md"
+        if not readme_path.is_file():
+            # check_validation_packages() already reports missing README.md
+            # for patches in its own PACKAGE_STATUSES scope; a validated
+            # optimization patch outside that scope with no README at all
+            # is still a real gap worth its own message here.
+            problems.append(
+                f"{descriptor.patch_id}: validated optimization patch has no README.md "
+                "to evidence the required native-llama.cpp 3-arm comparison"
+            )
+            continue
+        # Collapse whitespace (including line-wraps splitting a marker
+        # phrase across lines, e.g. "native\nllama.cpp" from ordinary
+        # markdown prose wrapping) before matching -- a real false-negative
+        # found by running this check against its own first real README.
+        readme_text = " ".join(readme_path.read_text(encoding="utf-8").casefold().split())
+        if not any(marker in readme_text for marker in _NATIVE_LLAMACPP_BASELINE_MARKERS):
+            problems.append(
+                f"{descriptor.patch_id}: validated optimization patch's README.md has no "
+                "evidence of a native-llama.cpp baseline comparison (BigCherry-internal "
+                "control/subject A/B alone does not show whether BigCherry's own baseline "
+                "already gained or lost ground against upstream)"
+            )
+    return tuple(problems)
+
+
 def require_execution_package(
     descriptor: patch_registry.PatchDescriptor, *, root: Path | None = None
 ) -> patch_validation.ValidationPlan:

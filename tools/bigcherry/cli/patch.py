@@ -192,6 +192,7 @@ def cmd_patch_lint(args: Namespace) -> int:
     )
     package_report = patch_validation_policy.check_validation_packages()
     problems.extend(package_report.problems)
+    problems.extend(patch_validation_policy.check_performance_evidence())
     if args.json:
         print(
             json.dumps(
