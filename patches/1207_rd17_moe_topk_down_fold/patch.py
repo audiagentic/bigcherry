@@ -148,8 +148,34 @@ _DETECT_BLOCK = """    // MoE: ffn_moe_weighted = moe_down * topk_weights. The d
                 (mul_node->flags & GGML_TENSOR_FLAG_COMPUTE) &&
                 ggml_cuda_check_fusion_memory_ranges(cgraph, i, 2, out_nodes, 1)) {
             const ggml_tensor * weights = mul_node->src[1];
+            // BigCherry fix (2026-09-11, real-hardware finding: GGML_ASSERT(
+            // ggml_nelements(fusion->x_scale) == dst->ne[1]) crash on real
+            // Qwen3.6-35B-A3B MoE inference, GPT root-cause req_6cf169798c784380):
+            // the ORIGINAL fork commit 5e545b7da restricted this fusion to
+            // single-column MUL_MAT_ID (GGML_ASSERT(!ids || dst->ne[2] == 1)),
+            // but current upstream's generic fusion host condition was since
+            // broadened (dst->ne[2] <= get_mmvq_mmid_max_batch(...)), and this
+            // patch's detection block was ported WITHOUT restoring that lost
+            // precondition. The kernel only ever indexes x_scale[channel_dst]
+            // (one scale per destination row) -- for a real batched/multi-
+            // token MoE forward pass (ne=[1,E,T,S] routing weights, T>1),
+            // ggml_nelements(weights) is E*T*S, not just E, so the kernel's
+            // own invariant is violated for real production shapes the
+            // broadened host condition now lets through. Restoring the
+            // fork's original single-column constraint here (ne[2]==1,
+            // ne[3]==1, mm_node->ne[2]==1, exact nelements match) is the
+            // smallest fix faithful to the original fork capability: decode
+            // (single-column) fusion works; multi-token PPL/prefill
+            // correctly falls through to the unfused MUL path instead of
+            // crashing. Extending this fusion to real batched shapes would
+            // need a per-output-column scale load in the kernel itself
+            // (x_scale[channel_dst + E*(j + T*sample_dst)]), a separate,
+            // not-yet-attempted extension -- not a detection-only relaxation.
             if (weights->type == GGML_TYPE_F32 && ggml_is_contiguous(weights) &&
                     weights->ne[0] == 1 && weights->ne[1] == mm_node->ne[1] &&
+                    weights->ne[2] == 1 && weights->ne[3] == 1 &&
+                    mm_node->ne[2] == 1 &&
+                    ggml_nelements(weights) == mm_node->ne[1] &&
                     ggml_are_same_shape(mm_node, mul_node) &&
                     ggml_cuda_should_fuse_mul_mat_vec_q(mm_node)) {
                 ggml_cuda_mm_fusion_args_host fusion_data{};
