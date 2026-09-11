@@ -188,6 +188,40 @@ class RunRd58StateRestoreEvidenceTests(unittest.TestCase):
         for env in seen_envs:
             self.assertEqual(env.get("HIP_VISIBLE_DEVICES"), "0,1")
 
+    def test_ambient_rocr_visible_devices_is_stripped(self) -> None:
+        # GPT review (req_8429aa8e0d35496e, 2026-09-11): an ambient
+        # ROCR_VISIBLE_DEVICES left over from an unrelated earlier
+        # command must never reach RD58's launched process -- this
+        # module's selector contract is HIP-only now (PNRO17). Preserving
+        # ambient HIP_VISIBLE_DEVICES (the test above) does not mean
+        # preserving ROCR too; the two are independent risks.
+        import os
+        seen_envs = []
+
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            seen_envs.append(env)
+            return _Result(0, "All tests passed.\n")
+
+        vc.subprocess.run = fake_run
+        old = dict(os.environ)
+        try:
+            os.environ["HIP_VISIBLE_DEVICES"] = "0,1"
+            os.environ["ROCR_VISIBLE_DEVICES"] = "6"
+            vc.run_rd58_state_restore_evidence(
+                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+                model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self._run_dir(),
+                campaign_id="campaign123", control_build_identity={}, subject_build_identity={},
+                repetitions=1,
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+        self.assertTrue(seen_envs)
+        for env in seen_envs:
+            self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
+            self.assertEqual(env.get("HIP_VISIBLE_DEVICES"), "0,1")
+
 
 class Rd58CliWiringTests(unittest.TestCase):
     def setUp(self) -> None:

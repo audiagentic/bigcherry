@@ -117,13 +117,19 @@ class DeviceVisibility:
     def document(self) -> dict[str, object]:
         """The same observed_devices shape run_rd58_state_restore_evidence()
         already records today -- kept identical so a future caller can
-        adopt this primitive without changing evidence schema. Still
-        records a "rocr_visible_devices" key for schema continuity, but
-        it is no longer a real selector this class sets or validates --
-        see the class docstring's real-hardware finding for why."""
+        adopt this primitive without changing evidence schema.
+
+        GPT review correction (req_8429aa8e0d35496e, 2026-09-11): an
+        earlier version of this method fabricated
+        "rocr_visible_devices": list(self.device_ids) -- false provenance,
+        since this class never sets or validates ROCR_VISIBLE_DEVICES (and
+        every governed launch site now explicitly UNSETS it, see PNRO17
+        and _ROCR_VISIBLE_DEVICES_UNSET in validation_campaign.py). The
+        key is kept for schema continuity but now honestly records None
+        (no ROCR selector claim is made), not a copy of the HIP value."""
         return {
             "hip_visible_devices": list(self.device_ids),
-            "rocr_visible_devices": list(self.device_ids),
+            "rocr_visible_devices": None,
             "gpu_count": self.gpu_count,
         }
 

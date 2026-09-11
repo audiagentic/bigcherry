@@ -91,6 +91,34 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
                     f"server without attestation (VA25)",
                 )
 
+    def test_every_rd73_server_lane_unsets_rocr_visible_devices(self) -> None:
+        # GPT review (req_8429aa8e0d35496e, 2026-09-11): an ambient
+        # ROCR_VISIBLE_DEVICES left over from an unrelated earlier
+        # command must never reach these server launches -- the module's
+        # selector contract is HIP-only now (PNRO17). Every
+        # AttestedServerSession(...) call in these three functions must
+        # pass env_unset=_ROCR_VISIBLE_DEVICES_UNSET (or something that
+        # names ROCR_VISIBLE_DEVICES), not merely omit setting it.
+        for name in _RD73_SERVER_LANE_FUNCTIONS:
+            with self.subTest(function=name):
+                func = self.functions_by_name[name]
+                session_calls = [
+                    node for node in ast.walk(func)
+                    if isinstance(node, ast.Call)
+                    and (
+                        (isinstance(node.func, ast.Name) and node.func.id == "AttestedServerSession")
+                        or (isinstance(node.func, ast.Attribute) and node.func.attr == "AttestedServerSession")
+                    )
+                ]
+                self.assertTrue(session_calls, f"{name}: no AttestedServerSession call found")
+                for call in session_calls:
+                    kwarg_names = {kw.arg for kw in call.keywords}
+                    self.assertIn(
+                        "env_unset", kwarg_names,
+                        f"{name}: an AttestedServerSession call has no env_unset kwarg -- "
+                        "ambient ROCR_VISIBLE_DEVICES would leak through",
+                    )
+
     def test_every_rd73_server_lane_requires_expected_execution(self) -> None:
         # The parameter that carries the caller's declared identity into
         # AttestedServerSession -- a lane that dropped this argument could

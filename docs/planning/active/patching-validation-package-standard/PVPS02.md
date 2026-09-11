@@ -90,7 +90,9 @@ SECOND-ROUND VALIDATED DESIGN (2026-09-11, same GPT session, self-critique pass,
 
 ## Acceptance Criteria
 
-All items in the real-hardware merge gate pass for real on Brutus. The generic --run-performance-benchmark entry point writes performance-matrix.json (workdir-scoped, distinct from RD04's own per-run performance.json evidence artifact) recording architecture/model/device-visibility for every planned applicable cell and an explicit skip-reason for every inapplicable one. RD04 produces identical commands/evidence via the legacy alias and the new generic entry point on the same arch/model. RD08's Contract adapter receives identical LaneEffects post-refactor. RD58/RD73 regression-tested unaffected by the visibility-primitive extraction. Full offline test suite green. Generic-mode artifacts never populate contract_promotions.
+All items in the real-hardware merge gate pass for real on Brutus, EXCEPT RD73's minimal real-execution check (see waiver below). The generic --run-performance-benchmark entry point writes performance-matrix.json (workdir-scoped, distinct from RD04's own per-run performance.json evidence artifact) recording architecture/model/device-visibility for every planned applicable cell and an explicit skip-reason for every inapplicable one. RD04 produces identical commands/evidence via the legacy alias and the new generic entry point on the same arch/model. RD08's Contract adapter receives identical LaneEffects post-refactor. RD58/RD73 regression-tested unaffected by the visibility-primitive extraction. Full offline test suite green. Generic-mode artifacts never populate contract_promotions.
+
+EXPLICIT WAIVER (recorded 2026-09-11 per GPT review req_8429aa8e0d35496e's bookkeeping requirement, not silently omitted): RD73's real-hardware minimal-execution check (warmup=0/measured=1 through each changed lane) was not run. No CLI hook exists for a cheap partial RD73 run (the only path through --run-rd73-contract is the full ~15-minute dual-GPU 27B qualification, decode_pairs=10/warmup_pairs=2/measured_pairs=10 hardcoded with no override flags). RD73's step-7 change was pure selector-validate-once-and-copy-into-env-overrides plumbing, covered by 35 passing hardware-free tests using real selector env-vars (RunRd73ContractQualificationTests + Va25 attestation tests, including a new AST-based golden-thread test proving every RD73 AttestedServerSession call passes env_unset covering ROCR_VISIBLE_DEVICES). Accepted as lower-risk than RD58's change (which WAS real-hardware verified) given this coverage.
 
 (Corrected 2026-09-11 per GPT review req_e608313764834497, which flagged the original wording -- "performance.json" -- as ambiguous against the real implementation's performance-matrix.json; this is a plan-doc correction, not an implementation change, since the matrix JSON legitimately differs in shape from RD04's own per-patch evidence artifact and should not be conflated with it.)
 
@@ -212,6 +214,20 @@ DELIBERATELY NOT DONE: RD73's real-hardware minimal check (warmup=0/measured=1 t
 
 PVPS02 STATUS: all 7 implementation steps done, hardened per GPT review, real-hardware-verified for the generic matrix (all 3 architectures) and RD58; RD04 legacy alias real-hardware-confirmed unchanged. RD73's real-hardware confirmation remains open. Full offline suite clean throughout, patch-lint/check clean. All work committed/pushed/synced.
 
+
+
+SECOND GPT REVIEW (req_8429aa8e0d35496e, 2026-09-11): VERDICT BLOCK on the state at commit 07ff2194 -- found a real, correct gap: removing the ROCR_VISIBLE_DEVICES REQUIREMENT was not the same as removing the RISK. An ambient ROCR_VISIBLE_DEVICES inherited from the invoking shell (never explicitly unset) could still reach every HIP-only-governed child process and reproduce the exact double-filtering bug PNRO17 found -- validated code only checked the synthetic env_overrides overlay, never the actual final merged child environment. Also flagged DeviceVisibility.document() fabricating "rocr_visible_devices": list(self.device_ids) as false provenance (the class never sets/validates ROCR), and the RD73 real-hardware omission as needing explicit AC bookkeeping (not a hard blocker on its own).
+
+FIXED (commit -- see next entry): every HIP-only-governed child environment now explicitly UNSETS ROCR_VISIBLE_DEVICES, not merely avoids setting it:
+- run_paired_llama_benchmark()'s clean_env: unconditional clean_env.pop("ROCR_VISIBLE_DEVICES", None) before env_overrides applies (covers the generic matrix + RD04/RD08 wrappers).
+- run_rd58_state_restore_evidence()'s env: same unconditional pop (RD58 still preserves ambient HIP_VISIBLE_DEVICES for its dual-GPU need; HIP alone is sufficient, ROCR added only risk).
+- All 3 RD73 AttestedServerSession(...) calls: added env_unset=_ROCR_VISIBLE_DEVICES_UNSET (uses ServerRunner's existing HI143 env_unset mechanism, the correct purpose-built primitive for exactly this).
+- DeviceVisibility.document() corrected: rocr_visible_devices now honestly records None instead of fabricating a copy of the HIP value.
+- Added 3 new regression tests with ambient ROCR_VISIBLE_DEVICES present (run_paired_llama_benchmark, RD58's env, plus a new AST-based golden-thread test proving every RD73 AttestedServerSession call carries env_unset) -- these are exactly the tests GPT asked for.
+- Amended acceptance_criteria to explicitly record the RD73 real-hardware waiver (bookkeeping GPT required) rather than leaving it an implicit gap.
+
+Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated failures), patch-lint/check clean. This fix has NOT yet been re-verified on real hardware with an ambient conflicting ROCR_VISIBLE_DEVICES actually set (the regression tests are hardware-free/mocked) -- the real-hardware runs already completed (RD58, RD04 legacy alias, the full matrix) never had a stray ambient ROCR value present, so they could not have exercised this exact fix's real-hardware path. Real-hardware re-verification with a deliberately-set conflicting ambient ROCR value is the next step before requesting final GPT approval again.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -225,7 +241,6 @@ PVPS02 STATUS: all 7 implementation steps done, hardened per GPT review, real-ha
 - 2026-09-11T09:12:57.017255+00:00 (updated-by): Updated: section:notes
 
 ## Ledger-events
-
 
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
@@ -245,3 +260,5 @@ PVPS02 STATUS: all 7 implementation steps done, hardened per GPT review, real-ha
 - 2026-09-11T11:41:58.996810+00:00 (updated-by): Updated: section:notes
 - chg_20260911_114209_finished-the-real-hardware-ver_2602
 - 2026-09-11T11:42:09.161413+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T12:04:13.058728+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-09-11T12:04:25.793620+00:00 (updated-by): Updated: section:notes

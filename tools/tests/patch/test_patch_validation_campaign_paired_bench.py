@@ -9,6 +9,7 @@ active/patching-validation-package-standard/PVPS02.md).
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -115,6 +116,38 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
                 model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
                 pairs=1, log_context="distinctive-context",
             )
+
+    def test_ambient_rocr_visible_devices_is_stripped_from_the_child_env(self) -> None:
+        # GPT review (req_8429aa8e0d35496e, 2026-09-11): an ambient
+        # ROCR_VISIBLE_DEVICES left over from an unrelated earlier
+        # command must never reach the measured child process -- this
+        # module's selector contract is HIP-only now (PNRO17), and a
+        # stray ROCR value inconsistent with HIP_VISIBLE_DEVICES
+        # reproduces the exact double-filtering bug that contract exists
+        # to prevent.
+        seen_envs: list[dict] = []
+
+        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
+            seen_envs.append(env)
+            return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
+
+        vc.subprocess.run = fake_run
+        old = dict(os.environ)
+        try:
+            os.environ["ROCR_VISIBLE_DEVICES"] = "6"
+            vc.run_paired_llama_benchmark(
+                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
+                model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
+                pairs=1, log_context="test",
+                env_overrides={"HIP_VISIBLE_DEVICES": "6"},
+            )
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertTrue(seen_envs)
+        for env in seen_envs:
+            self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
+            self.assertEqual(env.get("HIP_VISIBLE_DEVICES"), "6")
 
 
 if __name__ == "__main__":
