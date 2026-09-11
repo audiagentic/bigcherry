@@ -36,7 +36,7 @@ class PatchResolutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate"):
             patchset.resolve_exact(["0100_cmake_options", "0100_cmake_options"])
         with self.assertRaisesRegex(ValueError, "required state"):
-            patchset.resolve_exact(["1002_hip_unsafe_math_opt_in"], required_state="validated")
+            patchset.resolve_exact(["0840_hybrid_allreduce_dispatch"], required_state="validated")
 
     def test_context_ids_satisfies_requires_without_joining_the_selection(self):
         # HI134: an experiment overlay patch (1242) REQUIRES a base-set
