@@ -16,6 +16,6 @@ On the fork author's Strix Halo iGPU, the host-buffer path corrupts full-model r
 
 Ported verbatim from stew675-rdna-boosts fork commit 507f2e267 (https://github.com/stew675/llama.cpp), a deliberate divergence away from mainline PR #24233 -- a pin bump does not absorb this, it would re-enable the broken path.
 
-## Superseded (2026-09-10, pin bump to b10884)
+## Superseded (2026-09-10, pin bump to b10900)
 
-Upstream PR #28604 reverts PR #24233 (the change this patch's fork diverged to work around), making `integrated=false` upstream's own unconditional default on HIP at b10884+ -- verified against the real vendored source. See patch.py's SUPERSEDED note for full detail.
+Upstream PR #28604 reverts PR #24233 (the change this patch's fork diverged to work around), making `integrated=false` upstream's own unconditional default on HIP at b10884+ -- verified against the real vendored source at b10900. See patch.py's SUPERSEDED note for full detail.

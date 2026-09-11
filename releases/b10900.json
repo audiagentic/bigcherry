@@ -11,10 +11,10 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "ecd9b68af5e426bb0f078a0dc54b9c11954e5317",
-  "first_seen": "2026-08-31T00:25:53.443513+00:00",
-  "manifest_hash": "090c1489bbf840c85da5b86073397870",
-  "notes": "Real build + smoke test on local Windows GPU (bigcherry-native:control:windows-gfx1100, gfx1100/RX 7900 GRE), qwen35 0.8B BF16: pp32 1942.26 t/s, tg8 136.58 t/s. `bigcherry build --lane bigcherry-native:control:windows-gfx1100 --model artifacts/qwen0.8b-bf16.gguf --hip-visible-devices 0` -> ok. Root-caused an initial 0xC0000135 (DLL_NOT_FOUND) smoke failure to this session's shell having a stale PATH predating the ROCm bin dir's User-level persistence -- not a code bug; confirmed by running the built llama-bench.exe directly with ROCm PATH added, which succeeded. `bigcherry pin-status --complete --all-remotes` verbatim:\n\npin-status: local\n  pin           b10705 -> 2578138397d7\n  vendor HEAD   2578138397d7 (tag b10705)  [15 modified, 33 untracked]\n  marker        370cb12e8bb7 -> 2578138397d7 (b10705) [committed-clean]\n  VERDICT       consistent  (content-unverified: 15 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\npin-status: brutus (remote)\n  vendor HEAD   c841aeeb8bb2\n  pin           b10687 -> c841aeeb8bb2\n  VERDICT       mismatch  (remote pin b10687 != local pin b10705)\n\nAGGREGATE  DIVERGED  (tree brutus pinned at b10687, local at b10705)\nCOMPLETION  FAIL -- brutus intentionally not re-converged this run (explicit scope decision: local-only test bump); local tree itself is fully consistent and smoke-verified.",
+  "bigcherry_revision": "3a039505b5b2d3a4fa8e593ac085861e10b346a5",
+  "first_seen": "2026-09-10T21:51:01.577409+00:00",
+  "manifest_hash": "40fc4184e5c606f092265d58e46f02bc",
+  "notes": "",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
@@ -47,6 +47,7 @@
         "set-result-canonical-json": "already-applied"
       },
       "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
         "mmf-coverage-count": "applied",
         "mmf-coverage-include": "applied"
       },
@@ -63,6 +64,7 @@
         "q6k-mma-float-promotion": "applied"
       },
       "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
         "mmq-coverage-count": "applied",
         "mmq-coverage-include": "applied"
       },
@@ -74,6 +76,7 @@
         "mmq-public-decl": "applied"
       },
       "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
         "mmvf-coverage-count": "applied",
         "mmvf-coverage-include": "applied"
       },
@@ -81,6 +84,7 @@
         "mmvf-public-decl": "applied"
       },
       "ggml/src/ggml-cuda/mmvq.cu": {
+        "ggml_hip_family_mmvq-diagnostics-only-count": "applied",
         "mmvq-coverage-count": "applied",
         "mmvq-coverage-include": "applied"
       },
@@ -102,9 +106,9 @@
     }
   },
   "promotion": null,
-  "release_tag": "b10705",
-  "revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+  "release_tag": "b10900",
+  "revision": "50182a53fa2c26bd2a7fc31d855231effdc2f4ad",
   "stage": "generated",
   "tree_state": "",
-  "updated_at": "2026-09-10T12:50:21.914529+00:00"
+  "updated_at": "2026-09-10T22:07:47.686772+00:00"
 }

@@ -1,7 +1,25 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-09-10T05:38:19.089818+00:00",
+  "generated_at": "2026-09-10T22:07:47.701186+00:00",
   "releases": [
+    {
+      "audit_passed": true,
+      "manifest_hash": "40fc4184e5c606f092265d58e46f02bc",
+      "release_tag": "b10900",
+      "revision": "50182a53fa2c26bd2a7fc31d855231effdc2f4ad",
+      "slug": "b10900",
+      "stage": "generated",
+      "updated_at": "2026-09-10T22:07:47.686772+00:00"
+    },
+    {
+      "audit_passed": true,
+      "manifest_hash": "090c1489bbf840c85da5b86073397870",
+      "release_tag": "b10705",
+      "revision": "2578138397d7b422bb0e160efdd429976c55fb55",
+      "slug": "b10705",
+      "stage": "generated",
+      "updated_at": "2026-09-10T12:50:21.914529+00:00"
+    },
     {
       "audit_passed": true,
       "manifest_hash": "",
@@ -19,15 +37,6 @@
       "slug": "b10883",
       "stage": "patched",
       "updated_at": "2026-09-10T05:28:33.168524+00:00"
-    },
-    {
-      "audit_passed": true,
-      "manifest_hash": "b9e8510b11665a55ee625a209e7bde8b",
-      "release_tag": "b10705",
-      "revision": "2578138397d7b422bb0e160efdd429976c55fb55",
-      "slug": "b10705",
-      "stage": "generated",
-      "updated_at": "2026-08-31T05:42:56.444440+00:00"
     },
     {
       "audit_passed": true,

@@ -116,3 +116,7 @@ vendor/llama.cpp-stock-b10327-linux
 # code whose behaviour they describe. Everything else under .claude/ stays
 # local, which is why the rule above is .claude/* rather than .claude/.
 !.claude/skills/
+
+# tools/lab/bump-validation's own --output default and similar ad hoc
+# working directories -- never committed, per-run scratch only.
+/work/
