@@ -113,6 +113,17 @@ Step 1 DONE (commit 1162f617): require_device_visibility()/DeviceVisibility extr
 
 Remaining steps per the revised order: 2 (pure semantics-preserving extraction of the shared execution shape into run_paired_llama_benchmark(), with real translation-preserving compatibility wrappers for run_rd04_benchmark_evidence/run_rd08_validation_lanes and split patch_args/runtime_args), 3 (validation.toml wiring resolver), 4 (--run-performance-benchmark CLI with its own early path, execution_identity turned on here for the first time), 5 (real model/topology resolution -- ModelSpec/registry loader + Ministral models.toml entry + ordered device-pool semantics), 6 (legacy aliases, RD08's through its own adapter), 7 (RD58/RD73 wired onto the visibility helper as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
 
+Recommended status from the second-round validation: KEEP the design, amend before coding -- do not redesign the core idea. The central decisions (validation-adapter wiring for benchmark metadata, one shared paired-execution primitive, strict fail-closed selector safety, preserved bespoke correctness/activation paths per patch) hold up under critical review. What needed fixing was sequencing safety and explicit orchestration contracts (CLI early-path, model resolution, device-map topology semantics), not the architecture itself.
+
+IMPLEMENTATION PROGRESS (2026-09-11):
+Step 1 DONE (commit 1162f617): require_device_visibility()/DeviceVisibility extracted, 16 tests. Nothing wired to RD58/RD73 yet (deliberate).
+Step 2 DONE (commit 875e6db2): run_paired_llama_benchmark()/_paired_llama_bench_command() extracted from RD04/RD08's duplicated logic, both existing functions now byte-identical-behavior compatibility wrappers, patch_args/runtime_args split preserving each caller's historical argv order, 8 new direct tests, 1 brittle source-inspection test fixed as the design predicted.
+Step 3 DONE (commit 6f9a365d): resolve_benchmark_wiring() reads benchmark-executor/benchmark-extra-args from a patch's required performance validation.toml check, fail-closed on zero/ambiguous/unknown wiring. Real metadata wired into RD04 and RD08's actual validation.toml files. 10 new tests covering every failure mode plus both real patches.
+
+All three steps: full offline suite clean (only the 3 confirmed pre-existing/unrelated failures -- telemetry x2, HI104 -- remain), patch-lint/check clean, pushed to main/planning-refactor, synced to Brutus after each step.
+
+Remaining steps per the revised order: 4 (--run-performance-benchmark CLI with its own early path bypassing legacy --model/--manifest/--amdgpu-targets requirements, execution_identity/attestation turned on here for the first time), 5 (real model/topology resolution -- ModelSpec/registry loader + Ministral models.toml entry + ordered device-pool semantics -- does not exist yet, ​not just a TOML row), 6 (legacy aliases, RD08's through its own adapter), 7 (RD58/RD73 wired onto the visibility helper as its own dedicated regression-tested step), then the consolidated real-hardware merge gate on Brutus (reserved GPU-exclusive session, not routine).
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -122,3 +133,4 @@ Remaining steps per the revised order: 2 (pure semantics-preserving extraction o
 - 2026-09-11T07:17:49.001543+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:acceptance_criteria
 - 2026-09-11T07:28:55.652156+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:notes
 - 2026-09-11T07:59:38.514248+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T08:18:36.275347+00:00 (updated-by): Updated: section:notes
