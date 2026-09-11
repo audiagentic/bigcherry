@@ -10,6 +10,7 @@ run_rd73_mtp_server_lane are faked.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -417,7 +418,18 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
 
     def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0), resource_readings=(651,),
                             prior_session_effect_pct=None):
-        with mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
+        # PVPS02 step 7: run_rd73_contract_qualification() now validates
+        # HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES once via
+        # require_device_visibility(exact_count=2) before running any
+        # lane -- fake but consistent selector values so this hardware-
+        # free test (all three lane functions mocked below) reaches that
+        # call successfully, matching PVPS02's own design note that this
+        # rewiring was deliberately deferred past step 1 specifically so
+        # these existing tests would not break until this dedicated step.
+        env_patch = mock.patch.dict(
+            os.environ, {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
+        )
+        with env_patch, mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
             with mock.patch.object(
                 vc, "run_rd73_decode_control_lane",
                 return_value=self._fake_decode_control(

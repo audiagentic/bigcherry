@@ -219,9 +219,16 @@ class Rd58CliWiringTests(unittest.TestCase):
         rd58_block = self.source[rd58_block_start:self.source.index("# VA06: RD73 execution")]
         self.assertNotIn("contract_promotions[", rd58_block)
 
-    def test_gpu_preflight_rejects_duplicate_device_ids(self) -> None:
-        # GPT round 3: "0,0" must not be accepted as 2 distinct real GPUs.
-        self.assertIn("len(set(hip_device_ids)) != len(hip_device_ids)", self.source)
+    def test_gpu_preflight_goes_through_the_shared_visibility_primitive(self) -> None:
+        # PVPS02 step 7: the inline HIP/ROCR guard (including the "0,0" not
+        # counting as 2 distinct GPUs check -- GPT round 3) was replaced by
+        # a call to require_device_visibility(), which carries its own
+        # dedicated duplicate-id test coverage in
+        # test_experiment_execution_va14.py's RequireDeviceVisibilityTests.
+        # This just proves RD58 actually reaches that shared primitive
+        # rather than reimplementing selector validation inline again.
+        self.assertIn("_require_device_visibility(", self.source)
+        self.assertIn("rd58_observed_devices = rd58_visibility.document()", self.source)
 
     def test_validation_context_uses_rd58_build_identities_when_rd58_ran(self) -> None:
         # GPT round 3: ValidationContext's build check must be evaluated

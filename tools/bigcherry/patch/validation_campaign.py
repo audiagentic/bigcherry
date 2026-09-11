@@ -1783,6 +1783,7 @@ def run_rd73_mtp_server_lane(
     host: str = "127.0.0.1", control_port: int = 18080, subject_port: int = 18081,
     spec_draft_n_max: int = 4,
     n_predict: int = 128, warmup_pairs: int = 2, measured_pairs: int = 10,
+    selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 next slice: RD73's paired control/subject mtp_verify
     performance lane over a real llama-server HTTP harness (GPT scoping,
@@ -1860,7 +1861,17 @@ def run_rd73_mtp_server_lane(
     # "all control then all subject" design previously produced a real,
     # since-corrected measurement artifact on this exact model/hardware
     # -- see patches/1233.../README.md's "Historical evidence" section).
+    #
+    # PVPS02 step 7 (2026-09-11): ``selector_env`` carries the already-
+    # validated HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES pair from
+    # run_rd73_contract_qualification()'s single require_device_visibility()
+    # call (validate ONCE, not per-lane/per-request) -- ServerRunner
+    # starts each server from ambient env then applies these overrides,
+    # so this is enough to make the selector explicit for every server
+    # this lane launches without touching global os.environ.
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
+    if selector_env:
+        rd73_env.update(selector_env)
     ports = {"control": control_port, "subject": subject_port}
     binaries = {"control": control_binary, "subject": subject_binary}
     per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
@@ -1959,6 +1970,7 @@ def run_rd73_decode_control_lane(
     expected_execution: ExecutionIdentity,
     host: str = "127.0.0.1", control_port: int = 18082, subject_port: int = 18083,
     pairs: int = 3, extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
+    selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 (user redirect, 2026-09-01): RD73's decode control lane --
     launches real, plain (non-speculative) control/subject llama-server
@@ -1996,6 +2008,7 @@ def run_rd73_decode_control_lane(
             binary=binaries[arm], model=model, expected=expected_execution,
             host=host, port=ports[arm],
             extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
+            env_overrides=(dict(selector_env) if selector_env else None),
         )
         with session:
             metrics = run_bench_runner_server_bench(
@@ -2059,6 +2072,7 @@ def run_rd73_resource_burst_session(
     *, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
     expected_execution: ExecutionIdentity,
     host: str = "127.0.0.1", port: int = 18084, burst_requests: int = 20, n_predict: int = 32,
+    selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 (real hardware finding, 2026-09-01): RD73's graph-cache-entries
     resource evidence needs a real accumulated-cache burst -- repeated
@@ -2087,6 +2101,8 @@ def run_rd73_resource_burst_session(
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "rd73-resource-burst-subject-server.log"
     rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
+    if selector_env:
+        rd73_env.update(selector_env)
     session = AttestedServerSession(
         binary=subject_binary, model=model, expected=expected_execution,
         host=host, port=port,
@@ -2226,6 +2242,10 @@ def run_rd73_contract_qualification(
     one-request-at-a-time (never concurrently) for the same VRAM
     reason."""
     from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.experiment.execution import (
+        DeviceVisibilityError as _DeviceVisibilityError,
+        require_device_visibility as _require_device_visibility,
+    )
 
     # VA25: RD73's dual-XTX qualification is always `-sm tensor` across 2
     # homogeneous devices of this run's own architecture -- the exact
@@ -2237,10 +2257,32 @@ def run_rd73_contract_qualification(
         backend="ROCm", architectures=(amdgpu_targets, amdgpu_targets),
     )
 
+    # PVPS02 step 7 (2026-09-11): validate the real HIP/ROCR selector
+    # ONCE here (the same fail-closed contract RD58/the generic matrix
+    # use), then copy those validated values into every lane's own
+    # server-session env overrides below -- ServerRunner starts each
+    # server from ambient env then applies overrides, so this makes the
+    # selector explicit for every process this qualification launches
+    # without ever mutating global os.environ. ExecutionIdentity above
+    # remains the separate architecture/device-count attestation this
+    # was already doing; selector validation and attestation are
+    # deliberately two different checks, not merged into one.
+    try:
+        rd73_visibility = _require_device_visibility(
+            context=f"--run-rd73-contract ({amdgpu_targets})", exact_count=2,
+        )
+    except _DeviceVisibilityError as exc:
+        raise PatchCampaignError(str(exc)) from exc
+    rd73_selector_env = {
+        "HIP_VISIBLE_DEVICES": rd73_visibility.hip_visible_devices,
+        "ROCR_VISIBLE_DEVICES": rd73_visibility.rocr_visible_devices,
+    }
+
     mtp = run_rd73_mtp_server_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
         corpus_path=corpus_path, run_dir=run_dir, expected_execution=expected_execution,
         warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
+        selector_env=rd73_selector_env,
     )
     activation = evaluate_rd73_activation_evidence(
         marker_regex=marker_regex, control_log_path=mtp["control_log_path"],
@@ -2248,11 +2290,12 @@ def run_rd73_contract_qualification(
     )
     resource = run_rd73_resource_burst_session(
         subject_binary=subject_server_binary, model=model, corpus_path=corpus_path, run_dir=run_dir,
-        expected_execution=expected_execution,
+        expected_execution=expected_execution, selector_env=rd73_selector_env,
     )
     decode_control = run_rd73_decode_control_lane(
         control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
         run_dir=run_dir, expected_execution=expected_execution, pairs=decode_pairs,
+        selector_env=rd73_selector_env,
     )
     # A real content mismatch (or a missing/non-string/unpaired record) is a
     # genuine correctness RESULT, not an infrastructure failure -- it must
@@ -3508,7 +3551,20 @@ def run(args: argparse.Namespace) -> int:
         # Fail closed before any build: require HIP_VISIBLE_DEVICES and
         # ROCR_VISIBLE_DEVICES both explicitly set, consistent with each
         # other, and exposing at least the contract's declared minimum.
+        #
+        # PVPS02 step 7 (2026-09-11): this inline guard previously
+        # reimplemented require_device_visibility()'s exact contract by
+        # hand; replaced with a direct call so RD58 shares the same
+        # fail-closed selector primitive every other paired-benchmark
+        # path uses, at the same orchestration/preflight boundary this
+        # guard already occupied (before any build) -- the low-level
+        # run_rd58_state_restore_evidence() producer itself is
+        # unchanged, still fed via observed_devices=.
         from bigcherry.experiment import contract as _ec
+        from bigcherry.experiment.execution import (
+            DeviceVisibilityError as _DeviceVisibilityError,
+            require_device_visibility as _require_device_visibility,
+        )
 
         rd58_contract_check = _ec.load_contracts(
             REPO_ROOT / "config" / "experiment-contracts.toml"
@@ -3517,39 +3573,14 @@ def run(args: argparse.Namespace) -> int:
             rd58_contract_check.scope.gpu_count.minimum
             if rd58_contract_check.scope.gpu_count is not None else None
         )
-        hip_devices_raw = os.environ.get("HIP_VISIBLE_DEVICES")
-        rocr_devices_raw = os.environ.get("ROCR_VISIBLE_DEVICES")
-        if not hip_devices_raw or not rocr_devices_raw:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd58-state-restore requires HIP_VISIBLE_DEVICES and "
-                "ROCR_VISIBLE_DEVICES to be explicitly set (this contract requires "
-                f"{required_gpu_count}+ real GPUs -- an unset/ambient-default device list "
-                "cannot be trusted to expose that many)"
+        try:
+            rd58_visibility = _require_device_visibility(
+                context=f"{args.patch}: --run-rd58-state-restore",
+                minimum_count=required_gpu_count if required_gpu_count is not None else 1,
             )
-        hip_device_ids = [d.strip() for d in hip_devices_raw.split(",") if d.strip()]
-        rocr_device_ids = [d.strip() for d in rocr_devices_raw.split(",") if d.strip()]
-        if hip_device_ids != rocr_device_ids:
-            raise PatchCampaignError(
-                f"{args.patch}: HIP_VISIBLE_DEVICES ({hip_devices_raw!r}) and "
-                f"ROCR_VISIBLE_DEVICES ({rocr_devices_raw!r}) must match exactly"
-            )
-        # GPT round 3: a duplicated id (e.g. "0,0") must not count as 2
-        # distinct real GPUs.
-        if len(set(hip_device_ids)) != len(hip_device_ids):
-            raise PatchCampaignError(
-                f"{args.patch}: HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES contains duplicate "
-                f"device ids ({hip_devices_raw!r}) -- this does not expose distinct real GPUs"
-            )
-        if required_gpu_count is not None and len(hip_device_ids) < required_gpu_count:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd58-state-restore requires {required_gpu_count}+ GPUs; "
-                f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES expose only {len(hip_device_ids)} "
-                f"({hip_devices_raw!r})"
-            )
-        rd58_observed_devices = {
-            "hip_visible_devices": hip_device_ids, "rocr_visible_devices": rocr_device_ids,
-            "gpu_count": len(hip_device_ids),
-        }
+        except _DeviceVisibilityError as exc:
+            raise PatchCampaignError(str(exc)) from exc
+        rd58_observed_devices = rd58_visibility.document()
 
         rd58_build_root = build_root / "rd58-state-restore"
         rd58_control_bin = build_tree(
