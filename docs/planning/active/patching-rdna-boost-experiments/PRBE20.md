@@ -63,6 +63,16 @@ Supersedes: RD26
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd26
 
+
+
+REAL HARDWARE CORRECTNESS CHECK RUN (2026-09-11/12), first-ever real execution of the materialized 2/5-commit subset (patch 1210_rd26_bitidentical_decode_verify_standalone): authored patches/1210_rd26_bitidentical_decode_verify_standalone/validation/rd26_correctness.py (reusing the shared tools/bigcherry/experiment/perplexity.py primitive, its fifth real caller) plus run_rd26_ppl_check() in validation_campaign.py.
+
+HONEST SCOPE LIMIT, stated in the producer's own docstring and NOT to be conflated with PRBE20's real acceptance criteria: this check does NOT prove the actual cross-batch-size determinism claim (decode n_q=1 vs speculative-verify n_q up to 8 producing bit-identical logits against EACH OTHER) -- that needs a materially different test structure (a real within-binary cross-batch comparison), not implemented here. What it proves: the two ported kernel-routing hunks (MMVF batch threshold in ggml-cuda.cu, sgemm batch gate in llamafile/sgemm.cpp) do not regress ordinary single-token decode output.
+
+Ran for real on Brutus: gfx1201, tierA-qwen4b-q6k, real wikitext2 corpus. Result: PASS, exact PPL match (10.4463 both subject and control, delta=0.0) -- no regression from the two ported hunks on ordinary decode.
+
+PRBE20's full acceptance criteria (the real cross-batch bit-identity property across the FULL five-commit cluster, including the composition-gated flash-attn and RDNA4/RDNA3 hunks not yet ported) remain unmet -- this closes one real, narrow data point (no ordinary-decode regression from the standalone subset), not the item's actual scope. Patch state remains "untested".
+
 ## Change Log
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
@@ -78,3 +88,6 @@ Successor key: patching-rdna-boost-experiments-rd26
 - 2026-09-10T02:51:52.755045+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_025218_rdna-successors-prbe2022-now_5714
 - 2026-09-10T02:52:18.396789+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-11T16:37:09.158298+00:00 (updated-by): Updated: section:notes
+- chg_20260911_163714_real-hardware-test-confirms-no_2191
+- 2026-09-11T16:37:14.220103+00:00 (updated-by): Updated: section:ledger-events
