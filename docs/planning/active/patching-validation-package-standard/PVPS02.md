@@ -191,6 +191,16 @@ Separately (NOT fixed, NOT blocking -- documented in PNRO17): llama-bench's own 
 
 NEXT: re-run the real-hardware merge gate matrix with the fix -- full gfx1100/gfx1201/gfx1030 x tierM/tierB/tierL matrix should now pass on gfx1201/gfx1030 too (single-GPU cells), not just gfx1100.
 
+
+
+BUILD-SHARING REFACTOR + FULL MATRIX RE-CONFIRMED (commit 1e2461d1), 2026-09-11: per user direction, _run_performance_benchmark() now builds ONE fat multi-ISA control/subject llama-bench pair (AMDGPU_TARGETS=";".join(architectures)) instead of a separate build per architecture -- device SELECTION stays per-cell via HIP_VISIBLE_DEVICES (per the prior fix), only the BUILD is now shared. Full offline suite clean, patch-lint/check clean.
+
+Re-ran the full standard matrix on Brutus with the single-build version: identical outcome to the per-architecture-build run -- 7/9 cells executed, 2 correctly skipped (gfx1201/gfx1030 tierL-qwen27b-q8, both single-device-mapped, model needs tensor-2). Real decode effect numbers plausible and consistent across both runs (e.g. gfx1201/tierM ~3.0% both times). device_visibility correctly shows the right single HIP_VISIBLE_DEVICES entry per architecture (['0'], ['2'], ['3']) and ['0','1'] for the dual-GPU gfx1100 tierL cell, all from the ONE shared binary pair -- confirms a single fat multi-arch build dispatches correctly via HIP_VISIBLE_DEVICES selection across every present architecture.
+
+RD04's generic --run-performance-benchmark matrix is now real-hardware-confirmed working correctly end-to-end across all 3 architectures (gfx1100/gfx1201/gfx1030) and all 3 standard models, with the one architecturally-necessary skip pattern (tensor-2 models need 2 mapped devices) behaving exactly as designed.
+
+STILL REMAINING before this item is fully done: (1) RD58/RD73's changed selector plumbing has not yet been exercised on real hardware since step 7's rewiring -- needs minimal real execution through each changed lane per the design's revised merge-gate scope (warmup=0/measured=1, decode pairs=1, minimal resource burst); (2) the RD04 legacy --run-rd04-benchmark alias has not been re-run against the same arch/model for a direct comparison to the generic path's evidence.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -205,6 +215,7 @@ NEXT: re-run the real-hardware merge gate matrix with the fix -- full gfx1100/gf
 
 ## Ledger-events
 
+
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T09:30:41.738140+00:00 (updated-by): Updated: section:acceptance_criteria
@@ -217,3 +228,6 @@ NEXT: re-run the real-hardware merge gate matrix with the fix -- full gfx1100/gf
 - chg_20260911_101947_finished-wiring-the-last-two-p_5873
 - 2026-09-11T10:19:47.335057+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T11:00:29.130272+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T11:25:51.174223+00:00 (updated-by): Updated: section:notes
+- chg_20260911_112556_the-new-cross-gpu-benchmark-ha_7225
+- 2026-09-11T11:25:56.545599+00:00 (updated-by): Updated: section:ledger-events
