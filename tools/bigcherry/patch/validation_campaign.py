@@ -1093,6 +1093,123 @@ def run_rd13_ppl_check(
     return {"result": result, "artifact": artifact_ref}
 
 
+def _load_rd43_correctness_module() -> object:
+    """Dynamically load the real RD43 correctness producer (patches/
+    1216_rd43_concurrent_join_fusion_guard/validation/rd43_correctness.py)."""
+    module_path = (
+        REPO_ROOT / "patches" / "1216_rd43_concurrent_join_fusion_guard"
+        / "validation" / "rd43_correctness.py"
+    )
+    if not module_path.is_file():
+        raise PatchCampaignError(f"rd43 correctness producer not found at {module_path}")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_bigcherry_rd43_correctness", module_path)
+    if spec is None or spec.loader is None:
+        raise PatchCampaignError(f"cannot load rd43 correctness producer at {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def run_rd43_ppl_check(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, model: Path, corpus: Path, run_dir: Path, _module: object | None = None,
+) -> dict[str, object]:
+    """RD43's real correctness producer, orchestrated. Subject = 1215+1216
+    (RD43's own hard REQUIRES); control = 1215 alone. GGML_CUDA_GRAPH_OPT=1
+    is set on BOTH runs (the real-hardware reproduction condition RD43's
+    own docstring names) -- the PRIMARY proof is that the subject run
+    completes at all (no HIP graph-capture abort); ppl_equality against
+    the control is the secondary "and it didn't change output" proof."""
+    from bigcherry.patch import source as psi
+
+    rd43_correctness = _module or _load_rd43_correctness_module()
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=("1215_rd394041_amd_stream_moe_overlap",),
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry",
+        extra_patches=("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"),
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError("rd43 ppl check: control and subject resolved different base revisions")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    ppl_build_root = build_root / "rd43-ppl-check"
+    subject_bin = build_tree(
+        name="rd43-ppl-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name="rd43-ppl-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
+        extra_cmake_args=[],
+    )
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd43-ppl-subject", source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / "rd43-ppl-control", source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id="1216_rd43_concurrent_join_fusion_guard",
+    )
+
+    def _ppl_runner(argv, **kwargs):
+        env = {**os.environ, **rd43_correctness.GRAPH_OPT_ENV, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
+    try:
+        comparison = rd43_correctness.require_ppl_equality(
+            subject_binary=subject_bin / f"llama-perplexity{exe}",
+            control_binary=control_bin / f"llama-perplexity{exe}",
+            model=model, corpus=corpus, runner=_ppl_runner,
+        )
+        result = {"check": "ppl_equality", "passed": True, "detail": "within tolerance (graph capture completed)"}
+    except rd43_correctness.PerplexityError as exc:
+        comparison = None
+        result = {"check": "ppl_equality", "passed": False, "detail": str(exc)}
+
+    doc = {
+        **result,
+        "graph_opt_env": rd43_correctness.GRAPH_OPT_ENV,
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "comparison": rd43_correctness.comparison_to_dict(comparison) if comparison else None,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd43-ppl-check.json", doc)
+    _print(
+        f"rd43 ppl_equality (GGML_CUDA_GRAPH_OPT=1): {'PASS' if result['passed'] else 'FAIL'} -- {artifact_ref['path']}"
+    )
+    return {"result": result, "artifact": artifact_ref}
+
+
 def run_rd08_contract_trigger(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
