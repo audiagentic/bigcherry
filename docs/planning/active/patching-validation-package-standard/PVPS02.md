@@ -228,6 +228,12 @@ FIXED (commit -- see next entry): every HIP-only-governed child environment now 
 
 Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated failures), patch-lint/check clean. This fix has NOT yet been re-verified on real hardware with an ambient conflicting ROCR_VISIBLE_DEVICES actually set (the regression tests are hardware-free/mocked) -- the real-hardware runs already completed (RD58, RD04 legacy alias, the full matrix) never had a stray ambient ROCR value present, so they could not have exercised this exact fix's real-hardware path. Real-hardware re-verification with a deliberately-set conflicting ambient ROCR value is the next step before requesting final GPT approval again.
 
+
+
+REAL-HARDWARE RE-VERIFICATION OF THE ROCR-UNSET FIX (commit acbb28ed), 2026-09-11: ran the exact adversarial scenario GPT's second review specified -- ambient ROCR_VISIBLE_DEVICES=6 (a deliberately conflicting/nonexistent device) set alongside ambient HIP_VISIBLE_DEVICES=0,1,2,3, then --run-performance-benchmark restricting to gfx1201/tierM-ministral14b-q4km via --device-map gfx1201=2. Result: 1 executed, 0 skipped, real GPU throughput measured (59.99 t/s, matching the earlier ~61.75 t/s gfx1201 baseline -- NOT the ~8.4 t/s CPU-fallback signature the original bug produced), device_visibility correctly shows hip_visible_devices=['2']/rocr_visible_devices=None. The fix holds under real hardware with the exact adversarial condition specified -- ROCR is genuinely stripped from the final child environment, not just omitted from what the harness sets.
+
+PVPS02 is now ready for a final GPT re-review to close out the BLOCK verdict from req_8429aa8e0d35496e.
+
 ## Change Log
 
 - 2026-09-11T06:35:00.394840+00:00 (created-by): Created by agent
@@ -241,6 +247,7 @@ Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated fa
 - 2026-09-11T09:12:57.017255+00:00 (updated-by): Updated: section:notes
 
 ## Ledger-events
+
 
 - chg_20260911_091302_fixed-a-crash-in-the-new-gener_9057
 - 2026-09-11T09:13:02.211977+00:00 (updated-by): Updated: section:ledger-events
@@ -262,3 +269,6 @@ Full offline suite clean (3257 tests, same 3 confirmed pre-existing/unrelated fa
 - 2026-09-11T11:42:09.161413+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T12:04:13.058728+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-09-11T12:04:25.793620+00:00 (updated-by): Updated: section:notes
+- 2026-09-11T12:06:30.218808+00:00 (updated-by): Updated: section:notes
+- chg_20260911_120635_verified-on-real-gpu-hardware_2085
+- 2026-09-11T12:06:35.024942+00:00 (updated-by): Updated: section:ledger-events
