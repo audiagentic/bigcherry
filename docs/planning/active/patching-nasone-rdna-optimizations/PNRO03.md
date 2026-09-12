@@ -68,13 +68,14 @@ Supersedes: NRO03
 Inherited semantic scope: preserve source-current push direction, probe/fallback, no direct peer reads, and correctness-first acceptance.
 Migration: capability-rebaseline-v3-2026-09
 
+REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed in patches/1250 (NRO01) this same session, by inspection (same author/batch, same pattern: anchor ending at '=' mid-statement). Fixed proactively and re-verified with a real isolated gfx1100 build (1001+1252 composition): clean build, BUILD_OK. Closes this draft's 'applies cleanly, builds HIP' bar for the first time. All other acceptance criteria (bidirectional probes, scratch ownership, fallback, content-checked performance campaign) remain entirely unstarted.
+
 ## Change Log
 
 - 2026-09-09T10:52:12.743676+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:41.098537+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.061978+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:26:09.609126+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.291162+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T03:47:57.075297+00:00 (updated-by): Updated: section:notes
