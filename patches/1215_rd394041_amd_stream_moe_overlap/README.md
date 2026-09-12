@@ -299,6 +299,31 @@ ef392bae73c9...ec96d0`), same token sequence. Fixed
 `RD39-42-STREAM-MOE-OVERLAP` and `RD43-CONCURRENT-JOIN-FUSION-GUARD` to
 `tierM-qwen35b-a3b-moe-mtp`.
 
+## Real three-arm baseline comparison, non-interleaved -- DISCREPANCY found, unresolved (2026-09-13)
+
+Ran a quick B-vs-C decode comparison (`tg32`, `GGML_CUDA_GRAPH_OPT=1`,
+`Qwen3.6-35B-A3B`, gfx1100, 4 rounds, non-interleaved -- always B then
+C in sequence, not alternating): B (BigCherry baseline, no 1215/1216)
+consistently ~114 t/s across all 4 rounds; C (BigCherry+1215+1216)
+consistently ~108 t/s across 3 stable rounds (one early round showed
+~97 t/s with very high variance, discarded as a probable warm-up
+artifact). **This shows a consistent ~5% NEGATIVE delta, contradicting
+this patch's own formal 10-round INTERLEAVED evidence (+2.38% mean gain,
+95% CI [1.45%, 3.32%]) documented earlier in this README.**
+
+**Do not treat this as disproving the formal result.** The formal
+evidence used real, deliberate order-interleaving (baseline/subject
+alternating) specifically to rule out systematic drift/ordering bias --
+this quick check did not (always B first, then C), so a real, unrelated
+ordering/thermal/warm-up effect could fully explain the discrepancy
+rather than a genuine regression. This is a real, honest, unresolved
+finding -- flagged rather than silently reconciled or hidden. Next step
+(not yet done): rerun this specific B-vs-C comparison with proper
+interleaving to determine whether the formal +2.38% result and this
+quick -5% result can be reconciled, or whether something changed
+(e.g. a build/pin drift) between when the formal evidence was gathered
+and now.
+
 ## Known limitations
 
 - Both named correctness checks now have real, GPT-approved evidence
