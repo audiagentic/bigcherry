@@ -3,8 +3,9 @@
 This page covers the patch-reference entry point only. The sole canonical
 validation authority is
 [testing/PATCH_VALIDATION.md](../testing/PATCH_VALIDATION.md), which owns
-Experiment Contract obligations, campaign capabilities, evidence provenance,
-status semantics, promotion, demotion, and re-promotion.
+the complete G0-G7 sequence, operation applicability, Experiment Contract
+obligations, campaign capabilities, evidence provenance, status semantics,
+promotion, demotion, and re-promotion.
 
 Do not duplicate thresholds, campaign flags, lifecycle rules, or evidence
 policy here. If this pointer conflicts with the testing authority, the testing
