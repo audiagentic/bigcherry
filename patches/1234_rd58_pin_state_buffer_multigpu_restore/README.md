@@ -171,6 +171,18 @@ standard evidence-persistence pipeline is the concrete, well-scoped
 remaining step before `state = "validated"` can be set with full
 tooling confidence.
 
+**Exact remaining gap identified (PRBE109)**: `validation_campaign.py`'s
+`run()` function's `--run-rd58-state-restore` path already computes
+RD58's real `contract_correctness_gate` (line ~5379) from real evidence,
+but `contract_promotions` (the dict feeding
+`compute_persisted_validation_eligible()`) is only ever populated for
+`rd08_qualification`/`rd73_qualification` -- RD58's own promotion
+verdict is never computed or added. This means `eligible_for_validated_state`
+structurally cannot become `True` for RD58 through the standard CLI path
+today, regardless of how complete the real evidence is. This is a real,
+precisely located code gap (not a hardware or evidence gap) -- filed as
+PRBE109 with the exact fix location and required change.
+
 ## Evidence
 
 Runtime artifacts (build logs, raw test-save-load-state output) land
