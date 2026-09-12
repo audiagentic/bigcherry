@@ -326,7 +326,7 @@ def validation_evidence_statuses(
         # state-dependent behaviour and no lifecycle state is written here.
         verification_module = (
             replace(module, state="validated")
-            if patch_id in assume_validated and module.state != "validated"
+            if patch_id in assume_validated and module.state == "untested"
             else module
         )
 
