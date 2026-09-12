@@ -61,7 +61,10 @@ Low severity (workaround is trivial: pass distinct build_root per arch), but wil
 
 ## Ledger-events
 
+
 - chg_20260912_203230_patch-1206-rd13-now-has-real_7484
 - 2026-09-12T20:32:30.630645+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T22:42:30.804282+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T22:42:35.718286+00:00 (state-transition): State: pending → completed
+- chg_20260912_224753_fully-resolved-patch-1204-rd0_6022
+- 2026-09-12T22:47:53.082250+00:00 (updated-by): Updated: section:ledger-events

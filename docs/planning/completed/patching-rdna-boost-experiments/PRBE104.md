@@ -67,7 +67,10 @@ Final disposition: correctness passes, performance does not -- RD08 is not promo
 
 ## Ledger-events
 
+
 - chg_20260912_192807_confirmed-patch-1204-rd08s_9661
 - 2026-09-12T19:28:07.083361+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T22:47:17.610915+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T22:47:22.977085+00:00 (state-transition): State: pending → completed
+- chg_20260912_224753_fully-resolved-patch-1204-rd0_6022
+- 2026-09-12T22:47:53.075691+00:00 (updated-by): Updated: section:ledger-events
