@@ -2,7 +2,7 @@
 id: PRBE107
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-12T21:20:57.594630+00:00'
 breadth: ''
 skill: ''
@@ -69,6 +69,14 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 
 **Conclusion: the forced-dispatch patches cost a consistent ~22-23% prefill throughput specifically on MoE models, and nothing measurable on dense/dense-hybrid models.** The two MoE gaps (22.6%, 22.3%) are remarkably close across genuinely different MoE families -- a real, systematic interaction between the forced fixed geometry/nwarps dispatch parameters and MoE's smaller, more numerous expert-routed matmul shapes, not noise or a single-model artifact. This is very plausibly a known/accepted tradeoff for BigCherry's dispatch-research infrastructure (the forced parameters may be tuned for dense shapes), but was never previously quantified. Remaining open step: determine whether this is an accepted tradeoff (ask the framework patch-set's owner) or worth tuning the forced parameters specifically for MoE shapes -- a real, scoped follow-up for whoever owns dispatch/autotuning design, not blocking any current patch's qualification.
 
+**RESOLVED (2026-09-13).** Root cause: patches/0300_mmq_forced_j/patch.py's lifted J-selection scan (ggml_cuda_mmq_native_j_best) used args.ncols_max where real upstream (verified against actual vendor source in this repo) uses args.ncols_opt for tile-size optimization -- a distinct mmq_args field upstream sets to the approximate per-expert routed column count for MUL_MAT_ID/MoE on RDNA3.0/RDNA4 (deliberately smaller than ncols_max, the real launch/safety width). Dense models set ncols_opt==ncols_max upstream (hence zero observed effect); MoE models diverge sharply, causing the scan to select a substantially larger, wrong tile-width J than native upstream. GPT (req_75d5e59ef62e4675) diagnosed this precisely; independently verified against the real vendor source (mmq.cuh struct comment, mmq.cu's RDNA3/RDNA4 ncols_opt computation) before applying any fix.
+
+Fix applied and committed (1203c2e2): changed ggml_cuda_mmq_native_j_best() to take/use ncols_opt instead of ncols_max (declaration, call site, and definition). ggml_cuda_mmq_variant_is_eligible's own ncols_max parameter is untouched (different purpose: padding/OOB safety).
+
+Real hardware verification (rebuilt, multiple rounds): gpt-oss-20B recovers from 4267.30 to ~5209 (stock: 5169.24); Qwen3.6-35B-A3B MoE recovers from 2654.67 to 3165.05 (stock: 3247.36); Qwen3.5-4B dense confirmed unaffected (4890.26, matching its unaffected 4885.78 pre-fix and stock's 4881.74). Both predictions from the diagnosis confirmed exactly. Full details: docs/reference/testing/BASELINE_COMPARISON_RD13_2026-09-13.md.
+
+Remaining step: 0300_mmq_forced_j's validated state should be reconfirmed under a fresh formal qualification run now that native/forced_J=0 behavior is corrected -- it was never truly invalidated (the bug predates this session and 'validated' always assumed correct upstream-matching behavior at forced_J=0), but a fresh run would be good practice.
+
 ## Change Log
 
 - 2026-09-12T21:20:57.594630+00:00 (created-by): Created by agent
@@ -87,3 +95,5 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 - chg_20260912_213048_found-that-the-real-baseline-p_2042
 - 2026-09-12T21:30:48.021556+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T21:33:02.287522+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T21:54:01.846359+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T21:54:06.313278+00:00 (state-transition): State: pending → completed

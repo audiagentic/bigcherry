@@ -150,6 +150,58 @@ MoE routing shapes specifically -- plausibly the forced parameters are
 tuned/reasonable for dense matmul shapes but suboptimal for MoE's
 smaller, more numerous expert-routed matmuls.
 
+## RESOLVED: root cause found, fixed, and verified (2026-09-13)
+
+Bisected further (isolating each of the 3 "forced" patches individually):
+**`0300_mmq_forced_j` alone reproduces the entire regression**
+(4267.30 t/s); `0400_mmvf_forced_block` and `0500_mmf_forced_nwarps` are
+innocent (5209.73, 5206.47 -- both match stock).
+
+GPT (`req_75d5e59ef62e4675`) diagnosed the exact bug by comparing
+`patches/0300_mmq_forced_j/patch.py`'s lifted J-selection scan against
+real upstream `ggml/src/ggml-cuda/mmq.cuh`/`mmq.cu` -- **independently
+verified against the actual vendor source in this repo before applying
+any fix.** Upstream's `mmq_args` struct has two distinct fields:
+
+```cpp
+int64_t ncols_max;
+int64_t ncols_opt; // value to optimize the tile size against, launch grid still uses ncols_max
+```
+
+For MUL_MAT_ID/MoE on RDNA3.0/RDNA4, upstream's own code (`mmq.cu`)
+computes `ncols_opt` as the approximate per-expert routed column count
+(`(ne12*n_expert_used + ne02 - 1) / ne02`), deliberately smaller than
+`ncols_max` (the real launch/safety width). **0300's lifted scan used
+`ncols_max` where upstream's real scan uses `ncols_opt`** -- for dense
+models these are set equal upstream (hence zero observed effect), but
+for MoE they diverge sharply, causing the scan to pick a substantially
+larger, wrong tile-width `J` than native upstream would.
+
+**Fix applied**: `patches/0300_mmq_forced_j/patch.py` changed to pass
+`args.ncols_opt` instead of `args.ncols_max` into
+`ggml_cuda_mmq_native_j_best()` (both the declaration/call-site and the
+definition). `ggml_cuda_mmq_variant_is_eligible`'s own `ncols_max`
+parameter is deliberately untouched -- that one correctly needs the real
+launch width for padding/OOB safety, an unrelated purpose. Committed
+`1203c2e2`.
+
+**Real hardware verification (rebuilt, 3+ rounds each):**
+
+| Model | Class | Before fix | After fix | Stock (A) |
+|---|---|---|---|---|
+| gpt-oss-20B | MoE | 4267.30 | 5223.55 / 5212.42 / 5190.19 (mean ~5209) | 5169.24 |
+| Qwen3.6-35B-A3B | MoE | 2654.67 | 3165.05 | 3247.36 |
+| Qwen3.5-4B | dense+GDN | 4885.78 (unaffected) | 4890.26 (unaffected, as predicted) | 4881.74 |
+
+**Both MoE models recover to within noise of stock upstream; the dense
+model is confirmed unaffected by the fix, exactly as the diagnosis
+predicted.** This is a real, precise, GPT-diagnosed, independently
+source-verified, hardware-confirmed fix -- not a workaround or a
+documented-but-unresolved finding. `0300_mmq_forced_j`'s `validated`
+state should be reconfirmed under a fresh qualification run (it was
+never actually invalidated -- native/forced_J=0 behavior is now
+corrected to match upstream, which is what "validated" always assumed).
+
 ## What this does and doesn't establish
 
 - Confirms RD13 (the focal patch) itself is correctness-neutral and has
