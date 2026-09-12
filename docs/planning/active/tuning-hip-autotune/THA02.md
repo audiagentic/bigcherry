@@ -63,6 +63,7 @@ Successor key: tuning-hip-autotune-hi119
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.795562+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -70,3 +71,5 @@ Successor key: tuning-hip-autotune-hi119
 - 2026-09-10T03:24:43.274489+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032455_repaired-two-tuning-successors_8434
 - 2026-09-10T03:24:55.054433+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_044807_documented-four-moeglu-correc_6209
+- 2026-09-12T04:48:07.100516+00:00 (updated-by): Updated: section:ledger-events
