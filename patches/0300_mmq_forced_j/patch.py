@@ -83,7 +83,24 @@ static void mul_mat_q_launch_forced_J(
 // tuner's translation unit includes only hip-autotune-dispatch.cuh, so an
 // inline definition here leaves it with a declaration and no body, which links
 // but fails at load with an undefined symbol.
-int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max);
+//
+// PRBE107 fix (2026-09-13, GPT-diagnosed req_75d5e59ef62e4675, real-hardware
+// confirmed): takes ncols_opt, NOT ncols_max. Upstream's own scan optimizes
+// tile size against ncols_opt (mmq_args's "value to optimize the tile size
+// against, launch grid still uses ncols_max") -- for MUL_MAT_ID/MoE on
+// RDNA3.0/RDNA4, ncols_opt approximates per-expert routed columns
+// ((ne12*n_expert_used + ne02 - 1) / ne02), which can be far smaller than
+// ncols_max (the real launch/safety width, unchanged for padding purposes).
+// Passing ncols_max here instead of ncols_opt was a real, confirmed bug:
+// it selected a substantially larger J than native upstream for MoE prefill
+// specifically (dense models set ncols_opt == ncols_max, so they were
+// unaffected) -- measured as a real, deterministic ~22-23% pp512 throughput
+// regression on two independent MoE models (gpt-oss-20B, Qwen3.6-35B-A3B),
+// zero effect on two dense models (Qwen3.5-4B, Ministral-14B). Do NOT change
+// ggml_cuda_mmq_variant_is_eligible's own ncols_max parameter below -- that
+// one correctly needs the real launch width for padding/OOB safety, a
+// completely different purpose from this tile-size optimization scan.
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt);
 
 // bigcherry (HI06): upstream's J scan, as a pure function. The tuner needs the
 // native answer both as a fallback and as the baseline a challenger has to
@@ -94,7 +111,7 @@ int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max
 // has caused four defects in this project already.
 template <ggml_type type, bool fallback>
 static int mul_mat_q_compute_J_best(const mmq_args & args) {{
-    return ggml_cuda_mmq_native_j_best(type, fallback, args.ncols_max);
+    return ggml_cuda_mmq_native_j_best(type, fallback, args.ncols_opt);
 }}
 
 // bigcherry (HI06): hard eligibility (standards 12.4). Answers "could this J
@@ -192,7 +209,11 @@ bool ggml_cuda_mmq_variant_is_eligible(
 //
 // Returns 0 when nothing is eligible, which callers must read as "no such
 // candidate" rather than "J = 0".
-int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max) {
+//
+// PRBE107 fix (2026-09-13): takes ncols_opt, matching upstream's own scan --
+// see this function's forward declaration in mmq.cuh for the full real-
+// hardware-confirmed regression this corrects.
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt) {
     const int    id    = ggml_cuda_get_device();
     const int    cc    = ggml_cuda_info().devices[id].cc;
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
@@ -208,7 +229,7 @@ int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max
         if (mmq_get_nbytes_shared(config, cc) > smpbo) {
             continue;
         }
-        const int ntiles_x = (int) ((ncols_max + config.J - 1) / config.J);
+        const int ntiles_x = (int) ((ncols_opt + config.J - 1) / config.J);
         if (ntiles_x < ntiles_J_best) {
             J_best        = J;
             ntiles_J_best = ntiles_x;
