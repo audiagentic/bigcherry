@@ -1,6 +1,6 @@
 ---
 id: RHA07
-order: 0
+order: 1
 plan: run-hip-autotune
 state: pending
 created-at: '2026-09-09T18:00:32.292398+00:00'
@@ -61,6 +61,8 @@ RHA03 owns completed run-result/matrix advisories; RHA07 owns only the remaining
 
 RHA03 owns completed run-result/matrix advisories. GPT assessment says this is partially implemented and should be refreshed before coding; do not redo existing evaluator work.
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. Hardware-free boundary-advisory work should land before PA33 so the canonical patch-validate facade can consume existing run_advisories.py outputs. Preserve current evaluators and add only missing adapters; do not create another execution, recovery, or admission layer. Exploratory work may use a separate worktree, but final integration must serialize with PA34/PA33 CLI ownership.
+
 ## Change Log
 
 - 2026-09-09T18:00:32.292398+00:00 (created-by): Created by agent
@@ -73,3 +75,6 @@ RHA03 owns completed run-result/matrix advisories. GPT assessment says this is p
 - 2026-09-12T10:31:41.081187+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260912_103200_updated-the-active-buildrunp_8222
 - 2026-09-12T10:32:01.033733+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:54:36.524799+00:00 (updated-by): Updated: order=1, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.034171+00:00 (updated-by): Updated: section:ledger-events

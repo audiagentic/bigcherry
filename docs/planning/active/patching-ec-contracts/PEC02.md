@@ -1,6 +1,6 @@
 ---
 id: PEC02
-order: 0
+order: 1
 plan: patching-ec-contracts
 state: pending
 created-at: '2026-09-09T10:47:36.919359+00:00'
@@ -14,15 +14,16 @@ priority: null
 
 ## Description
 
-Complete the production half of the mandatory trigger-proof contract: populate TriggerEvidence from real telemetry and thread INVALID status through campaign/report validation.
+Complete the production half of the mandatory trigger-proof contract by using the repository's current Experiment Contract and campaign evidence owners. Populate TriggerEvidence from real telemetry and thread INVALID status through campaign/report validation; do not create another evidence authority or executor. This is an authority primitive for PA33 and later qualification work, with hardware evidence remaining a separate completion requirement.
 
 ## Steps
 
-- Select and document one real telemetry source first (0700 coverage_counters is the preferred launch-count source), then map its on-disk fields to positive contract lanes.
-- Implement a reader that constructs TriggerEvidence with candidate launches/route selections and rejects malformed or absent evidence.
-- Thread the reader through campaign_planner.expand_contract() and the per-lane evaluation path so evaluate_promotion_gate() receives trigger_proof for real runs.
-- Preserve the existing semantics: positive lanes must trigger, control/boundary lanes are not required to trigger, empty evidence is INVALID, and INVALID short-circuits pass/fail evaluation.
-- Run one real contract artifact end-to-end, add fixture/negative tests, and surface INVALID distinctly in report/release validation.
+1. Use tools/bigcherry/experiment/contract.py as the canonical TriggerEvidence/evaluate_promotion_gate authority and tools/bigcherry/experiment/execution.py as the current marker-to-evidence producer; use tools/bigcherry/campaign/planner.py and tools/bigcherry/campaign/qualification_execution.py for the per-lane runtime path. Do not revive the stale root-level experiment_contract.py path.
+2. Select and document one real telemetry source first (0700 coverage_counters is the preferred launch-count source), then map its on-disk fields to positive contract lanes.
+3. Implement or complete the reader that constructs TriggerEvidence with candidate launches/route selections and rejects malformed or absent evidence.
+4. Thread the reader through campaign planner and per-lane evaluation so evaluate_promotion_gate() receives trigger_proof for real runs.
+5. Preserve existing semantics: positive lanes must trigger, control/boundary lanes are not required to trigger, empty evidence is INVALID, and INVALID short-circuits pass/fail evaluation.
+6. Add fixture/negative tests, surface INVALID distinctly in report/release validation, and run one real contract artifact end-to-end when the hardware/telemetry environment is available. PA33 must consume this authority rather than inventing a schema.
 
 ## Detailed Solution & Technical Design
 
@@ -34,7 +35,7 @@ PEC02 closes the wiring gap left by the existing pure evaluation gate. Telemetry
 
 ## Files
 
-tools/bigcherry/experiment_contract.py; telemetry reader for 0700/0810/0820/0830; campaign_planner per-lane pipeline; contract/report/release validation; fixtures and tests.
+tools/bigcherry/experiment/contract.py; tools/bigcherry/experiment/execution.py; tools/bigcherry/campaign/planner.py; tools/bigcherry/campaign/qualification_execution.py; tools/bigcherry/patch/validation_campaign.py; contract/report/release validation; fixtures and tools/tests/campaign contract/evidence tests.
 
 ## Validation
 
@@ -58,6 +59,8 @@ Supersedes: EC18
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-ec-contracts-ec18
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. PEC02 is an authority primitive before PA33. Reconcile these current owners and the existing TriggerEvidence implementation before coding; do not add another evidence schema, gate evaluator, runner, or contract engine. Hardware-free malformed/empty/mismatch tests can proceed before real telemetry artifacts; the real artifact remains required for closure.
+
 ## Change Log
 
 - 2026-09-09T10:47:36.919359+00:00 (created-by): Created by capability-rebaseline-v3
@@ -73,3 +76,6 @@ Successor key: patching-ec-contracts-ec18
 - 2026-09-10T02:36:27.738695+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023638_the-two-ec-contract-successors_4025
 - 2026-09-10T02:36:38.467423+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:53:45.966189+00:00 (updated-by): Updated: order=1, section:description, section:steps, section:files, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.051370+00:00 (updated-by): Updated: section:ledger-events

@@ -31,7 +31,7 @@ CatalogSnapshot must include immutable module bytes/content hashes and canonical
 
 ## Files
 
-tools/bigcherry/patch_catalog.py; campaign_resolution.py; campaign_source.py; campaign_lane.py; campaign_planner.py; patchset.py; snapshot and campaign tests.
+tools/bigcherry/patch/catalog.py; tools/bigcherry/patch/patchset.py; tools/bigcherry/campaign/resolution.py; tools/bigcherry/campaign/source.py; tools/bigcherry/campaign/build.py; tools/bigcherry/campaign/lane.py; tools/bigcherry/campaign/planner.py; tools/bigcherry/campaign/plan.py; snapshot and campaign tests.
 
 ## Validation
 
@@ -55,6 +55,8 @@ Supersedes: RE39
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-reusable-build-campaign-re39
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This is the first reusable-campaign infrastructure item after BRC01/PA34 and must precede PA33. Thread the existing CatalogSnapshot through PA34 source+experiment/focal-overlay selection, materialization, BuildPlan and reporting; do not redesign it or reimplement resolve_exact()/expand_composition(). The prior file list's root-level patch_catalog.py/campaign_resolution.py names were stale; current owners are under patch/ and campaign/.
+
 ## Change Log
 
 - 2026-09-09T10:59:28.152268+00:00 (created-by): Created by capability-rebaseline-v3
@@ -70,3 +72,6 @@ Successor key: patching-reusable-build-campaign-re39
 - 2026-09-10T03:21:39.750213+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032208_repaired-the-reusable-build-ca_4665
 - 2026-09-10T03:22:08.366620+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:52:56.632221+00:00 (updated-by): Updated: section:files, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.038185+00:00 (updated-by): Updated: section:ledger-events

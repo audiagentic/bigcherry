@@ -35,7 +35,7 @@ The current mitigation quarantines only src0 Q6_K, primary J=112, fallback=0 on 
 
 ## Files
 
-src/ggml/src/ggml-cuda/hip-autotune-dispatch.cu; hip-autotune-journal.{h,cpp}; hip-autotune-tuner.cu; dispatch/replay tests; docs/reference/FINDINGS.md; exact historical attempt artifact if recovered.
+vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-dispatch.cu; vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-journal.{h,cpp}; vendor/llama.cpp/ggml/src/ggml-cuda/hip-autotune-tuner.cu; BigCherry dispatch/replay tests; docs/reference/FINDINGS.md; exact historical attempt artifact if recovered.
 
 ## Validation
 
@@ -59,6 +59,8 @@ Supersedes: EX02
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-external-fixes-ex02
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This remains a domain hardware lane after the core infrastructure spine, not a prerequisite for BRC01/PA34/PA33. Current source ownership is under vendor/llama.cpp/ggml/src/ggml-cuda; the prior files entry used the stale non-existent src/ggml/src path. Reconcile the exact shared-vendor/clean-audit checkout identity before any code change, preserve quarantine, and use the existing evidence/qualification authorities rather than inventing a runner.
+
 ## Change Log
 
 - 2026-09-09T10:47:40.567257+00:00 (created-by): Created by capability-rebaseline-v3
@@ -74,3 +76,6 @@ Successor key: patching-external-fixes-ex02
 - 2026-09-10T02:41:10.569527+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024129_build-and-external-fix-success_1105
 - 2026-09-10T02:41:29.980880+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:54:00.656263+00:00 (updated-by): Updated: section:files, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.055651+00:00 (updated-by): Updated: section:ledger-events
