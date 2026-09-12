@@ -65,6 +65,7 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.502028+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -75,3 +76,5 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 - 2026-09-12T18:52:56.632221+00:00 (updated-by): Updated: section:files, section:notes
 - chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
 - 2026-09-12T18:55:48.038185+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_191132_corrected-the-gpt-guided-imple_8803
+- 2026-09-12T19:11:32.068321+00:00 (updated-by): Updated: section:ledger-events
