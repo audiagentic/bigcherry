@@ -75,13 +75,30 @@ Honest scope note: this proves RD43 does not crash and does not regress output f
 
 1215's README.md authored (2026-09-11), documenting real indirect evidence it is exercised (builds, doesn't corrupt PPL, doesn't abort under GGML_CUDA_GRAPH_OPT=1) via RD43/1216's and RD44/1217's own already-run campaigns, since both require it. Core +7.4% tg128 performance claim still not independently reproduced. Ledger event chg_20260911_221000_found-and-documented-real-evid_3917 (mis-linked to PRBE13 initially, corrected here).
 
+### 2026-09-12: real performance + activation + cross-architecture evidence (GPT-reviewed, req_893357b8c0bd4a4e / req_58a8c6465fd249f1 / req_40c25c3069ab4852)
+
+First-ever dedicated performance campaign for the combined 1215+1216 unit (required together per this item's own PRBE34 dependency). Corrected methodology after GPT review: RD42/1215's shared-expert overlap is intra-token, single-GPU, batch-1-decode, opt-in behind GGML_CUDA_GRAPH_OPT=1 -- an initial dual-GPU/-sm-tensor/graph-opt-unset test structurally could not exercise it.
+
+**gfx1100 single-GPU, corrected condition** (Qwen3.6-35B-A3B-UD-Q4_K_M): 6-round interleaved 2x2 (OFF=GGML_CUDA_GRAPH_OPT=0 control, ON==1 subject). OFF mean -0.23% (flat, as expected). ON mean +2.47%, all 6 rounds positive -- real, reproducible, non-regressing gain (smaller than the fork's own +7.41%, measured on a different architecture gfx1151/RDNA3.5).
+
+**Direct profiler proof**: rocprofv3 kernel-trace, 103,768 real dispatches across 4 HSA queues. Computed real wall-clock union-intersection between the two populous queues (82,750 vs 20,170 dispatches) -- 82.28% of the auxiliary (shared-expert) stream's busy time genuinely overlaps in real time with the main (routed-expert) stream. Not just the 'Adding shared-expert stream at node...' marker firing (also independently confirmed via debug-verbosity log) -- actual concurrent GPU kernel execution.
+
+**Cross-architecture**: gfx1201 (single-GPU, same model) shows a directionally similar but noisier/weaker signal (ON +2.59% mean, but OFF control itself non-flat at +1.38%, higher baseline noise on this device). gfx1030 (single-GPU, smaller IQ3_S quant since Q4_K_M doesn't fit in 16GB) shows a noisy NET NEGATIVE (ON -1.19% mean, one severe -6.25% outlier) -- no clear benefit, possibly harmful, possibly just measurement noise from less VRAM headroom on this older/smaller GPU. Not conclusive either way.
+
+**Split-mode impact** (gfx1100 dual-GPU, GRAPH_OPT=1): `-sm layer` shows a real, consistent REGRESSION (~-4.4% mean, all 3 rounds negative). `-sm tensor` is flat/neutral (no benefit, no harm).
+
+**Production guidance**: real benefit is conditional on single-GPU deployment with GGML_CUDA_GRAPH_OPT=1 explicitly set; must NOT be enabled for multi-GPU -sm layer (real regression); safe-but-inert under -sm tensor. Generalization beyond gfx1100 is unproven/mixed.
+
+**GPT-reviewed disposition**: gfx1100 single-GPU performance/mechanism qualification is substantively complete (real E2E gain + activation marker + direct profiler overlap proof satisfy RD42's own claimed gate) -- recorded as a real positive finding on its own merits, independent of any specific percentage threshold (per explicit user correction this session: do not gate promotion on a fixed percentage bar). Do NOT promote to validated yet: this project's policy requires a complete validation package and patch-verify-evidence-passing persisted evidence; 1215's own contract requires a bit_identical correctness check and 1216's requires backend_reference (existing PPL-equality evidence does not formally substitute for that named check). GPT: 'stop hardware profiling now -- remaining gaps are package/contract work, not more performance evidence.' The cross-architecture/split-mode sweep was completed as a direct answer to a generalization question, not further promotion-path profiling.
+
+Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists; the formal validated-state package (validation.toml, bound Experiment Contract with its two named correctness checks) remains the concrete next step if pursued.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -98,3 +115,4 @@ Honest scope note: this proves RD43 does not crash and does not regress output f
 - 2026-09-11T22:10:30.357360+00:00 (updated-by): Updated: section:notes
 - chg_20260911_230135_found-and-documented-a-real-sa_9076
 - 2026-09-11T23:01:35.306535+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:17:39.246458+00:00 (updated-by): Updated: section:notes

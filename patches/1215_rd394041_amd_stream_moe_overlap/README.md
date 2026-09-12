@@ -62,17 +62,91 @@ None of this is a substitute for 1215's own dedicated evidence -- it is
 real, but incidental (produced as a side effect of validating its
 dependents, not by design).
 
+## Real dedicated performance + activation evidence (2026-09-12, GPT-reviewed, req_893357b8c0bd4a4e / req_58a8c6465fd249f1 / req_40c25c3069ab4852)
+
+First-ever dedicated performance campaign for the combined 1215+1216 unit
+(1216/RD43 is required with 1215 -- see "Composition" below). Initial
+methodology (dual-XTX `-sm tensor`, `GGML_CUDA_GRAPH_OPT` unset) was
+corrected after GPT review: RD42's shared-expert overlap is an
+**intra-token, single-GPU, batch-1-decode mechanism**, opt-in behind
+`GGML_CUDA_GRAPH_OPT=1` (off by default on gfx1100), and requires the
+1215+1216 unit together (1215 alone exposes a join-node fusion hazard
+1216 fixes). All results below use the corrected condition.
+
+**gfx1100, single GPU** (Qwen3.6-35B-A3B-UD-Q4_K_M.gguf, fits one 24GB
+XTX): 6-round interleaved 2x2 (`GGML_CUDA_GRAPH_OPT=0` control vs `=1`
+subject). OFF: deltas [1.25%, -0.40%, 0.15%, 0.17%, -3.07%, 0.50%], mean
+-0.23%, SD 1.49% -- flat, as expected for an inactive control. ON: deltas
+[0.37%, 1.75%, 5.59%, 2.10%, 2.79%, 2.19%], mean **+2.47%**, SD 1.73%,
+**all 6 rounds positive** -- a real, reproducible, non-regressing gain.
+Smaller than the fork's own claimed +7.41% (measured on gfx1151/RDNA3.5, a
+different architecture) but real on gfx1100.
+
+**Direct profiler proof of concurrency** (`rocprofv3 --kernel-trace`,
+103,768 real kernel dispatches across 4 HSA queues): computed the real
+wall-clock UNION of each queue's busy intervals, then the time-intersection
+between the two populous queues (82,750 and 20,170 dispatches respectively
+-- main routed-expert stream and auxiliary shared-expert stream). **82.28%
+of the auxiliary stream's busy time genuinely overlaps in real time with
+the main stream's execution** -- not just event-marker-fired-but-serialized,
+actual concurrent GPU kernel execution. Also confirmed via debug-verbosity
+log: real `Adding shared-expert stream at node <name> <ptr>` lines (RD42's
+own activation marker) fired multiple times during a real decode run.
+
+**Cross-architecture** (same corrected condition, single GPU each):
+- **gfx1201** (32GB, same Q4_K_M model, 4 rounds): OFF mean +1.38% (SD
+  1.33%, NOT flat like gfx1100's control -- this device's baseline noise
+  floor is higher), ON mean +2.59% (SD 2.75%, one round negative). A
+  directionally similar but noisier, weaker-evidenced signal than gfx1100;
+  not as clean a result.
+- **gfx1030** (16GB, smaller Qwen3.6-35B-A3B-UD-IQ3_S.gguf quant since the
+  Q4_K_M doesn't fit, 4 rounds): OFF mean -0.09% (SD 0.35%, flat/clean
+  control). ON mean **-1.19%** (SD 3.59%, one severe outlier round at
+  -6.25%, two small positives) -- noisy and net negative on this smaller,
+  older GPU. No clear benefit here; possibly harmful, possibly measurement
+  noise from less VRAM headroom -- not conclusively either way.
+
+**Split-mode impact** (gfx1100 dual-GPU, `GGML_CUDA_GRAPH_OPT=1`, 3 rounds
+each):
+- `-sm layer`: real, consistent **regression**: deltas [-2.47%, -5.34%,
+  -5.46%], mean approximately -4.4%.
+- `-sm tensor`: flat/neutral: deltas [+0.11%, -0.19%, -0.30%] -- no
+  benefit, no harm.
+
+**Production guidance this implies**: the patch's real benefit is
+conditional on single-GPU deployment with `GGML_CUDA_GRAPH_OPT=1`
+explicitly set. It should NOT be enabled for multi-GPU `-sm layer`
+configurations (real regression); it is safe-but-inert under `-sm tensor`.
+Cross-architecture generalization beyond gfx1100 is unproven (gfx1201
+weaker/noisier, gfx1030 net negative/inconclusive).
+
+## GPT-reviewed disposition
+
+Performance/mechanism qualification for the gfx1100 single-GPU case is
+substantively complete: real E2E gain, activation marker, and direct
+profiler proof of temporal overlap all satisfy RD42's own claimed
+mechanism gate. This is recorded as a real positive finding on its own
+merits (a small, reproducible, non-regressing gain is valid grounds for
+this, independent of any specific percentage threshold). Do NOT promote to
+`validated` yet -- this project's policy requires a complete validation
+package (`validation.toml`, bound Experiment Contract) and persisted,
+current-pin-identity-bound evidence via `patch-verify-evidence` before a
+state transition. 1215's own contract requires a `bit_identical`
+correctness check (not yet run); 1216's requires `backend_reference` (the
+existing PPL-equality evidence is valuable but does not formally
+substitute for that named check per this project's policy). GPT: "stop
+hardware profiling now -- the remaining gaps are package/final-producer
+work plus the two named correctness checks, not more performance
+evidence." (The cross-architecture/split-mode sweep above was completed
+separately, in response to a direct question about generalization, not as
+further promotion-path profiling.)
+
 ## Known limitations
 
-- **The core performance claim (+7.4% tg128 on Qwen3.6-35B-A3B Q4_K_M) has
-  never been independently reproduced on this project's hardware.** All
-  real evidence above is correctness-only (builds, doesn't corrupt PPL,
-  doesn't abort under graph-opt); no A/B timing run isolating 1215's own
-  effect exists yet.
-- No dedicated correctness producer exists for 1215 itself (e.g. a direct
-  test of the MoE shared-expert auxiliary-stream overlap in isolation,
-  without RD43/RD44 layered on top).
-- No `validation.toml` adapter or Experiment Contract binding exists.
-- `state` stays `"untested"` -- the evidence above supports "does not
-  appear to be broken" but not "validated" (no independent performance
-  reproduction, no dedicated correctness producer).
+- No dedicated correctness producer/contract binding exists yet for
+  1215's `bit_identical` check or 1216's `backend_reference` check --
+  the formal remaining work before `validated` is possible.
+- `state` stays `"untested"` -- real, substantial positive evidence now
+  exists for gfx1100 single-GPU, but the formal validation package is not
+  complete and cross-architecture/split-mode generalization is mixed (see
+  above).
