@@ -43,6 +43,45 @@ primitive) was run for real on Brutus via
 
 Artifact: `artifacts/rd13-ppl-check.json` (produced by the campaign run).
 
+## Real hardware evidence at current pin (2026-09-13)
+
+The 2026-09-11 result above was measured against a since-superseded pin.
+Re-ran `run_rd13_ppl_check()` for real on Brutus against the **current**
+active pin (`b10901` / `28ff0958291ce3465fabd7bd679d4b0edd742bd9`), fresh
+control/subject `llama-perplexity` builds, same model
+(`tierM-gptoss20b-q6k`) and corpus (real `wikitext-2-raw/wiki.test.raw`):
+
+- **Result: PASS.** PPL = 954.4877 on both subject and control builds
+  (note: differs from the 2026-09-11 figure of 561.6933 -- expected, the
+  pin moved between runs, changing the baseline model-graph/kernel
+  behavior; what matters is subject==control at any given pin, not the
+  absolute PPL value). delta = 0.0 exactly, well within tolerance.
+- Real build-identity parity asserted between control/subject
+  (`assert_validation_subject_parity()`) before the comparison ran.
+- Persisted artifact:
+  `evidence/artifacts/rd13-ppl-check.json` (committed to this package,
+  not left in a scratch dir -- this is now durable, checkable evidence).
+
+**Activation-marker attempt (real, negative finding).** Ran the built
+`rd13-only` `llama-bench` binary against `tierM-qwen35b-a3b-moe-mtp`'s
+Q4_K_M quant (a real MoE model, chosen since it's this project's only
+registered non-dense-transformer-family model) under both a decode-only
+(`-p 0 -n 32`) and a prefill (`-p 512 -n 0`) shape: **0 of 0**
+`BIGCHERRY_PATCH_HIT patch=1206_rd13` marker hits in either run. This is
+consistent with the patch's own authoring note ("needs an SSM/Mamba-family
+model; the view pattern is what makes it fire") -- `qwen3.6-35B-A3B` is a
+dense-attention MoE model, not an SSM/Mamba family, so the
+matmul-RESHAPE-add graph shape this patch targets is real but genuinely
+does not appear in any model currently registered in
+`config/models.toml`. **This project has no registered SSM/Mamba-family
+model at all** (checked: every registered tier is `qwen3.x`/`gpt-oss`/
+`ministral`, all dense or dense-MoE). The activation check therefore
+cannot be positively demonstrated with real evidence today -- not a
+methodology failure, a real missing-fixture gap. Filed as a concrete
+prerequisite for whoever picks up RD13's activation leg: register an
+SSM/Mamba/GDN-family model (RD50/1221's GDN chunked-recurrence patch has
+the identical gap) before attempting this check again.
+
 ## Known limitations
 
 - The PPL-equality check confirms the ported fusion introduces no numerical
