@@ -184,6 +184,28 @@ contract encoded an inappropriate requirement for this kernel class, the
 Experiment Contract should be deliberately revised and qualification
 rerun under the new contract before any promotion.
 
+## Real multi-architecture trigger coverage (2026-09-13, standardized criteria)
+
+RD08's own contract (`scope.architectures = ["gfx1100", "gfx1201",
+"gfx1030"]`) already declares all three architectures in scope, so per
+`docs/reference/testing/STANDARDIZED_PATCH_VALIDATION_CRITERIA.md`
+extended the trigger/activation evidence (previously gfx1100-only) to
+gfx1201 and gfx1030. Real methodology note: an initial attempt without
+`--verbose` got 0 hits on BOTH subject and control (unlike the earlier
+`GGML_LOG_WARN` fix's own claim that WARN bypasses the `--verbose` gate
+-- empirically, on this `llama-bench` build, `--verbose` was still
+required for the marker to appear at all). Adding `--verbose` gave a
+clean, real result:
+
+- **gfx1201**: `subject_hit=1`, `control_hit=0`.
+- **gfx1030**: `subject_hit=1`, `control_hit=0`.
+
+**RD08's trigger/activation leg is now real and clean on all three
+contract-declared architectures.** This does not change the open
+correctness-gate/contract-design question above (PRBE104) -- the patch's
+real, deterministic `bit_identical` FAIL stands independent of this
+trigger result, which only confirms the code path genuinely executes.
+
 ## Known limitations
 
 None declared — this patch is not `deferred-hardware`. See the
