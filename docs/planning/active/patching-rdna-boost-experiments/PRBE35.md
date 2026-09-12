@@ -155,6 +155,7 @@ Recorded in patches/1215.../README.md with the full CorrectnessResult shape and 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -179,3 +180,5 @@ Recorded in patches/1215.../README.md with the full CorrectnessResult shape and 
 - 2026-09-12T13:12:03.629518+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T13:23:48.429640+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T13:32:04.406756+00:00 (updated-by): Updated: section:notes
+- chg_20260912_133232_confirmed-with-exact-byte-leve_9051
+- 2026-09-12T13:32:32.389039+00:00 (updated-by): Updated: section:ledger-events
