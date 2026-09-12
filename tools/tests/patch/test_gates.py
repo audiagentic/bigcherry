@@ -88,6 +88,34 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_evidence_gate(context)
         self.assertEqual(result.status, GateStatus.FAIL)
 
+    def test_admission_gate_passes_full_composition(self) -> None:
+        modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=modules), catalog_path=None,
+            patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision="abc", evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(admissible=True, gate_active=True, status="admitted")
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result) as admit:
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.PASS)
+        self.assertEqual(admit.call_args.args[0], ("A", "B"))
+
+    def test_admission_gate_blocks_inactive_not_ready_result(self) -> None:
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=()), catalog_path=None,
+            patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision=None, evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(
+            admissible=True, gate_active=False, status="not-ready", warnings=("bootstrap",)
+        )
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result):
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.BLOCKED)
+
 
 if __name__ == "__main__":
     unittest.main()

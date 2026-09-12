@@ -223,3 +223,46 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
     if not status.ok:
         return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", status.problems)
     return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", status.problems)
+
+
+def evaluate_admission_gate(context: GateContext) -> GateResult:
+    """Evaluate G7 against the complete resolved production composition."""
+    ids = tuple(module.patch_id for module in context.composition.modules)
+    try:
+        # Keep admission ownership in patch_admission; this import is lazy to
+        # preserve the patch package's dependency direction.
+        from .. import patch_admission
+
+        result = patch_admission.admit(
+            ids,
+            mode="production",
+            catalog_path=context.catalog_path,
+            patches_dir=context.patches_dir,
+            pinned_ref=context.pinned_ref,
+            resolved_base_revision=context.resolved_base_revision,
+            evidence_root=context.evidence_root,
+            allow_legacy_grandfather=context.allow_legacy_grandfather,
+        )
+    except (OSError, TypeError, ValueError, AttributeError) as exc:
+        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", (str(exc),))
+
+    status = getattr(result, "status", None)
+    admissible = getattr(result, "admissible", None)
+    gate_active = getattr(result, "gate_active", None)
+    failures = tuple(getattr(result, "failures", ()) or ())
+    warnings = tuple(getattr(result, "warnings", ()) or ())
+    if not isinstance(status, str) or not isinstance(admissible, bool) or not isinstance(gate_active, bool):
+        return GateResult(
+            GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
+            ("admission returned a malformed result",),
+        )
+    if status == "not-ready" and not gate_active:
+        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", warnings)
+    if status in {"rejected", "escape-hatch"} or not admissible:
+        return GateResult(GateId.G7, GateStatus.FAIL, "admission", "patch_admission", failures or warnings)
+    if status == "admitted" and gate_active and not failures:
+        return GateResult(GateId.G7, GateStatus.PASS, "admission", "patch_admission", warnings)
+    return GateResult(
+        GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
+        (f"unrecognized admission result status {status!r}",),
+    )
