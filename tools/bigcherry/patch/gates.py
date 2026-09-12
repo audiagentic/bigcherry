@@ -77,7 +77,7 @@ class GateContext:
     allow_legacy_grandfather: bool = True
     catalog_states: Mapping[str, str] | None = None
     coverage_report: Mapping[str, Any] | None = None
-    recipe_patch_ids: frozenset[str] = frozenset()
+    recipe_patch_ids: frozenset[str] | None = None
     target_revision: str | None = None
 
 
@@ -201,6 +201,15 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
     actual evidence result.
     """
     try:
+        framework_configuration = validation_policy.is_framework_configuration_patch(context.descriptor)
+    except AttributeError:
+        framework_configuration = False
+    if context.intent is GateIntent.PROMOTE and framework_configuration:
+        return GateResult(
+            GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+            ("framework PROMOTE requires the prospective canonical-composition seam",),
+        )
+    try:
         statuses = patch_catalog.validation_evidence_statuses(
             (context.descriptor.patch_id,),
             catalog_path=context.catalog_path,
@@ -223,16 +232,25 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
             (f"no evidence result for {context.descriptor.patch_id!r}",),
         )
-    if status.status == "not-required":
+    evidence_status = getattr(status, "status", None)
+    evidence_ok = getattr(status, "ok", None)
+    if not isinstance(evidence_status, str) or not isinstance(evidence_ok, bool):
+        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+                          ("evidence returned a malformed result",))
+    problems = getattr(status, "problems", None)
+    if not isinstance(problems, (tuple, list)) or not all(isinstance(item, str) for item in problems):
+        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+                          ("evidence returned malformed problems",))
+    if evidence_status == "not-required":
         if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
             return GateResult(
                 GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog",
                 ("validation or promotion requires an evidence obligation",),
             )
         return GateResult(GateId.G4, GateStatus.NA, "evidence", "patch.catalog")
-    if not status.ok:
-        return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", status.problems)
-    return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", status.problems)
+    if not evidence_ok:
+        return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", tuple(problems))
+    return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", tuple(problems))
 
 
 def evaluate_admission_gate(context: GateContext) -> GateResult:
@@ -259,8 +277,14 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
     status = getattr(result, "status", None)
     admissible = getattr(result, "admissible", None)
     gate_active = getattr(result, "gate_active", None)
-    failures = tuple(getattr(result, "failures", ()) or ())
-    warnings = tuple(getattr(result, "warnings", ()) or ())
+    raw_failures = getattr(result, "failures", None)
+    raw_warnings = getattr(result, "warnings", None)
+    if (not isinstance(raw_failures, (tuple, list)) or not isinstance(raw_warnings, (tuple, list))
+            or not all(isinstance(item, str) for item in (*raw_failures, *raw_warnings))):
+        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
+                          ("admission returned malformed failures or warnings",))
+    failures = tuple(raw_failures)
+    warnings = tuple(raw_warnings)
     if not isinstance(status, str) or not isinstance(admissible, bool) or not isinstance(gate_active, bool):
         return GateResult(
             GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
@@ -280,7 +304,8 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
 
 def evaluate_disposition_gate(context: GateContext) -> GateResult:
     """Evaluate G6 through the revision-bound disposition coverage authority."""
-    if context.catalog_states is None or context.coverage_report is None or context.target_revision is None:
+    if (context.catalog_states is None or context.coverage_report is None
+            or context.recipe_patch_ids is None or context.target_revision is None):
         return GateResult(
             GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
             ("complete disposition coverage inputs were not supplied",),
@@ -312,16 +337,19 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
         )
     except (OSError, TypeError, ValueError, AttributeError) as exc:
         return GateResult(GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition", (str(exc),))
-    if not isinstance(coverage.complete, bool):
+    complete = getattr(coverage, "complete", None)
+    uncovered = getattr(coverage, "uncovered_patch_ids", None)
+    if (not isinstance(complete, bool) or not isinstance(uncovered, (tuple, list))
+            or not all(isinstance(item, str) for item in uncovered)):
         return GateResult(
             GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
             ("disposition coverage returned a malformed result",),
         )
-    if coverage.complete:
+    if complete:
         return GateResult(GateId.G6, GateStatus.PASS, "disposition", "patch.disposition")
     return GateResult(
         GateId.G6, GateStatus.FAIL, "disposition", "patch.disposition",
-        tuple(coverage.uncovered_patch_ids),
+        tuple(uncovered),
     )
 
 
@@ -391,6 +419,13 @@ def evaluate_lifecycle_gate(
             GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates",
             ("missing prerequisite gate results: " + ", ".join(missing),),
         )
+    blocked = tuple(
+        f"{gate_id.value}={prior_results[gate_id].status.value}"
+        for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
+        if prior_results[gate_id].status is GateStatus.BLOCKED
+    )
+    if blocked:
+        return GateResult(GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates", blocked)
     failures = tuple(
         f"{gate_id.value}={prior_results[gate_id].status.value}"
         for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
