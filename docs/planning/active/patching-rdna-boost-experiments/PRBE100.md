@@ -15,15 +15,19 @@ work: L
 
 ## Description
 
-Audit the full stew675-rdna-boosts Block 08 commit and produce an implementation-ready decomposition for its three previously missing SSM kernels and supporting graph/cache changes. This is design and provenance work first; no port is authorized until the audit establishes exact behavior, dependencies, and patch boundaries.
+Completed audit/design record for the previously untracked Block 08 source. It decomposes the source into current PRBE-owned follow-up work; it does not authorize a monolithic port or create a new legacy RD prerequisite.
 
 ## Steps
 
-1. Read the complete 5efcd85f diff, including mmvq.cu, norm.cu/.cuh, unary.cu/.cuh, and all graph wiring. 2. Reconstruct each fused kernel's source graph, tensor layouts, launch geometry, architecture predicates, numerical contract, and fallback path. 3. Reconcile shared files against current BigCherry and tracked RD12/RD15/RD17/RD24/RD25/RD26/RD09 work. 4. Decompose Block 08 into package-sized patch candidates with explicit dependency/order and conflict maps. 5. Define code target state, test fixtures, correctness/performance evidence, provenance registration, and a go/no-go decision for porting. 6. Do not edit production source or create patch modules in this item.
+1. Preserve and review the complete 5efcd85f source diff and its 10-file/+1585/-68 identity.
+2. Record dispositions: Q8_1 cache/MMVQ reuse belongs in PRBE05; paired activation in PRBE11; shared-expert candidate in PRBE13; 16-node SSM candidate in PRBE18; determinism cluster in PRBE20.
+3. Reject duplicate/unsupported ports for direct-Q8 producers, standalone gate/beta or L2 fragments, hidden conv_states reads, and unrelated attention/MoE tuning.
+4. Carry exact matcher, layout, epsilon, scalar-gate, graph-edge, capture/fallback and selector-derived-launch constraints into the owning PRBE plans.
+5. Register source provenance and correct stale RD25/PRBE11 narratives; no production edits or standalone Block 08 patch is introduced by this audit.
 
 ## Detailed Solution & Technical Design
 
-Source is the external stew675/llama.cpp rdna-boosts commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb, titled 'rdna-boosts: block 08: fused-core prefill kernels and GPU bit-identical', fetched into tools/lab/rd25-block08-review/block08.diff. The audit must treat the three missing kernels as a coordinated SSM fusion family: ssm_gate_beta_fused_q8_0 (two Q8 projections plus softplus/sigmoid gating), ssm_conv_l2_gatebeta_fused (conv+SiLU+Q/K normalization+V+gate/beta pre-scan), and shexp_down_gated_q8_0 (gated quantized down projection plus residual). Verify whether the shared Q8_1 cache, small-batch flash-attention selection, graph capture behavior, and auxiliary tensor fields are prerequisites or independent changes. Reuse the existing package-only patch model, graph recipe lifecycle, experiment contracts, correctness evidence, and BuildPlan identity; no speculative second executor or cache identity system.
+Block 08 is not a single implementation target. The shared-expert region is a PRBE13 candidate; the exact 16-node SSM fusion is a PRBE18 candidate; cache reuse is PRBE05 stage 2; determinism hunks belong to PRBE20. PRBE19 expresses the post-fix source-state rule for affected successors, while PRBE11/RD12 is outside that rule. Use stable bounded cache slabs, capture_active fallback, exact graph-edge visibility, Q/K epsilon equality, scalar/layout/shape predicates, raw output/logit comparison and current selector-derived MMVQ geometry. Do not create a second executor/cache identity system or port the monolithically fetched diff.
 
 ## Code Samples & Guidance
 
@@ -31,11 +35,11 @@ Source is the external stew675/llama.cpp rdna-boosts commit 5efcd85fb4cd8845c6c7
 
 ## Files
 
-tools/lab/rd25-block08-review/block08.diff; config/external-sources.toml; docs/planning/active/patching-rdna-boost-experiments/PRBE11.md; docs/planning/completed/patching-rdna-boost-experiments/PRBE99.md; current vendor ggml-cuda sources; patches/1205_rd12*; patches/1207_rd17*; patches/1235_rd09*; patches/12xx RD15/RD24/RD26; tools/bigcherry/patch/**; tools/bigcherry/campaign/**; tools/bigcherry/tuning/**; tools/tests/**
+tools/lab/rd25-block08-review/block08.diff; config/external-sources.toml; PRBE05/11/13/16/18/19/20; completed RD09/12/15/21/24/25/26 provenance; current ggml-cuda sources; candidate patch/test/campaign locations.
 
 ## Validation
 
-Full diff read with line/file counts; source-to-current symbol inventory; graph/operator and tensor-layout reconstruction; exact overlap/conflict table for tracked patches; current-pin ancestry/source registration check; static anchor feasibility; proposed synthetic per-op and end-to-end correctness matrix; deterministic output/bit-identity policy; launch/fallback/architecture coverage; no production edits during audit.
+Source identity and full-diff inventory; symbol/anchor inventory against current main; overlap/disposition table; plan dependency consistency; exact matcher/fallback/capture constraints; deterministic raw-output policy; planning and registry validation. No production code change is authorized here.
 
 ## Effort & Risk
 
@@ -47,11 +51,13 @@ Full diff read with line/file counts; source-to-current symbol inventory; graph/
 
 ## Acceptance Criteria
 
-The complete Block 08 diff is reviewed and its three kernels plus supporting changes are decomposed into explicit patch-sized follow-ups. Each follow-up has exact source provenance, current-tree anchors or a fail-closed non-port decision, dependencies/conflicts, target APIs/data flow, correctness/performance tests, and evidence identity requirements. RD25 remains blocked or is explicitly re-scoped based on this result; no guessed anchors or unreviewed production port is introduced.
+The complete Block 08 diff is reviewed and its three kernels plus supporting changes are decomposed into current PRBE-owned follow-ups. Each follow-up has exact source provenance, current-tree anchors or a fail-closed non-port decision, dependencies/conflicts, target APIs/data flow, correctness/performance tests, and evidence identity requirements. PRBE19 is re-scoped as the post-fix bake-in rule; no guessed anchors, monolithic port, or unreviewed production change is introduced.
 
 ## Notes
 
-Provenance: stew675/llama.cpp branch rdna-boosts, commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb; title and diff header are preserved in tools/lab/rd25-block08-review/block08.diff. Discovery was made during PRBE11's attempt to port RD25, and summarized in PRBE99. Next agent must obtain/read the complete upstream diff and compare it to current main; the existing lab diff is an audit input, not an implementation patch.
+Provenance: stew675/llama.cpp branch rdna-boosts, commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb; title and diff header are preserved in tools/lab/rd25-block08-review/block08.diff. Discovery was made during PRBE11's attempt to port the historical RD25 source and summarized in completed PRBE99. The audited source is an input for PRBE05/11/13/18/20; the lab diff is not an implementation patch.
+
+Provenance: stew675/llama.cpp rdna-boosts commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb, preserved in the lab diff. This completed audit feeds PRBE05/11/13/18/20; legacy RD items remain historical provenance only. PRBE19 is a bake-in rule, not a standalone Block 08 or RD25 prerequisite. The lab diff is an audit input, not an implementation patch.
 
 ## Change Log
 
@@ -59,5 +65,9 @@ Provenance: stew675/llama.cpp branch rdna-boosts, commit 5efcd85fb4cd8845c6c7dd4
 
 ## Ledger-events
 
+
 - chg_20260911_235011_added-a-provenance-backed-bloc_4570
 - 2026-09-11T23:50:11.493148+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:53:12.621788+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:notes
+- chg_20260912_095506_cleaned-the-active-rdna-boost_4906
+- 2026-09-12T09:55:06.268116+00:00 (updated-by): Updated: section:ledger-events

@@ -15,23 +15,19 @@ priority: null
 
 ## Description
 
-Port and qualify the 16-node SSM pre-scan chain fusion as a Wave-2 candidate, with RD09/RD25 bake-in dependencies and exact graph guards.
+Port and qualify the exact 16-node SSM pre-scan chain fusion as a Wave-2 candidate, with explicit PRBE05 cache and PRBE19 post-fix source-state dependencies. PRBE18 is the actionable successor to closed RD24.
 
 ## Steps
 
-- Port the three-file change as an isolated rd24 experiment with provenance and registry entry; do not port superseded RD14/RD16 separately.
-- Verify conv F32, ne[1]==1, silu, q/k/v views, shared alpha/beta, Q8_0 guards and wrong-wiring no-fuse.
-- Take the fused SSM region from branch-tip/RD25 post-fix state with 2-warp reduction and qi=QI8_0; audit RD09 cache relationship.
-- Run an SSM/Mamba model fused vs unfused output/capture/timing on gfx1100 before any composition.
-- Retain fallback and reject unsupported shapes; compare only declared dependency arms.
+1. Port the three-file candidate as an isolated PRBE18 experiment; do not port superseded RD14/RD16 separately.
+2. Require the exact 16-node graph: conv F32, ne[1]==1 decode shape, SiLU, Q/K/V views, shared alpha/beta, matching Q/K epsilon, packed Q8_0-compatible layout, contiguity and correct residual/output wiring.
+3. Confirm producer readiness and reject graphs with missing graph edges such as an untracked conv_states read; retain wrong-wiring/no-fuse fallback.
+4. Take the fused SSM region from PRBE19's reviewed post-fix source state, using current selector-derived MMVQ geometry rather than hardcoded historical warp assumptions; audit the four q8_1_cache references as evidence for the real PRBE05 dependency.
+5. Run fused vs unfused output, graph-capture and causal timing on gfx1100 before composition.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+The candidate combines conv+SiLU+Q/K normalization+V+gate/beta pre-scan in one 16-node path. PRBE05 is a real dependency because the source contains four q8_1_cache references; wire it through the stable, bounded cache rather than importing a second cache. PRBE19 is the post-fix source-state rule, not a separately applied patch. Enforce exact tensor layouts, epsilon equality, scalar/shape predicates, graph-edge visibility, fallback and current MMVQ selector-derived launch geometry.
 
 ## Code Samples & Guidance
 
@@ -39,7 +35,7 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-ggml-cuda.cu/mmvq.cu/mmvq.cuh; patch 12xx rd24; external source entry; RD09 cache and PRBE19 bake-in identity; exact 16-node/fallback fixtures; SSM campaign.
+ggml-cuda.cu/mmvq.cu/mmvq.cuh; isolated PRBE18 patch; external source entry; PRBE05 cache API and evidence; PRBE19 post-fix identity; exact 16-node/wrong-wiring fixtures; SSM campaign.
 
 ## Validation
 
@@ -63,6 +59,8 @@ Supersedes: RD24
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd24
 
+Supersedes: RD24 (closed historical predecessor); RD14 and RD16 are closed/superseded historical designs and are not separate ports. Preserve RD24 source commit 4a4da30e... as provenance. Live dependencies are PRBE05 and PRBE19.
+
 ## Change Log
 
 - 2026-09-09T10:54:45.862958+00:00 (created-by): Created by capability-rebaseline-v3
@@ -78,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd24
 - 2026-09-10T02:50:30.902295+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_025049_rdna-successors-prbe1719-now_5726
 - 2026-09-10T02:50:49.219544+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:52:30.160133+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:notes
+- chg_20260912_095506_cleaned-the-active-rdna-boost_4906
+- 2026-09-12T09:55:06.240435+00:00 (updated-by): Updated: section:ledger-events

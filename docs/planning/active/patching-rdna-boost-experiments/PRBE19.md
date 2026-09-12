@@ -15,23 +15,19 @@ priority: null
 
 ## Description
 
-Maintain RD25 as a bake-in sequencing rule: dependent ports must use branch-tip post-fix kernel regions; it is not a standalone patch.
+Maintain the authoritative cross-cutting post-fix source-state and correctness bake-in rule for affected successor ports. PRBE19 is not a standalone implementation patch or prerequisite stage.
 
 ## Steps
 
-- When PRBE16 is ported, take calc_nwarps gfx1151 table including ncols_dst extension from branch-tip.
-- When PRBE18 is ported, take SSM fused kernels with 2-warp reduction and qi=QI8_0 fix from tip.
-- When PRBE13 is ported, take shexp_down_gated_q8_0 from tip; likewise preserve post-fix regions for any declared PRBE20 dependents.
-- For each dependent port, validate fused decode against unfused and the named MTP batch-vs-seq scenario; preserve native non-MTP controls.
-- Never materialize a standalone RD25 patch from an absent pre-image; record exact branch-tip identity and dependency linkage.
+1. When PRBE13 is materialized, source the shared-expert region from the reviewed post-fix image.
+2. When PRBE16 is materialized, apply the corrected calc_nwarps() region.
+3. When PRBE18 is materialized, source the corrected SSM fused region and launch geometry.
+4. When PRBE20 Wave 2 is materialized, source affected MMVQ/SSM regions from the corrected state.
+5. Never apply the raw historical RD25 diff on top of successor ports; verify semantic/content equivalence against the current v3 snapshot.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+PRBE19 translates the closed RD25 correctness finding into a reusable source-state constraint. Preserve immutable correctness commit 8cdf1ab081..., reviewed post-fix v2 image 9e46e1fd..., and current v3 snapshot c8af5361... as distinct provenance. The rule applies to PRBE13, PRBE16, PRBE18 and affected PRBE20 regions; it explicitly does not apply to PRBE11/RD12. “Branch tip” must not be used as if the old v2 image were current.
 
 ## Code Samples & Guidance
 
@@ -39,11 +35,11 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-Branch-tip 9e46e1fd/post-fix kernel regions; dependent PRBE16/18/13/20 packages; mmvq.cu fixtures; batch-vs-seq regression artifacts; source identity/provenance.
+external source registry; successor patch source regions for PRBE13/16/18/20; semantic/content equivalence checks; provenance and bake-in validation.
 
 ## Validation
 
-Dependent region extraction; pre-fix reachability/reproduction or proof absent; fused decode bit identity/equality; MTP batch-vs-seq; native/non-MTP controls; no standalone patch assumption.
+Dependent-region extraction; pre-fix reachability/reproduction or proof absent; fused decode bit identity/equality; MTP batch-vs-seq controls; native/non-MTP controls; no raw standalone RD25 application.
 
 ## Effort & Risk
 
@@ -63,6 +59,8 @@ Supersedes: RD25
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd25
 
+Supersedes: RD25 (closed historical predecessor). RD25 remains historical evidence explaining why PRBE19 exists. It must never again appear as a prerequisite task; PRBE11/RD12 is outside the affected set.
+
 ## Change Log
 
 - 2026-09-09T10:54:40.683647+00:00 (created-by): Created by capability-rebaseline-v3
@@ -78,3 +76,6 @@ Successor key: patching-rdna-boost-experiments-rd25
 - 2026-09-10T02:50:36.902436+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_025049_rdna-successors-prbe1719-now_5726
 - 2026-09-10T02:50:49.233411+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:52:35.243207+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:notes
+- chg_20260912_095506_cleaned-the-active-rdna-boost_4906
+- 2026-09-12T09:55:06.248056+00:00 (updated-by): Updated: section:ledger-events
