@@ -311,18 +311,26 @@ artifact). **This shows a consistent ~5% NEGATIVE delta, contradicting
 this patch's own formal 10-round INTERLEAVED evidence (+2.38% mean gain,
 95% CI [1.45%, 3.32%]) documented earlier in this README.**
 
-**Do not treat this as disproving the formal result.** The formal
-evidence used real, deliberate order-interleaving (baseline/subject
-alternating) specifically to rule out systematic drift/ordering bias --
-this quick check did not (always B first, then C), so a real, unrelated
-ordering/thermal/warm-up effect could fully explain the discrepancy
-rather than a genuine regression. This is a real, honest, unresolved
-finding -- flagged rather than silently reconciled or hidden. Next step
-(not yet done): rerun this specific B-vs-C comparison with proper
-interleaving to determine whether the formal +2.38% result and this
-quick -5% result can be reconciled, or whether something changed
-(e.g. a build/pin drift) between when the formal evidence was gathered
-and now.
+**Update: reran WITH proper interleaving (B/C/C/B x4 rounds) -- the
+discrepancy persists, ordering bias is ruled out.** B=113.96 t/s
+(sd 0.20, very tight), C=107.20 t/s (sd 1.35), delta=-5.93%, essentially
+unchanged from the non-interleaved check. **Also ruled out: this
+session's own PRBE107 fix (0300_mmq_forced_j) is not the cause** --
+pure stock upstream (no 0300 at all) decode = 113.67 t/s, essentially
+identical to B (BigCherry baseline, includes the fixed 0300) = 113.96
+t/s; 0300 has no measurable decode effect.
+
+**This is now a real, confirmed, unexplained contradiction** between
+this session's real measurement (-5.93%) and the patch's own formal
+10-round evidence (+2.38%), with both ordering bias and this session's
+own fix ruled out as explanations. Remaining open possibilities (none
+yet checked): the formal evidence's exact build/benchmark shape may
+differ from this session's `tg32` check in a way not yet identified; a
+real regression may have been introduced by something else committed
+since the formal evidence was gathered; or the formal evidence itself
+has an undiscovered flaw. This needs a careful, deliberate
+re-investigation (PRBE108), not further ad-hoc quick checks -- do not
+treat either number as settled until reconciled.
 
 ## Known limitations
 
