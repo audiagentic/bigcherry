@@ -116,6 +116,15 @@ class GateContractTests(unittest.TestCase):
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.BLOCKED)
 
+    def test_patch_gate_evaluator_preserves_order_and_applicability(self) -> None:
+        context = SimpleNamespace(intent=GateIntent.AUTHOR)
+        g0 = gates.GateResult(GateId.G0, GateStatus.PASS, "composition", "test")
+        g1 = gates.GateResult(GateId.G1, GateStatus.PASS, "documentation", "test")
+        with mock.patch.object(gates, "evaluate_composition_gate", return_value=g0), \
+             mock.patch.object(gates, "evaluate_summary_gate", return_value=g1):
+            results = gates.evaluate_patch_gates(context)
+        self.assertEqual(tuple(result.id for result in results), (GateId.G0, GateId.G1))
+
 
 if __name__ == "__main__":
     unittest.main()
