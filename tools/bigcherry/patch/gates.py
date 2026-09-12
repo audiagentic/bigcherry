@@ -83,3 +83,25 @@ def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
         GateIntent.BUILD: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7)),
     }
     return gate_id in applicable[intent]
+
+
+def evaluate_composition_gate(context: GateContext) -> GateResult:
+    """Evaluate G0 using the canonical exact-composition resolver."""
+    ids = tuple(module.patch_id for module in context.composition.modules)
+    try:
+        resolved = patchset.resolve_exact(
+            ids, directory=context.patches_dir, allow_rejected=False,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        return GateResult(
+            GateId.G0, GateStatus.BLOCKED, "composition", "patchset.resolve_exact",
+            (f"composition could not be resolved: {exc}",),
+        )
+    expected = tuple((module.patch_id, module.content_hash) for module in context.composition.modules)
+    actual = tuple((module.patch_id, module.content_hash) for module in resolved.modules)
+    if actual != expected:
+        return GateResult(
+            GateId.G0, GateStatus.BLOCKED, "composition", "patchset.resolve_exact",
+            ("resolved composition identity differs from the supplied composition",),
+        )
+    return GateResult(GateId.G0, GateStatus.PASS, "composition", "patchset.resolve_exact")
