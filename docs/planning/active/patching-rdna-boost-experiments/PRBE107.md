@@ -62,9 +62,12 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 
 ## Ledger-events
 
+
 - chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
 - 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T21:22:28.159150+00:00 (updated-by): Updated: section:description
 - chg_20260912_212250_confirmed-with-real-multi-roun_7540
 - 2026-09-12T21:22:50.045765+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T21:28:02.462203+00:00 (updated-by): Updated: section:notes
+- chg_20260912_212832_traced-the-real-226-baselin_1022
+- 2026-09-12T21:28:32.498047+00:00 (updated-by): Updated: section:ledger-events
