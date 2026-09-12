@@ -88,6 +88,20 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_evidence_gate(context)
         self.assertEqual(result.status, GateStatus.FAIL)
 
+    def test_evidence_gate_blocks_unknown_or_inconsistent_status(self) -> None:
+        context = SimpleNamespace(
+            descriptor=SimpleNamespace(patch_id="P1"),
+            catalog_path=None, patches_dir=Path("patches"), pinned_ref="b10901",
+            evidence_root=None, allow_legacy_grandfather=True,
+            resolved_base_revision=None, intent=GateIntent.VALIDATE,
+        )
+        evidence = SimpleNamespace(status="future-status", ok=True, problems=())
+        with mock.patch.object(
+            gates.patch_catalog, "validation_evidence_statuses", return_value={"P1": evidence}
+        ):
+            result = gates.evaluate_evidence_gate(context)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+
     def test_admission_gate_passes_full_composition(self) -> None:
         modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))
         context = SimpleNamespace(
@@ -96,7 +110,10 @@ class GateContractTests(unittest.TestCase):
             resolved_base_revision="abc", evidence_root=None,
             allow_legacy_grandfather=True,
         )
-        result = SimpleNamespace(admissible=True, gate_active=True, status="admitted")
+        result = SimpleNamespace(
+            admissible=True, gate_active=True, status="admitted",
+            failures=(), warnings=(),
+        )
         with mock.patch("bigcherry.patch_admission.admit", return_value=result) as admit:
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.PASS)
@@ -110,7 +127,8 @@ class GateContractTests(unittest.TestCase):
             allow_legacy_grandfather=True,
         )
         result = SimpleNamespace(
-            admissible=True, gate_active=False, status="not-ready", warnings=("bootstrap",)
+            admissible=True, gate_active=False, status="not-ready",
+            failures=(), warnings=("bootstrap",)
         )
         with mock.patch("bigcherry.patch_admission.admit", return_value=result):
             outcome = gates.evaluate_admission_gate(context)
@@ -141,6 +159,21 @@ class GateContractTests(unittest.TestCase):
         result = SimpleNamespace(
             admissible=True, gate_active=True, status="admitted",
             failures="not-a-sequence", warnings=(),
+        )
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result):
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.BLOCKED)
+
+    def test_admission_gate_blocks_production_escape_hatch(self) -> None:
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=()), catalog_path=None,
+            patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision=None, evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(
+            admissible=False, gate_active=True, status="escape-hatch",
+            failures=("override",), warnings=(),
         )
         with mock.patch("bigcherry.patch_admission.admit", return_value=result):
             outcome = gates.evaluate_admission_gate(context)

@@ -234,7 +234,15 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
         )
     evidence_status = getattr(status, "status", None)
     evidence_ok = getattr(status, "ok", None)
-    if not isinstance(evidence_status, str) or not isinstance(evidence_ok, bool):
+    recognized_ok_statuses = frozenset({
+        "not-required", "validated-evidence", "legacy-grandfathered",
+        "ported-benched-evidence", "deferred-hardware-evidence",
+        "framework-configuration-evidence",
+    })
+    recognized_statuses = recognized_ok_statuses | {"missing-or-stale"}
+    expected_ok = evidence_status in recognized_ok_statuses
+    if (not isinstance(evidence_status, str) or evidence_status not in recognized_statuses
+            or not isinstance(evidence_ok, bool) or evidence_ok is not expected_ok):
         return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
                           ("evidence returned a malformed result",))
     problems = getattr(status, "problems", None)
@@ -296,7 +304,7 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
         return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", warnings)
     if status == "admitted" and admissible and not failures:
         return GateResult(GateId.G7, GateStatus.PASS, "admission", "patch_admission", warnings)
-    if status in {"rejected", "escape-hatch"} and not admissible:
+    if status == "rejected" and not admissible:
         return GateResult(GateId.G7, GateStatus.FAIL, "admission", "patch_admission", failures or warnings)
     return GateResult(
         GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
