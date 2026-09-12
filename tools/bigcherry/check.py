@@ -161,7 +161,9 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
         ):
             lines.add(node.lineno)
 
-    def binding_kinds(nodes: list[ast.stmt]) -> dict[str, str | None]:
+    def scope_binding_kinds(
+        nodes: list[ast.stmt],
+    ) -> tuple[dict[str, str | None], set[str], set[str]]:
         """Resolve names bound in one lexical scope.
 
         ``None`` means a name is definitely bound but not to one of the
@@ -171,6 +173,8 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
         being mistaken for ``importlib.import_module``.
         """
         observed: dict[str, set[str | None]] = {}
+        global_names: set[str] = set()
+        nonlocal_names: set[str] = set()
 
         def observe(name: str, kind: str | None) -> None:
             observed.setdefault(name, set()).add(kind)
@@ -213,12 +217,10 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
                 return
 
             def visit_Global(self, node: ast.Global) -> None:
-                for name in node.names:
-                    observed.pop(name, None)
+                global_names.update(node.names)
 
             def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-                for name in node.names:
-                    observed.pop(name, None)
+                nonlocal_names.update(node.names)
 
             def visit_Name(self, node: ast.Name) -> None:
                 if isinstance(node.ctx, (ast.Store, ast.Del)):
@@ -229,23 +231,34 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
                     observe(node.name, None)
                 self.generic_visit(node)
 
-            def visit_ImportStar(self, node: ast.AST) -> None:
-                return
-
         visitor = ScopeBindings()
         for node in nodes:
             visitor.visit(node)
-        return {
+        for name in global_names | nonlocal_names:
+            observed.pop(name, None)
+        bindings = {
             name: next(iter(kinds)) if len(kinds) == 1 else None
             for name, kinds in observed.items()
         }
+        return bindings, global_names, nonlocal_names
+
+    def binding_kinds(nodes: list[ast.stmt]) -> dict[str, str | None]:
+        return scope_binding_kinds(nodes)[0]
 
     module_bindings = binding_kinds(tree.body)
 
-    def function_bindings(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> dict[str, str | None]:
+    def function_bindings(
+        node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda,
+        parent_bindings: dict[str, str | None],
+    ) -> dict[str, str | None]:
         body = node.body if isinstance(node.body, list) else [node.body]
-        bindings = dict(module_bindings)
-        local = binding_kinds(body)
+        local, global_names, _ = scope_binding_kinds(body)
+        bindings = dict(parent_bindings)
+        for name in global_names:
+            if name in module_bindings:
+                bindings[name] = module_bindings[name]
+            else:
+                bindings.pop(name, None)
         arguments = (
             list(node.args.posonlyargs)
             + list(node.args.args)
@@ -308,10 +321,19 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
     class DynamicImportCalls(ast.NodeVisitor):
         def __init__(self) -> None:
             self.bindings_stack = [module_bindings]
+            self.scope_kinds = ["module"]
 
         @property
         def bindings(self) -> dict[str, str | None]:
             return self.bindings_stack[-1]
+
+        def function_parent(self) -> dict[str, str | None]:
+            # Methods resolve names through module globals, not the class
+            # namespace. Nested functions/lambdas inside ordinary functions
+            # do close over the current function bindings.
+            if self.scope_kinds[-1] == "class":
+                return module_bindings
+            return self.bindings
 
         def visit_Call(self, node: ast.Call) -> None:
             target = dynamic_import_target(node, self.bindings)
@@ -328,18 +350,22 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
             for default in [*node.args.defaults, *node.args.kw_defaults]:
                 if default is not None:
                     self.visit(default)
-            self.bindings_stack.append(function_bindings(node))
+            self.bindings_stack.append(function_bindings(node, self.function_parent()))
+            self.scope_kinds.append("function")
             for statement in node.body:
                 self.visit(statement)
             self.bindings_stack.pop()
+            self.scope_kinds.pop()
 
         def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
             self.visit_FunctionDef(node)
 
         def visit_Lambda(self, node: ast.Lambda) -> None:
-            self.bindings_stack.append(function_bindings(node))
+            self.bindings_stack.append(function_bindings(node, self.function_parent()))
+            self.scope_kinds.append("function")
             self.visit(node.body)
             self.bindings_stack.pop()
+            self.scope_kinds.pop()
 
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
             for decorator in node.decorator_list:
@@ -348,14 +374,17 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
                 self.visit(base)
             for keyword in node.keywords:
                 self.visit(keyword.value)
-            # Class bodies have their own namespace, but module-level imports
-            # are not lexical fallbacks there.  Start from an empty map and
-            # retain only bindings directly collected from the class body.
-            class_bindings = binding_kinds(node.body)
+            # Class bodies have their own namespace with module globals as a
+            # fallback. Methods below deliberately use module globals rather
+            # than inheriting this class namespace.
+            class_bindings = dict(module_bindings)
+            class_bindings.update(binding_kinds(node.body))
             self.bindings_stack.append(class_bindings)
+            self.scope_kinds.append("class")
             for statement in node.body:
                 self.visit(statement)
             self.bindings_stack.pop()
+            self.scope_kinds.pop()
 
     DynamicImportCalls().visit(tree)
 

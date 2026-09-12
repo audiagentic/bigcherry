@@ -70,6 +70,45 @@ class CliMainBackedgeTests(unittest.TestCase):
             (3, 4, 6, 8),
         )
 
+    def test_nested_function_and_class_scope_resolution(self) -> None:
+        path, product_root = self._write_module(
+            "\n".join(
+                (
+                    "import importlib",
+                    "def outer_shadow():",
+                    "    importlib = object()",
+                    "    def inner():",
+                    "        return importlib.import_module('bigcherry.__main__')",
+                    "def outer_alias():",
+                    "    import importlib as il",
+                    "    def inner():",
+                    "        return il.import_module('bigcherry.__main__')",
+                    "def outer_global():",
+                    "    importlib = object()",
+                    "    def inner():",
+                    "        global importlib",
+                    "        return importlib.import_module('bigcherry.__main__')",
+                    "def outer_nonlocal():",
+                    "    import importlib",
+                    "    def inner():",
+                    "        nonlocal importlib",
+                    "        return importlib.import_module('bigcherry.__main__')",
+                    "class UsesModuleGlobal:",
+                    "    importlib.import_module('bigcherry.__main__')",
+                    "class DoesNotLeakClassLocal:",
+                    "    import importlib as il",
+                    "    def method(self):",
+                    "        return il.import_module('bigcherry.__main__')",
+                )
+            )
+            + "\n",
+        )
+
+        self.assertEqual(
+            check._cli_main_backedge_lines(path, product_root),
+            (9, 14, 19, 21),
+        )
+
     def test_comments_docstrings_and_unrelated_modules_are_ignored(self) -> None:
         path, product_root = self._write_module(
             '"""from .. import __main__"""\n'
