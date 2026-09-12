@@ -20,8 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.core import paths  # noqa: E402
+from bigcherry.patch import overlay  # noqa: E402
 from bigcherry.patch import rebase  # noqa: E402
-from bigcherry import __main__ as legacy  # noqa: E402
 
 CLEAN_PATCH = """\
 from bigcherry.patcher import Edit, FilePatch
@@ -518,7 +518,7 @@ class WriteOverlaySnapshotTests(unittest.TestCase):
 
 class CopyOverlayTests(unittest.TestCase):
     """Same real bug, same fix, as WriteOverlaySnapshotTests -- but for
-    ``legacy._copy_overlay()``, the plain-``apply`` overlay-copy path."""
+    the canonical ``patch.overlay.copy_overlay()`` plain-``apply`` path."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-copy-overlay-")
@@ -539,7 +539,7 @@ class CopyOverlayTests(unittest.TestCase):
         target = self.root / "overlay-file.cpp"
         target.write_bytes(b"line1\r\nline2\r\n")
 
-        written = legacy._copy_overlay(self.root, dry_run=False)
+        written = overlay.copy_overlay(self.root, dry_run=False)
 
         self.assertEqual(written, ["overlay-file.cpp"])
         self.assertEqual(target.read_bytes(), b"line1\nline2\n")
@@ -549,9 +549,42 @@ class CopyOverlayTests(unittest.TestCase):
         target = self.root / "overlay-file.cpp"
         target.write_bytes(b"line1\nline2\n")
 
-        written = legacy._copy_overlay(self.root, dry_run=False)
+        written = overlay.copy_overlay(self.root, dry_run=False)
 
         self.assertEqual(written, [])
+
+    def test_dry_run_captures_backup_and_simulated_overlay_bytes(self):
+        (self.overlay_root / "overlay-file.cpp").write_bytes(b"new\n")
+        target = self.root / "overlay-file.cpp"
+        target.write_bytes(b"old\n")
+        backup = {}
+        simulated = {}
+
+        written = overlay.copy_overlay(
+            self.root,
+            dry_run=True,
+            backup=backup,
+            sim_texts=simulated,
+        )
+
+        self.assertEqual(written, ["overlay-file.cpp"])
+        self.assertEqual(backup, {"overlay-file.cpp": "old\n"})
+        self.assertEqual(simulated, {"overlay-file.cpp": "new\n"})
+        self.assertEqual(target.read_bytes(), b"old\n")
+
+    def test_restore_overlay_restores_existing_and_removes_new_files(self):
+        existing = self.root / "existing.cpp"
+        existing.write_text("after\n", encoding="utf-8")
+        new_file = self.root / "new.cpp"
+        new_file.write_text("new\n", encoding="utf-8")
+
+        overlay.restore_overlay(
+            self.root,
+            {"existing.cpp": "before\n", "new.cpp": None},
+        )
+
+        self.assertEqual(existing.read_text(encoding="utf-8"), "before\n")
+        self.assertFalse(new_file.exists())
 
 
 class ApplyKnownGoodTests(unittest.TestCase):
@@ -599,7 +632,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="audited")
-        with mock.patch("bigcherry.__main__._record_for", return_value=record):
+        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
             result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
 
         self.assertTrue(result.ok)
@@ -621,7 +654,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="audited")
-        with mock.patch("bigcherry.__main__._record_for", return_value=record):
+        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
             result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
 
         self.assertTrue(result.ok)
@@ -639,7 +672,7 @@ class ApplyKnownGoodTests(unittest.TestCase):
         record = self._fake_record(stage="generated")
         record.promotion = {"fake": "pointer"}
         record.manifest_hash = "fake-hash"
-        with mock.patch("bigcherry.__main__._record_for", return_value=record):
+        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
             with self.assertRaises(rebase.RebaseCheckError):
                 rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
             # --force explicitly accepts invalidating later-stage evidence --

@@ -95,7 +95,7 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                  patch("bigcherry.cli.source.cmd_pull", return_value=0), \
                  patch("bigcherry.source.audit.audit", return_value=clean_report), \
                  patch("bigcherry.source.audit.passed", return_value=True), \
-                 patch("bigcherry.__main__._record_for", return_value=record), \
+                 patch.object(pin_bump.releases, "record_for_checkout", return_value=record), \
                  patch.object(pin_bump.patch_rebase, "run_rebase_check", return_value=clean_report), \
                  patch.object(pin_bump.patch_rebase, "apply_known_good", side_effect=apply_once_then_resume), \
                  patch.object(pin_bump, "enforce_all_patches_clean_or_dispositioned", return_value={"ok": True}), \

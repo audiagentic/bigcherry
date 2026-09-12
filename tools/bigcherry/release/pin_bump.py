@@ -33,9 +33,11 @@ from typing import Any
 from ..core import paths
 from ..core import tree_activity
 from ..patch import disposition as patch_disposition
+from ..patch import overlay as patch_overlay
 from ..patch import rebase as patch_rebase
 from .. import pin_transition
 from .. import recipes as recipes_module
+from . import records as releases
 
 PHASES = (
     "preflight",
@@ -411,10 +413,6 @@ def run(
     whatever the original invocation was started with (``_resume_selector``),
     rather than re-defaulting.
     """
-    from .. import __main__ as legacy
-    from ..source import audit as source_audit
-    from ..patch import catalog as patch_catalog
-
     repo_root = paths.REPO_ROOT
     vendor_root = root if root is not None else paths.llama_root()
     dispositions_dir = dispositions_dir or paths.DISPOSITIONS
@@ -706,7 +704,6 @@ def _run_phases(
     selector_kind: str, selector_name: str,
     repo_root: Path, vendor_root: Path, dispositions_dir: Path, report_dir: Path,
 ) -> "PinBumpResult":
-    from .. import __main__ as legacy
     from ..source import audit as source_audit
     from ..patch import catalog as patch_catalog
 
@@ -766,7 +763,7 @@ def _run_phases(
                         evidence={"failed_checks": [c["id"] for c in report["checks"] if not c["ok"]]},
                         recommended_actions=["run `bigcherry audit --verbose` and reconcile", "rerun with --resume"],
                     )
-                legacy._copy_overlay(vendor_root, dry_run=False)
+                patch_overlay.copy_overlay(vendor_root, dry_run=False)
                 report = source_audit.audit(vendor_root)
                 if not source_audit.passed(report, strict=False):
                     raise PinBumpStop(
@@ -782,9 +779,7 @@ def _run_phases(
             # never sees a pass and refuses every real run. Found live: this
             # bump's first successful run through the coverage phase still
             # failed at apply for exactly this reason.
-            from ..release import records as releases
-
-            record = legacy._record_for(vendor_root)
+            record = releases.record_for_checkout(vendor_root)
             record.audit = releases.summarise_audit(report, strict=True)
             if record.stage == "pulled":
                 record.advance_to("audited")

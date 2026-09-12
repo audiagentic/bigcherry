@@ -1502,6 +1502,7 @@ Specify exact compatibility exports
 ## Ledger-events
 
 
+
 - chg_20260911_064900_added-a-tracked-cleanup-plan-f_3622
 - 2026-09-11T06:49:00.213062+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T07:01:03.606121+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
@@ -1529,3 +1530,5 @@ Specify exact compatibility exports
 - 2026-09-12T20:09:51.936129+00:00 (updated-by): Updated: section:notes
 - chg_20260912_201025_cleaned-the-brc01-provenance-n_3663
 - 2026-09-12T20:10:25.428513+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_202702_removed-legacy-__main__-bridgi_9733
+- 2026-09-12T20:27:02.015316+00:00 (updated-by): Updated: section:ledger-events
