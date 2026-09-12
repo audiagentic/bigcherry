@@ -17,6 +17,7 @@ from ..core import paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
+from . import disposition as patch_disposition
 from . import rebase
 from . import validation_policy
 from . import registry as patch_registry
@@ -74,6 +75,10 @@ class GateContext:
     source_root: Path | None = None
     rebase_report: Mapping[str, Any] | None = None
     allow_legacy_grandfather: bool = True
+    catalog_states: Mapping[str, str] | None = None
+    coverage_report: Mapping[str, Any] | None = None
+    recipe_patch_ids: frozenset[str] = frozenset()
+    target_revision: str | None = None
 
 
 def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
@@ -265,4 +270,34 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
     return GateResult(
         GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
         (f"unrecognized admission result status {status!r}",),
+    )
+
+
+def evaluate_disposition_gate(context: GateContext) -> GateResult:
+    """Evaluate G6 through the revision-bound disposition coverage authority."""
+    if context.catalog_states is None or context.coverage_report is None or context.target_revision is None:
+        return GateResult(
+            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            ("complete disposition coverage inputs were not supplied",),
+        )
+    try:
+        coverage = patch_disposition.compute_coverage(
+            catalog_states=dict(context.catalog_states),
+            all_report=dict(context.coverage_report),
+            recipe_patch_ids=context.recipe_patch_ids,
+            dispositions=patch_disposition.list_dispositions(context.dispositions_dir),
+            target_revision=context.target_revision,
+        )
+    except (OSError, TypeError, ValueError, AttributeError) as exc:
+        return GateResult(GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition", (str(exc),))
+    if not isinstance(coverage.complete, bool):
+        return GateResult(
+            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            ("disposition coverage returned a malformed result",),
+        )
+    if coverage.complete:
+        return GateResult(GateId.G6, GateStatus.PASS, "disposition", "patch.disposition")
+    return GateResult(
+        GateId.G6, GateStatus.FAIL, "disposition", "patch.disposition",
+        tuple(coverage.uncovered_patch_ids),
     )
