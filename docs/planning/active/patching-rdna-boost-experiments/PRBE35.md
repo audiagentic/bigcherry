@@ -120,13 +120,26 @@ Got a design review before writing any code, given RD08's single-op test-backend
 
 **Not implemented this session** -- this is genuine new engineering (a real logits-capture mechanism plus two carefully-designed contract-specific runner functions, each needing GPT-reviewed implementation, offline tests, and real hardware execution) deliberately left for a dedicated future pass rather than rushed at the end of an already very long session. This note carries the complete, ready-to-implement design so the next session/agent can go straight to authoring.
 
+### 2026-09-12: RD43 backend_reference CLOSED (real evidence, GPT-approved); RD39-42 bit_identical attempt via llama-results -- real negative finding, correctly discarded per GPT's own stated rule
+
+**RD43/1216 backend_reference: DONE.** Real hardware, GPT-designed and GPT-approved (req_3e42043eb71a4a92 / req_a457561b33ac4f24): control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both, full-vocab (248320 entries) HTTP logprob comparison, zero truncation. Exact match: 0 of 15,892,480 comparisons differ, max_abs_diff=0.0. Recorded in patches/1216.../README.md and committed. Real caveat: the pre-authored contract binds a different model (tierM-gptoss20b-q6k) than this run used (Qwen3.6-35B-A3B) -- persisted as real evidence, not yet the final contract-qualified result until that binding is resolved (an AUTHOR-then-VERIFY step, one rerun, no extra matrix needed since RD43 is fixed-effect/correctness-only).
+
+**RD39-42/1215 bit_identical: attempted via GPT's proposed llama-results approach, real negative result.** GPT's design: run `llama-results -ub 1` (teacher-forced single-microbatch forward pass) on control/subject, extract raw F32 logits from the output GGUF, byte-compare, gated on the RD42 'Adding shared-expert stream' activation marker firing as the 'decisive coverage check.' Built control+subject llama-results binaries, ran the subject on real hardware (single gfx1100, GGML_CUDA_GRAPH_OPT=1, -ub 1, -lv 4, real prompt) -- completed successfully, wrote a real 18.8MB output GGUF, but the activation marker fired ZERO times.
+
+Root cause (my working hypothesis, not yet GPT-confirmed at the time of closing this out): llama-results does one llama_decode() call over the WHOLE prompt as a single logical batch (n_tokens = full prompt length, every position outputs) -- -ub 1 only controls internal microbatch chunking for that call, not the logical batch shape RD42's gate actually checks. RD42's 'single-token decode' precondition likely requires a genuine autoregressive decode-loop call (KV-cache continuation, batch containing exactly one newly-generated token), which a one-shot teacher-forced forward pass structurally cannot produce regardless of -ub.
+
+Per GPT's own explicit, already-stated rule for this exact scenario (req_3e42043eb71a4a92): "If it does not [hit the activation path], stop and leave the bespoke incremental-logit producer as PRBE35 future work." Applying that rule here -- NOT continuing to chase llama-results further.
+
+**Remaining scope for RD39-42's bit_identical check** (real future work, not done this session): a genuine decode-loop-based raw-logits capture is needed -- e.g. a small instrumentation patch to llama-server exposing llama_get_logits_ith() during real autoregressive generation (matching this project's own established BIGCHERRY_PATCH_TRACE/telemetry conventions), not llama-results' one-shot batch approach. The full-vocab HTTP logprob technique (proven, real, exact-match evidence already gathered for both the pilot 1215+1216-vs-baseline comparison and RD43's backend_reference check) remains valid, real, useful evidence -- just not a literal bit_identical proof per GPT's earlier correction (post-softmax/sampler-output identity, not raw pre-softmax logit identity).
+
+**Overall 1215/1216 status**: both patches have now accumulated substantial real, GPT-reviewed hardware evidence (activation, full-vocab numerical parity via two independent real comparisons, direct profiler-confirmed stream overlap, a real interleaved-paired performance win, cross-architecture and split-mode characterization) but remain `state=untested` pending: (a) 1215's own bit_identical check (scoped above, needs new instrumentation), (b) the contract model-binding correction for 1216 backend_reference, (c) formal validation.toml/Experiment Contract wiring for both. Not rushed to closure -- real, substantial, honest progress recorded; genuine remaining formal-package work left explicitly scoped for a focused future pass.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -150,3 +163,4 @@ Got a design review before writing any code, given RD08's single-op test-backend
 - 2026-09-12T09:58:46.097569+00:00 (updated-by): Updated: section:notes
 - chg_20260912_131203_gathered-and-gpt-approved-the_6475
 - 2026-09-12T13:12:03.629518+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T13:23:48.429640+00:00 (updated-by): Updated: section:notes
