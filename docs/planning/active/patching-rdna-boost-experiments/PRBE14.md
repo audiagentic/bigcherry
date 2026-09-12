@@ -96,13 +96,26 @@ HONEST CAVEAT, recorded rather than overclaimed: this PASS proves the fix elimin
 
 Summary of RD17's real status: first-ever real execution found and fixed a genuine crash bug (restored a lost porting constraint); the fix is now real-hardware-verified safe (no crash, no PPL regression). Still NOT validated: real activation proof for the (now-narrower) single-column fusion path, the real performance claim (kernel-count reduction / decode timing), and PRBE14's full remaining scope (batched-shape kernel extension if ever wanted, PKC02 composition-conflict validation with 1205/RD12). Patch state remains "untested" -- this real progress is preserved as evidence, not a promotion.
 
+### 2026-09-12: activation proof + decode-path correctness + performance -- CLOSED NEGATIVE (GPT-reviewed, req_7add510830424329)
+
+Closed the exact gap the 2026-09-11/12 note above flagged as open: "Proving activation would need a real single-token decode workload with a trace marker (RD17 currently has none, unlike RD12/RD13's BIGCHERRY_PATCH_HIT markers) -- a real, separate gap, not yet closed."
+
+1. Added the missing activation-trace marker to patch 1207 (GGML_LOG_WARN, once-per-process, BIGCHERRY_PATCH_TRACE-gated, following RD12's exact pattern; WARN not INFO per this project's own HI90/1231 finding that INFO is filtered below llama-server's default verbosity).
+2. Real hardware (Brutus, dual gfx1100, Qwen3.6-35B-A3B-Revised-q8_0): launched with the trace var set, sent a real /completion request -- BIGCHERRY_PATCH_HIT patch=1207_rd17 fired exactly once. The fusion genuinely activates during real single-token decode.
+3. Verified against the fork's real source (stew675/llama.cpp@5e545b7da via gh api): the commit message claims only "drops 40 kernels per token... PPL is bit-identical" -- no throughput claim, no PR/discussion beyond the commit message. Nothing to cross-check further upstream.
+4. Decode-path correctness (GPT-corrected from an initial mistake): a batched llama-perplexity PPL comparison came back bit-identical, but per this patch's own single-column-only guard (the 2026-09-11 fix), batched/multi-token prefill correctly falls through UNFUSED -- so that comparison doesn't exercise the fused path at all. Ran the correct test: identical deterministic /completion request (temp=0, seed=42) against baseline and subject (marker confirmed firing) -- byte-identical 64-token output. This is real correctness evidence for the actual fused decode path.
+5. Performance: 6-round INTERLEAVED paired A/B (tg128, dual XTX) -- paired mean delta -1.32%, SD 1.00%, 5/6 rounds negative, paired-t 95% CI approx [-2.38%, -0.26%]. GPT: sufficient to close performance negative without further rounds or root-cause analysis; the burden is demonstrating a win, and this fails it.
+
+**GPT's disposition**: performance leg closed negative (do not promote); activation and fused-decode-path correctness are now real and proven; do NOT treat this as "correctness-proven" in PRBE14's full sense -- fused-vs-unfused routing/scale-case coverage across MUL_MAT_ID expert routing/IDs, false-positive fallback, graph-capture interaction, NVFP4-preservation, and the 1205/1207 PKC02 composition-conflict disposition remain open, unaffected by this closure.
+
+Final disposition for 1207 itself: correct (activation-proven, decode-path-correctness-proven), performance-negative, not promoted -- same disposition pattern as RD33/1241. `state` stays `untested`. PRBE14 itself remains open for its remaining listed gates (steps 3-5 above).
+
 ## Change Log
 
 - 2026-09-09T10:54:26.498754+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:35.940393+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.192523+00:00 (updated-by): Updated: section:ledger-events
@@ -123,3 +136,4 @@ Summary of RD17's real status: first-ever real execution found and fixed a genui
 - 2026-09-11T14:29:22.214547+00:00 (updated-by): Updated: section:notes
 - chg_20260911_142926_confirmed-on-real-hardware-tha_3426
 - 2026-09-11T14:29:26.549077+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T08:36:41.761011+00:00 (updated-by): Updated: section:notes

@@ -47,41 +47,86 @@ dense model never emits. `config/models.toml`'s
 currently-registered MoE-family model and is the right choice for
 activation/performance evidence here.
 
-## How to invoke validation
+## Real hardware evidence (2026-09-12, Brutus, dual gfx1100)
 
-No contract-bound qualification path or validation.toml exists yet --
-only the generic default S1-S2 campaign (apply/build) is currently
-invocable, and even that has no activation check wired to confirm the
-fusion path actually triggered (this patch has no
-`BIGCHERRY_PATCH_TRACE`-gated log marker in its `ggml_cuda_try_fuse`
-detection block, unlike RD12's -- a real, separate authoring gap from the
-missing README this commit fixes):
+Added an activation-trace marker this session (a real authoring gap this
+patch had, unlike RD12/1205) -- `GGML_LOG_WARN` (not `_INFO`, per this
+project's own HI90/1231 real-hardware finding that INFO-level ggml logs
+are filtered below `llama-server`'s `-lv 4`), once-per-process
+`atomic_flag`-guarded, `BIGCHERRY_PATCH_TRACE`-gated, following RD12's
+exact pattern.
 
-```
-PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
-  --patch 1207_rd17_moe_topk_down_fold \
-  --model <tierM-qwen35b-a3b-moe-mtp.gguf> \
-  --hip-path <production-rocm> --amdgpu-targets <target> \
-  --manifest <hip-autotune-manifest.json> \
-  --workdir <fresh-workdir> --worktree-root <worktree-root>
-```
+Verified the fork's own claim against its real source: commit
+`5e545b7da` on `stew675/llama.cpp` states only "Decode on qwen35moe drops
+40 kernels per token. PPL is bit-identical." -- no end-to-end throughput
+claim, and no PR/discussion exists beyond this commit message (checked via
+`gh api`/web search). Our measurement below neither confirms nor
+contradicts a claim the fork never made; the throughput finding is new.
 
-Bringing this patch to RD08's level of qualification (an activation trace
-marker, a real correctness producer proving the fork's bit-identical-PPL
-claim, a bound Experiment Contract, and real performance evidence on the
-required MoE model) is separate, not-yet-done authoring work tracked under
-PRBE14.
+Built baseline (no patches) and subject (this patch alone), isolated
+`bigcherry-native` compositions, real Qwen3.6-35B-A3B-Revised-q8_0 (this
+project's only registered MoE model), `-sm tensor`, dual XTX.
+
+**Activation**: launched with `BIGCHERRY_PATCH_TRACE=1`, sent a real
+`/completion` request -- `BIGCHERRY_PATCH_HIT patch=1207_rd17
+path=moe_topk_down_fold` appeared exactly once in the live server log at
+normal verbosity. The fusion genuinely fires during real MoE decode.
+
+**Decode-path correctness (GPT-reviewed correction, req_7add510830424329):
+an initial batched `llama-perplexity` PPL comparison across 12 wikitext-2
+chunks came back bit-identical (7.0962 +/- 0.31960 both, every per-chunk
+value matching) -- but this patch's own code comment documents that
+multi-token/batched prefill (`mm_node->ne[2]==1` guard) correctly falls
+through UNFUSED, so that comparison, while real, does not exercise the
+fused code path at all and is not correctness evidence for it.** Ran the
+correct test instead: identical deterministic `/completion` request
+(temp=0, seed=42, 64 tokens) against baseline and subject servers, subject
+run with the trace marker confirmed firing. Output was byte-identical
+between baseline and subject -- this is real correctness evidence for the
+actual fused decode path, not the unfused batched path.
+
+**Performance**: a first-pass 5-rep `llama-bench` aggregate looked like a
+noisy -2.4% (elevated variance in the subject run); per this project's own
+established methodology (RD33/1241 found a similar noisy single-pass
+signal that reversed under proper interleaving), did not stop there. Ran a
+6-round INTERLEAVED paired A/B (alternating base/subject, 1 rep/round,
+same binaries/flags):
+
+| round | base tg128 | subj tg128 | delta |
+|---|---:|---:|---:|
+| 1 | 80.74 | 81.29 | +0.68% |
+| 2 | 82.59 | 81.20 | -1.68% |
+| 3 | 82.52 | 81.33 | -1.44% |
+| 4 | 82.55 | 81.20 | -1.64% |
+| 5 | 82.62 | 81.21 | -1.71% |
+| 6 | 82.24 | 80.49 | -2.13% |
+
+Paired mean delta -1.32%, SD 1.00% (n=6); 5/6 rounds negative (round 1 is
+the outlier, consistent with this project's documented round-1 warm-up
+noise pattern). Paired t-test 95% CI approximately [-2.38%, -0.26%].
+
+## GPT-reviewed disposition (req_7add510830424329)
+
+Performance leg closed negative: no further rounds needed to justify
+not-promoting -- the burden is demonstrating a win, and this evidence
+clearly fails that bar. Root-cause analysis is optional follow-up, not
+required to close. Activation and the actual fused decode path's
+correctness are now both real and proven. **Do not mark this
+"correctness-proven" in the PRBE14 sense**, though -- PRBE14 additionally
+requires fused-vs-unfused routing/scale-case coverage, false-positive
+fallback behavior, graph-capture interaction, NVFP4-preservation, and the
+1205/1207 composition-conflict disposition (PKC02), none of which this
+session's evidence covers.
 
 ## Known limitations
 
-Not `deferred-hardware`. No real fresh evidence exists yet for this
-project's own hardware -- everything under "What it does" attributed to
-"the fork" is the fork's own reported claim, not this project's
-independently-measured result. No activation proof mechanism exists yet
-(see above), so even a clean build+run does not yet prove the fusion path
-was actually exercised rather than silently falling through unfused.
+Not `deferred-hardware` -- real hardware evidence now exists. Remaining
+PRBE14-owned gates (listed above) are still open; this session's evidence
+closes activation proof, fused-decode-path correctness, and the
+performance question (negative), not PRBE14's full scope.
 
 ## Evidence
 
-None yet. Runtime artifacts, once a real campaign runs, land under
-`artifacts/patch-validation/1207_rd17_moe_topk_down_fold/<campaign-identity>/`.
+Real hardware evidence recorded above (2026-09-12). No formal
+`artifacts/patch-validation/` bundle yet (no bound Experiment Contract);
+ad-hoc but real measurements, as documented.
