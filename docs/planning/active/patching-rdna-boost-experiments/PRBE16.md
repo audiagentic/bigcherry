@@ -19,11 +19,11 @@ Retain gfx1151 MMVQ nwarps=2 Q8_0 decode as a gate-verified-blocked hardware-spe
 
 ## Steps
 
-- Require PRBE19/RD25 prerequisite and preserve source 1818c3b... identity.
-- Keep the exact gfx1151 guard and Q8_0 decode scope; obtain gfx1151 hardware before timing.
-- On gfx1151 compare native control/treatment for exact shapes with correctness, resource/nwarps and decode evidence.
-- Run explicit non-selection controls on gfx1030/gfx1100/gfx1201 using activation eligibility evidence.
-- If hardware is unavailable, retain gate-verified-blocked disposition; do not extrapolate from current Brutus.
+1. Apply PRBE19's post-fix bake-in when materializing calc_nwarps(), including the gfx1151 table and ncols_dst extension; this is a source-state rule, not a standalone RD25 prerequisite.
+2. Keep the exact gfx1151 guard and Q8_0 decode scope; obtain gfx1151 hardware before timing.
+3. Compare native control/treatment for exact shapes with correctness, resource/nwarps and decode evidence.
+4. Run explicit non-selection controls on gfx1030/gfx1100/gfx1201 using activation eligibility evidence.
+5. If hardware is unavailable, retain gate-verified-blocked disposition; do not extrapolate from current Brutus.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-gfx1151 MMVQ catalog/source; activation eligibility evidence 1208_rd21_gfx1151_mmvq_nwarps_table; PRBE19 prerequisite; non-selection/build tests; gfx1151 campaign artifacts.
+gfx1151 MMVQ catalog/source; activation eligibility evidence 1208_rd21_gfx1151_mmvq_nwarps_table; PRBE19 post-fix bake-in rule; non-selection/build tests; gfx1151 campaign artifacts.
 
 ## Validation
 
@@ -63,6 +63,8 @@ Supersedes: RD21
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd21
 
+Supersedes: RD21 (closed historical predecessor). Preserve source 1818c3b... as provenance. PRBE19 is a constraint applied while materializing calc_nwarps(), not a live prerequisite patch.
+
 ## Change Log
 
 - 2026-09-09T10:54:33.728988+00:00 (created-by): Created by capability-rebaseline-v3
@@ -78,3 +80,6 @@ Successor key: patching-rdna-boost-experiments-rd21
 - 2026-09-10T02:49:12.755157+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024925_rdna-successors-prbe1416-now_9529
 - 2026-09-10T02:49:25.532036+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:52:24.101421+00:00 (updated-by): Updated: section:steps, section:files, section:notes
+- chg_20260912_095506_cleaned-the-active-rdna-boost_4906
+- 2026-09-12T09:55:06.232507+00:00 (updated-by): Updated: section:ledger-events

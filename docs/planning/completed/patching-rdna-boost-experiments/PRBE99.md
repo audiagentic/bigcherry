@@ -62,6 +62,8 @@ Goal: for EACH block 01-13, determine (a) which currently-tracked BigCherry patc
 
 Started 2026-09-11/12 per explicit user direction ("Full resnapshot -- audit all ~10 affected patches") after discovering this while trying to unblock PRBE11/RD12 via RD25. This is real, substantial new scope -- comparable in size to authoring several new RD04/RD08-class patches from scratch, per the user's own acknowledgement when choosing this option.
 
+Current taxonomy note (2026-09-12): PRBE99 is a completed historical audit. Its actionable follow-ups are owned by current PRBE items; retain this record for provenance. Block 08 design/decomposition is recorded in PRBE100, with implementation candidates routed to PRBE05, PRBE13, PRBE18 and PRBE20. Do not use PRBE99 or legacy RD IDs as live dependency targets.
+
 ## Audit results, remaining blocks (2026-09-12)
 
 Blocks 05, 07, 08 (partial), 10 already covered in earlier notes. This entry covers 01, 02, 03, 04, 06, 09, 11, 12, 13, plus completes 08.
@@ -105,5 +107,9 @@ PRBE99's own scope (audit only, no re-porting) is now complete for all 13 blocks
 
 ## Ledger-events
 
+
 - chg_20260911_211935_finished-auditing-all-13-block_3480
 - 2026-09-11T21:19:35.791867+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:53:28.218224+00:00 (updated-by): Updated: section:notes
+- chg_20260912_095506_cleaned-the-active-rdna-boost_4906
+- 2026-09-12T09:55:06.261955+00:00 (updated-by): Updated: section:ledger-events

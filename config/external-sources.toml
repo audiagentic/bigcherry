@@ -419,10 +419,10 @@ note = "ported 2026-08-18; isolated bench pending"
 commit = "299f6eaf73b5eeb888bd94eaa66122d003136e6a"
 original = "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc"
 title = "CUDA: cache quantized Q8_1 matmul inputs per graph"
-plan-item = "RD09"
+plan-item = "PRBE05"
 patch = "1235_rd09_q81_activation_cache_foundation"
 status = "ported-untested"
-note = "foundation for RD10/RD11/RD15 (and historically RD14, now superseded by RD24); the hard prerequisite of the Q8_1 family. Design converged 2026-08-24 (dev-gpt-agent, session ses_76b0fef0c94c434a, req_60a41664e0de43d6): NOT a verbatim port -- the fork's own key omits the exact view data offset (a real same-root/different-offset false-hit bug) and uses a relocatable arena (incompatible with HIP/CUDA graph-capture pointer stability). This patch (stage 1 of 7, foundation only, no caller yet) reimplements the mechanism with both weaknesses fixed: key includes the view data address; storage is bounded never-relocated stable slabs. See docs/planning/active/rdna-boost-experiments/RD09.md for the full staged plan."
+note = "Legacy predecessor: RD09. Actionable owner: PRBE05. Foundation for the Q8_1 family. Design converged 2026-08-24 (dev-gpt-agent, session ses_76b0fef0c94c434a, req_60a41664e0de43d6): NOT a verbatim port -- the fork's own key omits the exact view data offset (a real same-root/different-offset false-hit bug) and uses a relocatable arena (incompatible with HIP/CUDA graph-capture pointer stability). This patch (stage 1 foundation; caller and graph-entry wiring remain PRBE05) reimplements the mechanism with both weaknesses fixed: key includes the view data address; storage is bounded never-relocated stable slabs. See docs/planning/active/patching-rdna-boost-experiments/PRBE05.md."
 
 [[sources.tracked]]
 commit = "6be52a2416a63664abbf3d677abd62973c977f04"
@@ -436,7 +436,7 @@ note = "superseded by RD24 (4a4da30ef): the SSM pre-scan chain fuses this 9-node
 commit = "31eb8e95cd45ecba5b60c3bffe24abd1ce124f46"
 original = "2f0d3c56a613b415196bdf5d56b4d27c85fafacb"
 title = "CUDA: fuse shared-expert output chain into one op"
-plan-item = "RD15"
+plan-item = "PRBE13"
 status = "planned"
 
 [[sources.tracked]]
@@ -484,10 +484,10 @@ note = "depends on RD09 (writes into its cache)"
 commit = "1818c3b3704a623e33d73b6cb0b633400ef70b14"
 original = "9f807c21d527e061febe13a2cb29dc97bdab3f4a"
 title = "cuda : gfx1151 mmvq table with nwarps=2 for Q8_0 decode"
-plan-item = "RD21"
+plan-item = "PRBE16"
 status = "deferred-hardware"
 patch = "1208_rd21_gfx1151_mmvq_nwarps_table"
-note = "needs gfx1151 hardware (not on Brutus); also needs RD25 (8cdf1ab08) to avoid the known MTP batch-vs-seq inconsistency. Patch materialized 2026-08-18; bench blocked on hardware"
+note = "Legacy predecessor: RD21. Actionable owner: PRBE16. Apply PRBE19's post-fix bake-in when materializing calc_nwarps(); this is not a standalone RD25 prerequisite. Needs gfx1151 hardware (not on Brutus); bench blocked on hardware. Patch materialized 2026-08-18."
 
 [[sources.tracked]]
 commit = "507f2e26719b33a7c82429609bc7806aa60f27e6"
@@ -529,10 +529,10 @@ note = "ported verbatim 2026-08-18; both hunks anchor byte-identical on pin 4801
 commit = "44b51c66a210053b12bdfcf1183a6b175878b9c8"
 original = "ba9e339eaec9fafb9ae7d151bf95c82d13061a62"
 title = "cuda : fuse paired mmvq matmuls over a shared activation"
-plan-item = "RD12"
+plan-item = "PRBE11"
 status = "ported-untested"
 patch = "1205_rd12_paired_mmvq_dual_output"
-note = "MUST include RD25 (8cdf1ab08): the frozen version has a known MTP batch-vs-seq inconsistency. Ported 2026-08-18 (8 edits, 3 files); isolated bench pending"
+note = "Legacy predecessor: RD12. Actionable owner: PRBE11. Ported 2026-08-18 (8 edits, 3 files); isolated bench pending. RD25/PRBE19 is explicitly not a prerequisite for this paired-MMVQ implementation; preserve the source identity and validate declared compositions."
 
 [[sources.tracked]]
 commit = "3b200b259c48a688929cae6bfe1048a60543bc67"
@@ -555,28 +555,28 @@ note = "new in snapshot v2"
 [[sources.tracked]]
 commit = "4a4da30ef2986d77fb8a9181cbf6797e7f55b7c8"
 title = "cuda : fuse the SSM pre-scan chain (conv, l2_norm, gate/beta)"
-plan-item = "RD24"
+plan-item = "PRBE18"
 status = "planned"
-note = "new in snapshot v2; one 16-node kernel subsuming RD14 (9-node gate/beta) and RD16 (3-node L2 pair) patterns - verified by op-pattern inspection 2026-08-18"
+note = "Legacy predecessor: RD24. Actionable owner: PRBE18. New in snapshot v2; one 16-node kernel subsuming RD14 (9-node gate/beta) and RD16 (3-node L2 pair) patterns - verified by op-pattern inspection 2026-08-18. PRBE05 cache dependency and PRBE19 post-fix source-state rule are explicit in the active plan."
 
 [[sources.tracked]]
 commit = "8cdf1ab081384aa1786bfff3a45e0ec341f9fd52"
 title = "cuda : fix MTP batch-vs-seq consistency for fused kernels and gfx1151 mmvq"
-plan-item = "RD25"
+plan-item = "PRBE19"
 status = "planned"
-note = "new in snapshot v2; CORRECTNESS fix, touches mmvq.cu - required before porting RD12/RD21 (and audit RD08). REAL BLOCKER FOUND (2026-09-11, PRBE11 investigation): this commit's diff modifies 3 kernel functions (ssm_gate_beta_fused_q8_0, ssm_conv_l2_gatebeta_fused, shexp_down_gated_q8_0) that do not exist anywhere in this project's pinned vendor tree, tracked sources, or any existing/planned patch (grep-verified). Root cause (git log -S against the fork's full history): those kernels were introduced by a SEPARATE, completely untracked fork commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb (\"rdna-boosts: block 08: fused-core prefill kernels and GPU bit-identical\", stew675-rdna-boosts/rdna-boosts) -- 1585 insertions across 10 files, an order of magnitude larger than RD25 itself, never tracked/reviewed. RD25 genuinely CANNOT be ported until \"block 08\" is tracked, reviewed, and ported first, as its own dedicated multi-session effort -- do not attempt to guess anchors against it."
+note = "Legacy predecessor: RD25. Actionable owner: PRBE19. New in snapshot v2; correctness fix for affected fused-kernel/MMVQ source regions. PRBE19 is a post-fix source-state/bake-in rule, not a standalone patch or prerequisite. It applies to PRBE13/16/18 and affected PRBE20 regions; PRBE11/RD12 is outside the affected set. Preserve Block 08 commit 5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb as separate provenance and use PRBE100 for its audit/decomposition. Never apply this raw historical diff on top of successors."
 
 [[sources.tracked]]
 commit = "93510434f34ef48194e8d2e6fcc4a22289c3b8d8"
 title = "cuda : make flash-attn decode and speculative verify batches bit-identical"
-plan-item = "RD26"
+plan-item = "PRBE20"
 status = "planned"
 note = "new in snapshot v2; determinism/correctness cluster (see RD26). DEFERRED: its fattn-tile.cuh/fattn.cu pre-images require 1202 (type_KV template) and 1203 (WMMA gating); port only after both are benched and retained"
 
 [[sources.tracked]]
 commit = "b2655d381b9575d644ebef794869165ede14b3a3"
 title = "cuda : make non-flash attention decode and verify batches bit-identical"
-plan-item = "RD26"
+plan-item = "PRBE20"
 status = "ported-untested"
 patch = "1210_rd26_bitidentical_decode_verify_standalone"
 note = "representative of the base-standalone RD26a hunks (b2655d381 + d152888fc); ported 2026-08-19; the full determinism property needs all five cluster commits"
@@ -584,20 +584,20 @@ note = "representative of the base-standalone RD26a hunks (b2655d381 + d152888fc
 [[sources.tracked]]
 commit = "d152888fc34419c69fb946581f29f927a475b5fa"
 title = "cpu : make decode and speculative verify batches bit-identical"
-plan-item = "RD26"
+plan-item = "PRBE20"
 status = "ported-untested"
 note = "covered by 1210_rd26_bitidentical_decode_verify_standalone (representative commit b2655d381)"
 
 [[sources.tracked]]
 commit = "10b83d6b27520d19bed96e8701a8997c59c951f5"
 title = "cuda : make RDNA4 mmvq and fused SSM decode/verify batches bit-identical"
-plan-item = "RD26"
+plan-item = "PRBE20"
 status = "planned"
 
 [[sources.tracked]]
 commit = "6cdf5aff9b824f8e639d32fe7ce9428b6199c1ee"
 title = "cuda : make RDNA3_0 mmvq decode and verify batches bit-identical"
-plan-item = "RD26"
+plan-item = "PRBE20"
 status = "planned"
 
 [[sources.tracked]]
