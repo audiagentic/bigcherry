@@ -146,3 +146,35 @@ default hides real migration debt behind "it still works," and multiplies
 the number of code paths that need to be reasoned about and tested. Always
 prefer migrating everything up to the new shape over keeping the old one
 alive alongside it.
+
+## Planning group naming: build-/patching-/run-/tuning- prefix required
+
+Every planning group under docs/planning/ must be named with one of the
+four discipline prefixes: `build-<topic>`, `patching-<topic>`,
+`run-<topic>`, or `tuning-<topic>` (e.g. `patching-hip-autotune`,
+`run-gpu-collectives`). This convention was established by the
+`capability-rebaseline-v3` migration (2026-09-09/10) but is incomplete and
+was not consistently followed afterward -- several un-prefixed legacy
+groups (`patch-system`, `gpu-collectives`, `hip-autotune`, `hip-collectives`,
+`kernel-coverage`, `nasone-rdna-optimizations`, `ec-contracts`,
+`code-cleanup`, `docs-reference`, `campaign-durability`,
+`external-fixes`, `rdna-boost-experiments`, `reusable-build-campaign`,
+`rocm-vulkan-provider`, `validation-package-standard`) still exist
+alongside their newer prefixed counterparts, and new items have continued
+to land in the old unprefixed groups by mistake (including in this same
+session -- PA19-PA31 were created under `patch-system` when
+`patching-patch-system` already existed as the correct home).
+
+**Going forward**: before calling `plan_create_item`, check whether a
+prefixed group for the topic already exists (`patching-<topic>` for
+patch-authoring work, `build-<topic>` for build/compile infrastructure,
+`run-<topic>` for campaign/tooling/execution work, `tuning-<topic>` for
+autotune-campaign work) and use it. If genuinely none exists yet for a new
+topic, create the correctly-prefixed one directly -- never a bare,
+unprefixed group name.
+
+**Migrating the remaining legacy groups** (renaming existing items from an
+old unprefixed group into its prefixed counterpart, and retiring groups
+with no active items) is real, mechanical, multi-item work that has not
+been done yet as of 2026-09-12 -- treat it as its own tracked effort, not
+something to do incidentally while touching one item.
