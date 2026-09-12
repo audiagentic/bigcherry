@@ -40,7 +40,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tomllib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
@@ -288,6 +288,7 @@ def validation_evidence_statuses(
     allow_legacy_grandfather: bool = True,
     resolved_base_revision: str | None = None,
     default_validation_architectures: tuple[str, ...] = (),
+    assume_validated: frozenset[str] = frozenset(),
 ) -> dict[str, patch_validation_evidence.EvidenceCheck]:
     entries = load_catalog(catalog_path)
     modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
@@ -319,13 +320,23 @@ def validation_evidence_statuses(
             )
             continue
 
+        # Promotion checks may evaluate the evidence obligation for the
+        # target validated state before lifecycle mutation.  Keep this opt-in
+        # and local to the verifier input so existing callers retain today's
+        # state-dependent behaviour and no lifecycle state is written here.
+        verification_module = (
+            replace(module, state="validated")
+            if patch_id in assume_validated and module.state != "validated"
+            else module
+        )
+
         # Schema-5 framework configuration evidence is distinct from runtime
         # validation: compiled targets are configuration observations, not
         # gpu_architectures covered by a hardware campaign.  Keep this branch
         # restricted to validated framework packages; untested framework
         # packages retain the existing not-required behavior below.
         is_framework_configuration = (
-            module.state == "validated"
+            verification_module.state == "validated"
             and packaged_descriptor is not None
             and validation_policy.is_framework_configuration_patch(packaged_descriptor)
         )
@@ -334,7 +345,7 @@ def validation_evidence_statuses(
             requested_targets = tuple(default_validation_architectures)
             compiled_targets = tuple(dict.fromkeys((*explicit_targets, *requested_targets)))
             result[patch_id] = patch_validation_evidence.verify_framework_configuration_patch(
-                module,
+                verification_module,
                 pinned_ref=pinned_ref,
                 required_compiled_targets=compiled_targets,
                 root=evidence_root,
@@ -358,9 +369,9 @@ def validation_evidence_statuses(
         # matching status-obligation verifier so those two tracked
         # statuses are actually checked for current-pin qualification
         # instead of silently reporting not-required.
-        if module.state == "validated":
+        if verification_module.state == "validated":
             result[patch_id] = patch_validation_evidence.verify_validated_patch(
-                module, pinned_ref=pinned_ref,
+                verification_module, pinned_ref=pinned_ref,
                 required_architectures=required_archs,
                 root=evidence_root, allow_legacy_grandfather=allow_legacy_grandfather,
                 resolved_base_revision=resolved_base_revision,
