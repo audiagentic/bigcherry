@@ -165,6 +165,7 @@ Caught and self-corrected a real process mistake along the way: used `git stash`
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -194,3 +195,5 @@ Caught and self-corrected a real process mistake along the way: used `git stash`
 - chg_20260912_134912_fixed-a-real-configuration-bug_3724
 - 2026-09-12T13:49:12.543739+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T13:52:12.634324+00:00 (updated-by): Updated: section:notes
+- chg_20260912_135302_completed-the-statistical-evid_5013
+- 2026-09-12T13:53:02.080192+00:00 (updated-by): Updated: section:ledger-events
