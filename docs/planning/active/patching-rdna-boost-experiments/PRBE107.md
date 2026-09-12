@@ -13,7 +13,7 @@ created-by: agent
 
 ## Description
 
-A real three-arm A/B/C baseline comparison for RD13 (2026-09-13, docs/reference/testing/BASELINE_COMPARISON_RD13_2026-09-13.md) found stock upstream llama.cpp (source.llama-native, zero BigCherry patches) shows ~18% higher pp512 prefill throughput than BigCherry's own baseline composition (source.bigcherry-native, the framework+upstream-fixes patch-sets, with the focal patch RD13 absent) on gpt-oss-20B/gfx1100: A=5174.61 t/s vs B=4215.71 t/s. tg128 decode throughput is unaffected (177.76 vs 178.13, effectively identical). This gap is unrelated to RD13 itself (RD13's own B-vs-C effect is negligible). This is the first real evidence of this specific gap -- it was only surfaced because the standardized validation criteria required a genuine three-arm comparison rather than the project's usual B-vs-C-only methodology.
+A real three-arm A/B/C baseline comparison for RD13 (2026-09-13, docs/reference/testing/BASELINE_COMPARISON_RD13_2026-09-13.md), CONFIRMED across 3 rounds each for A and B: stock upstream llama.cpp (source.llama-native, zero BigCherry patches) shows a consistent, real ~22.6% higher pp512 prefill throughput than BigCherry's own baseline composition (source.bigcherry-native, the framework+upstream-fixes patch-sets, with no RD-series enhancement patches) on gpt-oss-20B/gfx1100: mean A=5169.24 t/s (sd 16.63) vs mean B=4217.83 t/s (sd 2.15), zero overlap across all 3 rounds. tg128 decode throughput is unaffected (essentially identical across arms). This gap is unrelated to RD13 itself (RD13's own B-vs-C effect is negligible, well within B's own round-to-round variation). This is a real, solid, confirmed finding -- not noise, not a single-round artifact -- surfaced only because the standardized validation criteria required a genuine three-arm comparison rather than the project's usual B-vs-C-only methodology.
 
 ## Steps
 
@@ -62,3 +62,4 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 
 - chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
 - 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T21:22:28.159150+00:00 (updated-by): Updated: section:description

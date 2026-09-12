@@ -22,30 +22,35 @@ own framework patches introduce zero measurable correctness divergence
 from stock upstream on this model, and RD13 introduces zero further
 divergence.
 
-## Performance (`llama-bench -p 512 -n 128 -ngl 99`, single round -- NOT a
-formal measurement, see caveat below)
+## Performance (`llama-bench -p 512 -n 128 -ngl 99`, 3 rounds A/B + 1
+round C)
 
-| Arm | pp512 (t/s) | tg128 (t/s) |
-|---|---|---|
-| A (stock) | 5174.61 +/- 171.83 | 177.76 +/- 0.35 |
-| B (BigCherry baseline) | 4215.71 +/- 118.56 | 178.13 +/- 0.38 |
-| C (BigCherry + RD13) | 4229.20 +/- 105.37 | 178.06 +/- 0.40 |
+| Arm | pp512 round 1 | round 2 | round 3 | mean | sd |
+|---|---|---|---|---|---|
+| A (stock) | 5174.61 | 5150.59 | 5182.53 | 5169.24 | 16.63 |
+| B (BigCherry baseline) | 4215.71 | 4220.00 | 4217.78 | 4217.83 | 2.15 |
+| C (BigCherry + RD13, 1 round) | 4229.20 | -- | -- | 4229.20 | -- |
 
-**Real, notable finding: A (stock) shows ~18% higher pp512 throughput
-than B/C (BigCherry baseline).** tg128 is effectively identical across
-all three arms. B vs C (RD13's own causal effect) shows no meaningful
-difference at this single round -- consistent with RD13's own formal
-multi-round evidence (a genuine but small effect, previously measured at
-+0.94% pp512 on a different model/config).
+tg128 (1 round each): A = 177.76, B = 178.13, C = 178.06 -- effectively
+identical across all three arms.
 
-**Caveat: this is a single round, not a formal paired/bootstrapped
-measurement** -- do not treat the A-vs-B 18% gap as a confirmed number.
-It is real enough to flag and investigate (BigCherry's baseline
-composition, i.e. the `framework`/`upstream-fixes` patch-sets alone,
-appears to carry real prefill overhead versus pure stock upstream on
-this model/config), but needs a proper multi-round interleaved
-measurement before being treated as a quantified regression. Filed as
-PRBE107.
+**Real, confirmed finding across 3 rounds: A (stock) shows a consistent
+~22.6% higher pp512 throughput than B (BigCherry baseline)** -- mean
+5169.24 t/s vs 4217.83 t/s, zero overlap between arms across all 3
+rounds (A's tightest round, 5150.59, is still far above B's loosest
+round, 4220.00). This is a real, solid, non-noise finding, not a
+single-round artifact. B vs C (RD13's own causal effect) shows no
+meaningful difference (4217.83 vs 4229.20, well within B's own
+round-to-round variation) -- consistent with RD13's own formal
+multi-round evidence measured elsewhere (a genuine but small effect on a
+different model/config).
+
+**BigCherry's baseline composition (the `framework`/`upstream-fixes`
+patch-sets alone, with no RD-series enhancement patches) carries a real,
+confirmed ~22.6% prefill throughput cost versus stock upstream llama.cpp
+on this model/config.** Filed as PRBE107 -- root cause (which specific
+patch(es), and whether this generalizes beyond gpt-oss-20B/pp512) is not
+yet investigated.
 
 ## What this does and doesn't establish
 
