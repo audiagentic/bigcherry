@@ -56,3 +56,8 @@ Low-risk, mechanical, single-line fix. Filed rather than fixed inline since patc
 ## Change Log
 
 - 2026-09-12T20:57:48.492290+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_205810_found-and-corrected-a-false-ne_3827
+- 2026-09-12T20:58:10.868990+00:00 (updated-by): Updated: section:ledger-events
