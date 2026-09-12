@@ -167,11 +167,11 @@ directory.
 The public gate examples are:
 
 ```bash
-patch-gates <patch-id> --intent validate --rebase-report <fresh-report>
-patch-gates <patch-id> --intent promote --rebase-report <fresh-report>
-patch-gates <patch-id> --intent build --source <source-name> \
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent validate --rebase-report <fresh-report>
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent promote --rebase-report <fresh-report>
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
-patch-gates <patch-id> --intent rebase --source <source-name> \
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent rebase --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 ```
 
@@ -324,8 +324,8 @@ malformed or unknown authority output is `BLOCKED`.
 | `ERROR` | Harness, identity, or infrastructure malfunction | Fix and rerun; no claim established |
 | Missing/invalid required result | Incomplete evidence | Fail closed; not qualified |
 
-Build may treat `not-required` as `NA`. Validate and promote require an
-evidence obligation; `not-required` cannot qualify those operations. A local
+Build may treat `not-required` as `NA`. PROMOTE requires an evidence
+obligation; `not-required` cannot qualify promotion. A local
 framework-configuration PROMOTE is currently `BLOCKED` before evidence
 resolution until the prospective canonical-composition seam exists.
 
