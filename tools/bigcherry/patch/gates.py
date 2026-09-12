@@ -201,39 +201,73 @@ def evaluate_repository_lint_gates(
     static policy authorities rather than by fabricating a ``GateContext``.
     """
     registry = patch_registry.load_registry(patches_dir)
-    summary_results: list[ScopedGateResult] = []
-    summary_problems: list[str] = []
-    for descriptor in registry.descriptors:
-        result = _evaluate_lint_summary(descriptor, registry.root)
-        summary_results.append(ScopedGateResult(descriptor.patch_id, result))
-        summary_problems.extend(result.detail)
+    def evaluate_summaries() -> tuple[tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]]:
+        results: list[ScopedGateResult] = []
+        problems: list[str] = []
+        for descriptor in registry.descriptors:
+            result = _evaluate_lint_summary(descriptor, registry.root)
+            results.append(ScopedGateResult(descriptor.patch_id, result))
+            problems.extend(result.detail)
+        return tuple(results), tuple(problems), ()
 
-    package_report = validation_policy.check_validation_packages(
-        root=patches_dir,
-        registry_path=patches_dir,
-        external_sources_path=external_sources_path,
-        baseline_path=validation_baseline_path,
-    )
-    package_statuses = {status.patch_id: status for status in package_report.statuses}
-    performance_problems: list[str] = []
-    package_results: list[ScopedGateResult] = []
-    for descriptor in registry.descriptors:
-        problems = validation_policy.check_performance_evidence_for_patch(
-            descriptor, root=patches_dir, assume_validated=False,
+    def evaluate_packages() -> tuple[tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]]:
+        package_report = validation_policy.check_validation_packages(
+            root=patches_dir,
+            registry_path=patches_dir,
+            external_sources_path=external_sources_path,
+            baseline_path=validation_baseline_path,
         )
-        performance_problems.extend(problems)
-        package_results.append(
-            ScopedGateResult(
-                descriptor.patch_id,
-                _evaluate_lint_package(descriptor, package_statuses.get(descriptor.patch_id), problems),
+        package_statuses = {status.patch_id: status for status in package_report.statuses}
+        performance_problems: list[str] = []
+        package_results: list[ScopedGateResult] = []
+        for descriptor in registry.descriptors:
+            problems = validation_policy.check_performance_evidence_for_patch(
+                descriptor, root=patches_dir, assume_validated=False,
             )
+            performance_problems.extend(problems)
+            package_results.append(
+                ScopedGateResult(
+                    descriptor.patch_id,
+                    _evaluate_lint_package(
+                        descriptor, package_statuses.get(descriptor.patch_id), problems,
+                    ),
+                )
+            )
+        return (
+            tuple(package_results),
+            tuple((*package_report.problems, *performance_problems)),
+            tuple(package_report.grandfathered),
         )
 
-    return LintGateReport(
-        results=tuple((*summary_results, *package_results)),
-        problems=tuple((*summary_problems, *package_report.problems, *performance_problems)),
-        grandfathered=tuple(package_report.grandfathered),
-    )
+    evaluators = {
+        GateId.G1: evaluate_summaries,
+        GateId.G3: evaluate_packages,
+    }
+    results: list[ScopedGateResult] = []
+    problems: list[str] = []
+    grandfathered: tuple[str, ...] = ()
+    for gate_id in GateId:
+        if not gate_applies(gate_id, GateIntent.LINT):
+            continue
+        evaluator = evaluators.get(gate_id)
+        if evaluator is None:
+            result = GateResult(
+                gate_id, GateStatus.BLOCKED, "lint", "patch.gates",
+                (f"applicable repository lint gate {gate_id.value} is not implemented",),
+            )
+            results.append(ScopedGateResult("<repository>", result))
+            problems.extend(result.detail)
+            continue
+        scoped, gate_problems, gate_grandfathered = evaluator()
+        results.extend(scoped)
+        problems.extend(gate_problems)
+        if gate_grandfathered:
+            grandfathered = gate_grandfathered
+        for scoped_result in scoped:
+            if scoped_result.result.status is GateStatus.BLOCKED:
+                problems.extend(scoped_result.result.detail)
+
+    return LintGateReport(tuple(results), tuple(problems), grandfathered)
 
 
 def evaluate_rebase_gate(context: GateContext) -> GateResult:

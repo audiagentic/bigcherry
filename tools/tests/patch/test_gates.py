@@ -150,6 +150,7 @@ class GateContractTests(unittest.TestCase):
 
         with (
             mock.patch.object(gates.patch_registry, "load_registry", return_value=registry) as load_registry,
+            mock.patch.object(gates, "gate_applies", wraps=gates.gate_applies) as gate_applies,
             mock.patch.object(
                 gates.patch_docs,
                 "check_summary_for_patch",
@@ -182,6 +183,8 @@ class GateContractTests(unittest.TestCase):
             )
 
         load_registry.assert_called_once_with(Path("patches"))
+        gate_applies.assert_any_call(GateId.G1, GateIntent.LINT)
+        gate_applies.assert_any_call(GateId.G3, GateIntent.LINT)
         check_packages.assert_called_once_with(
             root=Path("patches"), registry_path=Path("patches"),
             external_sources_path=Path("external.toml"), baseline_path=Path("baseline.json"),
@@ -213,6 +216,35 @@ class GateContractTests(unittest.TestCase):
         coverage.assert_not_called()
         dispositions.assert_not_called()
         admission.assert_not_called()
+
+    def test_repository_lint_unknown_package_status_is_fail_closed(self) -> None:
+        descriptor = SimpleNamespace(patch_id="P1")
+        registry = SimpleNamespace(descriptors=(descriptor,), root=Path("patches"))
+        package_report = gates.validation_policy.PackagePolicyReport(
+            statuses=(gates.validation_policy.PackagePolicyStatus("P1", "future"),),
+        )
+        with (
+            mock.patch.object(gates.patch_registry, "load_registry", return_value=registry),
+            mock.patch.object(gates.patch_docs, "check_summary_for_patch", return_value=()),
+            mock.patch.object(
+                gates.validation_policy,
+                "check_validation_packages",
+                return_value=package_report,
+            ),
+            mock.patch.object(
+                gates.validation_policy,
+                "check_performance_evidence_for_patch",
+                return_value=(),
+            ),
+        ):
+            report = gates.evaluate_repository_lint_gates()
+
+        outcome = next(
+            item.result for item in report.results
+            if item.patch_id == "P1" and item.result.id is GateId.G3
+        )
+        self.assertEqual(outcome.status, GateStatus.BLOCKED)
+        self.assertEqual(report.problems, outcome.detail)
 
     def test_admission_gate_passes_full_composition(self) -> None:
         modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))
