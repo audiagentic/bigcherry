@@ -102,6 +102,54 @@ cost ~22.6% on at least gpt-oss-20B's specific MoE shape, and 0% on
 Qwen3.5-4B's dense+GDN shape" -- a real, valuable, more precise finding
 that a single-model test would have missed entirely.
 
+## Third model: confirms dense-vs-MoE, not model-specific noise (2026-09-13)
+
+`tierM-ministral14b-q4km` (Ministral-3-14B, an independent dense
+transformer family, distinct from the Qwen family):
+
+| Arm | pp512 |
+|---|---|
+| A (stock) | 2275.05 +/- 34.28 |
+| B (BigCherry baseline) | 2274.98 +/- 26.77 |
+
+**Statistically identical again -- no gap.**
+
+## Fourth model: second MoE model CONFIRMS the MoE hypothesis (2026-09-13)
+
+`tierM-qwen35b-a3b-moe-mtp` (Qwen3.6-35B-A3B, a second, independent MoE
+model, different family from gpt-oss):
+
+| Arm | pp512 |
+|---|---|
+| A (stock) | 3247.36 +/- 200.79 |
+| B (BigCherry baseline) | 2654.67 +/- 249.50 |
+
+**Real gap: ~22.3%** -- remarkably close to gpt-oss-20B's ~22.6% gap,
+despite being a completely different MoE model family/size.
+
+## Triangulated conclusion (4 models, 2 architecture classes)
+
+| Model | Class | A vs B gap |
+|---|---|---|
+| Qwen3.5-4B | dense+GDN hybrid | ~0% (statistically identical) |
+| Ministral-3-14B | dense transformer | ~0% (statistically identical) |
+| gpt-oss-20B | MoE | ~22.6% (confirmed, 3 rounds) |
+| Qwen3.6-35B-A3B | MoE | ~22.3% (single round) |
+
+**Conclusively triangulated: the forced-dispatch patch cluster
+(`0300_mmq_forced_j`/`0400_mmvf_forced_block`/`0500_mmf_forced_nwarps`/
+`0600_mmvq_geometry`/`0650_mmvq_native_variant`) costs a consistent
+~22-23% prefill throughput specifically on MoE models, and costs
+nothing measurable on dense (or dense+hybrid) models.** This is a real,
+solid, multi-model-confirmed finding -- not a single-model artifact, not
+noise, and not a general "BigCherry tax." The two MoE gaps (22.6%,
+22.3%) are close enough across genuinely different MoE
+families/sizes/quantizations to indicate a real, systematic interaction
+between the forced-dispatch patches' fixed geometry/nwarps choices and
+MoE routing shapes specifically -- plausibly the forced parameters are
+tuned/reasonable for dense matmul shapes but suboptimal for MoE's
+smaller, more numerous expert-routed matmuls.
+
 ## What this does and doesn't establish
 
 - Confirms RD13 (the focal patch) itself is correctness-neutral and has
