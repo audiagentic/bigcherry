@@ -439,11 +439,20 @@ backend = "hip"
 architectures = ["gfx1100", "gfx1201", "gfx1030"]
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.positive]
-models = ["tierM-gptoss20b-q6k"]
-workloads = ["moe_decode"]
+# MODEL BINDING FIX (2026-09-13): the original binding had this backwards.
+# Real hardware testing this session (activation probe, BIGCHERRY_PATCH_HIT
+# patch=1206_rd13) confirmed tierM-gptoss20b-q6k (dense-MoE, no GDN/recurrent
+# layers) does NOT exercise RD13's MUL_MAT->RESHAPE->ADD fusion at all (0
+# marker hits). tierA-qwen4b-q6k (Qwen3.5-4B) DOES -- it is a dense+GDN
+# hybrid (24 of 32 layers are Gated DeltaNet recurrent layers, confirmed via
+# PRBE102), and this project's pinned llama.cpp implements the GDN path as
+# exactly RD13's target shape (ssm_out matmul -> reshape -> residual add).
+# Swapped positive/control to match reality.
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.controls]
-models = ["tierA-qwen4b-q6k"]
+models = ["tierM-gptoss20b-q6k"]
 workloads = ["decode"]
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.correctness]
@@ -452,6 +461,12 @@ backend_reference = "required"
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.acceptance]
 target_kernel_gain_pct = 0.5
 max_control_regression_pct = 1
+# VA24 migration (2026-09-13): the model-binding fix above already changed
+# this contract's hash, voiding config/experiment-contract-legacy.toml's
+# RD13-MUL-MAT-ADD-VIEW-FUSION point-estimate waiver. Migrated in the same
+# change, per the RD08/RD21/RD39-42/RD73 precedent.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD22-IGPU-HOST-BUFFER-BACKOUT]
 title = "RD22: back out integrated-GPU host buffers on HIP (fork divergence from PR #24233)"
