@@ -57,3 +57,8 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 ## Change Log
 
 - 2026-09-12T21:20:57.594630+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
+- 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
