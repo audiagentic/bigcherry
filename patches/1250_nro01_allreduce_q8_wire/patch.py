@@ -5,6 +5,8 @@ It creates the source primitives required for a correctness fixture before a
 lossy wire format can become reachable. NRO02 owns residual fusion.
 """
 
+import re as _re
+
 from bigcherry.patcher import Edit, FilePatch
 
 DRAFT_SOURCE_CONTEXT = {
@@ -64,12 +66,22 @@ PATCHES = [
         description="add disabled Q8_0 AllReduce wire primitives and policy state",
         edits=(
             Edit(
+                # Real bug found on real hardware (2026-09-12, gfx1201 build
+                # attempt): the anchor previously ended at the `=` sign, mid-
+                # statement -- insert_after splices immediately after the
+                # MATCHED TEXT, not after the enclosing line/statement, so
+                # this corrupted `... DEFAULT =\n<inserted>\n1024 * 1024;`
+                # into unparseable C++. The real source is one line
+                # (`... DEFAULT = 1024 * 1024; // 1 MB`); anchor through the
+                # trailing `;` so the insertion lands after the complete
+                # statement. The `// 1 MB` comment starts after the `;` so
+                # no comment/string-literal noise-stripping concern here.
                 id="q8-threshold-constant",
-                anchor=r"^static constexpr size_t GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT\s*=",
+                anchor=r"^static constexpr size_t GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT = 1024 \* 1024;",
                 mode="insert_after",
                 text="\n// BigCherry NRO01: 0 keeps the draft Q8 path unreachable until qualified.\nstatic constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;",
                 guard=r"^static constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;$",
-                rationale="place Q8 policy beside the uniquely named existing AllReduce transfer threshold without anchoring on its comment",
+                rationale="anchor through the complete single-line statement (not just up to '='), so insert_after lands after the full declaration instead of splicing mid-expression",
             ),
             Edit(
                 id="q8-kernel-primitives",
@@ -88,12 +100,26 @@ PATCHES = [
                 rationale="keep Q8 threshold in the provider instance alongside BF16 threshold",
             ),
             Edit(
+                # Same real bug class as q8-threshold-constant above: the
+                # anchor ended at `=`, mid-statement, corrupting
+                # `p->bf16_threshold   =\n<inserted>\nggml_cuda_ar_env_u64(...)`.
+                # The real source is one line:
+                # `p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);`
+                # -- it contains a string literal, which the patcher blanks
+                # before matching, so the LITERAL-placeholder technique
+                # (patches/1222, patches/1225) is used: write the anchor
+                # template with a placeholder token in place of the string,
+                # then replace the escaped placeholder with a loose
+                # same-line match.
                 id="q8-init-policy",
-                anchor=r"^    p->bf16_threshold\s*=",
+                anchor=(
+                    _re.escape('    p->bf16_threshold   = ggml_cuda_ar_env_u64(LITERAL1, 1);')
+                    .replace(_re.escape('LITERAL1'), r'[^\n]*')
+                ),
                 mode="insert_after",
                 text="\n    p->nro01_q8_threshold = ggml_cuda_ar_env_u64(\"GGML_CUDA_AR_Q8_THRESHOLD\", BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT);",
                 guard=r"p->nro01_q8_threshold = ggml_cuda_ar_env_u64",
-                rationale="anchor on the uniquely named BF16 policy assignment, not its environment string literal",
+                rationale="anchor through the complete single-line assignment (not just up to '='), using the LITERAL-placeholder technique to cross the noise-stripped string literal, so insert_after lands after the full statement instead of splicing mid-call",
             ),
         ),
     ),
