@@ -1,5 +1,7 @@
 """NRO03 draft: source-current push primitive for a future HIP P2P AR provider."""
 
+import re as _re
+
 from bigcherry.patcher import Edit, FilePatch
 
 DRAFT_SOURCE_CONTEXT = {
@@ -37,12 +39,25 @@ PATCHES = [FilePatch(
             rationale="provider instance owns the opt-in state",
         ),
         Edit(
+            # Same real bug class found and fixed in patches/1250 (2026-09-12,
+            # real gfx1100 build failure): the anchor previously ended at
+            # '=', mid-statement -- insert_after splices immediately after
+            # the MATCHED TEXT, not after the enclosing statement, corrupting
+            # `p->bf16_threshold   =\n<inserted>\nggml_cuda_ar_env_u64(...)`
+            # into unparseable C++. Real source is one line:
+            # `p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);`
+            # -- contains a string literal, so uses the LITERAL-placeholder
+            # technique (patches/1222, patches/1225, patches/1250) to cross
+            # the noise-stripped literal.
             id="p2p-request-init",
-            anchor=r"^    p->bf16_threshold\s*=",
+            anchor=(
+                _re.escape('    p->bf16_threshold   = ggml_cuda_ar_env_u64(LITERAL1, 1);')
+                .replace(_re.escape('LITERAL1'), r'[^\n]*')
+            ),
             mode="insert_after",
             text="\n    p->nro03_p2p_requested = ggml_cuda_ar_env_u64(\"GGML_CUDA_AR_P2P\", 0) != 0;",
             guard=r"p->nro03_p2p_requested = ggml_cuda_ar_env_u64",
-            rationale="anchor on the uniquely named BF16 policy assignment; P2P remains explicitly opt-in",
+            rationale="anchor through the complete single-line assignment (not just up to '='), using the LITERAL-placeholder technique to cross the noise-stripped string literal, so insert_after lands after the full statement instead of splicing mid-call",
         ),
         Edit(
             id="source-current-push-helper",
