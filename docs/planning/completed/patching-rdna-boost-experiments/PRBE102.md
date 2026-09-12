@@ -63,7 +63,10 @@ RD13's real PPL-equality correctness evidence (2026-09-13, current pin b10901) a
 
 ## Ledger-events
 
+
 - chg_20260912_144740_refreshed-patch-1206-rd13s_7649
 - 2026-09-12T14:47:40.653615+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T20:05:05.159621+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T20:05:07.332956+00:00 (state-transition): State: pending → completed
+- chg_20260912_200539_closed-the-missing-ssm-model-g_5054
+- 2026-09-12T20:05:39.199453+00:00 (updated-by): Updated: section:ledger-events
