@@ -121,6 +121,21 @@ Both binaries are run with the SAME `GGML_CUDA_REGISTER_HOST=1`
 environment -- that upstream flag alone is not RD58's contribution;
 the difference in observed behavior comes entirely from the patch.
 
+## Real three-arm baseline comparison (2026-09-13, standardized criteria)
+
+Built stock upstream llama.cpp's `test-save-load-state` (A, zero
+BigCherry patches) and ran the identical real dual-GPU
+(`HIP_VISIBLE_DEVICES=0,1`, `-sm tensor`, `GGML_CUDA_REGISTER_HOST=1`)
+test: **A also passes cleanly, all 8 internal tests PASS, exit=0.**
+This is real, expected, and consistent with this patch's own documented
+caveat -- the original ROCm SDMA fault was never independently
+reproduced on this host, so A=B=C=PASS on the pass/fail outcome. What
+RD58 changes (already documented above) is the real activation-marker
+behavior (`pinned state buffer (...) for restore` fires on the
+patched/subject build, never on stock or the unpatched baseline) and,
+per the fork's own original measurement (not independently confirmed
+here), pinning performance on hardware where the fault does reproduce.
+
 ## Evidence
 
 Runtime artifacts (build logs, raw test-save-load-state output) land
