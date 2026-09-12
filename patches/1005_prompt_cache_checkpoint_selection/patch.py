@@ -168,14 +168,37 @@ SERVER_CONTEXT_PATCH = FilePatch(
             max_span_lines=25,
         ),
         Edit(
+            # Real bug found via a live multi-turn hardware test (2026-09-12,
+            # gfx1100, LFM2.5-8B): this edit's anchor spanned BOTH the
+            # n_past reassignment line and the following SLT_TRC log line,
+            # but `text` only supplied a replacement for the log line --
+            # mode="replace" therefore silently DELETED the n_past
+            # reassignment from the generated source. With a restored
+            # checkpoint at an earlier position but n_past left at the
+            # larger longest-common-prefix value, tokens between the
+            # checkpoint's real position and n_past are skipped instead of
+            # replayed -- corrupting hybrid/recurrent state while all
+            # bookkeeping looks valid, producing garbled output and an
+            # immediate EOS in the live test. Root-caused by GPT
+            # (dev-gpt-agent, session ses_3adef4de3bc249b2,
+            # req_b97d0da804a34f6f) from the patch source alone, then
+            # confirmed by direct inspection. Real source has a SECOND,
+            # near-identical `SLT_TRC(slot,` at the same indentation two
+            # lines below (the `do_reset` branch's "forcing full prompt
+            # re-processing" log) -- anchoring on the log line alone would
+            # be ambiguous, so the two-line anchor is kept (it IS unique,
+            # since only THIS SLT_TRC is preceded by the n_past line), and
+            # `text` now preserves the n_past reassignment verbatim while
+            # only promoting the log level on the following line.
             id="checkpoint-restore-reset-log-level",
             anchor=(
                 r"                                        n_past   = std::min\(slot\.prompt\.tokens\.size_up_to_pos\(pos_next\), \(size_t\) it->n_tokens\);\n"
                 r"                                        SLT_TRC\(slot,"
             ),
-            rationale="promote the restore/reset logs from TRC to INF (matches upstream's other checkpoint log promotions)",
+            rationale="promote the restore/reset log from TRC to INF (matches upstream's other checkpoint log promotions) while preserving the n_past reassignment the original (buggy) replace-text silently deleted",
             mode="replace",
             text=(
+                "                                        n_past   = std::min(slot.prompt.tokens.size_up_to_pos(pos_next), (size_t) it->n_tokens);\n"
                 "                                        SLT_INF(slot,"
             ),
             guard=r"SLT_INF\(slot, \"restored context checkpoint",
