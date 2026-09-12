@@ -180,3 +180,46 @@ def evaluate_package_gate(context: GateContext) -> GateResult:
             (*status.problems, *performance_problems),
         )
     return GateResult(GateId.G3, GateStatus.PASS, "package", "patch.validation_policy", status.problems)
+
+
+def evaluate_evidence_gate(context: GateContext) -> GateResult:
+    """Evaluate G4 through the catalog/evidence authority.
+
+    Promotion is prospective: the focal untested module is evaluated as
+    validated without mutating registry state.  Build keeps the existing
+    ``not-required`` result as NA, while validation and promotion require an
+    actual evidence result.
+    """
+    try:
+        statuses = patch_catalog.validation_evidence_statuses(
+            (context.descriptor.patch_id,),
+            catalog_path=context.catalog_path,
+            patches_dir=context.patches_dir,
+            pinned_ref=context.pinned_ref,
+            evidence_root=context.evidence_root,
+            allow_legacy_grandfather=context.allow_legacy_grandfather,
+            resolved_base_revision=context.resolved_base_revision,
+            assume_validated=(
+                frozenset((context.descriptor.patch_id,))
+                if context.intent is GateIntent.PROMOTE else frozenset()
+            ),
+        )
+    except (OSError, TypeError, ValueError, patch_catalog.patch_validation_evidence.ValidationEvidenceError) as exc:
+        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog", (str(exc),))
+
+    status = statuses.get(context.descriptor.patch_id)
+    if status is None:
+        return GateResult(
+            GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+            (f"no evidence result for {context.descriptor.patch_id!r}",),
+        )
+    if status.status == "not-required":
+        if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
+            return GateResult(
+                GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog",
+                ("validation or promotion requires an evidence obligation",),
+            )
+        return GateResult(GateId.G4, GateStatus.NA, "evidence", "patch.catalog")
+    if not status.ok:
+        return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", status.problems)
+    return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", status.problems)
