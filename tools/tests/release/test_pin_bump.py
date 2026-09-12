@@ -307,6 +307,50 @@ class OverlaySelfHealTests(unittest.TestCase):
         self.assertTrue(safe)
         self.assertEqual(drifted, ["a.cpp", "b.cu"])
 
+    def test_run_phases_uses_canonical_overlay_owner_for_newline_self_heal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            vendor_root = root / "vendor"
+            report_dir = root / "report"
+            vendor_root.mkdir()
+            record = type(
+                "Record", (), {
+                    "stage": "audited", "audit": {}, "notes": "",
+                    "save": lambda self: None,
+                },
+            )()
+            state = pin_bump.PinBumpState(
+                schema_version=2, run_id="run-1", from_ref="b1", from_sha="a" * 40,
+                to_ref="b2", to_sha="b" * 40, transition_commit="c" * 40,
+                tree_name="local", tree_path=str(vendor_root),
+                completed_phases=["preflight", "declare", "pull"],
+                next_phase="audit", selector_kind="source",
+                selector_name="bigcherry", selector_patch_ids=(),
+            )
+            failed_report = {
+                "checks": [{"id": "overlay.vendor_sync", "ok": False}],
+                "summary": {},
+            }
+            clean_report = {"checks": [], "summary": {}}
+
+            with patch.object(pin_bump, "acquire_maintenance_lock", return_value=nullcontext()), \
+                 patch("bigcherry.source.audit.audit", side_effect=[failed_report, clean_report]), \
+                 patch("bigcherry.source.audit.passed", side_effect=[False, True, True]), \
+                 patch.object(pin_bump, "check_overlay_self_heal", return_value=(True, ["a.cpp"])), \
+                 patch.object(pin_bump.patch_overlay, "copy_overlay", return_value=[]) as copy_overlay, \
+                 patch.object(pin_bump.releases, "record_for_checkout", return_value=record), \
+                 patch("bigcherry.patch.catalog.cross_check", return_value=["stop after self-heal"]):
+                with self.assertRaises(pin_bump.PinBumpStop) as stopped:
+                    pin_bump._run_phases(
+                        state=state, target_ref="b2", selector_kind="source",
+                        selector_name="bigcherry", repo_root=root,
+                        vendor_root=vendor_root, dispositions_dir=root / "dispositions",
+                        report_dir=report_dir,
+                    )
+
+            self.assertEqual(stopped.exception.code, "PATCH_LINT_FAILED")
+            copy_overlay.assert_called_once_with(vendor_root, dry_run=False)
+
 
 class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
     """Found live TWICE (b10680->b10687 and b10687->b10692): the separate

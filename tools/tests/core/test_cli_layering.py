@@ -44,6 +44,32 @@ class CliMainBackedgeTests(unittest.TestCase):
             tuple(range(1, 10)),
         )
 
+    def test_dynamic_aliases_relative_names_and_shadowing(self) -> None:
+        path, product_root = self._write_module(
+            "\n".join(
+                (
+                    "import importlib as il",
+                    "from importlib import import_module as load",
+                    "il.import_module('bigcherry.__main__')",
+                    "load('bigcherry.__main__')",
+                    "import importlib",
+                    "importlib.import_module('.__main__', package='bigcherry')",
+                    "from importlib import import_module as relative_load",
+                    "relative_load('..__main__', package='bigcherry.cli')",
+                    "from unrelated import import_module",
+                    "import_module('bigcherry.__main__')",
+                    "def local(import_module):",
+                    "    return import_module('bigcherry.__main__')",
+                )
+            )
+            + "\n",
+        )
+
+        self.assertEqual(
+            check._cli_main_backedge_lines(path, product_root),
+            (3, 4, 6, 8),
+        )
+
     def test_comments_docstrings_and_unrelated_modules_are_ignored(self) -> None:
         path, product_root = self._write_module(
             '"""from .. import __main__"""\n'

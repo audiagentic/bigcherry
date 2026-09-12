@@ -161,6 +161,204 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
         ):
             lines.add(node.lineno)
 
+    def binding_kinds(nodes: list[ast.stmt]) -> dict[str, str | None]:
+        """Resolve names bound in one lexical scope.
+
+        ``None`` means a name is definitely bound but not to one of the
+        importlib forms we understand.  A name is only classified as a
+        dynamic-import binding when every binding seen in that scope agrees;
+        this prevents an unrelated local function or later assignment from
+        being mistaken for ``importlib.import_module``.
+        """
+        observed: dict[str, set[str | None]] = {}
+
+        def observe(name: str, kind: str | None) -> None:
+            observed.setdefault(name, set()).add(kind)
+
+        class ScopeBindings(ast.NodeVisitor):
+            def visit_Import(self, node: ast.Import) -> None:
+                for alias in node.names:
+                    bound = alias.asname or alias.name.split(".", 1)[0]
+                    observe(
+                        bound,
+                        "importlib"
+                        if alias.name == "importlib"
+                        or alias.name.startswith("importlib.")
+                        else None,
+                    )
+
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+                for alias in node.names:
+                    bound = alias.asname or alias.name
+                    observe(
+                        bound,
+                        "import_module"
+                        if node.module == "importlib"
+                        and alias.name == "import_module"
+                        else None,
+                    )
+
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                observe(node.name, None)
+
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+                observe(node.name, None)
+
+            def visit_ClassDef(self, node: ast.ClassDef) -> None:
+                observe(node.name, None)
+
+            def visit_Lambda(self, node: ast.Lambda) -> None:
+                # A lambda is a nested scope; its arguments/body do not bind
+                # names in the surrounding scope.
+                return
+
+            def visit_Global(self, node: ast.Global) -> None:
+                for name in node.names:
+                    observed.pop(name, None)
+
+            def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+                for name in node.names:
+                    observed.pop(name, None)
+
+            def visit_Name(self, node: ast.Name) -> None:
+                if isinstance(node.ctx, (ast.Store, ast.Del)):
+                    observe(node.id, None)
+
+            def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+                if node.name:
+                    observe(node.name, None)
+                self.generic_visit(node)
+
+            def visit_ImportStar(self, node: ast.AST) -> None:
+                return
+
+        visitor = ScopeBindings()
+        for node in nodes:
+            visitor.visit(node)
+        return {
+            name: next(iter(kinds)) if len(kinds) == 1 else None
+            for name, kinds in observed.items()
+        }
+
+    module_bindings = binding_kinds(tree.body)
+
+    def function_bindings(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> dict[str, str | None]:
+        body = node.body if isinstance(node.body, list) else [node.body]
+        bindings = dict(module_bindings)
+        local = binding_kinds(body)
+        arguments = (
+            list(node.args.posonlyargs)
+            + list(node.args.args)
+            + list(node.args.kwonlyargs)
+        )
+        if node.args.vararg:
+            arguments.append(node.args.vararg)
+        if node.args.kwarg:
+            arguments.append(node.args.kwarg)
+        for argument in arguments:
+            local[argument.arg] = None
+        bindings.update(local)
+        return bindings
+
+    def relative_dynamic_target(name: str, package: str | None) -> str | None:
+        if not name.startswith(".") or not package:
+            return name if not name.startswith(".") else None
+        level = len(name) - len(name.lstrip("."))
+        package_parts_for_call = package.split(".")
+        trim = level - 1
+        if trim >= len(package_parts_for_call):
+            return None
+        base = package_parts_for_call[: len(package_parts_for_call) - trim]
+        remainder = name[level:]
+        if remainder:
+            base.extend(remainder.split("."))
+        return ".".join(base)
+
+    def dynamic_import_target(node: ast.Call, bindings: dict[str, str | None]) -> str | None:
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            return None
+        name = node.args[0].value
+        if not isinstance(name, str):
+            return None
+
+        function = node.func
+        is_import_module = False
+        if isinstance(function, ast.Name):
+            is_import_module = bindings.get(function.id) == "import_module"
+            if function.id == "__import__" and function.id not in bindings:
+                is_import_module = True
+        elif (
+            isinstance(function, ast.Attribute)
+            and function.attr == "import_module"
+            and isinstance(function.value, ast.Name)
+            and bindings.get(function.value.id) == "importlib"
+        ):
+            is_import_module = True
+        if not is_import_module:
+            return None
+
+        package: str | None = None
+        if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+            package = node.args[1].value if isinstance(node.args[1].value, str) else None
+        for keyword in node.keywords:
+            if keyword.arg == "package" and isinstance(keyword.value, ast.Constant):
+                package = keyword.value.value if isinstance(keyword.value.value, str) else None
+        return relative_dynamic_target(name, package)
+
+    class DynamicImportCalls(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.bindings_stack = [module_bindings]
+
+        @property
+        def bindings(self) -> dict[str, str | None]:
+            return self.bindings_stack[-1]
+
+        def visit_Call(self, node: ast.Call) -> None:
+            target = dynamic_import_target(node, self.bindings)
+            if target is not None and (
+                target == "bigcherry.__main__"
+                or target.startswith("bigcherry.__main__.")
+            ):
+                lines.add(node.lineno)
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            for decorator in node.decorator_list:
+                self.visit(decorator)
+            for default in [*node.args.defaults, *node.args.kw_defaults]:
+                if default is not None:
+                    self.visit(default)
+            self.bindings_stack.append(function_bindings(node))
+            for statement in node.body:
+                self.visit(statement)
+            self.bindings_stack.pop()
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_FunctionDef(node)
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            self.bindings_stack.append(function_bindings(node))
+            self.visit(node.body)
+            self.bindings_stack.pop()
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            for decorator in node.decorator_list:
+                self.visit(decorator)
+            for base in node.bases:
+                self.visit(base)
+            for keyword in node.keywords:
+                self.visit(keyword.value)
+            # Class bodies have their own namespace, but module-level imports
+            # are not lexical fallbacks there.  Start from an empty map and
+            # retain only bindings directly collected from the class body.
+            class_bindings = binding_kinds(node.body)
+            self.bindings_stack.append(class_bindings)
+            for statement in node.body:
+                self.visit(statement)
+            self.bindings_stack.pop()
+
+    DynamicImportCalls().visit(tree)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             if any(
@@ -171,28 +369,6 @@ def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
                 lines.add(node.lineno)
         elif isinstance(node, ast.ImportFrom):
             resolve_from(node)
-        elif isinstance(node, ast.Call):
-            function = node.func
-            dynamic = (
-                isinstance(function, ast.Name)
-                and function.id in {"import_module", "__import__"}
-            ) or (
-                isinstance(function, ast.Attribute)
-                and function.attr == "import_module"
-                and isinstance(function.value, ast.Name)
-                and function.value.id == "importlib"
-            )
-            if (
-                dynamic
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-                and (
-                    node.args[0].value == "bigcherry.__main__"
-                    or node.args[0].value.startswith("bigcherry.__main__.")
-                )
-            ):
-                lines.add(node.lineno)
     return tuple(sorted(lines))
 
 

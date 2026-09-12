@@ -4,6 +4,8 @@ import json
 import math
 import sys
 import tempfile
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from types import SimpleNamespace
 import unittest
 from pathlib import Path
@@ -498,6 +500,216 @@ class ReleaseLifecycleTests(unittest.TestCase):
         self.assertEqual(
             record.tree_state, selection.tree_state_key("deadbeef" * 5)
         )
+
+    def test_apply_exact_selection_rolls_back_overlay_when_patch_fails(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        failed_edit = SimpleNamespace(edit_id="E1")
+        patch_result = SimpleNamespace(
+            path="src/example.cpp", results=[], failed=[failed_edit],
+            changed=False, ok=False,
+        )
+
+        def copy_overlay(root, *, dry_run, backup, sim_texts):
+            backup["overlay/example.cpp"] = "old\n"
+            sim_texts["overlay/example.cpp"] = "new\n"
+            return ["overlay/example.cpp"]
+
+        with mock.patch.object(
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            cli_patch.patch_admission,
+            "admit",
+            return_value=cli_patch.patch_admission.AdmissionResult(
+                True, True, "admitted"
+            ),
+        ), mock.patch.object(
+            cli_patch, "_record_for", return_value=record,
+        ), mock.patch.object(
+            cli_patch, "_copy_overlay", side_effect=copy_overlay,
+        ), mock.patch.object(
+            cli_patch, "_restore_overlay",
+        ) as restore_overlay, mock.patch.object(
+            cli_patch.patchset, "resolve_exact", return_value=object(),
+        ), mock.patch.object(
+            cli_patch.patchset, "load_resolved", return_value=[object()],
+        ), mock.patch.object(
+            cli_patch.patcher, "apply_all", return_value=[patch_result],
+        ), mock.patch.object(record, "save"):
+            ok = cli_patch._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+
+        self.assertFalse(ok)
+        restore_overlay.assert_called_once_with(
+            Path("/tmp/bigcherry-test-tree"),
+            {"overlay/example.cpp": "old\n"},
+        )
+        self.assertEqual(record.stage, "broken")
+
+    def test_apply_exact_selection_dry_run_preserves_simulation_and_admission(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
+        )
+        record = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        admission = cli_patch.patch_admission.AdmissionResult(
+            True, True, "admitted"
+        )
+        apply_result = SimpleNamespace(
+            path="src/example.cpp", results=[], failed=[], changed=True, ok=True,
+        )
+
+        def copy_overlay(root, *, dry_run, backup, sim_texts):
+            sim_texts["overlay/example.cpp"] = "new\n"
+            return ["overlay/example.cpp"]
+
+        with mock.patch.object(
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            cli_patch.patch_admission, "admit", return_value=admission,
+        ) as admit, mock.patch.object(
+            cli_patch, "_record_for", return_value=record,
+        ), mock.patch.object(
+            cli_patch, "_copy_overlay", side_effect=copy_overlay,
+        ), mock.patch.object(
+            cli_patch.patchset, "resolve_exact", return_value=object(),
+        ), mock.patch.object(
+            cli_patch.patchset, "load_resolved", return_value=[object()],
+        ), mock.patch.object(
+            cli_patch.patcher, "apply_all", return_value=[apply_result],
+        ) as apply_all, mock.patch.object(record, "save") as save:
+            ok = cli_patch._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+                dry_run=True, allow_stale_validation_evidence=True,
+            )
+
+        self.assertTrue(ok)
+        admit.assert_called_once_with(
+            ("0100_x",), mode="apply", pinned_ref="deadbeef" * 5,
+            resolved_base_revision="deadbeef" * 5,
+            allow_stale_validation_evidence=True,
+        )
+        self.assertEqual(
+            apply_all.call_args.kwargs["initial_texts"],
+            {"overlay/example.cpp": "new\n"},
+        )
+        save.assert_not_called()
+        self.assertEqual(record.stage, "validated")
+
+    def test_apply_exact_selection_reloads_record_before_persistence(self):
+        from bigcherry.patch.selection import CliPatchSelection
+
+        selection = CliPatchSelection(
+            label="", source_name="bigcherry",
+            source_ref="deadbeef" * 5, patch_set_id="psid",
+            patch_ids=("0100_x",), overlay=False, overlay_digest=None,
+        )
+        before = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        after = releases.ReleaseRecord(
+            revision="abc123", release_tag="b1234", stage="validated",
+            tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
+        )
+        patch_result = SimpleNamespace(
+            path="src/example.cpp", results=[], failed=[], changed=True, ok=True,
+        )
+
+        with mock.patch.object(
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
+        ), mock.patch(
+            "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
+        ), mock.patch.object(
+            cli_patch.patch_admission,
+            "admit",
+            return_value=cli_patch.patch_admission.AdmissionResult(
+                True, True, "admitted"
+            ),
+        ), mock.patch.object(
+            cli_patch, "_record_for", side_effect=[before, after],
+        ), mock.patch.object(
+            cli_patch.patchset, "resolve_exact", return_value=object(),
+        ), mock.patch.object(
+            cli_patch.patchset, "load_resolved", return_value=[object()],
+        ), mock.patch.object(
+            cli_patch.patcher, "apply_all", return_value=[patch_result],
+        ), mock.patch.object(before, "save") as before_save, mock.patch.object(
+            after, "save"
+        ) as after_save:
+            ok = cli_patch._apply_exact_selection(
+                Path("/tmp/bigcherry-test-tree"), selection,
+            )
+
+        self.assertTrue(ok)
+        before_save.assert_not_called()
+        after_save.assert_called_once_with()
+        self.assertEqual(after.stage, "patched")
+
+    def test_cmd_apply_preserves_exit_taxonomy_and_streams(self):
+        args = SimpleNamespace(
+            llama_root=None, rebase_report=None, known_good=False,
+            allow_stale_validation_evidence=False, source="bigcherry",
+            force=False, dry_run=False,
+        )
+        selection = SimpleNamespace(select_all=False, label="source=bigcherry")
+        with mock.patch.object(
+            cli_patch.paths, "llama_root", return_value=Path("/tmp/tree"),
+        ), mock.patch.object(
+            cli_patch.patch_selection, "resolve_cli_selection",
+            side_effect=cli_patch.patch_selection.SelectionError("bad selection"),
+        ):
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                rc = cli_patch.cmd_apply(args)
+            self.assertEqual(rc, 2)
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertIn("bad selection", stderr.getvalue())
+
+        with mock.patch.object(
+            cli_patch.paths, "llama_root", return_value=Path("/tmp/tree"),
+        ), mock.patch.object(
+            cli_patch.patch_selection, "resolve_cli_selection", return_value=selection,
+        ), mock.patch.object(cli_patch, "_apply_exact_selection", return_value=True):
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                rc = cli_patch.cmd_apply(args)
+            self.assertEqual(rc, 0)
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertIn("selection: source=bigcherry", stdout.getvalue())
+            self.assertIn("RESULT: PASS", stdout.getvalue())
+
+        with mock.patch.object(
+            cli_patch.paths, "llama_root", return_value=Path("/tmp/tree"),
+        ), mock.patch.object(
+            cli_patch.patch_selection, "resolve_cli_selection", return_value=selection,
+        ), mock.patch.object(cli_patch, "_apply_exact_selection", return_value=False):
+            stdout, stderr = StringIO(), StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                rc = cli_patch.cmd_apply(args)
+            self.assertEqual(rc, 1)
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertIn("RESULT: FAIL", stdout.getvalue())
 
     def test_successful_reapply_recovers_explicit_broken_state(self):
         record = releases.ReleaseRecord(revision="abc123", stage="broken")
