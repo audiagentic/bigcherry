@@ -736,12 +736,13 @@ GPT gateway initial response: audited main at 644b8207d11eaafa14c34f29fe4dc6c953
 
 GPT second-pass file-level design completed against published main tip 7f61b3b5615cc429efe6d630bffe4a46697d0e10. Key correction: cli/main.py and release/pin.py are already canonical; first tranche is limited to source/patch ownership inversion and __main__ compatibility reduction. No implementation started.
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This is the first production-code slice after planning reconciliation because current cmd_apply still delegates through __main__. The live remainder is narrowly _copy_overlay/_restore_overlay/_apply_exact_selection ownership inversion plus AST-backed TR14.CLI_MAIN_BACKEDGE and parity tests. cli.source, release.pin, and release.records are already canonical and must not be unnecessarily altered. PA34 and PA33 later touch the same CLI patch ownership, so serialize final integration and use separate worktrees for any parallel exploratory work.
+
 ## Change Log
 
 - 2026-09-11T06:44:31.138556+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
 
 
 - chg_20260911_064900_added-a-tracked-cleanup-plan-f_3622
@@ -754,3 +755,6 @@ GPT second-pass file-level design completed against published main tip 7f61b3b56
 - 2026-09-11T23:39:28.415008+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260912_134118_started-brc01-ownership-invers_2735
 - 2026-09-12T13:41:18.149659+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:52:27.212820+00:00 (updated-by): Updated: section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.021901+00:00 (updated-by): Updated: section:ledger-events

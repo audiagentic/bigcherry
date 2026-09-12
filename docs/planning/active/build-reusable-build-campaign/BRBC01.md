@@ -1,6 +1,6 @@
 ---
 id: BRBC01
-order: 0
+order: 2
 plan: build-reusable-build-campaign
 state: pending
 created-at: '2026-09-09T10:59:07.257799+00:00'
@@ -67,6 +67,8 @@ Successor key: build-reusable-build-campaign-re34
 Supersedes: RE34
 semantic-carryforward: dispositioned dormant/no-trigger; concrete trigger remains required.
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. Remains dormant unless BHA02 or another concrete toolchain/recipe/RDNA-target change activates the independent comparison gate. BHA02 must decide whether the current pin already contains equivalent PR #28079 behavior before any recipes.toml change; do not activate speculatively or build a second planner.
+
 ## Change Log
 
 - 2026-09-09T10:59:07.257799+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +87,6 @@ semantic-carryforward: dispositioned dormant/no-trigger; concrete trigger remain
 - 2026-09-10T02:40:57.120886+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_024129_build-and-external-fix-success_1105
 - 2026-09-10T02:41:29.953651+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:54:21.127247+00:00 (updated-by): Updated: order=2, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.029964+00:00 (updated-by): Updated: section:ledger-events

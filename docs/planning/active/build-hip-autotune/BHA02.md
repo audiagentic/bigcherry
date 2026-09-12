@@ -1,6 +1,6 @@
 ---
 id: BHA02
-order: 2
+order: 1
 plan: build-hip-autotune
 state: pending
 created-at: '2026-09-11T22:57:11.143052+00:00'
@@ -59,6 +59,8 @@ Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28079 — use selective 
 
 GPT order: independent build slice after PA21/BRC01/PA22 plan corrections. Provenance: llama.cpp PR #28079; report hypothesis f16-f16;q8_0-q8_0;q8_0-q5_1;q5_1-q5_1 remains unaccepted until inventory confirms it.
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This lands before PA20 recipe migration only if the current-pin/PR #28079 audit proves an actual recipe or build-identity change. If the pinned code already has equivalent behavior or the supported quant inventory does not justify a change, close BHA02 as no-op and leave BRBC01 dormant. recipes.toml is single-writer here; do not overlap PA20 recipe edits. When activated, use BRBC01's independent BuildPlan/ArtifactStore/check-parity oracle rather than building another planner.
+
 ## Change Log
 
 - 2026-09-11T22:57:11.143052+00:00 (created-by): Created by agent
@@ -71,3 +73,6 @@ GPT order: independent build slice after PA21/BRC01/PA22 plan corrections. Prove
 - 2026-09-12T10:31:36.533030+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260912_103200_updated-the-active-buildrunp_8222
 - 2026-09-12T10:32:01.029391+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:54:11.881010+00:00 (updated-by): Updated: order=1, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.025832+00:00 (updated-by): Updated: section:ledger-events

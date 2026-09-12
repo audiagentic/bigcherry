@@ -1,6 +1,6 @@
 ---
 id: PRBC02
-order: 0
+order: 2
 plan: patching-reusable-build-campaign
 state: pending
 created-at: '2026-09-09T10:59:33.148983+00:00'
@@ -55,6 +55,8 @@ Supersedes: RE40
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-reusable-build-campaign-re40
 
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. Treat this as a residual metadata/provenance audit after PRBC01, not a reason to duplicate existing CatalogSnapshot or registry logic. Current packaged catalog metadata already implements much of this scope; close only the exact residual checks after inventory and tests prove them satisfied, otherwise retain only those residuals.
+
 ## Change Log
 
 - 2026-09-09T10:59:33.148983+00:00 (created-by): Created by capability-rebaseline-v3
@@ -70,3 +72,6 @@ Successor key: patching-reusable-build-campaign-re40
 - 2026-09-10T03:21:46.904522+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032208_repaired-the-reusable-build-ca_4665
 - 2026-09-10T03:22:08.386926+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T18:53:09.647626+00:00 (updated-by): Updated: order=2, section:notes
+- chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
+- 2026-09-12T18:55:48.042620+00:00 (updated-by): Updated: section:ledger-events
