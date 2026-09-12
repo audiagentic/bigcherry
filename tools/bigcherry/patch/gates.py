@@ -136,8 +136,13 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
             GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase",
             ("no rebase report was supplied",),
         )
+    if context.source_root is None:
+        return GateResult(
+            GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase",
+            ("no upstream source root was supplied",),
+        )
     try:
-        known_good = rebase.require_fresh_report(context.rebase_report, context.patches_dir)
+        known_good = rebase.require_fresh_report(context.rebase_report, context.source_root)
     except (OSError, TypeError, ValueError, rebase.StaleRebaseReportError) as exc:
         return GateResult(GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase", (str(exc),))
     if context.descriptor.patch_id not in known_good:
@@ -280,7 +285,24 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
             GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
             ("complete disposition coverage inputs were not supplied",),
         )
+    if context.source_root is None:
+        return GateResult(
+            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            ("no upstream source root was supplied",),
+        )
+    selection = context.coverage_report.get("selection")
+    if not isinstance(selection, Mapping) or selection.get("all_patches") is not True:
+        return GateResult(
+            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            ("coverage report is not an all-patches report",),
+        )
+    if context.coverage_report.get("upstream_revision") != context.target_revision:
+        return GateResult(
+            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            ("coverage report upstream revision does not match target revision",),
+        )
     try:
+        rebase.require_fresh_report(context.coverage_report, context.source_root)
         coverage = patch_disposition.compute_coverage(
             catalog_states=dict(context.catalog_states),
             all_report=dict(context.coverage_report),

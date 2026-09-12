@@ -158,21 +158,27 @@ class GateContractTests(unittest.TestCase):
     def test_disposition_gate_maps_authority_coverage(self) -> None:
         base = {
             "catalog_states": {"P1": "untested"},
-            "coverage_report": {"patches": [{"patch_id": "P1", "status": "clean"}]},
+            "coverage_report": {
+                "selection": {"all_patches": True}, "upstream_revision": "abc",
+                "patches": [{"patch_id": "P1", "status": "clean"}],
+            },
             "recipe_patch_ids": frozenset(), "target_revision": "abc",
             "dispositions_dir": Path("dispositions"),
+            "source_root": Path("llama.cpp"),
         }
         complete = SimpleNamespace(complete=True, uncovered_patch_ids=())
-        with mock.patch.object(
-            gates.patch_disposition, "compute_coverage", return_value=complete
-        ):
+        with mock.patch.object(gates.rebase, "require_fresh_report", return_value=("P1",)), \
+             mock.patch.object(
+                 gates.patch_disposition, "compute_coverage", return_value=complete
+             ):
             result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
         self.assertEqual(result.status, GateStatus.PASS)
 
         incomplete = SimpleNamespace(complete=False, uncovered_patch_ids=("P1",))
-        with mock.patch.object(
-            gates.patch_disposition, "compute_coverage", return_value=incomplete
-        ):
+        with mock.patch.object(gates.rebase, "require_fresh_report", return_value=("P1",)), \
+             mock.patch.object(
+                 gates.patch_disposition, "compute_coverage", return_value=incomplete
+             ):
             result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
         self.assertEqual(result.status, GateStatus.FAIL)
         self.assertEqual(result.detail, ("P1",))
