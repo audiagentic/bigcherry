@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import sys
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -179,6 +181,46 @@ class GateContractTests(unittest.TestCase):
         self.assertEqual(outcome.status, GateStatus.FAIL)
         self.assertEqual(outcome.detail, ("policy rejected composition",))
         self.assertEqual(admit.call_args.args[0], ("P1",))
+
+    def test_admission_gate_cross_checks_real_rejected_composition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            patches = root / "patches"
+            patches.mkdir()
+            (patches / "0001_test.py").write_text(
+                'GROUP = "core"\nSTATE = "validated"\nPATCHES = []\n',
+                encoding="utf-8",
+            )
+            catalog = root / "catalog.toml"
+            catalog.write_text(
+                'version = 1\n\n[[patch]]\nid = "0001_test"\n'
+                'kind = "framework"\norigin = "local"\nbackend = "hip"\n'
+                'state = "validated"\n',
+                encoding="utf-8",
+            )
+            evidence = root / "evidence"
+            evidence.mkdir()
+            (evidence / "0002_eligible.json").write_text(
+                json.dumps({"records": [{"eligible_for_validated_state": True}]}),
+                encoding="utf-8",
+            )
+            context = SimpleNamespace(
+                composition=SimpleNamespace(
+                    modules=(SimpleNamespace(patch_id="0001_test"),),
+                ),
+                catalog_path=catalog,
+                patches_dir=patches,
+                pinned_ref="pin",
+                resolved_base_revision=None,
+                evidence_root=evidence,
+                allow_legacy_grandfather=True,
+            )
+
+            outcome = gates.evaluate_admission_gate(context)
+
+        self.assertEqual(outcome.id, GateId.G7)
+        self.assertEqual(outcome.status, GateStatus.FAIL)
+        self.assertIn("0001_test", outcome.detail[0])
 
     def test_admission_gate_blocks_malformed_failure_fields(self) -> None:
         context = SimpleNamespace(
