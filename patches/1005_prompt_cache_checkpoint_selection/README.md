@@ -60,18 +60,29 @@ reset/`rs_zero`/graph-reuse mechanism itself (`llama-memory-recurrent.cpp`
 / graph state setup), not a gap in patch 1005's own server-side
 checkpoint/cache-selection scope.
 
-**Concrete next diagnostic step** (not yet done): in the exact
-do-reset/no-valid-checkpoint path, temporarily call
-`llama_memory_clear(llama_get_memory(ctx_tgt), true)` (the `data=true`
-form, which explicitly clears both metadata and backing buffers) plus
-`llama_synchronize(ctx_tgt)` before re-evaluating, then re-run the A/B/C
-sequence:
-- If C now matches the cold reference: confirms a real defect in logical
-  `seq_rm()` -> fresh recurrent-state reconstruction. Open a dedicated
-  upstream-level investigation there (out of this patch's scope).
-- If C still garbles/hits early EOS: stale recurrent state is effectively
-  ruled out; the next target is warm-vs-cold graph/sampler/runtime state,
-  starting with first-token logits.
+**Diagnostic run (2026-09-12, real hardware) -- stale recurrent state is
+RULED OUT.** Inserted `llama_memory_clear(llama_get_memory(slot.ctx_tgt),
+true)` (the `data=true` form, clearing both metadata and backing buffers)
+plus `llama_synchronize(slot.ctx_tgt)` directly after the real
+`slot.mem.seq_rm(slot.id, p0, -1)` call site
+(`tools/server/server-context.cpp`), as a temporary, uncommitted
+diagnostic build. Re-ran the exact A/B/C sequence: turn C's output with
+the physical clear active is `" So we must be careful. So we must be
+careful. So we must be careful..."` (a degenerate repetition loop) --
+still does NOT match the cold reference. This is a **third distinct
+failure signature** across the three conditions tested (baseline:
+fluent-but-wrong; patched, no clear: garbled+immediate-EOS; patched+clear:
+degenerate repetition) -- none match cold.
+
+Per GPT's own discriminator criterion, a physical clear that still fails
+(just differently) rules out stale/uncleared recurrent state as the
+cause. **Confirmed conclusion: this is NOT a recurrent-memory-not-reset
+bug.** The root cause lies elsewhere -- most likely warm-vs-cold
+graph/sampler/runtime-state divergence (first-token logits comparison
+between the warm/post-reset and cold/fresh-process paths is the
+recommended next step, genuinely not yet run). The diagnostic
+instrumentation was not committed (deliberately throwaway); this
+patch's own `patch.py` carries only the real `n_past` fix.
 
 ## Disposition
 
