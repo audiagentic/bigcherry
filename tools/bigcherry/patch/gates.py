@@ -47,6 +47,7 @@ class GateIntent(str, Enum):
     PROMOTE = "promote"
     BUILD = "build"
     REBASE = "rebase"
+    LINT = "lint"
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,23 @@ class GateResult:
     phase: str
     authority: str
     detail: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ScopedGateResult:
+    """One shared gate result scoped to a repository patch descriptor."""
+
+    patch_id: str
+    result: GateResult
+
+
+@dataclass(frozen=True, slots=True)
+class LintGateReport:
+    """Repository-static lint results and the legacy CLI projection inputs."""
+
+    results: tuple[ScopedGateResult, ...]
+    problems: tuple[str, ...]
+    grandfathered: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +107,7 @@ def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
         GateIntent.PROMOTE: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4, GateId.G5)),
         GateIntent.REBASE: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G6)),
         GateIntent.BUILD: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7)),
+        GateIntent.LINT: frozenset((GateId.G1, GateId.G3)),
     }
     return gate_id in applicable[intent]
 
@@ -118,15 +137,103 @@ def evaluate_composition_gate(context: GateContext) -> GateResult:
 def evaluate_summary_gate(context: GateContext) -> GateResult:
     """Evaluate focal SUMMARY consistency through the scoped authority."""
     try:
-        problems = patch_docs.check_summary_for_patch(
-            context.descriptor,
-            context.patches_dir,
-        )
+        problems = patch_docs.check_summary_for_patch(context.descriptor, context.patches_dir)
     except (OSError, TypeError, ValueError) as exc:
         return GateResult(GateId.G1, GateStatus.BLOCKED, "documentation", "patch.docs", (str(exc),))
     if problems:
         return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
     return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
+
+
+def _evaluate_lint_summary(
+    descriptor: patch_registry.PatchDescriptor,
+    patches_dir: Path,
+) -> GateResult:
+    """Evaluate one repository-static SUMMARY gate without fake GateContext."""
+    problems = patch_docs.check_summary_for_patch(descriptor, patches_dir)
+    if problems:
+        return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
+    return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
+
+
+def _evaluate_lint_package(
+    descriptor: patch_registry.PatchDescriptor,
+    status: validation_policy.PackagePolicyStatus | None,
+    performance_problems: tuple[str, ...],
+) -> GateResult:
+    """Project existing static policy authorities into the shared G3 result."""
+    if status is None:
+        package_status = GateStatus.NA
+        package_detail: tuple[str, ...] = ()
+    elif status.status == "invalid":
+        package_status = GateStatus.FAIL
+        package_detail = status.problems
+    elif status.status in ("current", "grandfathered"):
+        package_status = GateStatus.PASS
+        package_detail = status.problems
+    elif status.status == "not-required":
+        package_status = GateStatus.NA
+        package_detail = ()
+    else:
+        return GateResult(
+            GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy",
+            (f"unknown package-policy status {status.status!r} for {descriptor.patch_id!r}",),
+        )
+    if performance_problems:
+        return GateResult(
+            GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy",
+            (*package_detail, *performance_problems),
+        )
+    return GateResult(GateId.G3, package_status, "package", "patch.validation_policy", package_detail)
+
+
+def evaluate_repository_lint_gates(
+    *,
+    patches_dir: Path = paths.PATCHES,
+    external_sources_path: Path = paths.EXTERNAL_SOURCES,
+    validation_baseline_path: Path = paths.VALIDATION_PACKAGE_GRANDFATHER,
+) -> LintGateReport:
+    """Evaluate the repository-static subset of the shared gate taxonomy.
+
+    Lint has no focal composition, upstream checkout, current-pin evidence,
+    disposition target, or production admission decision.  Its two gates are
+    therefore evaluated directly against the canonical registry and existing
+    static policy authorities rather than by fabricating a ``GateContext``.
+    """
+    registry = patch_registry.load_registry(patches_dir)
+    summary_results: list[ScopedGateResult] = []
+    summary_problems: list[str] = []
+    for descriptor in registry.descriptors:
+        result = _evaluate_lint_summary(descriptor, registry.root)
+        summary_results.append(ScopedGateResult(descriptor.patch_id, result))
+        summary_problems.extend(result.detail)
+
+    package_report = validation_policy.check_validation_packages(
+        root=patches_dir,
+        registry_path=patches_dir,
+        external_sources_path=external_sources_path,
+        baseline_path=validation_baseline_path,
+    )
+    package_statuses = {status.patch_id: status for status in package_report.statuses}
+    performance_problems: list[str] = []
+    package_results: list[ScopedGateResult] = []
+    for descriptor in registry.descriptors:
+        problems = validation_policy.check_performance_evidence_for_patch(
+            descriptor, root=patches_dir, assume_validated=False,
+        )
+        performance_problems.extend(problems)
+        package_results.append(
+            ScopedGateResult(
+                descriptor.patch_id,
+                _evaluate_lint_package(descriptor, package_statuses.get(descriptor.patch_id), problems),
+            )
+        )
+
+    return LintGateReport(
+        results=tuple((*summary_results, *package_results)),
+        problems=tuple((*summary_problems, *package_report.problems, *performance_problems)),
+        grandfathered=tuple(package_report.grandfathered),
+    )
 
 
 def evaluate_rebase_gate(context: GateContext) -> GateResult:

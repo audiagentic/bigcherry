@@ -30,6 +30,12 @@ class GateContractTests(unittest.TestCase):
         self.assertTrue(gate_applies(GateId.G7, GateIntent.BUILD))
         self.assertFalse(gate_applies(GateId.G7, GateIntent.REBASE))
 
+    def test_lint_applicability_is_exactly_summary_and_package(self) -> None:
+        self.assertEqual(
+            tuple(gate_id for gate_id in GateId if gate_applies(gate_id, GateIntent.LINT)),
+            (GateId.G1, GateId.G3),
+        )
+
     def test_gate_result_dataclass_is_frozen(self) -> None:
         from bigcherry.patch.gates import GateResult
 
@@ -117,6 +123,96 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_evidence_gate(context)
         self.assertEqual(result.status, GateStatus.BLOCKED)
         verifier.assert_not_called()
+
+    def test_repository_lint_adapter_preserves_static_policy_and_avoids_operational_gates(self) -> None:
+        descriptors = tuple(
+            SimpleNamespace(patch_id=patch_id)
+            for patch_id in ("P1", "P2", "P3", "P4", "LEGACY")
+        )
+        registry = SimpleNamespace(descriptors=descriptors, root=Path("patches"))
+        package_report = gates.validation_policy.PackagePolicyReport(
+            statuses=(
+                gates.validation_policy.PackagePolicyStatus("P1", "current"),
+                gates.validation_policy.PackagePolicyStatus("P2", "invalid", ("P2: invalid",)),
+                gates.validation_policy.PackagePolicyStatus("P3", "not-required"),
+                gates.validation_policy.PackagePolicyStatus("P4", "grandfathered", ("P4: shape",)),
+            ),
+            problems=("P2: invalid",),
+            grandfathered=("P4",),
+        )
+        performance = {
+            "P1": ("P1: missing native baseline",),
+            "P2": (),
+            "P3": ("P3: missing native baseline",),
+            "P4": (),
+            "LEGACY": (),
+        }
+
+        with (
+            mock.patch.object(gates.patch_registry, "load_registry", return_value=registry) as load_registry,
+            mock.patch.object(
+                gates.patch_docs,
+                "check_summary_for_patch",
+                side_effect=lambda descriptor, root: (
+                    (f"{descriptor.patch_id}: summary mismatch",)
+                    if descriptor.patch_id == "P1" else ()
+                ),
+            ),
+            mock.patch.object(
+                gates.validation_policy,
+                "check_validation_packages",
+                return_value=package_report,
+            ) as check_packages,
+            mock.patch.object(
+                gates.validation_policy,
+                "check_performance_evidence_for_patch",
+                side_effect=lambda descriptor, **kwargs: performance[descriptor.patch_id],
+            ) as check_performance,
+            mock.patch.object(gates.validation_policy, "require_execution_package") as require_package,
+            mock.patch.object(gates.patch_catalog, "validation_evidence_statuses") as evidence,
+            mock.patch.object(gates.rebase, "require_fresh_report") as rebase,
+            mock.patch.object(gates.patch_disposition, "compute_coverage") as coverage,
+            mock.patch.object(gates.patch_disposition, "list_dispositions") as dispositions,
+            mock.patch("bigcherry.patch_admission.admit") as admission,
+        ):
+            report = gates.evaluate_repository_lint_gates(
+                patches_dir=Path("patches"),
+                external_sources_path=Path("external.toml"),
+                validation_baseline_path=Path("baseline.json"),
+            )
+
+        load_registry.assert_called_once_with(Path("patches"))
+        check_packages.assert_called_once_with(
+            root=Path("patches"), registry_path=Path("patches"),
+            external_sources_path=Path("external.toml"), baseline_path=Path("baseline.json"),
+        )
+        self.assertEqual(check_performance.call_count, len(descriptors))
+        self.assertTrue(all(call.kwargs["assume_validated"] is False
+                            for call in check_performance.call_args_list))
+        self.assertEqual(
+            report.problems,
+            (
+                "P1: summary mismatch", "P2: invalid",
+                "P1: missing native baseline", "P3: missing native baseline",
+            ),
+        )
+        self.assertEqual(report.grandfathered, ("P4",))
+        outcomes = {
+            (item.patch_id, item.result.id): item.result.status
+            for item in report.results
+        }
+        self.assertEqual(outcomes[("P1", GateId.G1)], GateStatus.FAIL)
+        self.assertEqual(outcomes[("P1", GateId.G3)], GateStatus.FAIL)
+        self.assertEqual(outcomes[("P2", GateId.G3)], GateStatus.FAIL)
+        self.assertEqual(outcomes[("P3", GateId.G3)], GateStatus.FAIL)
+        self.assertEqual(outcomes[("P4", GateId.G3)], GateStatus.PASS)
+        self.assertEqual(outcomes[("LEGACY", GateId.G3)], GateStatus.NA)
+        require_package.assert_not_called()
+        evidence.assert_not_called()
+        rebase.assert_not_called()
+        coverage.assert_not_called()
+        dispositions.assert_not_called()
+        admission.assert_not_called()
 
     def test_admission_gate_passes_full_composition(self) -> None:
         modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))

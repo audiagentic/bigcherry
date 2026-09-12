@@ -19,7 +19,6 @@ from ..patch import registry as patch_registry
 from ..patch import selection as patch_selection
 from ..patch import rebase as patch_rebase
 from ..patch import docs as patch_docs
-from ..patch import validation_policy as patch_validation_policy
 from ..source.workspace import UpstreamRepository, WorkspaceError
 
 DISPOSITIONS_DIR = paths.DISPOSITIONS
@@ -187,24 +186,26 @@ def cmd_patch_lint(args: Namespace) -> int:
     """Run the non-mutating catalog/package lint gate. Purely static (VA02,
     docs/reference/testing/PATCH_VALIDATION.md): never verifies validation
     *evidence* content/freshness (that's patch-verify-evidence's job, VA08)
-    -- cross_check() is called with verify_validation_evidence=False so the
+    -- cross_check() is called with verify_validation_evidence=False and its
+    SUMMARY branch disabled because the shared lint gate owns that check. The
     HI83 dynamic branch (which silently skips packaged RD patches, since it
     only checks catalog.toml entries) never runs here."""
     problems = list(
         patch_catalog.cross_check(
-            verify_validation_evidence=False, allow_legacy_grandfather=True
+            verify_validation_evidence=False,
+            allow_legacy_grandfather=True,
+            check_summaries=False,
         )
     )
-    package_report = patch_validation_policy.check_validation_packages()
-    problems.extend(package_report.problems)
-    problems.extend(patch_validation_policy.check_performance_evidence())
+    lint_report = patch_gates.evaluate_repository_lint_gates()
+    problems.extend(lint_report.problems)
     if args.json:
         print(
             json.dumps(
                 {
                     "passed": not problems,
                     "problems": problems,
-                    "grandfathered": list(package_report.grandfathered),
+                    "grandfathered": list(lint_report.grandfathered),
                 },
                 indent=2,
                 sort_keys=True,
@@ -213,7 +214,7 @@ def cmd_patch_lint(args: Namespace) -> int:
     else:
         for problem in problems:
             print(problem, file=sys.stderr)
-        for patch_id in package_report.grandfathered:
+        for patch_id in lint_report.grandfathered:
             print(f"{patch_id}: structurally grandfathered (non-current, not failing)", file=sys.stderr)
     return 0 if not problems else 1
 
