@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 from ..core import paths
 from . import catalog as patch_catalog
+from . import docs as patch_docs
 from . import patchset
 from . import registry as patch_registry
 
@@ -105,3 +106,17 @@ def evaluate_composition_gate(context: GateContext) -> GateResult:
             ("resolved composition identity differs from the supplied composition",),
         )
     return GateResult(GateId.G0, GateStatus.PASS, "composition", "patchset.resolve_exact")
+
+
+def evaluate_summary_gate(context: GateContext) -> GateResult:
+    """Evaluate focal SUMMARY consistency through the scoped authority."""
+    try:
+        problems = patch_docs.check_summary_for_patch(
+            context.descriptor,
+            context.patches_dir,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        return GateResult(GateId.G1, GateStatus.BLOCKED, "documentation", "patch.docs", (str(exc),))
+    if problems:
+        return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
+    return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
