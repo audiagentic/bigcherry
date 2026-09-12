@@ -433,41 +433,44 @@ def check_performance_evidence(
     Never fails closed on a missing/malformed README (that's
     check_validation_packages()'s job) -- only on a validated+optimization
     patch whose README exists but lacks the required evidence marker."""
+    problems: list[str] = []
     resolved_root = root or paths.PATCHES
     reg = patch_registry.load_registry(registry_path or resolved_root)
-    problems: list[str] = []
     for descriptor in reg.descriptors:
-        if descriptor.representation != patch_registry.REPRESENTATION_PACKAGED:
-            continue
-        if descriptor.state != "validated":
-            continue
-        if "optimization" not in descriptor.tags:
-            continue
-        package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
-        readme_path = package_root / "README.md"
-        if not readme_path.is_file():
-            # check_validation_packages() already reports missing README.md
-            # for patches in its own PACKAGE_STATUSES scope; a validated
-            # optimization patch outside that scope with no README at all
-            # is still a real gap worth its own message here.
-            problems.append(
-                f"{descriptor.patch_id}: validated optimization patch has no README.md "
-                "to evidence the required native-llama.cpp 3-arm comparison"
-            )
-            continue
-        # Collapse whitespace (including line-wraps splitting a marker
-        # phrase across lines, e.g. "native\nllama.cpp" from ordinary
-        # markdown prose wrapping) before matching -- a real false-negative
-        # found by running this check against its own first real README.
-        readme_text = " ".join(readme_path.read_text(encoding="utf-8").casefold().split())
-        if not any(marker in readme_text for marker in _NATIVE_LLAMACPP_BASELINE_MARKERS):
-            problems.append(
-                f"{descriptor.patch_id}: validated optimization patch's README.md has no "
-                "evidence of a native-llama.cpp baseline comparison (BigCherry-internal "
-                "control/subject A/B alone does not show whether BigCherry's own baseline "
-                "already gained or lost ground against upstream)"
-            )
+        problems.extend(check_performance_evidence_for_patch(descriptor, root=resolved_root))
     return tuple(problems)
+
+
+def check_performance_evidence_for_patch(
+    descriptor: patch_registry.PatchDescriptor,
+    *,
+    root: Path | None = None,
+    assume_validated: bool = False,
+) -> tuple[str, ...]:
+    """Check one optimization package without inspecting unrelated patches."""
+    resolved_root = root or paths.PATCHES
+    if descriptor.representation != patch_registry.REPRESENTATION_PACKAGED:
+        return ()
+    if descriptor.state != "validated" and not assume_validated:
+        return ()
+    if "optimization" not in descriptor.tags:
+        return ()
+    package_root = resolved_root / (descriptor.package_root or descriptor.patch_id)
+    readme_path = package_root / "README.md"
+    if not readme_path.is_file():
+        return (
+            f"{descriptor.patch_id}: validated optimization patch has no README.md "
+            "to evidence the required native-llama.cpp 3-arm comparison",
+        )
+    readme_text = " ".join(readme_path.read_text(encoding="utf-8").casefold().split())
+    if not any(marker in readme_text for marker in _NATIVE_LLAMACPP_BASELINE_MARKERS):
+        return (
+            f"{descriptor.patch_id}: validated optimization patch's README.md has no "
+            "evidence of a native-llama.cpp baseline comparison (BigCherry-internal "
+            "control/subject A/B alone does not show whether BigCherry's own baseline "
+            "already gained or lost ground against upstream)",
+        )
+    return ()
 
 
 def require_execution_package(
