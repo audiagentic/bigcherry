@@ -95,6 +95,41 @@ activation leg with no new model registration required** --
 inaccurate (it is a dense+GDN hybrid), a real, useful correction in its
 own right. PRBE102 closed as resolved-without-new-registration.
 
+## Real multi-architecture coverage (2026-09-13, standardized criteria)
+
+Per `docs/reference/testing/STANDARDIZED_PATCH_VALIDATION_CRITERIA.md`
+(GPT-designed, `req_5b07ec3d063a4231`): RD13 is a generic HIP patch, not
+architecture-restricted, so the standard requires single-GPU coverage on
+all three real available architectures. Extended the gfx1100 results
+above to gfx1201 and gfx1030 (fresh control/subject `llama-bench` +
+`llama-perplexity` builds on each, current pin `b10901`/`28ff0958291c`):
+
+- **gfx1201 (device index 2)**: activation `subject_hit=1`,
+  `control_hit=0` (clean, real positive/negative split, same marker
+  regex, `tierA-qwen4b-q6k`). Correctness: **real PASS**, PPL = 944.9004
+  identical on both subject and control (`tierM-gptoss20b-q6k`,
+  wikitext2), delta = 0.0.
+- **gfx1030 (device index 3)**: activation `subject_hit=1`,
+  `control_hit=0` (same clean split). Correctness: **real PASS**, PPL =
+  952.858 identical on both subject and control, delta = 0.0.
+
+**RD13 now has complete, real, current-pin evidence -- correctness PASS
+and clean activation -- on all three available architectures
+(gfx1100, gfx1201, gfx1030).** This is the strongest evidence bar any
+RD-series patch has reached in this project to date for a
+non-architecture-scoped optimization.
+
+A real methodology bug was found and fixed during this run:
+`run_rd13_ppl_check()`'s build directories are named
+`rd13-ppl-subject`/`rd13-ppl-control` regardless of target architecture,
+so reusing the same `build_root` across architectures collided with a
+stale CMake cache from an earlier gfx1100 run (`CMake Error: The source
+... does not match the source ... used to generate cache`). Worked
+around by using a distinct `build_root` per architecture for this run;
+`run_rd13_ppl_check()` itself should eventually be fixed to
+namespace its build directories by architecture (filed as a known gap,
+not yet a tracked plan item).
+
 ## Known limitations
 
 - The PPL-equality check confirms the ported fusion introduces no numerical
