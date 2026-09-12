@@ -5,10 +5,13 @@ from __future__ import annotations
 import dataclasses
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.patch import gates  # noqa: E402
 from bigcherry.patch.gates import GateId, GateIntent, GateStatus, gate_applies  # noqa: E402
 
 
@@ -32,6 +35,21 @@ class GateContractTests(unittest.TestCase):
         self.assertTrue(dataclasses.is_dataclass(result))
         with self.assertRaises(dataclasses.FrozenInstanceError):
             result.status = GateStatus.FAIL  # type: ignore[misc]
+
+    def test_composition_gate_requires_exact_ordered_identity(self) -> None:
+        modules = (
+            SimpleNamespace(patch_id="A", content_hash="a"),
+            SimpleNamespace(patch_id="B", content_hash="b"),
+        )
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=modules), patches_dir=Path("patches")
+        )
+        with mock.patch.object(
+            gates.patchset, "resolve_exact",
+            return_value=SimpleNamespace(modules=modules),
+        ):
+            result = gates.evaluate_composition_gate(context)
+        self.assertEqual(result.status, GateStatus.PASS)
 
 
 if __name__ == "__main__":
