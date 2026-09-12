@@ -248,10 +248,23 @@ class Rd58CliWiringTests(unittest.TestCase):
             self.source,
         )
 
-    def test_never_touches_contract_promotions(self) -> None:
+    def test_populates_contract_promotions_from_a_real_promotion_gate_call(self) -> None:
+        # PRBE109 fix (2026-09-13): RD58's real correctness gate was always
+        # computed in this block, but its promotion verdict never reached
+        # contract_promotions, so eligible_for_validated_state could never
+        # become True for RD58 through this CLI path regardless of evidence
+        # completeness -- a real bug, now fixed. This test previously
+        # asserted the OLD (buggy) invariant that this block never touches
+        # contract_promotions at all; it now asserts the corrected one:
+        # the assignment exists, is keyed by the real contract id (not a
+        # hardcoded string), and is populated from a real
+        # evaluate_promotion_gate() call, not a fabricated always-pass value.
         rd58_block_start = self.source.index("if args.run_rd58_state_restore:")
         rd58_block = self.source[rd58_block_start:self.source.index("# VA06: RD73 execution")]
-        self.assertNotIn("contract_promotions[", rd58_block)
+        self.assertIn("contract_promotions[rd58_contract_check.id] = rd58_promotion", rd58_block)
+        self.assertIn("_ec.evaluate_promotion_gate(", rd58_block)
+        self.assertIn("rd58_aggregated_effects", rd58_block)
+        self.assertIn("rd58_trigger_proof", rd58_block)
 
     def test_gpu_preflight_goes_through_the_shared_visibility_primitive(self) -> None:
         # PVPS02 step 7: the inline HIP/ROCR guard (including the "0,0" not

@@ -26,6 +26,18 @@ _CONTRACTS = ec.load_contracts(
 RD08 = _CONTRACTS.contracts["RD08-Q6K-MMVQ-VDR2"]
 
 
+class _FakeMetric:
+    """PRBE104: minimal stand-in for the real per-row numeric metric
+    (err/threshold) run_rd08_contract_correctness() now also derives a
+    backend_reference CorrectnessResult from, alongside the pre-existing
+    bit_identical digest-equality result."""
+
+    def __init__(self, *, err: float = 1e-5, threshold: float = 0.0005) -> None:
+        self.err = err
+        self.threshold = threshold
+        self.backend1_digest = "fake-digest"
+
+
 class _FakeRow:
     def __init__(self, shape_name: str, seed: int, ok: bool) -> None:
         self.shape_name = shape_name
@@ -35,8 +47,12 @@ class _FakeRow:
         self.control_status = "ok" if ok else "ok"
         self.subject_digest = None
         self.control_digest = None
-        self.subject_metric = None
-        self.control_metric = None
+        # PRBE104: real rows always have a numeric subject_metric regardless
+        # of exact-digest .ok -- the two are independent facts (a row can be
+        # digest-divergent but well within the numeric tolerance, exactly
+        # what PRBE103 found for real on hardware).
+        self.subject_metric = _FakeMetric()
+        self.control_metric = _FakeMetric()
 
 
 class _Rd08CorrectnessError(RuntimeError):
@@ -55,7 +71,16 @@ class _FakeRd08CorrectnessModule:
         # directly (never raises) rather than from a raising call -- the
         # fake mirrors that: a failing run returns all rows with the FIRST
         # one not-ok, matching the real module's non-raising collector.
-        self.failing_rows = (_FakeRow("shape0", 1, False),) + ok_rows[1:]
+        #
+        # PRBE104: a real correctness failure under the current contract
+        # (which requires backend_reference, not bit_identical) means the
+        # NUMERIC check must also fail, not just the digest-equality .ok
+        # flag -- give the first failing row's subject_metric.err a value
+        # that genuinely exceeds its threshold, matching what a real
+        # backend_reference failure looks like.
+        _failing_first = _FakeRow("shape0", 1, False)
+        _failing_first.subject_metric = _FakeMetric(err=0.01, threshold=0.0005)
+        self.failing_rows = (_failing_first,) + ok_rows[1:]
 
     def materialize_rd08_variants(self, *, base_repo, worktree_root, base_revision):
         return Path("subject_src"), Path("control_src")
@@ -292,7 +317,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
             build_root=Path("B:/build"), build_env={}, run_dir=run_dir,
             control_build_identity={"effective_build_id": "c1"},
             subject_build_identity={"effective_build_id": "s1"},
-            pairs=2,
+            pairs=10,
         )
         self.assertTrue(result["trigger"]["control_hit"])
         self.assertFalse(result["trigger_proof"]["passed"])
@@ -310,7 +335,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
             build_root=Path("B:/build"), build_env={}, run_dir=run_dir,
             control_build_identity={"effective_build_id": "c1"},
             subject_build_identity={"effective_build_id": "s1"},
-            pairs=2,
+            pairs=10,
         )
         self.assertTrue(result["promotion"]["passed"], result["promotion"])
         self.assertTrue((run_dir / "artifacts" / "contract-qualification.json").exists())
@@ -327,7 +352,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
             build_root=Path("B:/build"), build_env={}, run_dir=run_dir,
             control_build_identity={"effective_build_id": "c1"},
             subject_build_identity={"effective_build_id": "s1"},
-            pairs=2,
+            pairs=10,
         )
         self.assertFalse(result["promotion"]["passed"])
         self.assertEqual(result["promotion"]["status"], "invalid")
@@ -344,7 +369,7 @@ class RunRd08ContractQualificationTests(unittest.TestCase):
             build_root=Path("B:/build"), build_env={}, run_dir=run_dir,
             control_build_identity={"effective_build_id": "c1"},
             subject_build_identity={"effective_build_id": "s1"},
-            pairs=2,
+            pairs=10,
         )
         self.assertFalse(result["promotion"]["passed"])
         self.assertNotEqual(result["promotion"]["status"], "invalid")
