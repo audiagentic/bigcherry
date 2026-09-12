@@ -56,3 +56,8 @@ Low severity (workaround is trivial: pass distinct build_root per arch), but wil
 ## Change Log
 
 - 2026-09-12T20:32:09.189511+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_203230_patch-1206-rd13-now-has-real_7484
+- 2026-09-12T20:32:30.630645+00:00 (updated-by): Updated: section:ledger-events
