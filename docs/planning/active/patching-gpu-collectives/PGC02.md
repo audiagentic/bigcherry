@@ -83,13 +83,16 @@ GPT's disposition (approved, with an important correction to my initial framing 
 
 Remaining PGC02 gates (soak, provider/threshold telemetry for the pp1024-4096 softening, RCCL/baseline comparison) are unaffected by this and still open -- this closes specifically the "topology coverage beyond the already-proven N=3 point" sub-gate as blocked by real hardware unavailability, not skipped.
 
+### 2026-09-13: corroborating heterogeneous-GPU-visibility crash, RD58/1234 (unrelated patch, same root cause class)
+
+While refreshing RD58's (patch 1234) state-restore evidence at the current pin, ran `test-save-load-state -sm tensor` with all 4 of Brutus's now-heterogeneous GPUs visible (no `HIP_VISIBLE_DEVICES` set): SIGSEGV (-11) on every run, preceded by `internal AllReduce init failed (n_devices != 2?); falling back to meta-backend butterfly`. Restricting to `HIP_VISIBLE_DEVICES=0,1` (the intended 2x XTX pair) fixed it immediately -- real, clean PASS on all legs. Not a new investigation, just a second real confirmation that letting all 4 heterogeneous GPUs stay visible (rather than deliberately restricting to the intended same-arch pair) reliably crashes multi-GPU paths on this host -- consistent with this item's own 2026-09-12 finding. No action needed on PGC02 itself; noted here for anyone hitting the same symptom on a different patch.
+
 ## Change Log
 
 - 2026-09-09T10:47:53.449711+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:53.119748+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
@@ -106,3 +109,4 @@ Remaining PGC02 gates (soak, provider/threshold telemetry for the pp1024-4096 so
 - 2026-09-12T05:24:03.851834+00:00 (updated-by): Updated: section:notes
 - chg_20260912_052450_investigated-why-real-3-gpu-n_2608
 - 2026-09-12T05:24:50.656811+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T15:35:29.988386+00:00 (updated-by): Updated: section:notes
