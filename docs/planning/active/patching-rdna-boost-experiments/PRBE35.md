@@ -104,6 +104,22 @@ Both contracts already exist pre-authored -- the real remaining gap is that no q
 
 Note: PA33 (patch-validate orchestrator) would eventually make this kind of per-patch qualification-function authoring unnecessary by consuming the contract generically -- but PA33 itself doesn't exist yet either, so for 1215/1216 specifically the nearer-term path is still a dedicated qualification function matching the existing RD08/RD73 pattern.
 
+### 2026-09-12: full GPT design for the formal qualification runners (req_3e42043eb71a4a92)
+
+Got a design review before writing any code, given RD08's single-op test-backend-ops pattern is a category error for a graph-scheduling patch like 1215/1216. Key correction: completion text/token equality (what I used for 1207) is TOO WEAK for a bit_identical claim -- different logits can produce identical greedy tokens. Full per-step raw logits comparison is the right bar, not text diffing.
+
+**Design (GPT-approved, concrete, ready to implement)**:
+
+1. One shared low-level primitive, `_run_decode_logit_reference_pair(...)`: materializes/builds two isolated compositions, fixed model/prompt/context/seed, 64 deterministic decode steps (sampling disabled), captures the FULL raw logits buffer after every decode step, computes a per-step SHA256 digest over a documented dtype/byte representation, records generated token IDs as diagnostics, returns exact equality + first mismatching step + per-step digests + aggregate digest + full command/env/build identities. **Caveat**: if `/completion`'s HTTP API cannot expose raw logits (it likely cannot beyond n_probs top-k, not the full vocab), a small bespoke llama_decode/logits-capture helper is needed -- NOT a test-backend-ops-style tool, something closer to `examples/eval-callback`.
+
+2. `run_rd39_42_contract_qualification()` (1215): control=baseline (no 1215/1216), subject=baseline+1215+1216 (1216 included because it's operationally inseparable from RD42's execution path -- document this explicitly in evidence), single gfx1100, GGML_CUDA_GRAPH_OPT=1 both arms, require the subject's shared-expert activation marker to fire, `CorrectnessResult(check_id="bit_identical", passed=<all 64 per-step digests match exactly>, method="full-model-decode-logit-digest", details={...})`.
+
+3. `run_rd43_contract_qualification()` (1216): causal control=baseline+1215 (NOT plain baseline -- isolates 1216's own marginal effect), subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, reuse the existing PPL-equality primitive (RD19 already establishes PPL subject/reference comparison as legitimate backend_reference methodology) but emit `check_id="backend_reference"` explicitly -- do NOT silently relabel the existing 561.6933==561.6933 historical PPL result as satisfying this; that result stands as corroboration only, a fresh formal run under this exact check_id is required. A stronger version could reuse the logit-digest primitive for an exact 1215-only-vs-1215+1216 match, but GPT says this isn't required -- the contract asks backend_reference, not bit_identical, for 1216.
+
+4. 1215 and 1216 must each independently obtain their own contract verdict and `eligible_for_validated_state` -- a convenience `run_amd_stream_contract_qualification()` may call both runners, but their evidence records stay separate.
+
+**Not implemented this session** -- this is genuine new engineering (a real logits-capture mechanism plus two carefully-designed contract-specific runner functions, each needing GPT-reviewed implementation, offline tests, and real hardware execution) deliberately left for a dedicated future pass rather than rushed at the end of an already very long session. This note carries the complete, ready-to-implement design so the next session/agent can go straight to authoring.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
@@ -130,3 +146,4 @@ Note: PA33 (patch-validate orchestrator) would eventually make this kind of per-
 - chg_20260912_091821_validated-a-gpu-concurrency-op_8669
 - 2026-09-12T09:18:21.067473+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T09:49:37.378827+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T09:58:46.097569+00:00 (updated-by): Updated: section:notes
