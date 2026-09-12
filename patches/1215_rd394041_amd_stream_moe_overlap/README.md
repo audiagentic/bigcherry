@@ -200,18 +200,37 @@ evidence." (The cross-architecture/split-mode sweep above was completed
 separately, in response to a direct question about generalization, not as
 further promotion-path profiling.)
 
+## Contract model-binding defect found and fixed (2026-09-12)
+
+The pre-authored `RD39-42-STREAM-MOE-OVERLAP` contract bound
+`tierM-gptoss20b-q6k`. Real hardware confirmation: `llama-results` at
+correct verbosity (`-lv 5`) against this model produced a real, complete
+output with **zero** RD42 activation-marker hits -- gpt-oss-20B's
+architecture does not carry the shared-expert join pattern RD42 detects
+at all, so this model could never exercise the mechanism these contracts
+test. Confirmed `tierM-qwen35b-a3b-moe-mtp` (already registered in
+`config/models.toml`, this project's own dedicated MoE lane) DOES
+activate it (720 marker hits) and re-ran the full `bit_identical` check
+on that exact model: byte-exact identical raw logits
+(`control_logits_sha256 == subject_logits_sha256 ==
+ef392bae73c9...ec96d0`), same token sequence. Fixed
+`config/experiment-contracts.toml`'s model binding for both
+`RD39-42-STREAM-MOE-OVERLAP` and `RD43-CONCURRENT-JOIN-FUSION-GUARD` to
+`tierM-qwen35b-a3b-moe-mtp`.
+
 ## Known limitations
 
 - Both named correctness checks now have real, GPT-approved evidence
-  (`bit_identical` above, `backend_reference` in patch 1216's README) --
-  but neither is yet bound into a formal `validation.toml`/Experiment
+  gathered on the CORRECT, now-properly-bound contract model
+  (`bit_identical` above, `backend_reference` in patch 1216's README,
+  both reconfirmed on `tierM-qwen35b-a3b-moe-mtp` after the binding fix)
+  -- but neither is yet wired into a formal `validation.toml`/Experiment
   Contract producer function (`run_rd39_42_contract_qualification()` /
-  `run_rd43_contract_qualification()`, scoped in PRBE35), and both real
-  runs used a different model than the pre-authored contract currently
-  binds (`tierM-gptoss20b-q6k`) -- resolving that model-binding mismatch
-  is the concrete remaining step before either check is the *formal*
-  contract-qualified result, not just real supporting evidence.
-- `state` stays `"untested"` -- real, substantial, now-complete-per-check
-  evidence exists for gfx1100 single-GPU, but the formal validation
-  package/contract-binding work is not complete and cross-architecture/
-  split-mode generalization is mixed (see above).
+  `run_rd43_contract_qualification()`, designed and scoped in PRBE35).
+  That producer-wiring is the sole remaining formal-package step; the
+  model-binding gap that previously blocked it is closed.
+- `state` stays `"untested"` -- real, substantial, now-complete-per-check,
+  contract-model-consistent evidence exists for gfx1100 single-GPU, but
+  the formal `validation.toml`/producer-function wiring is not done yet
+  and cross-architecture/split-mode generalization remains mixed (see
+  above).

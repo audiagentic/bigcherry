@@ -82,19 +82,18 @@ CorrectnessResult(
 )
 ```
 
-**GPT's explicit caveat -- real, unresolved contract-binding defect**: the
-`RD43-CONCURRENT-JOIN-FUSION-GUARD` contract in
-`config/experiment-contracts.toml` declares model `tierM-gptoss20b-q6k` /
-workload `moe_decode`; this real run used `Qwen3.6-35B-A3B-UD-Q4_K_M`
-(this project's only registered MoE model with the exact vocab-probe
-mechanism readily available). This result may be **persisted as a real
-passing `CorrectnessResult`**, but is **not the final contract-qualified
-result** until either (a) `tierM-gptoss20b-q6k` is confirmed to hit the
-RD42/RD43 activation path and this exact protocol is rerun there, or (b)
-if it does not hit that path, the contract's model binding is corrected
-to the Qwen model (an AUTHOR-then-VERIFY step, then one rerun -- no
-extra prompt/repeat matrix needed, since RD43 is a fixed-effect,
-correctness-only claim with no performance component).
+**Contract-binding defect confirmed and fixed (2026-09-12)**: real
+hardware testing (see patch 1215's README) confirmed `tierM-gptoss20b-q6k`
+does NOT trigger RD42/RD43's activation path at all (zero marker hits, a
+real complete run). `config/experiment-contracts.toml`'s model binding
+for both `RD39-42-STREAM-MOE-OVERLAP` and `RD43-CONCURRENT-JOIN-FUSION-GUARD`
+was corrected to `tierM-qwen35b-a3b-moe-mtp` (this project's own
+registered MoE lane, `config/models.toml`). **Reran this exact
+protocol on the newly-bound model** (`Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf`,
+the exact file `tierM-qwen35b-a3b-moe-mtp` points to): identical result --
+token IDs match across all 64 steps, 0 of 15,892,480 logprob comparisons
+differ, `max_abs_logprob_diff = 0.0`. This is now the formal,
+contract-model-consistent result, not just supporting evidence.
 
 ## Known limitations
 

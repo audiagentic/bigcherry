@@ -516,12 +516,26 @@ rationale = "ggml_cuda_op_mul_mat hardcoded stream 0 on the non-split path (RD39
 backend = "hip"
 architectures = ["gfx1100", "gfx1201", "gfx1030"]
 
+# MODEL BINDING FIX (2026-09-12, real hardware confirmation, req_013ff2ae8b0c4c4c):
+# tierM-gptoss20b-q6k does NOT trigger RD42's shared-expert overlap -- real
+# llama-results run at -lv 5 (correct verbosity for GGML_LOG_DEBUG; an
+# earlier -lv 4 attempt gave an invalid zero-hit false negative) confirmed
+# ZERO "Adding shared-expert stream" activation-marker hits for this model,
+# despite a successful, real, complete run. gpt-oss-20B's architecture does
+# not carry the shared-expert join = add(ffn_moe_out, ffn_shexp) diamond
+# pattern RD42 detects. tierM-qwen35b-a3b-moe-mtp (already registered in
+# config/models.toml, added 2026-09-05 specifically as this project's own
+# MoE lane) DOES trigger it -- confirmed via the same real llama-results
+# methodology: 720 real activation-marker hits, plus a real bit_identical
+# byte-exact raw-logits match (control_logits_sha256 ==
+# subject_logits_sha256 == ef392bae73c9...ec96d0) between baseline and
+# baseline+1215+1216 on this exact model file.
 [contract.RD39-42-STREAM-MOE-OVERLAP.positive]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["moe_decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.controls]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.correctness]
@@ -530,6 +544,12 @@ bit_identical = "required"
 [contract.RD39-42-STREAM-MOE-OVERLAP.acceptance]
 target_kernel_gain_pct = 1
 max_control_regression_pct = 1
+# 2026-09-12: model-binding fix changed the hash, so the legacy waiver is
+# void -- same real-hardware-driven situation as RD21 above. Migrated to
+# ci95_threshold_bound_v1 per VA24's stated migration path rather than
+# leaving a stale point-estimate waiver in place.
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 6
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]
 title = "RD43: keep a concurrent-region join node out of op-fusion"
@@ -551,12 +571,18 @@ rationale = "CORRECTNESS PREREQUISITE, no direct performance claim -- required b
 backend = "hip"
 architectures = ["gfx1100", "gfx1201", "gfx1030"]
 
+# MODEL BINDING FIX (2026-09-12): same real finding as
+# RD39-42-STREAM-MOE-OVERLAP above -- tierM-gptoss20b-q6k does not trigger
+# RD42's shared-expert overlap at all (RD43's own guard exists specifically
+# to protect that mechanism, so it cannot be meaningfully exercised on a
+# model that never activates it). Bound to tierM-qwen35b-a3b-moe-mtp,
+# consistent with its hard prerequisite RD39-42-STREAM-MOE-OVERLAP.
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.positive]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["moe_decode"]
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.controls]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["decode"]
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.correctness]
