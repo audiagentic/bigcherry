@@ -55,3 +55,8 @@ RD39-42/1215's formal contract-qualification evidence (10 rounds, deliberately i
 ## Change Log
 
 - 2026-09-12T22:08:29.479059+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_220855_found-a-real-unresolved-discr_5936
+- 2026-09-12T22:08:55.337667+00:00 (updated-by): Updated: section:ledger-events
