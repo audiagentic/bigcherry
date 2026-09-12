@@ -48,9 +48,35 @@ different model/config).
 **BigCherry's baseline composition (the `framework`/`upstream-fixes`
 patch-sets alone, with no RD-series enhancement patches) carries a real,
 confirmed ~22.6% prefill throughput cost versus stock upstream llama.cpp
-on this model/config.** Filed as PRBE107 -- root cause (which specific
-patch(es), and whether this generalizes beyond gpt-oss-20B/pp512) is not
-yet investigated.
+on this model/config.** Filed as PRBE107.
+
+## Root cause (bisected, 2026-09-13)
+
+Isolated via two targeted builds against `source.llama-native` (stock
+base, no framework/upstream-fixes composition at all):
+
+- **`upstream-fixes` alone** (just `1000_rdna4_mmq_q2k_q6k_fix`): pp512 =
+  5210.01 -- matches stock's ~5150-5182 range, **no regression**.
+- **The "forced"-dispatch family alone**
+  (`0300_mmq_forced_j`, `0400_mmvf_forced_block`, `0500_mmf_forced_nwarps`,
+  `0600_mmvq_geometry`, `0650_mmvq_native_variant` -- 5 of `framework`'s
+  14 patches): pp512 = 4263.46 -- **reproduces the full regression**,
+  matching BigCherry baseline's ~4217-4229 range.
+
+**Root cause conclusively isolated to the "forced"-dispatch patch
+cluster, not the upstream-fixes correctness backport.** This is a real,
+substantial finding: these 5 patches (by name, forcing fixed
+`j`/block-size/`nwarps`/geometry/native-variant dispatch parameters
+instead of upstream's own tuned auto-selection heuristics) cost ~22.6%
+real prefill throughput on this model/config, as the deliberate price of
+making dispatch deterministic/instrumentable for BigCherry's own
+autotuning research infrastructure. This is very plausibly an accepted,
+understood tradeoff (these patches exist specifically to support
+BigCherry's dispatch-research and autotuning framework, not to be a
+production performance win on their own) rather than an unintended bug
+-- but this was not previously measured/documented as a quantified real
+number anywhere in the project, and whoever owns the framework
+patch-set's design should confirm this is the accepted/expected cost.
 
 ## What this does and doesn't establish
 

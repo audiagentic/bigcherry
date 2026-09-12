@@ -54,15 +54,17 @@ A real three-arm A/B/C baseline comparison for RD13 (2026-09-13, docs/reference/
 
 Discovered as a side effect of adopting the standardized A/B/C baseline comparison methodology (docs/reference/testing/STANDARDIZED_PATCH_VALIDATION_CRITERIA.md) -- a real demonstration of why the three-arm comparison has value beyond the project's usual B-vs-C-only patch qualification.
 
+**Root cause isolated (2026-09-13, real bisection).** Built two isolated compositions against source.llama-native (stock base): (1) upstream-fixes alone (just 1000_rdna4_mmq_q2k_q6k_fix) -- pp512=5210.01, matches stock, NO regression. (2) the 'forced'-dispatch family alone (0300_mmq_forced_j, 0400_mmvf_forced_block, 0500_mmf_forced_nwarps, 0600_mmvq_geometry, 0650_mmvq_native_variant -- 5 of framework's 14 patches) -- pp512=4263.46, REPRODUCES the full ~22.6% regression, matching BigCherry baseline's range. Root cause conclusively isolated to this 5-patch cluster, not the upstream-fixes correctness backport. These patches force fixed dispatch parameters (forced j/block-size/nwarps/geometry/native-variant) instead of upstream's own tuned auto-selection heuristics -- very plausibly a deliberate, accepted tradeoff for BigCherry's dispatch-research/autotuning infrastructure, not an unintended bug, but this quantified real number (~22.6% pp512 cost) was not previously measured/documented anywhere in the project. Whoever owns the framework patch-set's design should confirm this is the accepted/expected cost. Remaining open steps: confirm whether this generalizes beyond gpt-oss-20B/pp512 (other models/workloads), and whether all 5 patches contribute or just a subset.
+
 ## Change Log
 
 - 2026-09-12T21:20:57.594630+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
 - 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T21:22:28.159150+00:00 (updated-by): Updated: section:description
 - chg_20260912_212250_confirmed-with-real-multi-roun_7540
 - 2026-09-12T21:22:50.045765+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T21:28:02.462203+00:00 (updated-by): Updated: section:notes
