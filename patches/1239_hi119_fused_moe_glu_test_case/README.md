@@ -19,9 +19,23 @@ part of THA02's scope, not yet re-verified against a schema-2 build.
 
 Depends on patch `1238`'s deterministic routing.
 
+## Real schema-2 hardware pass (2026-09-12, Brutus dual gfx1100, THA02)
+
+All 4 registered instances of this patch's `test_bigcherry_moe_glu_fusion`
+class (SWIGLU/GEGLU x the real production broadcast Q8_0 k=2048 shape x a
+non-broadcast F32 k=256 shape) passed cleanly and reproducibly on both real
+XTX GPUs (ROCm0 and ROCm1, individually, 136/136 each run), real
+correctness errors 1e-8 to 1e-14 against the CPU reference, far under the
+5e-3 threshold. Full detail in THA02's plan item, including a separate
+gfx1201/gfx1030 finding (THA33) confirmed unrelated to this patch.
+
+The dispatch-execution-proof requirement (observed signature digest ==
+requested, proving the fused path actually executed rather than silently
+falling back to unfused) was not separately re-verified this pass -- still
+open before promotion.
+
 ## Disposition
 
-`state` stays `"untested"`. `kind = "diagnostic"`. THA02
-(`docs/planning/active/tuning-hip-autotune/THA02.md`) owns the fresh
-schema-2 hardware pass and the dispatch-execution-proof requirement before
-any promotion.
+`state` stays `"untested"`. `kind = "diagnostic"`. Hardware-confirmed on
+gfx1100 as of 2026-09-12; the dispatch-execution-proof requirement is still
+open before any promotion.

@@ -28,10 +28,18 @@ from Qwen3.6-35B-A3B:
 Full detail, including the broader campaign, is recorded in HI105's plan
 item (`docs/planning/completed/hip-autotune/HI105.md`).
 
+## Schema-2 hardware re-confirmation (2026-09-12, THA02)
+
+The dispatch signature schema bumped v1->v2 after the above evidence was
+gathered (see `1238`/THA02). Re-verified as part of the chain
+[1222,1223,1236,1238,1239,1240] on real Brutus dual-gfx1100 hardware:
+2162/2162 broad correctness net on ROCm0, plus 136/136 reproducibly clean
+on ROCm0 and ROCm1 individually. Full detail in THA02's plan item.
+
 ## Disposition
 
 `state` stays `"untested"` -- this is a `kind = "diagnostic"` test-harness
 patch (modifies `test-backend-ops.cpp`'s own initializer), not a production
 dispatch patch, so it is not itself a promotion candidate. Its purpose --
 unblocking correctness-gated promotion for MUL_MAT_ID candidates -- is
-proven on real hardware above.
+proven on real hardware above, and reconfirmed under schema-2.

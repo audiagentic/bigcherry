@@ -16,13 +16,26 @@ deliberately flipped back to `untested` for exactly this reason -- not a
 regression, a genuine "the evidence is for a build that no longer exists"
 situation.
 
-A fresh schema-2 Brutus 4-GPU correctness + record-mode structural-match
-validation, plus a real HI83-format evidence record, is the explicit
-required next step -- tracked under THA02
-(`docs/planning/active/tuning-hip-autotune/THA02.md`), not yet run.
+## Real schema-2 hardware pass (2026-09-12, Brutus dual gfx1100, THA02)
+
+Built the full chain [1222,1223,1236,1238,1239,1240] at current pin b10901
+(schema v2). Real correctness net on ROCm0: 2162/2162 passed (deterministic
+seed=42). Tightly filtered to the 4 registered fused-GLU instances (which
+depend on this patch's deterministic routing): 136/136 passed reproducibly
+on ROCm0 and ROCm1 individually (the real dual-XTX production topology).
+This satisfies the schema-2 hardware requirement below for gfx1100.
+
+A separate real finding surfaced on gfx1201/gfx1030 (not this patch chain's
+target architecture) -- investigated at length and confirmed unrelated to
+this patch (crash stack is entirely in pre-existing production
+`mul_mat_vec_f_cuda`, never touching test-harness code this patch changes).
+Filed as `THA33`. Does not block this patch's gfx1100 confirmation.
+
+A real HI83-format evidence record is still a separate, not-yet-done step
+before any promotion.
 
 ## Disposition
 
 `state` stays `"untested"`. `kind = "diagnostic"` (test-harness patch, not
-a production dispatch patch). Do not promote or re-validate against stale
-schema-1 evidence; THA02 owns the fresh schema-2 hardware pass this needs.
+a production dispatch patch). Hardware-confirmed on gfx1100 as of
+2026-09-12; do not promote without a real HI83-format evidence record.
