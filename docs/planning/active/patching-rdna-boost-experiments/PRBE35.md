@@ -177,6 +177,7 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -209,3 +210,5 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 - chg_20260912_135302_completed-the-statistical-evid_5013
 - 2026-09-12T13:53:02.080192+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T13:57:26.301994+00:00 (updated-by): Updated: section:notes
+- chg_20260912_135807_finished-gathering-all-require_7893
+- 2026-09-12T13:58:07.808223+00:00 (updated-by): Updated: section:ledger-events
