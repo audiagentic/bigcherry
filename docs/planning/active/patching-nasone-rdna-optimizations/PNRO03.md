@@ -77,6 +77,7 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.061978+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -85,3 +86,5 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.291162+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T03:47:57.075297+00:00 (updated-by): Updated: section:notes
+- chg_20260912_034828_confirmed-on-real-hardware-tha_4451
+- 2026-09-12T03:48:28.669796+00:00 (updated-by): Updated: section:ledger-events
