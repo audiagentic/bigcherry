@@ -81,6 +81,18 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             result["1210_rd26_bitidentical_decode_verify_standalone"].status, "not-required"
         )
 
+    def test_explicit_assume_validated_enters_validated_verifier(self) -> None:
+        patch_id = "1210_rd26_bitidentical_decode_verify_standalone"
+        with mock.patch.object(
+            pve, "verify_validated_patch",
+            return_value=pve.EvidenceCheck("prospective-validated"),
+        ) as fake_validated:
+            result = patch_catalog.validation_evidence_statuses(
+                [patch_id], assume_validated=frozenset({patch_id})
+            )
+        fake_validated.assert_called_once()
+        self.assertEqual(result[patch_id].status, "prospective-validated")
+
     def test_validated_patch_still_uses_verify_validated_patch_unchanged(self) -> None:
         # 1000_rdna4_mmq_q2k_q6k_fix is real STATE="validated" -- must go
         # through the original, unmodified verify_validated_patch() path,
