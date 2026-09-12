@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.release import records as releases # noqa: E402
-from bigcherry import __main__ as bigcherry_main  # noqa: E402
+from bigcherry.cli import patch as cli_patch  # noqa: E402
 from bigcherry.tuning.promotion import PromotionError  # noqa: E402
 
 
@@ -346,13 +346,13 @@ class ReleaseLifecycleTests(unittest.TestCase):
             patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
         )
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git",
+            cli_patch.patch_rebase, "_git",
             side_effect=lambda root, *a: (
                 "deadbeef" * 5 if a == ("rev-parse", "deadbeef" * 5 + "^{commit}")
                 else "cafef00d" * 5
             ),
         ):
-            ok = bigcherry_main._apply_exact_selection(
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
@@ -371,11 +371,11 @@ class ReleaseLifecycleTests(unittest.TestCase):
             patch_ids=("0100_x", "0200_y"), overlay=True, overlay_digest="digest",
         )
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
         ), mock.patch(
             "bigcherry.patch.selection._resolve_exact_selection", return_value=drifted,
         ):
-            ok = bigcherry_main._apply_exact_selection(
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
@@ -389,11 +389,11 @@ class ReleaseLifecycleTests(unittest.TestCase):
             patch_ids=("0100_x",), overlay=None,
         )
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
         ), mock.patch(
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ):
-            ok = bigcherry_main._apply_exact_selection(
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
@@ -406,17 +406,17 @@ class ReleaseLifecycleTests(unittest.TestCase):
             source_ref="deadbeef" * 5, patch_set_id="psid",
             patch_ids=("0100_x",), overlay=True, overlay_digest="digest",
         )
-        rejected = bigcherry_main.patch_admission.AdmissionResult(
+        rejected = cli_patch.patch_admission.AdmissionResult(
             False, True, "rejected", failures=("0100_x: stale evidence",)
         )
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
         ), mock.patch(
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ), mock.patch.object(
-            bigcherry_main.patch_admission, "admit", return_value=rejected,
-        ), mock.patch.object(bigcherry_main, "_copy_overlay") as copy_overlay:
-            ok = bigcherry_main._apply_exact_selection(
+            cli_patch.patch_admission, "admit", return_value=rejected,
+        ), mock.patch.object(cli_patch, "_copy_overlay") as copy_overlay:
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertFalse(ok)
@@ -435,21 +435,21 @@ class ReleaseLifecycleTests(unittest.TestCase):
             tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
         )
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
         ), mock.patch(
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ), mock.patch.object(
-            bigcherry_main, "_record_for", return_value=record,
+            cli_patch, "_record_for", return_value=record,
         ), mock.patch.object(
-            bigcherry_main, "_copy_overlay",
+            cli_patch, "_copy_overlay",
         ) as copy_overlay, mock.patch.object(
-            bigcherry_main.patchset, "resolve_exact", return_value=object(),
+            cli_patch.patchset, "resolve_exact", return_value=object(),
         ), mock.patch.object(
-            bigcherry_main.patchset, "load_resolved", return_value=[],
+            cli_patch.patchset, "load_resolved", return_value=[],
         ), mock.patch.object(
-            bigcherry_main.patcher, "apply_all", return_value=[],
+            cli_patch.patcher, "apply_all", return_value=[],
         ), mock.patch.object(record, "save"):
-            ok = bigcherry_main._apply_exact_selection(
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertTrue(ok)
@@ -470,27 +470,27 @@ class ReleaseLifecycleTests(unittest.TestCase):
         patch_result = SimpleNamespace(
             path="src/example.cpp", results=[], failed=[], changed=True, ok=True)
         with mock.patch.object(
-            bigcherry_main.patch_rebase_module, "_git", return_value="deadbeef" * 5,
+            cli_patch.patch_rebase, "_git", return_value="deadbeef" * 5,
         ), mock.patch(
             "bigcherry.patch.selection._resolve_exact_selection", return_value=selection,
         ), mock.patch.object(
-            bigcherry_main, "_record_for", return_value=record,
+            cli_patch, "_record_for", return_value=record,
         ), mock.patch.object(
-            bigcherry_main.patch_admission,
+            cli_patch.patch_admission,
             "admit",
-            return_value=bigcherry_main.patch_admission.AdmissionResult(
+            return_value=cli_patch.patch_admission.AdmissionResult(
                 True, True, "admitted"
             ),
         ), mock.patch.object(
-            bigcherry_main, "_copy_overlay", return_value=[],
+            cli_patch, "_copy_overlay", return_value=[],
         ), mock.patch.object(
-            bigcherry_main.patchset, "resolve_exact", return_value=object(),
+            cli_patch.patchset, "resolve_exact", return_value=object(),
         ), mock.patch.object(
-            bigcherry_main.patchset, "load_resolved", return_value=[object()],
+            cli_patch.patchset, "load_resolved", return_value=[object()],
         ), mock.patch.object(
-            bigcherry_main.patcher, "apply_all", return_value=[patch_result],
+            cli_patch.patcher, "apply_all", return_value=[patch_result],
         ), mock.patch.object(record, "save"):
-            ok = bigcherry_main._apply_exact_selection(
+            ok = cli_patch._apply_exact_selection(
                 Path("/tmp/bigcherry-test-tree"), selection,
             )
         self.assertTrue(ok)

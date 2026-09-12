@@ -128,6 +128,74 @@ def _python_imports(path: Path) -> set[str]:
     return imports
 
 
+def _cli_main_backedge_lines(path: Path, product_root: Path) -> tuple[int, ...]:
+    """Return lines that semantically import ``bigcherry.__main__``.
+
+    This is intentionally AST-based.  A textual search would flag comments and
+    documentation, while the relative-import cases need the source file's
+    package depth to resolve their target module.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    relative = path.relative_to(product_root)
+    package_parts = ["bigcherry", *relative.parts[:-1]]
+    lines: set[int] = set()
+
+    def is_main_module(parts: list[str]) -> bool:
+        return len(parts) >= 2 and parts[:2] == ["bigcherry", "__main__"]
+
+    def resolve_from(node: ast.ImportFrom) -> None:
+        if node.level == 0:
+            base: list[str] = []
+        else:
+            trim = node.level - 1
+            if trim > len(package_parts):
+                return
+            base = package_parts[: len(package_parts) - trim]
+
+        module_parts = base + (node.module.split(".") if node.module else [])
+        if is_main_module(module_parts):
+            lines.add(node.lineno)
+            return
+        if module_parts == ["bigcherry"] and any(
+            alias.name == "__main__" for alias in node.names
+        ):
+            lines.add(node.lineno)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(
+                alias.name == "bigcherry.__main__"
+                or alias.name.startswith("bigcherry.__main__.")
+                for alias in node.names
+            ):
+                lines.add(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            resolve_from(node)
+        elif isinstance(node, ast.Call):
+            function = node.func
+            dynamic = (
+                isinstance(function, ast.Name)
+                and function.id in {"import_module", "__import__"}
+            ) or (
+                isinstance(function, ast.Attribute)
+                and function.attr == "import_module"
+                and isinstance(function.value, ast.Name)
+                and function.value.id == "importlib"
+            )
+            if (
+                dynamic
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and (
+                    node.args[0].value == "bigcherry.__main__"
+                    or node.args[0].value.startswith("bigcherry.__main__.")
+                )
+            ):
+                lines.add(node.lineno)
+    return tuple(sorted(lines))
+
+
 def _has_fixed_parent_depth(path: Path) -> list[int]:
     """Find actual ``thing.parents[N]`` AST nodes, not textual mentions."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -237,6 +305,11 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
             try:
                 imports = _python_imports(path)
                 parent_lines = _has_fixed_parent_depth(path)
+                main_backedge_lines = (
+                    ()
+                    if relative == "tools/bigcherry/__main__.py"
+                    else _cli_main_backedge_lines(path, product_root)
+                )
             except (OSError, SyntaxError) as exc:
                 findings.append(
                     _diagnostic(
@@ -249,6 +322,18 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     )
                 )
                 continue
+
+            for line in main_backedge_lines:
+                findings.append(
+                    _diagnostic(
+                        root,
+                        "TR14.CLI_MAIN_BACKEDGE",
+                        "error",
+                        path,
+                        f"production tooling imports compatibility entrypoint at line {line}",
+                        "move the dependency to a canonical CLI or domain owner; __main__.py is entrypoint-only",
+                    )
+                )
 
             for imported in sorted(imports):
                 if imported == "tools.lab" or imported.startswith("tools.lab."):

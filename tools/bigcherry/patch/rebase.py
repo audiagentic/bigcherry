@@ -34,9 +34,10 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import apply as patcher
+from . import overlay as patch_overlay
 from . import patchset
 from . import registry as patch_registry
 from .. import pin_transition
@@ -45,6 +46,9 @@ from .apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from .apply import PatchError
 from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
+
+if TYPE_CHECKING:
+    from ..campaign import resolution as campaign_resolution
 
 REPORT_SCHEMA_VERSION = 1
 
@@ -1064,7 +1068,8 @@ def _write_overlay_snapshot(
     """Write exactly the overlay bytes already captured in ``texts`` --
     never re-reads ``src/`` from disk.
 
-    Adversarial-review follow-up: ``legacy._copy_overlay()`` (used by a
+    Adversarial-review follow-up: the plain ``apply`` overlay-copy path
+    (used by a
     plain ``apply``) reads ``src/`` itself at write time, which is exactly
     right for that caller -- it never claimed anything about an earlier,
     separately-timed digest. ``apply_known_good`` does make that claim
@@ -1141,9 +1146,7 @@ def apply_known_good(
     selected = tuple(report.get("selection", {}).get("patch_ids", ()))
     partial = set(known_good) != set(selected)
 
-    from .. import __main__ as legacy  # noqa: PLC0415 (leaf import, avoids a cycle)
-
-    record = legacy._record_for(root)
+    record = releases.record_for_checkout(root)
     original_stage = record.stage
     if not force and not record.audit.get("passed"):
         raise RebaseCheckError(
@@ -1180,7 +1183,7 @@ def apply_known_good(
     results = patcher.apply_all(file_patches, root, dry_run=dry_run, initial_texts=dict(overlay_snapshot))
     ok = all(r.ok for r in results)
     if not ok and not dry_run and overlay_backup:
-        legacy._restore_overlay(root, overlay_backup)
+        patch_overlay.restore_overlay(root, overlay_backup)
 
     if not dry_run:
         record.patches = releases.summarise_patches(results)

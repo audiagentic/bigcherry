@@ -8,15 +8,15 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..core import paths
+from ..release import records as releases
 from ..tuning import replay_inspect
 
 
 def cmd_generate(args: Namespace) -> int:
-    from .. import __main__ as legacy
     from ..tuning import catalog as autotune_catalog
 
     root = paths.llama_root(args.llama_root)
-    record = legacy._record_for(root)
+    record = releases.record_for_checkout(root)
     if not args.force and record.stage not in (
         "patched",
         "generated",

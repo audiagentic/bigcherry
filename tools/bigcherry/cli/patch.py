@@ -6,27 +6,168 @@ import json
 import sys
 from argparse import Namespace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..core import config as campaign_config
 from ..core.context import ProjectContext
 from ..core import paths
+from .. import patch_admission
+from ..patch import apply as patcher
 from ..patch import catalog as patch_catalog
 from ..patch import disposition as patch_disposition
 from ..patch import gates as patch_gates
 from ..patch import lifecycle as patch_lifecycle
+from ..patch import overlay as patch_overlay
 from ..patch import patchset
 from ..patch import registry as patch_registry
 from ..patch import selection as patch_selection
 from ..patch import rebase as patch_rebase
 from ..patch import docs as patch_docs
+from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
+
+if TYPE_CHECKING:
+    from ..patch.selection import CliPatchSelection
 
 DISPOSITIONS_DIR = paths.DISPOSITIONS
 
 
-def cmd_apply(args: Namespace) -> int:
-    from .. import __main__ as legacy
+_copy_overlay = patch_overlay.copy_overlay
+_restore_overlay = patch_overlay.restore_overlay
+_record_for = releases.record_for_checkout
 
+
+def _apply_exact_selection(
+    root: Path,
+    selection: "CliPatchSelection",
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    allow_stale_validation_evidence: bool = False,
+) -> bool:
+    """Install the overlay and apply one exact ``--source`` selection."""
+    live_revision = patch_rebase._git(root, "rev-parse", "HEAD")
+    # Resolve symbolic refs in the same checkout before comparing them with
+    # live HEAD. A correctly pinned checkout may use a tag rather than a SHA.
+    try:
+        expected_revision = patch_rebase._git(
+            root, "rev-parse", f"{selection.source_ref}^{{commit}}"
+        )
+    except Exception as exc:  # noqa: BLE001 -- clear apply-time diagnostic
+        print(
+            f"apply: --source {selection.source_name!r}'s ref "
+            f"{selection.source_ref!r} does not resolve in this checkout: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    if expected_revision != live_revision:
+        print(
+            f"apply: --source {selection.source_name!r} expects upstream "
+            f"revision {selection.source_ref!r} ({expected_revision}), but "
+            f"the live checkout is at {live_revision!r} -- pull first, or "
+            "re-run patch-rebase-check",
+            file=sys.stderr,
+        )
+        return False
+
+    fresh = patch_selection._resolve_exact_selection(selection.source_name)
+    if fresh.patch_set_id != selection.patch_set_id or fresh.patch_ids != selection.patch_ids:
+        print(
+            f"apply: --source {selection.source_name!r}'s composition changed "
+            "since it was resolved (config/recipes.toml or the patch "
+            "registry moved concurrently) -- re-run to pick up the current "
+            "composition",
+            file=sys.stderr,
+        )
+        return False
+    selection = fresh
+
+    if selection.overlay is None:
+        print(
+            f"apply: --source {selection.source_name!r}'s overlay flag was "
+            "never resolved -- refusing to guess whether to install it",
+            file=sys.stderr,
+        )
+        return False
+
+    admission = patch_admission.admit(
+        selection.patch_ids,
+        mode="apply",
+        pinned_ref=selection.source_ref,
+        resolved_base_revision=live_revision,
+        allow_stale_validation_evidence=allow_stale_validation_evidence,
+    )
+    for warning in admission.warnings:
+        print(f"apply: admission warning: {warning}", file=sys.stderr)
+    if not admission.admissible:
+        detail = "; ".join(admission.failures) or admission.status
+        print(f"apply: patch admission failed: {detail}", file=sys.stderr)
+        return False
+
+    record = _record_for(root)
+    if not force and not record.audit.get("passed"):
+        print(
+            "refusing to patch a tree that has not passed a strict audit.\n"
+            "  run `python -m bigcherry audit` first, or pass --force.",
+            file=sys.stderr,
+        )
+        return False
+
+    overlay_backup: dict[str, str | None] = {}
+    overlay_sim: dict[str, str] = {}
+    written: list[str] = []
+    if selection.overlay:
+        written = _copy_overlay(
+            root,
+            dry_run=dry_run,
+            backup=overlay_backup,
+            sim_texts=overlay_sim,
+        )
+
+    resolved = patchset.resolve_exact(selection.patch_ids, allow_rejected=False)
+    patches = patchset.load_resolved(resolved)
+    results = patcher.apply_all(
+        patches, root, dry_run=dry_run, initial_texts=overlay_sim
+    )
+    ok = all(result.ok for result in results)
+    if not ok and not dry_run and overlay_backup:
+        _restore_overlay(root, overlay_backup)
+
+    intended_tree_state = selection.tree_state_key(live_revision)
+    selection_changed = record.tree_state != intended_tree_state
+    tree_mutated = bool(written) or any(result.changed for result in results)
+
+    if ok:
+        verb = "would write" if dry_run else "wrote"
+        print(
+            f"overlay: {verb} {len(written)} file(s)"
+            if selection.overlay
+            else "overlay: none (source overlay=false)"
+        )
+    else:
+        verb = "not written (dry run)" if dry_run else "rolled back"
+        print(f"overlay: {verb} -- patches failed")
+    print(f"patches ({len(patches)} file(s)):")
+    print(patcher.format_results(results))
+
+    if not dry_run:
+        record = _record_for(root)
+        record.patches = releases.summarise_patches(results)
+        releases.record_apply_result(
+            record, ok, mutated=selection_changed or tree_mutated
+        )
+        if not ok:
+            record.notes = "patches failed: " + ", ".join(
+                record.patches["failed_edits"]
+            )
+        elif record.notes.startswith("patches failed:"):
+            record.notes = ""
+        record.tree_state = intended_tree_state if ok else ""
+        record.save()
+    return ok
+
+
+def cmd_apply(args: Namespace) -> int:
     root = paths.llama_root(args.llama_root)
     report_path = getattr(args, "rebase_report", None)
     known_good = bool(getattr(args, "known_good", False))
@@ -83,7 +224,7 @@ def cmd_apply(args: Namespace) -> int:
         print("apply: --source is required", file=sys.stderr)
         return 2
 
-    ok = legacy._apply_exact_selection(
+    ok = _apply_exact_selection(
         root,
         selection,
         force=args.force,
