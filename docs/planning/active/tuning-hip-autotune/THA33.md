@@ -56,3 +56,8 @@ Filed 2026-09-12 during THA02's real hardware pass. GPT-reviewed across 3 deep-a
 ## Change Log
 
 - 2026-09-12T08:11:34.403381+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_081232_confirmed-the-moeglu-correctn_6156
+- 2026-09-12T08:12:32.130115+00:00 (updated-by): Updated: section:ledger-events
