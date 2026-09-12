@@ -59,3 +59,8 @@ This finding may also be relevant to any other patch using the same bit_identica
 ## Change Log
 
 - 2026-09-12T16:08:58.867574+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_160922_ran-patch-1204-rd08s-full-c_6243
+- 2026-09-12T16:09:22.565880+00:00 (updated-by): Updated: section:ledger-events
