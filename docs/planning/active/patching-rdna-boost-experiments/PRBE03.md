@@ -61,13 +61,16 @@ Successor key: patching-rdna-boost-experiments-rd06
 
 2026-09-11: started a real gfx1201 build+bench campaign for patch 1203 (see PRBE02's notes for the same in-flight run -- same build, both items' evidence come from it). CAVEAT: this is a single-shape decode/PPL pass via llama-bench/llama-perplexity, not yet the per-shape/softcap matrix with balanced repeats and explicit gfx1100 non-selection controls this item's own acceptance criteria require. First real signal only, not closure.
 
+REAL RESULT 2026-09-12: gfx1201 PPL-equality (see PRBE02's notes, same run): PASS, sigma=1.35, well under 3.0 threshold. Performance (llama-bench, pp512/pp2048/tg128, -fa on, r=5) launched, results pending -- see this item's own performance acceptance criteria (per-shape/softcap matrix with balanced repeats and gfx1100 non-selection control) once numbers land. Correctness confirmed; performance claim still being measured.
+
+REAL PERFORMANCE RESULT 2026-09-12 (llama-bench, gfx1201, tierA-qwen4b-q6k, -fa on -p 512,2048 -n 128 -r 5): pp512 +3.4% (5260.12->5439.31 t/s), pp2048 +6.2% (5102.77->5417.97 t/s, very tight stddev on both arms making this a credible signal), tg128 +0.0% (92.63 t/s both, correctly unaffected -- decode doesn't touch flash-attn prefill/Q6_K mmq). Real, positive first signal for RD06's config-enablement claim. Still missing per this item's own acceptance criteria: per-shape/softcap matrix, balanced statistical repeats beyond r=5, and an explicit gfx1100 non-selection/non-regression control proving the expanded config doesn't activate there. See patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/README.md for full writeup.
+
 ## Change Log
 
 - 2026-09-09T10:53:39.131985+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:18.220021+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.138725+00:00 (updated-by): Updated: section:ledger-events
@@ -79,3 +82,5 @@ Successor key: patching-rdna-boost-experiments-rd06
 - 2026-09-11T23:50:30.925613+00:00 (updated-by): Updated: section:notes
 - chg_20260911_235103_caught-myself-running-a-real-h_5912
 - 2026-09-11T23:51:03.373803+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T03:20:09.369112+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T03:21:06.351281+00:00 (updated-by): Updated: section:notes

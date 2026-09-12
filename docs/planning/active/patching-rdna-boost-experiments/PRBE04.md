@@ -61,6 +61,8 @@ Successor key: patching-rdna-boost-experiments-rd07
 
 2026-09-11: started a real gfx1201 build+bench campaign for patch 1203 (same in-flight run as PRBE02/PRBE03). CAVEAT, important for this item specifically: this initial pass does NOT include PEF01's specific illegal-memory/safety gates or HI71's dense-shape eligibility verification, both of which this item's acceptance criteria mark as mandatory before any timing claim. Do not treat a clean PPL/bench result from this run as satisfying PRBE04 -- the PEF01 quarantine check and HI71 eligibility check are separate, not-yet-done, and higher-priority than the timing number given this item's own 'PEF01 quarantine mandatory... never relax EX02' standard.
 
+REAL RESULT 2026-09-12: correctness (PPL-equality, see PRBE02) PASS, sigma=1.35. Performance (pp2048 +6.2%, pp512 +3.4%, likely partly attributable to RD07's Q6_K mmq fold specifically, though this run doesn't isolate RD05/RD06/RD07's individual contributions -- 1203 is one bundled patch). STILL BLOCKING per this item's own mandatory standard ('PEF01 quarantine mandatory... never relax EX02'): PEF01's illegal-memory/safety gate and HI71's dense-shape eligibility check were NOT run. Do not treat the real performance numbers above as satisfying this item -- they are encouraging first evidence, not a substitute for the mandatory safety gate.
+
 ## Change Log
 
 - 2026-09-09T10:53:43.516065+00:00 (created-by): Created by capability-rebaseline-v3
@@ -79,3 +81,6 @@ Successor key: patching-rdna-boost-experiments-rd07
 - 2026-09-11T23:50:33.415840+00:00 (updated-by): Updated: section:notes
 - chg_20260911_235103_caught-myself-running-a-real-h_5912
 - 2026-09-11T23:51:03.386145+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T03:21:09.440786+00:00 (updated-by): Updated: section:notes
+- chg_20260912_032330_ran-the-first-ever-real-hardwa_3337
+- 2026-09-12T03:23:30.822091+00:00 (updated-by): Updated: section:ledger-events
