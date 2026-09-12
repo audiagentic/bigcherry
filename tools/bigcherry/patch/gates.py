@@ -320,17 +320,60 @@ def evaluate_patch_gates(context: GateContext) -> tuple[GateResult, ...]:
         GateId.G7: evaluate_admission_gate,
     }
     results: list[GateResult] = []
+    results_by_id: dict[GateId, GateResult] = {}
     for gate_id in GateId:
         if not gate_applies(gate_id, context.intent):
             continue
         evaluator = evaluators.get(gate_id)
         if evaluator is None:
-            results.append(
-                GateResult(
+            result = (
+                evaluate_lifecycle_gate(context, results_by_id)
+                if gate_id is GateId.G5
+                else GateResult(
                     gate_id, GateStatus.BLOCKED, "lifecycle", "patch.gates",
                     ("applicable gate is not implemented",),
                 )
             )
         else:
-            results.append(evaluator(context))
+            result = evaluator(context)
+        results.append(result)
+        results_by_id[gate_id] = result
     return tuple(results)
+
+
+def evaluate_lifecycle_gate(
+    context: GateContext,
+    prior_results: Mapping[GateId, GateResult],
+) -> GateResult:
+    """Evaluate G5 from current state and the already-computed G0-G4 gates."""
+    if context.intent is not GateIntent.PROMOTE:
+        return GateResult(GateId.G5, GateStatus.NA, "lifecycle", "patch.catalog")
+    module = next(
+        (item for item in context.composition.modules
+         if item.patch_id == context.descriptor.patch_id),
+        None,
+    )
+    if module is None:
+        return GateResult(
+            GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.catalog",
+            ("focal patch is absent from the resolved composition",),
+        )
+    if getattr(module, "state", None) != "untested":
+        return GateResult(GateId.G5, GateStatus.NA, "lifecycle", "patch.catalog")
+    missing = tuple(
+        gate_id.value for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
+        if gate_id not in prior_results
+    )
+    if missing:
+        return GateResult(
+            GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates",
+            ("missing prerequisite gate results: " + ", ".join(missing),),
+        )
+    failures = tuple(
+        f"{gate_id.value}={prior_results[gate_id].status.value}"
+        for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
+        if prior_results[gate_id].status is not GateStatus.PASS
+    )
+    if failures:
+        return GateResult(GateId.G5, GateStatus.FAIL, "lifecycle", "patch.gates", failures)
+    return GateResult(GateId.G5, GateStatus.PASS, "lifecycle", "patch.gates")
