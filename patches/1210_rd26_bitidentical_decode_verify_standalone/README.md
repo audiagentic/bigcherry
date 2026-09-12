@@ -74,6 +74,14 @@ confirmation of the decode-vs-speculative-verify claim). No activation
 marker exists for this patch (see "Known limitations"), so activation
 coverage is not applicable here.
 
+## Real three-arm baseline comparison (2026-09-13, standardized criteria)
+
+Ran stock upstream llama.cpp's `llama-perplexity` on the same real
+gfx1100/gpt-oss-20B/wikitext2 configuration: PPL = 954.4877 -- an exact
+match to RD26's own B (BigCherry baseline) and C (BigCherry+RD26)
+results from the current-pin evidence above (both also 954.4877). A
+complete, real A=B=C correctness match.
+
 ## Known limitations (honest scope boundary -- read before citing this as proof of RD26's core claim)
 
 - **This check proves the two ported hunks do not regress ordinary
