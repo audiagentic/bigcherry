@@ -11,7 +11,7 @@ work: M
 priority: null
 ---
 
-# Bake-in rule: port RD21/RD24/RD15 kernel regions from branch-tip (post-fix) state
+# Apply post-fix source-state bake-in across affected PRBE ports
 
 ## Description
 
@@ -39,7 +39,7 @@ external source registry; successor patch source regions for PRBE13/16/18/20; se
 
 ## Validation
 
-Dependent-region extraction; pre-fix reachability/reproduction or proof absent; fused decode bit identity/equality; MTP batch-vs-seq controls; native/non-MTP controls; no raw standalone RD25 application.
+Dependent-region extraction; semantic/content equivalence against the reviewed post-fix image and current snapshot; pre-fix reachability/reproduction or proof absent; fused decode bit identity/equality; MTP batch-vs-seq controls; native/non-MTP controls; no raw standalone RD25 application.
 
 ## Effort & Risk
 
@@ -47,11 +47,11 @@ Dependent-region extraction; pre-fix reachability/reproduction or proof absent; 
 
 ## Standards
 
-Correctness bake-in; branch-tip provenance; no standalone patch; dependency-aware promotion.
+Immutable reviewed post-fix source state; no standalone patch; PRBE-owner-aware sequencing; dependency-aware promotion.
 
 ## Acceptance Criteria
 
-Every dependent port uses post-fix branch-tip state and passes its own correctness gate; no broken pre-fix region is materialized; RD25 remains a sequencing/provenance rule.
+Every affected PRBE13/16/18/20 port uses semantically equivalent reviewed post-fix source state and passes its own correctness gate; no broken pre-fix region is materialized; PRBE19 remains a sequencing/source-state rule and RD25 remains provenance only.
 
 ## Notes
 
@@ -79,3 +79,6 @@ Supersedes: RD25 (closed historical predecessor). RD25 remains historical eviden
 - 2026-09-12T09:52:35.243207+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:notes
 - chg_20260912_095506_cleaned-the-active-rdna-boost_4906
 - 2026-09-12T09:55:06.248056+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T10:09:43.707400+00:00 (updated-by): Updated: section:title, section:validation, section:standards, section:acceptance_criteria
+- chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
+- 2026-09-12T10:10:15.552804+00:00 (updated-by): Updated: section:ledger-events

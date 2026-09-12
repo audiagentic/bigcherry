@@ -51,7 +51,7 @@ Exact graph pattern; dependency-aware comparison; fallback; isolated-test-first.
 
 ## Acceptance Criteria
 
-Exact patterns are correct with RD25; unsafe/near-miss graphs fall back; isolated performance and any composition result are separately attributable; 1207 is not silently combined.
+Exact patterns are correct under the declared PRBE11 composition; unsafe/near-miss graphs fall back; isolated performance and any composition result are separately attributable; 1207 is not silently combined; RD25/PRBE19 is not a prerequisite.
 
 ## Notes
 
@@ -81,3 +81,6 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 - 2026-09-12T09:52:15.950084+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:notes
 - chg_20260912_095506_cleaned-the-active-rdna-boost_4906
 - 2026-09-12T09:55:06.207567+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T10:09:36.168667+00:00 (updated-by): Updated: section:acceptance_criteria
+- chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
+- 2026-09-12T10:10:15.542955+00:00 (updated-by): Updated: section:ledger-events
