@@ -134,6 +134,20 @@ Per GPT's own explicit, already-stated rule for this exact scenario (req_3e42043
 
 **Overall 1215/1216 status**: both patches have now accumulated substantial real, GPT-reviewed hardware evidence (activation, full-vocab numerical parity via two independent real comparisons, direct profiler-confirmed stream overlap, a real interleaved-paired performance win, cross-architecture and split-mode characterization) but remain `state=untested` pending: (a) 1215's own bit_identical check (scoped above, needs new instrumentation), (b) the contract model-binding correction for 1216 backend_reference, (c) formal validation.toml/Experiment Contract wiring for both. Not rushed to closure -- real, substantial, honest progress recorded; genuine remaining formal-package work left explicitly scoped for a focused future pass.
 
+### 2026-09-12: RD39-42/1215 bit_identical CLOSED -- real, decisive, byte-exact evidence (GPT-designed and GPT-approved, req_3e42043eb71a4a92 / req_d6534fe00b8140ca / req_013ff2ae8b0c4c4c)
+
+Corrected an earlier stalled attempt: the previous session note below (llama-results discarded) was itself based on an INVALID negative finding -- GPT caught that the activation marker check used -lv 4, but GGML_LOG_DEBUG (RD42's marker level) requires -lv 5. Rerun at the correct verbosity found the marker firing 1000 times -- RD42 genuinely activates under llama-results -ub 1.
+
+Used the real existing llama-results tool (tools/results/results.cpp, already in the vendor tree, no bespoke tool needed) to dump raw pre-softmax F32 logits via llama_get_logits_ith() to a GGUF file. Ran control (baseline) and subject (baseline+1215+1216) on real single gfx1100 hardware, GGML_CUDA_GRAPH_OPT=1, -ub 1, identical real 19-token prompt. Wrote a minimal pure-Python GGUF binary parser (no external dependency) to extract the raw tokens and logits tensors byte-for-byte.
+
+**Result: fully byte-exact identical.** Tokens: identical 19-token sequence (SHA256 c3937aa6...dccac matches both). Logits: raw F32 tensor, (19, 248320) shape, 4,718,080 values, 18,872,320 bytes, byte-for-byte identical (SHA256 788844674b53...b41fec matches both control and subject). This is literal, decisive bit_identical evidence -- genuine raw pre-softmax model logit byte-identity, not the HTTP-logprob proxy used for the pilot/RD43 evidence.
+
+GPT-approved disposition: bit_identical methodology PASS, real gfx1100 evidence PASS, RD42 activation coverage PASS (1000 marker hits). Same caveat as RD43: real evidence, not yet the FORMAL contract-qualified result until the RD39-42-STREAM-MOE-OVERLAP contract's model binding (currently tierM-gptoss20b-q6k, this run used Qwen3.6-35B-A3B) is resolved.
+
+Recorded in patches/1215.../README.md with the full CorrectnessResult shape and all SHA256 hashes for independent auditability, per GPT's explicit instruction.
+
+**Both 1215's bit_identical and 1216's backend_reference checks now have real, GPT-approved evidence.** Remaining formal work before either patch can transition to validated: (a) resolve the model-binding mismatch on both contracts (AUTHOR-then-VERIFY the correct model, one rerun each -- no new methodology needed, the producers are proven), (b) author validation.toml + wire run_rd39_42_contract_qualification()/run_rd43_contract_qualification() per the design already recorded above, (c) run patch-verify-evidence to confirm eligible_for_validated_state. This is now real, bounded, well-scoped remaining work -- not open-ended investigation.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
@@ -164,3 +178,4 @@ Per GPT's own explicit, already-stated rule for this exact scenario (req_3e42043
 - chg_20260912_131203_gathered-and-gpt-approved-the_6475
 - 2026-09-12T13:12:03.629518+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T13:23:48.429640+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T13:32:04.406756+00:00 (updated-by): Updated: section:notes

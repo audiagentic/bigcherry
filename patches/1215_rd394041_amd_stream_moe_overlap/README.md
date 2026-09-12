@@ -120,6 +120,65 @@ configurations (real regression); it is safe-but-inert under `-sm tensor`.
 Cross-architecture generalization beyond gfx1100 is unproven (gfx1201
 weaker/noisier, gfx1030 net negative/inconclusive).
 
+## Real bit_identical correctness evidence (2026-09-12, GPT-designed and GPT-approved, req_3e42043eb71a4a92 / req_d6534fe00b8140ca / req_013ff2ae8b0c4c4c)
+
+The contract's own required check is literal `bit_identical` (raw
+pre-softmax model logits, not an HTTP/sampler-output proxy). Used the
+real `llama-results` tool (`tools/results/results.cpp`, already in the
+vendor tree -- `llama_get_logits_ith()` dumped to a GGUF `logits` tensor,
+no bespoke tool needed): single gfx1100, `GGML_CUDA_GRAPH_OPT=1`, `-ub 1`,
+control=baseline, subject=baseline+1215+1216, identical real 19-token
+prompt.
+
+**A first attempt at `-lv 4` found zero activation-marker hits and was
+correctly flagged by GPT as an invalid negative finding** -- RD42's
+marker is `GGML_LOG_DEBUG`, which requires `-lv 5`, not `-lv 4`. Rerunning
+at the correct verbosity found the "Adding shared-expert stream at node"
+marker firing **1000 times** in the subject run -- RD42 genuinely
+activates under this test shape.
+
+**Real result**: wrote a minimal pure-Python GGUF binary parser (no
+external dependency), extracted the raw `tokens` and `logits` tensors
+from both output files, and compared byte-for-byte:
+- Tokens: both runs produced the identical 19-token sequence (verified by
+  direct integer comparison, and independently confirmed via matching
+  SHA256 `c3937aa6...dccac` for both).
+- Logits: raw F32 tensor, shape `(19, 248320)` = 4,718,080 values =
+  18,872,320 bytes. **Byte-for-byte identical** (`bytes == bytes` in
+  Python), independently confirmed via matching SHA256
+  `788844674b53...b41fec` for both control and subject.
+
+```
+correctness_results = {
+    "bit_identical": CorrectnessResult(
+        passed=True,
+        detail=json.dumps({
+            "method": "llama-results-raw-logit-byte-identity",
+            "tokens": 19, "vocab_size": 248320,
+            "logit_values": 4718080, "total_bytes_compared": 18872320,
+            "byte_exact": True, "activation_marker_hits": 1000,
+            "control": "baseline", "subject": "baseline+1215+1216",
+            "graph_opt": 1, "ubatch_size": 1, "hardware": "gfx1100",
+            "model": "Qwen3.6-35B-A3B-UD-Q4_K_M",
+            "control_logits_sha256": "788844674b53208fb38bb558507dd7401cb2820dce2d9305fb9b42f81b41fecf",
+            "subject_logits_sha256": "788844674b53208fb38bb558507dd7401cb2820dce2d9305fb9b42f81b41fecf",
+            "control_tokens_sha256": "c3937aa6cdecba2fe1a20add7c8f9d5ab2bbc36bcd4df880a9d3491efdcdccac",
+            "subject_tokens_sha256": "c3937aa6cdecba2fe1a20add7c8f9d5ab2bbc36bcd4df880a9d3491efdcdccac",
+            "prompt_sha256": "4d63c5981334809e190f2a2f7a98645f967d5b7be70d47204fc4b357bf7e050f",
+        }, sort_keys=True),
+    ),
+}
+```
+
+**GPT-approved disposition**: real, decisive `bit_identical` methodology
+PASS, real gfx1100 evidence PASS, RD42 activation coverage PASS. Same
+caveat as RD43: the pre-authored `RD39-42-STREAM-MOE-OVERLAP` contract
+binds a different model (`tierM-gptoss20b-q6k`) than this run used --
+valid, real evidence, but not yet the final contract-qualified result
+until that binding is resolved (fix the contract's model binding or
+confirm `tierM-gptoss20b-q6k` also triggers RD42, then rerun this exact
+producer once).
+
 ## GPT-reviewed disposition
 
 Performance/mechanism qualification for the gfx1100 single-GPU case is
@@ -143,10 +202,16 @@ further promotion-path profiling.)
 
 ## Known limitations
 
-- No dedicated correctness producer/contract binding exists yet for
-  1215's `bit_identical` check or 1216's `backend_reference` check --
-  the formal remaining work before `validated` is possible.
-- `state` stays `"untested"` -- real, substantial positive evidence now
-  exists for gfx1100 single-GPU, but the formal validation package is not
-  complete and cross-architecture/split-mode generalization is mixed (see
-  above).
+- Both named correctness checks now have real, GPT-approved evidence
+  (`bit_identical` above, `backend_reference` in patch 1216's README) --
+  but neither is yet bound into a formal `validation.toml`/Experiment
+  Contract producer function (`run_rd39_42_contract_qualification()` /
+  `run_rd43_contract_qualification()`, scoped in PRBE35), and both real
+  runs used a different model than the pre-authored contract currently
+  binds (`tierM-gptoss20b-q6k`) -- resolving that model-binding mismatch
+  is the concrete remaining step before either check is the *formal*
+  contract-qualified result, not just real supporting evidence.
+- `state` stays `"untested"` -- real, substantial, now-complete-per-check
+  evidence exists for gfx1100 single-GPU, but the formal validation
+  package/contract-binding work is not complete and cross-architecture/
+  split-mode generalization is mixed (see above).
