@@ -182,6 +182,26 @@ _DETECT_BLOCK = """    // MoE: ffn_moe_weighted = moe_down * topk_weights. The d
                 fusion_data.x_scale             = weights;
                 fusion_data.x_scale_channel_dst = true;
 
+                // bigcherry: activation-evidence instrumentation (not part of
+                // the ported fork change), matching the pattern established
+                // by RD12/1205. Emits once (not per-call) so an unattended
+                // validation campaign can prove this silent, host-side-
+                // selected fusion path was actually taken -- a green build
+                // plus a plausible benchmark alone cannot distinguish "fused"
+                // from "fell through unfused" for a graph-selection
+                // optimization like this one. Uses GGML_LOG_WARN, not _INFO:
+                // real-hardware finding (HI90/1231, 2026-08-23) confirmed
+                // llama-server maps raw ggml INFO-level logs to a TRACE
+                // verbosity filtered below -lv 4, so an INFO marker would be
+                // silently invisible at any normal server verbosity even
+                // though the fusion genuinely fired.
+                if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                    static std::atomic_flag bigcherry_rd17_logged = ATOMIC_FLAG_INIT;
+                    if (!bigcherry_rd17_logged.test_and_set(std::memory_order_relaxed)) {
+                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1207_rd17 path=moe_topk_down_fold\\n");
+                    }
+                }
+
                 ggml_cuda_mul_mat_vec_q(*cuda_ctx, mm_node->src[0], mm_node->src[1], mm_node->src[2], mul_node, &fusion_data);
                 return 1;
             }
