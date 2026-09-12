@@ -47,7 +47,7 @@ All five commit identities; dependency/order checks; byte-identical outputs; nat
 
 ## Standards
 
-Coordinated determinism change; no half-cluster acceptance; branch-tip post-fix provenance.
+Coordinated determinism change; no half-cluster acceptance; immutable reviewed post-fix source-state provenance for affected Wave-2 regions.
 
 ## Acceptance Criteria
 
@@ -94,3 +94,6 @@ Supersedes: RD26 (closed historical predecessor). Preserve all five immutable co
 - 2026-09-12T09:52:40.373896+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:notes
 - chg_20260912_095506_cleaned-the-active-rdna-boost_4906
 - 2026-09-12T09:55:06.254140+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T10:10:04.682892+00:00 (updated-by): Updated: section:standards
+- chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
+- 2026-09-12T10:10:15.563853+00:00 (updated-by): Updated: section:ledger-events

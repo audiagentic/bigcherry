@@ -460,9 +460,9 @@ note = "ported 2026-08-18 (9 edits, 3 files); isolated bench pending"
 commit = "381bba6be1ea42a8f38924fe5616aa89704605db"
 original = "9b27962071de2ccfbbe04eefb307e001fb713b1c"
 title = "CUDA: fold the norm-input Q8_1 quantize into the rms norm kernel"
-plan-item = "RD10"
+plan-item = "PRBE06"
 status = "planned"
-note = "depends on RD09; conflicts with BigCherry patch 1004 at the RMS_NORM node (mutually exclusive rewrites; needs a node-ownership decision)"
+note = "Legacy predecessor: RD10. Actionable owner: PRBE06. Depends on PRBE05; conflicts with BigCherry patch 1004 at the RMS_NORM node (mutually exclusive rewrites; needs a node-ownership decision)."
 
 [[sources.tracked]]
 commit = "8473c0da78daf4f525e26c8742bf590ace765726"
@@ -476,9 +476,9 @@ note = "extends BigCherry patch 1004 (IMRoPE mode + BF16 set_rows, both absent f
 commit = "fbfdf64ce367c0eaa2c4e12611170ba417490525"
 original = "5024d787291108d111c861bb6b01b38db547a09f"
 title = "cuda : write Q8_1 in the gating-MUL kernel"
-plan-item = "RD11"
+plan-item = "PRBE10"
 status = "planned"
-note = "depends on RD09 (writes into its cache)"
+note = "Legacy predecessor: RD11. Actionable owner: PRBE10. Depends on PRBE05 because it writes into the Q8_1 cache."
 
 [[sources.tracked]]
 commit = "1818c3b3704a623e33d73b6cb0b633400ef70b14"

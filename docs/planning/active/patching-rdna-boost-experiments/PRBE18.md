@@ -39,7 +39,7 @@ ggml-cuda.cu/mmvq.cu/mmvq.cuh; isolated PRBE18 patch; external source entry; PRB
 
 ## Validation
 
-Guard/wrong-wiring; output equality; graph capture; RD09/RD25 dependency; gfx1100 causal timing; no RD14/RD16 duplicate port.
+Guard/wrong-wiring; output equality; graph capture; PRBE05 cache and PRBE19 post-fix source-state checks; gfx1100 causal timing; no RD14/RD16 duplicate port.
 
 ## Effort & Risk
 
@@ -79,3 +79,6 @@ Supersedes: RD24 (closed historical predecessor); RD14 and RD16 are closed/super
 - 2026-09-12T09:52:30.160133+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:notes
 - chg_20260912_095506_cleaned-the-active-rdna-boost_4906
 - 2026-09-12T09:55:06.240435+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T10:09:39.929105+00:00 (updated-by): Updated: section:validation
+- chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
+- 2026-09-12T10:10:15.548038+00:00 (updated-by): Updated: section:ledger-events
