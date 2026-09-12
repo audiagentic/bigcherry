@@ -85,14 +85,25 @@ architecture) but real on gfx1100.
 **Extended to 10 paired rounds (2026-09-12) to satisfy the contract's
 `ci95_threshold_bound_v1` policy** (`min_paired_rounds = 10`, set after
 the model-binding fix below invalidated the legacy point-estimate waiver
-and required migration to the interval-bound policy). 4 additional real
-`GGML_CUDA_GRAPH_OPT=1` interleaved paired rounds, same hardware/flags:
-deltas [1.81%, 2.12%, 2.54%, 2.57%], all positive, consistent with the
-original 6. **Full 10-round result: mean +2.38%, SD 1.31%, 95% CI
-[1.45%, 3.32%]** -- entirely positive, does not straddle zero, comfortably
-clears the contract's `target_kernel_gain_pct = 1` threshold with real
-statistical confidence. This is the formal, contract-policy-compliant
-performance result.
+and required migration to the interval-bound policy). GPT review
+(req_eafaa56c9f334674) additionally flagged that the CONTROL lane also
+needs its own 10-round CI, since `max_control_regression_pct = 1` is
+independently mandatory under the same policy -- extended both lanes:
+
+- **ON/subject** (4 additional real rounds): deltas [1.81%, 2.12%, 2.54%,
+  2.57%], all positive, consistent with the original 6. **Full 10-round
+  result: mean +2.38%, SD 1.31%, 95% CI [1.45%, 3.32%]** -- entirely
+  positive, comfortably clears `target_kernel_gain_pct = 1`.
+- **OFF/control** (4 additional real rounds): deltas [0.14%, -0.03%,
+  -0.24%, -0.38%], consistent with the original 6. **Full 10-round
+  result: mean -0.19%, SD 1.12%, 95% CI [-0.99%, 0.61%]** -- flat as
+  expected, upper bound (0.61%) comfortably under
+  `max_control_regression_pct = 1`.
+
+Both lanes now satisfy the migrated `ci95_threshold_bound_v1` policy's
+`min_paired_rounds = 10` requirement. This is the formal,
+contract-policy-compliant performance result -- both the gain and
+regression legs of the acceptance criteria.
 
 **Direct profiler proof of concurrency** (`rocprofv3 --kernel-trace`,
 103,768 real kernel dispatches across 4 HSA queues): computed the real

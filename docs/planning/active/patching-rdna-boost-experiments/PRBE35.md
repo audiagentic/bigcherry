@@ -158,13 +158,24 @@ Caught and self-corrected a real process mistake along the way: used `git stash`
 
 **Current status of 1215+1216's contract-level qualification**: activation (real, marker-confirmed), bit_identical correctness (real, byte-exact raw logits), backend_reference correctness (real, exact full-vocab match), and now a properly ci95-policy-compliant 10-round performance result, all on the correctly contract-bound model (tierM-qwen35b-a3b-moe-mtp, after fixing the model-binding defect this session found). Remaining formal step: wiring these into actual `run_rd39_42_contract_qualification()`/`run_rd43_contract_qualification()` producer functions (design fully scoped above) so `patch-verify-evidence` can compute `eligible_for_validated_state` -- the substantive evidence-gathering is now complete and contract-policy-consistent; what remains is packaging/wiring, not further investigation.
 
+### 2026-09-12: RD39-42-STREAM-MOE-OVERLAP contract-level qualification evidence COMPLETE (GPT-confirmed, req_eafaa56c9f334674)
+
+GPT's final review identified one remaining gap: the CONTROL lane also needed its own 10-round CI under the migrated ci95_threshold_bound_v1 policy, since max_control_regression_pct=1 is independently mandatory (not just the positive/subject gain leg). Ran 4 additional real OFF-condition (GGML_CUDA_GRAPH_OPT=0) paired rounds to extend that lane to 10 too.
+
+**Final complete result, both lanes at 10 real paired rounds each:**
+- ON/subject (gain leg): mean +2.38%, SD 1.31%, 95% CI [1.45%, 3.32%] -- entirely positive, clears target_kernel_gain_pct=1.
+- OFF/control (regression leg): mean -0.19%, SD 1.12%, 95% CI [-0.99%, 0.61%] -- flat as expected, upper bound 0.61% comfortably under max_control_regression_pct=1.
+
+**GPT's final disposition**: bit_identical PASS, activation PASS (1000 real marker hits), positive gain >=1% PASS, control regression <=1% now satisfied with the extended 10-round control lane -- all four required contract-qualification legs for RD39-42-STREAM-MOE-OVERLAP are now complete with real, GPT-approved, statistically rigorous evidence on the correctly contract-bound model (tierM-qwen35b-a3b-moe-mtp).
+
+**What remains is purely mechanical**: emitting this real evidence through BigCherry's canonical paired/geometric bootstrap producer function (run_rd39_42_contract_qualification(), fully designed above) so patch-verify-evidence can compute eligible_for_validated_state -- and the equivalent for RD43's backend_reference (already exact-match evidence gathered on the same corrected model). The substantive scientific work (activation proof, correctness proof at raw-logit byte level, statistically powered performance evidence for both gain and regression legs) is done. Patches 1215/1216 stay state=untested pending only that formal producer-function wiring, not further investigation.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -197,3 +208,4 @@ Caught and self-corrected a real process mistake along the way: used `git stash`
 - 2026-09-12T13:52:12.634324+00:00 (updated-by): Updated: section:notes
 - chg_20260912_135302_completed-the-statistical-evid_5013
 - 2026-09-12T13:53:02.080192+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T13:57:26.301994+00:00 (updated-by): Updated: section:notes
