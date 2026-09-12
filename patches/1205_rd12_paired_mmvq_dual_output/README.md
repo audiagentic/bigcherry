@@ -127,3 +127,10 @@ evidence bundle; further root-causing the zero-activation result is real,
 not-yet-done work (a candidate task for whoever picks up PRBE11's RD25
 prerequisite, since activation must be confirmed before any correctness
 work on this patch is meaningful).
+
+## Real three-arm baseline comparison (2026-09-13, standardized criteria)
+
+A/B/C decode comparison on gpt-oss-20B/gfx1100 (RD12's fusion does not
+activate on this model -- see above -- so this measures baseline health,
+not RD12's own effect): A=178.09, B=178.01, C=177.48 -- all within
+noise, no baseline concern for this patch's domain.
