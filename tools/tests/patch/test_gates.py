@@ -163,6 +163,23 @@ class GateContractTests(unittest.TestCase):
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.BLOCKED)
 
+    def test_admission_gate_maps_active_rejection_to_fail(self) -> None:
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1"),)),
+            catalog_path=None, patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision="abc", evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(
+            admissible=False, gate_active=True, status="rejected",
+            failures=("policy rejected composition",), warnings=(),
+        )
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result) as admit:
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.FAIL)
+        self.assertEqual(outcome.detail, ("policy rejected composition",))
+        self.assertEqual(admit.call_args.args[0], ("P1",))
+
     def test_admission_gate_blocks_malformed_failure_fields(self) -> None:
         context = SimpleNamespace(
             composition=SimpleNamespace(modules=()), catalog_path=None,
