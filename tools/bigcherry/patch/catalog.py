@@ -227,11 +227,11 @@ def load_catalog(path: Path | None = None) -> dict[str, CatalogEntry]:
         state = record.get("state")
         if state not in patchset.STATES:
             raise ValueError(f"{path}: {patch_id}: state must be one of {patchset.STATES}, got {state!r}")
-        for field, valid in (("backends", BACKENDS),):
-            for value in record.get(field) or ():
+        for field_name, valid in (("backends", BACKENDS),):
+            for value in record.get(field_name) or ():
                 if value not in valid:
                     raise ValueError(
-                        f"{path}: {patch_id}: {field} entries must be one of "
+                        f"{path}: {patch_id}: {field_name} entries must be one of "
                         f"{valid}, got {value!r}"
                     )
         validation_architectures_raw = record.get("validation-architectures") or []
@@ -434,6 +434,7 @@ def cross_check(
     evidence_root: Path | None = None,
     allow_legacy_grandfather: bool = True,
     resolved_base_revision: str | None = None,
+    check_summaries: bool = True,
 ) -> list[str]:
     """Verify one-to-one coverage between the catalog and discovered patch
     modules, and that each entry's ``state`` matches its module's real STATE
@@ -444,7 +445,12 @@ def cross_check(
     patches_dir both omitted) -- synthetic temp-catalog unit tests keep
     their pre-HI83 narrow semantics unless they explicitly opt in. This
     function is still only a diagnostic (see the module note above it) --
-    nothing currently calls it from a production apply/build path."""
+    nothing currently calls it from a production apply/build path.
+
+    ``check_summaries`` controls the real-repository SUMMARY convention
+    independently of the catalog/module checks.  It defaults to True for
+    compatibility; repository consumers that own SUMMARY evaluation can set
+    it to False to avoid duplicate diagnostics."""
     entries = load_catalog(catalog_path)
     registry = patchset.patch_registry.load_registry(patches_dir or paths.PATCHES)
     modules = {module.patch_id for module in patchset.catalog(patches_dir)}
@@ -478,7 +484,7 @@ def cross_check(
     # SUMMARY.md is a real-repository convention; synthetic/temp catalogs
     # used by unit tests have no reason to carry one -- same real-repo-only
     # gating verify_validation_evidence already uses below.
-    if catalog_path is None and patches_dir is None:
+    if check_summaries and catalog_path is None and patches_dir is None:
         from . import docs as patch_docs
         problems.extend(patch_docs.check_summary_consistency(patches_dir))
 

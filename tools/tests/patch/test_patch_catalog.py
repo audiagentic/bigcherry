@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
@@ -44,6 +45,35 @@ class TestPatchCatalogCrossCheck(unittest.TestCase):
     def test_cross_check_is_clean_on_the_real_catalog(self):
         problems = patch_catalog.cross_check()
         self.assertEqual(problems, [])
+
+    def test_cross_check_summary_switch_is_backward_compatible(self):
+        registry = SimpleNamespace(descriptors=(), root=Path("patches"))
+        with (
+            mock.patch.object(patch_catalog, "load_catalog", return_value={}),
+            mock.patch.object(
+                patch_catalog.patchset.patch_registry,
+                "load_registry",
+                return_value=registry,
+            ),
+            mock.patch.object(patch_catalog.patchset, "catalog", return_value=[]),
+            mock.patch(
+                "bigcherry.patch.docs.check_summary_consistency",
+                return_value=["summary problem"],
+            ) as check_summary,
+        ):
+            self.assertEqual(
+                patch_catalog.cross_check(verify_validation_evidence=False),
+                ["summary problem"],
+            )
+            self.assertEqual(
+                patch_catalog.cross_check(
+                    verify_validation_evidence=False,
+                    check_summaries=False,
+                ),
+                [],
+            )
+
+        check_summary.assert_called_once()
 
     def test_cross_check_detects_orphan_catalog_entry(self):
         with tempfile.TemporaryDirectory() as tmp:
