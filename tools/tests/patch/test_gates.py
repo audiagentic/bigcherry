@@ -148,6 +148,35 @@ class GateContractTests(unittest.TestCase):
         result = gates.evaluate_lifecycle_gate(context, prior)
         self.assertEqual(result.status, GateStatus.PASS)
 
+    def test_disposition_gate_blocks_without_complete_inputs(self) -> None:
+        context = SimpleNamespace(
+            catalog_states=None, coverage_report=None, target_revision=None,
+        )
+        result = gates.evaluate_disposition_gate(context)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+
+    def test_disposition_gate_maps_authority_coverage(self) -> None:
+        base = {
+            "catalog_states": {"P1": "untested"},
+            "coverage_report": {"patches": [{"patch_id": "P1", "status": "clean"}]},
+            "recipe_patch_ids": frozenset(), "target_revision": "abc",
+            "dispositions_dir": Path("dispositions"),
+        }
+        complete = SimpleNamespace(complete=True, uncovered_patch_ids=())
+        with mock.patch.object(
+            gates.patch_disposition, "compute_coverage", return_value=complete
+        ):
+            result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
+        self.assertEqual(result.status, GateStatus.PASS)
+
+        incomplete = SimpleNamespace(complete=False, uncovered_patch_ids=("P1",))
+        with mock.patch.object(
+            gates.patch_disposition, "compute_coverage", return_value=incomplete
+        ):
+            result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
+        self.assertEqual(result.status, GateStatus.FAIL)
+        self.assertEqual(result.detail, ("P1",))
+
 
 if __name__ == "__main__":
     unittest.main()
