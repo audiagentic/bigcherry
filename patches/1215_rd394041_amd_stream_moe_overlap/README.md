@@ -77,10 +77,22 @@ corrected after GPT review: RD42's shared-expert overlap is an
 XTX): 6-round interleaved 2x2 (`GGML_CUDA_GRAPH_OPT=0` control vs `=1`
 subject). OFF: deltas [1.25%, -0.40%, 0.15%, 0.17%, -3.07%, 0.50%], mean
 -0.23%, SD 1.49% -- flat, as expected for an inactive control. ON: deltas
-[0.37%, 1.75%, 5.59%, 2.10%, 2.79%, 2.19%], mean **+2.47%**, SD 1.73%,
-**all 6 rounds positive** -- a real, reproducible, non-regressing gain.
-Smaller than the fork's own claimed +7.41% (measured on gfx1151/RDNA3.5, a
-different architecture) but real on gfx1100.
+[0.37%, 1.75%, 5.59%, 2.10%, 2.79%, 2.19%], mean +2.47%, SD 1.73%, all 6
+rounds positive -- a real, reproducible, non-regressing gain. Smaller than
+the fork's own claimed +7.41% (measured on gfx1151/RDNA3.5, a different
+architecture) but real on gfx1100.
+
+**Extended to 10 paired rounds (2026-09-12) to satisfy the contract's
+`ci95_threshold_bound_v1` policy** (`min_paired_rounds = 10`, set after
+the model-binding fix below invalidated the legacy point-estimate waiver
+and required migration to the interval-bound policy). 4 additional real
+`GGML_CUDA_GRAPH_OPT=1` interleaved paired rounds, same hardware/flags:
+deltas [1.81%, 2.12%, 2.54%, 2.57%], all positive, consistent with the
+original 6. **Full 10-round result: mean +2.38%, SD 1.31%, 95% CI
+[1.45%, 3.32%]** -- entirely positive, does not straddle zero, comfortably
+clears the contract's `target_kernel_gain_pct = 1` threshold with real
+statistical confidence. This is the formal, contract-policy-compliant
+performance result.
 
 **Direct profiler proof of concurrency** (`rocprofv3 --kernel-trace`,
 103,768 real kernel dispatches across 4 HSA queues): computed the real
