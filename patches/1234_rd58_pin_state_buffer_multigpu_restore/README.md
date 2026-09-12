@@ -48,6 +48,38 @@ state-restore integrity + no material regression -- it does not
 independently establish "fault happens, pinning eliminates it" on this
 specific host. See RD58's plan-item notes for the full history.
 
+## Real hardware evidence at current pin (2026-09-13)
+
+Reran `run_rd58_state_restore_evidence()` for real on Brutus against the
+current active pin (`b10901`/`28ff0958291c`), fresh control/subject
+`test-save-load-state` builds, `tierA-qwen4b-q6k`, 5 real repetitions per
+arm.
+
+**First attempt crashed (real methodology bug, not a patch defect)**:
+all 5 subject runs exited `-11` (SIGSEGV), log showing `internal
+AllReduce init failed (n_devices != 2?); falling back to meta-backend
+butterfly`. Root cause: Brutus now has 4 heterogeneous GPUs installed
+(2x gfx1100 XTX, 1x integrated APU, 1x gfx1030 6900XT), and no
+`HIP_VISIBLE_DEVICES` was set, so all 4 were visible instead of the
+intended 2x XTX pair -- the same heterogeneous-arch crash class already
+tracked at PGC02. Fixed by setting `HIP_VISIBLE_DEVICES=0,1` before the
+run.
+
+**Corrected rerun: real, clean PASS on all three legs.**
+- **Correctness**: `correctness_passed = True` (5/5 subject runs exit 0,
+  every internal `test-save-load-state` check including "Test 4: seq
+  copy (host)" passed).
+- **Activation**: `subject_hit = True`, `control_hit = False` -- a real,
+  clean positive/negative marker split (`pinned state buffer (... bytes)
+  for restore` fired on every subject run, never on control).
+- **Controls**: `controls_passed = True`, 5/5 passes on both arms, no
+  crash/regression across repeated real restore cycles.
+
+This confirms the 2026-08-24 finding still holds at the current pin.
+Same ceiling as before: `eligible_for_validated_state` stays `False`
+(the original SDMA fault itself is still unreproduced on this host), so
+`ported-benched` remains the honest disposition.
+
 ## How to invoke validation
 
 Hardware-free-adjacent evidence producer (VA05) -- requires 2 real
