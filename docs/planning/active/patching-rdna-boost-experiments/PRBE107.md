@@ -56,12 +56,15 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 
 **Root cause isolated (2026-09-13, real bisection).** Built two isolated compositions against source.llama-native (stock base): (1) upstream-fixes alone (just 1000_rdna4_mmq_q2k_q6k_fix) -- pp512=5210.01, matches stock, NO regression. (2) the 'forced'-dispatch family alone (0300_mmq_forced_j, 0400_mmvf_forced_block, 0500_mmf_forced_nwarps, 0600_mmvq_geometry, 0650_mmvq_native_variant -- 5 of framework's 14 patches) -- pp512=4263.46, REPRODUCES the full ~22.6% regression, matching BigCherry baseline's range. Root cause conclusively isolated to this 5-patch cluster, not the upstream-fixes correctness backport. These patches force fixed dispatch parameters (forced j/block-size/nwarps/geometry/native-variant) instead of upstream's own tuned auto-selection heuristics -- very plausibly a deliberate, accepted tradeoff for BigCherry's dispatch-research/autotuning infrastructure, not an unintended bug, but this quantified real number (~22.6% pp512 cost) was not previously measured/documented anywhere in the project. Whoever owns the framework patch-set's design should confirm this is the accepted/expected cost. Remaining open steps: confirm whether this generalizes beyond gpt-oss-20B/pp512 (other models/workloads), and whether all 5 patches contribute or just a subset.
 
+**Root cause isolated (2026-09-13, real bisection).** Built two isolated compositions against source.llama-native (stock base): (1) upstream-fixes alone (just 1000_rdna4_mmq_q2k_q6k_fix) -- pp512=5210.01, matches stock, NO regression. (2) the 'forced'-dispatch family alone (0300_mmq_forced_j, 0400_mmvf_forced_block, 0500_mmf_forced_nwarps, 0600_mmvq_geometry, 0650_mmvq_native_variant -- 5 of framework's 14 patches) -- pp512=4263.46, REPRODUCES the full ~22.6% regression, matching BigCherry baseline's range. Root cause conclusively isolated to this 5-patch cluster on gpt-oss-20B.
+
+**CRITICAL SCOPE CORRECTION (2026-09-13): does NOT generalize across models.** Ran the same A-vs-B comparison on tierA-qwen4b-q6k (Qwen3.5-4B, dense+GDN hybrid, 2 rounds): A=[4881.74, 4896.58], B=[4885.78, 4876.29] -- statistically identical, NO gap at all. The ~22.6% regression is specific to gpt-oss-20B (likely its MoE routing shape interacting with the forced-dispatch patches' fixed geometry/nwarps choices), not a universal BigCherry baseline cost. Revised finding: 'BigCherry's forced-dispatch patches cost ~22.6% pp512 on at least gpt-oss-20B's MoE shape, and ~0% on Qwen3.5-4B's dense+GDN shape' -- this is exactly why the standardized criteria's multi-model requirement matters; a single-model test would have wrongly generalized this as a universal cost. Remaining open steps: test additional models (tierM-ministral14b-q4km, tierM-qwen35b-a3b-moe-mtp) to map which architectural property (MoE routing specifically, vs something else about gpt-oss-20B) actually correlates with the regression.
+
 ## Change Log
 
 - 2026-09-12T21:20:57.594630+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
 
 - chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
 - 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
@@ -71,3 +74,4 @@ Discovered as a side effect of adopting the standardized A/B/C baseline comparis
 - 2026-09-12T21:28:02.462203+00:00 (updated-by): Updated: section:notes
 - chg_20260912_212832_traced-the-real-226-baselin_1022
 - 2026-09-12T21:28:32.498047+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T21:30:17.612591+00:00 (updated-by): Updated: section:notes

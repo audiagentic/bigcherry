@@ -78,6 +78,30 @@ production performance win on their own) rather than an unintended bug
 number anywhere in the project, and whoever owns the framework
 patch-set's design should confirm this is the accepted/expected cost.
 
+## Second model: the gap does NOT generalize (2026-09-13)
+
+Per the standardized criteria's "range of models" requirement, ran the
+same A-vs-B pp512 comparison on `tierA-qwen4b-q6k` (Qwen3.5-4B, the
+dense+GDN hybrid model, gfx1100, 2 rounds):
+
+| Arm | round 1 | round 2 |
+|---|---|---|
+| A (stock) | 4881.74 | 4896.58 |
+| B (BigCherry baseline) | 4885.78 | 4876.29 |
+
+**No gap at all on this model -- A and B are statistically identical**
+(well within each other's uncertainty, unlike gpt-oss-20B's clean,
+non-overlapping ~22.6% separation). **PRBE107's finding does NOT
+generalize across models -- it is specific to gpt-oss-20B (or more
+likely, to some architectural property gpt-oss-20B has that Qwen3.5-4B
+doesn't -- e.g. its MoE routing shape interacting differently with the
+forced-dispatch patches' fixed geometry/nwarps choices).** This
+significantly changes PRBE107's scope: it is not "BigCherry's baseline
+costs ~22.6% universally," it is "BigCherry's forced-dispatch patches
+cost ~22.6% on at least gpt-oss-20B's specific MoE shape, and 0% on
+Qwen3.5-4B's dense+GDN shape" -- a real, valuable, more precise finding
+that a single-model test would have missed entirely.
+
 ## What this does and doesn't establish
 
 - Confirms RD13 (the focal patch) itself is correctness-neutral and has
