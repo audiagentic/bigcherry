@@ -127,6 +127,7 @@ Got a design review before writing any code, given RD08's single-op test-backend
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -147,3 +148,5 @@ Got a design review before writing any code, given RD08's single-op test-backend
 - 2026-09-12T09:18:21.067473+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T09:49:37.378827+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T09:58:46.097569+00:00 (updated-by): Updated: section:notes
+- chg_20260912_131203_gathered-and-gpt-approved-the_6475
+- 2026-09-12T13:12:03.629518+00:00 (updated-by): Updated: section:ledger-events
