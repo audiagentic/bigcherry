@@ -17,6 +17,7 @@ from ..core import paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
+from . import rebase
 from . import registry as patch_registry
 
 
@@ -120,3 +121,22 @@ def evaluate_summary_gate(context: GateContext) -> GateResult:
     if problems:
         return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
     return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
+
+
+def evaluate_rebase_gate(context: GateContext) -> GateResult:
+    """Evaluate G2 through the canonical rebase freshness authority."""
+    if context.rebase_report is None:
+        return GateResult(
+            GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase",
+            ("no rebase report was supplied",),
+        )
+    try:
+        known_good = rebase.require_fresh_report(context.rebase_report, context.patches_dir)
+    except (OSError, TypeError, ValueError, rebase.StaleRebaseReportError) as exc:
+        return GateResult(GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase", (str(exc),))
+    if context.descriptor.patch_id not in known_good:
+        return GateResult(
+            GateId.G2, GateStatus.FAIL, "rebase", "patch.rebase",
+            (f"focal patch {context.descriptor.patch_id!r} is not known-good",),
+        )
+    return GateResult(GateId.G2, GateStatus.PASS, "rebase", "patch.rebase")
