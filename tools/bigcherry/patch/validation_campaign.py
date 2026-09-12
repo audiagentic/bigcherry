@@ -841,12 +841,12 @@ def run_rd08_contract_correctness(
     rows_doc = [rd08_correctness.row_to_diagnostic_dict(r) for r in all_rows]
     failing = next((r for r in all_rows if not r.ok), None)
     if failing is None:
-        result = experiment_contract.CorrectnessResult(
+        bit_identical_result = experiment_contract.CorrectnessResult(
             check="bit_identical", passed=True,
             detail=f"{len(all_rows)} (shape,seed) pairs bit-identical",
         )
     else:
-        result = experiment_contract.CorrectnessResult(
+        bit_identical_result = experiment_contract.CorrectnessResult(
             check="bit_identical", passed=False,
             detail=(
                 f"RD08 correctness evidence failed for shape={failing.shape_name!r} "
@@ -859,8 +859,36 @@ def run_rd08_contract_correctness(
             ),
         )
 
+    # PRBE104 (2026-09-13): RD08's contract was deliberately revised from
+    # requiring bit_identical to backend_reference (GPT req_8163325eb9c545ea)
+    # -- VDR=2 intentionally changes accumulation grouping, so exact digest
+    # equality was never the scientifically appropriate bar; each row's own
+    # subject_metric.err/threshold (already computed by the NMSE comparison
+    # every row performs regardless of the exact-digest result) IS the real
+    # backend_reference evidence. Derive it from the SAME rows, never a
+    # second correctness-checking engine -- bit_identical is preserved above
+    # as the real, now-non-gating diagnostic fact PRBE103 established.
+    numeric_rows = [r for r in all_rows if r.subject_metric is not None]
+    if not numeric_rows:
+        backend_reference_result = experiment_contract.CorrectnessResult(
+            check="backend_reference", passed=False,
+            detail="no rows produced a subject_metric to evaluate",
+        )
+    else:
+        worst = max(numeric_rows, key=lambda r: r.subject_metric.err)
+        over_threshold = worst.subject_metric.err > worst.subject_metric.threshold
+        backend_reference_result = experiment_contract.CorrectnessResult(
+            check="backend_reference", passed=not over_threshold,
+            detail=(
+                f"{len(numeric_rows)} rows, worst subject err={worst.subject_metric.err} "
+                f"vs threshold={worst.subject_metric.threshold} "
+                f"(shape={worst.shape_name!r} seed={worst.seed})"
+            ),
+        )
+
     correctness_doc = {
-        "check": "bit_identical", "passed": result.passed, "detail": result.detail,
+        "bit_identical": {"passed": bit_identical_result.passed, "detail": bit_identical_result.detail},
+        "backend_reference": {"passed": backend_reference_result.passed, "detail": backend_reference_result.detail},
         "subject_source_tree": psi.git_worktree_tree(subject_src),
         "control_source_tree": psi.git_worktree_tree(control_src),
         "subject_build_identity": subject_build_evidence.campaign_identity(),
@@ -869,7 +897,11 @@ def run_rd08_contract_correctness(
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd08-correctness.json", correctness_doc)
     return {
-        "results": {"bit_identical": result}, "artifact": artifact_ref,
+        "results": {
+            "bit_identical": bit_identical_result,
+            "backend_reference": backend_reference_result,
+        },
+        "artifact": artifact_ref,
         "subject_build_identity": subject_build_evidence.campaign_identity(),
         "control_build_identity": control_build_evidence.campaign_identity(),
     }
@@ -5111,6 +5143,52 @@ def run(args: argparse.Namespace) -> int:
         rd58_contract_correctness_named_results = {
             "state_restore_integrity": rd58_contract_correctness_result,
         }
+
+        from bigcherry.experiment import execution as experiment_execution
+
+        # PRBE109 fix (2026-09-13): RD58's real correctness gate was already
+        # computed above, but its promotion verdict was never added to
+        # contract_promotions, so eligible_for_validated_state could never
+        # become True through this CLI path regardless of evidence
+        # completeness. Reuse the generic control_bin/validation_subject_bin
+        # llama-bench binaries (already built earlier in run(), same pattern
+        # RD08's qualification reuses) for the contract's own bound `decode`
+        # control-lane performance measurement -- RD58's contract declares
+        # no target_kernel_gain_pct (it is a pure correctness/reliability
+        # contract), only max_control_regression_pct, so a control-role-only
+        # LaneEffect is sufficient for evaluate_promotion_gate() to evaluate
+        # it (the gain check is skipped when the contract names none).
+        rd58_decode_outcome = run_paired_llama_benchmark(
+            control_binary=control_bin / f"llama-bench{exe}",
+            subject_binary=validation_subject_bin / f"llama-bench{exe}",
+            model=args.model, hip_path=args.hip_path, pairs=3, log_context="rd58-decode",
+            workloads=("decode",), runtime_args=("-sm", "tensor"),
+            env_overrides={"GGML_CUDA_REGISTER_HOST": "1"},
+        )
+        rd58_decode_lane = experiment_execution.lane_effect_from_run(
+            "control", "tg128", rd58_decode_outcome.runs["decode"],
+        )
+        rd58_aggregated_effects = _ec.aggregate_contract_effects(
+            rd58_contract_check, [rd58_decode_lane], target_metric="tg128",
+        )
+        rd58_trigger_evidence = [
+            _ec.TriggerEvidence(
+                role="positive", lane_id="rd58-subject",
+                candidate_launches=1 if rd58_result["subject_hit"] else 0,
+            ),
+        ]
+        rd58_trigger_proof = _ec.evaluate_trigger_proof(rd58_trigger_evidence)
+        rd58_promotion = _ec.evaluate_promotion_gate(
+            rd58_contract_check, correctness_gate=compute_contract_correctness_gate(
+                rd58_contract_check, rd58_contract_correctness_named_results,
+            ),
+            aggregated_effects=rd58_aggregated_effects, trigger_proof=rd58_trigger_proof,
+        )
+        contract_promotions[rd58_contract_check.id] = rd58_promotion
+        _print(
+            f"rd58 promotion: "
+            f"{'PASS' if rd58_promotion.get('passed') else rd58_promotion.get('status', 'FAIL')}"
+        )
 
         def _bind_rd58_log(relative_log_path: str) -> dict[str, str]:
             target = (campaign_run_dir / relative_log_path).resolve()

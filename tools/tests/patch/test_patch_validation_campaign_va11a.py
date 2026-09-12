@@ -30,26 +30,26 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
         self.assertIsNone(vc.compute_contract_correctness_gate(None, None))
 
     def test_single_required_check_no_results_is_blocked(self) -> None:
-        # RD08-Q6K-MMVQ-VDR2 requires exactly one check (bit_identical).
+        # RD08-Q6K-MMVQ-VDR2 requires exactly one check (backend_reference).
         gate = vc.compute_contract_correctness_gate(RD08, None)
         self.assertIsNotNone(gate)
         self.assertFalse(gate["passed"])
-        self.assertIn("bit_identical", gate["missing_checks"])
+        self.assertIn("backend_reference", gate["missing_checks"])
 
     def test_single_required_check_passes_with_a_real_named_result(self) -> None:
-        result = ec.CorrectnessResult(check="bit_identical", passed=True, detail="15/15 rows ok")
-        gate = vc.compute_contract_correctness_gate(RD08, {"bit_identical": result})
+        result = ec.CorrectnessResult(check="backend_reference", passed=True, detail="15/15 rows ok")
+        gate = vc.compute_contract_correctness_gate(RD08, {"backend_reference": result})
         self.assertIsNotNone(gate)
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["missing_checks"], [])
         self.assertEqual(gate["failed_checks"], [])
 
     def test_single_required_check_fails_with_a_failing_named_result(self) -> None:
-        result = ec.CorrectnessResult(check="bit_identical", passed=False, detail="mismatch")
-        gate = vc.compute_contract_correctness_gate(RD08, {"bit_identical": result})
+        result = ec.CorrectnessResult(check="backend_reference", passed=False, detail="mismatch")
+        gate = vc.compute_contract_correctness_gate(RD08, {"backend_reference": result})
         self.assertIsNotNone(gate)
         self.assertFalse(gate["passed"])
-        self.assertIn("bit_identical", gate["failed_checks"])
+        self.assertIn("backend_reference", gate["failed_checks"])
 
     def test_generic_summary_cannot_satisfy_a_named_check(self) -> None:
         # A dict that isn't a real CorrectnessResult (e.g. a stray generic
@@ -58,7 +58,7 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
         # objects with .passed are read.
         with self.assertRaises(AttributeError):
             vc.compute_contract_correctness_gate(
-                RD08, {"bit_identical": {"disposition": "passed"}}
+                RD08, {"backend_reference": {"disposition": "passed"}}
             )
 
     def test_two_required_checks_blocked_never_fabricates_two_passes(self) -> None:

@@ -2,7 +2,7 @@
 id: PRBE109
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-12T23:01:11.676984+00:00'
 breadth: ''
 skill: ''
@@ -54,6 +54,21 @@ RD58 (patch 1234) now has a real, complete, passing evaluate_promotion_gate() ve
 
 This is precise, scoped, real engineering work -- not a hardware/evidence gap. The real evidence needed to prove RD58 passes already exists (this session's manual computation); this item is purely about making the standard CLI/evidence-persistence pipeline able to reach the same real conclusion automatically, so state="validated" can be set with full tooling confidence per this project's lifecycle doctrine.
 
+**RESOLVED and implemented (2026-09-13).** Wired RD58's real promotion evaluation into validation_campaign.py's run() function: after rd58_contract_correctness_named_results is built, a real paired decode benchmark (run_paired_llama_benchmark, -sm tensor, GGML_CUDA_REGISTER_HOST=1, the contract's own bound model) produces a real control-role LaneEffect, aggregate_contract_effects() computes real aggregated_effects, evaluate_trigger_proof() evaluates real trigger evidence, and evaluate_promotion_gate() produces the real verdict -- now correctly populated into contract_promotions[rd58_contract_check.id], mirroring RD08's exact pattern (line 4808).
+
+Also fixed a related real gap surfaced by this work: run_rd08_contract_correctness() only ever derived a bit_identical CorrectnessResult, but RD08's contract was revised (PRBE104) to require backend_reference instead -- the function now derives BOTH from the same real per-row numeric data (subject_metric.err vs .threshold), preserving bit_identical as a non-gating diagnostic while backend_reference becomes the real gating check.
+
+Updated test fixtures (test_patch_validation_campaign_va05.py, va11a.py, va14_final.py) to match: test_never_touches_contract_promotions rewritten to assert the corrected invariant (promotion IS now computed, from real evaluate_promotion_gate() output, not fabricated); va11a's RD08 fixture tests updated bit_identical->backend_reference; va14_final's fake correctness rows given a realistic numeric subject_metric, and pairs bumped from 2 to 10 to satisfy RD08's now-migrated min_paired_rounds=10 policy.
+
+Verified: full tools/tests/patch suite (both the validation_campaign-specific 213 tests and the complete directory) passes cleanly, 0 failures, 0 errors.
+
 ## Change Log
 
 - 2026-09-12T23:01:11.676984+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_230207_precisely-located-the-exact-co_2078
+- 2026-09-12T23:02:07.666285+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T23:20:25.650402+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T23:20:31.968997+00:00 (state-transition): State: pending → completed
