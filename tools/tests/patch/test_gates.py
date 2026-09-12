@@ -125,6 +125,29 @@ class GateContractTests(unittest.TestCase):
             results = gates.evaluate_patch_gates(context)
         self.assertEqual(tuple(result.id for result in results), (GateId.G0, GateId.G1))
 
+    def test_lifecycle_gate_blocks_without_all_prerequisites(self) -> None:
+        context = SimpleNamespace(
+            intent=GateIntent.PROMOTE,
+            descriptor=SimpleNamespace(patch_id="P1"),
+            composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1", state="untested"),)),
+        )
+        result = gates.evaluate_lifecycle_gate(context, {})
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+        self.assertIn("G0", result.detail[0])
+
+    def test_lifecycle_gate_passes_untested_patch_after_g0_to_g4(self) -> None:
+        context = SimpleNamespace(
+            intent=GateIntent.PROMOTE,
+            descriptor=SimpleNamespace(patch_id="P1"),
+            composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1", state="untested"),)),
+        )
+        prior = {
+            gate_id: gates.GateResult(gate_id, GateStatus.PASS, "test", "test")
+            for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
+        }
+        result = gates.evaluate_lifecycle_gate(context, prior)
+        self.assertEqual(result.status, GateStatus.PASS)
+
 
 if __name__ == "__main__":
     unittest.main()
