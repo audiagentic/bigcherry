@@ -90,6 +90,7 @@ Remaining PGC02 gates (soak, provider/threshold telemetry for the pp1024-4096 so
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -103,3 +104,5 @@ Remaining PGC02 gates (soak, provider/threshold telemetry for the pp1024-4096 so
 - chg_20260912_045133_documented-the-n-way-allreduce_7094
 - 2026-09-12T04:51:33.420806+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T05:24:03.851834+00:00 (updated-by): Updated: section:notes
+- chg_20260912_052450_investigated-why-real-3-gpu-n_2608
+- 2026-09-12T05:24:50.656811+00:00 (updated-by): Updated: section:ledger-events
