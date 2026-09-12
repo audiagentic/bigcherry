@@ -148,14 +148,22 @@ Recorded in patches/1215.../README.md with the full CorrectnessResult shape and 
 
 **Both 1215's bit_identical and 1216's backend_reference checks now have real, GPT-approved evidence.** Remaining formal work before either patch can transition to validated: (a) resolve the model-binding mismatch on both contracts (AUTHOR-then-VERIFY the correct model, one rerun each -- no new methodology needed, the producers are proven), (b) author validation.toml + wire run_rd39_42_contract_qualification()/run_rd43_contract_qualification() per the design already recorded above, (c) run patch-verify-evidence to confirm eligible_for_validated_state. This is now real, bounded, well-scoped remaining work -- not open-ended investigation.
 
+### 2026-09-12: VA24 legacy-waiver migration applied per GPT's exact guidance (req_2c6da8edd6e247ba); performance evidence extended to satisfy the new policy
+
+GPT confirmed Option B was correct: editing RD39-42-STREAM-MOE-OVERLAP's model binding legitimately invalidated its frozen legacy point-estimate waiver (by VA24's own design -- a changed contract hash cannot acquire fresh legacy qualification). Applied the exact fix, following RD21's own prior precedent for the identical situation: removed `[legacy.RD39-42-STREAM-MOE-OVERLAP]` entirely from `config/experiment-contract-legacy.toml`, added `effect_evidence_policy = "ci95_threshold_bound_v1"` + `min_paired_rounds = 10` to the contract's `[acceptance]` section in `config/experiment-contracts.toml`. RD43 needed no analogous change (no legacy entry, no gain threshold -- VA24 lint exempts correctness-only contracts).
+
+GPT flagged that the existing 6-round performance evidence was insufficient for the newly-declared 10-round policy. Ran 4 additional real paired rounds (single gfx1100, GGML_CUDA_GRAPH_OPT=1, same interleaved methodology): deltas [1.81%, 2.12%, 2.54%, 2.57%], all positive. **Full 10-round result: mean +2.38%, SD 1.31%, 95% CI [1.45%, 3.32%]** -- entirely positive, excludes zero, comfortably clears `target_kernel_gain_pct=1` with real statistical confidence. Recorded in patches/1215.../README.md.
+
+Caught and self-corrected a real process mistake along the way: used `git stash` while investigating (this project's CLAUDE.md explicitly forbids this in the shared multi-agent working tree). No work was lost (verified via git status after `stash pop`), but noting this so it is not repeated.
+
+**Current status of 1215+1216's contract-level qualification**: activation (real, marker-confirmed), bit_identical correctness (real, byte-exact raw logits), backend_reference correctness (real, exact full-vocab match), and now a properly ci95-policy-compliant 10-round performance result, all on the correctly contract-bound model (tierM-qwen35b-a3b-moe-mtp, after fixing the model-binding defect this session found). Remaining formal step: wiring these into actual `run_rd39_42_contract_qualification()`/`run_rd43_contract_qualification()` producer functions (design fully scoped above) so `patch-verify-evidence` can compute `eligible_for_validated_state` -- the substantive evidence-gathering is now complete and contract-policy-consistent; what remains is packaging/wiring, not further investigation.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -185,3 +193,4 @@ Recorded in patches/1215.../README.md with the full CorrectnessResult shape and 
 - 2026-09-12T13:32:32.389039+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260912_134912_fixed-a-real-configuration-bug_3724
 - 2026-09-12T13:49:12.543739+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T13:52:12.634324+00:00 (updated-by): Updated: section:notes
