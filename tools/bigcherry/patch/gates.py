@@ -301,3 +301,36 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
         GateId.G6, GateStatus.FAIL, "disposition", "patch.disposition",
         tuple(coverage.uncovered_patch_ids),
     )
+
+
+def evaluate_patch_gates(context: GateContext) -> tuple[GateResult, ...]:
+    """Evaluate applicable gates in stable G0-G7 order.
+
+    An applicable gate without an implementation is reported BLOCKED.  This
+    keeps consumers honest while the staged PA21 implementation is completed;
+    no gate may disappear merely because its adapter is not wired yet.
+    """
+    evaluators = {
+        GateId.G0: evaluate_composition_gate,
+        GateId.G1: evaluate_summary_gate,
+        GateId.G2: evaluate_rebase_gate,
+        GateId.G3: evaluate_package_gate,
+        GateId.G4: evaluate_evidence_gate,
+        GateId.G6: evaluate_disposition_gate,
+        GateId.G7: evaluate_admission_gate,
+    }
+    results: list[GateResult] = []
+    for gate_id in GateId:
+        if not gate_applies(gate_id, context.intent):
+            continue
+        evaluator = evaluators.get(gate_id)
+        if evaluator is None:
+            results.append(
+                GateResult(
+                    gate_id, GateStatus.BLOCKED, "lifecycle", "patch.gates",
+                    ("applicable gate is not implemented",),
+                )
+            )
+        else:
+            results.append(evaluator(context))
+    return tuple(results)
