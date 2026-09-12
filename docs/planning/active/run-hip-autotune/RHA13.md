@@ -15,15 +15,19 @@ work: M
 
 ## Description
 
-Validate the reported Windows HIP silent-corruption case on mixed RX 7900 XTX gfx1100 plus RX 9070 XT gfx1201. Throughput alone is insufficient because the reported failure produces fluent but incorrect output with normal PP/TG.
+Validate and gate the reported Windows mixed gfx1100+gfx1201 HIP silent-corruption topology. This is environment-blocked qualification, not a harness to build speculatively.
 
 ## Steps
 
-1. Resolve the exact upstream issue and capture its reproduction details. 2. Run single-device XTX and R9700 controls, mixed HIP layer-split and tensor-split cases, and the same mixed pair under Vulkan as a control. 3. Use a deterministic prompt and compare token/output hashes plus correctness, not only throughput. 4. Record OS, ROCm/runtime, device order, split mode, model, build/pin, and all environment selectors. 5. Keep Windows mixed HIP multi-GPU evidence non-admissible until the gate passes; preserve the failure as a regression guard if reproduced.
+1. Freeze the platform/device contract: Windows version, ROCm/runtime, exact device order, layer/tensor split modes, model/build/pin, fixture hashes and environment selectors.
+2. Resolve issue #28676 and capture exact reproduction details.
+3. Run single-device controls and mixed HIP layer/tensor split cases; Vulkan remains a separate comparative control.
+4. Compare deterministic token/output hashes and correctness, not throughput alone; persist complete provenance.
+5. Keep mixed HIP performance non-admissible until the gate passes; preserve a failure as regression evidence.
 
 ## Detailed Solution & Technical Design
 
-This is a run/qualification gate, not a kernel optimization. The shared chat reports llama.cpp issue #28676 as open on 12 Sep 2026, with corruption on Windows 11 and official ROCm 10.0 binaries for RX 7900 XTX + RX 9070 XT, while single-XTX, Linux HIP, and Windows Vulkan controls were correct. Treat those facts as external provenance only until reproduced against the current BigCherry pin. Reuse existing campaign identity, correctness evidence, receipts, and validation-package machinery; do not add a separate benchmark oracle.
+Reuse campaign identity, correctness evidence, receipts and validation-package machinery; do not add a separate benchmark oracle. Required evidence must distinguish a true pass from fluent but corrupt output and must retain safe fallback/quarantine behavior.
 
 ## Code Samples & Guidance
 
@@ -35,7 +39,7 @@ tools/bigcherry/campaign/**; tools/bigcherry/tuning/correctness_evidence.py; too
 
 ## Validation
 
-Resolve issue #28676 state and exact reproducer; run five-cell control/subject matrix; require deterministic output/token hashes, zero corruption, and complete runtime/build/device provenance. Confirm llama-bench-only success cannot admit the result. Test both layer and tensor split and preserve failed evidence if reproduced.
+Issue state/reproducer; five-cell control/subject matrix; deterministic hashes; zero corruption; complete runtime/build/device provenance; layer and tensor split; no llama-bench-only admission.
 
 ## Effort & Risk
 
@@ -43,15 +47,17 @@ Resolve issue #28676 state and exact reproducer; run five-cell control/subject m
 
 ## Standards
 
-
+Environment contract first; correctness before throughput; no unsupported extrapolation; Vulkan boundary independent.
 
 ## Acceptance Criteria
 
-A committed, reproducible correctness verdict exists for the mixed Windows HIP topology. No performance result from that topology is treated as trustworthy without output validation. If reproduced, the topology remains gated/quarantined with a clear safe fallback and regression evidence; if not reproduced, the negative evidence and exact environment are retained.
+A committed reproducible verdict exists for the mixed topology; no performance result is trusted without output validation; reproduced failures remain gated/quarantined with fallback and regression evidence.
 
 ## Notes
 
 Provenance: shared ChatGPT conversation 'Daily AMD Updates Review', 12 Sep 2026, section '#28676 — mixed XTX + RDNA4 Windows HIP can silently generate garbage'; source link https://github.com/ggml-org/llama.cpp/issues/28676. External report says Windows HIP dual-GPU corrupts while Linux HIP and Windows Vulkan controls pass. Current BigCherry status: no matching PR/issue-specific plan or committed validation found by scan; must revalidate against current main/pin before implementation.
+
+Provenance: upstream issue #28676 and shared review. GPT says implementation is blocked until actual host/device identity and fixture contract are available.
 
 ## Change Log
 
@@ -59,5 +65,9 @@ Provenance: shared ChatGPT conversation 'Daily AMD Updates Review', 12 Sep 2026,
 
 ## Ledger-events
 
+
 - chg_20260911_225756_added-six-provenance-rich-buil_2622
 - 2026-09-11T22:57:56.698658+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T10:31:48.117034+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:validation, section:standards, section:acceptance_criteria, section:notes
+- chg_20260912_103200_updated-the-active-buildrunp_8222
+- 2026-09-12T10:32:01.038027+00:00 (updated-by): Updated: section:ledger-events
