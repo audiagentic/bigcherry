@@ -87,23 +87,40 @@ Built real control (baseline) and subject (1205 applied) `llama-bench`
 binaries on Brutus. Apply and build both real, clean PASS (both
 `bigcherry-native` compositions configured and compiled cleanly).
 
-Activation: ran `BIGCHERRY_PATCH_TRACE=1 llama-bench -p 512 -n 32` against
-two different real models (`Qwen3.5-4B-UD-Q6_K_XL` and
-`gpt-oss-20b-UD-Q6_K_XL`, both real prefill+decode workloads, single
-gfx1100): **0 of 0** `BIGCHERRY_PATCH_HIT patch=1205_rd12` marker hits in
-either run. This is a real negative finding, not yet root-caused -- the
-fusion's own guard requires two adjacent `MUL_MAT` nodes sharing the same
-activation/output-shape AND both selected by
-`ggml_cuda_should_fuse_mul_mat_vec_q` (real code, `ggml-cuda.cu`); neither
-tested model's attention block apparently presents that exact
-back-to-back K/V-projection shape at these architectures/quantizations,
-or the shape check (`mid->ne[0..2] == mm_a->ne[0..2]`, differing
-`src[0]`) rejects it for a reason not yet investigated. Consistent with
-this patch's own documented status: the fork's claim was measured on
-gfx1201 with the fork's own model, never independently confirmed on this
-project's hardware. Per this patch's hard prerequisite (RD25 not yet
-ported), no correctness/performance qualification was attempted -- this
-is deliberately scoped to apply/build/activation only.
+Activation, round 1 (2026-09-13, real, negative -- METHODOLOGY BUG, not
+a real negative): ran `BIGCHERRY_PATCH_TRACE=1 llama-bench -p 512 -n 32`
+(no `--verbose`) against two real models (`Qwen3.5-4B-UD-Q6_K_XL` and
+`gpt-oss-20b-UD-Q6_K_XL`, single gfx1100): **0 of 0**
+`BIGCHERRY_PATCH_HIT patch=1205_rd12` marker hits in either run.
+
+**Root cause found and corrected: this patch's marker uses
+`GGML_LOG_INFO`, not `GGML_LOG_WARN`** (`patch.py` line 155) -- the exact
+same class of bug this project already found and fixed for RD08
+(`GGML_LOG_INFO`->`GGML_LOG_WARN`, commit `991e761`, VA21): `llama-bench`
+gates INFO-level ggml logs behind its own `--verbose` flag, which the
+round-1 command above did not pass. **This was a real methodology bug in
+my own test command, not a real negative finding about the patch or the
+model.**
+
+**Activation, round 2 (2026-09-13, real, POSITIVE, all three
+architectures).** Rerunning the identical command with `--verbose` added,
+against the SAME `Qwen3.5-4B-UD-Q6_K_XL` model already registered as
+`tierA-qwen4b-q6k` (confirmed elsewhere this session, via PRBE102, to be
+a dense+GDN hybrid, not purely dense): **clean, real positive/negative
+split on all three available architectures** --
+`BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion` fired
+once (subject_hit=1) on gfx1100, gfx1201, AND gfx1030, zero hits
+(control_hit=0) on the baseline build on all three. **RD12's activation
+leg is resolved: the patch's fusion genuinely activates, on real
+hardware, across every available architecture.** The `mmvq.cu` marker
+itself should be changed from `GGML_LOG_INFO` to `GGML_LOG_WARN` to match
+RD08's precedent and avoid this exact trap recurring for future
+validators (not yet done -- a real, small, low-risk authoring fix,
+tracked below).
+
+Per this patch's hard prerequisite (RD25 not yet ported), no
+correctness/performance qualification was attempted -- that remains
+deliberately scoped out until RD25 lands.
 
 Runtime artifacts (raw logs) recorded but not yet persisted as a durable
 evidence bundle; further root-causing the zero-activation result is real,
