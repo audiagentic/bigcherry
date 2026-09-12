@@ -43,6 +43,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+from array import array
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -1136,6 +1137,505 @@ def run_rd13_ppl_check(
         f"rd13 ppl_equality: {'PASS' if result['passed'] else 'FAIL'} -- {artifact_ref['path']}"
     )
     return {"result": result, "artifact": artifact_ref}
+
+
+_RD13_BACKEND_REFERENCE_MODEL_REF = "tierA-qwen4b-q6k"
+_RD13_BACKEND_REFERENCE_VOCAB_SIZE = 248_320
+_RD13_BACKEND_REFERENCE_TOLERANCE = 0.0005
+_RD13_BACKEND_REFERENCE_N_PREDICT = 64
+_RD13_BACKEND_REFERENCE_PROMPT = (
+    "Explain in one concise sentence why a recurrent state update can be combined "
+    "with a residual connection while preserving the model's output."
+)
+
+
+def _rd13_stream_completion_rows(
+    session: object,
+    payload: Mapping[str, object],
+    *,
+    timeout_s: int,
+    stream_request=None,
+) -> Iterable[Mapping[str, object]]:
+    """Yield one native llama-server probability row per generated token.
+
+    The pinned server emits one ``completion_probabilities`` entry per SSE
+    event when ``stream=true``.  Streaming is intentional: a 64-token,
+    full-vocabulary Qwen response contains ~16M probability entries, so the
+    non-streaming ``post_json()`` path would retain the whole JSON document in
+    memory.  Tests inject ``stream_request`` and never touch HTTP.
+    """
+    if stream_request is not None:
+        yield from stream_request(session, dict(payload), timeout_s)
+        return
+
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps(dict(payload)).encode("utf-8")
+    request = urllib.request.Request(
+        f"{session.base_url}/completion",
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+        method="POST",
+    )
+    saw_stop = False
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="strict").strip()
+                if not line or line.startswith(":") or line.startswith("event:"):
+                    continue
+                if not line.startswith("data:"):
+                    raise PatchCampaignError(
+                        f"rd13 backend_reference: malformed SSE line: {line[:120]!r}"
+                    )
+                encoded = line.removeprefix("data:").strip()
+                if encoded == "[DONE]":
+                    saw_stop = True
+                    break
+                try:
+                    event = json.loads(encoded)
+                except json.JSONDecodeError as exc:
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: malformed JSON in completion stream"
+                    ) from exc
+                if not isinstance(event, Mapping):
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: completion stream event is not an object"
+                    )
+                stop = event.get("stop")
+                if stop is True:
+                    saw_stop = True
+                    continue
+                if stop is not False:
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: completion stream event lacks boolean stop=false"
+                    )
+                rows = event.get("completion_probabilities")
+                if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], Mapping):
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: expected exactly one completion_probabilities row per stream event"
+                    )
+                yield rows[0]
+    except (urllib.error.URLError, OSError, TimeoutError, UnicodeError) as exc:
+        raise PatchCampaignError(f"rd13 backend_reference: streaming /completion failed: {exc}") from exc
+    if not saw_stop:
+        raise PatchCampaignError("rd13 backend_reference: completion stream ended without a stop event")
+
+
+def _rd13_dense_logprobs(
+    row: Mapping[str, object], *, vocab_size: int, arm: str, step: int,
+) -> tuple[int, array]:
+    """Validate one full-vocabulary row and return token-id-indexed logprobs."""
+    generated_id = row.get("id")
+    if not isinstance(generated_id, int) or isinstance(generated_id, bool):
+        raise PatchCampaignError(
+            f"rd13 backend_reference: {arm} step {step} has invalid generated token id"
+        )
+    if generated_id < 0 or generated_id >= vocab_size:
+        raise PatchCampaignError(
+            f"rd13 backend_reference: {arm} step {step} generated token id {generated_id} "
+            f"outside vocabulary [0,{vocab_size})"
+        )
+
+    top = row.get("top_logprobs")
+    if not isinstance(top, list) or len(top) != vocab_size:
+        actual = len(top) if isinstance(top, list) else None
+        raise PatchCampaignError(
+            f"rd13 backend_reference: {arm} step {step} is not full-vocabulary -- "
+            f"expected {vocab_size} top_logprobs, got {actual!r}"
+        )
+
+    values = array("d", [math.nan]) * vocab_size
+    seen = bytearray(vocab_size)
+    for entry in top:
+        if not isinstance(entry, Mapping):
+            raise PatchCampaignError(
+                f"rd13 backend_reference: {arm} step {step} has a non-object top_logprobs entry"
+            )
+        token_id = entry.get("id")
+        logprob = entry.get("logprob")
+        if (
+            not isinstance(token_id, int)
+            or isinstance(token_id, bool)
+            or token_id < 0
+            or token_id >= vocab_size
+        ):
+            raise PatchCampaignError(
+                f"rd13 backend_reference: {arm} step {step} has invalid vocabulary token id {token_id!r}"
+            )
+        if seen[token_id]:
+            raise PatchCampaignError(
+                f"rd13 backend_reference: {arm} step {step} duplicates vocabulary token id {token_id}"
+            )
+        if not isinstance(logprob, (int, float)) or isinstance(logprob, bool):
+            raise PatchCampaignError(
+                f"rd13 backend_reference: {arm} step {step} token {token_id} has invalid logprob"
+            )
+        value = float(logprob)
+        if not math.isfinite(value):
+            raise PatchCampaignError(
+                f"rd13 backend_reference: {arm} step {step} token {token_id} has non-finite logprob"
+            )
+        seen[token_id] = 1
+        values[token_id] = value
+
+    # len(top)==vocab_size + unique in-range ids proves complete coverage.
+    return generated_id, values
+
+
+def _rd13_canonical_bytes(values: array) -> bytes:
+    """Canonical little-endian f64 encoding for evidence digests/spooling."""
+    if values.typecode != "d" or values.itemsize != 8:
+        raise PatchCampaignError("rd13 backend_reference: platform does not expose 64-bit array('d')")
+    if sys.byteorder == "little":
+        return values.tobytes()
+    copied = array("d", values)
+    copied.byteswap()
+    return copied.tobytes()
+
+
+def run_rd13_backend_reference_check(
+    *,
+    base_revision: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    worktree_root: Path,
+    build_root: Path,
+    model: Path,
+    run_dir: Path,
+    expected_execution=None,
+    selector_env: dict[str, str] | None = None,
+    vocab_size: int = _RD13_BACKEND_REFERENCE_VOCAB_SIZE,
+    n_predict: int = _RD13_BACKEND_REFERENCE_N_PREDICT,
+    tolerance: float = _RD13_BACKEND_REFERENCE_TOLERANCE,
+    prompt: str = _RD13_BACKEND_REFERENCE_PROMPT,
+    request_timeout_s: int = 900,
+    _session_factory=None,
+    _stream_request=None,
+    _source_module: object | None = None,
+) -> dict[str, object]:
+    """RD13's contract-grade backend_reference correctness producer.
+
+    Control is the resolved production composition with RD13 absent; subject
+    is the same composition with 1206 selected.  Both build a real
+    llama-server and run the contract's positive model through the pinned
+    native /completion API with pre-sampling, full-vocabulary logprobs.
+    Numeric comparison uses absolute logprob delta and fails at > tolerance.
+    """
+    from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.patch import source as real_source
+
+    if not isinstance(vocab_size, int) or isinstance(vocab_size, bool) or vocab_size <= 0:
+        raise PatchCampaignError("rd13 backend_reference: vocab_size must be a positive integer")
+    if not isinstance(n_predict, int) or isinstance(n_predict, bool) or n_predict <= 0:
+        raise PatchCampaignError("rd13 backend_reference: n_predict must be a positive integer")
+    if not math.isfinite(tolerance) or tolerance < 0.0:
+        raise PatchCampaignError("rd13 backend_reference: tolerance must be finite and non-negative")
+    if not isinstance(prompt, str) or not prompt:
+        raise PatchCampaignError("rd13 backend_reference: prompt must be non-empty")
+
+    psi = _source_module or real_source
+    session_factory = _session_factory or AttestedServerSession
+    expected = expected_execution or ExecutionIdentity(
+        backend="ROCm", architectures=(amdgpu_targets,),
+    )
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", focal="1206_rd13_mul_mat_add_view_fusion",
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError(
+            "rd13 backend_reference: control and subject resolved different base revisions"
+        )
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "control",
+        resolved_revision=control_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "subject",
+        resolved_revision=subject_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    reference_build_root = build_root / "rd13-backend-reference"
+    subject_name = f"rd13-backend-reference-subject-{amdgpu_targets}"
+    control_name = f"rd13-backend-reference-control-{amdgpu_targets}"
+    subject_bin = build_tree(
+        name=subject_name,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=reference_build_root,
+        targets=["llama-server"],
+        source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name=control_name,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=reference_build_root,
+        targets=["llama-server"],
+        source=control_src,
+        extra_cmake_args=[],
+    )
+
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_binary = subject_bin / f"llama-server{exe}"
+    control_binary = control_bin / f"llama-server{exe}"
+    subject_build_evidence = capture_completed_build_evidence(
+        reference_build_root / subject_name,
+        source_root=subject_src,
+        architecture=amdgpu_targets,
+        binary=subject_binary,
+        requested_cmake_args=cmake_args,
+        build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        reference_build_root / control_name,
+        source_root=control_src,
+        architecture=amdgpu_targets,
+        binary=control_binary,
+        requested_cmake_args=cmake_args,
+        build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence,
+        subject_build_evidence,
+        patch_id="1206_rd13_mul_mat_add_view_fusion",
+    )
+
+    request_payload: dict[str, object] = {
+        "prompt": prompt,
+        "n_predict": n_predict,
+        "n_probs": vocab_size,
+        "post_sampling_probs": False,
+        "temperature": 0.0,
+        "seed": 42,
+        "cache_prompt": False,
+        "ignore_eos": True,
+        "return_tokens": True,
+        "stream": True,
+    }
+    server_env = _hip_env(hip_path)
+    server_env.update(selector_env or {})
+    server_env.pop("ROCR_VISIBLE_DEVICES", None)
+    # An inherited global fusion-disable makes the RD13 subject inert and
+    # therefore cannot be allowed to masquerade as correctness evidence.
+    server_env.pop("GGML_CUDA_DISABLE_FUSION", None)
+    server_env = _hip_only(server_env)
+    env_unset = (*_ROCR_VISIBLE_DEVICES_UNSET, "GGML_CUDA_DISABLE_FUSION")
+    server_args = ("-ngl", "99", "-c", "1024", "--parallel", "1")
+
+    logs_dir = run_dir / "logs"
+    scratch_dir = run_dir / "scratch"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    spool_path = scratch_dir / "rd13-control-full-vocab-logprobs.f64"
+
+    control_tokens: list[int] = []
+    subject_tokens: list[int] = []
+    control_digest = hashlib.sha256()
+    subject_digest = hashlib.sha256()
+    attestations: dict[str, object] = {}
+    max_abs_diff = 0.0
+    worst: dict[str, object] | None = None
+    first_token_mismatch: dict[str, int] | None = None
+    comparable_steps = 0
+
+    try:
+        with session_factory(
+            binary=control_binary,
+            model=model,
+            expected=expected,
+            extra_args=server_args,
+            log_path=logs_dir / "rd13-backend-reference-control-server.log",
+            env_overrides=server_env,
+            env_unset=env_unset,
+        ) as control_session, spool_path.open("wb") as spool:
+            if control_session.attestation is None:
+                raise PatchCampaignError("rd13 backend_reference: control server has no attestation")
+            attestations["control"] = control_session.attestation.document()
+            for step, row in enumerate(
+                _rd13_stream_completion_rows(
+                    control_session,
+                    request_payload,
+                    timeout_s=request_timeout_s,
+                    stream_request=_stream_request,
+                )
+            ):
+                if step >= n_predict:
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: control emitted more decode steps than requested"
+                    )
+                generated_id, values = _rd13_dense_logprobs(
+                    row, vocab_size=vocab_size, arm="control", step=step,
+                )
+                encoded = _rd13_canonical_bytes(values)
+                spool.write(encoded)
+                control_digest.update(encoded)
+                control_tokens.append(generated_id)
+            if len(control_tokens) != n_predict:
+                raise PatchCampaignError(
+                    f"rd13 backend_reference: control emitted {len(control_tokens)} decode steps; "
+                    f"expected {n_predict}"
+                )
+
+        with session_factory(
+            binary=subject_binary,
+            model=model,
+            expected=expected,
+            extra_args=server_args,
+            log_path=logs_dir / "rd13-backend-reference-subject-server.log",
+            env_overrides=server_env,
+            env_unset=env_unset,
+        ) as subject_session, spool_path.open("rb") as spool:
+            if subject_session.attestation is None:
+                raise PatchCampaignError("rd13 backend_reference: subject server has no attestation")
+            attestations["subject"] = subject_session.attestation.document()
+            for step, row in enumerate(
+                _rd13_stream_completion_rows(
+                    subject_session,
+                    request_payload,
+                    timeout_s=request_timeout_s,
+                    stream_request=_stream_request,
+                )
+            ):
+                if step >= n_predict:
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: subject emitted more decode steps than requested"
+                    )
+                generated_id, subject_values = _rd13_dense_logprobs(
+                    row, vocab_size=vocab_size, arm="subject", step=step,
+                )
+                encoded = _rd13_canonical_bytes(subject_values)
+                subject_digest.update(encoded)
+                subject_tokens.append(generated_id)
+
+                control_values = array("d")
+                try:
+                    control_values.fromfile(spool, vocab_size)
+                except EOFError as exc:
+                    raise PatchCampaignError(
+                        "rd13 backend_reference: compact control spool ended early"
+                    ) from exc
+                if sys.byteorder != "little":
+                    control_values.byteswap()
+
+                control_generated = control_tokens[step]
+                if first_token_mismatch is None and control_generated != generated_id:
+                    first_token_mismatch = {
+                        "step": step,
+                        "control_token_id": control_generated,
+                        "subject_token_id": generated_id,
+                    }
+
+                # Step k's distribution is still comparable when token k is
+                # the first mismatch (its input context was identical).  Once
+                # a generated token diverges, later contexts are not the same
+                # experiment and their numeric deltas are diagnostic only.
+                if first_token_mismatch is None or first_token_mismatch["step"] == step:
+                    comparable_steps += 1
+                    for token_id, (control_value, subject_value) in enumerate(
+                        zip(control_values, subject_values, strict=True)
+                    ):
+                        delta = abs(subject_value - control_value)
+                        if delta > max_abs_diff:
+                            max_abs_diff = delta
+                            worst = {
+                                "step": step,
+                                "token_id": token_id,
+                                "control_logprob": control_value,
+                                "subject_logprob": subject_value,
+                                "abs_diff": delta,
+                            }
+            if len(subject_tokens) != n_predict:
+                raise PatchCampaignError(
+                    f"rd13 backend_reference: subject emitted {len(subject_tokens)} decode steps; "
+                    f"expected {n_predict}"
+                )
+            if spool.read(1):
+                raise PatchCampaignError("rd13 backend_reference: compact control spool has trailing data")
+    finally:
+        spool_path.unlink(missing_ok=True)
+        try:
+            scratch_dir.rmdir()
+        except OSError:
+            pass
+
+    generated_tokens_match = first_token_mismatch is None
+    passed = generated_tokens_match and max_abs_diff <= tolerance
+    compared = comparable_steps * vocab_size
+    if first_token_mismatch is not None:
+        detail = (
+            "generated token sequence diverged at step "
+            f"{first_token_mismatch['step']} after comparing {compared} full-vocabulary logprobs"
+        )
+    else:
+        relation = "<=" if passed else ">"
+        detail = (
+            f"{n_predict} decode steps, {compared} full-vocabulary logprobs; "
+            f"max_abs_logprob_diff={max_abs_diff:.9g} {relation} tolerance={tolerance:.9g}"
+        )
+    correctness_result = experiment_contract.CorrectnessResult(
+        check="backend_reference", passed=passed, detail=detail,
+    )
+
+    comparison = {
+        "method": "llama-server-streaming-full-vocab-logprob",
+        "contract_model_ref": _RD13_BACKEND_REFERENCE_MODEL_REF,
+        "vocab_size": vocab_size,
+        "decode_steps_requested": n_predict,
+        "decode_steps_compared": comparable_steps,
+        "logprobs_compared": compared,
+        "tolerance": tolerance,
+        "generated_tokens_match": generated_tokens_match,
+        "first_generated_token_mismatch": first_token_mismatch,
+        "max_abs_logprob_diff": max_abs_diff,
+        "worst": worst,
+        "control_logprobs_sha256": control_digest.hexdigest(),
+        "subject_logprobs_sha256": subject_digest.hexdigest(),
+    }
+    doc = {
+        "schema_version": 1,
+        "check": correctness_result.check,
+        "passed": correctness_result.passed,
+        "detail": correctness_result.detail,
+        "model": str(model),
+        "request": request_payload,
+        "comparison": comparison,
+        "execution_attestation": attestations,
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd13-backend-reference.json", doc)
+    _print(
+        f"rd13 backend_reference: {'PASS' if passed else 'FAIL'} -- {artifact_ref['path']}"
+    )
+    return {
+        "results": {"backend_reference": correctness_result},
+        "artifact": artifact_ref,
+        "comparison": comparison,
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+    }
 
 
 def _load_rd43_correctness_module() -> object:
