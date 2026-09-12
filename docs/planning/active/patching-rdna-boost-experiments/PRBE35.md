@@ -100,6 +100,7 @@ Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -116,3 +117,5 @@ Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists
 - chg_20260911_230135_found-and-documented-a-real-sa_9076
 - 2026-09-11T23:01:35.306535+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T09:17:39.246458+00:00 (updated-by): Updated: section:notes
+- chg_20260912_091821_validated-a-gpu-concurrency-op_8669
+- 2026-09-12T09:18:21.067473+00:00 (updated-by): Updated: section:ledger-events
