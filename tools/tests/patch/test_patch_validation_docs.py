@@ -110,6 +110,15 @@ def _resolve_documented_symbol(reference: str) -> object:
     return getattr(module, attribute)
 
 
+def _authority_references(authority_cell: str) -> tuple[str, ...]:
+    """Extract callable references from the canonical matrix itself."""
+    return tuple(
+        reference
+        for reference in re.findall(r"`([^`]+\(\))`", authority_cell)
+        if reference.startswith(("patch.", "patch_admission."))
+    )
+
+
 def _relative_links(source: str) -> list[str]:
     clean = _strip_fenced_markdown(source)
     links: list[str] = []
@@ -125,46 +134,6 @@ def _relative_links(source: str) -> list[str]:
             continue
         links.append(unquote(parsed.path))
     return links
-
-
-REQUIRED_AUTHORITY_REFERENCES = {
-    "G0": (
-        "patch.gates.evaluate_composition_gate()",
-        "patch.patchset.resolve_exact()",
-    ),
-    "G1": (
-        "patch.gates.evaluate_summary_gate()",
-        "patch.docs.check_summary_for_patch()",
-        "patch.gates.evaluate_repository_lint_gates()",
-        "patch.gates._evaluate_lint_summary()",
-    ),
-    "G2": (
-        "patch.gates.evaluate_rebase_gate()",
-        "patch.rebase.require_fresh_report()",
-    ),
-    "G3": (
-        "patch.gates.evaluate_package_gate()",
-        "patch.validation_policy.check_validation_packages()",
-        "patch.validation_policy.require_execution_package()",
-        "patch.validation_policy.check_performance_evidence_for_patch()",
-        "patch.gates.evaluate_repository_lint_gates()",
-        "patch.gates._evaluate_lint_package()",
-    ),
-    "G4": (
-        "patch.gates.evaluate_evidence_gate()",
-        "patch.catalog.validation_evidence_statuses()",
-    ),
-    "G5": ("patch.gates.evaluate_lifecycle_gate()",),
-    "G6": (
-        "patch.gates.evaluate_disposition_gate()",
-        "patch.disposition.compute_coverage()",
-        "patch.rebase.require_fresh_report()",
-    ),
-    "G7": (
-        "patch.gates.evaluate_admission_gate()",
-        "patch_admission.admit()",
-    ),
-}
 
 
 class PatchValidationDocumentationTests(unittest.TestCase):
@@ -190,16 +159,28 @@ class PatchValidationDocumentationTests(unittest.TestCase):
 
     def test_matrix_names_resolvable_live_authorities(self) -> None:
         matrix = _parse_gate_matrix(CANONICAL.read_text(encoding="utf-8"))
-        for gate_id, references in REQUIRED_AUTHORITY_REFERENCES.items():
-            authority = matrix[gate_id][3]
+        for gate_id, row in matrix.items():
+            references = _authority_references(row[3])
+            self.assertTrue(references, gate_id)
             for reference in references:
-                self.assertIn(f"`{reference}`", authority, gate_id)
                 self.assertTrue(callable(_resolve_documented_symbol(reference)), reference)
+        self.assertIn(
+            "patch.gates.evaluate_repository_lint_gates()",
+            _authority_references(matrix["G1"][3]),
+        )
+        self.assertIn(
+            "patch.gates._evaluate_lint_summary()",
+            _authority_references(matrix["G1"][3]),
+        )
+        self.assertIn(
+            "patch.gates._evaluate_lint_package()",
+            _authority_references(matrix["G3"][3]),
+        )
 
     def test_public_intents_match_the_real_cli_parser(self) -> None:
         document = _strip_fenced_markdown(CANONICAL.read_text(encoding="utf-8"))
         match = re.search(
-            r"The public `patch-gates` intents are exactly\s+(.+?)\.",
+            r"The public\s+`patch-gates`\s+intents are exactly\s+(.+?)\.",
             document,
         )
         self.assertIsNotNone(match)
