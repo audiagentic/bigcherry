@@ -58,3 +58,8 @@ Both 2026-09-11 and 2026-09-13 investigations independently converged on this sa
 ## Change Log
 
 - 2026-09-12T19:27:37.075621+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_192807_confirmed-patch-1204-rd08s_9661
+- 2026-09-12T19:28:07.083361+00:00 (updated-by): Updated: section:ledger-events

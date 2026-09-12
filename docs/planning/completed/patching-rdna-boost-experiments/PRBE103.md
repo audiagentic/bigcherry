@@ -68,7 +68,10 @@ Conclusion: the original VDR=1-vs-VDR=2 digest divergence in RD08's contract-qua
 
 ## Ledger-events
 
+
 - chg_20260912_160922_ran-patch-1204-rd08s-full-c_6243
 - 2026-09-12T16:09:22.565880+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T19:21:43.738642+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T19:21:48.669745+00:00 (state-transition): State: pending → completed
+- chg_20260912_192807_confirmed-patch-1204-rd08s_9661
+- 2026-09-12T19:28:07.089979+00:00 (updated-by): Updated: section:ledger-events
