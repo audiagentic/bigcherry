@@ -49,6 +49,53 @@ GPT-reviewed. Not yet `validated` -- 1216's own Experiment Contract
 requires a `backend_reference` correctness check, which the existing
 PPL-equality evidence does not formally substitute for.
 
+## Real backend_reference correctness evidence (2026-09-12, GPT-approved, req_3e42043eb71a4a92 / req_a457561b33ac4f24)
+
+The contract's own required check is `backend_reference`, not `ppl_equality`
+-- the 2026-09-11 PPL result above is real but does not formally satisfy
+this named check. Ran the correct check per GPT's exact design: real
+Brutus hardware, single gfx1100, control = baseline+1215 (isolating 1216's
+own marginal effect, not plain baseline), subject = baseline+1215+1216,
+`GGML_CUDA_GRAPH_OPT=1` both arms, same fixed deterministic prompt
+(temp=0, seed=42, 64 decode steps), comparing generated token IDs plus
+**all** 248,320 vocab logprobs per step via `/completion`'s `n_probs`
+parameter (this model's real vocab size, confirmed empirically) --
+**no rounding/truncation** this time (an earlier pass that rounded to 6
+decimal places was correctly flagged by GPT as too lossy for a formal
+result).
+
+**Result: exact match.** Token IDs identical across all 64 steps;
+0 of 15,892,480 total logprob comparisons (64 steps x 248,320 vocab
+entries) differ at all; `max_abs_logprob_diff = 0.0` (exactly zero, not
+just below a tolerance).
+
+```
+CorrectnessResult(
+    check_id="backend_reference", passed=True,
+    method="full-vocab-http-logprob-parity",
+    details={
+        "generated_steps": 64, "vocab_size": 248320,
+        "total_compared": 15892480, "mismatches": 0,
+        "max_abs_logprob_diff": 0.0, "token_id_mismatches": 0,
+        "graph_opt": 1, "control": "1215", "subject": "1215+1216",
+    },
+)
+```
+
+**GPT's explicit caveat -- real, unresolved contract-binding defect**: the
+`RD43-CONCURRENT-JOIN-FUSION-GUARD` contract in
+`config/experiment-contracts.toml` declares model `tierM-gptoss20b-q6k` /
+workload `moe_decode`; this real run used `Qwen3.6-35B-A3B-UD-Q4_K_M`
+(this project's only registered MoE model with the exact vocab-probe
+mechanism readily available). This result may be **persisted as a real
+passing `CorrectnessResult`**, but is **not the final contract-qualified
+result** until either (a) `tierM-gptoss20b-q6k` is confirmed to hit the
+RD42/RD43 activation path and this exact protocol is rerun there, or (b)
+if it does not hit that path, the contract's model binding is corrected
+to the Qwen model (an AUTHOR-then-VERIFY step, then one rerun -- no
+extra prompt/repeat matrix needed, since RD43 is a fixed-effect,
+correctness-only claim with no performance component).
+
 ## Known limitations
 
 - No `validation.toml` adapter exists for this patch. `patch-lint`'s package
