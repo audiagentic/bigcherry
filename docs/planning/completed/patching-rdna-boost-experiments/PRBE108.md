@@ -66,6 +66,7 @@ Remaining open question: why does a real, tight, reproducible ~5.93% negative de
 
 ## Ledger-events
 
+
 - chg_20260912_220855_found-a-real-unresolved-discr_5936
 - 2026-09-12T22:08:55.337667+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T22:12:33.510493+00:00 (updated-by): Updated: section:notes
@@ -73,3 +74,5 @@ Remaining open question: why does a real, tight, reproducible ~5.93% negative de
 - 2026-09-12T22:13:15.186788+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T22:16:14.529646+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T22:16:20.658267+00:00 (state-transition): State: pending → completed
+- chg_20260912_221648_fully-resolved-the-prbe108-dis_6659
+- 2026-09-12T22:16:48.171542+00:00 (updated-by): Updated: section:ledger-events
