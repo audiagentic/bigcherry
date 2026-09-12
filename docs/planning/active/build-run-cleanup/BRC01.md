@@ -15,56 +15,79 @@ work: L
 
 ## Description
 
-GPT-reviewed remaining build/run cleanup after the source and release ownership migrations already landed. The live defect is the cli.patch -> bigcherry.__main__ back-edge: cmd_apply still delegates to __main__ helpers. The first slice should move only _copy_overlay, _restore_overlay, and _apply_exact_selection into cli.patch, remove the dependency, reduce __main__.py to compatibility/entrypoint wiring, and add the TR14.CLI_MAIN_BACKEDGE guard. cli.source, release.records, and release.pin are already canonical and must not be reimplemented. Root inventory.py, patcher.py, and replay_cache.py remain compatibility facades pending independent retirement proof; smoke/report and rocprof consolidation are later scans, not this slice.
+GPT-reviewed cleanup of the remaining production __main__ back-edges. The first implementation slice removes the cli.patch, cli.tuning, patch.rebase, and release.pin_bump dependencies on bigcherry.__main__ while preserving compatibility aliases at the entrypoint. Overlay copy/restore is a shared patch-domain concern, so it belongs in patch/overlay.py; cli.patch owns apply orchestration and release.records remains the record authority. Smoke/report, rocprof, replay/cache, and root-facade retirement remain separate follow-up work.
 
 ## Steps
 
-1. Freeze the current ownership boundary and inventory call sites/tests: cli.source, release.records, and release.pin are already canonical; do not repeat their migration. Confirm current cli.patch.cmd_apply -> __main__ helper references and compatibility exports.
-2. Move _copy_overlay, _restore_overlay, and _apply_exact_selection from __main__.py into cli/patch.py with behavior-preserving imports and the existing allow_stale_validation_evidence, admission, overlay rollback, patch rollback, release/tree-state, stdout/stderr, and exit-code contracts intact. Change cmd_apply to call the local helper and remove the production cli.patch -> __main__ import.
-3. Reduce __main__.py by deleting only the migrated substantive helper bodies; retain the module entrypoint, parser/command compatibility exports, and private aliases only where existing consumers/tests prove they are required. Do not change source/release ownership or remove root compatibility facades.
-4. Add AST-backed TR14.CLI_MAIN_BACKEDGE in check.py for static/dynamic import forms, and update lookup-site monkeypatches/tests to cli.patch or canonical owners. Add direct apply parity/rollback/TOCTOU and compatibility tests.
-5. Run focused CLI/release/core boundary tests, patch/replay regressions, check --quick, compileall, and the full offline suite. Record exact before/after CLI behavior and unchanged worktree state. Leave smoke/report/rocprof/facade retirement for later separately designed items.
+1. Freeze the current call graph and compatibility surface: cli.patch.cmd_apply -> __main__._apply_exact_selection; cli.tuning.cmd_generate -> __main__._record_for; patch.rebase -> __main__._copy_overlay/_restore_overlay/_record_for; release.pin_bump -> __main__._copy_overlay/_record_for. Confirm all affected tests and do not reimplement cli.source, release.records, or release.pin.
+2. Add tools/bigcherry/patch/overlay.py as the dependency-light canonical overlay copy/restore owner. Move the existing behavior without semantic changes: sorted traversal, raw-byte/newline-sensitive change detection, UTF-8 writes, simulation text for dry-run, original-content backups including missing files, normalized relative paths, O_NOFOLLOW restore, deletion of newly-created files, and per-file restore-failure isolation.
+3. Move _apply_exact_selection from __main__.py into cli/patch.py unchanged in transaction order. Import patch.overlay, patch.apply, patchset, patch.rebase, patch_admission, and release.records at their canonical layers; use releases.record_for_checkout; retain local identity aliases _copy_overlay and _restore_overlay for tested compatibility lookup sites.
+4. Retarget patch/rebase.py to patch.overlay.copy_overlay/restore_overlay and release.records.record_for_checkout; retarget release/pin_bump.py to patch.overlay and release.records; retarget cli/tuning.py to release.records. No protected domain may import cli.* or __main__.
+5. Reduce __main__.py to entrypoint/compatibility identity aliases and existing supported command/parser exports. Retain _copy_overlay, _restore_overlay, _apply_exact_selection, and _record_for only as direct identity aliases where compatibility tests establish them; remove substantive implementations and dead support helpers.
+6. Add AST-backed TR14.CLI_MAIN_BACKEDGE in check.py for static relative/absolute and literal dynamic imports resolving to bigcherry.__main__, excluding __main__.py and ignoring comments/docstrings. Avoid duplicate diagnostics and keep TR14.DOMAIN_CLI_IMPORT.
+7. Retarget/add focused tests for cli.patch apply parity, rebase overlay/rollback, pin-bump self-heal, tuning generation, compatibility identity, and CLI layering. Validate before/after streams, exit codes, dry-run, admission-before-mutation, TOCTOU, rollback, release/evidence/tree-state identity, and current facade identity.
 
 ## Detailed Solution & Technical Design
 
-Binding GPT roadmap correction: this tranche must not reimplement tools/bigcherry/cli/source.py, release/records.py, or release/pin.py. Their ownership migrations are already landed and are canonical. The only remaining production ownership defect is cli.patch.cmd_apply importing or delegating to bigcherry.__main__.
+GPT implementation design correction: the previous BRC01 statement that cli.patch alone could own _copy_overlay/_restore_overlay was architecturally incomplete. patch.rebase.py and release.pin_bump.py are protected domain modules and cannot import cli.patch. The canonical ownership must therefore be:
 
-Target ownership:
-- cli.patch.py owns _copy_overlay, _restore_overlay, and _apply_exact_selection plus cmd_apply.
-- bigcherry.patch.apply.apply_all remains the sole anchored-edit engine.
-- release.records and release.pin remain the canonical record/pin authorities and are imported directly where needed.
-- __main__.py is only the python -m entrypoint and compatibility shell. Retain cmd_* exports and private aliases only when existing compatibility tests/consumers require them; no substantive source/patch/release helper implementation remains there.
-- check.py owns TR14.CLI_MAIN_BACKEDGE, using AST resolution for static and dynamic import forms while ignoring comments/docstrings.
+- tools/bigcherry/patch/overlay.py: dependency-light copy_overlay(...) and restore_overlay(...), with no CLI, release, or __main__ dependency. Preserve the existing helper's optional backup and sim_texts behavior so dry-run and rollback semantics remain identical.
+- tools/bigcherry/cli/patch.py: canonical cmd_apply and _apply_exact_selection orchestration. It imports patch.overlay and release.records. Keep _copy_overlay = patch_overlay.copy_overlay and _restore_overlay = patch_overlay.restore_overlay as direct identity aliases for compatibility and existing lookup-site tests.
+- tools/bigcherry/release/records.py: canonical record_for_checkout(root); its implementation is out of scope and must not be duplicated.
+- tools/bigcherry/patch/rebase.py: imports patch.overlay and release.records directly. Replace legacy._copy_overlay, legacy._restore_overlay, and legacy._record_for with canonical owners without changing probing, known-good selection, partial reconciliation, report, dry-run, rollback, tree-state, or release-update algorithms.
+- tools/bigcherry/release/pin_bump.py: imports patch.overlay and release.records directly. Replace only legacy helper lookups; preserve self-heal output, evidence invalidation, and phase behavior.
+- tools/bigcherry/cli/tuning.py: imports release.records directly for cmd_generate; no behavior change.
+- tools/bigcherry/__main__.py: entrypoint/compatibility shell. It may import cli.patch and release.records to expose identity aliases, but no production module other than __main__.py may import it. Aliases must be identity aliases, not wrappers.
 
-Preserve the current _apply_exact_selection transaction exactly: live HEAD and source-ref resolution; exact composition and patch-set drift checks; overlay fail-closed behavior; patch admission before overlay writes; warning/error streams; stale-evidence override; two-pass patch application and overlay/patch rollback; tree-state and mutation identity; release-record advancement; dry-run non-persistence; and argument/selection/apply exit taxonomy 2/1/0. Do not merge overlay rollback with patch rollback or introduce a generic subprocess/workflow abstraction.
+Preserve _apply_exact_selection's exact order: live HEAD and source-ref resolution; live/ref mismatch refusal; exact source composition and patch-set/ordered patch-ID TOCTOU checks; unresolved-overlay refusal; admission and warnings before overlay mutation; audit gate; overlay simulation/copy; exact patch loading/application; real-apply overlay rollback; tree-state and mutation calculation; existing output; second record lookup and persistence; and evidence invalidation/update semantics. Preserve --force, --dry-run, allow_stale_validation_evidence, stdout/stderr, return codes 0/1/2, release/evidence/tree-state identities, and rebase-report delegation to patch.rebase.apply_known_good. Do not introduce a generic workflow abstraction or merge overlay rollback with patch rollback.
 
-The target graph is entrypoint -> cli.main -> cli.source/domain APIs and cli.patch/domain APIs. No production cli.* or canonical domain module may import bigcherry.__main__. Root patcher.py, inventory.py, and replay_cache.py remain identity facades. Smoke/report and either rocprof path are explicitly out of scope for this tranche.
-
-Required tests include direct cli.patch apply parity, live-HEAD/ref/composition/admission-before-mutation failures, rollback and stale-evidence override, dry-run/reapply tree-state behavior, stdout/stderr/exit parity, source CLI regression coverage, compatibility facade identity, and static/dynamic back-edge detection.
-
-GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104; the corrected boundary was validated in req_0e85b3eb1d7e4df0 and req_f7a013040828433c.
+TR14.CLI_MAIN_BACKEDGE must AST-scan production tools/bigcherry/**/*.py except __main__.py. Detect absolute and relative imports that resolve to bigcherry.__main__, plus literal importlib.import_module/import_module/__import__ calls. Ignore comments/docstrings/string mentions and unrelated __main__ modules. Emit one stable diagnostic per offense and leave the existing domain-to-CLI boundary rule intact.
 
 ## Code Samples & Guidance
 
+patch/overlay.py:
+copy_overlay(root, *, dry_run, backup=None, sim_texts=None) -> list[str]
+restore_overlay(root, backup) -> None
 
+cli/patch.py:
+_copy_overlay = patch_overlay.copy_overlay
+_restore_overlay = patch_overlay.restore_overlay
+_record_for = releases.record_for_checkout
+# cmd_apply calls the local _apply_exact_selection; no cli.patch -> __main__ import.
+
+patch/rebase.py and release/pin_bump.py:
+from ..patch import overlay as patch_overlay
+from ..release import records as releases
+# use patch_overlay.copy_overlay/restore_overlay and releases.record_for_checkout.
+
+__main__.py:
+_copy_overlay = _patch_cli._copy_overlay
+_restore_overlay = _patch_cli._restore_overlay
+_apply_exact_selection = _patch_cli._apply_exact_selection
+_record_for = _release_records.record_for_checkout
 
 ## Files
 
-tools/bigcherry/__main__.py (remove migrated helper bodies, retain entrypoint/compatibility exports)
-tools/bigcherry/cli/patch.py (own apply helpers and cmd_apply)
+tools/bigcherry/patch/overlay.py (new canonical overlay primitive)
+tools/bigcherry/cli/patch.py (apply orchestration, overlay compatibility aliases, _apply_exact_selection)
+tools/bigcherry/__main__.py (remove substantive helper implementations; retain identity aliases/entrypoint)
+tools/bigcherry/patch/rebase.py (canonical overlay and release-record imports)
+tools/bigcherry/release/pin_bump.py (canonical overlay and release-record imports)
+tools/bigcherry/cli/tuning.py (canonical release-record import)
 tools/bigcherry/check.py (TR14.CLI_MAIN_BACKEDGE)
-tools/tests/cli/test_cli_patch_apply.py
-tools/tests/cli/test_cli_source_pull.py
-tools/tests/core/test_compatibility_facades.py
+tools/tests/cli/test_cli_patch_apply.py (move/retarget apply workflow coverage)
+tools/tests/patch/test_patch_rebase.py (overlay/rollback lookup sites)
+tools/tests/release/test_pin_bump.py (canonical lookup-site patches)
+tools/tests/release/test_releases.py (retain record tests; move apply workflow tests as needed)
+tools/tests/cli/test_cli_tuning.py or existing generate tests
 tools/tests/core/test_cli_layering.py
-tools/tests/release/test_releases.py
-tools/tests/release/test_pin_status.py
-Inspect only: tools/bigcherry/cli/source.py, tools/bigcherry/cli/main.py, tools/bigcherry/release/records.py, tools/bigcherry/release/pin.py
-Later scans, not this tranche: e2e_smoke_campaign.py, e2e_smoke_report.py, rocprof.py, profiling/rocprof.py, inventory.py, patcher.py, replay_cache.py, TOOL_DISPOSITION.md.
+tools/tests/core/test_compatibility_facades.py
+Inspect only: cli/source.py, release/records.py, release/pin.py
+Later separate work: smoke/report, rocprof, replay/cache, patcher.py, inventory.py, replay_cache.py
 
 ## Validation
 
-Before/after consumer proof for python imports and direct CLI invocations. Verify cli.source and cli.patch import without loading __main__ as a production dependency; compatibility exports remain available where tested. Run focused patch-apply/source/release/core tests, patch and replay regressions, check --quick, compileall, and the full offline test suite. Compare command help, aliases, exit codes, stdout/stderr, failure receipts, release/evidence/tree-state identity, overlay/patch rollback, and rebase-report behavior. Capture HEAD, branch, index, worktree list, and unrelated-file state before/after; they must be unchanged outside disposable fixtures.
+Run focused CLI/apply, rebase, pin-bump, tuning, release, and core-layering tests. Add AST unit tests for every supported absolute/relative/literal dynamic import form, comments/docstrings/string false positives, __main__.py exemption, and zero current production back-edges. Run patch and replay regressions, bigcherry check --quick, compileall, and the full offline suite where the local interpreter is available. Compare command help, aliases, stdout/stderr, exit codes, dry-run non-persistence, admission-before-overlay mutation, live HEAD/ref and composition TOCTOU failures, overlay and patch rollback, stale-evidence override, release/evidence/tree-state identity, and rebase-report behavior. Capture repository HEAD, branch, index, worktree list, and unrelated-file state before/after; only disposable fixtures may change.
 
 ## Effort & Risk
 
@@ -76,7 +99,7 @@ Before/after consumer proof for python imports and direct CLI invocations. Verif
 
 ## Acceptance Criteria
 
-Implement only after the recorded GPT design is reviewed. No production cli.* -> bigcherry.__main__ import, static or dynamic; __main__.py is compatibility/entrypoint wiring only; cli.main remains parser authority; cli.patch owns apply orchestration; release.pin and release.records remain canonical; patch.apply remains the sole anchored-edit engine; current admission, HEAD/ref, composition, overlay, rollback, CLI stream/exit, release/evidence/tree-state, replay, and facade identity behavior remain unchanged; check --quick prevents back-edge reintroduction; full applicable tests pass. No smoke/report consolidation, rocprof change, or facade retirement is included in this tranche.
+No production module other than __main__.py imports bigcherry.__main__, including static and literal dynamic forms. No protected patch or release domain imports cli. patch/overlay is the sole canonical copy/restore implementation, with byte/newline, backup, simulation, O_NOFOLLOW, and rollback behavior unchanged. cli.patch owns _apply_exact_selection and cmd_apply; release.records.record_for_checkout remains authoritative; cli.tuning, patch.rebase, and release.pin_bump use canonical owners. __main__.py contains only entrypoint/compatibility wiring and direct identity aliases where compatibility requires them. Existing admission-before-mutation, HEAD/ref, composition-TOCTOU, stale-evidence override, overlay/patch rollback, output streams, exit codes, dry-run, rebase-report, release/evidence/tree-state, and facade identity contracts remain unchanged. TR14.CLI_MAIN_BACKEDGE is AST-backed, ignores comments/docstrings, exempts __main__.py, avoids duplicate findings, and check --quick prevents reintroduction. No smoke/report, rocprof, replay/cache, or root-facade retirement is included.
 
 ## Notes
 
@@ -87,6 +110,26 @@ GPT gateway initial response: audited main at 644b8207d11eaafa14c34f29fe4dc6c953
 GPT second-pass file-level design completed against published main tip 7f61b3b5615cc429efe6d630bffe4a46697d0e10. Key correction: cli/main.py and release/pin.py are already canonical; first tranche is limited to source/patch ownership inversion and __main__ compatibility reduction. No implementation started.
 
 GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This is the first production-code slice after planning reconciliation because current cmd_apply still delegates through __main__. The live remainder is narrowly _copy_overlay/_restore_overlay/_apply_exact_selection ownership inversion plus AST-backed TR14.CLI_MAIN_BACKEDGE and parity tests. cli.source, release.pin, and release.records are already canonical and must not be unnecessarily altered. PA34 and PA33 later touch the same CLI patch ownership, so serialize final integration and use separate worktrees for any parallel exploratory work.
+
+Initial assessment and design to be supplied by GPT gateway review before implementation.
+
+GPT gateway initial response: audited main at 644b8207d11eaafa14c34f29fe4dc6c95388911d; verdict directionally coherent but still overly bridged. Recommended order: (1) cli/__main__ ownership inversion; (2) reduce __main__ to compatibility shell; (3) enforce no cli -> __main__ back-edge; (4) consolidate smoke/report; (5) reconcile rocprof; (6) retire root facades last. Safe to remove now: none. Root facades are intentional module-identity aliases. The audit also noted BRC01 was not visible on the audited tip, which is why this plan must be committed and pushed before the second review.
+
+GPT second-pass file-level design completed against published main tip 7f61b3b5615cc429efe6d630bffe4a46697d0e10. Key correction: cli/main.py and release/pin.py are already canonical; first tranche is limited to source/patch ownership inversion and __main__ compatibility reduction. No implementation started.
+
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This is the first production-code slice after planning reconciliation because current cmd_apply still delegates through __main__. The live remainder is narrowly _copy_overlay/_restore_overlay/_apply_exact_selection ownership inversion plus AST-backed TR14.CLI_MAIN_BACKEDGE and parity tests. cli.source, release.pin, and release.records are already canonical and must not be unnecessarily altered. PA34 and PA33 later touch the same CLI patch ownership, so serialize final integration and use separate worktrees for any parallel exploratory work.
+
+GPT implementation design response: request req_eccf031bbe2c42d5, same session ses_76206cac3e6b4be0, completed against exact pushed 66e9de865621dd5daf98f3482f81e9ab1c447544. It corrected the boundary to patch.overlay plus cli.patch orchestration, identified all four production __main__ consumers, specified canonical retargeting for patch.rebase/release.pin_bump/cli.tuning, required identity aliases only in __main__, and defined the AST back-edge checks and focused tests. The response is preserved in review RV176 and must be treated as design guidance, not implementation evidence.
+
+Initial assessment and design to be supplied by GPT gateway review before implementation.
+
+GPT gateway initial response: audited main at 644b8207d11eaafa14c34f29fe4dc6c95388911d; verdict directionally coherent but still overly bridged. Recommended order: (1) cli/__main__ ownership inversion; (2) reduce __main__ to compatibility shell; (3) enforce no cli -> __main__ back-edge; (4) consolidate smoke/report; (5) reconcile rocprof; (6) retire root facades last. Safe to remove now: none. Root facades are intentional module-identity aliases. The audit also noted BRC01 was not visible on the audited tip, which is why this plan must be committed and pushed before the second review.
+
+GPT second-pass file-level design completed against published main tip 7f61b3b5615cc429efe6d630bffe4a46697d0e10. Key correction: cli/main.py and release/pin.py are already canonical; first tranche is limited to source/patch ownership inversion and __main__ compatibility reduction. No implementation started.
+
+GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3e6b4be0, exact pushed bb20f104. This is the first production-code slice after planning reconciliation because current cmd_apply still delegates through __main__. The live remainder is narrowly _copy_overlay/_restore_overlay/_apply_exact_selection ownership inversion plus AST-backed TR14.CLI_MAIN_BACKEDGE and parity tests. cli.source, release.pin, and release.records are already canonical and must not be unnecessarily altered. PA34 and PA33 later touch the same CLI patch ownership, so serialize final integration and use separate worktrees for any parallel exploratory work.
+
+GPT implementation design response: request req_eccf031bbe2c42d5, same session ses_76206cac3e6b4be0, completed against exact pushed 66e9de865621dd5daf98f3482f81e9ab1c447544. It corrected the boundary to patch.overlay plus cli.patch orchestration, identified all four production __main__ consumers, specified canonical retargeting for patch.rebase/release.pin_bump/cli.tuning, required identity aliases only in __main__, and defined the AST back-edge checks and focused tests. The response is preserved in review RV176 and must be treated as design guidance, not implementation evidence.
 
 ## Preserved historical GPT design (context only)
 
@@ -1480,3 +1523,9 @@ Specify exact compatibility exports
 - 2026-09-12T19:16:48.726262+00:00 (updated-by): Updated (no visible changes)
 - chg_20260912_191736_preserved-all-prior-brc01-gpt_4536
 - 2026-09-12T19:17:36.432170+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T20:08:36.807486+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
+- chg_20260912_200920_updated-brc01-with-gpts-imple_6565
+- 2026-09-12T20:09:20.621985+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T20:09:51.936129+00:00 (updated-by): Updated: section:notes
+- chg_20260912_201025_cleaned-the-brc01-provenance-n_3663
+- 2026-09-12T20:10:25.428513+00:00 (updated-by): Updated: section:ledger-events
