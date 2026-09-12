@@ -102,6 +102,20 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_evidence_gate(context)
         self.assertEqual(result.status, GateStatus.BLOCKED)
 
+    def test_framework_promotion_blocks_before_evidence_resolution(self) -> None:
+        descriptor = SimpleNamespace(
+            patch_id="P1", representation="packaged", kind="framework",
+            origin="local", external_source=None, experiment_contracts=(),
+            plan_ids=(), plan_item=None,
+        )
+        context = SimpleNamespace(
+            descriptor=descriptor, intent=GateIntent.PROMOTE,
+        )
+        with mock.patch.object(gates.patch_catalog, "validation_evidence_statuses") as verifier:
+            result = gates.evaluate_evidence_gate(context)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+        verifier.assert_not_called()
+
     def test_admission_gate_passes_full_composition(self) -> None:
         modules = (SimpleNamespace(patch_id="A"), SimpleNamespace(patch_id="B"))
         context = SimpleNamespace(
@@ -247,6 +261,22 @@ class GateContractTests(unittest.TestCase):
         result = gates.evaluate_lifecycle_gate(context, prior)
         self.assertEqual(result.status, GateStatus.PASS)
 
+    def test_lifecycle_gate_propagates_blocked_prerequisite(self) -> None:
+        context = SimpleNamespace(
+            intent=GateIntent.PROMOTE,
+            descriptor=SimpleNamespace(patch_id="P1"),
+            composition=SimpleNamespace(modules=(SimpleNamespace(patch_id="P1", state="untested"),)),
+        )
+        prior = {
+            GateId.G0: gates.GateResult(GateId.G0, GateStatus.BLOCKED, "", "test"),
+            GateId.G1: gates.GateResult(GateId.G1, GateStatus.PASS, "", "test"),
+            GateId.G2: gates.GateResult(GateId.G2, GateStatus.PASS, "", "test"),
+            GateId.G3: gates.GateResult(GateId.G3, GateStatus.PASS, "", "test"),
+            GateId.G4: gates.GateResult(GateId.G4, GateStatus.PASS, "", "test"),
+        }
+        result = gates.evaluate_lifecycle_gate(context, prior)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+
     def test_disposition_gate_blocks_without_complete_inputs(self) -> None:
         context = SimpleNamespace(
             catalog_states=None, coverage_report=None, target_revision=None,
@@ -297,6 +327,20 @@ class GateContractTests(unittest.TestCase):
              mock.patch.object(gates.patch_disposition, "compute_coverage", return_value=malformed):
             result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
         self.assertEqual(result.status, GateStatus.BLOCKED)
+
+    def test_disposition_gate_blocks_when_recipe_ids_are_omitted(self) -> None:
+        context = SimpleNamespace(
+            catalog_states={"P1": "untested"},
+            coverage_report={
+                "selection": {"all_patches": True}, "upstream_revision": "abc",
+            },
+            recipe_patch_ids=None, target_revision="abc",
+            dispositions_dir=Path("dispositions"), source_root=Path("llama.cpp"),
+        )
+        with mock.patch.object(gates.patch_disposition, "compute_coverage") as compute:
+            result = gates.evaluate_disposition_gate(context)
+        self.assertEqual(result.status, GateStatus.BLOCKED)
+        compute.assert_not_called()
 
 
 if __name__ == "__main__":
