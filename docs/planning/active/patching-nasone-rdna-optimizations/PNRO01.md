@@ -68,13 +68,14 @@ Supersedes: NRO01
 Inherited semantic scope: preserve source identity, opt-in policy, numerical/tail correctness, four-arm matrix, and explicit-envelope promotion gates.
 Migration: capability-rebaseline-v3-2026-09
 
+REAL FINDING 2026-09-12: this draft had never been built before. First real hardware build attempt (gfx1100/Brutus, isolated scratch clone, requires=1001_hip_internal_allreduce composition) found a genuine compile failure -- two Edit anchors in patches/1250's patch.py ended at the '=' sign of a single-line C++ statement; insert_after splices immediately after the matched text, not after the enclosing statement, corrupting both `GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT`'s declaration and `p->bf16_threshold`'s assignment into unparseable C++ (real compiler errors: 'expected expression', 'use of undeclared identifier'). Fixed by extending both anchors to match the complete single-line statement (one needed this project's own LITERAL-placeholder technique to cross a noise-stripped string literal). Re-verified on real hardware: clean build, generated source inspected and confirmed well-formed. This closes acceptance criterion 1 ('Draft patch applies cleanly on b10705, builds HIP') for the first time -- it was never actually true before this session despite the patch being packaged and offline-tested. The 13 existing offline tests never caught this because they check structural properties, not actual compilation. Remaining acceptance criteria (numerical correctness matrix, activation/wire-byte evidence, model quality gates, 4-arm performance sweep) are all still genuinely not started -- this fix only makes the draft buildable, it does not wire the Q8 path to anything reachable (deliberately, per the patch's own inert-by-design scope).
+
 ## Change Log
 
 - 2026-09-09T10:52:01.168387+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:30.603565+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.053474+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:25:56.314497+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.269059+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T03:33:46.596780+00:00 (updated-by): Updated: section:notes
