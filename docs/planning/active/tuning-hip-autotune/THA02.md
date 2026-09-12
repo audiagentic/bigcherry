@@ -86,6 +86,7 @@ While running the same test filter against Brutus's other two GPUs (gfx1201 devi
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.795562+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -96,3 +97,5 @@ While running the same test filter against Brutus's other two GPUs (gfx1201 devi
 - chg_20260912_044807_documented-four-moeglu-correc_6209
 - 2026-09-12T04:48:07.100516+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T08:11:21.209073+00:00 (updated-by): Updated: section:notes
+- chg_20260912_081232_confirmed-the-moeglu-correctn_6156
+- 2026-09-12T08:12:32.123196+00:00 (updated-by): Updated: section:ledger-events
