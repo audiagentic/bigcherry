@@ -2,7 +2,7 @@
 id: BRC01
 order: 1
 plan: build-run-cleanup
-state: pending
+state: in_progress
 created-at: '2026-09-11T06:44:31.138556+00:00'
 breadth: ''
 skill: advanced
@@ -1505,6 +1505,7 @@ Specify exact compatibility exports
 
 
 
+
 - chg_20260911_064900_added-a-tracked-cleanup-plan-f_3622
 - 2026-09-11T06:49:00.213062+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T07:01:03.606121+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
@@ -1538,3 +1539,6 @@ Specify exact compatibility exports
 - 2026-09-12T20:49:55.016283+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260912_205819_closed-the-final-gpt-found-ana_1131
 - 2026-09-12T20:58:19.235650+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T21:10:36.908253+00:00 (state-transition): State: pending → in_progress
+- chg_20260912_211106_final-gpt-review-passes-brc01_3408
+- 2026-09-12T21:11:06.771300+00:00 (updated-by): Updated: section:ledger-events
