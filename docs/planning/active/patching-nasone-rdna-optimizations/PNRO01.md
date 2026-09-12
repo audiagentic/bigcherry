@@ -77,6 +77,7 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.053474+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -85,3 +86,5 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.269059+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T03:33:46.596780+00:00 (updated-by): Updated: section:notes
+- chg_20260912_033450_documented-a-real-bug-fix-and_2722
+- 2026-09-12T03:34:50.268598+00:00 (updated-by): Updated: section:ledger-events
