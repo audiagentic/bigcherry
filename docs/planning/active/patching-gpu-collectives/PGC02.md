@@ -94,6 +94,7 @@ While refreshing RD58's (patch 1234) state-restore evidence at the current pin, 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -110,3 +111,5 @@ While refreshing RD58's (patch 1234) state-restore evidence at the current pin, 
 - chg_20260912_052450_investigated-why-real-3-gpu-n_2608
 - 2026-09-12T05:24:50.656811+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T15:35:29.988386+00:00 (updated-by): Updated: section:notes
+- chg_20260912_153555_refreshed-patch-1234-rd58s_4124
+- 2026-09-12T15:35:55.590300+00:00 (updated-by): Updated: section:ledger-events
