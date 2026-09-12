@@ -118,6 +118,13 @@ the contract's acceptance thresholds via the same real CI computed for
 1215. State transition to `validated` remains a separate, deliberate
 lifecycle decision, not automatic from this producer passing.
 
+**2026-09-13 update: superseded by the provenance-hardened interface**
+-- see patch 1215's README, same-dated update. `run_rd43_contract_qualification()`
+now requires a content-hashed `QualificationEvidenceManifest`; this PASS
+stands as real historical evidence but does not satisfy the current
+interface. A fresh manifest-bound rerun (jointly with 1215, since they
+share their performance measurement) is required before promotion.
+
 ## Known limitations
 
 - No `validation.toml` adapter exists for this patch. `patch-lint`'s package

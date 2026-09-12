@@ -237,6 +237,22 @@ code, not just narrative evidence. State transition to `validated` is
 still a separate, deliberate lifecycle decision (per
 `bigcherry-patch-lifecycle`), not automatic from this producer passing.
 
+**2026-09-13 update: this PASS was measured against the producer's prior
+naked-list/dict interface, since superseded.** GPT's provenance-hardening
+review (P2, `req_ea5a7ab7d6634e09`) requires
+`run_rd39_42_contract_qualification()` to consume a content-hashed
+`QualificationEvidenceManifest` binding source/build identity, model
+hash, per-execution device attestation, and raw-artifact provenance --
+none of which was captured for this specific run (it was gathered
+ad-hoc via manual `llama-bench`/`llama-results` invocations, not saved
+build-identity JSON). Per GPT: "the old data can remain documented as
+prior real evidence, but it cannot create this manifest retroactively...
+capturing the old build directory's identity now would not
+cryptographically bind yesterday's measurements to it." **This PASS
+result stands as real historical evidence but does not satisfy the
+current, hardened qualification interface** -- a fresh manifest-bound
+rerun is required before this patch can reach a promotion decision.
+
 ## GPT-reviewed disposition
 
 Performance/mechanism qualification for the gfx1100 single-GPU case is
