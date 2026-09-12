@@ -131,8 +131,9 @@ Keep each fact in the system that owns it:
 
 For a packaged patch, do not maintain a second metadata authority in
 `patches/catalog.toml` or duplicate `STATE`, `GROUP`, or equivalent catalog
-fields in `patch.py`. `SUMMARY.md` is human-facing, but its `Status`, `Group`,
-and `Plan item` header must agree with `patch.toml`; `patch-lint` checks this.
+fields in `patch.py`. `SUMMARY.md` is human-facing, but its `Status` and
+`Plan item` header must agree with `patch.toml`; the live G1 summary check and
+repository LINT enforce this.
 
 The registry hashes the implementation and validation identity. Validation
 identity includes the validation files, framework semantic version, and bound

@@ -146,12 +146,12 @@ which is the actual question "is this patch worth carrying" depends on.
 **Rule**: before tagging a patch `optimization` AND setting
 `state = "validated"`, its README.md must document a real 3-arm comparison:
 **native (unmodified) llama.cpp**, **BigCherry baseline** (patch excluded),
-and **BigCherry + this patch**. `tools/bigcherry/patch/validation_policy.py`'s
-`check_performance_evidence()` enforces this structurally in `patch-lint`
-(a literal-substring presence check for a phrase like "native llama.cpp" in
-the README -- it cannot verify the comparison is real or current, only that
-some evidence was written down; a human/GPT reviewer still owns whether
-that evidence is honest and sufficient). A patch that is `kind=enhancement`
+and **BigCherry + this patch**. The repository LINT adapter invokes
+`check_performance_evidence_for_patch()` once per descriptor (a
+literal-substring presence check for a phrase like "native llama.cpp" in the
+README -- it cannot verify the comparison is real or current, only that some
+evidence was written down; a human/GPT reviewer still owns whether that
+evidence is honest and sufficient). A patch that is `kind=enhancement`
 but makes no performance claim (a correctness fix, a safety guard, a
 functional addition) should NOT carry the `optimization` tag and is exempt
 from this rule -- see `kind`'s own framework/diagnostic/upstream-backport/
