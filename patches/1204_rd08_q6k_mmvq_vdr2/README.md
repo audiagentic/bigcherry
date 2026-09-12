@@ -206,6 +206,22 @@ correctness-gate/contract-design question above (PRBE104) -- the patch's
 real, deterministic `bit_identical` FAIL stands independent of this
 trigger result, which only confirms the code path genuinely executes.
 
+## Real three-arm baseline comparison (2026-09-13, standardized criteria)
+
+Per the standardized criteria's A/B/C requirement (A=stock upstream,
+B=BigCherry baseline without RD08, C=BigCherry+RD08), gpt-oss-20B,
+gfx1100:
+
+- **Decode (RD08's own domain, `tg128`)**: A=177.49, B=178.23,
+  C=179.09 -- all within noise of each other; no baseline concern, no
+  material B-vs-C effect distinguishable from noise at this sample size.
+- **Prefill (`pp512`, not RD08's domain)**: A=5173.25, B=4154.34,
+  C=4215.66 -- **B and C both show PRBE107's already-documented and
+  already-fixed regression** (these builds predate the `0300_mmq_forced_j`
+  fix). Not a new finding -- corroborates PRBE107's root cause applies
+  to this build too, and confirms the fix (already committed) will
+  benefit RD08's own prefill baseline once rebuilt.
+
 ## Known limitations
 
 None declared — this patch is not `deferred-hardware`. See the
