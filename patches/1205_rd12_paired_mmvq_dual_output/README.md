@@ -82,5 +82,31 @@ independently-measured result.
 
 ## Evidence
 
-None yet. Runtime artifacts, once a real campaign runs, land under
-`artifacts/patch-validation/1205_rd12_paired_mmvq_dual_output/<campaign-identity>/`.
+**Real apply/build/activation check (2026-09-13, current pin b10901/28ff0958291c).**
+Built real control (baseline) and subject (1205 applied) `llama-bench`
+binaries on Brutus. Apply and build both real, clean PASS (both
+`bigcherry-native` compositions configured and compiled cleanly).
+
+Activation: ran `BIGCHERRY_PATCH_TRACE=1 llama-bench -p 512 -n 32` against
+two different real models (`Qwen3.5-4B-UD-Q6_K_XL` and
+`gpt-oss-20b-UD-Q6_K_XL`, both real prefill+decode workloads, single
+gfx1100): **0 of 0** `BIGCHERRY_PATCH_HIT patch=1205_rd12` marker hits in
+either run. This is a real negative finding, not yet root-caused -- the
+fusion's own guard requires two adjacent `MUL_MAT` nodes sharing the same
+activation/output-shape AND both selected by
+`ggml_cuda_should_fuse_mul_mat_vec_q` (real code, `ggml-cuda.cu`); neither
+tested model's attention block apparently presents that exact
+back-to-back K/V-projection shape at these architectures/quantizations,
+or the shape check (`mid->ne[0..2] == mm_a->ne[0..2]`, differing
+`src[0]`) rejects it for a reason not yet investigated. Consistent with
+this patch's own documented status: the fork's claim was measured on
+gfx1201 with the fork's own model, never independently confirmed on this
+project's hardware. Per this patch's hard prerequisite (RD25 not yet
+ported), no correctness/performance qualification was attempted -- this
+is deliberately scoped to apply/build/activation only.
+
+Runtime artifacts (raw logs) recorded but not yet persisted as a durable
+evidence bundle; further root-causing the zero-activation result is real,
+not-yet-done work (a candidate task for whoever picks up PRBE11's RD25
+prerequisite, since activation must be confirmed before any correctness
+work on this patch is meaningful).
