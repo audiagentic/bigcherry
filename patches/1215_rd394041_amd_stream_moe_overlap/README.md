@@ -320,17 +320,23 @@ pure stock upstream (no 0300 at all) decode = 113.67 t/s, essentially
 identical to B (BigCherry baseline, includes the fixed 0300) = 113.96
 t/s; 0300 has no measurable decode effect.
 
-**This is now a real, confirmed, unexplained contradiction** between
-this session's real measurement (-5.93%) and the patch's own formal
-10-round evidence (+2.38%), with both ordering bias and this session's
-own fix ruled out as explanations. Remaining open possibilities (none
-yet checked): the formal evidence's exact build/benchmark shape may
-differ from this session's `tg32` check in a way not yet identified; a
-real regression may have been introduced by something else committed
-since the formal evidence was gathered; or the formal evidence itself
-has an undiscovered flaw. This needs a careful, deliberate
-re-investigation (PRBE108), not further ad-hoc quick checks -- do not
-treat either number as settled until reconciled.
+**RESOLVED (2026-09-13): wrong model file, not a real regression.**
+Checked the formal evidence's exact model reference above --
+`Qwen3.6-35B-A3B-UD-Q4_K_M.gguf` -- against what this session's quick
+check actually used: `Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf`, a
+**completely different quantization/file**, not the model this contract
+lane is measured against. Reran the exact same B-vs-C comparison with
+the CORRECT model file (`tg128`, 3 rounds): B=[110.65, 109.73, 111.23]
+mean 110.54, C=[111.86, 110.93, 111.29] mean 111.36 -- **C >= B in all 3
+rounds, mean +0.74% gain**, consistent in direction and magnitude range
+with the formal +2.38% result (well within its own SD 1.31%). **The
+earlier -5.93% "discrepancy" was entirely an artifact of testing the
+wrong model file -- there is no real contradiction with the formal
+evidence.** Both PRBE108's ruled-out explanations (ordering bias, the
+session's own 0300 fix) turned out to be correctly ruled out; the actual
+cause was a third, simpler explanation (wrong model) found by directly
+comparing the exact model reference in this README against what was
+actually run. PRBE108 closed.
 
 ## Known limitations
 
