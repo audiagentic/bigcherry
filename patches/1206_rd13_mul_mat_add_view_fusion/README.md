@@ -130,6 +130,32 @@ around by using a distinct `build_root` per architecture for this run;
 namespace its build directories by architecture (filed as a known gap,
 not yet a tracked plan item).
 
+## Real contract model-binding defect found and fixed (2026-09-13)
+
+`config/experiment-contracts.toml`'s `RD13-MUL-MAT-ADD-VIEW-FUSION`
+contract had its `positive`/`controls` model bindings backwards:
+`tierM-gptoss20b-q6k` (dense-MoE, confirmed this session via real
+activation probes to NOT trigger RD13's fusion at all) was bound as
+`positive`, while `tierA-qwen4b-q6k` (the actual dense+GDN hybrid that
+DOES trigger it, per PRBE102) was bound as `controls`. Swapped them to
+match reality -- the exact same class of defect found and fixed earlier
+this session for RD39-42/RD43's contracts. Editing the contract changed
+its hash, voiding the legacy point-estimate waiver (VA24); migrated to
+`ci95_threshold_bound_v1` with `min_paired_rounds=10` in the same
+change.
+
+**Still not bound in `patch.toml`**: the contract's required correctness
+check is `backend_reference` (full-vocab logprob comparison), but this
+patch's only existing correctness producer
+(`run_rd13_ppl_check()`) implements `ppl_equality`, a different check
+type. Binding the contract into `patch.toml` requires either building a
+real `backend_reference` producer for RD13 (following RD43's pattern:
+`llama-server`'s `/completion` endpoint with `n_probs=<vocab_size>`) or
+a deliberate contract-design decision to accept `ppl_equality` instead
+(matching RD26/RD58's precedent) -- neither done yet. The model-binding
+fix above is complete and correct regardless of which path is chosen
+next.
+
 ## Known limitations
 
 - The PPL-equality check confirms the ported fusion introduces no numerical
