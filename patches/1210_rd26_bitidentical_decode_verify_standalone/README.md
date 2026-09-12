@@ -55,6 +55,25 @@ Same scope limit as before applies unchanged: this remains a
 regression guard on ordinary single-sequence decode, not a confirmation
 of RD26's actual decode-vs-speculative-verify bit-identity claim.
 
+## Real multi-architecture coverage (2026-09-13, standardized criteria)
+
+Per `docs/reference/testing/STANDARDIZED_PATCH_VALIDATION_CRITERIA.md`:
+RD26 is a generic HIP patch, not architecture-restricted, so extended
+the gfx1100 result above to gfx1201 and gfx1030 (current pin, isolated
+build roots per architecture per PRBE105's fix):
+
+- **gfx1201**: real PASS, PPL = 8.6898 identical on subject and control,
+  delta = 0.0.
+- **gfx1030**: real PASS, PPL = 8.6638 identical on subject and control,
+  delta = 0.0.
+
+**RD26 now has real correctness PASS on all three available
+architectures** (gfx1100, gfx1201, gfx1030) -- same scope limit as
+above applies to all three (ordinary-decode regression guard, not a
+confirmation of the decode-vs-speculative-verify claim). No activation
+marker exists for this patch (see "Known limitations"), so activation
+coverage is not applicable here.
+
 ## Known limitations (honest scope boundary -- read before citing this as proof of RD26's core claim)
 
 - **This check proves the two ported hunks do not regress ordinary
