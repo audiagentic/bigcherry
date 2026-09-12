@@ -61,13 +61,14 @@ Successor key: patching-rdna-boost-experiments-rd05
 
 2026-09-11: started a real gfx1201 build+correctness campaign for patch 1203 (isolated scratch clone, resolve_source_composition/materialize_composition methodology, pin 28ff0958291ce3465fabd7bd679d4b0edd742bd9, HIP_VISIBLE_DEVICES=2 for the real gfx1201/R9700 device). Building llama-perplexity + llama-bench for BC-baseline (1203 excluded) and BC+1203 -- currently in progress, not yet complete. IMPORTANT CAVEAT recorded honestly before results land: this initial pass is a generic PPL-equality correctness check + llama-bench timing, NOT yet the specific targeted-head-size (192/256/320/512/576) graph/non-graph/loaded correctness matrix this item's own acceptance criteria require. Treat this run as a first real signal, not closure of PRBE02 -- the full targeted correctness matrix remains separate, not-yet-done work regardless of this pass's outcome.
 
+REAL RESULT 2026-09-12: gfx1201 PPL-equality correctness check completed. BC-baseline (1203 excluded): PPL=10.4463 +/- 0.02753. BC+1203 (RD05/06/07): PPL=10.3938 +/- 0.02737. Combined-uncertainty sigma = |10.4463-10.3938| / sqrt(0.02753^2+0.02737^2) = 0.0525/0.0388 = 1.35 -- well under this project's established 3-sigma significance threshold (see tools/bigcherry/experiment/perplexity.py's require_ppl_equality). PASS: no statistically significant PPL divergence between baseline and RD05/06/07-patched builds on real gfx1201 hardware, tierA-qwen4b-q6k, real wikitext2 corpus. This is real evidence for PRBE02's own correctness-barrier claim at the whole-model level, but does NOT yet satisfy this item's own stated acceptance criteria (the specific targeted head-size 192/256/320/512/576 graph/non-graph/loaded matrix) -- this PPL check exercises whatever head sizes this one real model's attention layers happen to use, not the full targeted matrix. Real, positive first signal; full closure remains separate work.
+
 ## Change Log
 
 - 2026-09-09T10:53:35.078709+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:12.738042+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.134485+00:00 (updated-by): Updated: section:ledger-events
@@ -79,3 +80,4 @@ Successor key: patching-rdna-boost-experiments-rd05
 - 2026-09-11T23:50:28.466918+00:00 (updated-by): Updated: section:notes
 - chg_20260911_235103_caught-myself-running-a-real-h_5912
 - 2026-09-11T23:51:03.367650+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T03:20:07.065538+00:00 (updated-by): Updated: section:notes
