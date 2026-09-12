@@ -52,6 +52,12 @@ RD39-42/1215's formal contract-qualification evidence (10 rounds, deliberately i
 
 ## Notes
 
+**Interleaving does NOT explain the discrepancy** (2026-09-13): reran with proper interleaving (B/C/C/B x4 rounds): B mean=113.96 t/s (sd 0.20, very tight), C mean=107.20 t/s (sd 1.35), delta=-5.93%, essentially unchanged from the non-interleaved check. Ordering bias is ruled out as the explanation.
+
+**Also ruled out: this session's own PRBE107 fix (0300_mmq_forced_j) is NOT the cause.** Compared pure stock upstream (zero BigCherry patches, no 0300 at all) decode tg32 = 113.67 t/s against B (BigCherry baseline, includes the FIXED 0300) = 113.96 t/s -- essentially identical. 0300 has no measurable effect on decode throughput at all (expected -- its scan only matters for MMQ tile-width selection, and decode's batch=1 shape barely engages MMQ's tile-width tuning). The real -5.93% negative delta is isolated specifically to C (BigCherry+1215+1216), not explained by ordering, not explained by the 0300 fix.
+
+Remaining open question: why does a real, tight, reproducible ~5.93% negative decode delta appear for BigCherry+1215+1216 here, when the patch's own formal 10-round interleaved evidence documented a real +2.38% POSITIVE gain under nominally the same condition (GGML_CUDA_GRAPH_OPT=1, gfx1100)? Possible remaining explanations, none yet checked: (a) the formal evidence's exact build/pin differs from the current git HEAD in some way not yet identified, (b) the formal evidence measured a different benchmark shape (need to check its exact llama-bench invocation/workload vs this session's tg32), (c) a real regression was introduced to 1215/1216's mechanism by something else committed since the formal evidence was gathered, (d) the formal evidence itself has a real, undiscovered flaw. This needs a careful, deliberate re-investigation, not further ad-hoc quick checks.
+
 ## Change Log
 
 - 2026-09-12T22:08:29.479059+00:00 (created-by): Created by agent
@@ -60,3 +66,4 @@ RD39-42/1215's formal contract-qualification evidence (10 rounds, deliberately i
 
 - chg_20260912_220855_found-a-real-unresolved-discr_5936
 - 2026-09-12T22:08:55.337667+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T22:12:33.510493+00:00 (updated-by): Updated: section:notes
