@@ -143,6 +143,13 @@ configurations (real regression); it is safe-but-inert under `-sm tensor`.
 Cross-architecture generalization beyond gfx1100 is unproven (gfx1201
 weaker/noisier, gfx1030 net negative/inconclusive).
 
+**2026-09-13 addendum**: confirmed real RD42 activation (600 marker
+hits each) on both gfx1201 and gfx1030 against this contract's own bound
+model with `GGML_CUDA_GRAPH_OPT=1` -- see 1216/RD43's README, "Real
+multi-architecture guard coverage" section, for the real join-fusion
+guard crash-prevention evidence this produced (no graph-capture abort on
+either architecture).
+
 ## Real bit_identical correctness evidence (2026-09-12, GPT-designed and GPT-approved, req_3e42043eb71a4a92 / req_d6534fe00b8140ca / req_013ff2ae8b0c4c4c)
 
 The contract's own required check is literal `bit_identical` (raw

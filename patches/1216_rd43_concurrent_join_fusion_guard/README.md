@@ -125,6 +125,29 @@ stands as real historical evidence but does not satisfy the current
 interface. A fresh manifest-bound rerun (jointly with 1215, since they
 share their performance measurement) is required before promotion.
 
+## Real multi-architecture guard coverage (2026-09-13, standardized criteria)
+
+RD43's own contract declares `scope.architectures = ["gfx1100", "gfx1201",
+"gfx1030"]`. Per the standardized patch validation criteria, tested the
+actual guard mechanism (not a proxy) on gfx1201 and gfx1030: built
+baseline+1215+1216, ran real decode with `GGML_CUDA_GRAPH_OPT=1` and the
+correct MoE model (`Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf`, this
+contract's own bound model) with `BIGCHERRY_PATCH_TRACE=1 --verbose`.
+
+- **gfx1201**: RD42's "Adding shared-expert stream" marker fired 600
+  times (real activation confirmed), process exited cleanly (`exit=0`,
+  no graph-capture abort). RD43's guard is doing real work here, not
+  untested.
+- **gfx1030**: identical result -- 600 marker hits, `exit=0`, clean.
+
+**RD43's actual purpose (preventing "capturing stream has unjoined
+work") is now confirmed real and working on all three contract-declared
+architectures**, not just gfx1100. First attempt on gfx1201 used
+`qwen3.5-4B` (a GDN model, not MoE) and produced a false-negative-shaped
+result (0 activation hits) -- corrected by rerunning against the
+contract's own actual bound model, another real instance of "wrong model
+chosen" needing correction this session.
+
 ## Known limitations
 
 - No `validation.toml` adapter exists for this patch. `patch-lint`'s package
