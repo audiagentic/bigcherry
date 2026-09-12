@@ -1038,6 +1038,25 @@ def _require_fresh(
     return known_good
 
 
+def require_fresh_report(
+    report: dict[str, Any],
+    root: Path,
+    *,
+    overlay_snapshot_digest: str | None = None,
+) -> tuple[str, ...]:
+    """Expose the existing freshness authority for read-only gate checks."""
+    try:
+        return _require_fresh(
+            report,
+            root,
+            overlay_snapshot_digest=overlay_snapshot_digest,
+        )
+    except StaleRebaseReportError:
+        raise
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise StaleRebaseReportError(f"malformed rebase report: {exc}") from exc
+
+
 def _write_overlay_snapshot(
     root: Path, texts: dict[str, str], *, dry_run: bool,
     backup: dict[str, str | None] | None = None,
