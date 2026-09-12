@@ -93,13 +93,23 @@ First-ever dedicated performance campaign for the combined 1215+1216 unit (requi
 
 Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists; the formal validated-state package (validation.toml, bound Experiment Contract with its two named correctness checks) remains the concrete next step if pursued.
 
+### 2026-09-12: concrete next-step scoping for the formal validated-state package
+
+Checked what the pre-authored contracts (`config/experiment-contracts.toml`) actually require, to make the remaining gap concrete rather than abstract:
+
+- `[contract.RD39-42-STREAM-MOE-OVERLAP]` (1215): model `tierM-gptoss20b-q6k`, workloads `moe_decode`/`decode`, correctness=`bit_identical` (required), architectures `[gfx1100, gfx1201, gfx1030]`, acceptance `target_kernel_gain_pct=1, max_control_regression_pct=1` -- easily cleared by the already-measured +2.47% gfx1100 result, so this is not the blocker.
+- `[contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]` (1216): same model/workloads, correctness=`backend_reference` (required), `prerequisites = ["RD39-42-STREAM-MOE-OVERLAP"]`.
+
+Both contracts already exist pre-authored -- the real remaining gap is that no qualification RUNNER exists to bind and execute them. `validation_campaign.py` has exactly two patch-specific qualification functions today (`run_rd08_contract_qualification`, `run_rd73_contract_qualification`), no generic one. Writing `run_rd39_42_contract_qualification()` (and wiring 1216's `backend_reference` check, which per its prerequisite likely composes with 1215's rather than needing a fully separate runner) following that same real, careful pattern -- anchor-tested, GPT-reviewed, offline-tested, then real-hardware-run on `tierM-gptoss20b-q6k` -- is genuine new authoring work, not a quick script. Deliberately NOT rushed into this already-long session; scoped here so the next session picking this up has the exact target (function name, contract IDs, model, correctness-check kind) rather than needing to re-derive it.
+
+Note: PA33 (patch-validate orchestrator) would eventually make this kind of per-patch qualification-function authoring unnecessary by consuming the contract generically -- but PA33 itself doesn't exist yet either, so for 1215/1216 specifically the nearer-term path is still a dedicated qualification function matching the existing RD08/RD73 pattern.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -119,3 +129,4 @@ Patches 1215 and 1216 stay state=untested. Real, substantial evidence now exists
 - 2026-09-12T09:17:39.246458+00:00 (updated-by): Updated: section:notes
 - chg_20260912_091821_validated-a-gpu-concurrency-op_8669
 - 2026-09-12T09:18:21.067473+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T09:49:37.378827+00:00 (updated-by): Updated: section:notes
