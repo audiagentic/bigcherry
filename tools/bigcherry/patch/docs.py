@@ -108,6 +108,36 @@ def parse_summary_header(text: str) -> dict[str, str] | None:
     }
 
 
+def check_summary_for_patch(
+    descriptor: patch_registry.PatchDescriptor,
+    patches_root: Path,
+) -> tuple[str, ...]:
+    """Check one descriptor without consulting unrelated patches."""
+    problems: list[str] = []
+    summary_path = patch_summary_path(descriptor, patches_root)
+    if not summary_path.is_file():
+        return (f"{descriptor.patch_id}: missing SUMMARY.md",)
+    header = parse_summary_header(summary_path.read_text(encoding="utf-8"))
+    if header is None:
+        return (
+            f"{descriptor.patch_id}: SUMMARY.md is missing the required "
+            "Status/Plan item header (see patches/_template/SUMMARY.md)",
+        )
+    if header["status"] != descriptor.state:
+        problems.append(
+            f"{descriptor.patch_id}: SUMMARY.md Status={header['status']!r} "
+            f"does not match patch.toml state={descriptor.state!r}"
+        )
+    expected_plan_item = _expected_plan_item(descriptor)
+    if header["plan_item"] != expected_plan_item:
+        problems.append(
+            f"{descriptor.patch_id}: SUMMARY.md Plan item={header['plan_item']!r} "
+            f"does not match the canonical value {expected_plan_item!r} "
+            "(from patch.toml plan-ids/plan-item)"
+        )
+    return tuple(problems)
+
+
 def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
     """Fully mechanical drift check, no judgment involved: every patch's
     SUMMARY.md Status header must equal patch.toml's own state
@@ -131,35 +161,12 @@ def check_summary_consistency(patches_dir: Path | None = None) -> list[str]:
     earlier version loaded it here AND again via patchset.catalog(), two
     reads of the same on-disk state for one check).
     """
-    problems: list[str] = []
     registry = patch_registry.load_registry(patches_dir or paths.PATCHES)
-
-    for descriptor in registry.descriptors:
-        summary_path = patch_summary_path(descriptor, registry.root)
-        if not summary_path.is_file():
-            problems.append(f"{descriptor.patch_id}: missing SUMMARY.md")
-            continue
-        header = parse_summary_header(summary_path.read_text(encoding="utf-8"))
-        if header is None:
-            problems.append(
-                f"{descriptor.patch_id}: SUMMARY.md is missing the required "
-                "Status/Plan item header (see patches/_template/SUMMARY.md)"
-            )
-            continue
-        if header["status"] != descriptor.state:
-            problems.append(
-                f"{descriptor.patch_id}: SUMMARY.md Status={header['status']!r} "
-                f"does not match patch.toml state={descriptor.state!r}"
-            )
-        expected_plan_item = _expected_plan_item(descriptor)
-        if header["plan_item"] != expected_plan_item:
-            problems.append(
-                f"{descriptor.patch_id}: SUMMARY.md Plan item={header['plan_item']!r} "
-                f"does not match the canonical value {expected_plan_item!r} "
-                "(from patch.toml plan-ids/plan-item)"
-            )
-
-    return problems
+    return [
+        problem
+        for descriptor in registry.descriptors
+        for problem in check_summary_for_patch(descriptor, registry.root)
+    ]
 
 
 def resolve_patch_descriptors(
