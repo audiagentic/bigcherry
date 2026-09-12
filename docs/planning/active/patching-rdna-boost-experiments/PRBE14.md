@@ -117,6 +117,7 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.192523+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -137,3 +138,5 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 - chg_20260911_142926_confirmed-on-real-hardware-tha_3426
 - 2026-09-11T14:29:26.549077+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T08:36:41.761011+00:00 (updated-by): Updated: section:notes
+- chg_20260912_083706_completed-real-hardware-valida_4788
+- 2026-09-12T08:37:06.312262+00:00 (updated-by): Updated: section:ledger-events
