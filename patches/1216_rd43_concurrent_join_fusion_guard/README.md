@@ -37,6 +37,18 @@ under which RD42's join/graph-capture interaction actually reproduces:
 
 Artifact: `artifacts/rd43-ppl-check.json` (produced by the campaign run).
 
+## Real performance evidence as part of the combined 1215+1216 unit (2026-09-12)
+
+See `patches/1215_rd394041_amd_stream_moe_overlap/README.md` for the full
+real-hardware performance campaign -- 1215 and 1216 must be qualified
+together (1215 alone exposes the join-node fusion hazard this patch
+fixes). Summary: real, reproducible, non-regressing +2.47% mean gain on
+gfx1100 single-GPU under `GGML_CUDA_GRAPH_OPT=1`, direct profiler proof of
+82.28% real temporal overlap between main and auxiliary CUDA/HIP streams,
+GPT-reviewed. Not yet `validated` -- 1216's own Experiment Contract
+requires a `backend_reference` correctness check, which the existing
+PPL-equality evidence does not formally substitute for.
+
 ## Known limitations
 
 - No `validation.toml` adapter exists for this patch. `patch-lint`'s package
