@@ -58,3 +58,8 @@ RD13's real PPL-equality correctness evidence (2026-09-13, current pin b10901) a
 ## Change Log
 
 - 2026-09-12T14:46:44.752775+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260912_144740_refreshed-patch-1206-rd13s_7649
+- 2026-09-12T14:47:40.653615+00:00 (updated-by): Updated: section:ledger-events
