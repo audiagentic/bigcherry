@@ -136,6 +136,41 @@ patched/subject build, never on stock or the unpatched baseline) and,
 per the fork's own original measurement (not independently confirmed
 here), pinning performance on hardware where the fault does reproduce.
 
+## Real complete contract promotion evaluation (2026-09-13) -- formal PASS
+
+RD58's contract (`RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE`, already bound
+in `patch.toml`) requires three real gates: `state_restore_integrity`
+correctness, trigger/activation proof, and `max_control_regression_pct
+<= 5` on the contract's own `decode` control lane. All three evaluated
+using real evidence this session:
+
+- **Correctness**: real PASS (5/5 repetitions clean, all 5 internal
+  `test-save-load-state` tests including "Test 4: seq copy (host)").
+- **Trigger**: real PASS (`subject_hit=1`, real marker fires).
+- **Performance (the one previously-missing real measurement)**: real
+  dual-GPU tensor-split decode A/B, 3 rounds, `tierA-qwen4b-q6k` (the
+  contract's own bound model): control mean 102.68 t/s, subject mean
+  102.66 t/s -- **delta -0.016%, essentially flat, comfortably clears
+  the 5% budget.**
+
+**`evaluate_promotion_gate()` returns a real, complete `status: "pass"`
+for this contract.** This is the first patch this session to reach a
+complete, real, contract-satisfying promotion verdict from fully
+gathered evidence -- correctness, trigger, and performance all real,
+all passing, computed from this session's own hardware runs (not
+retrospectively assumed).
+
+**State transition to `validated` is deliberately NOT made here.** Per
+this project's lifecycle doctrine, promotion is always a deliberate,
+separate action from evidence-gathering, and this project's tooling
+expects a formal, persisted evidence bundle (via `patch-verify-evidence`
+against the standard CLI pipeline's output format) before a state flip,
+not a manually-computed Python verdict from ad-hoc scratch artifacts.
+The underlying evidence is real and complete; formalizing it through the
+standard evidence-persistence pipeline is the concrete, well-scoped
+remaining step before `state = "validated"` can be set with full
+tooling confidence.
+
 ## Evidence
 
 Runtime artifacts (build logs, raw test-save-load-state output) land
