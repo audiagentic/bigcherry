@@ -74,11 +74,6 @@ waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "049f71615b24403ac026970204bfd6b0"
 migration = "VA24"
 
-[legacy.RD39-42-STREAM-MOE-OVERLAP]
-waiver_class = "pre_va24_point_estimate"
-baseline_contract_hash = "cd609b50e0368eb0c3dcaccb0186ab07"
-migration = "VA24"
-
 [legacy.RD50-GDN-CHUNKED-RECURRENCE]
 waiver_class = "pre_va24_point_estimate"
 baseline_contract_hash = "7fc8bff85135614657aac3d4e6c616b7"
