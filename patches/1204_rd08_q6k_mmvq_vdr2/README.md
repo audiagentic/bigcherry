@@ -112,8 +112,77 @@ methodology, or whether it needs a tolerance-based redesign.
 
 **No promotion attempted or claimed** -- `evaluate_promotion_gate()`
 correctly returned `status=fail` on the correctness gate; this is not
-overridden or reinterpreted here. The patch's real disposition remains
-`untested` pending PRBE103's root-cause confirmation.
+overridden or reinterpreted here.
+
+## PRBE103 resolution (2026-09-13) -- nondeterminism hypothesis DISPROVED, real correctness FAIL confirmed
+
+PRBE103's same-binary-run-twice control (GPT-designed and reviewed,
+`req_d0be05f943d64d86` / `req_aabd4a5c2b274763` / `req_35aec570a6bb4038`)
+ran the identical VDR=1 control binary 4 independent times for every one
+of the 15 (shape, seed) cases, using the real campaign's own
+environment-preservation runner (`{**os.environ, **env}`, matching
+`validation_campaign.py`'s pattern -- a first attempt without it produced
+spurious nonzero exit codes and was correctly discarded). **Result:
+all 60 executions exited cleanly (`status=ok`), and every single
+(shape, seed) case produced a bit-identical `backend1_digest` across all
+4 executions.**
+
+**PRBE103 CLOSED -- same-binary nondeterminism hypothesis disproved.**
+The identical VDR=1 binary is deterministic across repeated real
+executions on this hardware. Therefore the exact-digest divergence
+observed between the VDR=1 control and VDR=2 subject in the contract-
+qualification run above is deterministic and attributable to the real
+implementation difference between the two kernels, not process-launch or
+GPU floating-point nondeterminism. Cross-process exact digest comparison
+is a valid, stable oracle for this workload; no tolerance-based
+replacement is justified by nondeterminism.
+
+## Final disposition (GPT-approved, `req_35aec570a6bb4038`)
+
+**Correctness: confirmed real FAIL, not a methodology artifact.** The
+VDR=2 implementation is NOT bit-identical to the VDR=1 implementation it
+replaces, contrary to the upstream fork's own stated bit-identical claim
+and this patch's bound `bit_identical = "required"` correctness
+obligation. The observed numerical divergence is small (~1e-7 relative),
+and both implementations independently remain within
+`test-backend-ops`' own backend-reference numerical threshold -- this is
+a real, deterministic loss of EXACT equivalence, not a demonstrated
+material numerical-accuracy regression under a separate tolerance-based
+metric. The Experiment Contract's `bit_identical` requirement is not
+weakened post hoc to convert this FAIL into a PASS -- that would require
+a separate, deliberate contract-policy review (contract authority, not a
+validation-producer decision), followed by fresh qualification under any
+revised contract. No validation promotion is permitted from this
+evidence.
+
+**Lifecycle: `state` stays `"untested"` (GPT-corrected, `req_d76911c6fc814809`).**
+An initial recommendation to reject this patch (briefly applied to
+`patch.toml`, then reverted the same session) was too strong: a prior
+investigation (`config/external-sources.toml`'s RD08 note, dated
+2026-09-11, `req_3c98f154389148bb`) had already hit this exact same
+correctness-gate failure, ruled out RD25 as the cause, and explicitly
+framed the real open question as a **contract-design review**, not a
+proven defect -- VDR=2 intentionally changes lane assignment and
+warp-reduction structure versus VDR=1, so whether exact bit-identity is
+even the scientifically appropriate acceptance bar for this class of
+kernel was left deliberately unresolved. PRBE103 answers a narrower
+question (the divergence is deterministic, not GPU/process noise) and
+does NOT resolve that pre-existing, still-open contract-design question.
+
+**Current, accurate disposition: current `bit_identical` contract check
+FAILS, confirmed deterministic; patch remains `untested` pending
+independent contract-design adjudication.** No evidence presently
+establishes a material numerical-accuracy regression, and no lifecycle
+rejection is justified until the normative correctness requirement
+itself is resolved. Do not weaken the contract merely to rescue RD08 --
+any contract-design review must justify the intended correctness
+semantics independently of this patch's outcome, per this project's own
+lifecycle rules (contract authority, not a validation-producer
+decision). If that review concludes exact bit-identity is the correct
+required bar, RD08 should then become `rejected`. If it concludes the
+contract encoded an inappropriate requirement for this kernel class, the
+Experiment Contract should be deliberately revised and qualification
+rerun under the new contract before any promotion.
 
 ## Known limitations
 

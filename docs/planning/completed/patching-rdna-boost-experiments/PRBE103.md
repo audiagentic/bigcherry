@@ -2,7 +2,7 @@
 id: PRBE103
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-12T16:08:58.867574+00:00'
 breadth: ''
 skill: ''
@@ -56,6 +56,12 @@ A real run of run_rd08_contract_qualification() on Brutus (2026-09-13, current p
 
 This finding may also be relevant to any other patch using the same bit_identical/exact-digest correctness methodology (e.g. RD39-42/1215's llama-results raw-logit approach used a single-process teacher-forced batch rather than two separate process launches, which may be why it achieved a real byte-exact match -- worth checking whether that structural difference, not luck, is why 1215's bit_identical check succeeded while RD08's did not).
 
+**CLOSED (2026-09-13, GPT-reviewed req_d0be05f943d64d86/req_aabd4a5c2b274763/req_35aec570a6bb4038): nondeterminism hypothesis DISPROVED.**
+
+Ran the identical VDR=1 control binary 4 independent times for every one of 15 (shape, seed) cases, using the real campaign's own environment-preservation runner (a first attempt without it produced spurious nonzero exit codes and was correctly discarded, not counted). Result: all 60 executions exited cleanly (status=ok), and every case produced a bit-identical backend1_digest across all 4 executions -- same-binary execution is fully deterministic on this hardware.
+
+Conclusion: the original VDR=1-vs-VDR=2 digest divergence in RD08's contract-qualification run is real and deterministic, not GPU/process nondeterminism. Cross-process exact digest comparison remains a valid oracle; no tolerance-based redesign is justified. RD08 (patch 1204)'s correctness FAIL stands as a genuine, confirmed finding -- the fork's bit-identical claim is disproven. patch.toml state transitioned to "rejected" (GPT-approved deliberate lifecycle decision, no VDR=2 fix in progress). See patches/1204_rd08_q6k_mmvq_vdr2/README.md's "Final disposition" section for full detail.
+
 ## Change Log
 
 - 2026-09-12T16:08:58.867574+00:00 (created-by): Created by agent
@@ -64,3 +70,5 @@ This finding may also be relevant to any other patch using the same bit_identica
 
 - chg_20260912_160922_ran-patch-1204-rd08s-full-c_6243
 - 2026-09-12T16:09:22.565880+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T19:21:43.738642+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T19:21:48.669745+00:00 (state-transition): State: pending → completed
