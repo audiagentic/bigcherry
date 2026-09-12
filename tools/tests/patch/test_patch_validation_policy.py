@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.patch import registry as patch_registry # noqa: E402
 from bigcherry.patch import validation_policy as vp # noqa: E402
 
 PATCH_PY = "STATE = 'ported-benched'\n"
@@ -629,6 +630,19 @@ class PerformanceEvidenceTests(unittest.TestCase):
             )
             problems = vp.check_performance_evidence(root=root)
             self.assertEqual(problems, ())
+
+    def test_scoped_optimization_check_can_evaluate_prospective_validated_state(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._write_package(
+                root, state="untested", tags='tags = ["optimization"]\n', readme=None,
+            )
+            descriptor = patch_registry.load_registry(root).descriptors[0]
+            problems = vp.check_performance_evidence_for_patch(
+                descriptor, root=root, assume_validated=True,
+            )
+            self.assertEqual(len(problems), 1)
+            self.assertIn("no README.md", problems[0])
 
 
 if __name__ == "__main__":

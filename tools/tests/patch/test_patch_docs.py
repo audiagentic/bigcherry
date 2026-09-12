@@ -176,6 +176,16 @@ class ParseSummaryHeaderTests(unittest.TestCase):
 
 
 class CheckSummaryConsistencyTests(unittest.TestCase):
+    def test_scoped_check_matches_aggregate_for_one_descriptor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_packaged_patch(root, "0100_x", state="validated")
+            _write_summary(root, "0100_x", status="validated", plan_item="none")
+            descriptor = _descriptor(root, "0100_x")
+            self.assertEqual(
+                patch_docs.check_summary_for_patch(descriptor, _registry_root(root)), ()
+            )
+
     def test_flags_missing_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
