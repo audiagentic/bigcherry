@@ -290,15 +290,17 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
             GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
             ("admission returned a malformed result",),
         )
-    if status == "not-ready" and not gate_active:
+    # An inactive admission gate is not an approval, regardless of any
+    # provisional status/admissible fields carried beside it.
+    if not gate_active:
         return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", warnings)
-    if status in {"rejected", "escape-hatch"} or not admissible:
-        return GateResult(GateId.G7, GateStatus.FAIL, "admission", "patch_admission", failures or warnings)
-    if status == "admitted" and gate_active and not failures:
+    if status == "admitted" and admissible and not failures:
         return GateResult(GateId.G7, GateStatus.PASS, "admission", "patch_admission", warnings)
+    if status in {"rejected", "escape-hatch"} and not admissible:
+        return GateResult(GateId.G7, GateStatus.FAIL, "admission", "patch_admission", failures or warnings)
     return GateResult(
         GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
-        (f"unrecognized admission result status {status!r}",),
+        (f"inconsistent or unrecognized admission result status {status!r}",),
     )
 
 
@@ -335,16 +337,13 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
             dispositions=patch_disposition.list_dispositions(context.dispositions_dir),
             target_revision=context.target_revision,
         )
+        complete = getattr(coverage, "complete", None)
+        uncovered = getattr(coverage, "uncovered_patch_ids", None)
+        if (not isinstance(complete, bool) or not isinstance(uncovered, (tuple, list))
+                or not all(isinstance(item, str) for item in uncovered)):
+            raise TypeError("disposition coverage returned malformed fields")
     except (OSError, TypeError, ValueError, AttributeError) as exc:
         return GateResult(GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition", (str(exc),))
-    complete = getattr(coverage, "complete", None)
-    uncovered = getattr(coverage, "uncovered_patch_ids", None)
-    if (not isinstance(complete, bool) or not isinstance(uncovered, (tuple, list))
-            or not all(isinstance(item, str) for item in uncovered)):
-        return GateResult(
-            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
-            ("disposition coverage returned a malformed result",),
-        )
     if complete:
         return GateResult(GateId.G6, GateStatus.PASS, "disposition", "patch.disposition")
     return GateResult(

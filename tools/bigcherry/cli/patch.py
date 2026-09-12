@@ -7,15 +7,20 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+from ..core import config as campaign_config
+from ..core.context import ProjectContext
 from ..core import paths
 from ..patch import catalog as patch_catalog
 from ..patch import disposition as patch_disposition
+from ..patch import gates as patch_gates
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import patchset
+from ..patch import registry as patch_registry
 from ..patch import selection as patch_selection
 from ..patch import rebase as patch_rebase
 from ..patch import docs as patch_docs
 from ..patch import validation_policy as patch_validation_policy
+from ..source.workspace import UpstreamRepository, WorkspaceError
 
 DISPOSITIONS_DIR = paths.DISPOSITIONS
 
@@ -257,7 +262,6 @@ def cmd_patch_disposition(args: Namespace) -> int:
 def cmd_patch_verify_evidence(args: Namespace) -> int:
     """Report current validation evidence for selected patches."""
     from ..core import config as campaign_config
-    from ..core.context import ProjectContext
     from ..source.workspace import UpstreamRepository, WorkspaceError
 
     cfg = campaign_config.load(paths.RECIPES)
@@ -314,6 +318,150 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
 def cmd_patch_validate(args: Namespace) -> int:
     """Verify existing evidence; hardware campaigns remain explicit."""
     return cmd_patch_verify_evidence(args)
+
+
+def cmd_patch_gates(args: Namespace) -> int:
+    """Evaluate the shared PA21 gate registry for one exact composition.
+
+    This handler resolves inputs and presents results only.  Gate policy
+    remains in ``patch.gates`` and its existing domain authorities; this
+    command must not grow a second set of patch-selection or evidence rules.
+    """
+    from ..campaign import resolution as campaign_resolution
+
+    intent = patch_gates.GateIntent(args.intent)
+    try:
+        cfg = campaign_config.load(paths.RECIPES)
+        registry = patch_registry.load_registry(paths.PATCHES)
+        descriptor = registry.get(args.patch_id)
+        modules = patchset.catalog(directory=paths.PATCHES)
+
+        if args.source:
+            if args.source not in cfg.sources:
+                raise ValueError(f"unknown source {args.source!r}")
+            selection = campaign_resolution.resolve_canonical_selection(
+                args.source, cfg, modules, catalog_directory=paths.PATCHES,
+            )
+            selected_ids = selection.patch_ids
+            if args.patch_id not in selected_ids:
+                raise ValueError(
+                    f"source {args.source!r} does not select patch {args.patch_id!r}"
+                )
+        else:
+            if intent in (patch_gates.GateIntent.BUILD, patch_gates.GateIntent.REBASE):
+                raise ValueError(f"--source is required for {intent.value}")
+            selected_ids = patchset.expand_composition(
+                (args.patch_id,), directory=paths.PATCHES,
+            ).expanded
+        composition = patchset.resolve_exact(
+            tuple(selected_ids), directory=paths.PATCHES, allow_rejected=False,
+        )
+    except (campaign_config.ConfigError, campaign_resolution.ResolutionError,
+            patch_registry.PatchRegistryError, ValueError, OSError) as exc:
+        print(f"patch-gates: cannot resolve composition: {exc}", file=sys.stderr)
+        return 2
+
+    source_root = paths.llama_root(getattr(args, "llama_root", None))
+    try:
+        repository = UpstreamRepository(source_root)
+        resolved_base_revision = repository.resolve_ref(cfg.pinned)
+        target_revision = repository.resolve_ref("HEAD")
+    except (WorkspaceError, OSError, ValueError) as exc:
+        print(
+            f"patch-gates: cannot resolve pin {cfg.pinned!r} locally: {exc}",
+            file=sys.stderr,
+        )
+        return 2
+
+    def load_report(path_value: str | None, label: str) -> dict[str, object] | None:
+        if path_value is None:
+            return None
+        try:
+            report = patch_rebase.load_report(Path(path_value))
+        except (patch_rebase.RebaseCheckError, OSError, ValueError) as exc:
+            raise ValueError(f"{label} is not a readable report: {exc}") from exc
+        if not isinstance(report, dict):
+            raise ValueError(f"{label} must contain a JSON object")
+        return report
+
+    try:
+        rebase_report = load_report(args.rebase_report, "--rebase-report")
+        coverage_report = load_report(args.all_report, "--all-report")
+    except ValueError as exc:
+        print(f"patch-gates: {exc}", file=sys.stderr)
+        return 2
+
+    source_cfg = cfg.sources.get(args.source) if args.source else None
+    backend = (
+        source_cfg.backend if source_cfg is not None
+        else descriptor.backend or "agnostic"
+    )
+    context = patch_gates.GateContext(
+        descriptor=descriptor,
+        composition=composition,
+        pinned_ref=cfg.pinned,
+        intent=intent,
+        patch_context=patch_catalog.PatchContext(
+            backend=backend, source=args.source,
+        ),
+        patches_dir=paths.PATCHES,
+        resolved_base_revision=resolved_base_revision,
+        catalog_path=paths.PATCH_CATALOG,
+        evidence_root=None,
+        external_sources_path=paths.EXTERNAL_SOURCES,
+        validation_baseline_path=paths.VALIDATION_PACKAGE_GRANDFATHER,
+        dispositions_dir=paths.DISPOSITIONS,
+        source_root=source_root,
+        rebase_report=rebase_report,
+        allow_legacy_grandfather=not args.no_legacy_grandfather,
+        catalog_states={module.patch_id: module.state for module in modules},
+        coverage_report=coverage_report,
+        recipe_patch_ids=(
+            frozenset(module.patch_id for module in composition.modules)
+            if intent in (patch_gates.GateIntent.BUILD, patch_gates.GateIntent.REBASE)
+            else None
+        ),
+        target_revision=target_revision,
+    )
+    results = patch_gates.evaluate_patch_gates(context)
+
+    payload = {
+        "schema_version": 1,
+        "patch_id": args.patch_id,
+        "intent": intent.value,
+        "source": args.source,
+        "composition": [module.patch_id for module in composition.modules],
+        "gates": [
+            {
+                "id": result.id.value,
+                "status": result.status.value,
+                "phase": result.phase,
+                "authority": result.authority,
+                "detail": list(result.detail),
+            }
+            for result in results
+        ],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        source_label = args.source or "focal patch dependency closure"
+        print(f"patch-gates: {args.patch_id} ({intent.value})")
+        print(f"source: {source_label}")
+        print("composition: " + ", ".join(payload["composition"]))
+        for result in payload["gates"]:
+            suffix = " -- " + "; ".join(result["detail"]) if result["detail"] else ""
+            print(f"  {result['id']}: {result['status']} ({result['authority']}){suffix}")
+        overall = "PASS" if all(
+            result.status in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
+            for result in results
+        ) else "FAIL"
+        print("RESULT: " + overall)
+
+    return 0 if all(
+        result.status in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
+        for result in results
+    ) else 1
 
 
 def cmd_patch_doc(args: Namespace) -> int:

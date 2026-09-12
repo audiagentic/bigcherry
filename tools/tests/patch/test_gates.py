@@ -116,6 +116,36 @@ class GateContractTests(unittest.TestCase):
             outcome = gates.evaluate_admission_gate(context)
         self.assertEqual(outcome.status, GateStatus.BLOCKED)
 
+    def test_admission_gate_blocks_inactive_rejected_result(self) -> None:
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=()), catalog_path=None,
+            patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision=None, evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(
+            admissible=False, gate_active=False, status="rejected",
+            failures=("bootstrap",), warnings=(),
+        )
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result):
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.BLOCKED)
+
+    def test_admission_gate_blocks_malformed_failure_fields(self) -> None:
+        context = SimpleNamespace(
+            composition=SimpleNamespace(modules=()), catalog_path=None,
+            patches_dir=Path("patches"), pinned_ref="b10901",
+            resolved_base_revision=None, evidence_root=None,
+            allow_legacy_grandfather=True,
+        )
+        result = SimpleNamespace(
+            admissible=True, gate_active=True, status="admitted",
+            failures="not-a-sequence", warnings=(),
+        )
+        with mock.patch("bigcherry.patch_admission.admit", return_value=result):
+            outcome = gates.evaluate_admission_gate(context)
+        self.assertEqual(outcome.status, GateStatus.BLOCKED)
+
     def test_patch_gate_evaluator_preserves_order_and_applicability(self) -> None:
         context = SimpleNamespace(intent=GateIntent.AUTHOR)
         g0 = gates.GateResult(GateId.G0, GateStatus.PASS, "composition", "test")
@@ -124,6 +154,42 @@ class GateContractTests(unittest.TestCase):
              mock.patch.object(gates, "evaluate_summary_gate", return_value=g1):
             results = gates.evaluate_patch_gates(context)
         self.assertEqual(tuple(result.id for result in results), (GateId.G0, GateId.G1))
+
+    def test_patch_gate_evaluator_preserves_promote_order(self) -> None:
+        context = SimpleNamespace(intent=GateIntent.PROMOTE)
+        values = {
+            GateId.G0: gates.GateResult(GateId.G0, GateStatus.PASS, "", "test"),
+            GateId.G1: gates.GateResult(GateId.G1, GateStatus.PASS, "", "test"),
+            GateId.G2: gates.GateResult(GateId.G2, GateStatus.PASS, "", "test"),
+            GateId.G3: gates.GateResult(GateId.G3, GateStatus.PASS, "", "test"),
+            GateId.G4: gates.GateResult(GateId.G4, GateStatus.PASS, "", "test"),
+            GateId.G5: gates.GateResult(GateId.G5, GateStatus.PASS, "", "test"),
+        }
+        with mock.patch.object(gates, "evaluate_composition_gate", return_value=values[GateId.G0]), \
+             mock.patch.object(gates, "evaluate_summary_gate", return_value=values[GateId.G1]), \
+             mock.patch.object(gates, "evaluate_rebase_gate", return_value=values[GateId.G2]), \
+             mock.patch.object(gates, "evaluate_package_gate", return_value=values[GateId.G3]), \
+             mock.patch.object(gates, "evaluate_evidence_gate", return_value=values[GateId.G4]), \
+             mock.patch.object(gates, "evaluate_lifecycle_gate", return_value=values[GateId.G5]):
+            results = gates.evaluate_patch_gates(context)
+        self.assertEqual(tuple(result.id for result in results),
+                         (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4, GateId.G5))
+
+    def test_patch_gate_evaluator_preserves_build_order(self) -> None:
+        context = SimpleNamespace(intent=GateIntent.BUILD)
+        values = {
+            gate_id: gates.GateResult(gate_id, GateStatus.PASS, "", "test")
+            for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7)
+        }
+        with mock.patch.object(gates, "evaluate_composition_gate", return_value=values[GateId.G0]), \
+             mock.patch.object(gates, "evaluate_summary_gate", return_value=values[GateId.G1]), \
+             mock.patch.object(gates, "evaluate_rebase_gate", return_value=values[GateId.G2]), \
+             mock.patch.object(gates, "evaluate_evidence_gate", return_value=values[GateId.G4]), \
+             mock.patch.object(gates, "evaluate_disposition_gate", return_value=values[GateId.G6]), \
+             mock.patch.object(gates, "evaluate_admission_gate", return_value=values[GateId.G7]):
+            results = gates.evaluate_patch_gates(context)
+        self.assertEqual(tuple(result.id for result in results),
+                         (GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7))
 
     def test_lifecycle_gate_blocks_without_all_prerequisites(self) -> None:
         context = SimpleNamespace(
@@ -182,6 +248,22 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
         self.assertEqual(result.status, GateStatus.FAIL)
         self.assertEqual(result.detail, ("P1",))
+
+    def test_disposition_gate_blocks_malformed_authority_result(self) -> None:
+        base = {
+            "catalog_states": {"P1": "untested"},
+            "coverage_report": {
+                "selection": {"all_patches": True}, "upstream_revision": "abc",
+            },
+            "recipe_patch_ids": frozenset(), "target_revision": "abc",
+            "dispositions_dir": Path("dispositions"),
+            "source_root": Path("llama.cpp"),
+        }
+        malformed = SimpleNamespace(complete=True, uncovered_patch_ids="P1")
+        with mock.patch.object(gates.rebase, "require_fresh_report", return_value=("P1",)), \
+             mock.patch.object(gates.patch_disposition, "compute_coverage", return_value=malformed):
+            result = gates.evaluate_disposition_gate(SimpleNamespace(**base))
+        self.assertEqual(result.status, GateStatus.BLOCKED)
 
 
 if __name__ == "__main__":

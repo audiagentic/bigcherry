@@ -35,6 +35,7 @@ from .patch import (
     cmd_patch_doc,
     cmd_patch_explain,
     cmd_patch_graph,
+    cmd_patch_gates,
     cmd_patch_lint,
     cmd_patch_rebase_check,
     cmd_patch_status,
@@ -343,6 +344,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
+
+    patch_gates_cmd = sub.add_parser(
+        "patch-gates",
+        help="evaluate the shared PA21 patch gates for one exact composition",
+    )
+    patch_gates_cmd.add_argument(
+        "patch_id", help="canonical patch ID to evaluate"
+    )
+    patch_gates_cmd.add_argument(
+        "--intent",
+        required=True,
+        choices=("validate", "promote", "build", "rebase"),
+        help="operation whose PA21 gate applicability should be evaluated",
+    )
+    patch_gates_cmd.add_argument(
+        "--source",
+        default=None,
+        choices=_v2_source_names(),
+        help="canonical v2 source name; required for build and rebase",
+    )
+    patch_gates_cmd.add_argument(
+        "--rebase-report", metavar="PATH",
+        help="PA16 report used by G2 when the intent includes rebase freshness",
+    )
+    patch_gates_cmd.add_argument(
+        "--all-report", metavar="PATH",
+        help="all-patches PA16 report used by the G6 disposition-coverage gate",
+    )
+    patch_gates_cmd.add_argument(
+        "--no-legacy-grandfather", action="store_true",
+        help="require current evidence instead of the one-time legacy baseline",
+    )
+    patch_gates_cmd.add_argument(
+        "--json", action="store_true", help="emit stable machine-readable output",
+    )
+    patch_gates_cmd.add_argument(
+        "--llama-root", default=argparse.SUPPRESS,
+        help="llama.cpp checkout (also accepted as the global option)",
+    )
+    patch_gates_cmd.set_defaults(func=cmd_patch_gates)
 
     patch_disposition_cmd = sub.add_parser(
         "patch-disposition",
