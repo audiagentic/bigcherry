@@ -1042,13 +1042,19 @@ def run_rd13_ppl_check(
 
     exe = ".exe" if sys.platform == "win32" else ""
     ppl_build_root = build_root / "rd13-ppl-check"
+    # PRBE105 fix (2026-09-13): namespace by architecture. A shared build_root
+    # reused across a multi-arch validation run (e.g. gfx1100 then gfx1201)
+    # otherwise hits a real CMake "source does not match the source used to
+    # generate cache" error from the stale first-architecture configure.
+    subject_name = f"rd13-ppl-subject-{amdgpu_targets}"
+    control_name = f"rd13-ppl-control-{amdgpu_targets}"
     subject_bin = build_tree(
-        name="rd13-ppl-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        name=subject_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
         extra_cmake_args=[],
     )
     control_bin = build_tree(
-        name="rd13-ppl-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        name=control_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
         extra_cmake_args=[],
     )
@@ -1057,12 +1063,12 @@ def run_rd13_ppl_check(
         hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
     )
     subject_build_evidence = capture_completed_build_evidence(
-        ppl_build_root / "rd13-ppl-subject", source_root=subject_src,
+        ppl_build_root / subject_name, source_root=subject_src,
         architecture=amdgpu_targets, binary=subject_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     control_build_evidence = capture_completed_build_evidence(
-        ppl_build_root / "rd13-ppl-control", source_root=control_src,
+        ppl_build_root / control_name, source_root=control_src,
         architecture=amdgpu_targets, binary=control_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )

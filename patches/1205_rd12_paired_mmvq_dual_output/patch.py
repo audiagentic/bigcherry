@@ -152,7 +152,11 @@ _DETECT_BLOCK = """    // Dual-output mmvq fusion: two matmuls over the same act
                 if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                     static std::atomic_flag bigcherry_rd12_logged = ATOMIC_FLAG_INIT;
                     if (!bigcherry_rd12_logged.test_and_set(std::memory_order_relaxed)) {
-                        GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion\\n");
+                        // PRBE106 fix (2026-09-13): GGML_LOG_INFO is gated
+                        // behind llama-bench's own --verbose flag, causing a
+                        // real false-negative activation finding this
+                        // session. WARN matches RD08's precedent.
+                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion\\n");
                     }
                 }
                 ggml_cuda_mul_mat_vec_q(*cuda_ctx, mm_a->src[0], mm_a->src[1], mm_a->src[2], mm_a, &fusion_data);
