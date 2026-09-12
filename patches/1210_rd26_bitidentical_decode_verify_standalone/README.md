@@ -37,6 +37,24 @@ PPL-comparison primitive) was run for real on Brutus via
 
 Artifact: `artifacts/rd26-ppl-check.json` (produced by the campaign run).
 
+## Real hardware evidence at current pin (2026-09-13)
+
+The 2026-09-11 result above was measured against a since-superseded pin.
+Reran `run_rd26_ppl_check()` for real on Brutus against the **current**
+active pin (`b10901` / `28ff0958291ce3465fabd7bd679d4b0edd742bd9`), fresh
+control/subject `llama-perplexity` builds, same model
+(`tierA-qwen4b-q6k`) and corpus (real `wikitext-2-raw/wiki.test.raw`):
+
+- **Result: PASS.** PPL = 8.69 on both subject and control builds
+  (differs from the 2026-09-11 figure of 10.4463 -- expected, the pin
+  moved; what matters is subject==control at a given pin). delta = 0.0
+  exactly.
+- Real build-identity parity asserted before the comparison ran.
+
+Same scope limit as before applies unchanged: this remains a
+regression guard on ordinary single-sequence decode, not a confirmation
+of RD26's actual decode-vs-speculative-verify bit-identity claim.
+
 ## Known limitations (honest scope boundary -- read before citing this as proof of RD26's core claim)
 
 - **This check proves the two ported hunks do not regress ordinary
