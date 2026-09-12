@@ -18,6 +18,7 @@ from . import catalog as patch_catalog
 from . import docs as patch_docs
 from . import patchset
 from . import rebase
+from . import validation_policy
 from . import registry as patch_registry
 
 
@@ -140,3 +141,42 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
             (f"focal patch {context.descriptor.patch_id!r} is not known-good",),
         )
     return GateResult(GateId.G2, GateStatus.PASS, "rebase", "patch.rebase")
+
+
+def evaluate_package_gate(context: GateContext) -> GateResult:
+    """Evaluate the focal package policy without unrelated patch poisoning."""
+    try:
+        report = validation_policy.check_validation_packages(
+            root=context.patches_dir,
+            registry_path=context.patches_dir,
+            external_sources_path=context.external_sources_path,
+            baseline_path=context.validation_baseline_path,
+        )
+    except (OSError, TypeError, ValueError, validation_policy.PolicyError) as exc:
+        return GateResult(GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy", (str(exc),))
+    status = next((item for item in report.statuses if item.patch_id == context.descriptor.patch_id), None)
+    if status is None:
+        return GateResult(
+            GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy",
+            (f"no package-policy result for {context.descriptor.patch_id!r}",),
+        )
+    if status.status == "invalid":
+        return GateResult(GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy", status.problems)
+    if status.status == "not-required":
+        return GateResult(GateId.G3, GateStatus.NA, "package", "patch.validation_policy")
+    if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
+        try:
+            validation_policy.require_execution_package(context.descriptor, root=context.patches_dir)
+        except (OSError, TypeError, ValueError, validation_policy.PolicyError) as exc:
+            return GateResult(GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy", (str(exc),))
+    performance_problems = validation_policy.check_performance_evidence_for_patch(
+        context.descriptor,
+        root=context.patches_dir,
+        assume_validated=context.intent is GateIntent.PROMOTE,
+    )
+    if performance_problems:
+        return GateResult(
+            GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy",
+            (*status.problems, *performance_problems),
+        )
+    return GateResult(GateId.G3, GateStatus.PASS, "package", "patch.validation_policy", status.problems)
