@@ -118,7 +118,9 @@ class PatchGatesCliTests(unittest.TestCase):
                 "resolve_canonical_selection",
                 return_value=SimpleNamespace(patch_ids=("A", "P1")),
             ) as resolve_source,
-            mock.patch.object(cli_patch.patchset, "resolve_exact", return_value=composition),
+            mock.patch.object(
+                cli_patch.patchset, "resolve_exact", return_value=composition,
+            ) as resolve_exact,
             mock.patch.object(cli_patch.patch_rebase, "load_report",
                               side_effect=(rebase_report, all_report)) as load_report,
             mock.patch.object(cli_patch, "UpstreamRepository", return_value=self.repo),
@@ -136,6 +138,9 @@ class PatchGatesCliTests(unittest.TestCase):
         resolve_source.assert_called_once_with(
             "bigcherry", self.cfg, [first, focal],
             catalog_directory=cli_patch.paths.PATCHES,
+        )
+        resolve_exact.assert_called_once_with(
+            ("A", "P1"), directory=cli_patch.paths.PATCHES, allow_rejected=False,
         )
         self.assertEqual(load_report.call_args_list[0].args[0], Path("rebase.json"))
         self.assertEqual(load_report.call_args_list[1].args[0], Path("all.json"))
@@ -160,6 +165,7 @@ class PatchGatesCliTests(unittest.TestCase):
     def test_source_mode_rejects_focal_outside_canonical_selection(self) -> None:
         import bigcherry.cli.patch as cli_patch
 
+        self.cfg.sources = {"bigcherry": SimpleNamespace(backend="hip")}
         with (
             mock.patch.object(cli_patch.campaign_config, "load", return_value=self.cfg),
             mock.patch.object(cli_patch.patch_registry, "load_registry", return_value=self.registry),
@@ -168,12 +174,13 @@ class PatchGatesCliTests(unittest.TestCase):
                 campaign_resolution,
                 "resolve_canonical_selection",
                 return_value=SimpleNamespace(patch_ids=("OTHER",)),
-            ),
+            ) as resolve_source,
             mock.patch.object(cli_patch.patchset, "resolve_exact") as resolve,
         ):
             exit_code = cmd_patch_gates(_args(source="bigcherry"))
 
         self.assertEqual(exit_code, 2)
+        resolve_source.assert_called_once()
         resolve.assert_not_called()
 
     def test_focal_promote_expands_dependency_closure_without_recipe_ids(self) -> None:
@@ -273,6 +280,9 @@ class PatchGatesCliTests(unittest.TestCase):
         results = (
             GateResult(GateId.G0, GateStatus.PASS, "composition", "test"),
             GateResult(GateId.G1, GateStatus.NA, "documentation", "test"),
+        )
+        self.repo.resolve_ref.side_effect = (
+            lambda ref: "a" * 40 if ref == self.cfg.pinned else "b" * 40
         )
         with (
             mock.patch.object(cli_patch.campaign_config, "load", return_value=self.cfg),
