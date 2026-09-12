@@ -76,6 +76,7 @@ Migration: capability-rebaseline-v3-2026-09
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -86,3 +87,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:38:05.053695+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria
 - chg_20260910_023824_the-gpu-collective-successors_5773
 - 2026-09-10T02:38:24.269287+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_045133_documented-the-n-way-allreduce_7094
+- 2026-09-12T04:51:33.420806+00:00 (updated-by): Updated: section:ledger-events
