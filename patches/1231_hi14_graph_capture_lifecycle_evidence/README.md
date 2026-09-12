@@ -45,23 +45,39 @@ following the same opt-in-marker convention established by HI85 (patch
   filtered by that mechanism. Full offline suite green (1727 passed)
   afterward.
 
-## Lifecycle note -- deliberately still `untested`
+## Real live-server confirmation (2026-09-12, Brutus, dual gfx1100)
 
-The HI90 fix session explicitly attempted real-hardware re-verification on
-Brutus (to confirm the `WARN`-level markers are actually visible in a real
-server log at normal verbosity) but **backed off** after a dry-run apply
-showed the overlay pipeline failing on an unrelated patch from another
-concurrent session's in-progress work -- deliberately avoided risking a
-collision rather than forcing the run. That re-verification has not been
-completed since. `STATE` stays `"untested"` because the fix itself
-(WARN-level visibility) has real hardware-grounded reasoning but no direct
-"markers observed in a live server log" confirmation yet -- this README
-documents that gap honestly rather than closing it prematurely.
+Closed the previously-open gap: built `llama-server` with this patch alone
+(isolated `bigcherry-native` composition), launched it at **normal
+verbosity** (no `-lv` flag), real Qwen3.8-27B-Q8_0 model, `-sm tensor`,
+`BIGCHERRY_GRAPH_LIFECYCLE_TRACE=1`. Sent a real completion request. All
+four expected markers appeared in the live server log exactly once, in the
+correct order:
+
+```
+BIGCHERRY_GRAPH_LIFECYCLE stage=capture_begin
+BIGCHERRY_GRAPH_LIFECYCLE stage=capture_end
+BIGCHERRY_GRAPH_LIFECYCLE stage=instantiate
+BIGCHERRY_GRAPH_LIFECYCLE stage=replay
+```
+
+This directly confirms the HI90 fix (INFO->WARN) works as intended on real
+hardware at normal server verbosity -- the previously-untested assumption
+is now hardware-confirmed, not just reasoned about.
+
+## Lifecycle note
+
+The HI90 fix session had explicitly attempted this re-verification on
+Brutus but backed off after a dry-run apply showed the overlay pipeline
+failing on an unrelated patch from another concurrent session's
+in-progress work -- deliberately avoided risking a collision rather than
+forcing the run. That gap is now closed by the confirmation above.
 
 ## Known limitations
 
 - No `validation.toml` adapter exists; `kind = "diagnostic"`, not eligible
   for the local-framework adapter path.
-- Real confirmation that the WARN-level markers appear in a live
-  `llama-server` log at normal verbosity is the concrete remaining step
-  before this patch can be promoted to `validated`.
+- `state` stays `"untested"` -- this is a diagnostic/instrumentation
+  patch, not a production dispatch patch, so "validated" in the
+  performance-patch sense does not apply; the live-server confirmation
+  above is this patch's own complete acceptance evidence.
