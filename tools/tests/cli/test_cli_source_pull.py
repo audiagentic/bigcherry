@@ -69,14 +69,14 @@ class PullSourceRefResolutionTests(unittest.TestCase):
             return ref
 
         with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.__main__._uncommitted_pin_change", return_value=None), \
-                mock.patch("bigcherry.__main__.pin_transition.committed_state"), \
-                mock.patch("bigcherry.__main__.paths.REPO_ROOT", Path(self._tmp.name)), \
-                mock.patch("bigcherry.__main__.upstream.resolve_ref", side_effect=fake_resolve_ref), \
-                mock.patch("bigcherry.__main__.upstream.clear_stale_locks", return_value=[]), \
-                mock.patch("bigcherry.__main__.upstream.ensure_ref", return_value="b10705"), \
-                mock.patch("bigcherry.__main__._run"), \
-                mock.patch("bigcherry.__main__._record_for") as record_for, \
+                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+                mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
+                mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)), \
+                mock.patch("bigcherry.cli.source.upstream.resolve_ref", side_effect=fake_resolve_ref), \
+                mock.patch("bigcherry.cli.source.upstream.clear_stale_locks", return_value=[]), \
+                mock.patch("bigcherry.cli.source.upstream.ensure_ref", return_value="b10705"), \
+                mock.patch("bigcherry.cli.source._run"), \
+                mock.patch("bigcherry.cli.source.releases.record_for_checkout") as record_for, \
                 mock.patch.object(Path, "exists", return_value=True):
             record_for.return_value.revision = "deadbeef"
             record_for.return_value.release_tag = "b10705"
@@ -97,14 +97,14 @@ class PullSourceRefResolutionTests(unittest.TestCase):
             return ref
 
         with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.__main__._uncommitted_pin_change", return_value=None), \
-                mock.patch("bigcherry.__main__.pin_transition.committed_state"), \
-                mock.patch("bigcherry.__main__.paths.REPO_ROOT", Path(self._tmp.name)), \
-                mock.patch("bigcherry.__main__.upstream.resolve_ref", side_effect=fake_resolve_ref), \
-                mock.patch("bigcherry.__main__.upstream.clear_stale_locks", return_value=[]), \
-                mock.patch("bigcherry.__main__.upstream.ensure_ref", return_value="b9999"), \
-                mock.patch("bigcherry.__main__._run"), \
-                mock.patch("bigcherry.__main__._record_for") as record_for, \
+                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+                mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
+                mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)), \
+                mock.patch("bigcherry.cli.source.upstream.resolve_ref", side_effect=fake_resolve_ref), \
+                mock.patch("bigcherry.cli.source.upstream.clear_stale_locks", return_value=[]), \
+                mock.patch("bigcherry.cli.source.upstream.ensure_ref", return_value="b9999"), \
+                mock.patch("bigcherry.cli.source._run"), \
+                mock.patch("bigcherry.cli.source.releases.record_for_checkout") as record_for, \
                 mock.patch.object(Path, "exists", return_value=True):
             record_for.return_value.revision = "deadbeef"
             record_for.return_value.release_tag = "b9999"
@@ -116,9 +116,9 @@ class PullSourceRefResolutionTests(unittest.TestCase):
         from bigcherry.core import paths as core_paths
 
         with mock.patch.object(core_paths, "RECIPES", self.recipes_path), \
-                mock.patch("bigcherry.__main__._uncommitted_pin_change", return_value=None), \
-                mock.patch("bigcherry.__main__.pin_transition.committed_state"), \
-                mock.patch("bigcherry.__main__.paths.REPO_ROOT", Path(self._tmp.name)):
+                mock.patch("bigcherry.cli.source.pin_release.uncommitted_pin_change", return_value=None), \
+                mock.patch("bigcherry.cli.source.pin_transition.committed_state"), \
+                mock.patch("bigcherry.cli.source.paths.REPO_ROOT", Path(self._tmp.name)):
             rc = cli_source.cmd_pull(self._args(source="not-a-real-source"))
         self.assertEqual(rc, 2)
 

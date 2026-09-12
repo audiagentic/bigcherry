@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import os
+import subprocess
 import tempfile
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -35,10 +36,45 @@ from typing import Any, Literal
 
 from .. import ARTIFACT_VERSION
 from ..core import paths
+from ..source import audit as source_audit
 from ..tuning.promotion import PromotionPointer
 
 RELEASES_DIR = paths.REPO_ROOT / "releases"
 INDEX_PATH = RELEASES_DIR / "index.json"
+
+
+def _git_out(root: Path, *args: str) -> str:
+    """Return git stdout for a best-effort release identity lookup."""
+    try:
+        result = subprocess.run(
+            ("git", "-C", str(root), *args),
+            capture_output=True, text=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+    return result.stdout.strip()
+
+
+def _bigcherry_revision() -> str:
+    """Return the BigCherry checkout revision used to make a record."""
+    return _git_out(paths.REPO_ROOT, "rev-parse", "HEAD")
+
+
+def record_for_checkout(root: Path) -> "ReleaseRecord":
+    """Load or create the release record for an upstream checkout.
+
+    This is the canonical release-identity API formerly implemented in the
+    compatibility entrypoint.  Revision, exact tag lookup, fallback record
+    selection, and BigCherry provenance intentionally retain their existing
+    semantics.
+    """
+    revision, _ = source_audit.git_revision(root)
+    tag = _git_out(root, "describe", "--tags", "--exact-match")
+    record = load(revision, tag)
+    record.revision = revision
+    record.release_tag = tag
+    record.bigcherry_revision = _bigcherry_revision()
+    return record
 
 
 def _atomic_write_json(path: Path, document: dict[str, Any]) -> None:

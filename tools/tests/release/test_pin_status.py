@@ -17,11 +17,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.release import pin_status # noqa: E402
+from bigcherry.release import pin as release_pin # noqa: E402
 from bigcherry import pin_transition  # noqa: E402
 
 _PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
@@ -44,6 +46,36 @@ _GIT_COMMIT_ENV = {
     "GIT_COMMITTER_EMAIL": "pin-status-test@example.com",
     "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
 }
+
+
+class UncommittedPinApiTests(unittest.TestCase):
+    def test_uncommitted_pin_api_returns_working_pin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipes = root / "config" / "recipes.toml"
+            recipes.parent.mkdir()
+            recipes.write_text('version = 2\npinned = "b2"\n', encoding="utf-8")
+            with mock.patch.object(release_pin.paths, "RECIPES", recipes), \
+                    mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
+                    mock.patch.object(
+                        release_pin.upstream, "_git",
+                        return_value='version = 2\npinned = "b1"\n',
+                    ):
+                self.assertEqual(release_pin.uncommitted_pin_change(), "b2")
+
+    def test_uncommitted_pin_api_returns_none_when_committed_pin_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipes = root / "config" / "recipes.toml"
+            recipes.parent.mkdir()
+            recipes.write_text('version = 2\npinned = "b1"\n', encoding="utf-8")
+            with mock.patch.object(release_pin.paths, "RECIPES", recipes), \
+                    mock.patch.object(release_pin.paths, "REPO_ROOT", root), \
+                    mock.patch.object(
+                        release_pin.upstream, "_git",
+                        return_value='version = 2\npinned = "b1"\n',
+                    ):
+                self.assertIsNone(release_pin.uncommitted_pin_change())
 
 
 def _git(root: Path, *args: str) -> str:
