@@ -83,6 +83,7 @@ Remaining step: 0300_mmq_forced_j's validated state should be reconfirmed under 
 
 ## Ledger-events
 
+
 - chg_20260912_212119_ran-a-real-stock-llamacpp-vs_9340
 - 2026-09-12T21:21:19.539124+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T21:22:28.159150+00:00 (updated-by): Updated: section:description
@@ -97,3 +98,5 @@ Remaining step: 0300_mmq_forced_j's validated state should be reconfirmed under 
 - 2026-09-12T21:33:02.287522+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T21:54:01.846359+00:00 (updated-by): Updated: section:notes
 - 2026-09-12T21:54:06.313278+00:00 (state-transition): State: pending → completed
+- chg_20260912_215453_found-fixed-and-verified-a-r_8228
+- 2026-09-12T21:54:53.246619+00:00 (updated-by): Updated: section:ledger-events
