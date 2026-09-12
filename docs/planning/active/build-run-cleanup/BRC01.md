@@ -743,6 +743,7 @@ GPT second-pass file-level design completed against published main tip 7f61b3b56
 ## Ledger-events
 
 
+
 - chg_20260911_064900_added-a-tracked-cleanup-plan-f_3622
 - 2026-09-11T06:49:00.213062+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-11T07:01:03.606121+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
@@ -751,3 +752,5 @@ GPT second-pass file-level design completed against published main tip 7f61b3b56
 - 2026-09-11T09:27:28.866422+00:00 (updated-by): Updated: section:detailed_solution, section:acceptance_criteria, section:notes
 - chg_20260911_233928_recorded-gpts-complete-file-l_6915
 - 2026-09-11T23:39:28.415008+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_134118_started-brc01-ownership-invers_2735
+- 2026-09-12T13:41:18.149659+00:00 (updated-by): Updated: section:ledger-events

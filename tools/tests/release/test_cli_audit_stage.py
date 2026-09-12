@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry import __main__ as main
+from bigcherry.cli import source as cli_source
 from bigcherry.release import records as releases # noqa: E402
 
 
@@ -20,12 +20,12 @@ class AuditStageTests(unittest.TestCase):
         args.llama_root = "."
         args.strict = True
         args.verbose = False
-        with mock.patch.object(main, "_record_for", return_value=record), \
-             mock.patch.object(main.source_audit, "audit", return_value={"source_revision": "abc123", "source_dirty": False, "summary": {}, "checks": []}), \
-             mock.patch.object(main.source_audit, "passed", return_value=True), \
-             mock.patch.object(main.source_audit, "format_report", return_value=""), \
+        with mock.patch.object(cli_source.releases, "record_for_checkout", return_value=record), \
+             mock.patch.object(cli_source.source_audit, "audit", return_value={"source_revision": "abc123", "source_dirty": False, "summary": {}, "checks": []}), \
+             mock.patch.object(cli_source.source_audit, "passed", return_value=True), \
+             mock.patch.object(cli_source.source_audit, "format_report", return_value=""), \
              mock.patch.object(record, "save"):
-            self.assertEqual(main.cmd_audit(args), 0)
+            self.assertEqual(cli_source.cmd_audit(args), 0)
         self.assertEqual(record.stage, "patched")
 
 

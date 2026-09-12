@@ -40,6 +40,22 @@ class AtomicJsonWriteTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
 
 
+class RecordIdentityApiTests(unittest.TestCase):
+    def test_record_for_checkout_preserves_legacy_identity_inputs(self) -> None:
+        record = releases.ReleaseRecord(revision="old")
+        with mock.patch.object(
+            releases.source_audit, "git_revision", return_value=("upstream-sha", False)
+        ), mock.patch.object(
+            releases, "_git_out", side_effect=("b1234", "bigcherry-sha")
+        ), mock.patch.object(releases, "load", return_value=record) as load:
+            result = releases.record_for_checkout(Path("vendor"))
+
+        load.assert_called_once_with("upstream-sha", "b1234")
+        self.assertIs(result, record)
+        self.assertEqual(result.revision, "upstream-sha")
+        self.assertEqual(result.release_tag, "b1234")
+        self.assertEqual(result.bigcherry_revision, "bigcherry-sha")
+
 class ReleasePublicationTests(unittest.TestCase):
     def test_save_publishes_record_and_index_through_atomic_writer(self):
         with tempfile.TemporaryDirectory() as directory:

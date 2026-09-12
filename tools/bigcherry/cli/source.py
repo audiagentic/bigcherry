@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from argparse import Namespace
 
 from ..core import paths
 from ..release import records as releases
+from ..release import pin as pin_release
+from .. import pin_transition
 from ..source import audit as source_audit
+from ..source import upstream
+
+UPSTREAM_URL = upstream.UPSTREAM_URL
+
+
+def _run(
+    args: list[str], cwd=None, *, check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run one source CLI subprocess, preserving the legacy contract."""
+    return subprocess.run(args, cwd=cwd, text=True, check=check)
 
 
 def cmd_audit(args: Namespace) -> int:
-    from .. import __main__ as legacy
-
     root = paths.llama_root(args.llama_root)
     report = source_audit.audit(root)
     report["strict"] = args.strict
@@ -27,7 +39,7 @@ def cmd_audit(args: Namespace) -> int:
     print(source_audit.format_report(report, verbose=args.verbose))
     print(f"  report: {out}")
     print("  RESULT: " + ("PASS" if good else "FAIL"))
-    record = legacy._record_for(root)
+    record = releases.record_for_checkout(root)
     record.audit = releases.summarise_audit(report, strict=args.strict)
     if not good:
         record.advance_to("broken")
@@ -44,42 +56,40 @@ def cmd_audit(args: Namespace) -> int:
 
 
 def cmd_pull(args: Namespace) -> int:
-    from .. import __main__ as legacy
-
-    root = legacy.paths.llama_root(args.llama_root)
+    root = paths.llama_root(args.llama_root)
 
     # RE48: never move the checkout over an uncommitted pin change.
-    uncommitted_pin = legacy._uncommitted_pin_change()
+    uncommitted_pin = pin_release.uncommitted_pin_change()
     if uncommitted_pin is not None and args.ref:
         print(
             f"refusing: the pin in config/recipes.toml is uncommitted "
             f"(working tree pins {uncommitted_pin!r}).",
-            file=legacy.sys.stderr,
+            file=sys.stderr,
         )
         print(
             "commit the pin move (and the repin transition marker, if one "
             "was written) first, then pull -- or revert the pin change.",
-            file=legacy.sys.stderr,
+            file=sys.stderr,
         )
         return 2
 
     # RE48: never move the checkout while a pin-transition marker exists
     # but is uncommitted (the bump's declaration commit is still missing).
-    marker_path = legacy.paths.REPO_ROOT / "releases" / "pin-transition.json"
+    marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
     if (
         marker_path.is_file()
-        and legacy.pin_transition.committed_state(marker_path) != "committed-clean"
+        and pin_transition.committed_state(marker_path) != "committed-clean"
     ):
         print(
             "refusing: releases/pin-transition.json (the pin-transition "
             "marker) is uncommitted.",
-            file=legacy.sys.stderr,
+            file=sys.stderr,
         )
         print(
             "commit it together with config/recipes.toml first (see "
             "docs/reference/build/PIN_BUMP.md), then pull -- or delete it if the "
             "bump was abandoned.",
-            file=legacy.sys.stderr,
+            file=sys.stderr,
         )
         return 2
 
@@ -95,27 +105,27 @@ def cmd_pull(args: Namespace) -> int:
             cfg = campaign_config.load(paths.RECIPES)
             source = cfg.sources[source_name]
         except (campaign_config.ConfigError, KeyError) as exc:
-            print(f"pull: unknown source {source_name!r}: {exc}", file=legacy.sys.stderr)
+            print(f"pull: unknown source {source_name!r}: {exc}", file=sys.stderr)
             return 2
         ref = cfg.pinned if source.ref == "pinned" else source.ref
     try:
         if ref:
-            resolved = legacy.upstream.resolve_ref(ref)
+            resolved = upstream.resolve_ref(ref)
             if resolved != ref:
                 print(f"{ref} -> {resolved}")
             ref = resolved
-    except legacy.upstream.UpstreamError as exc:
-        print(str(exc), file=legacy.sys.stderr)
+    except upstream.UpstreamError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
     if not (root / ".git").exists():
         root.parent.mkdir(parents=True, exist_ok=True)
-        print(f"cloning {legacy.UPSTREAM_URL} -> {root}")
+        print(f"cloning {UPSTREAM_URL} -> {root}")
         depth = [] if args.full else ["--depth", "1"]
-        legacy._run(["git", "clone", *depth, legacy.UPSTREAM_URL, str(root)])
+        _run(["git", "clone", *depth, UPSTREAM_URL, str(root)])
         # Upstream is LF throughout. Letting git rewrite line endings in the
         # working tree would make every generated diff unreviewable.
-        legacy._run(["git", "-C", str(root), "config", "core.autocrlf", "false"])
+        _run(["git", "-C", str(root), "config", "core.autocrlf", "false"])
     else:
         # A lock left by a killed git process (a prior timeout, an
         # interrupted step) blocks every ref write that touches it, silently
@@ -123,7 +133,7 @@ def cmd_pull(args: Namespace) -> int:
         # `clear_stale_locks` docstring for the incident this fixes. Not
         # calling this unconditionally elsewhere: it is only safe when we are
         # about to run the one git operation ourselves, i.e. right here.
-        stale = legacy.upstream.clear_stale_locks(root)
+        stale = upstream.clear_stale_locks(root)
         if stale:
             print(
                 f"cleared {len(stale)} stale git lock(s) from an earlier "
@@ -135,7 +145,7 @@ def cmd_pull(args: Namespace) -> int:
         if not args.full:
             fetch += ["--depth", "1"]
         fetch += ["origin", ref or "HEAD"]
-        legacy._run(fetch)
+        _run(fetch)
 
     checkout_target = ref
     if ref:
@@ -143,17 +153,17 @@ def cmd_pull(args: Namespace) -> int:
         # `fetch --tags` does not bring one down under a master-only refspec.
         # Fetch exactly this ref rather than making everyone unshallow.
         try:
-            checkout_target = legacy.upstream.ensure_ref(
+            checkout_target = upstream.ensure_ref(
                 root, ref, deepen=not args.full
             )
-        except legacy.upstream.UpstreamError as exc:
-            print(f"could not make {ref} available: {exc}", file=legacy.sys.stderr)
+        except upstream.UpstreamError as exc:
+            print(f"could not make {ref} available: {exc}", file=sys.stderr)
             return 1
         label = ref if checkout_target == ref else f"{ref} ({checkout_target})"
         print(f"checking out {label}")
-        legacy._run(["git", "-C", str(root), "checkout", "--force", checkout_target])
+        _run(["git", "-C", str(root), "checkout", "--force", checkout_target])
 
-    record = legacy._record_for(root)
+    record = releases.record_for_checkout(root)
     record.advance_to("pulled")
     record.save()
     print(

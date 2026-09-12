@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 
 from ..core import config as campaign_config
@@ -17,6 +18,32 @@ from ..release import pin_status
 from .. import pin_transition
 from .. import recipes
 from ..source import sources, upstream
+
+_PIN_LINE = re.compile(r'^pinned\s*=\s*"([^"]+)"', re.MULTILINE)
+
+
+def uncommitted_pin_change() -> str | None:
+    """Return the working-tree pin when it differs from committed config."""
+    try:
+        text = paths.RECIPES.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    working = _PIN_LINE.search(text)
+    if working is None:
+        return None
+    try:
+        committed = upstream._git(
+            paths.REPO_ROOT,
+            "show",
+            "HEAD:" + str(paths.RECIPES.relative_to(paths.REPO_ROOT)).replace("\\", "/"),
+        )
+    except upstream.UpstreamError:
+        committed = ""
+    match = _PIN_LINE.search(committed)
+    committed_pin = match.group(1) if match else None
+    if committed_pin is not None and committed_pin != working.group(1):
+        return working.group(1)
+    return None
 
 
 def resolve_pin_sha(ref: str) -> str:
