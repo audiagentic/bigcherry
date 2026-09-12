@@ -2,7 +2,7 @@
 id: PRBE105
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: completed
 created-at: '2026-09-12T20:32:09.189511+00:00'
 breadth: ''
 skill: ''
@@ -53,6 +53,8 @@ run_rd13_ppl_check() (tools/bigcherry/patch/validation_campaign.py) names its bu
 
 Low severity (workaround is trivial: pass distinct build_root per arch), but will recur for every future multi-arch validation run using these producers unless fixed at the source.
 
+**Fixed and verified (2026-09-13).** run_rd13_ppl_check() now namespaces build directories by amdgpu_targets. Verified with a real test: ran gfx1100 then gfx1201 against the SAME shared build_root -- both succeeded cleanly, real PASS on both, zero CMake collision. Fix confirmed working.
+
 ## Change Log
 
 - 2026-09-12T20:32:09.189511+00:00 (created-by): Created by agent
@@ -61,3 +63,5 @@ Low severity (workaround is trivial: pass distinct build_root per arch), but wil
 
 - chg_20260912_203230_patch-1206-rd13-now-has-real_7484
 - 2026-09-12T20:32:30.630645+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-12T22:42:30.804282+00:00 (updated-by): Updated: section:notes
+- 2026-09-12T22:42:35.718286+00:00 (state-transition): State: pending → completed

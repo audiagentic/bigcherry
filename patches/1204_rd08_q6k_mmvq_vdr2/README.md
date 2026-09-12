@@ -184,7 +184,43 @@ contract encoded an inappropriate requirement for this kernel class, the
 Experiment Contract should be deliberately revised and qualification
 rerun under the new contract before any promotion.
 
-## Real multi-architecture trigger coverage (2026-09-13, standardized criteria)
+## PRBE104 resolved: contract revised, real re-evaluation (2026-09-13)
+
+GPT made the actual contract-design decision (`req_8163325eb9c545ea`):
+revised `config/experiment-contracts.toml`'s `RD08-Q6K-MMVQ-VDR2`
+correctness requirement from `bit_identical` to `backend_reference`
+(NMSE within `test-backend-ops`' existing 0.0005 threshold) -- RD08
+deliberately changes Q6_K accumulation grouping/lane structure, and
+floating-point addition is non-associative, so exact output bytes were
+never the scientifically appropriate bar for this kernel class. The
+bit-identical digest-equality result is preserved as a non-gating
+diagnostic fact (the fork's own bit-identical claim is genuinely
+disproven, per PRBE103) but is no longer the promotion gate. Editing the
+contract changed its hash, which voided the legacy point-estimate
+waiver (VA24 policy) -- migrated to `ci95_threshold_bound_v1` with
+`min_paired_rounds=10` in the same change, removing the stale waiver
+entry, per the RD21/RD39-42/RD73 precedent.
+
+**Re-evaluated using the already-gathered PRBE103 evidence (no new
+correctness hardware run needed)**: all 15 rows' real subject `err`
+values (~2.3e-5 to ~2.6e-5) are ~19-21x below the 0.0005 threshold --
+**correctness gate now PASSES.**
+
+**Performance gate: real FAIL, honestly evaluated.** Extended the
+original 6 paired rounds to the required 10 (4 additional real rounds,
+current pin). Full 10-round result: `target_kernel_gain_pct` point
+estimate +0.261%, but **95% CI lower bound -0.062% -- crosses zero,
+below the required 0.3% threshold.** `max_control_regression_pct` CI
+upper bound (0.040%) comfortably passes its own 1% bound. **RD08's real
+measured gain is small enough that 10 real paired rounds cannot
+statistically distinguish it from zero** -- this is a genuine,
+evidence-based performance FAIL under the interval policy, not a
+methodology artifact.
+
+**Overall: correctness now passes; performance does not. RD08 is not
+promotable to `validated`** (both required gates must pass), but for an
+honest, now-fully-resolved reason -- not the previously open
+contract-design ambiguity. `state` stays `untested`. PRBE104 closed.
 
 RD08's own contract (`scope.architectures = ["gfx1100", "gfx1201",
 "gfx1030"]`) already declares all three architectures in scope, so per
