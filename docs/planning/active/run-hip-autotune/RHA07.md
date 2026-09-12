@@ -70,6 +70,7 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 ## Ledger-events
 
 
+
 - chg_20260909_180121_run-results-now-expose-conditi_8235
 - 2026-09-09T18:01:21.357937+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T10:31:41.081187+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
@@ -78,3 +79,5 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 - 2026-09-12T18:54:36.524799+00:00 (updated-by): Updated: order=1, section:notes
 - chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
 - 2026-09-12T18:55:48.034171+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_191132_corrected-the-gpt-guided-imple_8803
+- 2026-09-12T19:11:32.064144+00:00 (updated-by): Updated: section:ledger-events

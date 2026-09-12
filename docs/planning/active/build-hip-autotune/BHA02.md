@@ -68,6 +68,7 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 ## Ledger-events
 
 
+
 - chg_20260911_225756_added-six-provenance-rich-buil_2622
 - 2026-09-11T22:57:56.715001+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T10:31:36.533030+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
@@ -76,3 +77,5 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 - 2026-09-12T18:54:11.881010+00:00 (updated-by): Updated: order=1, section:notes
 - chg_20260912_185547_recorded-the-gpt-guided-non-vu_6004
 - 2026-09-12T18:55:48.025832+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260912_191132_corrected-the-gpt-guided-imple_8803
+- 2026-09-12T19:11:32.055454+00:00 (updated-by): Updated: section:ledger-events
