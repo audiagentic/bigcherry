@@ -71,14 +71,14 @@ just below a tolerance).
 
 ```
 CorrectnessResult(
-    check_id="backend_reference", passed=True,
-    method="full-vocab-http-logprob-parity",
-    details={
+    check="backend_reference", passed=True,
+    detail=json.dumps({
+        "method": "full-vocab-http-logprob-parity",
         "generated_steps": 64, "vocab_size": 248320,
         "total_compared": 15892480, "mismatches": 0,
         "max_abs_logprob_diff": 0.0, "token_id_mismatches": 0,
         "graph_opt": 1, "control": "1215", "subject": "1215+1216",
-    },
+    }, sort_keys=True),
 )
 ```
 
@@ -94,6 +94,29 @@ the exact file `tierM-qwen35b-a3b-moe-mtp` points to): identical result --
 token IDs match across all 64 steps, 0 of 15,892,480 logprob comparisons
 differ, `max_abs_logprob_diff = 0.0`. This is now the formal,
 contract-model-consistent result, not just supporting evidence.
+
+## Formal contract-qualification producer (2026-09-13)
+
+`run_rd43_contract_qualification()` (`tools/bigcherry/patch/validation_campaign.py`)
+binds the real `backend_reference` `CorrectnessResult` above into the
+actual `RD43-CONCURRENT-JOIN-FUSION-GUARD` contract's
+`evaluate_promotion_gate()` verdict. RD43 declares no independent
+performance claim (it is required alongside 1215, not a separate
+optimization), so the same 1215 `LaneEffect`s produced by
+`run_rd39_42_contract_qualification()` are passed through as
+`shared_performance_effects` -- never re-measured under a different name.
+Invoked against this patch's real correctness result:
+
+```
+promotion = {"status": "pass", "passed": True, "reasons": [],
+             "contract_id": "RD43-CONCURRENT-JOIN-FUSION-GUARD", ...}
+```
+
+**Real formal PASS.** Correctness gate passes on the real
+`backend_reference` result; the shared 1215 performance effects satisfy
+the contract's acceptance thresholds via the same real CI computed for
+1215. State transition to `validated` remains a separate, deliberate
+lifecycle decision, not automatic from this producer passing.
 
 ## Known limitations
 

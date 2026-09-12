@@ -174,6 +174,7 @@ from both output files, and compared byte-for-byte:
 ```
 correctness_results = {
     "bit_identical": CorrectnessResult(
+        check="bit_identical",
         passed=True,
         detail=json.dumps({
             "method": "llama-results-raw-logit-byte-identity",
@@ -201,6 +202,40 @@ valid, real evidence, but not yet the final contract-qualified result
 until that binding is resolved (fix the contract's model binding or
 confirm `tierM-gptoss20b-q6k` also triggers RD42, then rerun this exact
 producer once).
+
+## Formal contract-qualification producer (2026-09-13)
+
+`run_rd39_42_contract_qualification()` (`tools/bigcherry/patch/validation_campaign.py`)
+now exists and binds every real evidence item documented above into the
+actual `RD39-42-STREAM-MOE-OVERLAP` contract's `evaluate_promotion_gate()`
+verdict -- it does not re-run anything; it accepts the already-measured
+10-round paired percentage deltas (subject/control) and the real
+`bit_identical` `CorrectnessResult`/`TriggerEvidence`, converts the deltas
+into the `LaneEffect.pair_ratios` shape `aggregate_contract_effects()`
+requires, and calls the contract module's real gates directly. Invoked
+against this patch's real numbers (subject deltas `[0.37, 1.75, 5.59,
+2.10, 2.79, 2.19, 1.81, 2.12, 2.54, 2.57]`, control deltas `[1.25, -0.40,
+0.15, 0.17, -3.07, 0.50, 0.14, -0.03, -0.24, -0.38]`, the `bit_identical`
+result above, 1000 real trigger-marker hits):
+
+```
+promotion = {"status": "pass", "passed": True, "reasons": [],
+             "contract_id": "RD39-42-STREAM-MOE-OVERLAP", ...}
+aggregated_effects = {"target_kernel_gain_pct": 2.3755, "end_to_end_gain_pct": 2.3755,
+                       "max_control_regression_pct": 0.1967,
+                       "target_kernel_gain_pct_ci95_low": 1.682, "target_kernel_gain_pct_paired_rounds": 10,
+                       "max_control_regression_pct_ci95_high": 0.9483, ...}
+```
+
+**Real formal PASS** under the contract's own `ci95_threshold_bound_v1`
+policy (`min_paired_rounds=10`): gain CI lower bound (1.682%) clears
+`target_kernel_gain_pct=1`; control-regression CI upper bound (0.9483%)
+stays under `max_control_regression_pct=1`; correctness and trigger gates
+both pass. This is the mechanical remaining step that was previously
+outstanding -- the contract-qualification shape is now real, reproducible
+code, not just narrative evidence. State transition to `validated` is
+still a separate, deliberate lifecycle decision (per
+`bigcherry-patch-lifecycle`), not automatic from this producer passing.
 
 ## GPT-reviewed disposition
 

@@ -35,8 +35,10 @@ import argparse
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import re
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -3480,6 +3482,183 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     for cell in skipped:
         _print(f"  skipped {cell['architecture']}/{cell['model']}: {cell['reason']}")
     return 0 if executed else 1
+
+
+def _lane_effect_from_pct_deltas(
+    *, role: str, metric: str, pct_deltas: list[float],
+) -> "experiment_contract.LaneEffect":
+    """Binds real, already-measured per-round percentage deltas (the shape
+    manually-run paired llama-bench campaigns report, e.g. patches
+    1215/1216's README round-by-round evidence) into a LaneEffect, without
+    re-running anything. ``pct_deltas`` is one signed percentage change per
+    paired round (subject vs control, same round); converted to the
+    ``pair_ratios`` sufficient statistic (1 + delta/100) that
+    bootstrap_fixed_composite_mean()/aggregate_contract_effects() require
+    for an interval, and to the geometric mean effect for the point
+    estimate -- the same estimator block_bootstrap_effect() uses elsewhere
+    in this module, just computed here directly since there is no raw
+    per-pair timing to re-derive it from."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    if not pct_deltas:
+        raise PatchCampaignError("_lane_effect_from_pct_deltas: pct_deltas must be non-empty")
+    ratios = tuple(1.0 + (delta / 100.0) for delta in pct_deltas)
+    if any(ratio <= 0 for ratio in ratios):
+        raise PatchCampaignError(
+            f"_lane_effect_from_pct_deltas: non-positive ratio derived from deltas {pct_deltas!r}"
+        )
+    log_ratios = [math.log(ratio) for ratio in ratios]
+    point_pct = 100.0 * (math.exp(statistics.mean(log_ratios)) - 1.0)
+    lane = experiment_contract.LaneEffect(
+        role=role, metric=metric, geometric_effect_pct=point_pct,
+        paired_rounds=len(ratios), pair_ratios=ratios,
+    )
+    ci = experiment_contract.bootstrap_fixed_composite_mean([lane])
+    if ci is not None:
+        lane = dataclasses.replace(lane, ci95_low_pct=ci[0], ci95_high_pct=ci[1])
+    return lane
+
+
+def run_rd39_42_contract_qualification(
+    *, contract: object, run_dir: Path,
+    subject_pct_deltas: list[float], control_pct_deltas: list[float],
+    target_metric: str = "tg128",
+    correctness_results: "dict[str, experiment_contract.CorrectnessResult] | None" = None,
+    trigger_evidence: "list[experiment_contract.TriggerEvidence] | None" = None,
+) -> dict[str, object]:
+    """Binds patch 1215's (RD39/40/41, the AMD stream MoE overlap unit)
+    already-gathered real hardware evidence -- the 10-round paired gfx1100
+    performance campaign and the raw-logit bit_identical correctness check
+    documented in patches/1215_rd394041_amd_stream_moe_overlap/README.md --
+    into the formal RD39-42-STREAM-MOE-OVERLAP contract-qualification shape,
+    following run_rd08_contract_qualification()'s composition pattern
+    (lanes -> correctness -> trigger -> gates -> promotion verdict). Unlike
+    RD08's producer, this does not execute any benchmark or probe itself:
+    the evidence was gathered manually (llama-bench/llama-results, not the
+    campaign framework's automated lane materialization), so the caller
+    supplies it as already-measured data. See _lane_effect_from_pct_deltas()
+    for how raw percentage deltas become the LaneEffect shape
+    aggregate_contract_effects() requires."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    positive_lane = _lane_effect_from_pct_deltas(
+        role="positive", metric=target_metric, pct_deltas=subject_pct_deltas,
+    )
+    control_lane = _lane_effect_from_pct_deltas(
+        role="control", metric=target_metric, pct_deltas=control_pct_deltas,
+    )
+    lanes_doc = {
+        "positive": dataclasses.asdict(positive_lane),
+        "control": dataclasses.asdict(control_lane),
+    }
+    lanes_artifact = _write_bound_artifact(run_dir, "rd39-42-lanes.json", lanes_doc)
+
+    correctness_results = correctness_results or {}
+    correctness_doc = {
+        name: {"check": r.check, "passed": r.passed, "detail": r.detail}
+        for name, r in correctness_results.items()
+    }
+    correctness_artifact = _write_bound_artifact(run_dir, "rd39-42-correctness.json", correctness_doc)
+    correctness_gate = compute_contract_correctness_gate(contract, correctness_results)
+
+    aggregated_effects = experiment_contract.aggregate_contract_effects(
+        contract, [positive_lane, control_lane], target_metric=target_metric,
+    )
+
+    trigger_evidence = trigger_evidence or []
+    trigger_doc = [
+        {
+            "role": te.role, "lane_id": te.lane_id,
+            "candidate_launches": te.candidate_launches,
+            "expected_route_selected": te.expected_route_selected,
+        }
+        for te in trigger_evidence
+    ]
+    trigger_artifact = _write_bound_artifact(run_dir, "rd39-42-trigger.json", trigger_doc)
+    trigger_proof = experiment_contract.evaluate_trigger_proof(trigger_evidence)
+
+    promotion = experiment_contract.evaluate_promotion_gate(
+        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
+        trigger_proof=trigger_proof,
+    )
+    qualification_doc = {
+        "contract_id": contract.id, "contract_hash": contract.contract_hash,
+        "lanes_artifact": lanes_artifact, "correctness_artifact": correctness_artifact,
+        "trigger_artifact": trigger_artifact,
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "trigger_proof": trigger_proof, "promotion": promotion,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd39-42-contract-qualification.json", qualification_doc)
+    return {
+        "lanes": {"positive": positive_lane, "control": control_lane}, "correctness_gate": correctness_gate,
+        "aggregated_effects": aggregated_effects, "trigger_proof": trigger_proof,
+        "promotion": promotion, "artifact": artifact_ref,
+    }
+
+
+def run_rd43_contract_qualification(
+    *, contract: object, run_dir: Path,
+    correctness_results: "dict[str, experiment_contract.CorrectnessResult]",
+    trigger_evidence: "list[experiment_contract.TriggerEvidence] | None" = None,
+    shared_performance_effects: "list[experiment_contract.LaneEffect] | None" = None,
+    target_metric: str = "tg128",
+) -> dict[str, object]:
+    """Binds patch 1216's (RD43, the concurrent-region join/fusion guard)
+    already-gathered real hardware evidence -- the full-vocab HTTP logprob
+    backend_reference parity check documented in
+    patches/1216_rd43_concurrent_join_fusion_guard/README.md -- into the
+    formal RD43-CONCURRENT-JOIN-FUSION-GUARD contract-qualification shape.
+    RD43 has no independent performance claim of its own (it is a
+    correctness/graph-capture guard required alongside 1215, not a separate
+    optimization); when the contract declares acceptance thresholds anyway,
+    ``shared_performance_effects`` lets the caller pass the SAME 1215 lane
+    effects (see run_rd39_42_contract_qualification()) since 1215+1216 are
+    qualified together as one unit per both READMEs' documented
+    'Composition' sections -- never re-measured a second time under a
+    different name."""
+    from bigcherry.experiment import contract as experiment_contract
+
+    correctness_doc = {
+        name: {"check": r.check, "passed": r.passed, "detail": r.detail}
+        for name, r in correctness_results.items()
+    }
+    correctness_artifact = _write_bound_artifact(run_dir, "rd43-correctness.json", correctness_doc)
+    correctness_gate = compute_contract_correctness_gate(contract, correctness_results)
+
+    shared_performance_effects = shared_performance_effects or []
+    aggregated_effects = experiment_contract.aggregate_contract_effects(
+        contract, shared_performance_effects, target_metric=target_metric,
+    ) if shared_performance_effects else {}
+
+    trigger_evidence = trigger_evidence or []
+    trigger_doc = [
+        {
+            "role": te.role, "lane_id": te.lane_id,
+            "candidate_launches": te.candidate_launches,
+            "expected_route_selected": te.expected_route_selected,
+        }
+        for te in trigger_evidence
+    ]
+    trigger_artifact = _write_bound_artifact(run_dir, "rd43-trigger.json", trigger_doc)
+    trigger_proof = (
+        experiment_contract.evaluate_trigger_proof(trigger_evidence) if trigger_evidence else None
+    )
+
+    promotion = experiment_contract.evaluate_promotion_gate(
+        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
+        trigger_proof=trigger_proof,
+    )
+    qualification_doc = {
+        "contract_id": contract.id, "contract_hash": contract.contract_hash,
+        "correctness_artifact": correctness_artifact, "trigger_artifact": trigger_artifact,
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "trigger_proof": trigger_proof, "promotion": promotion,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd43-contract-qualification.json", qualification_doc)
+    return {
+        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "trigger_proof": trigger_proof, "promotion": promotion, "artifact": artifact_ref,
+    }
 
 
 def run(args: argparse.Namespace) -> int:
