@@ -46,7 +46,7 @@ quantisation = "Q6_K"
 parameters = "4B"
 size-bytes = 4261908800
 mtp = true
-notes = "Small dense tier. The default lane for most contracts (12 of 19) because it is the cheapest real model that still exercises the production kernel paths."
+notes = "Small tier, default lane for most contracts (12 of 19) because it is the cheapest real model that still exercises the production kernel paths. CORRECTED 2026-09-13 (PRBE102, GPT req_7f31983c9fa649eb): previously mislabeled 'dense' here -- Qwen3.5-4B's real architecture is a dense+GDN HYBRID (24 of 32 layers are Gated DeltaNet recurrent layers, 8 blocks of 3x GDN + 1x attention), confirmed by real hardware activation evidence for RD13 (patch 1206) firing its MUL_MAT->RESHAPE->ADD fusion marker against this exact model/quant. This is this project's only registered model that exercises GDN/recurrent-layer op-graph shapes."
 
 [[models]]
 id = "tierM-gptoss20b-q6k"

@@ -62,25 +62,38 @@ control/subject `llama-perplexity` builds, same model
   `evidence/artifacts/rd13-ppl-check.json` (committed to this package,
   not left in a scratch dir -- this is now durable, checkable evidence).
 
-**Activation-marker attempt (real, negative finding).** Ran the built
-`rd13-only` `llama-bench` binary against `tierM-qwen35b-a3b-moe-mtp`'s
-Q4_K_M quant (a real MoE model, chosen since it's this project's only
-registered non-dense-transformer-family model) under both a decode-only
-(`-p 0 -n 32`) and a prefill (`-p 512 -n 0`) shape: **0 of 0**
-`BIGCHERRY_PATCH_HIT patch=1206_rd13` marker hits in either run. This is
-consistent with the patch's own authoring note ("needs an SSM/Mamba-family
-model; the view pattern is what makes it fire") -- `qwen3.6-35B-A3B` is a
-dense-attention MoE model, not an SSM/Mamba family, so the
-matmul-RESHAPE-add graph shape this patch targets is real but genuinely
-does not appear in any model currently registered in
-`config/models.toml`. **This project has no registered SSM/Mamba-family
-model at all** (checked: every registered tier is `qwen3.x`/`gpt-oss`/
-`ministral`, all dense or dense-MoE). The activation check therefore
-cannot be positively demonstrated with real evidence today -- not a
-methodology failure, a real missing-fixture gap. Filed as a concrete
-prerequisite for whoever picks up RD13's activation leg: register an
-SSM/Mamba/GDN-family model (RD50/1221's GDN chunked-recurrence patch has
-the identical gap) before attempting this check again.
+**Activation-marker attempt, round 1 (2026-09-13, real, negative finding
+-- wrong model chosen).** Ran the built `rd13-only` `llama-bench` binary
+against `tierM-qwen35b-a3b-moe-mtp`'s Q4_K_M quant (a real MoE model,
+chosen since it's this project's only registered non-dense-transformer-
+family model) under both a decode-only (`-p 0 -n 32`) and a prefill
+(`-p 512 -n 0`) shape: **0 of 0** `BIGCHERRY_PATCH_HIT patch=1206_rd13`
+marker hits in either run. Consistent with the patch's own authoring
+note ("needs an SSM/Mamba-family model; the view pattern is what makes
+it fire") -- `qwen3.6-35B-A3B` is a dense-attention MoE model, not an
+SSM/Mamba family. At the time this was recorded as "this project has no
+registered SSM/Mamba-family model at all" and filed as PRBE102 to track
+registering one.
+
+**Activation-marker attempt, round 2 (2026-09-13, real, POSITIVE --
+corrected model, PRBE102 closed).** GPT (`req_7f31983c9fa649eb`)
+identified that `tierA-qwen4b-q6k` (`config/models.toml`'s
+`Qwen3.5-4B-UD-Q6_K_XL.gguf`) -- already registered, its own note calling
+it a "small dense tier" -- is in fact NOT purely dense: Qwen3.5-4B's real
+architecture is a hybrid with 24 of 32 layers being Gated DeltaNet (GDN)
+recurrent layers (8 blocks of 3x GDN + 1x attention), and this project's
+pinned llama.cpp genuinely implements the GDN path as
+`ssm_out matmul -> ggml_reshape_2d() -> residual ggml_add()` -- exactly
+RD13's MUL_MAT->RESHAPE->ADD target shape. Reran the real activation
+probe against this ALREADY-registered model: **subject_hit=1,
+control_hit=0** (`BIGCHERRY_PATCH_HIT patch=1206_rd13
+path=mul_mat_add_view_fusion_f` fired once on the patched `rd13-only`
+build across a 128-token decode run with `-p 512`, zero hits on the
+baseline build under the identical command). **This resolves RD13's
+activation leg with no new model registration required** --
+`config/models.toml`'s own "dense tier" note for `tierA-qwen4b-q6k` is
+inaccurate (it is a dense+GDN hybrid), a real, useful correction in its
+own right. PRBE102 closed as resolved-without-new-registration.
 
 ## Known limitations
 
