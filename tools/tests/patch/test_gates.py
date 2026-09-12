@@ -51,6 +51,43 @@ class GateContractTests(unittest.TestCase):
             result = gates.evaluate_composition_gate(context)
         self.assertEqual(result.status, GateStatus.PASS)
 
+    def test_evidence_gate_passes_and_marks_promotion_prospectively(self) -> None:
+        context = SimpleNamespace(
+            descriptor=SimpleNamespace(patch_id="P1"),
+            catalog_path=None,
+            patches_dir=Path("patches"),
+            pinned_ref="b10901",
+            evidence_root=None,
+            allow_legacy_grandfather=True,
+            resolved_base_revision="abc",
+            intent=GateIntent.PROMOTE,
+        )
+        evidence = SimpleNamespace(status="validated-evidence", ok=True, problems=())
+        with mock.patch.object(
+            gates.patch_catalog, "validation_evidence_statuses", return_value={"P1": evidence}
+        ) as verifier:
+            result = gates.evaluate_evidence_gate(context)
+        self.assertEqual(result.status, GateStatus.PASS)
+        self.assertEqual(verifier.call_args.kwargs["assume_validated"], frozenset({"P1"}))
+
+    def test_evidence_gate_does_not_treat_required_validation_as_not_required(self) -> None:
+        context = SimpleNamespace(
+            descriptor=SimpleNamespace(patch_id="P1"),
+            catalog_path=None,
+            patches_dir=Path("patches"),
+            pinned_ref="b10901",
+            evidence_root=None,
+            allow_legacy_grandfather=True,
+            resolved_base_revision=None,
+            intent=GateIntent.VALIDATE,
+        )
+        evidence = SimpleNamespace(status="not-required", ok=True, problems=())
+        with mock.patch.object(
+            gates.patch_catalog, "validation_evidence_statuses", return_value={"P1": evidence}
+        ):
+            result = gates.evaluate_evidence_gate(context)
+        self.assertEqual(result.status, GateStatus.FAIL)
+
 
 if __name__ == "__main__":
     unittest.main()
