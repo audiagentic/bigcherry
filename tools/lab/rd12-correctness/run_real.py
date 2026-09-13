@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,6 +22,12 @@ from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
 ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
+# config/environment.toml's real Brutus device inventory: index is the
+# HIP/ROCR visible-devices ordinal. Each architecture MUST run against its
+# own matching device -- the loop below sets this per iteration since a
+# single fixed ambient HIP_VISIBLE_DEVICES would silently run gfx1201/
+# gfx1030's builds against whatever device index 0 happens to be.
+DEVICE_INDEX_BY_ARCH = {"gfx1100": "0", "gfx1201": "2", "gfx1030": "3"}
 
 
 def main() -> int:
@@ -39,6 +46,9 @@ def main() -> int:
             p.mkdir(parents=True, exist_ok=True)
 
         print(f"=== RD12 correctness: {arch} ===")
+        device_index = DEVICE_INDEX_BY_ARCH[arch]
+        os.environ["HIP_VISIBLE_DEVICES"] = device_index
+        os.environ["ROCR_VISIBLE_DEVICES"] = device_index
         result = vc.run_rd12_correctness_check(
             base_revision=base_revision,
             hip_path=HIP_PATH,
