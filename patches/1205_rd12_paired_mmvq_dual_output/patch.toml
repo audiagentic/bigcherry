@@ -6,6 +6,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 external-source = "stew675-rdna-boosts"
+experiment-contract = "RD12-PAIRED-MMVQ-DUAL"
 plan-ids = ["RD12"]
 requires = []
 conflicts = ["1207_rd17_moe_topk_down_fold"]
