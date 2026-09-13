@@ -59,7 +59,7 @@ contract promotion -- `eligible_for_validated_state` stays `False`
 after this command; `ported-benched` current-pin qualification (VA08)
 is the honest ceiling this command can produce.
 
-## Real RD04 contract correctness evidence (2026-09-13, in progress)
+## Real RD04 contract correctness evidence (2026-09-13, CONFIRMED)
 
 RD04's contract (`RD04-BF16-FLASH-ATTN-TILE`, requiring both
 `backend_reference` and `ppl_equality`) had no correctness producer until
@@ -69,18 +69,41 @@ one real whole-model PPL comparison (control = 1202 absent, subject = 1202
 applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison actually
 exercises RD04's native-BF16 flash-attn path.
 
-Real run on Brutus:
+Real run on Brutus, all three contract architectures, **build-once
+fat-multiarch verified** (see below):
 
 | architecture | subject PPL | control PPL | sigma | result |
 |---|---:|---:|---:|---|
 | gfx1100 | 10.5870 | 10.6247 | 0.1826 | **PASS** |
-| gfx1201 | -- | -- | -- | build crashed (clang segfault, real toolchain fault, not this patch -- retry pending) |
-| gfx1030 | -- | -- | -- | not yet run |
+| gfx1201 | 10.5787 | 10.6406 | 0.3000 | **PASS** |
+| gfx1030 | 10.5978 | 10.5978 | 0.0000 | **PASS** |
 
-gfx1100 is a clean real PASS on both contract checks. The gfx1201 build
-crash is a real `clang++` internal segfault during compilation (real
-compiler bug/flakiness, ample free memory on the host at the time) --
-retry, not a code issue in this patch or producer, in progress.
+All three architectures are a clean real PASS on both contract checks
+(`backend_reference` + `ppl_equality`), every sigma well inside the
+`max_sigma=3.0` threshold. The earlier gfx1201 build crash (real
+`clang++` internal segfault, real toolchain flakiness) did not recur on
+retry -- confirmed not a code issue in this patch or producer.
+
+**Build-once fat-multiarch fix confirmed working.** This run also
+verifies the `docs/reference/testing/STANDARDIZED_PATCH_VALIDATION_CRITERIA.md`
+"build once, run per-device" fix (commits `cacc0b98`, `b65071d1`): the
+subject/control binaries were compiled ONCE with
+`AMDGPU_TARGETS="gfx1100;gfx1201;gfx1030"`, and the gfx1201/gfx1030 runs
+both hit real CMake cache reuse rather than a fresh rebuild:
+
+```
+=== RD04 correctness: gfx1201 ===
+[patch-campaign] rd04-correctness-subject: configure request unchanged; reusing CMake cache
+[patch-campaign] rd04-correctness-control: configure request unchanged; reusing CMake cache
+=== RD04 correctness: gfx1030 ===
+[patch-campaign] rd04-correctness-subject: configure request unchanged; reusing CMake cache
+[patch-campaign] rd04-correctness-control: configure request unchanged; reusing CMake cache
+```
+
+Only gfx1100 (the first architecture in the loop) performed a real
+compile; gfx1201 and gfx1030 reused the same fat binaries. This is the
+reference-correct pattern for every multi-arch correctness/benchmark
+producer in this project going forward.
 
 ## Known limitations
 
