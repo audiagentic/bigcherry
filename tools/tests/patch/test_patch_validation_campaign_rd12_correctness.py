@@ -239,7 +239,9 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
                     self.assertTrue(row["bit_identical"])
 
                 doc = json.loads(
-                    (run_dir / "artifacts" / "rd12-correctness.json").read_text(encoding="utf-8")
+                    (
+                        run_dir / "artifacts" / f"rd12-correctness-{architecture}.json"
+                    ).read_text(encoding="utf-8")
                 )
                 self.assertTrue(doc["passed"])
                 self.assertEqual(doc["architecture"], architecture)

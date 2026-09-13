@@ -108,7 +108,7 @@ class RunRd07ContractCorrectnessTests(unittest.TestCase):
                 correctness = result["results"]["backend_reference"]
                 self.assertTrue(correctness.passed)
 
-                artifact = run_dir / "artifacts" / "rd07-correctness.json"
+                artifact = run_dir / "artifacts" / f"rd07-correctness-{architecture}.json"
                 self.assertTrue(artifact.exists())
 
                 doc = json.loads(artifact.read_text(encoding="utf-8"))
