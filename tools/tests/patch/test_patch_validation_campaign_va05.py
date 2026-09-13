@@ -237,10 +237,13 @@ class Rd58CliWiringTests(unittest.TestCase):
         self.assertIn(
             "--run-rd58-state-restore is mutually exclusive with the", self.source
         )
-        self.assertIn(
-            "if args.run_rd04_benchmark or args.run_rd08_lanes or args.run_rd08_contract:",
-            self.source,
-        )
+        block_start = self.source.index("if args.run_rd58_state_restore:")
+        block = self.source[block_start:block_start + 500]
+        self.assertIn("args.run_rd04_benchmark", block)
+        self.assertIn("args.run_rd08_lanes", block)
+        self.assertIn("args.run_rd08_contract", block)
+        self.assertIn("args.run_rd13_contract", block)
+        self.assertIn("args.run_rd26_contract", block)
 
     def test_rd58_only_gating(self) -> None:
         self.assertIn(

@@ -35,12 +35,14 @@ class Rd12ContractCliTests(unittest.TestCase):
             "if args.run_rd04_contract:"
         )]
         self.assertIn("run-rd12-contract is mutually exclusive with the", block)
-        self.assertIn(
-            "if args.run_rd08_lanes or args.run_rd08_contract or "
-            "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd04_contract:",
-            block,
-        )
+        self.assertIn("args.run_rd08_lanes", block)
+        self.assertIn("args.run_rd08_contract", block)
+        self.assertIn("args.run_rd04_benchmark", block)
+        self.assertIn("args.run_rd58_state_restore", block)
+        self.assertIn("args.run_rd73_contract", block)
+        self.assertIn("args.run_rd04_contract", block)
+        self.assertIn("args.run_rd13_contract", block)
+        self.assertIn("args.run_rd26_contract", block)
         # The mutual-exclusion condition must never reference itself --
         # a real bug caught during authoring: including run_rd12_contract
         # in its own guard makes the condition always true inside the
@@ -93,7 +95,8 @@ class Rd12ContractCliTests(unittest.TestCase):
         self.assertIn(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract):",
+            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )
         self.assertIn(

@@ -38,7 +38,8 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         match = re.search(
             r"if not \(args\.run_rd08_contract or args\.run_rd04_benchmark or "
             r"args\.run_rd58_state_restore or args\.run_rd73_contract or "
-            r"args\.run_rd12_contract or args\.run_rd04_contract\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
+            r"args\.run_rd12_contract or args\.run_rd04_contract or "
+            r"args\.run_rd13_contract or args\.run_rd26_contract\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
             self.source,
         )
         self.assertIsNotNone(
@@ -46,9 +47,10 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
             "campaign.run() must be guarded by "
             "`if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract):` -- the generic "
+            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd13_contract or args.run_rd26_contract):` -- the generic "
             "tune/promote/export pipeline must never be a hard prerequisite of "
-            "RD08's/RD04's/RD58's/RD73's/RD12's own contract evidence",
+            "RD08's/RD04's/RD58's/RD73's/RD12's/RD13's/RD26's own contract evidence",
         )
 
     def test_report_md_read_is_also_guarded(self) -> None:
@@ -58,7 +60,8 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         guard_text = (
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract):"
+            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd13_contract or args.run_rd26_contract):"
         )
         guarded_block = self.source[self.source.index(guard_text):]
         guarded_block = guarded_block[:guarded_block.index("\n\n", guarded_block.index("report.md"))]
@@ -115,7 +118,8 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         guard_index = self.source.index(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract):"
+            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd13_contract or args.run_rd26_contract):"
         )
         self.assertLess(
             ensure_index, guard_index,
