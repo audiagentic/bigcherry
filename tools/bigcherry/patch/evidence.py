@@ -262,6 +262,12 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/rd12-correctness-gfx1100.json",
         "artifacts/rd12-correctness-gfx1201.json",
         "artifacts/rd12-correctness-gfx1030.json",
+        # PA39: RD04's real backend_reference+ppl_equality correctness
+        # producer (run_rd04_contract_correctness()) namespaces its
+        # artifact by the architecture the run actually executed against.
+        "artifacts/rd04-correctness-gfx1100.json",
+        "artifacts/rd04-correctness-gfx1201.json",
+        "artifacts/rd04-correctness-gfx1030.json",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
