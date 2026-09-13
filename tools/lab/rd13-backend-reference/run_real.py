@@ -20,12 +20,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
+from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
 AMDGPU_TARGETS = "gfx1100"
 MODEL = Path("/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
 BASE_REVISION = None  # resolved from the active pin below
+# rocm-smi --showbus: GPU[0] = 0000:03:00.0, a real gfx1100 XTX. HIP_VISIBLE_
+# DEVICES=0 below pins execution to exactly this device.
+EXPECTED_EXECUTION = ExecutionIdentity(
+    backend="ROCm", architectures=("gfx1100",), locators=("0000:03:00.0",),
+)
 
 
 def main() -> int:
@@ -49,6 +55,7 @@ def main() -> int:
         build_root=build_root,
         model=MODEL,
         run_dir=run_dir,
+        expected_execution=EXPECTED_EXECUTION,
     )
     correctness = result["results"]["backend_reference"]
     print(f"RD13 backend_reference: {'PASS' if correctness.passed else 'FAIL'}")

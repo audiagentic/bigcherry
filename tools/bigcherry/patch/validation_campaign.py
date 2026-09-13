@@ -1340,6 +1340,19 @@ def run_rd13_backend_reference_check(
     expected = expected_execution or ExecutionIdentity(
         backend="ROCm", architectures=(amdgpu_targets,),
     )
+    # PRBE111 (2026-09-13): a real backend can report a device's PCI
+    # locator without a resolvable architecture string (observed here as
+    # architecture="<unknown>", locator="0000:03:00.0") -- attestation
+    # then fails closed unless the caller supplies the locator->arch
+    # mapping itself. Every other real AttestedServerSession caller
+    # (tools/bigcherry/campaign/benchmark.py) builds this the same way:
+    # zip expected.locators with expected.architectures. Only meaningful
+    # when the caller supplied real locators; otherwise leave it None and
+    # let attestation fail closed exactly as before (never guess a mapping).
+    architecture_by_locator = (
+        dict(zip(expected.locators, expected.architectures))
+        if expected.locators is not None else None
+    )
 
     control_revision, control_composition = psi.resolve_source_composition(
         "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
@@ -1467,6 +1480,7 @@ def run_rd13_backend_reference_check(
             log_path=logs_dir / "rd13-backend-reference-control-server.log",
             env_overrides=server_env,
             env_unset=env_unset,
+            architecture_by_locator=architecture_by_locator,
         ) as control_session, spool_path.open("wb") as spool:
             if control_session.attestation is None:
                 raise PatchCampaignError("rd13 backend_reference: control server has no attestation")
@@ -1502,6 +1516,7 @@ def run_rd13_backend_reference_check(
             expected=expected,
             extra_args=server_args,
             log_path=logs_dir / "rd13-backend-reference-subject-server.log",
+            architecture_by_locator=architecture_by_locator,
             env_overrides=server_env,
             env_unset=env_unset,
         ) as subject_session, spool_path.open("rb") as spool:
