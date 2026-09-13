@@ -1,0 +1,36 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# RD26-DECODE-VERIFY-BIT-IDENTITY requires correctness.bit_identical only
+# (expected_effect = "correctness", no performance claim -- EC02 Appendix-B
+# rule). run_rd26_decode_verify_bit_identity_check() (tools/bigcherry/patch/
+# validation_campaign.py) is the real producer; correctness-summary
+# consumes its bound disposition. No CLI wiring reaches this producer yet
+# (same gap RD04/RD12/RD13 had before their own CLI flags landed) --
+# declared honestly; stays BLOCKED until that lands.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# The contract declares a real controls lane (decode, as the control
+# workload against mtp_verify's positive) -- bind_contract()'s rule adds
+# the controls capability whenever contract.controls is non-empty,
+# independent of whether a performance claim exists.
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
