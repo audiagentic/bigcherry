@@ -34,15 +34,22 @@ def main() -> int:
     recipes = tomllib.loads((REPO_ROOT / "config" / "recipes.toml").read_text())
     base_revision = recipes["pinned"]
 
+    # worktree_root/build_root are SHARED across every architecture in this
+    # loop -- the producer now compiles one fat multi-arch binary once and
+    # reuses it for every device run (build_tree()'s cmake-cache-reuse).
+    # Per-arch subdirectories here would defeat that by giving each run a
+    # genuinely different build location with nothing to reuse. Only
+    # run_dir stays shared too: the producer already namespaces its own
+    # artifact filenames by run architecture, so no collision risk.
+    run_root = REPO_ROOT / "artifacts" / "lab" / "rd04-correctness"
+    run_dir = run_root / "run"
+    worktree_root = run_root / "worktrees"
+    build_root = run_root / "build"
+    for p in (run_dir, worktree_root, build_root):
+        p.mkdir(parents=True, exist_ok=True)
+
     overall_pass = True
     for arch in ARCHITECTURES:
-        run_root = REPO_ROOT / "artifacts" / "lab" / "rd04-correctness" / arch
-        run_dir = run_root / "run"
-        worktree_root = run_root / "worktrees"
-        build_root = run_root / "build"
-        for p in (run_dir, worktree_root, build_root):
-            p.mkdir(parents=True, exist_ok=True)
-
         print(f"=== RD04 correctness: {arch} ===")
         device_index = DEVICE_INDEX_BY_ARCH[arch]
         os.environ["HIP_VISIBLE_DEVICES"] = device_index
