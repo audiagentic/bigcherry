@@ -109,6 +109,33 @@ RD06's config-selection logic specifically -- RD06's own performance
 claim (per-shape/head-dimension/softcap gains, and confirming gfx1100
 does not select or regress) remains separate, not-yet-gathered work.
 
+## Real RD07 contract correctness evidence (2026-09-13, all three contract architectures)
+
+RD07's contract (`RD07-Q6K-MMQ-PREFILL-FOLD`, `correctness.backend_reference
+= "required"`) covers all three of this project's real architectures
+(gfx1100, gfx1201, gfx1030), unlike RD05/RD06 (gfx1201-only). Reused the
+same real PPL-comparison technique (`run_rd07_contract_correctness()`),
+requiring one real, independent build+run per architecture -- a
+multi-target fat compile is never accepted as per-architecture execution
+evidence.
+
+Real runs on Brutus, control (1203 absent) vs subject (1203 applied),
+against the same wikitext2 corpus slice used for RD05/RD06:
+
+| architecture | subject PPL | control PPL | sigma | result |
+|---|---:|---:|---:|---|
+| gfx1100 | 10.6173 | 10.6173 | 0.0000 | **PASS** |
+| gfx1201 | 10.5835 | 10.6394 | 0.2709 | **PASS** |
+| gfx1030 | 10.6007 | 10.6007 | 0.0000 | **PASS** |
+
+This is this session's first patch with real, clean multi-architecture
+correctness evidence across all three of this project's real GPU
+architectures at once. Contract still not bound in `patch.toml` -- this
+proves backend-reference correctness of the complete shipped 1203 patch
+on every architecture it targets, not causal attribution to RD07's
+Q6_K MMQ fold specifically (which remains subject to HI71's dense-shape
+eligibility re-verification per the contract's own co-tenancy warning).
+
 ## Known limitations -- real gaps, not yet closed
 
 This is a genuine first real signal, not full closure of PRBE02/PRBE03/PRBE04:
