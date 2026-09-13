@@ -6,6 +6,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 plan-item = "RD26"
+experiment-contract = "RD26-DECODE-VERIFY-BIT-IDENTITY"
 external-source = "stew675-rdna-boosts"
 plan-ids = []
 requires = []
