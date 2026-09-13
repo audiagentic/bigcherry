@@ -1,5 +1,53 @@
 # RD13: mul_mat + RESHAPE + add fusion
 
+## Real backend_reference correctness evidence (2026-09-13, gfx1100)
+
+RD13's contract requires a `backend_reference` correctness check
+(`config/experiment-contracts.toml`), which had no producer until this
+session. `run_rd13_backend_reference_check()`
+(`tools/bigcherry/patch/validation_campaign.py`) proves the MUL_MAT
+-> RESHAPE -> ADD graph rewrite via real llama-server `/completion`
+streaming, full-vocabulary (248,320-token), pre-sampling logprob
+comparison between control (RD13 absent) and subject (RD13 applied)
+against `tierA-qwen4b-q6k` -- the contract's real GDN-hybrid positive
+model. RD43's technique was used rather than RD08's test-backend-ops
+approach, since RD13's claim is about a graph rewrite only the real
+model graph exercises, not an isolated operator.
+
+Real run on Brutus, single gfx1100 XTX (`HIP_VISIBLE_DEVICES=0`,
+`ROCR_VISIBLE_DEVICES=0`), 64 decode steps, real greedy decoding
+(`temperature=0`, `seed=42`): control and subject generated the
+IDENTICAL token sequence and produced BYTE-IDENTICAL full-vocabulary
+logprob streams -- `max_abs_logprob_diff=0.0` across all 15,892,480
+compared logprobs (64 steps x 248,320 vocab), well within the
+0.0005 tolerance; `control_logprobs_sha256 == subject_logprobs_sha256`
+(`786c7793f097bc0ee04fd9ca205403d96c401bbc97a975f07810cfd584bec130`).
+Real hardware attestation confirmed gfx1100 (PCI `0000:03:00.0`) on
+both arms. **`backend_reference: PASS`** -- RD13's contract now has a
+real correctness producer satisfying its `correctness.backend_reference
+= "required"` obligation.
+
+Two real infrastructure bugs were found and fixed while getting this
+run clean (neither is a correctness finding about RD13 itself):
+(1) the driver's `hip_path` must point at the ROCm compiler shim
+(`docs/reference/ENVIRONMENT.md`'s `rocm-shim`), not `/opt/rocm` --
+`/opt/rocm` ships `amdclang`/`amdclang++` with real `clang` hidden
+under `llvm/bin`, and campaigns build compiler paths as
+`<hip-path>/bin/clang`; (2) `run_rd13_backend_reference_check()` never
+built the `architecture_by_locator` map real hardware attestation
+needs when a backend reports a device's PCI locator without a
+resolvable architecture string (observed: `architecture="<unknown>"`,
+`locator="0000:03:00.0"`) -- fixed by zipping
+`expected_execution.locators` with `.architectures`, matching every
+other real `AttestedServerSession` caller
+(`tools/bigcherry/campaign/benchmark.py`).
+
+Contract still not bound in `patch.toml` -- this establishes the
+correctness leg only; performance/trigger evidence against the
+contract's acceptance gates (`target_kernel_gain_pct=0.5`,
+`max_control_regression_pct=1`, `ci95_threshold_bound_v1`,
+`min_paired_rounds=10`) remains separate, not-yet-gathered work.
+
 ## Scope
 
 Extends the existing `mul_mat`+`add` fusion in `ggml_cuda_try_fuse` to accept one
