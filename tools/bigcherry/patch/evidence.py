@@ -256,6 +256,12 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
         "artifacts/rd73-resource.json",
         "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
+        # PA39: RD12's real bit-identical correctness producer
+        # (run_rd12_correctness_check()) namespaces its artifact by the
+        # architecture the run actually executed against.
+        "artifacts/rd12-correctness-gfx1100.json",
+        "artifacts/rd12-correctness-gfx1201.json",
+        "artifacts/rd12-correctness-gfx1030.json",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
