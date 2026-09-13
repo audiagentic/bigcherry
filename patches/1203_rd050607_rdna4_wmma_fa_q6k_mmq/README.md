@@ -64,6 +64,32 @@ noise; pp512 has wider variance but points the same direction. tg128
 (decode) is correctly unaffected -- this patch targets flash-attn prefill
 and Q6_K mmq, not the decode matvec path.
 
+## Real RD05 contract correctness evidence (2026-09-13, gfx1201)
+
+RD05's contract (`RD05-WMMA-FA-CORRECTNESS-BARRIERS`, `correctness.backend_reference
+= "required"`) had no producer until this session. Patch 1203 bundles
+RD05 (correctness only) with RD06/RD07 (real performance changes) as one
+atomic patch.py, so there is no way to isolate RD05 alone via source
+composition -- `bit_identical` would be the wrong bar (RD06/RD07 are
+expected to shift numerics at the margin). `run_rd05_contract_correctness()`
+(`tools/bigcherry/patch/validation_campaign.py`) reuses this project's
+`backend_reference` sigma-vs-threshold technique
+(`tools/bigcherry/experiment/perplexity.py`), the same approach validated
+for RD13 earlier this session.
+
+Real run on Brutus (single gfx1201 R9700), control (1203 absent) vs
+subject (1203 applied), against a real wikitext2 corpus slice:
+**PASS** -- subject PPL=10.5871, control PPL=10.5869, delta=0.00020,
+sigma=0.0010 (well within the 3.0 threshold). This is consistent with,
+and considerably tighter than, this patch's own earlier ad-hoc PPL
+comparison (sigma=1.35) -- both real measurements agree the bundled
+patch does not corrupt output.
+
+Contract still not bound in `patch.toml` -- this establishes the
+correctness leg only; RD05's contract also carries no performance claim
+(`expected_effect = "correctness"`), so this closes RD05's evidence
+obligation in full modulo the formal binding step.
+
 ## Known limitations -- real gaps, not yet closed
 
 This is a genuine first real signal, not full closure of PRBE02/PRBE03/PRBE04:
