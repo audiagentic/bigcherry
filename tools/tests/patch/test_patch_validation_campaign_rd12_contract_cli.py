@@ -53,12 +53,26 @@ class Rd12ContractCliTests(unittest.TestCase):
             self.run_source,
         )
 
-    def test_binds_correctness_evidence_never_contract_promotions(self) -> None:
+    def test_binds_correctness_summary_evidence_never_contract_promotions(self) -> None:
+        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must
+        # point at the canonical correctness.json (real "disposition"
+        # field), never rd12_qualification["artifact"] (no "disposition").
         block_start = self.run_source.index("if args.run_rd12_contract:")
         block = self.run_source[block_start:self.run_source.index(
-            "validation_check_results: dict[str, object] = {}"
+            "if args.run_rd04_contract:", block_start
         )]
-        self.assertIn("correctness_evidence = {\"artifact\": rd12_qualification[\"artifact\"]}", block)
+        self.assertNotIn(
+            'correctness_evidence = {"artifact": rd12_qualification["artifact"]}',
+            block,
+        )
+        self.assertIn(
+            '"path": correctness_path.relative_to(campaign_run_dir).as_posix()',
+            block,
+        )
+        self.assertIn(
+            '"sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest()',
+            block,
+        )
         self.assertNotIn("contract_promotions[", block)
 
     def test_disposition_derives_from_bit_identical_not_backend_reference(self) -> None:
