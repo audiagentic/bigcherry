@@ -71,6 +71,12 @@ PRBE20's full acceptance criteria (the real cross-batch bit-identity property ac
 
 Supersedes: RD26 (closed historical predecessor). Preserve all five immutable commit IDs as provenance. Existing 2/5 PPL/no-regression evidence remains narrow and does not satisfy PRBE20 acceptance. Do not split PRBE20; use internal Wave 1/Wave 2 sections.
 
+REAL HARDWARE CONTRACT-GATE RUN (2026-09-13/14), first-ever real execution of --run-rd26-contract / run_rd26_decode_verify_bit_identity_check() (the actual raw-logit decode-vs-verify producer, distinct from the earlier PPL no-regression check already recorded above): ran on Brutus, gfx1100, patch 1210_rd26_bitidentical_decode_verify_standalone at current pin. All 5 base builds plus the dedicated rd26-bit-identity control/subject builds succeeded. Result: bit_identical check FAILS -- subject decode vs verify raw-logit artifacts differ, first_file_byte_mismatch=480. Contract correctness gate: not passed. Evidence committed (patches/1210_rd26_bitidentical_decode_verify_standalone/evidence/validation.json, commit 3ec5d033).
+
+This FAIL is EXPECTED and already anticipated in run_rd26_decode_verify_bit_identity_check()'s own docstring: the materialized 1210 patch is only 2 of the full 5-commit cluster, so the complete cross-batch bit-identity property cannot hold yet. This confirms (does not newly discover) that the 2/5 standalone subset cannot satisfy PRBE20's real acceptance criteria -- consistent with, and now backed by direct contract-gate evidence rather than only the narrower PPL-based reasoning above. Patch 1210 state remains "untested" (never promoted); this is not a demotion.
+
+Decision (per GPT design consultation, req_9b384a623ff24ab8): do not run gfx1201/gfx1030 --run-rd26-contract for the current subset -- more architectures would only produce more expected FAILs and add no new information. Block further 1210 contract-gate qualification runs until the remaining 3 commits (93510434f flash-attn, 10b83d6b2 RDNA4 MMVQ/fused SSM, 6cdf5aff9 RDNA3 MMVQ) are authored/composed into the full cluster per Wave 1/Wave 2 above. Resume all-three-architecture contract coverage only after that.
+
 ## Change Log
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
@@ -97,3 +103,6 @@ Supersedes: RD26 (closed historical predecessor). Preserve all five immutable co
 - 2026-09-12T10:10:04.682892+00:00 (updated-by): Updated: section:standards
 - chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
 - 2026-09-12T10:10:15.563853+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-13T17:29:17.167484+00:00 (updated-by): Updated: section:notes
+- chg_20260913_172927_fixed-a-real-hardware-attestat_9172
+- 2026-09-13T17:29:30.492149+00:00 (updated-by): Updated: section:ledger-events
