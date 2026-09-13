@@ -23,10 +23,15 @@ from bigcherry.patch import validation_campaign as vc  # noqa: E402
 HIP_PATH = Path("/home/audumla/rocm-shim")
 AMDGPU_TARGETS = "gfx1201"
 MODEL = Path("/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
-CORPUS = Path(
-    "/mnt/vault/development/llmhosts/hipfire/worktrees/latest/35b2d2cb866c/"
-    "benchmarks/quality-baselines/slice/wikitext2-1024s-2048ctx.txt"
-)
+CORPUS = Path("/tmp/wikitext2-small-slice.txt")
+# A ~400KB prefix of the full wikitext2-1024s-2048ctx.txt slice --
+# the full 10MB corpus took over an hour of real gfx1201 wall-clock time
+# for just the subject arm, which is unreasonable for a correctness check
+# (this compares two builds for sigma-bounded PPL agreement; it does not
+# need the full corpus's statistical precision to detect a real
+# divergence). Killed after ~75 real minutes with only the subject arm
+# started; this smaller slice is still large enough for a real multi-chunk
+# perplexity comparison.
 
 
 def main() -> int:
