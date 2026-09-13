@@ -6,6 +6,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 external-source = "stew675-rdna-boosts"
+experiment-contract = "RD13-MUL-MAT-ADD-VIEW-FUSION"
 plan-ids = ["RD13"]
 requires = []
 conflicts = []
