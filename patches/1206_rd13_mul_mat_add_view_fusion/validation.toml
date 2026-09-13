@@ -18,3 +18,33 @@ capability = "activation"
 validator = "trace-marker"
 required = true
 marker-regex = "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)"
+
+# RD13-MUL-MAT-ADD-VIEW-FUSION requires correctness.backend_reference.
+# run_rd13_ppl_check() (tools/bigcherry/patch/validation_campaign.py) is a
+# real whole-model PPL comparison standing in for backend_reference --
+# this project's only real whole-model correctness signal, the same
+# reasoning RD04 and RD13's own producer docstring both use. correctness-
+# summary is mechanism-agnostic and consumes whatever disposition a real
+# producer binds. No CLI wiring to this producer exists yet (tracked
+# separately) -- declared honestly; stays BLOCKED until it does.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# expected_effect = "both" requires performance+activation capability
+# producers (bind_contract()'s derivation rule) in addition to the
+# trace-marker activation check this patch already had.
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
