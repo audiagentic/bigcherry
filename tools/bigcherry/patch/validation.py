@@ -65,6 +65,7 @@ BUILTIN_VALIDATORS: tuple[str, ...] = (
     "apply",
     "build",
     "backend-ops",
+    "correctness-summary",
     "trace-marker",
     "compile-option",
     "runtime-smoke",
@@ -83,7 +84,7 @@ BUILTIN_VALIDATORS: tuple[str, ...] = (
 _CAPABILITY_PRODUCERS: dict[str, frozenset[str]] = {
     "apply": frozenset({"apply"}),
     "build": frozenset({"build"}),
-    "correctness": frozenset({"backend-ops", "autotune-campaign"}),
+    "correctness": frozenset({"backend-ops", "correctness-summary", "autotune-campaign"}),
     "activation": frozenset({"trace-marker"}),
     "smoke": frozenset({"runtime-smoke"}),
     "performance": frozenset({"benchmark", "autotune-campaign"}),
@@ -1078,6 +1079,49 @@ def _builtin_backend_ops(spec: CheckSpec, ctx: ValidationContext) -> ValidationR
     )
 
 
+def _builtin_correctness_summary(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
+    """Consume a bound patch-level correctness.json.
+
+    Unlike ``backend-ops`` (which requires a specific configured op set),
+    this validator makes no assumption about the correctness MECHANISM --
+    it accepts whole-model PPL comparisons, exact-output digest checks, or
+    any other real producer that binds a ``disposition`` ("passed"/
+    "failed") to a patch-level correctness.json. The Experiment Contract
+    itself owns which named checks were required; this validator only
+    establishes that the campaign produced a bound, machine-readable
+    patch-level correctness result and that it reports success.
+    """
+    evidence = ctx.correctness_evidence
+    artifact = evidence.get("artifact") if isinstance(evidence, dict) else None
+    payload = _read_bound_json(artifact, ctx.run_dir)
+    if payload is None:
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=BLOCKED,
+            summary="verified correctness-summary artifact is required",
+        )
+    disposition = payload.get("disposition")
+    if disposition == "failed":
+        return ValidationResult(
+            check_id=spec.check_id, capability=spec.capability, status=FAIL,
+            summary="bound correctness summary reports failure",
+        )
+    if disposition != "passed":
+        return _error_result(
+            spec, f"correctness summary has invalid/non-final disposition {disposition!r}",
+        )
+    if not isinstance(artifact, dict):
+        return _error_result(spec, "correctness artifact reference is malformed")
+    return ValidationResult(
+        check_id=spec.check_id, capability=spec.capability, status=PASS,
+        summary="bound correctness summary reports pass",
+        artifacts=(
+            ArtifactRef(
+                name="correctness-summary", path=str(artifact["path"]), sha256=str(artifact["sha256"]),
+            ),
+        ),
+    )
+
+
 def _builtin_trace_marker(spec: CheckSpec, ctx: ValidationContext) -> ValidationResult:
     """Consume generic positive/negative marker evidence.
 
@@ -1165,6 +1209,7 @@ register_builtin("apply", _builtin_apply)
 register_builtin("build", _builtin_build)
 register_builtin("trace-marker", _builtin_trace_marker)
 register_builtin("backend-ops", _builtin_backend_ops)
+register_builtin("correctness-summary", _builtin_correctness_summary)
 register_builtin("compile-option", _builtin_compile_option)
 register_builtin("runtime-smoke", _builtin_runtime_smoke)
 register_builtin("architecture", _builtin_architecture)
