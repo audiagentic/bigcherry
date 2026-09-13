@@ -2250,10 +2250,19 @@ def _run_1203_backend_reference_contract_correctness(
         allowed = ", ".join(allowed_architectures)
         raise PatchCampaignError(
             f"{contract_label} correctness: {contract_id} requires exactly one "
-            f"contract architecture per run ({allowed}); "
+            f"run architecture per invocation ({allowed}); "
             f"got AMDGPU_TARGETS={amdgpu_targets!r}"
         )
     architecture = targets[0]
+    # Real production builds (config/recipes.toml's platform.linux-multi)
+    # compile ONE fat multi-arch binary and select the real device to run
+    # it against at runtime via HIP_VISIBLE_DEVICES -- they never rebuild
+    # per architecture. Match that: compile with the FULL contract-scope
+    # target list every time, under a build-dir name that does NOT vary
+    # per single run architecture, so build_tree()'s own cmake-cache-reuse
+    # ("configure request unchanged; reusing CMake cache") makes every run
+    # after the first one a zero-rebuild binary reuse, not a fresh compile.
+    fat_targets = ";".join(allowed_architectures)
 
     psi = _source_module or real_source
     subject_patch = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
@@ -2282,32 +2291,32 @@ def _run_1203_backend_reference_contract_correctness(
 
     exe = ".exe" if sys.platform == "win32" else ""
     ppl_build_root = build_root / f"{contract_label}-correctness"
-    subject_name = f"{contract_label}-correctness-subject-{architecture}"
-    control_name = f"{contract_label}-correctness-control-{architecture}"
+    subject_name = f"{contract_label}-correctness-subject"
+    control_name = f"{contract_label}-correctness-control"
 
     subject_bin = build_tree(
-        name=subject_name, hip_path=hip_path, amdgpu_targets=architecture,
+        name=subject_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
         extra_cmake_args=[],
     )
     control_bin = build_tree(
-        name=control_name, hip_path=hip_path, amdgpu_targets=architecture,
+        name=control_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
         extra_cmake_args=[],
     )
 
     build_env = _hip_env(hip_path)
     cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=architecture, extra_cmake_args=[],
+        hip_path=hip_path, amdgpu_targets=fat_targets, extra_cmake_args=[],
     )
     subject_build_evidence = capture_completed_build_evidence(
         ppl_build_root / subject_name, source_root=subject_src,
-        architecture=architecture, binary=subject_bin / f"llama-perplexity{exe}",
+        architecture=fat_targets, binary=subject_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     control_build_evidence = capture_completed_build_evidence(
         ppl_build_root / control_name, source_root=control_src,
-        architecture=architecture, binary=control_bin / f"llama-perplexity{exe}",
+        architecture=fat_targets, binary=control_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     assert_validation_subject_parity(
@@ -2351,6 +2360,7 @@ def _run_1203_backend_reference_contract_correctness(
         "detail": backend_reference_result.detail,
         "base_revision": base_revision,
         "architecture": architecture,
+        "compiled_targets": fat_targets,
         "model": str(model),
         "corpus": str(corpus),
         "subject_patch": subject_patch,
@@ -2360,7 +2370,9 @@ def _run_1203_backend_reference_contract_correctness(
         "control_build_identity": control_build_evidence.campaign_identity(),
         "comparison": perplexity.comparison_to_dict(comparison) if comparison is not None else None,
     }
-    artifact_ref = _write_bound_artifact(run_dir, f"{contract_label}-correctness.json", doc)
+    artifact_ref = _write_bound_artifact(
+        run_dir, f"{contract_label}-correctness-{architecture}.json", doc,
+    )
     _print(
         f"{contract_label} backend_reference: {'PASS' if backend_reference_result.passed else 'FAIL'} -- "
         f"{artifact_ref['path']}"
@@ -2456,6 +2468,12 @@ def run_rd04_contract_correctness(
             f"got AMDGPU_TARGETS={amdgpu_targets!r}"
         )
     architecture = targets[0]
+    # Real production builds compile ONE fat multi-arch binary and select
+    # the real device to run it against at runtime -- match that instead
+    # of rebuilding per architecture. build_tree()'s own cmake-cache-reuse
+    # makes every call after the first one a zero-rebuild binary reuse
+    # when the build-dir name and cmake config are identical.
+    fat_targets = ";".join(allowed_architectures)
 
     psi = _source_module or real_source
 
@@ -2483,32 +2501,32 @@ def run_rd04_contract_correctness(
 
     exe = ".exe" if sys.platform == "win32" else ""
     ppl_build_root = build_root / "rd04-correctness"
-    subject_name = f"rd04-correctness-subject-{architecture}"
-    control_name = f"rd04-correctness-control-{architecture}"
+    subject_name = "rd04-correctness-subject"
+    control_name = "rd04-correctness-control"
 
     subject_bin = build_tree(
-        name=subject_name, hip_path=hip_path, amdgpu_targets=architecture,
+        name=subject_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
         extra_cmake_args=[],
     )
     control_bin = build_tree(
-        name=control_name, hip_path=hip_path, amdgpu_targets=architecture,
+        name=control_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
         extra_cmake_args=[],
     )
 
     build_env = _hip_env(hip_path)
     cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=architecture, extra_cmake_args=[],
+        hip_path=hip_path, amdgpu_targets=fat_targets, extra_cmake_args=[],
     )
     subject_build_evidence = capture_completed_build_evidence(
         ppl_build_root / subject_name, source_root=subject_src,
-        architecture=architecture, binary=subject_bin / f"llama-perplexity{exe}",
+        architecture=fat_targets, binary=subject_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     control_build_evidence = capture_completed_build_evidence(
         ppl_build_root / control_name, source_root=control_src,
-        architecture=architecture, binary=control_bin / f"llama-perplexity{exe}",
+        architecture=fat_targets, binary=control_bin / f"llama-perplexity{exe}",
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     assert_validation_subject_parity(
@@ -2554,6 +2572,7 @@ def run_rd04_contract_correctness(
         "contract_id": contract_id,
         "base_revision": base_revision,
         "architecture": architecture,
+        "compiled_targets": fat_targets,
         "model": str(model),
         "corpus": str(corpus),
         "subject_patch": subject_patch,
@@ -2576,7 +2595,9 @@ def run_rd04_contract_correctness(
         "control_build_identity": control_build_evidence.campaign_identity(),
         "comparison": perplexity.comparison_to_dict(comparison) if comparison is not None else None,
     }
-    artifact_ref = _write_bound_artifact(run_dir, "rd04-correctness.json", doc)
+    artifact_ref = _write_bound_artifact(
+        run_dir, f"rd04-correctness-{architecture}.json", doc,
+    )
     _print(
         f"rd04 backend_reference+ppl_equality: {'PASS' if passed else 'FAIL'} -- "
         f"{artifact_ref['path']}"
@@ -2661,6 +2682,12 @@ def run_rd12_correctness_check(
             f"got AMDGPU_TARGETS={amdgpu_targets!r}"
         )
     architecture = targets[0]
+    # Real production builds compile ONE fat multi-arch binary and select
+    # the real device to run it against at runtime -- match that instead
+    # of rebuilding per architecture (build_tree()'s cmake-cache-reuse
+    # makes every call after the first a zero-rebuild binary reuse when
+    # the build-dir name and cmake config are identical).
+    fat_targets = ";".join(supported_architectures)
 
     if not seeds or any(seed == 0 for seed in seeds) or len(set(seeds)) != len(seeds):
         raise PatchCampaignError(
@@ -2700,16 +2727,16 @@ def run_rd12_correctness_check(
 
     exe = ".exe" if sys.platform == "win32" else ""
     correctness_build_root = build_root / "rd12-correctness"
-    control_name = f"rd12-correctness-control-{architecture}"
-    subject_name = f"rd12-correctness-subject-{architecture}"
+    control_name = "rd12-correctness-control"
+    subject_name = "rd12-correctness-subject"
 
     control_bin_dir = build_tree(
-        name=control_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        name=control_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=correctness_build_root, targets=["test-backend-ops"], source=control_src,
         extra_cmake_args=[],
     )
     subject_bin_dir = build_tree(
-        name=subject_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        name=subject_name, hip_path=hip_path, amdgpu_targets=fat_targets,
         workdir=correctness_build_root, targets=["test-backend-ops"], source=subject_src,
         extra_cmake_args=[],
     )
@@ -2717,16 +2744,16 @@ def run_rd12_correctness_check(
     subject_binary = subject_bin_dir / f"test-backend-ops{exe}"
 
     cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+        hip_path=hip_path, amdgpu_targets=fat_targets, extra_cmake_args=[],
     )
     control_build_evidence = capture_completed_build_evidence(
         correctness_build_root / control_name, source_root=control_src,
-        architecture=architecture, binary=control_binary,
+        architecture=fat_targets, binary=control_binary,
         requested_cmake_args=cmake_args, build_env=build_env,
     )
     subject_build_evidence = capture_completed_build_evidence(
         correctness_build_root / subject_name, source_root=subject_src,
-        architecture=architecture, binary=subject_binary,
+        architecture=fat_targets, binary=subject_binary,
         requested_cmake_args=cmake_args, build_env=build_env,
     )
 
@@ -2932,6 +2959,7 @@ def run_rd12_correctness_check(
         "passed": bit_identical_result.passed,
         "base_revision": base_revision,
         "architecture": architecture,
+        "compiled_targets": fat_targets,
         "mechanism": (
             "registered whole-graph paired MUL_MAT test-backend-ops subject/control "
             "CPU-reference + backend1 digest equality"
@@ -2956,7 +2984,9 @@ def run_rd12_correctness_check(
         "rows": rows,
     }
 
-    artifact_ref = _write_bound_artifact(run_dir, "rd12-correctness.json", artifact_doc)
+    artifact_ref = _write_bound_artifact(
+        run_dir, f"rd12-correctness-{architecture}.json", artifact_doc,
+    )
 
     return {
         "results": {

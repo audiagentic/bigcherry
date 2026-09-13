@@ -104,7 +104,7 @@ class RunRd06ContractCorrectnessTests(unittest.TestCase):
         correctness = result["results"]["backend_reference"]
         self.assertTrue(correctness.passed)
 
-        artifact = run_dir / "artifacts" / "rd06-correctness.json"
+        artifact = run_dir / "artifacts" / "rd06-correctness-gfx1201.json"
         self.assertTrue(artifact.exists())
 
         doc = json.loads(artifact.read_text(encoding="utf-8"))

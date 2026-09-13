@@ -134,7 +134,7 @@ class RunRd04ContractCorrectnessTests(unittest.TestCase):
                     self.assertEqual(argv[argv.index("-ctk") + 1], "bf16")
                     self.assertEqual(argv[argv.index("-ctv") + 1], "bf16")
 
-                artifact = run_dir / "artifacts" / "rd04-correctness.json"
+                artifact = run_dir / "artifacts" / f"rd04-correctness-{architecture}.json"
                 self.assertTrue(artifact.exists())
 
                 doc = json.loads(artifact.read_text(encoding="utf-8"))
