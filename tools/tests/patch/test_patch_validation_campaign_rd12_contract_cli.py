@@ -26,14 +26,19 @@ class Rd12ContractCliTests(unittest.TestCase):
 
     def test_mutually_exclusive_with_other_specialized_modes(self) -> None:
         block_start = self.run_source.index("if args.run_rd12_contract:")
+        # RD12's own block ends where PA39's RD04 block begins -- stop
+        # there, not at the later validation_check_results marker, so
+        # this doesn't accidentally scan into RD04's block (which
+        # legitimately mentions args.run_rd12_contract in ITS own
+        # mutual-exclusion condition).
         block = self.run_source[block_start:self.run_source.index(
-            "validation_check_results: dict[str, object] = {}"
+            "if args.run_rd04_contract:"
         )]
         self.assertIn("run-rd12-contract is mutually exclusive with the", block)
         self.assertIn(
             "if args.run_rd08_lanes or args.run_rd08_contract or "
             "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract:",
+            "args.run_rd73_contract or args.run_rd04_contract:",
             block,
         )
         # The mutual-exclusion condition must never reference itself --
@@ -74,20 +79,22 @@ class Rd12ContractCliTests(unittest.TestCase):
         self.assertIn(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract):",
+            "args.run_rd12_contract or args.run_rd04_contract):",
             self.run_source,
         )
         self.assertIn(
             "trace_result = None if (args.run_rd08_contract or "
             "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd12_contract) else "
+            "args.run_rd73_contract or args.run_rd12_contract or "
+            "args.run_rd04_contract) else "
             "run_trace_activation_probes(",
             self.run_source,
         )
 
     def test_run_performance_benchmark_exclusion_includes_rd12(self) -> None:
         self.assertIn(
-            '"run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract",',
+            '"run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", '
+            '"run_rd04_contract",',
             self.main_source,
         )
 
