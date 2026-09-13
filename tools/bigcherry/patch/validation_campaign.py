@@ -2996,6 +2996,14 @@ def run_rd12_correctness_check(
         },
         "artifact": artifact_ref,
         "rows": rows,
+        # PA39: exposed so a --run-rd12-contract CLI caller can bind real
+        # validation_build_identities into make_record() without needing
+        # the raw CompletedBuildEvidence objects (already baked into
+        # artifact_doc above as control_build_identity/subject_build_identity).
+        "validation_build_identities": {
+            "control": artifact_doc["control_build_identity"],
+            "subject": artifact_doc["subject_build_identity"],
+        },
     }
 
 
@@ -5794,7 +5802,8 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
         "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-        "run_rd58_state_restore", "run_rd73_contract", "correctness_evidence",
+        "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract",
+        "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
     if args.amdgpu_targets is None:
@@ -7256,7 +7265,7 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract) else run_trace_activation_probes(
+    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -7324,7 +7333,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract):
+    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -7367,6 +7376,12 @@ def run(args: argparse.Namespace) -> int:
         raise PatchCampaignError(
             f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
             "together -- --run-rd08-contract already produces its own authoritative "
+            "correctness.json"
+        )
+    if args.correctness_evidence is not None and args.run_rd12_contract:
+        raise PatchCampaignError(
+            f"{args.patch}: --correctness-evidence and --run-rd12-contract are ambiguous "
+            "together -- --run-rd12-contract already produces its own authoritative "
             "correctness.json"
         )
     if args.correctness_evidence is not None:
@@ -8027,6 +8042,72 @@ def run(args: argparse.Namespace) -> int:
             f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
         )
 
+    # PA39: RD12's real bit-identical correctness producer, bound into the
+    # tracked evidence system the same way RD73's block above is. This is a
+    # CORRECTNESS-EVIDENCE producer only -- it must never populate
+    # contract_promotions (that would falsely qualify RD12's separately-
+    # declared performance/controls claims from a correctness-only run).
+    rd12_qualification: dict[str, object] | None = None
+    if args.run_rd12_contract:
+        if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd12-contract is mutually exclusive with the "
+                "other specialized evidence-producer modes"
+            )
+        if descriptor.experiment_contract != "RD12-PAIRED-MMVQ-DUAL":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd12-contract is RD12-only today"
+            )
+        rd12_worktree_root = worktree_root / "rd12-correctness"
+        rd12_build_root = build_root / "rd12-correctness"
+        rd12_qualification = run_rd12_correctness_check(
+            base_revision=base_revision, hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            worktree_root=rd12_worktree_root, build_root=rd12_build_root,
+            build_env=build_env, run_dir=campaign_run_dir,
+        )
+        rd12_results = rd12_qualification["results"]
+        bit_identical_result = rd12_results["bit_identical"]
+
+        # Bind correctness evidence: contract.correctness requires only
+        # bit_identical -- that result's disposition is the gate, not the
+        # supplementary backend_reference/activation results also returned.
+        correctness_evidence = {"artifact": rd12_qualification["artifact"]}
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": "passed" if bit_identical_result.passed else "failed",
+            "mechanism": "rd12-paired-mmvq-bit-identical",
+            "detail": bit_identical_result.detail,
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+
+        # RD12's activation result is real (the focal patch's own
+        # BIGCHERRY_PATCH_TRACE marker, checked inside the correctness
+        # producer itself) -- bind it the same way RD08/RD58/RD73 do so
+        # the record's top-level activation disposition, not just the
+        # declared trace-marker check, reflects real evidence.
+        activation_result = rd12_results["activation"]
+        activation_evidence = ActivationEvidence(
+            status="executed" if activation_result.passed else "not_executed",
+            mechanism="rd12-trigger-marker", detail=activation_result.detail,
+        )
+        activation_verdict = verdict(activation_evidence, correctness_passed=None)
+        write_activation_json(
+            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+            extra={"campaign_identity_digest": campaign.campaign_identity_digest},
+        )
+
+        _print(f"rd12 correctness: {rd12_qualification['artifact']['path']}")
+        _print(f"rd12 bit_identical: {'PASS' if bit_identical_result.passed else 'FAIL'}")
+
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -8144,12 +8225,22 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (blocker #1): RD58's real validation build is
         # test-save-load-state, not the generic llama-bench control/
         # validation-subject builds -- record ITS identities when RD58 ran.
+        # PA39: RD12's own correctness producer materializes and builds its
+        # own isolated control/subject worktrees (run_rd12_correctness_check()),
+        # distinct from the generic campaign control/validation-subject
+        # builds above -- record ITS identities when RD12 ran, the same
+        # pattern as RD58. rd12_qualification's identities are already
+        # plain dicts (built from .campaign_identity() inside the producer),
+        # not objects needing .campaign_identity() called here.
         validation_build_identities=(
             {
                 "control": rd58_control_build_evidence.campaign_identity(),
                 "subject": rd58_subject_build_evidence.campaign_identity(),
             }
-            if args.run_rd58_state_restore else {
+            if args.run_rd58_state_restore
+            else rd12_qualification["validation_build_identities"]
+            if rd12_qualification is not None
+            else {
                 "control": control_build_evidence.campaign_identity(),
                 "subject": validation_subject_build_evidence.campaign_identity(),
             }
@@ -8297,6 +8388,15 @@ def main(argv: list[str] | None = None) -> int:
              "RD04/RD08/RD58 execution modes. Requires --rd73-corpus.",
     )
     parser.add_argument(
+        "--run-rd12-contract", action="store_true", default=False,
+        help="PA39: RD12's real bit-identical correctness producer "
+             "(run_rd12_correctness_check()) -- binds current-pin correctness "
+             "evidence into the tracked record. Correctness-evidence producer "
+             "only: does NOT populate contract_promotions or qualify RD12's "
+             "separately-declared performance/controls claims. RD12-only; "
+             "mutually exclusive with the other specialized evidence modes.",
+    )
+    parser.add_argument(
         "--rd73-corpus", type=Path, default=None,
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
              "(bench/server_completion.py's load_corpus() format).",
@@ -8347,7 +8447,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
             "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-            "run_rd58_state_restore", "run_rd73_contract",
+            "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)
