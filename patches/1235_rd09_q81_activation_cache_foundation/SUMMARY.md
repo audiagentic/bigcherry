@@ -1,7 +1,7 @@
 # 1235_rd09_q81_activation_cache_foundation: Per-graph Q8_1 activation-quantization cache, foundation only (RD09 stage 1)
 
 **Status:** untested
-**Plan item:** RD09
+**Plan item:** PRBE05
 
 ## What it does
 

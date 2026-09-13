@@ -29,17 +29,29 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         self.assertTrue(s.contracted)
         self.assertIn("RD08-Q6K-MMVQ-VDR2", s.contract_ids)
 
-    def test_rd09_is_source_pinned_and_materialized_as_stage1_foundation(self):
+    def test_rd09_successor_prbe05_is_source_pinned_and_materialized_as_stage1_foundation(self):
         # RD09's stage 1 (foundation-only cache, no MMVQ caller yet -- see
         # patches/1235_rd09_q81_activation_cache_foundation/patch.py) landed
         # 2026-08-24. compute_all must report that honestly, not the old
         # pre-implementation "planned, no patch" state.
-        s = self.statuses["RD09"]
+        #
+        # The patch's own PROVENANCE/patch.toml plan-item field was fixed
+        # (2026-09-13) from the stale "RD09" to "PRBE05" -- the tracked
+        # source registry entry (config/external-sources.toml) already
+        # named PRBE05 as RD09's actionable successor ("Legacy predecessor:
+        # RD09. Actionable owner: PRBE05."), so the patch-side field was
+        # the one out of date, not the registry. Before this fix, the
+        # mismatch made "RD09" appear as a materialized-but-unpinned
+        # orphan (test_orphan_report_runs_and_returns_real_categories) while
+        # "PRBE05" appeared pinned-but-unmaterialized -- the same real gap
+        # split across two keys instead of unified into one.
+        s = self.statuses["PRBE05"]
         self.assertTrue(s.source_pinned)
         self.assertTrue(s.materialized)
         self.assertEqual(s.patch_ids, ("1235_rd09_q81_activation_cache_foundation",))
         self.assertEqual(s.build_state, "untested")
         self.assertFalse(s.contracted)
+        self.assertNotIn("RD09", self.statuses)
 
     def test_rd1003_rejected_upstream_fix_reports_rejected_build_state(self):
         # 1003 is a real, deliberately-rejected (already-ancestral) upstream
