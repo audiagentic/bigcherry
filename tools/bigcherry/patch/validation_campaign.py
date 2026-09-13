@@ -8086,7 +8086,6 @@ def run(args: argparse.Namespace) -> int:
         # Bind correctness evidence: contract.correctness requires only
         # bit_identical -- that result's disposition is the gate, not the
         # supplementary backend_reference/activation results also returned.
-        correctness_evidence = {"artifact": rd12_qualification["artifact"]}
         correctness_summary = {
             "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
             "patch_id": args.patch,
@@ -8102,6 +8101,21 @@ def run(args: argparse.Namespace) -> int:
         }
         correctness_path = campaign_run_dir / "correctness.json"
         _atomic_write_json(correctness_path, correctness_summary)
+        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
+        # at THIS canonical correctness.json (the artifact with a real
+        # "disposition" field, which _builtin_correctness_summary() reads)
+        # -- not rd12_qualification["artifact"] (the raw producer artifact,
+        # which has "passed"/"rows" fields, never "disposition"). Pointing
+        # at the wrong file made the generic adapter's correctness check
+        # report ERROR even when the contract correctness gate (which reads
+        # rd12_correctness_named_results directly, a separate code path)
+        # correctly showed PASS.
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
 
         # RD12's activation result is real (the focal patch's own
         # BIGCHERRY_PATCH_TRACE marker, checked inside the correctness
@@ -8162,7 +8176,6 @@ def run(args: argparse.Namespace) -> int:
         # Bind correctness evidence: contract.correctness requires BOTH
         # backend_reference and ppl_equality -- the disposition is the
         # conjunction, matching run_rd04_contract_correctness()'s own gate.
-        correctness_evidence = {"artifact": rd04_qualification["artifact"]}
         correctness_summary = {
             "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
             "patch_id": args.patch,
@@ -8183,6 +8196,16 @@ def run(args: argparse.Namespace) -> int:
         }
         correctness_path = campaign_run_dir / "correctness.json"
         _atomic_write_json(correctness_path, correctness_summary)
+        # GPT review (req_5631b12dc3fb4a23): same fix as RD12's block above
+        # -- correctness_evidence must point at THIS canonical correctness.json
+        # (real "disposition" field), never rd04_qualification["artifact"]
+        # (the raw producer artifact, no "disposition" field).
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
 
         _print(f"rd04 correctness: {rd04_qualification['artifact']['path']}")
         _print(
@@ -8336,6 +8359,12 @@ def run(args: argparse.Namespace) -> int:
             if args.run_rd58_state_restore
             else rd12_qualification["validation_build_identities"]
             if rd12_qualification is not None
+            # GPT review (req_5631b12dc3fb4a23): RD04's producer also
+            # materializes and builds its OWN isolated control/subject
+            # worktrees (same shape as RD12), NOT the generic campaign's --
+            # falling through to the generic identities below was wrong.
+            else rd04_qualification["validation_build_identities"]
+            if rd04_qualification is not None
             else {
                 "control": control_build_evidence.campaign_identity(),
                 "subject": validation_subject_build_evidence.campaign_identity(),

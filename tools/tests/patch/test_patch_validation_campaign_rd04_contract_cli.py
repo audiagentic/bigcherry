@@ -55,13 +55,24 @@ class Rd04ContractCliTests(unittest.TestCase):
             self.run_source,
         )
 
-    def test_binds_correctness_evidence_never_contract_promotions(self) -> None:
+    def test_binds_correctness_summary_evidence_never_contract_promotions(self) -> None:
+        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must
+        # point at the canonical correctness.json (real "disposition"
+        # field), never rd04_qualification["artifact"] (no "disposition").
         block_start = self.run_source.index("if args.run_rd04_contract:")
         block = self.run_source[block_start:self.run_source.index(
             "validation_check_results: dict[str, object] = {}"
         )]
-        self.assertIn(
+        self.assertNotIn(
             'correctness_evidence = {"artifact": rd04_qualification["artifact"]}',
+            block,
+        )
+        self.assertIn(
+            '"path": correctness_path.relative_to(campaign_run_dir).as_posix()',
+            block,
+        )
+        self.assertIn(
+            '"sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest()',
             block,
         )
         self.assertNotIn("contract_promotions[", block)
@@ -126,6 +137,16 @@ class Rd04ContractCliTests(unittest.TestCase):
         self.assertIn('"validation_build_identities": {', source)
         self.assertIn('"control": doc["control_build_identity"]', source)
         self.assertIn('"subject": doc["subject_build_identity"]', source)
+
+    def test_validation_build_identities_thread_rd04_qualification(self) -> None:
+        # GPT review (req_5631b12dc3fb4a23): RD04's producer builds its own
+        # isolated control/subject worktrees (same shape as RD12), so
+        # falling through to the generic campaign identities was wrong.
+        self.assertIn(
+            'else rd04_qualification["validation_build_identities"]\n'
+            "            if rd04_qualification is not None",
+            self.run_source,
+        )
 
     def test_contract_correctness_gate_threads_rd04_named_results(self) -> None:
         self.assertIn(
