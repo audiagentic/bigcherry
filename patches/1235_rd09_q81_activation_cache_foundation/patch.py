@@ -161,7 +161,7 @@ STATE = "untested"
 
 PROVENANCE = {
     "source-id": "stew675-rdna-boosts",
-    "plan-item": "RD09",
+    "plan-item": "PRBE05",
     "fork-commit": "299f6eaf73b5eeb888bd94eaa66122d003136e6a",
     "fork-commit-title": "CUDA: cache quantized Q8_1 matmul inputs per graph",
     "original-commit": "ff6fde5046ffb86672e05da640d2bfb20d4bfdfc",
