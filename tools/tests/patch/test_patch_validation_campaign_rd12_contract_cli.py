@@ -110,6 +110,23 @@ class Rd12ContractCliTests(unittest.TestCase):
         self.assertIn('"control": artifact_doc["control_build_identity"]', source)
         self.assertIn('"subject": artifact_doc["subject_build_identity"]', source)
 
+    def test_contract_correctness_gate_threads_rd12_named_results(self) -> None:
+        # Real bug caught on first real-hardware run (2026-09-13): RD12's
+        # bit_identical PASS never reached compute_contract_correctness_gate(),
+        # so the record reported "contract correctness gate: blocked" despite
+        # genuinely passing evidence -- rd12_qualification was never threaded
+        # into the shared full_contract/named_results resolution RD08/RD58/
+        # RD73 already use.
+        self.assertIn(
+            "rd12_correctness_named_results = (\n"
+            "            rd12_qualification[\"results\"] if rd12_qualification is not None else None\n"
+            "        )",
+            self.run_source,
+        )
+        gate_call_start = self.run_source.index("contract_correctness_gate = compute_contract_correctness_gate(")
+        gate_call = self.run_source[gate_call_start:gate_call_start + 800]
+        self.assertIn("else rd12_correctness_named_results", gate_call)
+
 
 if __name__ == "__main__":
     unittest.main()

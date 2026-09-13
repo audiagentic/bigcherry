@@ -8164,6 +8164,13 @@ def run(args: argparse.Namespace) -> int:
             rd08_contract if rd08_qualification is not None
             else patch_validation.load_contract_for_descriptor(descriptor)
         )
+        # PA39: RD12's real bit-identical result is already evaluated
+        # inside run_rd12_correctness_check(); thread it through the same
+        # way RD08's/RD58's/RD73's named results are, so the gate reflects
+        # the real evidence instead of reporting missing_checks/BLOCKED.
+        rd12_correctness_named_results = (
+            rd12_qualification["results"] if rd12_qualification is not None else None
+        )
         # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
         # test-save-load-state evidence produces a named
         # state_restore_integrity CorrectnessResult -- thread it through
@@ -8181,7 +8188,7 @@ def run(args: argparse.Namespace) -> int:
                 # reflects the evidence instead of reporting missing_checks.
                 else rd73_qualification["correctness_named_results"]
                 if rd73_qualification is not None
-                else None
+                else rd12_correctness_named_results
             ),
         )
         validation_check_results = {
