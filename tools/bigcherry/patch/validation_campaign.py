@@ -2413,6 +2413,183 @@ def run_rd07_contract_correctness(
     )
 
 
+def run_rd04_contract_correctness(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, model: Path, corpus: Path, run_dir: Path,
+    _source_module: object | None = None,
+) -> dict[str, object]:
+    """RD04 real backend_reference + ppl_equality correctness producer.
+
+    Both contract checks are derived from one real whole-model perplexity
+    comparison: normal BigCherry control versus the same composition with
+    1202 applied. Each invocation executes exactly one contract architecture.
+    Unlike RD05/RD06/RD07 (bundled in atomic patch 1203), RD04 is a single
+    self-contained patch, so composition CAN isolate it -- but the contract
+    requires both backend_reference and ppl_equality, and this project has
+    only one real whole-model correctness signal available (real PPL), so
+    both checks are legitimately derived from the same comparison, mirroring
+    RD13's own reasoning for the same situation.
+
+    Forces -fa on -ctk bf16 -ctv bf16 so the comparison actually exercises
+    1202's native-BF16 flash-attn path (otherwise the comparison could pass
+    without ever touching the code this contract is about).
+    """
+    from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.experiment import perplexity
+    from bigcherry.patch import source as real_source
+
+    contract_id = "RD04-BF16-FLASH-ATTN-TILE"
+    subject_patch = "1202_rd04_bf16_flash_attn_tile"
+    allowed_architectures = ("gfx1100", "gfx1201", "gfx1030")
+    ppl_extra_args = ("-fa", "on", "-ctk", "bf16", "-ctv", "bf16")
+
+    targets = tuple(
+        target.strip()
+        for target in amdgpu_targets.replace(",", ";").split(";")
+        if target.strip()
+    )
+    if len(targets) != 1 or targets[0] not in allowed_architectures:
+        allowed = ", ".join(allowed_architectures)
+        raise PatchCampaignError(
+            f"rd04 correctness: {contract_id} requires exactly one "
+            f"contract architecture per run ({allowed}); "
+            f"got AMDGPU_TARGETS={amdgpu_targets!r}"
+        )
+    architecture = targets[0]
+
+    psi = _source_module or real_source
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", focal=subject_patch, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError(
+            "rd04 correctness: control and subject resolved different base revisions"
+        )
+
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    ppl_build_root = build_root / "rd04-correctness"
+    subject_name = f"rd04-correctness-subject-{architecture}"
+    control_name = f"rd04-correctness-control-{architecture}"
+
+    subject_bin = build_tree(
+        name=subject_name, hip_path=hip_path, amdgpu_targets=architecture,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name=control_name, hip_path=hip_path, amdgpu_targets=architecture,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
+        extra_cmake_args=[],
+    )
+
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=architecture, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / subject_name, source_root=subject_src,
+        architecture=architecture, binary=subject_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / control_name, source_root=control_src,
+        architecture=architecture, binary=control_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id=subject_patch,
+    )
+
+    def _ppl_runner(argv, **kwargs):
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
+    try:
+        subject_run = perplexity.run_perplexity(
+            subject_bin / f"llama-perplexity{exe}",
+            model=model, corpus=corpus, runner=_ppl_runner, extra_args=ppl_extra_args,
+        )
+        control_run = perplexity.run_perplexity(
+            control_bin / f"llama-perplexity{exe}",
+            model=model, corpus=corpus, runner=_ppl_runner, extra_args=ppl_extra_args,
+        )
+    except perplexity.PerplexityError as exc:
+        comparison = None
+        passed = False
+        detail = f"could not produce a real BF16 flash-attn perplexity comparison: {exc}"
+    else:
+        comparison = perplexity.PerplexityComparison(subject=subject_run, control=control_run)
+        passed = comparison.ok
+        detail = (
+            f"real BF16 flash-attn perplexity comparison: sigma={comparison.sigma:.4f} "
+            f"vs threshold max_sigma={comparison.max_sigma} "
+            f"(subject={comparison.subject.ppl:.4f}, control={comparison.control.ppl:.4f}, "
+            f"delta={comparison.delta:.5f})"
+        )
+
+    backend_reference_result = experiment_contract.CorrectnessResult(
+        check="backend_reference", passed=passed, detail=detail,
+    )
+    ppl_equality_result = experiment_contract.CorrectnessResult(
+        check="ppl_equality", passed=passed, detail=detail,
+    )
+
+    doc = {
+        "schema_version": 1,
+        "contract_id": contract_id,
+        "base_revision": base_revision,
+        "architecture": architecture,
+        "model": str(model),
+        "corpus": str(corpus),
+        "subject_patch": subject_patch,
+        "perplexity_extra_args": list(ppl_extra_args),
+        "results": {
+            "backend_reference": {
+                "check": backend_reference_result.check,
+                "passed": backend_reference_result.passed,
+                "detail": backend_reference_result.detail,
+            },
+            "ppl_equality": {
+                "check": ppl_equality_result.check,
+                "passed": ppl_equality_result.passed,
+                "detail": ppl_equality_result.detail,
+            },
+        },
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "comparison": perplexity.comparison_to_dict(comparison) if comparison is not None else None,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd04-correctness.json", doc)
+    _print(
+        f"rd04 backend_reference+ppl_equality: {'PASS' if passed else 'FAIL'} -- "
+        f"{artifact_ref['path']}"
+    )
+    return {
+        "results": {
+            "backend_reference": backend_reference_result,
+            "ppl_equality": ppl_equality_result,
+        },
+        "artifact": artifact_ref,
+    }
+
+
 def run_rd12_correctness_check(
     *,
     base_revision: str,
