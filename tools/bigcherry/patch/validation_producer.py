@@ -1,0 +1,389 @@
+"""PA36 foundation: the generic validation-producer protocol.
+
+End-state principle (GPT design, req_0fb717b910e145b2, 2026-09-13):
+``validation_campaign.py`` knows how to EXECUTE a selected validation
+producer, but never knows WHICH patch/RD it is executing. Patch identity,
+producer entrypoint, policy, declared inputs, and allowed artifact names
+are all owned by ``patches/<id>/validation/``; reusable build/run/evidence
+machinery (``build_tree()``, ``capture_completed_build_evidence()``,
+``run_paired_lane()``, ``patch_validation_evidence.make_record()``, etc.)
+stays shared and lives in ``validation_campaign.py``/``evidence.py``.
+
+This module is infrastructure only (PA36 step 0) -- no patch has migrated
+onto it yet. A patch migrates by adding ``patches/<id>/validation/
+producer.toml`` + ``producer.py`` and deleting its old ``run_rdXX_*``
+function/CLI branch/central artifact names from ``validation_campaign.py``
+in the SAME commit (see PA36's atomic-migration checklist; no compatibility
+layer, no old-flag aliases).
+
+Dependency direction is load-bearing: this module (and every
+``patches/<id>/validation/producer.py``) must NEVER import
+``validation_campaign.py`` -- that would recreate the exact coupling this
+refactor exists to remove. ``validation_campaign.py`` imports THIS module,
+not the other way around.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Mapping, Protocol
+
+import tomllib
+
+# Reuse the project's real build-identity shape (CompletedBuildEvidence.
+# campaign_identity()'s return type) rather than inventing a parallel
+# concrete type -- it is already exactly Mapping[str, Mapping[str, object]]
+# (a plain dict of plain dicts), so this alias just names that shape.
+JsonObject = Mapping[str, object]
+BuildIdentityMap = Mapping[str, Mapping[str, object]]
+
+_ALLOWED_POLICY_VALUES: dict[str, frozenset[str]] = {
+    "trace_probe": frozenset({"run", "skip"}),
+    "standard_campaign": frozenset({"run", "skip"}),
+    "correctness_evidence_cli": frozenset({"allow", "forbid"}),
+    "performance_benchmark_cli": frozenset({"allow", "forbid"}),
+}
+
+# Artifact names must be plain, unique basenames -- never a path component
+# that could escape the campaign's own artifacts/ directory (the exact
+# same discipline evidence.py::_artifact_refs()'s hardcoded allowlist
+# already enforces implicitly by being a fixed tuple; this makes it an
+# explicit, checked rule for the now-decentralized per-producer names).
+_ARTIFACT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9]+$")
+
+
+class ValidationProducerError(ValueError):
+    """Raised for a malformed producer.toml, an unresolvable producer, or
+    a producer result that violates its own declared contract."""
+
+
+@dataclass(frozen=True)
+class FatTargetPlan:
+    """The build-once-fat-multiarch rule (STANDARDIZED_PATCH_VALIDATION_
+    CRITERIA.md), made a concrete value instead of producer-author
+    discipline. ``cmake_value`` is the exact ``AMDGPU_TARGETS`` string
+    (semicolon-joined) every control/subject build in a multi-device
+    producer run must share -- constructing this from ``targets`` is the
+    only sanctioned way to get that string, so it can never accidentally
+    drift between two builds of the same producer run."""
+
+    targets: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.targets:
+            raise ValidationProducerError("FatTargetPlan requires at least one target")
+        if len(set(self.targets)) != len(self.targets):
+            raise ValidationProducerError(f"FatTargetPlan has duplicate targets: {self.targets!r}")
+
+    @property
+    def cmake_value(self) -> str:
+        return ";".join(self.targets)
+
+
+@dataclass(frozen=True)
+class ProducerInputSpec:
+    """One declared ``[producer.<id>.input.<name>]`` entry from
+    producer.toml. ``type`` is presently informational (the producer
+    itself is responsible for interpreting the raw string from
+    ``--producer-input name=value``); this exists so ``resolve_producer()``
+    can fail closed on an undeclared or missing-required input before the
+    producer ever runs, rather than the producer discovering a typo'd
+    ``--producer-input`` key at an arbitrary point mid-run."""
+
+    name: str
+    type: str
+    required: bool
+
+
+@dataclass(frozen=True)
+class ProducerSpec:
+    """The plan-side projection of one ``[producer.<id>]`` entry --
+    resolved, validated, and immutable. Mirrors ``patch_validation.
+    ContractBinding``'s role for Experiment Contracts: authoritative
+    content stays in producer.toml, this is a checked projection of it."""
+
+    patch_id: str
+    producer_id: str
+    entrypoint: Path
+    callable_name: str
+    trace_probe: str
+    standard_campaign: str
+    correctness_evidence_cli: str
+    performance_benchmark_cli: str
+    artifact_names: frozenset[str]
+    inputs: Mapping[str, ProducerInputSpec] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProducerContext:
+    """What a producer receives. Deliberately NOT an argparse.Namespace --
+    patch-local producer code must never become coupled to CLI structure,
+    so every field here is a plain, already-resolved value the generic
+    dispatcher computed."""
+
+    repo_root: Path
+    patch_dir: Path
+    workdir: Path
+    campaign_id: str
+    base_revision: str
+    hip_path: Path
+    fat_targets: FatTargetPlan
+    model: Path | None
+    corpus: Path | None
+    build_env: Mapping[str, str]
+    inputs: Mapping[str, str]
+    # Control/subject identities the generic campaign path already built,
+    # when available -- a producer that materializes and builds its OWN
+    # isolated control/subject worktrees (RD12's shape) replaces these in
+    # its ProducerResult rather than reusing them.
+    validation_build_identities: BuildIdentityMap
+
+
+@dataclass(frozen=True)
+class ProducerResult:
+    """What a producer returns. Reconciled against the real current
+    ``patch_validation_evidence.make_record()`` call (validation_campaign.py)
+    -- every field here maps onto a real make_record() parameter or an
+    intermediate value the generic dispatcher needs before calling it.
+
+    No generic ``record_kwargs: dict`` escape hatch -- that would let a
+    producer smuggle untyped patch-specific fields through and recreate
+    the exact monolith coupling this refactor removes. If a genuinely new
+    generic concept is needed, it gets a named field here, not a bag.
+    """
+
+    correctness: JsonObject | None
+    named_correctness_results: Mapping[str, object]
+    validation_build_identities: BuildIdentityMap
+    activation_evidence: object | None
+    performance_evidence: JsonObject | None
+    trace_evidence: JsonObject | None
+    check_results: Mapping[str, JsonObject]
+    lane_effects: tuple[JsonObject, ...]
+    emitted_artifacts: frozenset[str]
+
+    def __post_init__(self) -> None:
+        if len(set(self.validation_build_identities)) != 2 or set(
+            self.validation_build_identities
+        ) != {"control", "subject"}:
+            raise ValidationProducerError(
+                "ProducerResult.validation_build_identities role set must be "
+                f"exactly {{'control', 'subject'}}, got "
+                f"{set(self.validation_build_identities)!r}"
+            )
+
+
+class ValidationProducer(Protocol):
+    def __call__(self, ctx: ProducerContext) -> ProducerResult: ...
+
+
+@dataclass(frozen=True)
+class ProducerSelection:
+    spec: ProducerSpec
+    producer: ValidationProducer
+
+
+def _parse_artifact_names(raw: object, *, where: str) -> frozenset[str]:
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise ValidationProducerError(f"{where}: artifacts must be a list of strings")
+    names: list[str] = []
+    for name in raw:
+        if not name:
+            raise ValidationProducerError(f"{where}: artifact name must be non-empty")
+        if "/" in name or "\\" in name:
+            raise ValidationProducerError(f"{where}: artifact name {name!r} must be a basename")
+        if ".." in name:
+            raise ValidationProducerError(f"{where}: artifact name {name!r} must not contain '..'")
+        if any(ch in name for ch in "*?[]"):
+            raise ValidationProducerError(f"{where}: artifact name {name!r} must not contain a glob")
+        if not _ARTIFACT_NAME_PATTERN.match(name):
+            raise ValidationProducerError(f"{where}: artifact name {name!r} is not a valid basename")
+        names.append(name)
+    if len(set(names)) != len(names):
+        raise ValidationProducerError(f"{where}: duplicate artifact name in {names!r}")
+    return frozenset(names)
+
+
+def _parse_policy_value(raw: object, *, field_name: str, where: str) -> str:
+    if not isinstance(raw, str) or raw not in _ALLOWED_POLICY_VALUES[field_name]:
+        raise ValidationProducerError(
+            f"{where}: {field_name} must be one of "
+            f"{sorted(_ALLOWED_POLICY_VALUES[field_name])!r}, got {raw!r}"
+        )
+    return raw
+
+
+def _parse_inputs(raw: object, *, where: str) -> dict[str, ProducerInputSpec]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValidationProducerError(f"{where}: input must be a table")
+    inputs: dict[str, ProducerInputSpec] = {}
+    for name, body in raw.items():
+        input_where = f"{where}.input.{name}"
+        if not isinstance(body, dict):
+            raise ValidationProducerError(f"{input_where} must be a table")
+        input_type = body.get("type")
+        if not isinstance(input_type, str) or not input_type:
+            raise ValidationProducerError(f"{input_where}: type must be a non-empty string")
+        required = body.get("required", False)
+        if not isinstance(required, bool):
+            raise ValidationProducerError(f"{input_where}: required must be a boolean")
+        inputs[name] = ProducerInputSpec(name=name, type=input_type, required=required)
+    return inputs
+
+
+def resolve_producer(*, patch_dir: Path, producer_id: str) -> ProducerSelection:
+    """Load ``patch_dir/validation/producer.toml``, resolve the
+    ``[producer.<producer_id>]`` entry, and dynamically load its
+    ``entrypoint``'s ``callable_name`` -- the shared, single loader every
+    patch's producer goes through. No central ``{"rd12": load_rd12, ...}``
+    map: that would just be a different registry monolith.
+
+    Fails closed on: missing producer.toml, unknown producer_id, an
+    entrypoint that resolves outside ``patch_dir/validation/`` (absolute
+    path or ``..`` traversal), a missing callable, invalid/duplicate
+    artifact names, an unknown policy enum value, or a malformed
+    ``input`` table.
+    """
+    validation_dir = patch_dir / "validation"
+    manifest_path = validation_dir / "producer.toml"
+    if not manifest_path.is_file():
+        raise ValidationProducerError(f"{patch_dir}: no validation/producer.toml")
+
+    try:
+        doc = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValidationProducerError(f"{manifest_path}: {exc}") from exc
+
+    producers = doc.get("producer")
+    if not isinstance(producers, dict):
+        raise ValidationProducerError(f"{manifest_path}: no [producer.*] entries")
+    body = producers.get(producer_id)
+    if not isinstance(body, dict):
+        raise ValidationProducerError(
+            f"{manifest_path}: unknown producer {producer_id!r}; known: {sorted(producers)}"
+        )
+
+    where = f"{manifest_path}: producer.{producer_id}"
+
+    entrypoint_raw = body.get("entrypoint")
+    if not isinstance(entrypoint_raw, str) or not entrypoint_raw:
+        raise ValidationProducerError(f"{where}: entrypoint must be a non-empty string")
+    if Path(entrypoint_raw).is_absolute():
+        raise ValidationProducerError(f"{where}: entrypoint must be a relative path")
+    if ".." in Path(entrypoint_raw).parts:
+        raise ValidationProducerError(f"{where}: entrypoint must not contain '..'")
+    entrypoint = (validation_dir / entrypoint_raw).resolve()
+    resolved_validation_dir = validation_dir.resolve()
+    if resolved_validation_dir not in entrypoint.parents and entrypoint != resolved_validation_dir:
+        raise ValidationProducerError(
+            f"{where}: entrypoint {entrypoint} escapes {resolved_validation_dir}"
+        )
+    if not entrypoint.is_file():
+        raise ValidationProducerError(f"{where}: entrypoint {entrypoint} does not exist")
+
+    callable_name = body.get("callable")
+    if not isinstance(callable_name, str) or not callable_name:
+        raise ValidationProducerError(f"{where}: callable must be a non-empty string")
+
+    spec = ProducerSpec(
+        patch_id=patch_dir.name,
+        producer_id=producer_id,
+        entrypoint=entrypoint,
+        callable_name=callable_name,
+        trace_probe=_parse_policy_value(body.get("trace_probe"), field_name="trace_probe", where=where),
+        standard_campaign=_parse_policy_value(
+            body.get("standard_campaign"), field_name="standard_campaign", where=where,
+        ),
+        correctness_evidence_cli=_parse_policy_value(
+            body.get("correctness_evidence_cli"), field_name="correctness_evidence_cli", where=where,
+        ),
+        performance_benchmark_cli=_parse_policy_value(
+            body.get("performance_benchmark_cli"), field_name="performance_benchmark_cli", where=where,
+        ),
+        artifact_names=_parse_artifact_names(body.get("artifacts", []), where=where),
+        inputs=_parse_inputs(body.get("input"), where=where),
+    )
+
+    module_name = f"_bigcherry_producer_{patch_dir.name}_{producer_id}"
+    module_spec = importlib.util.spec_from_file_location(module_name, entrypoint)
+    if module_spec is None or module_spec.loader is None:
+        raise ValidationProducerError(f"{where}: cannot load entrypoint {entrypoint}")
+    module = importlib.util.module_from_spec(module_spec)
+    sys.modules[module_name] = module
+    module_spec.loader.exec_module(module)
+
+    producer_callable = getattr(module, callable_name, None)
+    if producer_callable is None or not callable(producer_callable):
+        raise ValidationProducerError(
+            f"{where}: entrypoint {entrypoint} has no callable {callable_name!r}"
+        )
+
+    return ProducerSelection(spec=spec, producer=producer_callable)
+
+
+def validate_producer_inputs(
+    spec: ProducerSpec, provided: Mapping[str, str],
+) -> Mapping[str, str]:
+    """Fail closed on an undeclared ``--producer-input`` key or a missing
+    required one. Returns ``provided`` unchanged (a pure gate, not a
+    transform) so a caller can pass its result straight into
+    ``ProducerContext.inputs``."""
+    unknown = sorted(set(provided) - set(spec.inputs))
+    if unknown:
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: undeclared producer-input(s) {unknown!r}; "
+            f"known: {sorted(spec.inputs)}"
+        )
+    missing = sorted(
+        name for name, input_spec in spec.inputs.items()
+        if input_spec.required and name not in provided
+    )
+    if missing:
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: missing required producer-input(s) {missing!r}"
+        )
+    return provided
+
+
+def validate_producer_cli_compatibility(
+    spec: ProducerSpec,
+    *,
+    correctness_evidence_requested: bool,
+    performance_benchmark_requested: bool,
+) -> None:
+    """Replaces the repeated hand-copied exclusion tuples every
+    ``--run-rdXX-contract``-style flag used to carry (the ``--correctness-
+    evidence``-ambiguity guard and the ``--run-performance-benchmark``
+    mutual-exclusion check, both previously re-copied per flag -- see
+    RD12's/RD04's landed wiring in validation_campaign.py, commits
+    4312a2d5/8a5641e9, for the exact pattern this generalizes)."""
+    if correctness_evidence_requested and spec.correctness_evidence_cli == "forbid":
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: --correctness-evidence is ambiguous "
+            "together with this producer -- it already produces its own authoritative "
+            "correctness.json"
+        )
+    if performance_benchmark_requested and spec.performance_benchmark_cli == "forbid":
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: --run-performance-benchmark is "
+            "mutually exclusive with this producer"
+        )
+
+
+def validate_producer_result(spec: ProducerSpec, result: ProducerResult) -> None:
+    """Fail closed if a producer emits an artifact name it never declared
+    in producer.toml -- the decentralized equivalent of evidence.py's
+    ``_artifact_refs()`` hardcoded allowlist: an arbitrary file dropped in
+    the workdir still cannot become evidence, even post-migration."""
+    undeclared = sorted(result.emitted_artifacts - spec.artifact_names)
+    if undeclared:
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: producer emitted undeclared "
+            f"artifact(s) {undeclared!r}; declared: {sorted(spec.artifact_names)}"
+        )
