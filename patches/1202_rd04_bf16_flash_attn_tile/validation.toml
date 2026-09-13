@@ -31,18 +31,20 @@ capability = "controls"
 validator = "benchmark"
 required = true
 
-# GPT direction (session ses_5bbee8ce5c9a4265, req_41664660f78a4e3f):
-# no real per-check correctness producer exists yet for RD04's
-# backend_reference/ppl_equality obligations -- declared honestly
-# against a real validator shape (backend-ops), never faked via
-# autotune-campaign as a placeholder. Stays BLOCKED (no ctx.correctness_evidence
-# bound) until a real producer exists. See README.md's "Known limitations".
+# PA35 correction (2026-09-13): run_rd04_contract_correctness() is a real
+# whole-model PPL comparison (backend_reference + ppl_equality), not a
+# direct backend-ops invocation -- "backend-ops" with ops=[FLASH_ATTN_EXT]
+# was never the right validator shape for this producer's evidence.
+# correctness-summary consumes the bound patch-level correctness.json a
+# real producer writes, whatever its correctness mechanism. See README.md
+# for RD04's real 3-architecture PASS evidence; the evidence-binding CLI
+# wiring (--run-rd04-contract) that feeds ctx.correctness_evidence is
+# tracked follow-up work, not yet landed.
 [[check]]
 id = "correctness"
 capability = "correctness"
-validator = "backend-ops"
+validator = "correctness-summary"
 required = true
-ops = ["FLASH_ATTN_EXT"]
 
 # No real subject-hit/control-miss RD04 marker probe exists yet (RD04's
 # patch source carries no BIGCHERRY_PATCH_TRACE-gated marker, unlike

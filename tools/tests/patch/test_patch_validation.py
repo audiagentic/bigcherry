@@ -14,6 +14,7 @@ check, and B4's framework-version re-export.
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -496,6 +497,63 @@ class RegistryAndVersionTests(unittest.TestCase):
             control_source=None, subject_source=None,
         )
         self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.BLOCKED)
+
+    def test_builtin_correctness_summary_requires_bound_artifact(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="correct", capability="correctness", validator="correctness-summary",
+            required=True,
+        )
+        ctx = pv.ValidationContext(
+            descriptor=_descriptor(), base_revision="r",
+            control_source=None, subject_source=None,
+        )
+        self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.BLOCKED)
+
+    def test_builtin_correctness_summary_passes_on_bound_passed_disposition(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="correct", capability="correctness", validator="correctness-summary",
+            required=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            artifact_path = run_dir / "correctness.json"
+            artifact_path.write_text(
+                json.dumps({"disposition": "passed"}), encoding="utf-8",
+            )
+            ctx = pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None, run_dir=run_dir,
+                correctness_evidence={
+                    "artifact": {
+                        "path": "correctness.json",
+                        "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                    },
+                },
+            )
+            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.PASS)
+
+    def test_builtin_correctness_summary_fails_on_bound_failed_disposition(self) -> None:
+        spec = pv.CheckSpec(
+            check_id="correct", capability="correctness", validator="correctness-summary",
+            required=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            artifact_path = run_dir / "correctness.json"
+            artifact_path.write_text(
+                json.dumps({"disposition": "failed"}), encoding="utf-8",
+            )
+            ctx = pv.ValidationContext(
+                descriptor=_descriptor(), base_revision="r",
+                control_source=None, subject_source=None, run_dir=run_dir,
+                correctness_evidence={
+                    "artifact": {
+                        "path": "correctness.json",
+                        "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                    },
+                },
+            )
+            self.assertEqual(pv.evaluate_check(spec, ctx).status, pv.FAIL)
 
     def test_builtin_trace_marker_requires_verified_positive_and_negative_logs(self) -> None:
         spec = pv.CheckSpec(
