@@ -8,6 +8,13 @@ single-op test-file case cannot exercise patch 1205.
 This diagnostic patch adds the minimal whole-graph case needed by the
 RD12 Experiment Contract producer. It is applied identically to control
 and subject; only 1205 differs between the two arms.
+
+Both projection outputs are explicit graph roots. This is intentional:
+using ADD(k_out, v_out) as a terminal liveness node makes the second
+matmul eligible for the pre-existing CUDA MUL_MAT+ADD fusion, which
+writes directly to the ADD destination and leaves v_out itself
+unmaterialized. Explicitly expanding k_out and returning v_out keeps
+the two MUL_MAT nodes live, adjacent, and independently verifiable.
 """
 
 GROUP = "core"
@@ -26,10 +33,12 @@ from bigcherry.patcher import Edit, FilePatch, csource as _csource
 _NEW_STRUCT = r'''
 // bigcherry (RD12 correctness): two distinct quantized MUL_MAT nodes over
 // the exact same activation tensor. This is the production graph shape
-// patches/1205_rd12_paired_mmvq_dual_output scans for. The terminal ADD
-// exists only to keep both projection results live in one graph;
-// fusion_test_nodes() asks test-backend-ops to compare each projection
-// output independently.
+// patches/1205_rd12_paired_mmvq_dual_output scans for.
+//
+// Both projections are explicit graph roots. Do NOT join them with an ADD:
+// the pre-existing CUDA MUL_MAT+ADD fusion may consume the second MUL_MAT
+// directly into the ADD destination, leaving that intermediate output
+// unmaterialized and therefore invalid for fusion_test_nodes() verification.
 struct test_bigcherry_rd12_paired_mul_mat : public test_case {
     const ggml_type type;
     const int64_t m;
@@ -86,10 +95,23 @@ struct test_bigcherry_rd12_paired_mul_mat : public test_case {
         v_out = ggml_mul_mat(ctx, v_weight, x);
         ggml_set_name(v_out, "rd12_v_out");
 
-        // Keep both projection nodes live and adjacent in the forward graph.
-        ggml_tensor * out = ggml_add(ctx, k_out, v_out);
-        ggml_set_name(out, "rd12_pair_sum");
-        return out;
+        // test_case::eval() has already created gf before build_graph().
+        // Add K as the first independent root here. eval() will expand the
+        // returned V root afterwards, producing the required graph-node order:
+        //
+        //     rd12_k_out
+        //     rd12_v_out
+        //
+        // This keeps both outputs materialized while preserving the exact
+        // adjacent-MUL_MAT shape required by RD12's production detector.
+        //
+        // Only touch gf in MODE_TEST; other modes do not need the paired
+        // correctness graph and may not have a usable test graph here.
+        if (mode == MODE_TEST) {
+            ggml_build_forward_expand(gf, k_out);
+        }
+
+        return v_out;
     }
 
     std::vector<ggml_tensor *> fusion_test_nodes() override {
