@@ -48,7 +48,14 @@ def main() -> int:
         print(f"=== RD12 correctness: {arch} ===")
         device_index = DEVICE_INDEX_BY_ARCH[arch]
         os.environ["HIP_VISIBLE_DEVICES"] = device_index
-        os.environ["ROCR_VISIBLE_DEVICES"] = device_index
+        # Setting BOTH HIP_VISIBLE_DEVICES and ROCR_VISIBLE_DEVICES to the
+        # same index double-filters: ROCR selects device N from the real
+        # device list first, then HIP re-applies its own index-N filter
+        # against that already-filtered (now 1-device) list, landing on
+        # nothing -- "no ROCm-capable device is detected" (a known trap in
+        # this project, e.g. RD58's PVPS02 finding). HIP_VISIBLE_DEVICES
+        # alone is sufficient.
+        os.environ.pop("ROCR_VISIBLE_DEVICES", None)
         result = vc.run_rd12_correctness_check(
             base_revision=base_revision,
             hip_path=HIP_PATH,
