@@ -59,6 +59,29 @@ contract promotion -- `eligible_for_validated_state` stays `False`
 after this command; `ported-benched` current-pin qualification (VA08)
 is the honest ceiling this command can produce.
 
+## Real RD04 contract correctness evidence (2026-09-13, in progress)
+
+RD04's contract (`RD04-BF16-FLASH-ATTN-TILE`, requiring both
+`backend_reference` and `ppl_equality`) had no correctness producer until
+this session. `run_rd04_contract_correctness()`
+(`tools/bigcherry/patch/validation_campaign.py`) derives both checks from
+one real whole-model PPL comparison (control = 1202 absent, subject = 1202
+applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison actually
+exercises RD04's native-BF16 flash-attn path.
+
+Real run on Brutus:
+
+| architecture | subject PPL | control PPL | sigma | result |
+|---|---:|---:|---:|---|
+| gfx1100 | 10.5870 | 10.6247 | 0.1826 | **PASS** |
+| gfx1201 | -- | -- | -- | build crashed (clang segfault, real toolchain fault, not this patch -- retry pending) |
+| gfx1030 | -- | -- | -- | not yet run |
+
+gfx1100 is a clean real PASS on both contract checks. The gfx1201 build
+crash is a real `clang++` internal segfault during compilation (real
+compiler bug/flakiness, ample free memory on the host at the time) --
+retry, not a code issue in this patch or producer, in progress.
+
 ## Known limitations
 
 - **Correctness (`backend_reference` + `ppl_equality`) has no real
