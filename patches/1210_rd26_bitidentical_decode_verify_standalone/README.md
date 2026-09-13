@@ -103,3 +103,33 @@ complete, real A=B=C correctness match.
 - The 3 deferred hunks of the 5-commit cluster (RD26b) are not represented
   in this patch at all; this package covers only the base-standalone
   subset.
+
+## Real decode-vs-verify bit-identity evidence (2026-09-13, gfx1100) -- the dedicated harness now exists, and confirms the gap above
+
+The dedicated harness this README previously said was "not yet built" now
+exists: `run_rd26_decode_verify_bit_identity_check()`
+(`tools/bigcherry/patch/validation_campaign.py`) uses `llama-results`
+(`vendor/llama.cpp/tools/results`, a real registered tool that writes raw
+F32 `llama_get_logits_ith()` rows to GGUF) to compare the same prompt run
+through a decode-shaped batch (`--ubatch-size 1`) against a verify-shaped
+batch (`--ubatch-size n_draft+1=5`), for both control (1210 absent) and
+subject (1210 applied), each repeated twice to confirm same-configuration
+determinism first.
+
+**Real run on Brutus (gfx1100), `tierA-qwen4b-q6k`, `spec_draft_n_max=4`:
+FAIL.** Both arms are internally deterministic (each configuration
+reproduced byte-identically across 2 repetitions), but **subject's own
+decode and verify outputs diverge from each other**, first byte mismatch
+at file offset 480 (both control and subject artifacts are 58,604,000
+bytes, so this is a real content difference, not a shape/size change).
+This is exactly the honest outcome the "Known limitations" section above
+predicted: patch 1210 contains only 2 of the 5-commit determinism
+cluster's hunks (RD26b's 3 remaining hunks are not represented), so the
+complete decode/verify bit-identity property this contract requires is
+not yet established by 1210 alone. **This is a real, useful finding
+confirming a known, already-documented gap -- not a new defect, and not
+a harness bug.** The remaining RD26b hunks (deferred until 1202/RD04 and
+1203/RD05-07 land and are retained) are the concrete next step before
+this contract can pass.
+
+Contract (`RD26-DECODE-VERIFY-BIT-IDENTITY`) not bound in `patch.toml`.
