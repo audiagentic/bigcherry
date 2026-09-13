@@ -90,6 +90,25 @@ correctness leg only; RD05's contract also carries no performance claim
 (`expected_effect = "correctness"`), so this closes RD05's evidence
 obligation in full modulo the formal binding step.
 
+## Real RD06 contract correctness evidence (2026-09-13, gfx1201)
+
+RD06's contract (`RD06-RDNA4-WMMA-FA-CONFIG`, `correctness.backend_reference
+= "required"`) had no producer until this session. Like RD05, RD06 cannot
+be isolated from RD05/RD07 via source composition (one atomic patch.py),
+so `run_rd06_contract_correctness()` reuses the same real PPL-comparison
+technique, scoped to gfx1201 (RD06's contract scope).
+
+Real run on Brutus (single gfx1201 R9700), control (1203 absent) vs
+subject (1203 applied), against the same wikitext2 corpus slice used for
+RD05: **PASS** -- subject PPL=10.5835, control PPL=10.6394, delta=0.0559,
+sigma=0.2709 (well within the 3.0 threshold).
+
+Contract still not bound in `patch.toml`. This proves backend-reference
+correctness of the complete shipped 1203 patch, not causal attribution to
+RD06's config-selection logic specifically -- RD06's own performance
+claim (per-shape/head-dimension/softcap gains, and confirming gfx1100
+does not select or regress) remains separate, not-yet-gathered work.
+
 ## Known limitations -- real gaps, not yet closed
 
 This is a genuine first real signal, not full closure of PRBE02/PRBE03/PRBE04:
