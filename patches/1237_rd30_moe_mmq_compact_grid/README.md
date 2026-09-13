@@ -98,6 +98,35 @@ after qualification, never an automatic campaign side effect." The manual
 A/B evidence above is real and strong, but is not a substitute for that
 qualification path.
 
+## Real bit-identical contract correctness evidence (2026-09-13, gfx1100)
+
+RD30's contract (`RD30-MOE-MMQ-COMPACT-GRID`) required a `bit_identical`
+correctness check that had no producer until this session.
+`run_rd30_correctness_check()` (`tools/bigcherry/patch/validation_campaign.py`)
+proves the compact-grid rewrite via real `test-backend-ops` MUL_MAT_ID runs,
+control (RD30 absent) vs subject (RD30 applied), both composed with the
+deterministic evidence chain (1222+1223+1236) so two independent process
+invocations see identical full-256-expert routing.
+
+Real run on Brutus (single gfx1100 XTX), 2 quant types (Q4_K, Q8_0) x 3
+seeds = 6 (shape, seed) rows, `n_expert=256`/`n_expert_used=8`, 32 routed
+tokens (deliberately above upstream's `MMVQ_MAX_BATCH_SIZE=8`, so the real
+production dispatcher reaches MoE MMQ rather than decode MMVQ): **all 6
+rows PASS** -- control and subject produced identical routing digests, CPU
+reference digests, GPU output digests, and element counts on every row.
+**`bit_identical: PASS`**; `backend_reference` (a diagnostic NMSE check,
+not the contract's gate) also PASS on all 6 rows. This confirms the
+compact-grid rewrite changes launch configuration only, never arithmetic
+or routing, exactly as the contract's hypothesis claims.
+
+Contract still not bound in `patch.toml` -- this establishes the
+correctness leg only; performance/trigger evidence against the contract's
+acceptance gates (`target_kernel_gain_pct=0.5`,
+`max_control_regression_pct=1`, `ci95_threshold_bound_v1`,
+`min_paired_rounds=10`) remains separate, not-yet-gathered work, distinct
+from this patch's own earlier informal manual A/B (which predates this
+contract and is explicitly not treated as a preregistration of it).
+
 ## Known limitations
 
 - No `validation.toml` adapter exists yet (no bound Experiment Contract).
