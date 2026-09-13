@@ -73,6 +73,37 @@ Contract, and real performance evidence) is separate, not-yet-done
 authoring work tracked under PRBE11 -- blocked on the RD25 prerequisite
 above before that work is meaningful.
 
+## Real bit-identical correctness evidence (2026-09-13, all three architectures)
+
+The correctness-producer piece named above as not-yet-done now exists:
+`run_rd12_correctness_check()` (`tools/bigcherry/patch/validation_campaign.py`)
+uses a new diagnostic support patch, `1258_rd12_paired_mul_mat_test_case`
+(a registered whole-graph `test-backend-ops` case with two distinct Q6_K
+MUL_MAT projections over one shared F32 activation, matching the real
+K/V-projection production shape), to prove the fork's bit-identical claim
+via exact digest equality plus a real activation-marker check (the focal
+patch's own `BIGCHERRY_PATCH_HIT` trace, gating a false-green result if
+the fusion never actually activated).
+
+Real runs on Brutus across all three architectures: **clean PASS on
+gfx1100, gfx1201, and gfx1030** -- 6/6 (projection, seed) rows
+byte-identical (both K and V lanes, 3 seeds each) on every architecture,
+with real activation confirmed (subject hit, control miss) in every run.
+One real bug was found and fixed along the way: the test case's first
+version joined K/V with a terminal ADD, which made the second MUL_MAT
+eligible for the pre-existing CUDA MUL_MAT+ADD fusion and left `v_out`
+unmaterialized (a ~800 NMSE on the CONTROL build, not a RD12 defect) --
+fixed by making both outputs independent graph roots (see 1258's own
+README for the full finding).
+
+**This is real, clean multi-architecture correctness evidence -- but it
+does NOT satisfy PRBE11's full qualification bar.** The RD25 hard
+prerequisite above (batch-vs-seq consistency fix) is still unmet, no
+Experiment Contract is bound in `patch.toml`, and no real performance
+evidence has been gathered. This closes the "prove the fork's
+bit-identical claim on real hardware" gap specifically -- it does not by
+itself authorize promotion or supersede PRBE11's blocking prerequisite.
+
 ## Known limitations
 
 Not `deferred-hardware`. No real fresh evidence exists yet for this
