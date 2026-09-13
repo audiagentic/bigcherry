@@ -2213,6 +2213,385 @@ def run_rd05_contract_correctness(
     }
 
 
+def run_rd12_correctness_check(
+    *,
+    base_revision: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    worktree_root: Path,
+    build_root: Path,
+    build_env: dict[str, str],
+    run_dir: Path,
+    seeds: tuple[int, ...] = (1, 2, 3),
+    _source_module: object | None = None,
+    _evidence_module: object | None = None,
+    _runner=None,
+) -> dict[str, object]:
+    """RD12 exact-output correctness producer.
+
+    Control:
+      normal BigCherry composition
+      + deterministic test-backend-ops seed support (1222)
+      + machine-readable correctness metrics (1223)
+      + paired plain-MUL_MAT whole-graph probe (1258)
+
+    Subject:
+      exact same composition
+      + 1205_rd12_paired_mmvq_dual_output
+
+    A normal signature_to_test_file_line()/--test-file case is
+    intentionally NOT used: it represents one isolated MUL_MAT and cannot
+    satisfy RD12's production selector, which requires two distinct
+    adjacent MUL_MAT nodes sharing the exact src1 tensor. 1236 is not
+    needed -- this graph contains no MUL_MAT_ID routing tensor.
+
+    Exact equality is required independently for the K and V outputs:
+      * CPU-reference output digest,
+      * HIP output digest,
+      * output element count.
+
+    The focal patch's existing BIGCHERRY_PATCH_TRACE marker is also
+    mandatory. This prevents a false green result if control and subject
+    happen to produce identical bytes because the dual-output fusion never
+    activated.
+    """
+    import math as _math
+
+    from bigcherry.experiment import contract as experiment_contract
+
+    if _source_module is None:
+        from bigcherry.patch import source as psi
+    else:
+        psi = _source_module
+
+    if _evidence_module is None:
+        from bigcherry.tuning import (
+            correctness_evidence as correctness_evidence,
+        )
+    else:
+        correctness_evidence = _evidence_module
+
+    targets = tuple(
+        target.strip()
+        for target in amdgpu_targets.replace(",", ";").split(";")
+        if target.strip()
+    )
+    supported_architectures = ("gfx1100", "gfx1201", "gfx1030")
+    if len(targets) != 1 or targets[0] not in supported_architectures:
+        raise PatchCampaignError(
+            "RD12 correctness requires exactly one contract architecture "
+            "per run: gfx1100, gfx1201, or gfx1030; "
+            f"got AMDGPU_TARGETS={amdgpu_targets!r}"
+        )
+    architecture = targets[0]
+
+    if not seeds or any(seed == 0 for seed in seeds) or len(set(seeds)) != len(seeds):
+        raise PatchCampaignError(
+            "RD12 correctness requires a non-empty set of unique nonzero seeds"
+        )
+
+    evidence_patches = (
+        "1222_hi67_deterministic_test_backend_ops_seed",
+        "1223_hi67_machine_readable_correctness_metrics",
+        "1258_rd12_paired_mul_mat_test_case",
+    )
+    subject_patch = "1205_rd12_paired_mmvq_dual_output"
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=evidence_patches,
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=(*evidence_patches, subject_patch),
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError(
+            "RD12 correctness: control and subject resolved different base revisions"
+        )
+
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd12-correctness-control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd12-correctness-subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    correctness_build_root = build_root / "rd12-correctness"
+    control_name = f"rd12-correctness-control-{architecture}"
+    subject_name = f"rd12-correctness-subject-{architecture}"
+
+    control_bin_dir = build_tree(
+        name=control_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["test-backend-ops"], source=control_src,
+        extra_cmake_args=[],
+    )
+    subject_bin_dir = build_tree(
+        name=subject_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["test-backend-ops"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_binary = control_bin_dir / f"test-backend-ops{exe}"
+    subject_binary = subject_bin_dir / f"test-backend-ops{exe}"
+
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / control_name, source_root=control_src,
+        architecture=architecture, binary=control_binary,
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / subject_name, source_root=subject_src,
+        architecture=architecture, binary=subject_binary,
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+
+    # The registered 1258 test case is deliberately unique under -p.
+    shape = {
+        "name": "q6_k-kv-decode1-1024x2560",
+        "weight_type": "Q6_K",
+        "m": 1024, "n": 1, "k": 2560,
+        "params_filter": "bigcherry_rd12=1",
+        "digest_tensor": "rd12_x",
+    }
+    lanes = (("k", "rd12_k_out"), ("v", "rd12_v_out"))
+
+    runner = _runner or subprocess.run
+
+    trace_marker = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion"
+    activation_observations: list[dict[str, object]] = []
+
+    def _correctness_runner(argv, **kwargs):
+        # correctness_evidence intentionally supplies only the variables
+        # needed by its test. Preserve ambient device-selection variables,
+        # and enable the focal patch's existing activation marker.
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        env["BIGCHERRY_PATCH_TRACE"] = "1"
+
+        completed = runner(argv, env=env, **kwargs)
+
+        executable = str(argv[0])
+        if executable == str(control_binary):
+            arm = "control"
+        elif executable == str(subject_binary):
+            arm = "subject"
+        else:
+            arm = "unknown"
+
+        stderr = completed.stderr or ""
+        activation_observations.append({
+            "arm": arm,
+            "seed": env.get("BIGCHERRY_TEST_DETERMINISTIC_SEED"),
+            "hit": trace_marker in stderr,
+        })
+        return completed
+
+    def _finite_or_none(value: float) -> float | None:
+        return float(value) if _math.isfinite(float(value)) else None
+
+    rows: list[dict[str, object]] = []
+
+    for lane, target_tensor in lanes:
+        for seed in seeds:
+            control = correctness_evidence.collect_native_seed_evidence(
+                control_binary, op_filter=shape["params_filter"],
+                target_tensor=target_tensor, digest_tensor=shape["digest_tensor"],
+                seed=seed, runner=_correctness_runner,
+            )
+            subject = correctness_evidence.collect_native_seed_evidence(
+                subject_binary, op_filter=shape["params_filter"],
+                target_tensor=target_tensor, digest_tensor=shape["digest_tensor"],
+                seed=seed, runner=_correctness_runner,
+            )
+
+            control_backend_ok = (
+                control.native_execution_status == "ok"
+                and _math.isfinite(control.e_n_nmse)
+                and _math.isfinite(control.threshold_t)
+                and control.e_n_nmse <= control.threshold_t
+            )
+            subject_backend_ok = (
+                subject.native_execution_status == "ok"
+                and _math.isfinite(subject.e_n_nmse)
+                and _math.isfinite(subject.threshold_t)
+                and subject.e_n_nmse <= subject.threshold_t
+            )
+
+            reference_equal = (
+                control.reference_output_digest is not None
+                and control.reference_output_digest == subject.reference_output_digest
+            )
+            output_equal = (
+                control.native_output_digest is not None
+                and control.native_output_digest == subject.native_output_digest
+            )
+            nels_equal = (
+                control.output_nels is not None
+                and control.output_nels == subject.output_nels
+            )
+
+            exact_equal = (
+                control.native_execution_status == "ok"
+                and subject.native_execution_status == "ok"
+                and reference_equal and output_equal and nels_equal
+            )
+
+            rows.append({
+                "shape": shape["name"], "weight_type": shape["weight_type"],
+                "lane": lane, "target_tensor": target_tensor, "seed": seed,
+                "control_status": control.native_execution_status,
+                "subject_status": subject.native_execution_status,
+                "control_input_digest": control.reference_digest,
+                "subject_input_digest": subject.reference_digest,
+                "control_reference_output_digest": control.reference_output_digest,
+                "subject_reference_output_digest": subject.reference_output_digest,
+                "control_output_digest": control.native_output_digest,
+                "subject_output_digest": subject.native_output_digest,
+                "control_output_nels": control.output_nels,
+                "subject_output_nels": subject.output_nels,
+                "control_nmse": _finite_or_none(control.e_n_nmse),
+                "subject_nmse": _finite_or_none(subject.e_n_nmse),
+                "control_threshold": _finite_or_none(control.threshold_t),
+                "subject_threshold": _finite_or_none(subject.threshold_t),
+                "control_max_abs": _finite_or_none(control.max_abs_native),
+                "subject_max_abs": _finite_or_none(subject.max_abs_native),
+                "reference_equal": reference_equal, "output_equal": output_equal,
+                "nels_equal": nels_equal,
+                "backend_reference_ok": control_backend_ok and subject_backend_ok,
+                "bit_identical": exact_equal,
+            })
+
+    expected_runs_per_arm = len(lanes) * len(seeds)
+    control_activation_runs = [
+        observation for observation in activation_observations if observation["arm"] == "control"
+    ]
+    subject_activation_runs = [
+        observation for observation in activation_observations if observation["arm"] == "subject"
+    ]
+
+    activation_ok = (
+        len(control_activation_runs) == expected_runs_per_arm
+        and len(subject_activation_runs) == expected_runs_per_arm
+        and not any(observation["hit"] for observation in control_activation_runs)
+        and all(observation["hit"] for observation in subject_activation_runs)
+    )
+
+    activation_result = experiment_contract.CorrectnessResult(
+        check="activation", passed=activation_ok,
+        detail=(
+            f"RD12 dual-output MMVQ activation proven for all {expected_runs_per_arm} "
+            "subject runs; control emitted no focal marker"
+            if activation_ok else (
+                "RD12 activation attestation failed: "
+                f"control_runs={len(control_activation_runs)} "
+                f"control_hits={sum(bool(row['hit']) for row in control_activation_runs)} "
+                f"subject_runs={len(subject_activation_runs)} "
+                f"subject_hits={sum(bool(row['hit']) for row in subject_activation_runs)} "
+                f"expected_per_arm={expected_runs_per_arm}"
+            )
+        ),
+    )
+
+    first_exact_failure = next((row for row in rows if not row["bit_identical"]), None)
+
+    if first_exact_failure is None and activation_result.passed:
+        bit_identical_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=True,
+            detail=(
+                f"{len(rows)} RD12 (projection,seed) rows produced byte-identical "
+                "CPU-reference and HIP outputs with focal fusion activation proven"
+            ),
+        )
+    elif first_exact_failure is not None:
+        bit_identical_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=False,
+            detail=(
+                f"RD12 exact-output mismatch for shape={first_exact_failure['shape']!r} "
+                f"lane={first_exact_failure['lane']!r} seed={first_exact_failure['seed']}: "
+                f"control_status={first_exact_failure['control_status']} "
+                f"subject_status={first_exact_failure['subject_status']} "
+                f"reference_equal={first_exact_failure['reference_equal']} "
+                f"output_equal={first_exact_failure['output_equal']} "
+                f"nels_equal={first_exact_failure['nels_equal']}"
+            ),
+        )
+    else:
+        bit_identical_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=False,
+            detail=(
+                "RD12 exact output digests matched, but the focal dual-output MMVQ "
+                f"path was not proven active: {activation_result.detail}"
+            ),
+        )
+
+    first_backend_failure = next((row for row in rows if not row["backend_reference_ok"]), None)
+    backend_reference_result = experiment_contract.CorrectnessResult(
+        check="backend_reference", passed=first_backend_failure is None,
+        detail=(
+            f"{len(rows)} subject/control rows stayed within each emitted "
+            "backend-reference threshold"
+            if first_backend_failure is None else (
+                f"RD12 backend-reference failure for shape={first_backend_failure['shape']!r} "
+                f"lane={first_backend_failure['lane']!r} seed={first_backend_failure['seed']}: "
+                f"control_nmse={first_backend_failure['control_nmse']} "
+                f"control_threshold={first_backend_failure['control_threshold']} "
+                f"subject_nmse={first_backend_failure['subject_nmse']} "
+                f"subject_threshold={first_backend_failure['subject_threshold']}"
+            )
+        ),
+    )
+
+    artifact_doc = {
+        "schema_version": 1,
+        "contract_id": "RD12-PAIRED-MMVQ-DUAL",
+        "check": "bit_identical",
+        "passed": bit_identical_result.passed,
+        "base_revision": base_revision,
+        "architecture": architecture,
+        "mechanism": (
+            "registered whole-graph paired MUL_MAT test-backend-ops subject/control "
+            "CPU-reference + backend1 digest equality"
+        ),
+        "evidence_patches": list(evidence_patches),
+        "subject_patch": subject_patch,
+        "seeds": list(seeds),
+        "shape": {
+            "name": shape["name"], "weight_type": shape["weight_type"],
+            "m": shape["m"], "n": shape["n"], "k": shape["k"],
+            "params_filter": shape["params_filter"], "digest_tensor": shape["digest_tensor"],
+            "target_tensors": [target_tensor for _, target_tensor in lanes],
+        },
+        "activation": {
+            "marker": trace_marker, "passed": activation_result.passed,
+            "observations": activation_observations,
+        },
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "rows": rows,
+    }
+
+    artifact_ref = _write_bound_artifact(run_dir, "rd12-correctness.json", artifact_doc)
+
+    return {
+        "results": {
+            "bit_identical": bit_identical_result,
+            "backend_reference": backend_reference_result,
+            "activation": activation_result,
+        },
+        "artifact": artifact_ref,
+        "rows": rows,
+    }
+
+
 def _load_rd43_correctness_module() -> object:
     """Dynamically load the real RD43 correctness producer (patches/
     1216_rd43_concurrent_join_fusion_guard/validation/rd43_correctness.py)."""

@@ -1,0 +1,20 @@
+schema = 1
+id = "1258_rd12_paired_mul_mat_test_case"
+order = 1258
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "hip"
+plan-item = "RD12"
+plan-ids = []
+requires = [
+  "1222_hi67_deterministic_test_backend_ops_seed",
+  "1223_hi67_machine_readable_correctness_metrics",
+]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
+backends = []
