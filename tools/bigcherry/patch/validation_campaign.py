@@ -2940,6 +2940,385 @@ def run_rd26_ppl_check(
     return {"result": result, "artifact": artifact_ref}
 
 
+def run_rd26_decode_verify_bit_identity_check(
+    *,
+    base_revision: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    worktree_root: Path,
+    build_root: Path,
+    model: Path,
+    run_dir: Path,
+    build_env: dict[str, str] | None = None,
+    selector_env: dict[str, str] | None = None,
+    spec_draft_n_max: int = 4,
+    ctx_size: int = 256,
+    prompt: str = (
+        "RD26 determinism probe. The quick brown fox jumps over the lazy dog. "
+        "Pack my box with five dozen liquor jugs. Sphinx of black quartz, judge my vow. "
+        "How vexingly quick daft zebras jump. Bright vixens jump; dozy fowl quack."
+    ),
+    replicates: int = 2,
+    timeout_s: int = 900,
+    _source_module: object | None = None,
+    _runner=None,
+) -> dict[str, object]:
+    """Prove RD26's decode-vs-verify raw-logit bit-identity claim.
+
+    The experiment is deliberately a within-build comparison first:
+      control: ubatch=1 vs ubatch=n_draft+1
+      subject: ubatch=1 vs ubatch=n_draft+1
+
+    The contract passes only when the subject pair is byte-identical and
+    the control pair is not. That makes the result non-vacuous: it proves
+    both the invariant RD26 claims and that this patch, rather than an
+    already-identical baseline, removed the divergence.
+
+    llama-server is intentionally not used as the numeric oracle. At the
+    pinned llama.cpp revision its speculative-accept path does not populate
+    result.probs/top_logprobs for accepted draft tokens, and logprobs would
+    be weaker than the contract's literal raw-logit bit-identity claim
+    anyway.
+
+    llama-results (vendor/llama.cpp/tools/results, a real registered
+    LLAMA_EXAMPLE_RESULTS tool) drives the real model through
+    llama_decode(), requests logits for every token, and writes the raw
+    F32 llama_get_logits_ith() rows to GGUF. Varying --ubatch-size controls
+    ggml's internal graph-splitting granularity -- the actual sub-batch
+    shape that reaches kernel dispatch decisions -- giving the exact
+    target-model n_q=1 versus n_q=n_draft+1 computation while keeping
+    model, prompt, token positions, context, and output representation
+    fixed.
+
+    This is a target-model correctness oracle, not an MTP-controller
+    activation probe. RD73's real --spec-type draft-mtp server lane remains
+    the appropriate evidence that the production speculative controller
+    itself executes.
+
+    A real run against the CURRENT 1210 patch (only the two base-standalone
+    hunks of a five-commit determinism cluster) may legitimately return
+    FAIL -- the complete decode/verify determinism property belongs to the
+    full cluster, not this subset. That is real, useful evidence of a real
+    remaining gap, not a harness defect; never weaken this check to force
+    a pass.
+    """
+    from bigcherry.experiment import contract as experiment_contract
+
+    if _source_module is None:
+        from bigcherry.patch import source as psi
+    else:
+        psi = _source_module
+
+    if (
+        not isinstance(spec_draft_n_max, int)
+        or isinstance(spec_draft_n_max, bool)
+        or not 1 <= spec_draft_n_max <= 7
+    ):
+        raise PatchCampaignError(
+            "rd26 bit identity: spec_draft_n_max must be in [1, 7] "
+            "so verify width n_draft+1 stays inside RD26's <=8 scope"
+        )
+
+    verify_width = spec_draft_n_max + 1
+
+    if (
+        not isinstance(ctx_size, int)
+        or isinstance(ctx_size, bool)
+        or ctx_size < verify_width * 2
+    ):
+        raise PatchCampaignError(
+            "rd26 bit identity: ctx_size must be an integer at least "
+            "2 * (spec_draft_n_max + 1)"
+        )
+
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise PatchCampaignError("rd26 bit identity: prompt must be non-empty")
+
+    if not isinstance(replicates, int) or isinstance(replicates, bool) or replicates < 2:
+        raise PatchCampaignError(
+            "rd26 bit identity: replicates must be >= 2 to prove same-configuration repeatability"
+        )
+
+    if not isinstance(timeout_s, int) or isinstance(timeout_s, bool) or timeout_s <= 0:
+        raise PatchCampaignError("rd26 bit identity: timeout_s must be positive")
+
+    subject_patch = "1210_rd26_bitidentical_decode_verify_standalone"
+
+    # Explicit whole-composition arms, matching RD30's correctness design:
+    # normal BigCherry composition vs the same composition plus RD26.
+    # No partial reverse-edit control is used.
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=(), base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", extra_patches=(subject_patch,),
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError(
+            "rd26 bit identity: control and subject resolved different base revisions"
+        )
+
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd26-bit-identity-control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd26-bit-identity-subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    correctness_build_root = build_root / "rd26-bit-identity"
+    architecture_tag = amdgpu_targets.replace(";", "_").replace(",", "_")
+    control_name = f"rd26-bit-identity-control-{architecture_tag}"
+    subject_name = f"rd26-bit-identity-subject-{architecture_tag}"
+
+    control_bin_dir = build_tree(
+        name=control_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["llama-results"], source=control_src,
+        extra_cmake_args=[],
+    )
+    subject_bin_dir = build_tree(
+        name=subject_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=correctness_build_root, targets=["llama-results"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_binary = control_bin_dir / f"llama-results{exe}"
+    subject_binary = subject_bin_dir / f"llama-results{exe}"
+
+    effective_build_env = _hip_env(hip_path) if build_env is None else dict(build_env)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / control_name, source_root=control_src,
+        architecture=amdgpu_targets, binary=control_binary,
+        requested_cmake_args=cmake_args, build_env=effective_build_env,
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        correctness_build_root / subject_name, source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_binary,
+        requested_cmake_args=cmake_args, build_env=effective_build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id=subject_patch,
+    )
+
+    runtime_env = _hip_env(hip_path)
+    runtime_env.update(selector_env or {})
+    runtime_env.pop("ROCR_VISIBLE_DEVICES", None)
+
+    runner = _runner or subprocess.run
+
+    scratch_dir = run_dir / "scratch" / "rd26-bit-identity"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+
+    created_outputs: list[Path] = []
+
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _first_diff_offset(left: Path, right: Path) -> int | None:
+        offset = 0
+        with left.open("rb") as lhs, right.open("rb") as rhs:
+            while True:
+                lchunk = lhs.read(1024 * 1024)
+                rchunk = rhs.read(1024 * 1024)
+                if lchunk == rchunk:
+                    if not lchunk:
+                        return None
+                    offset += len(lchunk)
+                    continue
+                limit = min(len(lchunk), len(rchunk))
+                for index in range(limit):
+                    if lchunk[index] != rchunk[index]:
+                        return offset + index
+                return offset + limit
+
+    def _run_one(*, arm: str, binary: Path, mode: str, ubatch_size: int, replicate: int) -> dict[str, object]:
+        output = scratch_dir / f"{arm}-{mode}-rep{replicate}.gguf"
+        created_outputs.append(output)
+
+        argv = [
+            str(binary), "--model", str(model), "--output", str(output),
+            "--prompt", prompt, "--ctx-size", str(ctx_size),
+            "--batch-size", str(ctx_size), "--ubatch-size", str(ubatch_size),
+            "-ngl", "99",
+        ]
+        completed = runner(
+            argv, cwd=run_dir, env=runtime_env, capture_output=True, text=True,
+            timeout=timeout_s, check=False,
+        )
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or "").strip()
+            detail = stderr or stdout or "<no output>"
+            raise PatchCampaignError(
+                f"rd26 bit identity: {arm}/{mode}/rep{replicate} llama-results failed "
+                f"with exit {completed.returncode}: {detail}"
+            )
+        if not output.is_file():
+            raise PatchCampaignError(
+                f"rd26 bit identity: {arm}/{mode}/rep{replicate} llama-results did not "
+                "create its GGUF output"
+            )
+
+        size = output.stat().st_size
+        with output.open("rb") as handle:
+            magic = handle.read(4)
+        if size <= 4 or magic != b"GGUF":
+            raise PatchCampaignError(
+                f"rd26 bit identity: {arm}/{mode}/rep{replicate} produced a malformed "
+                "llama-results artifact"
+            )
+
+        return {"path": output, "size": size, "sha256": _sha256_file(output)}
+
+    try:
+        runs: dict[str, dict[str, list[dict[str, object]]]] = {
+            "control": {"decode": [], "verify": []},
+            "subject": {"decode": [], "verify": []},
+        }
+        binaries = {"control": control_binary, "subject": subject_binary}
+        widths = {"decode": 1, "verify": verify_width}
+
+        # Alternate ordering between replicate pairs. Exact equality should
+        # not depend on thermal state, but this avoids systematically
+        # attaching any process-order effect to one configuration.
+        for arm in ("control", "subject"):
+            for replicate in range(replicates):
+                mode_order = ("decode", "verify") if replicate % 2 == 0 else ("verify", "decode")
+                for mode in mode_order:
+                    runs[arm][mode].append(_run_one(
+                        arm=arm, binary=binaries[arm], mode=mode,
+                        ubatch_size=widths[mode], replicate=replicate,
+                    ))
+
+        # Cross-configuration divergence is attributable only if each
+        # individual configuration repeats exactly by itself.
+        for arm in ("control", "subject"):
+            for mode in ("decode", "verify"):
+                records = runs[arm][mode]
+                sizes = {int(record["size"]) for record in records}
+                digests = {str(record["sha256"]) for record in records}
+                if len(sizes) != 1 or len(digests) != 1:
+                    raise PatchCampaignError(
+                        f"rd26 bit identity: {arm}/{mode} is not repeatable across "
+                        f"{replicates} identical process runs"
+                    )
+
+        arm_comparison: dict[str, dict[str, object]] = {}
+        for arm in ("control", "subject"):
+            decode = runs[arm]["decode"][0]
+            verify = runs[arm]["verify"][0]
+
+            if decode["size"] != verify["size"]:
+                raise PatchCampaignError(
+                    f"rd26 bit identity: {arm} decode/verify llama-results artifacts have "
+                    f"different sizes ({decode['size']} != {verify['size']}); model/prompt "
+                    "output shape changed, so byte comparison is not a valid raw-logit "
+                    "identity test"
+                )
+
+            identical = decode["sha256"] == verify["sha256"]
+            first_diff = None if identical else _first_diff_offset(
+                Path(decode["path"]), Path(verify["path"]),
+            )
+
+            arm_comparison[arm] = {
+                "bit_identical": identical,
+                "decode_sha256": decode["sha256"], "verify_sha256": verify["sha256"],
+                "decode_repeat_sha256": [record["sha256"] for record in runs[arm]["decode"]],
+                "verify_repeat_sha256": [record["sha256"] for record in runs[arm]["verify"]],
+                "artifact_size": decode["size"], "first_file_byte_mismatch": first_diff,
+            }
+
+        subject_identical = bool(arm_comparison["subject"]["bit_identical"])
+        control_diverged = not bool(arm_comparison["control"]["bit_identical"])
+
+        # Fail closed if the subject happens to be identical but the
+        # control is also identical. That would establish the invariant
+        # for this sample, but would not establish RD26's fixing effect.
+        passed = subject_identical and control_diverged
+
+        if not subject_identical:
+            detail = (
+                "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch="
+                f"{arm_comparison['subject']['first_file_byte_mismatch']}"
+            )
+        elif not control_diverged:
+            detail = (
+                "subject decode/verify raw logits are bit-identical, but control is also "
+                "bit-identical; RD26 fixing effect was not triggered and the result is "
+                "non-authoritative"
+            )
+        else:
+            detail = (
+                f"subject decode (n_q=1) and verify-shaped (n_q={verify_width}) raw F32 "
+                "logits are bit-identical; control diverges, proving a non-vacuous RD26 "
+                "fixing effect"
+            )
+
+        correctness_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=passed, detail=detail,
+        )
+
+        comparison = {
+            "method": "llama-results-raw-f32-gguf-cross-ubatch-byte-identity",
+            "oracle": "llama_get_logits_ith raw F32 rows",
+            "decode_ubatch": 1, "verify_ubatch": verify_width,
+            "spec_draft_n_max": spec_draft_n_max, "replicates": replicates,
+            "subject_bit_identical": subject_identical, "control_diverged": control_diverged,
+            "arms": arm_comparison,
+        }
+        artifact_doc = {
+            "schema_version": 1,
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "check": correctness_result.check, "passed": correctness_result.passed,
+            "detail": correctness_result.detail,
+            "base_revision": base_revision, "architecture": amdgpu_targets,
+            "model": str(model), "prompt": prompt,
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "ctx_size": ctx_size, "subject_patch": subject_patch,
+            "comparison": comparison,
+            "control_source_tree": psi.git_worktree_tree(control_src),
+            "subject_source_tree": psi.git_worktree_tree(subject_src),
+            "control_build_identity": control_build_evidence.campaign_identity(),
+            "subject_build_identity": subject_build_evidence.campaign_identity(),
+        }
+        artifact_ref = _write_bound_artifact(
+            run_dir, "rd26-decode-verify-bit-identity.json", artifact_doc,
+        )
+        _print(
+            f"rd26 bit_identical: {'PASS' if passed else 'FAIL'} -- {artifact_ref['path']}"
+        )
+        return {
+            "results": {"bit_identical": correctness_result},
+            "artifact": artifact_ref,
+            "comparison": comparison,
+            "subject_build_identity": subject_build_evidence.campaign_identity(),
+            "control_build_identity": control_build_evidence.campaign_identity(),
+        }
+    finally:
+        for path in created_outputs:
+            path.unlink(missing_ok=True)
+        try:
+            scratch_dir.rmdir()
+            scratch_dir.parent.rmdir()
+        except OSError:
+            pass
+
+
 def run_rd08_contract_trigger(
     *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
     hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
