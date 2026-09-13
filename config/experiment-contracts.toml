@@ -881,3 +881,48 @@ max_ci95_width_pct = 1.0
 metric = "graph_cache_entries"
 unit = "count"
 max_value = 800
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID]
+title = "RD30: compact the MoE MMQ launch grid (AMD-MOE-001)"
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["f8864197a4e2"]
+atomic_part = "1237_rd30_moe_mmq_compact_grid"
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.target]
+kind = "launch_configuration"
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Replaces upstream's rectangular MoE MMQ launch grid dim3(nty, ntx, ntzw) with a compact grid dim3(nty, max_m_blocks, 1) built from a prep kernel that turns expert_bounds[] into a prefix-sum block_start[]/block_expert[] map, avoiding launching blocks for tile columns no routed token actually occupies. This is a pure launch-configuration/scheduling change -- unlike RD13's graph-fusion rewrite, it does not alter accumulation order or arithmetic, so bit-identical output (not backend_reference/ppl_equality) is the correct correctness bar. Gated to nsamples_y==1 and cc==GGML_CUDA_CC_RDNA3 exactly (gfx1100 only); falls back to the exact legacy grid whenever the compact map would exceed grid.y or the prep kernel's shared-memory budget."
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.positive]
+# Real n_expert=256 MoE model, matching this patch's own documented
+# real-hardware evidence (README.md's rocprofv3 capture and A/B were both
+# against Qwen3.6-35B-A3B) -- the only registered model whose expert count
+# is large enough to meaningfully exercise the compact-grid path's real
+# benefit (avoided blocks scale with n_experts - occupied_experts).
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["prefill"]
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.controls]
+# A dense model never enters ggml_cuda_mul_mat_id's MoE launch-grid path at
+# all, so it is a true negative control for this patch's activation marker,
+# the same role tierM-gptoss20b-q6k plays for RD13.
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.correctness]
+bit_identical = "required"
+
+[contract.RD30-MOE-MMQ-COMPACT-GRID.acceptance]
+target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
