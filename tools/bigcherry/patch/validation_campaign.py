@@ -2074,6 +2074,145 @@ def run_rd30_correctness_check(
     }
 
 
+def run_rd05_contract_correctness(
+    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
+    build_root: Path, model: Path, corpus: Path, run_dir: Path,
+    _source_module: object | None = None,
+) -> dict[str, object]:
+    """RD05's real backend_reference correctness producer, orchestrated.
+
+    RD05-WMMA-FA-CORRECTNESS-BARRIERS.scope restricts this to gfx1201.
+    Patch 1203 bundles RD05 (a head-256 WMMA flash-attn combine race + a
+    tile_Q reuse race fix, correctness only) with RD06 (RDNA4 WMMA config,
+    a real performance change) and RD07 (Q6_K MMQ fold, also a real
+    performance change) as ONE atomic patch.py -- there is no way to
+    isolate "RD05 present, RD06/RD07 absent" via source composition alone.
+    bit_identical is therefore the WRONG bar (RD06/RD07 are expected to
+    change numerics at the margin); backend_reference (this project's
+    ppl_equality-derived sigma-vs-threshold bar, same technique RD13's
+    original producer used) is the right one -- RD05's own claim is that
+    the race fix does not corrupt output, not that the bundled patch is a
+    no-op. Reuses tools/bigcherry/experiment/perplexity.py, this being a
+    second real caller for a correctness-only RD-series contract. Real
+    ad-hoc evidence for this exact comparison already exists (this
+    session's manual PPL run: BC-baseline 10.4463 vs BC+1203 10.3938,
+    sigma=1.35, PASS -- see patches/1203_.../README.md's "Real hardware
+    evidence" section); this producer wires the same comparison into the
+    standard Experiment Contract pipeline rather than reproducing it ad hoc.
+    """
+    from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.experiment import perplexity
+    from bigcherry.patch import source as real_source
+
+    if amdgpu_targets.strip() != "gfx1201":
+        raise PatchCampaignError(
+            "rd05 correctness: RD05-WMMA-FA-CORRECTNESS-BARRIERS is scoped to "
+            "a single gfx1201 build"
+        )
+
+    psi = _source_module or real_source
+
+    control_revision, control_composition = psi.resolve_source_composition(
+        "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        "bigcherry", focal="1203_rd050607_rdna4_wmma_fa_q6k_mmq",
+        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise PatchCampaignError("rd05 correctness: control and subject resolved different base revisions")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=control_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+    subject_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=subject_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    ppl_build_root = build_root / "rd05-correctness"
+    subject_name = f"rd05-correctness-subject-{amdgpu_targets}"
+    control_name = f"rd05-correctness-control-{amdgpu_targets}"
+    subject_bin = build_tree(
+        name=subject_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
+        extra_cmake_args=[],
+    )
+    control_bin = build_tree(
+        name=control_name, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
+        extra_cmake_args=[],
+    )
+    build_env = _hip_env(hip_path)
+    cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    subject_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / subject_name, source_root=subject_src,
+        architecture=amdgpu_targets, binary=subject_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        ppl_build_root / control_name, source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"llama-perplexity{exe}",
+        requested_cmake_args=cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, subject_build_evidence, patch_id="1203_rd050607_rdna4_wmma_fa_q6k_mmq",
+    )
+
+    def _ppl_runner(argv, **kwargs):
+        env = {**os.environ, **(kwargs.pop("env", None) or {})}
+        return subprocess.run(argv, env=env, **kwargs)
+
+    try:
+        subject_run = perplexity.run_perplexity(
+            subject_bin / f"llama-perplexity{exe}", model=model, corpus=corpus, runner=_ppl_runner,
+        )
+        control_run = perplexity.run_perplexity(
+            control_bin / f"llama-perplexity{exe}", model=model, corpus=corpus, runner=_ppl_runner,
+        )
+    except perplexity.PerplexityError as exc:
+        comparison = None
+        backend_reference_result = experiment_contract.CorrectnessResult(
+            check="backend_reference", passed=False,
+            detail=f"could not produce a real perplexity run: {exc}",
+        )
+    else:
+        comparison = perplexity.PerplexityComparison(subject=subject_run, control=control_run)
+        backend_reference_result = experiment_contract.CorrectnessResult(
+            check="backend_reference", passed=comparison.ok,
+            detail=(
+                f"real perplexity backend-reference comparison: sigma={comparison.sigma:.4f} "
+                f"vs threshold max_sigma={comparison.max_sigma} "
+                f"(subject={comparison.subject.ppl:.4f}, control={comparison.control.ppl:.4f}, "
+                f"delta={comparison.delta:.5f})"
+            ),
+        )
+
+    doc = {
+        "backend_reference": {
+            "passed": backend_reference_result.passed, "detail": backend_reference_result.detail,
+        },
+        "subject_source_tree": psi.git_worktree_tree(subject_src),
+        "control_source_tree": psi.git_worktree_tree(control_src),
+        "subject_build_identity": subject_build_evidence.campaign_identity(),
+        "control_build_identity": control_build_evidence.campaign_identity(),
+        "comparison": perplexity.comparison_to_dict(comparison) if comparison else None,
+    }
+    artifact_ref = _write_bound_artifact(run_dir, "rd05-correctness.json", doc)
+    _print(
+        f"rd05 backend_reference: {'PASS' if backend_reference_result.passed else 'FAIL'} -- {artifact_ref['path']}"
+    )
+    return {
+        "results": {"backend_reference": backend_reference_result},
+        "artifact": artifact_ref,
+    }
+
+
 def _load_rd43_correctness_module() -> object:
     """Dynamically load the real RD43 correctness producer (patches/
     1216_rd43_concurrent_join_fusion_guard/validation/rd43_correctness.py)."""
