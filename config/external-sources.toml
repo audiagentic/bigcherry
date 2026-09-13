@@ -215,9 +215,9 @@ note = "SKIPPED this pass (2026-08-20): not self-contained -- changes ggml_ssm_c
 commit = "2b9497ff2ea22e5e94aa275b48efaf1dc10f57f2"
 title = "CUDA: fused chunked gated_delta_net kernel (RDNA3.5)"
 plan-item = "RD50"
-status = "ported-untested"
+status = "deferred-hardware"
 patch = "1221_rd50_gdn_chunked_recurrence"
-note = "ported 2026-08-20 (2 edits, 1 file, new-file content folded into gated_delta_net.cu -- patcher has no new-file primitive). RD51 (DPP row-shift reduction), RD52 (native exp2 decay) and RD53 (launch-bounds/VGPR occupancy tuning) are all the SAME commit (2b9497ff) as this row -- inline, RDNA3.5-gated micro-decisions inside the single kernel body, not independently anchorable hunks. Subsumed into this one patch rather than filed as separate tracked rows (the registry's commit-uniqueness constraint forbids duplicating this SHA); see the patch module docstring for the bake-in rationale, same discipline as 1208's RD25 bake-in. Isolated bench pending; gfx1100/gfx1201 (Brutus) can only validate the fallback path is untouched, not the RDNA3.5 performance claim."
+note = "ported 2026-08-20 (2 edits, 1 file, new-file content folded into gated_delta_net.cu -- patcher has no new-file primitive). RD51 (DPP row-shift reduction), RD52 (native exp2 decay) and RD53 (launch-bounds/VGPR occupancy tuning) are all the SAME commit (2b9497ff) as this row -- inline, RDNA3.5-gated micro-decisions inside the single kernel body, not independently anchorable hunks. Subsumed into this one patch rather than filed as separate tracked rows (the registry's commit-uniqueness constraint forbids duplicating this SHA); see the patch module docstring for the bake-in rationale, same discipline as 1208's RD25 bake-in. Isolated bench pending; gfx1100/gfx1201 (Brutus) can only validate the fallback path is untouched, not the RDNA3.5 performance claim. Status corrected 2026-09-13 from ported-untested to deferred-hardware (was tracked-status mismatch vs RD21/RD44's same real gfx1151-hardware-unavailability blocker -- this project's own lifecycle rules reserve deferred-hardware exactly for this case; gfx1151/RDNA3.5 work is explicitly parked pending real hardware access, per user instruction)."
 
 [[sources.tracked]]
 commit = "f8864197a4e2d07321bfb85466e3ba071e020aa9"
