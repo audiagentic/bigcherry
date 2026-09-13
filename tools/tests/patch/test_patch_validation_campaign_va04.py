@@ -200,7 +200,12 @@ class Rd04CliWiringTests(unittest.TestCase):
 
     def test_mutually_exclusive_with_rd08_modes(self) -> None:
         self.assertIn("--run-rd04-benchmark is mutually exclusive with the", self.source)
-        self.assertIn("if args.run_rd08_lanes or args.run_rd08_contract:", self.source)
+        block_start = self.source.index("if args.run_rd04_benchmark:")
+        block = self.source[block_start:block_start + 400]
+        self.assertIn("args.run_rd08_lanes", block)
+        self.assertIn("args.run_rd08_contract", block)
+        self.assertIn("args.run_rd13_contract", block)
+        self.assertIn("args.run_rd26_contract", block)
 
     def test_rd04_only_gating(self) -> None:
         self.assertIn('descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE"', self.source)

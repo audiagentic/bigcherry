@@ -1650,6 +1650,10 @@ def run_rd13_backend_reference_check(
         "comparison": comparison,
         "subject_build_identity": subject_build_evidence.campaign_identity(),
         "control_build_identity": control_build_evidence.campaign_identity(),
+        "validation_build_identities": {
+            "control": doc["control_build_identity"],
+            "subject": doc["subject_build_identity"],
+        },
     }
 
 
@@ -3731,6 +3735,10 @@ def run_rd26_decode_verify_bit_identity_check(
             "comparison": comparison,
             "subject_build_identity": subject_build_evidence.campaign_identity(),
             "control_build_identity": control_build_evidence.campaign_identity(),
+            "validation_build_identities": {
+                "control": artifact_doc["control_build_identity"],
+                "subject": artifact_doc["subject_build_identity"],
+            },
         }
     finally:
         for path in created_outputs:
@@ -5810,7 +5818,7 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
         "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-        "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract",
+        "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
         "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
@@ -7341,7 +7349,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract or args.run_rd04_contract):
+    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract or args.run_rd04_contract or args.run_rd13_contract or args.run_rd26_contract):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -7396,6 +7404,18 @@ def run(args: argparse.Namespace) -> int:
         raise PatchCampaignError(
             f"{args.patch}: --correctness-evidence and --run-rd04-contract are ambiguous "
             "together -- --run-rd04-contract already produces its own authoritative "
+            "correctness.json"
+        )
+    if args.correctness_evidence is not None and args.run_rd13_contract:
+        raise PatchCampaignError(
+            f"{args.patch}: --correctness-evidence and --run-rd13-contract are ambiguous "
+            "together -- --run-rd13-contract already produces its own authoritative "
+            "correctness.json"
+        )
+    if args.correctness_evidence is not None and args.run_rd26_contract:
+        raise PatchCampaignError(
+            f"{args.patch}: --correctness-evidence and --run-rd26-contract are ambiguous "
+            "together -- --run-rd26-contract already produces its own authoritative "
             "correctness.json"
         )
     if args.correctness_evidence is not None:
@@ -7474,6 +7494,13 @@ def run(args: argparse.Namespace) -> int:
         raise PatchCampaignError(
             f"{args.patch}: --run-rd08-contract already runs the lanes -- "
             "do not also pass --run-rd08-lanes"
+        )
+    if (args.run_rd08_lanes or args.run_rd08_contract) and (
+        args.run_rd13_contract or args.run_rd26_contract
+    ):
+        raise PatchCampaignError(
+            f"{args.patch}: RD08 execution modes are mutually exclusive with "
+            "--run-rd13-contract/--run-rd26-contract"
         )
     rd08_lane_evidence: dict[str, object] | None = None
     rd08_qualification: dict[str, object] | None = None
@@ -7630,10 +7657,15 @@ def run(args: argparse.Namespace) -> int:
     # command produces truthful ported-benched-level evidence, never a
     # pretend contract-promotion PASS.
     if args.run_rd04_benchmark:
-        if args.run_rd08_lanes or args.run_rd08_contract:
+        if (
+            args.run_rd08_lanes
+            or args.run_rd08_contract
+            or args.run_rd13_contract
+            or args.run_rd26_contract
+        ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd04-benchmark is mutually exclusive with the "
-                "RD08 execution modes"
+                "other specialized evidence-producer modes"
             )
         if descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE":
             raise PatchCampaignError(
@@ -7662,10 +7694,16 @@ def run(args: argparse.Namespace) -> int:
     # contract_promotions stays empty -- eligible_for_validated_state
     # remains False even on a full PASS.
     if args.run_rd58_state_restore:
-        if args.run_rd04_benchmark or args.run_rd08_lanes or args.run_rd08_contract:
+        if (
+            args.run_rd04_benchmark
+            or args.run_rd08_lanes
+            or args.run_rd08_contract
+            or args.run_rd13_contract
+            or args.run_rd26_contract
+        ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd58-state-restore is mutually exclusive with the "
-                "RD04/RD08 execution modes"
+                "other specialized evidence-producer modes"
             )
         if descriptor.experiment_contract != "RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE":
             raise PatchCampaignError(
@@ -7933,10 +7971,17 @@ def run(args: argparse.Namespace) -> int:
     # verdict is produced and printed here as before.
     rd73_qualification: dict[str, object] | None = None
     if args.run_rd73_contract:
-        if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore:
+        if (
+            args.run_rd08_lanes
+            or args.run_rd08_contract
+            or args.run_rd04_benchmark
+            or args.run_rd58_state_restore
+            or args.run_rd13_contract
+            or args.run_rd26_contract
+        ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
-                "RD04/RD08/RD58 execution modes"
+                "other specialized evidence-producer modes"
             )
         if descriptor.experiment_contract != "RD73-STABLE-GRAPH-CACHE-KEY":
             raise PatchCampaignError(
@@ -8063,7 +8108,16 @@ def run(args: argparse.Namespace) -> int:
     # declared performance/controls claims from a correctness-only run).
     rd12_qualification: dict[str, object] | None = None
     if args.run_rd12_contract:
-        if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract:
+        if (
+            args.run_rd08_lanes
+            or args.run_rd08_contract
+            or args.run_rd04_benchmark
+            or args.run_rd58_state_restore
+            or args.run_rd73_contract
+            or args.run_rd04_contract
+            or args.run_rd13_contract
+            or args.run_rd26_contract
+        ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd12-contract is mutually exclusive with the "
                 "other specialized evidence-producer modes"
@@ -8147,7 +8201,16 @@ def run(args: argparse.Namespace) -> int:
     # validation.toml/README "Known limitations").
     rd04_qualification: dict[str, object] | None = None
     if args.run_rd04_contract:
-        if args.run_rd08_lanes or args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract:
+        if (
+            args.run_rd08_lanes
+            or args.run_rd08_contract
+            or args.run_rd04_benchmark
+            or args.run_rd58_state_restore
+            or args.run_rd73_contract
+            or args.run_rd12_contract
+            or args.run_rd13_contract
+            or args.run_rd26_contract
+        ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd04-contract is mutually exclusive with the "
                 "other specialized evidence-producer modes"
@@ -8210,6 +8273,106 @@ def run(args: argparse.Namespace) -> int:
         _print(f"rd04 correctness: {rd04_qualification['artifact']['path']}")
         _print(
             f"rd04 backend_reference+ppl_equality: {'PASS' if rd04_all_passed else 'FAIL'}"
+        )
+
+    # RD13 contract-grade backend_reference correctness producer.
+    # Correctness evidence only: performance/controls promotion remains
+    # independent. Activation is deliberately NOT rebound here: RD13's real
+    # BIGCHERRY_PATCH_TRACE marker is handled by the generic trace probe
+    # above (not skipped for RD13 -- its GGML_CUDA_DISABLE_FUSION negative
+    # control remains valid and should still run).
+    rd13_qualification: dict[str, object] | None = None
+    if args.run_rd13_contract:
+        if args.run_rd26_contract:
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd13-contract is mutually exclusive with "
+                "--run-rd26-contract"
+            )
+        if descriptor.experiment_contract != "RD13-MUL-MAT-ADD-VIEW-FUSION":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd13-contract is RD13-only today"
+            )
+
+        rd13_qualification = run_rd13_backend_reference_check(
+            base_revision=base_revision, hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            worktree_root=worktree_root / "rd13-correctness", build_root=build_root,
+            model=args.model, run_dir=campaign_run_dir,
+        )
+        rd13_backend_reference_result = rd13_qualification["results"]["backend_reference"]
+
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": "passed" if rd13_backend_reference_result.passed else "failed",
+            "mechanism": "rd13-full-vocab-backend-reference",
+            "detail": rd13_backend_reference_result.detail,
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
+
+        _print(f"rd13 correctness: {rd13_qualification['artifact']['path']}")
+        _print(
+            "rd13 backend_reference: "
+            + ("PASS" if rd13_backend_reference_result.passed else "FAIL")
+        )
+
+    # RD26 contract-grade decode-vs-verify bit-identity producer.
+    # Correctness evidence only: its separately-required controls lane is
+    # not qualified here and contract_promotions remains untouched.
+    rd26_qualification: dict[str, object] | None = None
+    if args.run_rd26_contract:
+        if descriptor.experiment_contract != "RD26-DECODE-VERIFY-BIT-IDENTITY":
+            raise PatchCampaignError(
+                f"{args.patch}: --run-rd26-contract is RD26-only today"
+            )
+
+        rd26_qualification = run_rd26_decode_verify_bit_identity_check(
+            base_revision=base_revision, hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            worktree_root=worktree_root / "rd26-correctness", build_root=build_root,
+            model=args.model, run_dir=campaign_run_dir, build_env=build_env,
+        )
+        rd26_bit_identical_result = rd26_qualification["results"]["bit_identical"]
+
+        correctness_summary = {
+            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+            "patch_id": args.patch,
+            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+                _patch_file
+            ),
+            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "gpu_architectures": [args.amdgpu_targets],
+            "disposition": "passed" if rd26_bit_identical_result.passed else "failed",
+            "mechanism": "rd26-decode-verify-bit-identity",
+            "detail": rd26_bit_identical_result.detail,
+        }
+        correctness_path = campaign_run_dir / "correctness.json"
+        _atomic_write_json(correctness_path, correctness_summary)
+        correctness_evidence = {
+            "artifact": {
+                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+            }
+        }
+
+        _print(f"rd26 correctness: {rd26_qualification['artifact']['path']}")
+        _print(
+            "rd26 bit_identical: "
+            + ("PASS" if rd26_bit_identical_result.passed else "FAIL")
         )
 
     validation_check_results: dict[str, object] = {}
@@ -8281,6 +8444,12 @@ def run(args: argparse.Namespace) -> int:
         rd04_correctness_named_results = (
             rd04_qualification["results"] if rd04_qualification is not None else None
         )
+        rd13_correctness_named_results = (
+            rd13_qualification["results"] if rd13_qualification is not None else None
+        )
+        rd26_correctness_named_results = (
+            rd26_qualification["results"] if rd26_qualification is not None else None
+        )
         # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
         # test-save-load-state evidence produces a named
         # state_restore_integrity CorrectnessResult -- thread it through
@@ -8301,6 +8470,10 @@ def run(args: argparse.Namespace) -> int:
                 else rd12_correctness_named_results
                 if rd12_qualification is not None
                 else rd04_correctness_named_results
+                if rd04_qualification is not None
+                else rd13_correctness_named_results
+                if rd13_qualification is not None
+                else rd26_correctness_named_results
             ),
         )
         validation_check_results = {
@@ -8365,6 +8538,10 @@ def run(args: argparse.Namespace) -> int:
             # falling through to the generic identities below was wrong.
             else rd04_qualification["validation_build_identities"]
             if rd04_qualification is not None
+            else rd13_qualification["validation_build_identities"]
+            if rd13_qualification is not None
+            else rd26_qualification["validation_build_identities"]
+            if rd26_qualification is not None
             else {
                 "control": control_build_evidence.campaign_identity(),
                 "subject": validation_subject_build_evidence.campaign_identity(),
@@ -8538,6 +8715,24 @@ def main(argv: list[str] | None = None) -> int:
              "perplexity comparison.",
     )
     parser.add_argument(
+        "--run-rd13-contract", action="store_true", default=False,
+        help="RD13's real contract-grade backend_reference correctness producer "
+             "(run_rd13_backend_reference_check()) -- binds current-pin correctness "
+             "evidence into the tracked record. The normal trace-marker machinery "
+             "continues to evaluate RD13 activation independently. Does NOT populate "
+             "contract_promotions or qualify performance/controls. RD13-only; mutually "
+             "exclusive with the other specialized evidence modes.",
+    )
+    parser.add_argument(
+        "--run-rd26-contract", action="store_true", default=False,
+        help="RD26's real decode-vs-verify bit_identical correctness producer "
+             "(run_rd26_decode_verify_bit_identity_check()) -- binds current-pin "
+             "correctness evidence into the tracked record. Does NOT populate "
+             "contract_promotions or qualify RD26's separately-required controls "
+             "lane. RD26-only; mutually exclusive with the other specialized "
+             "evidence modes.",
+    )
+    parser.add_argument(
         "--rd73-corpus", type=Path, default=None,
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
              "(bench/server_completion.py's load_corpus() format).",
@@ -8588,7 +8783,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
             "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-            "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract",
+            "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)

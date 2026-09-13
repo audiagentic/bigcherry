@@ -268,6 +268,8 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/rd04-correctness-gfx1100.json",
         "artifacts/rd04-correctness-gfx1201.json",
         "artifacts/rd04-correctness-gfx1030.json",
+        "artifacts/rd13-backend-reference.json",
+        "artifacts/rd26-decode-verify-bit-identity.json",
     )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 

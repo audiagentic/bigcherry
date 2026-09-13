@@ -39,12 +39,14 @@ class Rd04ContractCliTests(unittest.TestCase):
             "validation_check_results: dict[str, object] = {}"
         )]
         self.assertIn("run-rd04-contract is mutually exclusive with the", block)
-        self.assertIn(
-            "if args.run_rd08_lanes or args.run_rd08_contract or "
-            "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd12_contract:",
-            block,
-        )
+        self.assertIn("args.run_rd08_lanes", block)
+        self.assertIn("args.run_rd08_contract", block)
+        self.assertIn("args.run_rd04_benchmark", block)
+        self.assertIn("args.run_rd58_state_restore", block)
+        self.assertIn("args.run_rd73_contract", block)
+        self.assertIn("args.run_rd12_contract", block)
+        self.assertIn("args.run_rd13_contract", block)
+        self.assertIn("args.run_rd26_contract", block)
         # Same class of bug caught twice already this session: the
         # mutual-exclusion condition must never reference itself.
         self.assertNotIn("args.run_rd04_contract:\n            raise", block)
@@ -107,7 +109,8 @@ class Rd04ContractCliTests(unittest.TestCase):
         self.assertIn(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract):",
+            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )
         self.assertIn(
