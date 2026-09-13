@@ -26,8 +26,13 @@ class RD12PackageMigrationTests(unittest.TestCase):
         plan = patch_validation.build_plan_for_patch(descriptor, root=root)
         self.assertIsNotNone(plan)
         assert plan is not None
+        # PA38: RD12 is now contract-bound (RD12-PAIRED-MMVQ-DUAL,
+        # expected_effect="both"), requiring performance/controls/
+        # correctness checks in addition to the trace-marker activation
+        # check this migration originally covered.
         self.assertEqual(
-            {check.validator for check in plan.checks}, {"apply", "build", "trace-marker"}
+            {check.validator for check in plan.checks},
+            {"apply", "build", "trace-marker", "benchmark", "correctness-summary"},
         )
         self.assertNotIn("1205_rd12_paired_mmvq_dual_output.py", {p.name for p in root.glob("*.py")})
 

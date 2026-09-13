@@ -18,3 +18,31 @@ capability = "activation"
 validator = "trace-marker"
 required = true
 marker-regex = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion"
+
+# PA38: RD12-PAIRED-MMVQ-DUAL's correctness obligation is bit_identical,
+# not backend_reference -- correctness-summary is mechanism-agnostic (it
+# only consumes a bound patch-level correctness.json's disposition field)
+# and is the right shape for run_rd12_correctness_check()'s real
+# bit-identical VDR1-vs-fused producer. Declared honestly; stays BLOCKED
+# until the --run-rd12-contract evidence-binding CLI wiring (PA39) lands.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# expected_effect = "both" in config/experiment-contracts.toml requires
+# both performance and controls capability producers (bind_contract()'s
+# derivation rule) in addition to the activation this patch already had.
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
