@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from ..core.canonical import domain_blake2b_128
 from ..core.context import ProjectContext
 
 
@@ -31,12 +32,7 @@ def _canonical(value: object) -> object:
 
 
 def _digest(domain: str, value: object) -> str:
-    encoded = json.dumps(
-        _canonical(value), sort_keys=True, separators=(",", ":")
-    ).encode()
-    return hashlib.blake2b(
-        domain.encode() + b"\0" + encoded, digest_size=16
-    ).hexdigest()
+    return domain_blake2b_128(domain, _canonical(value))
 
 
 @dataclass(frozen=True)
