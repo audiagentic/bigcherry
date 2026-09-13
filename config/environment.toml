@@ -62,26 +62,36 @@ bench-port = 18400
 
 # Device inventory. Index is the HIP/ROCR visible-devices ordinal, which is
 # what --devices and *_VISIBLE_DEVICES take.
+# locator: real PCI BDF (bus:device.function), verified 2026-09-13 via
+# `rocm-smi --showbus`/`--showproductname` on the real host -- required by
+# bigcherry.experiment.attestation.parse_llama_server_attestation() to
+# positively confirm which physical device ran a llama-server-based
+# measurement (PRBE111). Never invent this value; a wrong locator would
+# let attestation silently confirm the wrong physical card.
 [[host.build-server.devices]]
 index = 0
 arch = "gfx1100"
 model = "RX 7900 XTX"
 vram-mib = 24560
+locator = "0000:03:00.0"
 
 [[host.build-server.devices]]
 index = 1
 arch = "gfx1100"
 model = "RX 7900 XTX"
 vram-mib = 24560
+locator = "0000:06:00.0"
 
 [[host.build-server.devices]]
 index = 2
 arch = "gfx1201"
 model = "AI PRO R9700"
 vram-mib = 32624
+locator = "0000:09:00.0"
 
 [[host.build-server.devices]]
 index = 3
 arch = "gfx1030"
 model = "RX 6900 XT"
 vram-mib = 16368
+locator = "0000:17:00.0"

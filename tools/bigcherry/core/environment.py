@@ -17,6 +17,7 @@ Merging them would make every consumer of one depend on the other.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,9 @@ def gpu_visibility_pair(indices: tuple[int, ...]) -> dict[str, str]:
     }
 
 
+_PCI_LOCATOR_PATTERN = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]$")
+
+
 @dataclass(frozen=True)
 class Device:
     """One GPU, as the runtime addresses it.
@@ -55,12 +59,26 @@ class Device:
     PCI id. ``vram_mib`` matters because the SMALLEST participating card
     constrains any cross-architecture comparison: changing model or KV
     quantisation per card changes the work being measured.
+
+    ``locator`` (PRBE111, 2026-09-13) is the real PCI BDF (bus:device.function,
+    canonical lowercase form e.g. "0000:03:00.0", verified via ``rocm-smi
+    --showbus`` -- never invented) this physical device occupies. A
+    llama-server log reports a device's marketing name and BDF but never its
+    gfx ISA, so `bigcherry.experiment.attestation.parse_llama_server_
+    attestation()` requires a real, host-configured BDF->arch mapping to
+    positively confirm which physical card actually ran a measurement --
+    this field is that mapping's source of truth. Optional (``None`` when
+    not yet verified for a given index) because populating it with a guessed
+    value would let attestation silently confirm the wrong physical device,
+    which is worse than the honest fail-closed ARCH_MISMATCH it prevents by
+    staying absent.
     """
 
     index: int
     arch: str
     model: str
     vram_mib: int
+    locator: str | None = None
 
 
 @dataclass(frozen=True)
@@ -156,17 +174,33 @@ def load(path: str | Path) -> Environment:
         devices = []
         for entry in body.get("devices") or ():
             dwhere = f"{where}.devices"
+            locator_raw = entry.get("locator")
+            locator = None
+            if locator_raw is not None:
+                locator = str(locator_raw).lower()
+                if not _PCI_LOCATOR_PATTERN.match(locator):
+                    raise EnvironmentError_(
+                        f"{dwhere}: locator {locator_raw!r} is not a canonical lowercase "
+                        "PCI BDF (expected dddd:dd:dd.d)"
+                    )
             devices.append(Device(
                 index=int(_require(entry, "index", dwhere)),
                 arch=str(_require(entry, "arch", dwhere)),
                 model=str(entry.get("model", "")),
                 vram_mib=int(entry.get("vram-mib", 0)),
+                locator=locator,
             ))
         # Device ordinals are how every caller addresses a GPU, so a duplicate
         # would silently make one of them unreachable.
         seen = [d.index for d in devices]
         if len(seen) != len(set(seen)):
             raise EnvironmentError_(f"{where}: duplicate device index in {seen}")
+        # PRBE111: a duplicate locator would mean two configured devices
+        # claim the same physical PCI slot -- attestation would then accept
+        # either as "the" device at that BDF, silently confusing them.
+        seen_locators = [d.locator for d in devices if d.locator is not None]
+        if len(seen_locators) != len(set(seen_locators)):
+            raise EnvironmentError_(f"{where}: duplicate device locator in {seen_locators}")
         hosts[name] = Host(
             name=name,
             description=str(body.get("description", "")).strip(),

@@ -59,6 +59,20 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(idx, sorted(idx))
         self.assertEqual(len(idx), len(set(idx)))
 
+    def test_devices_have_real_verified_pci_locators(self):
+        # PRBE111: every real Brutus device's PCI BDF was independently
+        # verified via `rocm-smi --showbus`/`--showproductname` on the real
+        # host (2026-09-13) -- required for llama-server-based attestation
+        # (parse_llama_server_attestation()) to positively confirm which
+        # physical card ran a measurement, not just its architecture.
+        expected = {
+            0: "0000:03:00.0", 1: "0000:06:00.0",
+            2: "0000:09:00.0", 3: "0000:17:00.0",
+        }
+        for d in self.host.devices:
+            with self.subTest(index=d.index):
+                self.assertEqual(d.locator, expected[d.index])
+
     def test_gpu_visibility_env_rejects_an_unknown_ordinal(self):
         # Fail closed: a typo in a device list must not silently produce a
         # visibility pair that exposes the wrong cards.
@@ -144,6 +158,74 @@ class GpuVisibilityPairTests(unittest.TestCase):
         host = loaded.host()
         idx = host.devices[-1].index
         self.assertEqual(host.gpu_visibility_env(idx), env.gpu_visibility_pair((idx,)))
+
+
+class DeviceLocatorParsingTests(unittest.TestCase):
+    """PRBE111: fail-closed validation for the new locator field, using a
+    synthetic document -- the real config is covered by
+    EnvironmentContractTests above."""
+
+    def _write(self, tmp_path: Path, devices_toml: str) -> Path:
+        doc = (
+            'default-host = "h"\n\n'
+            "[host.h]\n"
+            'hostname = "h"\n\n'
+            f"{devices_toml}\n"
+        )
+        cfg = tmp_path / "environment.toml"
+        cfg.write_text(doc, encoding="utf-8")
+        return cfg
+
+    def test_locator_is_optional(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._write(Path(td), (
+                "[[host.h.devices]]\n"
+                "index = 0\n"
+                'arch = "gfx1100"\n'
+            ))
+            loaded = env.load(cfg)
+            self.assertIsNone(loaded.host("h").devices[0].locator)
+
+    def test_locator_is_lowercased(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._write(Path(td), (
+                "[[host.h.devices]]\n"
+                "index = 0\n"
+                'arch = "gfx1100"\n'
+                'locator = "0000:03:00.0"\n'
+            ))
+            loaded = env.load(cfg)
+            self.assertEqual(loaded.host("h").devices[0].locator, "0000:03:00.0")
+
+    def test_malformed_locator_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._write(Path(td), (
+                "[[host.h.devices]]\n"
+                "index = 0\n"
+                'arch = "gfx1100"\n'
+                'locator = "not-a-bdf"\n'
+            ))
+            with self.assertRaises(env.EnvironmentError_):
+                env.load(cfg)
+
+    def test_duplicate_locator_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            cfg = self._write(Path(td), (
+                "[[host.h.devices]]\n"
+                "index = 0\n"
+                'arch = "gfx1100"\n'
+                'locator = "0000:03:00.0"\n\n'
+                "[[host.h.devices]]\n"
+                "index = 1\n"
+                'arch = "gfx1100"\n'
+                'locator = "0000:03:00.0"\n'
+            ))
+            with self.assertRaises(env.EnvironmentError_):
+                env.load(cfg)
 
 
 if __name__ == "__main__":

@@ -121,6 +121,85 @@ def _hip_env(hip_path: Path) -> dict[str, str]:
     return env
 
 
+def resolve_selected_device_execution_identity(
+    *, expected_arch: str, host_devices=None,
+) -> tuple[ExecutionIdentity, dict[str, str]]:
+    """PRBE111 shared helper: resolve the real, host-configured
+    ExecutionIdentity (architecture + verified PCI locator) and env-override
+    dict for the ONE physical device the ambient HIP_VISIBLE_DEVICES
+    currently selects.
+
+    Required, fail-closed semantics (never guessed, never partial):
+    - HIP_VISIBLE_DEVICES must be explicitly set in the environment.
+    - It must select exactly one device (a single numeric index).
+    - That index must be a real, configured Device in this host's
+      inventory (config/environment.toml).
+    - The configured Device must have a real, verified `locator`.
+    - The configured Device's `arch` must equal `expected_arch` -- a
+      selector pointing at the wrong physical architecture is a caller
+      bug, not something to silently accept.
+
+    Any server-based (llama-server) producer needing real execution
+    attestation should go through this helper rather than constructing
+    its own ExecutionIdentity, so the "never guess a locator" discipline
+    stays in exactly one place.
+    """
+    import os
+
+    from bigcherry.core import environment as bc_environment
+
+    raw = os.environ.get("HIP_VISIBLE_DEVICES")
+    if not raw:
+        raise PatchCampaignError(
+            "resolve_selected_device_execution_identity: HIP_VISIBLE_DEVICES "
+            "must be explicitly set (an unset/ambient-default device list "
+            "cannot be trusted for a real-hardware measurement)"
+        )
+    selectors = [part for part in raw.split(",") if part != ""]
+    if len(selectors) != 1:
+        raise PatchCampaignError(
+            f"resolve_selected_device_execution_identity: HIP_VISIBLE_DEVICES={raw!r} "
+            "must select exactly one device for a server-based producer"
+        )
+    try:
+        index = int(selectors[0])
+    except ValueError as exc:
+        raise PatchCampaignError(
+            f"resolve_selected_device_execution_identity: HIP_VISIBLE_DEVICES={raw!r} "
+            "is not a numeric device index"
+        ) from exc
+
+    if host_devices is None:
+        host_devices = bc_environment.load_default().host().devices
+    matches = [d for d in host_devices if d.index == index]
+    if not matches:
+        raise PatchCampaignError(
+            f"resolve_selected_device_execution_identity: HIP_VISIBLE_DEVICES "
+            f"selects index {index}, which is not a configured device in "
+            f"config/environment.toml (known indices: {sorted(d.index for d in host_devices)})"
+        )
+    device = matches[0]
+    if device.locator is None:
+        raise PatchCampaignError(
+            f"resolve_selected_device_execution_identity: device index {index} "
+            f"({device.arch}) has no verified locator in config/environment.toml -- "
+            "add one (via real `rocm-smi --showbus` output, never invented) before "
+            "using it with a server-based attestation producer"
+        )
+    if device.arch != expected_arch:
+        raise PatchCampaignError(
+            f"resolve_selected_device_execution_identity: device index {index} is "
+            f"configured as {device.arch!r}, but {expected_arch!r} was requested -- "
+            "HIP_VISIBLE_DEVICES selects the wrong physical architecture"
+        )
+
+    identity = ExecutionIdentity(
+        backend="ROCm", architectures=(device.arch,), locators=(device.locator,),
+    )
+    selector_env = {"HIP_VISIBLE_DEVICES": str(index)}
+    return identity, selector_env
+
+
 def _requested_cmake_args(amdgpu_targets: str, extra_cmake_args: list[str]) -> list[str]:
     """Identity-relevant CMake intent shared by configure and post-build
     verification -- ONE definition so the two can never silently drift
@@ -8293,11 +8372,15 @@ def run(args: argparse.Namespace) -> int:
                 f"{args.patch}: --run-rd13-contract is RD13-only today"
             )
 
+        rd13_expected_execution, rd13_selector_env = resolve_selected_device_execution_identity(
+            expected_arch=args.amdgpu_targets,
+        )
         rd13_qualification = run_rd13_backend_reference_check(
             base_revision=base_revision, hip_path=args.hip_path,
             amdgpu_targets=args.amdgpu_targets,
             worktree_root=worktree_root / "rd13-correctness", build_root=build_root,
             model=args.model, run_dir=campaign_run_dir,
+            expected_execution=rd13_expected_execution, selector_env=rd13_selector_env,
         )
         rd13_backend_reference_result = rd13_qualification["results"]["backend_reference"]
 
