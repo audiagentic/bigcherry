@@ -68,6 +68,7 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 ## Ledger-events
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.177979+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -84,3 +85,5 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 - 2026-09-12T10:09:36.168667+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
 - 2026-09-12T10:10:15.542955+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260913_064911_rd12s-fork-claim-paired-mmvq_5827
+- 2026-09-13T06:49:14.580560+00:00 (updated-by): Updated: section:ledger-events
