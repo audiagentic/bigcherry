@@ -56,6 +56,56 @@ together), 1x gfx1201, 1x gfx1030.
   GPUs: record `deferred-hardware`/unavailable. Never substitute Brutus's
   heterogeneous 3/4-GPU set to manufacture "N>=3 coverage."
 
+## Build once (fat multi-arch), run per-device -- never rebuild per architecture
+
+**Real bug this session (2026-09-13):** the RD04/RD06/RD07/RD12
+correctness producers each compiled a fresh single-architecture binary
+for every device they ran against, tripling real build time and disk for
+zero benefit. This is not how this project actually ships binaries.
+
+This project's own real production build path (`config/recipes.toml`'s
+`platform.linux-multi`, `tools/bigcherry/campaign/build.py`'s
+`";".join(platform.targets)`) compiles **one fat multi-arch binary**
+(`AMDGPU_TARGETS="gfx1100;gfx1201;gfx1030"`) and selects which real
+device to run it against at runtime via `HIP_VISIBLE_DEVICES` -- it never
+recompiles per architecture. Every correctness/benchmark producer that
+needs to execute against multiple real devices **must follow the same
+pattern**, no exceptions:
+
+1. Build control and subject binaries ONCE, with `amdgpu_targets` set to
+   the full `";"`-joined contract-scope architecture list (never a single
+   architecture, when the contract scope has more than one), under a
+   build-directory `name` that does **not** vary per run-device -- this
+   lets `build_tree()`'s own cmake-cache-reuse ("configure request
+   unchanged; reusing CMake cache") make every call after the first one a
+   zero-rebuild binary reuse.
+2. Loop only the RUN phase (the actual subprocess execution against one
+   real GPU) across devices, setting `HIP_VISIBLE_DEVICES` per device
+   (never also `ROCR_VISIBLE_DEVICES` to the same index -- that
+   double-filters to zero visible devices, see below).
+3. Record BOTH facts in the evidence artifact: `compiled_targets` (the
+   real fat target list the binary was built with) and `architecture`
+   (which specific device this run's evidence came from) -- these are
+   different facts and must not collapse into one field.
+4. Namespace the artifact filename by run architecture
+   (`<label>-correctness-<arch>.json`), never a fixed name a later
+   device's run would silently overwrite.
+
+See `run_rd04_contract_correctness()`, `_run_1203_backend_reference_
+contract_correctness()` (shared by RD05/RD06/RD07), and
+`run_rd12_correctness_check()` in
+`tools/bigcherry/patch/validation_campaign.py` for the real, working
+reference implementation of this pattern -- copy it, don't reinvent it.
+
+**Known related trap**: setting both `HIP_VISIBLE_DEVICES` and
+`ROCR_VISIBLE_DEVICES` to the same device index double-filters (ROCR
+selects device N from the real device list first, then HIP re-applies its
+own index-N filter against that already-filtered single-device list,
+landing on nothing -- `"no ROCm-capable device is detected"`). Set only
+`HIP_VISIBLE_DEVICES`; explicitly `pop()` any ambient `ROCR_VISIBLE_
+DEVICES` before a real run. See RD58's PVPS02 finding for the original
+discovery of this trap.
+
 ## Baseline comparison: BOTH comparisons, different purposes
 
 Three arms:
