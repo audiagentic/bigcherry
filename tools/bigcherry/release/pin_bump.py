@@ -188,8 +188,15 @@ class PinBumpState:
             freeze = data.get("selector")
             if (
                 not isinstance(freeze, dict)
-                or not isinstance(freeze.get("kind"), str)
-                or not freeze.get("kind")
+                # Schema-2 pin-bump state only ever represented SOURCE
+                # selectors (dev-gpt-agent round-3 req_ab94edd31aa04419 Q3):
+                # accepting any other non-empty string here would let a
+                # malformed/foreign kind (e.g. "experiment") be promoted
+                # and later resumed, since _selector_patch_ids() ignores
+                # selector_kind entirely and always resolves selector_name
+                # as a source -- a malformed kind + valid source name would
+                # silently resume.
+                or freeze.get("kind") != "source"
                 or not isinstance(freeze.get("name"), str)
                 or not freeze.get("name")
                 or not isinstance(freeze.get("patch_ids"), list)
