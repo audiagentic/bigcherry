@@ -12,6 +12,10 @@ capability = "build"
 validator = "build"
 required = true
 
+# Satisfied by a real --run-rd12-contract run: the producer runs the
+# paired probe under BIGCHERRY_PATCH_TRACE=1 and writes one raw per-arm
+# log; the validator re-reads both logs and re-verifies the marker
+# itself. Stays BLOCKED without a real run.
 [[check]]
 id = "activation"
 capability = "activation"
@@ -23,8 +27,9 @@ marker-regex = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion
 # not backend_reference -- correctness-summary is mechanism-agnostic (it
 # only consumes a bound patch-level correctness.json's disposition field)
 # and is the right shape for run_rd12_correctness_check()'s real
-# bit-identical VDR1-vs-fused producer. Declared honestly; stays BLOCKED
-# until the --run-rd12-contract evidence-binding CLI wiring (PA39) lands.
+# bit-identical producer. Satisfied by a real --run-rd12-contract run,
+# which binds that canonical correctness.json (PA39); without one this
+# check stays BLOCKED.
 [[check]]
 id = "correctness"
 capability = "correctness"

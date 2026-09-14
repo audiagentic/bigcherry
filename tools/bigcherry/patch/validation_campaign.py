@@ -2862,6 +2862,7 @@ def run_rd12_correctness_check(
 
     trace_marker = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion"
     activation_observations: list[dict[str, object]] = []
+    activation_log_records: list[dict[str, object]] = []
 
     def _correctness_runner(argv, **kwargs):
         # correctness_evidence intentionally supplies only the variables
@@ -2880,11 +2881,20 @@ def run_rd12_correctness_check(
         else:
             arm = "unknown"
 
+        stdout = completed.stdout or ""
         stderr = completed.stderr or ""
+        seed = env.get("BIGCHERRY_TEST_DETERMINISTIC_SEED")
         activation_observations.append({
             "arm": arm,
-            "seed": env.get("BIGCHERRY_TEST_DETERMINISTIC_SEED"),
+            "seed": seed,
             "hit": trace_marker in stderr,
+        })
+        # Keep each invocation's raw streams for the per-arm activation
+        # logs written below: the declared trace-marker check's validator
+        # re-reads those files and re-verifies the marker itself, so the
+        # "hit" observation above is NOT what the validator trusts.
+        activation_log_records.append({
+            "arm": arm, "seed": seed, "stdout": stdout, "stderr": stderr,
         })
         return completed
 
@@ -2962,6 +2972,35 @@ def run_rd12_correctness_check(
                 "backend_reference_ok": control_backend_ok and subject_backend_ok,
                 "bit_identical": exact_equal,
             })
+
+    # One raw per-arm log each (RD08/RD58 precedent): these files are the
+    # artifacts the declared trace-marker check binds and re-verifies, so
+    # they carry the real, unfiltered subprocess output. Written even when
+    # activation fails, so a failed run's logs remain inspectable.
+    subject_log_path = run_dir / "activation-rd12-subject.log"
+    control_log_path = run_dir / "activation-rd12-control.log"
+    subject_log_path.write_text(
+        "\n---\n".join(
+            f"{record['arm']}-seed{record['seed']}:\n{record['stdout']}\n{record['stderr']}"
+            for record in activation_log_records if record["arm"] == "subject"
+        ),
+        encoding="utf-8",
+    )
+    control_log_path.write_text(
+        "\n---\n".join(
+            f"{record['arm']}-seed{record['seed']}:\n{record['stdout']}\n{record['stderr']}"
+            for record in activation_log_records if record["arm"] == "control"
+        ),
+        encoding="utf-8",
+    )
+    subject_log_ref = {
+        "path": subject_log_path.relative_to(run_dir).as_posix(),
+        "sha256": hashlib.sha256(subject_log_path.read_bytes()).hexdigest(),
+    }
+    control_log_ref = {
+        "path": control_log_path.relative_to(run_dir).as_posix(),
+        "sha256": hashlib.sha256(control_log_path.read_bytes()).hexdigest(),
+    }
 
     expected_runs_per_arm = len(lanes) * len(seeds)
     control_activation_runs = [
@@ -3066,6 +3105,8 @@ def run_rd12_correctness_check(
         },
         "activation": {
             "marker": trace_marker, "passed": activation_result.passed,
+            "subject_log": subject_log_ref["path"],
+            "control_log": control_log_ref["path"],
             "observations": activation_observations,
         },
         "control_source_tree": psi.git_worktree_tree(control_src),
@@ -3087,6 +3128,15 @@ def run_rd12_correctness_check(
         },
         "artifact": artifact_ref,
         "rows": rows,
+        # The declared trace-marker check's validator re-reads these two
+        # logs and re-verifies the marker itself; the --run-rd12-contract
+        # CLI binds them as the positive (subject) / negative (control)
+        # trace_evidence artifacts (RD08/RD58/RD73 precedent) so the
+        # check can leave BLOCKED on a real run.
+        "subject_log_path": subject_log_ref["path"],
+        "control_log_path": control_log_ref["path"],
+        "subject_log_artifact": subject_log_ref,
+        "control_log_artifact": control_log_ref,
         # PA39: exposed so a --run-rd12-contract CLI caller can bind real
         # validation_build_identities into make_record() without needing
         # the raw CompletedBuildEvidence objects (already baked into
@@ -8256,6 +8306,23 @@ def run(args: argparse.Namespace) -> int:
         # the record's top-level activation disposition, not just the
         # declared trace-marker check, reflects real evidence.
         activation_result = rd12_results["activation"]
+        # --run-rd12-contract skips the generic probe, so this block is
+        # the ONLY source of trace_evidence for the record: the producer
+        # wrote one raw per-arm log from the real subprocess output, and
+        # _builtin_trace_marker() re-reads both logs and re-verifies the
+        # marker itself (positive = subject arm, negative = control arm).
+        # Without this binding the declared trace-marker check could
+        # never leave BLOCKED, no matter how many real runs passed.
+        trace_evidence = {
+            "positive": {
+                "marker_regex": trace_marker_regex,
+                "artifact": rd12_qualification["subject_log_artifact"],
+            },
+            "negative": {
+                "marker_regex": trace_marker_regex,
+                "artifact": rd12_qualification["control_log_artifact"],
+            },
+        }
         activation_evidence = ActivationEvidence(
             status="executed" if activation_result.passed else "not_executed",
             mechanism="rd12-trigger-marker", detail=activation_result.detail,
@@ -8263,7 +8330,14 @@ def run(args: argparse.Namespace) -> int:
         activation_verdict = verdict(activation_evidence, correctness_passed=None)
         write_activation_json(
             campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
-            extra={"campaign_identity_digest": campaign.campaign_identity_digest},
+            extra={
+                "campaign_identity_digest": campaign.campaign_identity_digest,
+                "rd12_activation": {
+                    "marker": trace_marker_regex,
+                    "subject_log": rd12_qualification["subject_log_path"],
+                    "control_log": rd12_qualification["control_log_path"],
+                },
+            },
         )
 
         _print(f"rd12 correctness: {rd12_qualification['artifact']['path']}")

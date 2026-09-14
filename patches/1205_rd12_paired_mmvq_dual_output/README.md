@@ -3,10 +3,13 @@
 Patch id: `1205_rd12_paired_mmvq_dual_output`. Original plan item `RD12` is
 superseded by `PRBE11` (docs/planning/active/patching-rdna-boost-experiments/PRBE11.md,
 capability-rebaseline-v3-2026-09) -- PRBE11 is the authoritative tracking
-item now, not RD12. No Experiment Contract is bound yet -- this patch has
-no `experiment-contract` field in `patch.toml` and no bespoke correctness
-producer under `validation/`, unlike RD04/RD08/RD58/RD73. Its
-`validation.toml` wires only `apply`/`build`/`activation` checks.
+item now, not RD12. The `RD12-PAIRED-MMVQ-DUAL` Experiment Contract is
+bound in `patch.toml`, and the bespoke correctness producer is
+`run_rd12_correctness_check()` in
+`tools/bigcherry/patch/validation_campaign.py` (invoked via
+`--run-rd12-contract`, or standalone via
+`tools/lab/rd12-correctness/run_real.py`). Its `validation.toml` wires
+`apply`/`build`/`activation`/`correctness`/`performance`/`controls`.
 
 **HARD PREREQUISITE, not yet met (PRBE11's own steps)**: RD25's batch-vs-seq
 consistency fix (fork commit `8cdf1ab08`) must land first -- the frozen
@@ -47,17 +50,34 @@ deferred future decision, not an accident to route around.
 
 ## How to invoke validation
 
-No contract-bound qualification path exists yet -- only the generic
-S1-S7 campaign (apply/build/activation) is currently invocable:
+The contract-bound correctness/activation path is `--run-rd12-contract`
+(exactly one contract architecture per run: gfx1100, gfx1201, or gfx1030):
 
 ```
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1205_rd12_paired_mmvq_dual_output \
-  --model <a real .gguf> \
-  --hip-path <production-rocm> --amdgpu-targets <target> \
-  --manifest <hip-autotune-manifest.json> \
-  --workdir <fresh-workdir> --worktree-root <worktree-root>
+  --run-rd12-contract \
+  --hip-path <production-rocm> --amdgpu-targets <gfx1100|gfx1201|gfx1030> \
+  --workdir <fresh-workdir>
 ```
+
+The standalone lab driver used for the 2026-09-13 real runs calls the same
+producer for all three architectures in sequence (writing under
+`artifacts/lab/rd12-correctness/`):
+
+```
+PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py
+```
+
+A real `--run-rd12-contract` run binds its evidence into the record: a
+canonical `correctness.json` (the bit_identical disposition),
+`activation.json`, and one raw per-arm activation log
+(`activation-rd12-{subject,control}.log`) bound as the declared
+trace-marker check's positive/negative artifacts -- the validator
+re-reads those logs and re-verifies the marker itself, so the check
+cannot be satisfied by fixture output. The declared
+`performance`/`controls` checks stay BLOCKED until real performance
+evidence exists.
 
 Activation is proven via the `BIGCHERRY_PATCH_HIT patch=1205_rd12
 path=dual_output_mmvq_fusion` trace marker this patch's own
@@ -67,11 +87,10 @@ flag) the first time the dual-output fusion path is actually taken under
 fusion path was really exercised, not merely that the build succeeded and
 a benchmark ran without crashing.
 
-Bringing this patch to RD08's level of qualification (a real bit-identical
-correctness producer proving the fork's own claim, a bound Experiment
-Contract, and real performance evidence) is separate, not-yet-done
-authoring work tracked under PRBE11 -- blocked on the RD25 prerequisite
-above before that work is meaningful.
+The remaining gap to RD08's level of qualification is real performance
+evidence (the declared `performance`/`controls` checks), tracked under
+PRBE11 -- blocked on the RD25 prerequisite above before that work is
+meaningful.
 
 ## Real bit-identical correctness evidence (2026-09-13, all three architectures)
 
@@ -98,18 +117,19 @@ README for the full finding).
 
 **This is real, clean multi-architecture correctness evidence -- but it
 does NOT satisfy PRBE11's full qualification bar.** The RD25 hard
-prerequisite above (batch-vs-seq consistency fix) is still unmet, no
-Experiment Contract is bound in `patch.toml`, and no real performance
-evidence has been gathered. This closes the "prove the fork's
-bit-identical claim on real hardware" gap specifically -- it does not by
-itself authorize promotion or supersede PRBE11's blocking prerequisite.
+prerequisite above (batch-vs-seq consistency fix) is still unmet and no
+real performance evidence has been gathered (the declared
+`performance`/`controls` checks remain BLOCKED without it). This closes
+the "prove the fork's bit-identical claim on real hardware" gap
+specifically -- it does not by itself authorize promotion or supersede
+PRBE11's blocking prerequisite.
 
 ## Known limitations
 
-Not `deferred-hardware`. No real fresh evidence exists yet for this
-project's own hardware -- everything under "What it does" attributed to
-"the fork" is the fork's own reported claim, not this project's
-independently-measured result.
+Not `deferred-hardware`. The fork's own performance claim (small positive
+tg64 gains on gfx1201) has not been independently measured on this
+project's hardware -- the real evidence above covers correctness and
+activation only, not performance.
 
 ## Evidence
 
@@ -143,25 +163,28 @@ split on all three available architectures** --
 once (subject_hit=1) on gfx1100, gfx1201, AND gfx1030, zero hits
 (control_hit=0) on the baseline build on all three. **RD12's activation
 leg is resolved: the patch's fusion genuinely activates, on real
-hardware, across every available architecture.** The `mmvq.cu` marker
-itself should be changed from `GGML_LOG_INFO` to `GGML_LOG_WARN` to match
-RD08's precedent and avoid this exact trap recurring for future
-validators (not yet done -- a real, small, low-risk authoring fix,
-tracked below).
+hardware, across every available architecture.** The `GGML_LOG_INFO` ->
+`GGML_LOG_WARN` fix this trap pointed at was made the same day (PRBE106,
+2026-09-13; the marker now uses `GGML_LOG_WARN`, matching RD08's
+precedent).
 
-Per this patch's hard prerequisite (RD25 not yet ported), no
-correctness/performance qualification was attempted -- that remains
-deliberately scoped out until RD25 lands.
+Per this patch's hard prerequisite (RD25 not yet ported), no performance
+qualification has been attempted -- that remains deliberately scoped out
+until RD25 lands. The 2026-09-13 correctness runs above were done as
+real bit-identical proof of the fork's claim, not as a promotion
+decision.
 
-Runtime artifacts (raw logs) recorded but not yet persisted as a durable
-evidence bundle; further root-causing the zero-activation result is real,
-not-yet-done work (a candidate task for whoever picks up PRBE11's RD25
-prerequisite, since activation must be confirmed before any correctness
-work on this patch is meaningful).
+From this run forward, `--run-rd12-contract` persists one raw per-arm
+activation log (`activation-rd12-{subject,control}.log`) in the campaign
+run directory and binds them into the record's trace evidence, so the
+declared trace-marker check can independently re-verify the marker from
+the real subprocess output.
 
 ## Real three-arm baseline comparison (2026-09-13, standardized criteria)
 
-A/B/C decode comparison on gpt-oss-20B/gfx1100 (RD12's fusion does not
-activate on this model -- see above -- so this measures baseline health,
-not RD12's own effect): A=178.09, B=178.01, C=177.48 -- all within
-noise, no baseline concern for this patch's domain.
+A/B/C decode comparison on gpt-oss-20B/gfx1100 (RD12's activation was
+never confirmed on this model -- round 1's zero hits were the
+log-level bug described above, not evidence of non-activation -- so
+this measures baseline health, not RD12's own effect): A=178.09,
+B=178.01, C=177.48 -- all within noise, no baseline concern for this
+patch's domain.
