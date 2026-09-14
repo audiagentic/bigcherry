@@ -432,13 +432,16 @@ lanes = [
 #                      contains it, and adding the experiment is rejected with
 #                      "experiment repeats a base patch module" (correctly).
 #
-# RD73 is already in validated-enhancements, so arm 4 carries no experiment
-# here. Note the consequence honestly: RD73 is currently the ONLY promoted
-# enhancement, so arm 4's composition is IDENTICAL to arm 3's (framework +
-# RD73). That makes arm 4 a consistency check -- it proves the release set
-# really does contain the patch -- rather than an independent data point. Once
-# a second enhancement ships, the two diverge and arm 4 starts measuring
-# genuine composition effects.
+# RD73 was demoted out of validated-enhancements on 2026-09-09 (e548aaee,
+# HI162: its balanced A/B measured a regression on its own promotion
+# workload), so the release composition no longer contains it. Arm 4 carries
+# no experiment and is the pure release set (framework + upstream-fixes, with
+# validated-enhancements currently empty); arm 3 carries RD73 via the
+# rd73-only experiment. That makes arm 4 versus arm 3 the actual
+# release-without-vs-with RD73 contrast -- the one that measured the
+# regression -- an independent data point, not a consistency check. Until the
+# next enhancement ships, arm 4 compiles the same composition as the control
+# lanes; once it ships, arm 4 diverges in the usual already-shipped way.
 #
 # `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
 # it, so a lane left at the default publishes -- and therefore builds -- only
