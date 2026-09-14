@@ -71,6 +71,19 @@ EXPECTED_REMOVED_MODULES: tuple[str, ...] = (
 SERVING_CORE_SOURCE_NAME = "__pa26_serving_core"
 SERVING_CORE_PATCH_SET_NAME = "__pa26_serving_core_set"
 
+# GPT hardware-harness review (req_a4974e46d4d643e0): the production replay
+# build is intentionally diagnostics-free on BOTH arms (the candidate never
+# has 0810 at all; the control build itself carries no
+# GGML_HIP_REPLAY_DIAGNOSTICS instrumentation either), so neither arm can
+# emit a per-dispatch hit log for runtime comparison. A separate DIAGNOSTIC
+# companion pair re-adds 0810 to the candidate ONLY as an ephemeral PA26
+# probe (never persisted, exactly like the production candidate) so both
+# diagnostic arms share the same observer; it must never substitute for the
+# production pair's own process/output/correctness comparison.
+DIAGNOSTIC_ADDBACK_MODULE = "0810_replay_hit_diagnostics"
+SERVING_CORE_DIAGNOSTIC_SOURCE_NAME = "__pa26_serving_core_diagnostic"
+SERVING_CORE_DIAGNOSTIC_PATCH_SET_NAME = "__pa26_serving_core_diagnostic_set"
+
 
 def build_serving_core_config(cfg: config.Config) -> config.Config:
     """Return an ephemeral copy of ``cfg`` carrying the ad-hoc PA26 candidate
@@ -108,6 +121,77 @@ def build_serving_core_config(cfg: config.Config) -> config.Config:
         patch_sets={**cfg.patch_sets, SERVING_CORE_PATCH_SET_NAME: candidate_set},
         sources={**cfg.sources, SERVING_CORE_SOURCE_NAME: candidate_source},
     )
+
+
+def build_serving_core_diagnostic_config(cfg: config.Config) -> config.Config:
+    """Return an ephemeral copy of ``cfg`` carrying the DIAGNOSTIC companion
+    candidate: the serving-core composition PLUS ``DIAGNOSTIC_ADDBACK_MODULE``
+    (0810) re-added as a PA26-only probe. Never persisted to
+    ``config/recipes.toml``. Distinct source/patch-set names from the
+    production candidate -- the two are never resolved together."""
+    if "framework" not in cfg.patch_sets:
+        raise ReplayEquivalenceError("cfg carries no 'framework' patch-set")
+    if "bigcherry-native" not in cfg.sources:
+        raise ReplayEquivalenceError("cfg carries no 'bigcherry-native' source")
+    framework = cfg.patch_sets["framework"]
+    removed_except_diagnostic = frozenset(EXPECTED_REMOVED_MODULES) - {
+        DIAGNOSTIC_ADDBACK_MODULE
+    }
+    missing_expected = removed_except_diagnostic - set(framework.patches)
+    if missing_expected or DIAGNOSTIC_ADDBACK_MODULE not in framework.patches:
+        raise ReplayEquivalenceError(
+            "config/recipes.toml 'framework' patch-set no longer declares "
+            "the modules PA26's diagnostic companion depends on -- stale "
+            "hardcoded module list"
+        )
+    candidate_ids = tuple(
+        pid for pid in framework.patches if pid not in removed_except_diagnostic
+    )
+    candidate_set = config.PatchSet(
+        name=SERVING_CORE_DIAGNOSTIC_PATCH_SET_NAME,
+        patches=candidate_ids,
+        required_state=framework.required_state,
+    )
+    native = cfg.sources["bigcherry-native"]
+    candidate_source = config.Source(
+        name=SERVING_CORE_DIAGNOSTIC_SOURCE_NAME,
+        ref=native.ref,
+        overlay=native.overlay,
+        patch_sets=(SERVING_CORE_DIAGNOSTIC_PATCH_SET_NAME, "upstream-fixes"),
+        backend=native.backend,
+    )
+    return dataclasses.replace(
+        cfg,
+        patch_sets={
+            **cfg.patch_sets,
+            SERVING_CORE_DIAGNOSTIC_PATCH_SET_NAME: candidate_set,
+        },
+        sources={**cfg.sources, SERVING_CORE_DIAGNOSTIC_SOURCE_NAME: candidate_source},
+    )
+
+
+def require_diagnostic_matches_production(
+    production_candidate_ids: tuple[str, ...],
+    diagnostic_candidate_ids: tuple[str, ...],
+) -> None:
+    """Fail closed unless the diagnostic candidate is EXACTLY the production
+    candidate plus ``DIAGNOSTIC_ADDBACK_MODULE`` -- explicitly binds the
+    diagnostic pair's runtime observations back to the production
+    composition they are meant to stand in for."""
+    expected = tuple(
+        pid for pid in diagnostic_candidate_ids if pid != DIAGNOSTIC_ADDBACK_MODULE
+    )
+    if expected != production_candidate_ids:
+        raise ReplayEquivalenceError(
+            "diagnostic candidate composition is not the production "
+            "candidate plus the diagnostic add-back module: got "
+            f"{list(expected)} (after removing {DIAGNOSTIC_ADDBACK_MODULE!r}), "
+            f"want {list(production_candidate_ids)}"
+        )
+    if DIAGNOSTIC_ADDBACK_MODULE not in diagnostic_candidate_ids:
+        raise ReplayEquivalenceError(
+            f"diagnostic candidate does not carry {DIAGNOSTIC_ADDBACK_MODULE!r}"
+        )
 
 
 @dataclasses.dataclass(frozen=True)
