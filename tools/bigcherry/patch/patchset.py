@@ -79,6 +79,7 @@ def module_upstream(path: Path) -> str | None:
 @dataclass(frozen=True)
 class PatchInfo:
     """Metadata about a single patch module."""
+
     name: str
     path: Path
     state: str
@@ -254,12 +255,43 @@ def resolve_exact(
     allow_rejected: bool = False,
     context_ids: frozenset[str] = frozenset(),
 ) -> ResolvedPatchSet:
+    """Load the catalog and validate against it -- see
+    :func:`resolve_exact_from_catalog` for the validation contract.
+
+    (PA34 adversarial-review fix, dev-gpt-agent req_b6af12ef4ad34bad Q2:
+    the pure half is exposed so a caller that already holds a catalog
+    snapshot -- the rebase identity snapshot -- can validate against those
+    exact modules instead of re-reading the registry mid-run, which would
+    otherwise admit a concurrent REQUIRES/CONFLICTS metadata edit between
+    identity resolution and probing.)"""
+    modules = {module.patch_id: module for module in catalog(directory)}
+    return resolve_exact_from_catalog(
+        patch_ids,
+        modules=modules,
+        required_state=required_state,
+        allow_rejected=allow_rejected,
+        context_ids=context_ids,
+    )
+
+
+def resolve_exact_from_catalog(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    modules: dict[str, PatchModule],
+    required_state: str | None = None,
+    allow_rejected: bool = False,
+    context_ids: frozenset[str] = frozenset(),
+) -> ResolvedPatchSet:
     """Resolve a complete explicit module set without adding dependencies.
 
     The authoritative exact-composition validator (RV80): unknown IDs,
     invalid/rejected states, duplicate IDs, missing explicit requires, and
     internal conflicts ALL fail closed. The returned module order is a true
     topological order (``topological_order``), not a numeric re-sort.
+
+    ``modules`` is an already-loaded ``patch_id -> PatchModule`` mapping --
+    validation never touches the registry, so a caller bound to one catalog
+    snapshot stays bound to it (PA34 identity snapshot).
 
     ``context_ids`` (HI134): patch IDs considered already-selected for the
     purpose of the REQUIRES/conflicts check ONLY -- e.g. an experiment
@@ -273,7 +305,6 @@ def resolve_exact(
     way to be satisfied without also re-adding that module to the overlay
     itself -- which then collided with the overlay/base disjointness check.
     """
-    modules = {module.patch_id: module for module in catalog(directory)}
     ids = tuple(patch_ids)
     if len(set(ids)) != len(ids):
         raise ValueError("patch selection contains duplicate canonical IDs")
@@ -285,7 +316,9 @@ def resolve_exact(
         if module.state not in STATES:
             raise ValueError(f"{module.patch_id}: invalid STATE={module.state!r}")
         if module.state in RETIRED_STATES and not allow_rejected:
-            raise ValueError(f"{module.patch_id}: {module.state} patch requires --allow-rejected")
+            raise ValueError(
+                f"{module.patch_id}: {module.state} patch requires --allow-rejected"
+            )
         if required_state is not None and module.state != required_state:
             raise ValueError(
                 f"{module.patch_id}: state {module.state!r} does not satisfy "
@@ -304,9 +337,7 @@ def resolve_exact(
                 f"{module.patch_id} conflicts with selected module(s): {', '.join(conflicts)}"
             )
     ordered_ids = topological_order(ids, modules=modules)
-    return ResolvedPatchSet(
-        tuple(modules[pid] for pid in ordered_ids), required_state
-    )
+    return ResolvedPatchSet(tuple(modules[pid] for pid in ordered_ids), required_state)
 
 
 @dataclass(frozen=True)
@@ -323,7 +354,9 @@ class CompositionExpansion:
     @property
     def pulled_in(self) -> tuple[str, ...]:
         requested = set(self.requested)
-        return tuple(patch_id for patch_id in self.expanded if patch_id not in requested)
+        return tuple(
+            patch_id for patch_id in self.expanded if patch_id not in requested
+        )
 
 
 def expand_composition(
@@ -362,14 +395,12 @@ def expand_composition(
         if patch_id in seen:
             return
         if patch_id in in_progress:
-            cycle = " -> ".join(in_progress[in_progress.index(patch_id):] + [patch_id])
+            cycle = " -> ".join(in_progress[in_progress.index(patch_id) :] + [patch_id])
             raise ValueError(f"REQUIRES cycle detected: {cycle}")
         in_progress.append(patch_id)
         for dependency in modules[patch_id].requires:
             if dependency not in modules:
-                raise ValueError(
-                    f"{patch_id} REQUIRES unknown module {dependency!r}"
-                )
+                raise ValueError(f"{patch_id} REQUIRES unknown module {dependency!r}")
             visit(dependency)
         in_progress.pop()
         seen.add(patch_id)
@@ -461,5 +492,7 @@ def load_patches(
     for descriptor in registry.descriptors:
         if states is not None and descriptor.state not in states:
             continue
-        patches.extend(patch_registry.load_implementation(descriptor, root=registry.root))
+        patches.extend(
+            patch_registry.load_implementation(descriptor, root=registry.root)
+        )
     return patches

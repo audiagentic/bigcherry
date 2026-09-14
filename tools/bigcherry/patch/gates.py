@@ -348,11 +348,25 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
             ("no upstream source root was supplied",),
         )
     try:
-        known_good = rebase.require_fresh_report(
-            context.rebase_report,
-            context.source_root,
-            expected_selector=context.expected_selector,
-        )
+        if context.expected_selector is not None:
+            known_good = rebase.require_fresh_report(
+                context.rebase_report,
+                context.source_root,
+                expected_selector=context.expected_selector,
+            )
+        else:
+            # PA34 (dev-gpt-agent req_41a3133e657340c7 Q1): the no-source
+            # validate/promote path has no named selector to bind an exact
+            # identity against, so G2 binds by the composition's exact
+            # (patch_id, content_hash) pairs instead of a 5th selector kind.
+            known_good = rebase.require_fresh_report(
+                context.rebase_report,
+                context.source_root,
+                required_module_hashes=tuple(
+                    (module.patch_id, module.content_hash)
+                    for module in context.composition.modules
+                ),
+            )
     except (OSError, TypeError, ValueError, rebase.StaleRebaseReportError) as exc:
         return GateResult(
             GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase", (str(exc),)

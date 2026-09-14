@@ -1734,8 +1734,9 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     from pathlib import Path as _Path
 
     from ..core import paths as _paths
-    from ..core import tree_activity as _tree_activity
+    from ..core.tree_activity import TreeActivityError
     from ..release import pin_bump as _pin_bump
+    from ..release.pin_bump import PinBumpStop
 
     report_dir = (
         _Path(args.report_dir)
@@ -1749,7 +1750,11 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
             resume=args.resume,
             report_dir=report_dir,
         )
-    except _pin_bump.PinBumpStop as exc:
+    # The `or` coalesces in this handler are legitimate (exc.run_id is None
+    # until run() assigns a run_id, and target/tree are None before the first
+    # phase). no-boolean-in-except's stopBy:end scans the except BODY, not
+    # just the header, so it false-positives on them -- suppress inline.
+    except PinBumpStop as exc:  # pi-lens-ignore: no-boolean-in-except
         envelope = _pin_bump.failure_envelope(
             exc.run_id or "unresolved",
             exc.target or {"from_ref": "?", "to_ref": args.target},
@@ -1770,7 +1775,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         for action in exc.recommended_actions:
             print(f"  - {action}", file=_sys.stderr)
         return 1
-    except _tree_activity.TreeActivityError as exc:
+    except TreeActivityError as exc:
         print(f"pin-bump: TREE_IN_USE: {exc}", file=_sys.stderr)
         return 1
 

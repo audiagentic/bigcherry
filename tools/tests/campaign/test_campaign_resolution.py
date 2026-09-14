@@ -641,7 +641,7 @@ class PerLaneExperimentTests(unittest.TestCase):
         )
         # Request-level fills the baselines that declare none; a lane that
         # declares its own keeps it.
-        by_source = {(l.source_name, l.experiment) for l in lanes}
+        by_source = {(lane.source_name, lane.experiment) for lane in lanes}
         self.assertIn(("bigcherry", "rd73-only"), by_source)
 
     def test_unknown_lane_experiment_is_rejected(self):
@@ -670,8 +670,21 @@ class SelectorIdentityAuthorityTests(unittest.TestCase):
     ``resolve_canonical_selection()`` / ``build_all_patches_identity()`` and
     validate it through ``SelectorIdentity.from_payload()``. This test walks
     the whole production tree and fails closed if any other module constructs
-    the identity directly (an AST constructor call, so annotations,
-    ``from_payload``, comments and strings never match)."""
+    the identity directly.
+
+    Adversarial-review follow-up (dev-gpt-agent req_b6af12ef4ad34bad P3 #8):
+    the original check only caught a bare ``SelectorIdentity(...)`` name
+    call. It now also catches
+      * a dotted constructor ``<module>.SelectorIdentity(...)`` (the
+        ``campaign_resolution.SelectorIdentity(...)`` alias form), and
+      * a hand-assembled identity PAYLOAD -- a dict literal carrying BOTH
+        the ``"selector_kind"`` and ``"module_hashes"`` keys, which is the
+        exact shape ``to_payload()`` produces and which no other domain data
+        carries. (``from_payload`` / ``describe_diff`` / annotations / comments
+        never match: they are not constructor calls nor such dict literals.)
+    """
+
+    _PAYLOAD_MARKER_KEYS = frozenset(("selector_kind", "module_hashes"))
 
     def test_identity_is_constructed_only_in_the_authority_module(self) -> None:
         import ast
@@ -680,7 +693,7 @@ class SelectorIdentityAuthorityTests(unittest.TestCase):
         production = repo_root / "tools" / "bigcherry"
         authority = production / "campaign" / "resolution.py"
 
-        offenders = []
+        offenders: list[str] = []
         for source_file in sorted(production.rglob("*.py")):
             if source_file == authority:
                 continue
@@ -689,16 +702,41 @@ class SelectorIdentityAuthorityTests(unittest.TestCase):
                 filename=str(source_file),
             )
             for node in ast.walk(tree):
-                if (
-                    isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Name)
-                    and node.func.id == "SelectorIdentity"
-                ):
-                    offenders.append(f"{source_file}:{node.lineno}")
+                # (a) a bare or dotted SelectorIdentity(...) constructor call.
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    if isinstance(func, ast.Name) and func.id == "SelectorIdentity":
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"constructs SelectorIdentity by name"
+                        )
+                    elif (
+                        isinstance(func, ast.Attribute)
+                        and func.attr == "SelectorIdentity"
+                    ):
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"constructs <module>.SelectorIdentity by attribute"
+                        )
+                # (b) a hand-assembled identity payload dict literal.
+                elif isinstance(node, ast.Dict):
+                    string_keys = {
+                        key.value
+                        for key in node.keys
+                        if isinstance(key, ast.Constant)
+                        and isinstance(key.value, str)
+                    }
+                    if string_keys.issuperset(self._PAYLOAD_MARKER_KEYS):
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"hand-assembles a selector identity payload "
+                            "(dict with selector_kind + module_hashes)"
+                        )
         self.assertEqual(
             offenders,
             [],
             "selector identity must be constructed only in "
             "campaign/resolution.py; consumers must use "
-            "resolve_canonical_selection()/build_all_patches_identity()",
+            "resolve_canonical_selection()/build_all_patches_identity() "
+            "-- offenders: " + "; ".join(offenders),
         )
