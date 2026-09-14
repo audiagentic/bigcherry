@@ -57,9 +57,9 @@ class CMakeValidationAdapterTests(unittest.TestCase):
                                   run_dir=Path(directory), register_artifact=register)
             result = checks.check(ctx)
             self.assertEqual(result.status, PASS, result)
-            self.assertEqual({ref.name for ref in bound}, {"coverage-selection.cmake", "coverage-selection.json"})
-            report = json.loads((Path(directory) / "artifacts/coverage-selection.json").read_text())
-            self.assertEqual([item["returncode"] for item in report["observations"]], [0, 0, 0, 0])
+            self.assertEqual({ref.name for ref in bound}, {"serving-selection.cmake", "serving-selection.json"})
+            report = json.loads((Path(directory) / "artifacts/serving-selection.json").read_text())
+            self.assertEqual([item["returncode"] for item in report["observations"]], [0, 0])
             self.assertFalse(report["patch_second_changed"])
 
     def test_matrix_failure_is_fail(self):
@@ -121,7 +121,7 @@ class CMakeValidationAdapterTests(unittest.TestCase):
             real_register = make_default_register_artifact(Path(directory))
             def register(name, path):
                 ref = real_register(name, path)
-                if name == "coverage-selection.json":
+                if name == "serving-selection.json":
                     return ArtifactRef(ref.name, ref.path, "0" * 64)
                 return ref
             ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",

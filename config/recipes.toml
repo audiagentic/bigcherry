@@ -6,6 +6,7 @@ pinned = "b10901"
 [patch-set.framework]
 patches = [
   "0100_cmake_options",
+  "0110_campaign_tune_record_build",
   "0200_dispatch_hook",
   "0300_mmq_forced_j",
   "0400_mmvf_forced_block",

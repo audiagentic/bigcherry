@@ -15,7 +15,7 @@ callable = "validation/checks.py:check_build"
 required = true
 
 [[check]]
-id = "coverage-source-selection"
+id = "serving-source-selection"
 capability = "configuration"
 validator = "custom"
 callable = "validation/checks.py:check"

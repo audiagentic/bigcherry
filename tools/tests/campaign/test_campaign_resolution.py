@@ -70,11 +70,15 @@ class CampaignResolutionTests(unittest.TestCase):
         # upstream-fixes patch-set, still composed into bigcherry-native --
         # the total stays 15, now correctly split 14 framework + 1
         # upstream-fixes instead of bundled as 15 "framework".
-        self.assertEqual(len(expected), 15)
+        # PA27 (2026-09-14) split 0100_cmake_options into a narrowed
+        # serving/shared package plus the new 0110_campaign_tune_record_build
+        # package, both in the framework set -- the total becomes 16, split
+        # 15 framework + 1 upstream-fixes.
+        self.assertEqual(len(expected), 16)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
             len(self.cfg.patch_sets["framework"].patches),
-            14,
+            15,
         )
         self.assertEqual(
             len(self.cfg.patch_sets["upstream-fixes"].patches),
@@ -146,7 +150,9 @@ class CampaignResolutionTests(unittest.TestCase):
         lane = campaign_resolution.resolve_lane(
             "bigcherry-native", cfg, self.catalog, experiment="one-fix"
         )
-        self.assertEqual(len(lane.patch_set.module_ids), 16)
+        # PA27 (2026-09-14) added 0110_campaign_tune_record_build to the
+        # framework set, so the 15 native modules + 1 overlay patch = 17.
+        self.assertEqual(len(lane.patch_set.module_ids), 17)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn(
             "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids

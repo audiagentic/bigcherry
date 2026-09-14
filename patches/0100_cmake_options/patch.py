@@ -1,41 +1,49 @@
-"""HI02 - build options for HIP measured dispatch.
+"""HI02 - build options for HIP measured dispatch (serving/shared half).
+
+PA27 split this patch by runtime ownership (dev-gpt-agent design,
+req_42717536998244ea): this package now owns only what a replay/serving
+build needs -- dispatch/replay enablement, generated registry inclusion,
+production source list, and validation that makes an invalid replay build
+fail closed. The campaign-only half (tune/record options, tuner source
+inclusion, workload/record routing, campaign-only diagnostics) moved to
+``patches/0110_campaign_tune_record_build``.
 
 Two files are touched. The options and their validation go in
 ``ggml/CMakeLists.txt`` because that is where the backend switches live and,
 more importantly, because the validation has to fire even when the HIP backend
-directory is never processed -- ``GGML_HIP_AUTOTUNE=ON`` with ``GGML_HIP=OFF``
-must fail at configure time, not produce a quietly inert build.
+directory is never processed -- ``GGML_HIP_DISPATCH_REPLAY=ON`` with
+``GGML_HIP=OFF`` must fail at configure time, not produce a quietly inert
+build.
 
 The HIP backend's own ``CMakeLists.txt`` then turns the options into compile
-definitions and pulls in SQLite for the record/tune builds.
+definitions and pulls in the production dispatch/replay sources.
 
-Two rules from the standards are enforced here rather than at runtime, because
-both describe builds that should not exist:
+One rule from the standards is enforced here rather than at runtime, because
+it describes builds that should not exist:
 
 * section 4.3 / 6.1 -- ``GGML_CUDA_FORCE_MMQ`` and ``GGML_CUDA_FORCE_CUBLAS``
-  hide legal families from measured dispatch. A build combining either with
-  dispatch would tune against an incomplete candidate set and never know.
-* section 6.2 -- the ``workload-max`` variant set is defined by an inventory
-  file. Without one there is nothing to derive the candidate set from.
+  hide legal families from measured dispatch. A replayed build combining
+  either would replay against an incomplete candidate set and never know.
+
+This package sets a non-cache sentinel, ``_BC_HIP_SERVING_BUILD_PLUMBING``,
+in ``ggml/CMakeLists.txt`` (top level, NOT the HIP backend's own
+``CMakeLists.txt`` -- ``add_subdirectory(src)`` runs after this file's own
+option/validation blocks, so a sentinel set only in the backend file would
+not exist yet when a top-level validation check reads it) that
+``0110_campaign_tune_record_build`` reads to fail closed if its own options
+are activated without this serving package applied. Reciprocally, this
+package's own validation reads ``0110``'s
+``_BC_HIP_CAMPAIGN_BUILD_PLUMBING`` sentinel to reject ``GGML_HIP_AUTOTUNE``
+set without the campaign package present.
 """
 
 GROUP = "core"
 STATE = "validated"
 
-import re
-
 from bigcherry.patcher import Edit, FilePatch
 
 _OPTIONS = """
-option(GGML_HIP_AUTOTUNE                    "ggml: build the HIP dispatch autotuner"          OFF)
 option(GGML_HIP_DISPATCH_REPLAY             "ggml: build HIP replay dispatch (no tuner)"      OFF)
-# bigcherry: hot-path diagnostics. OFF is the PRODUCTION shape -- the dispatch
-# counters, the native-select sample timing and the per-launch coverage
-# counting are all compiled out, not merely runtime-disabled. Coverage counting
-# in particular was unconditional (two atomic RMWs per dispatch, ~382,000 per
-# bench run), with the env var controlling only whether a report was WRITTEN.
-# A build used for a final performance number must not carry any of it.
-option(GGML_HIP_DISPATCH_DIAGNOSTICS        "ggml: HIP dispatch hot-path diagnostics"         OFF)
 set   (GGML_HIP_AUTOTUNE_VARIANT_SET "inventory" CACHE STRING
                                             "ggml: HIP autotune candidate set")
 set_property(CACHE GGML_HIP_AUTOTUNE_VARIANT_SET PROPERTY STRINGS
@@ -44,10 +52,6 @@ set   (GGML_HIP_AUTOTUNE_SIGNATURE_FILE "" CACHE STRING
                                             "ggml: inventory JSON driving workload-max")
 set   (GGML_HIP_AUTOTUNE_GENERATED_DIR "" CACHE PATH
                                             "bigcherry: build-local generated compile inputs")
-option(GGML_HIP_AUTOTUNE_SQLITE             "ggml: link SQLite for record/tune modes"          ON)
-option(GGML_HIP_AUTOTUNE_RECORD             "ggml: build signature record mode"                OFF)
-option(GGML_HIP_WORKSPACE_METRICS            "ggml: collect tune-only pool workspace metrics"   OFF)
-option(GGML_HIP_ROUTING_TRANSFORM           "ggml: tune sig-to-sig routing transformations"    OFF)
 
 # Accept uppercase spellings from BUILD_PROFILES.md as aliases (B10).
 set(__BC_UPPERCASE_SETS "NATIVE" "WORKLOAD_MAX" "FULL_MAX" "REPLAY_FULL" "REPLAY_SLIM")
@@ -55,18 +59,28 @@ if (GGML_HIP_AUTOTUNE_VARIANT_SET IN_LIST __BC_UPPERCASE_SETS)
     string(TOLOWER "${GGML_HIP_AUTOTUNE_VARIANT_SET}" _variant_lower)
     set(GGML_HIP_AUTOTUNE_VARIANT_SET "${_variant_lower}")
 endif()
+
+# bigcherry: non-cache marker read by the campaign tune/record build package
+# (0110_campaign_tune_record_build) to fail closed if its own options are
+# activated without this serving package present. Set HERE at top level, not
+# in ggml/src/ggml-hip/CMakeLists.txt -- add_subdirectory(src) (which
+# eventually reaches the HIP backend file) runs AFTER this top-level
+# CMakeLists.txt's own option/validation blocks, so a sentinel set only in
+# the backend file would not yet exist when 0110's top-level validation
+# checks it (dev-gpt-agent review, req_4c330960a8db450f, BLOCKER 1).
+set(_BC_HIP_SERVING_BUILD_PLUMBING ON)
 """
 
 _VALIDATION = """
-# ---- bigcherry: HIP measured dispatch validation -----------------------------
-if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
+# ---- bigcherry: HIP measured dispatch validation (serving/shared) -----------
+if (GGML_HIP_DISPATCH_REPLAY)
     if (NOT GGML_HIP)
         message(FATAL_ERROR
-            "GGML_HIP_AUTOTUNE/GGML_HIP_DISPATCH_REPLAY require GGML_HIP=ON.")
+            "GGML_HIP_DISPATCH_REPLAY requires GGML_HIP=ON.")
     endif()
 
     # Standards 4.3: these flags remove legal families from consideration, so a
-    # tuned or replayed build would be measuring a truncated candidate set.
+    # replayed build would be measuring a truncated candidate set.
     if (GGML_CUDA_FORCE_MMQ)
         message(FATAL_ERROR
             "GGML_CUDA_FORCE_MMQ is incompatible with HIP measured dispatch: "
@@ -84,39 +98,25 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
             "GGML_HIP_AUTOTUNE_VARIANT_SET=workload-max requires "
             "GGML_HIP_AUTOTUNE_SIGNATURE_FILE to point at an inventory JSON.")
     endif()
-
-    # Standards 9.1: production replay builds contain no tuner and no SQLite.
-    if (GGML_HIP_DISPATCH_REPLAY AND GGML_HIP_AUTOTUNE)
-        message(FATAL_ERROR
-            "GGML_HIP_DISPATCH_REPLAY and GGML_HIP_AUTOTUNE are mutually "
-            "exclusive: a replay build must not carry the tuning engine.")
-    endif()
 endif()
 
-# HI29-HI31: the transform registry and launch helper are present, but the
-# transform identity is not yet part of the record/replay ABI and the normal
-# dispatcher does not yet select transformed bindings.  Do not let a partial
-# build advertise the feature: it could tune a transformed path without being
-# able to persist or replay the same decision.  Requiring the tuning dispatch
-# and the record capability is the safe offline boundary until that ABI is
-# wired end-to-end.
-if (GGML_HIP_ROUTING_TRANSFORM AND
-        (NOT GGML_HIP_AUTOTUNE OR NOT GGML_HIP_AUTOTUNE_RECORD))
+# Reciprocal fail-closed check (dev-gpt-agent review, req_4c330960a8db450f,
+# BLOCKER 2): this package does not declare GGML_HIP_AUTOTUNE, but CMake
+# still accepts a raw, undeclared -DGGML_HIP_AUTOTUNE=ON with only this
+# package applied -- that would enter this package's own dispatch/replay
+# definitions block (`if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)`)
+# without any of 0110_campaign_tune_record_build's tuner definitions or
+# sources ever being compiled in. Reject it explicitly.
+if (GGML_HIP_AUTOTUNE AND NOT _BC_HIP_CAMPAIGN_BUILD_PLUMBING)
     message(FATAL_ERROR
-        "GGML_HIP_ROUTING_TRANSFORM requires both GGML_HIP_AUTOTUNE and "
-        "GGML_HIP_AUTOTUNE_RECORD until transform recording and dispatch "
-        "integration is complete.")
-endif()
-
-if (GGML_HIP_WORKSPACE_METRICS AND NOT GGML_HIP_AUTOTUNE)
-    message(FATAL_ERROR
-        "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
+        "GGML_HIP_AUTOTUNE requires the HIP campaign tune/record build "
+        "package (0110_campaign_tune_record_build) to be applied.")
 endif()
 # ---- end bigcherry -----------------------------------------------------------
 """
 
 _HIP_DEFINITIONS = """
-# ---- bigcherry: HIP measured dispatch ---------------------------------------
+# ---- bigcherry: HIP measured dispatch (serving/shared) ----------------------
 if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     # Partition BigCherry CUDA translation units out of upstream's broad glob;
     # they are appended explicitly below so each source enters the target once.
@@ -124,31 +124,10 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
     add_compile_definitions(GGML_HIP_DISPATCH)
     add_compile_definitions(GGML_HIP_AUTOTUNE_VARIANT_SET="${GGML_HIP_AUTOTUNE_VARIANT_SET}")
 
-    if (GGML_HIP_AUTOTUNE)
-        add_compile_definitions(GGML_HIP_AUTOTUNE)
-    endif()
     if (GGML_HIP_DISPATCH_REPLAY)
         add_compile_definitions(GGML_HIP_DISPATCH_REPLAY)
     endif()
-    # Tuning and recording builds need the counters to do their job, so they
-    # get diagnostics implicitly; a pure replay build does not and must be
-    # able to be built clean for benchmarking.
-    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)
-        add_compile_definitions(GGML_HIP_DISPATCH_DIAGNOSTICS)
-    endif()
-    # HI27. Global rather than per-source: the transform machinery is declared
-    # in hip-autotune-types.h, which the tuner, the dispatcher and the replay
-    # loader all include. Defining it for hip-autotune-transform.cu alone would
-    # give that one file a different view of a struct the others also lay out.
-    if (GGML_HIP_ROUTING_TRANSFORM)
-        add_compile_definitions(GGML_HIP_ROUTING_TRANSFORM)
-    endif()
-    if (GGML_HIP_WORKSPACE_METRICS)
-        if (NOT GGML_HIP_AUTOTUNE)
-            message(FATAL_ERROR "GGML_HIP_WORKSPACE_METRICS requires GGML_HIP_AUTOTUNE=ON.")
-        endif()
-        add_compile_definitions(GGML_HIP_WORKSPACE_METRICS)
-    endif()
+
     # Campaign builds use an out-of-tree generated directory.  The empty
     # value remains a legacy compatibility path for the interactive command;
     # campaign/build services always pass the explicit directory.
@@ -177,48 +156,12 @@ if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)
         "../ggml-cuda/hip-autotune-transform.cu"
         "../ggml-cuda/hip-autotune-reduce-telemetry.cpp"
         "../ggml-cuda/hip-autotune-signature.cpp"
-        "../ggml-cuda/hip-autotune-blake2b.cpp"
-        "../ggml-cuda/hip-autotune-coverage.cpp")
+        "../ggml-cuda/hip-autotune-blake2b.cpp")
     if (GGML_HIP_DISPATCH_REPLAY)
         list(APPEND _BC_DISPATCH_SOURCES
             "../ggml-cuda/hip-autotune-replay.cpp")
     endif()
-    if (GGML_HIP_AUTOTUNE_RECORD)
-        list(APPEND _BC_DISPATCH_SOURCES
-            "../ggml-cuda/hip-autotune-record.cpp")
-    endif()
-    if (GGML_HIP_AUTOTUNE)
-        list(APPEND _BC_DISPATCH_SOURCES
-            "../ggml-cuda/hip-autotune-tuner.cu"
-            "../ggml-cuda/hip-autotune-io.cpp"
-            "../ggml-cuda/hip-autotune-journal.cpp"
-            "../ggml-cuda/hip-autotune-smi.cpp")
-    endif()
     list(APPEND GGML_SOURCES_ROCM ${_BC_DISPATCH_SOURCES})
-
-    # Recording is a *separate capability* from tuning, and the distinction
-    # matters: the inventory build records signatures with no tuner and no
-    # benchmarking, and its output is what drives workload-max generation.
-    # Folding record into GGML_HIP_AUTOTUNE would make the documented inventory
-    # profile (DISPATCH_REPLAY=ON, AUTOTUNE=OFF, MODE=record) silently record
-    # nothing -- and the whole pipeline would then start from an empty
-    # inventory without any error.
-    # Record support is a separate capability.  Tune builds must not define
-    # this macro: they deliberately omit hip-autotune-record.cpp from the
-    # link graph, and defining it makes the dispatcher reference the absent
-    # ggml_hip_record_flush symbol at runtime.
-    if (GGML_HIP_AUTOTUNE_RECORD)
-        add_compile_definitions(GGML_HIP_AUTOTUNE_RECORD)
-    endif()
-
-    # No SQLite anywhere. Record mode writes JSON Lines and
-    # `python -m bigcherry.inventory` builds the database offline with the
-    # stdlib sqlite3 module, against the same sql/dispatch-db.sql schema.
-    #
-    # That is not a shortcut: it removes a build dependency neither machine
-    # has, makes a killed tuning run keep everything already flushed, and makes
-    # standards 9.1 -- production links no SQLite -- true by construction
-    # rather than by remembering to gate it.
 endif()
 # ---- end bigcherry -----------------------------------------------------------
 """
@@ -226,7 +169,7 @@ endif()
 
 OPTIONS_PATCH = FilePatch(
     path="ggml/CMakeLists.txt",
-    description="HIP autotune build options and their validation",
+    description="HIP replay/serving build options and their validation",
     edits=(
         Edit(
             id="hip-autotune-options",
@@ -237,7 +180,7 @@ OPTIONS_PATCH = FilePatch(
             anchor=r"^option\(GGML_HIP_EXPORT_METRICS.*$",
             rationale="the end of the GGML_HIP_* option block",
             text=_OPTIONS,
-            guard=r"^option\(GGML_HIP_AUTOTUNE\b",
+            guard=r"^option\(GGML_HIP_DISPATCH_REPLAY\b",
         ),
         Edit(
             id="hip-autotune-validation",
@@ -252,21 +195,9 @@ OPTIONS_PATCH = FilePatch(
     ),
 )
 
-_COVERAGE_SOURCE_OLD = (
-    '        "../ggml-cuda/hip-autotune-blake2b.cpp"\n'
-    '        "../ggml-cuda/hip-autotune-coverage.cpp")'
-)
-_COVERAGE_SOURCE_DIAGNOSTIC = (
-    '        "../ggml-cuda/hip-autotune-blake2b.cpp")\n'
-    '    if (GGML_HIP_DISPATCH_DIAGNOSTICS OR GGML_HIP_AUTOTUNE OR GGML_HIP_AUTOTUNE_RECORD)\n'
-    '        list(APPEND _BC_DISPATCH_SOURCES\n'
-    '            "../ggml-cuda/hip-autotune-coverage.cpp")\n'
-    '    endif()'
-)
-
 HIP_BACKEND_PATCH = FilePatch(
     path="ggml/src/ggml-hip/CMakeLists.txt",
-    description="HIP backend compile definitions, generated sources, SQLite",
+    description="HIP backend compile definitions and production dispatch/replay sources",
     edits=(
         Edit(
             id="hip-autotune-definitions",
@@ -278,30 +209,6 @@ HIP_BACKEND_PATCH = FilePatch(
             text=_HIP_DEFINITIONS,
             guard=r"bigcherry: HIP measured dispatch",
         ),
-        Edit(
-            id="hip-autotune-coverage-source",
-            anchor=r'^        "\.\./ggml-cuda/hip-autotune-blake2b\.cpp"\)$',
-            rationale="add the coverage implementation to an already-applied explicit source split",
-            mode="replace",
-            text=(
-                '        "../ggml-cuda/hip-autotune-blake2b.cpp"\n'
-                '        "../ggml-cuda/hip-autotune-coverage.cpp")'
-            ),
-            guard=r'hip-autotune-coverage\.cpp',
-        ),
-        Edit(
-            id="hip-autotune-coverage-diagnostics-only",
-            anchor=re.escape(_COVERAGE_SOURCE_OLD),
-            text=_COVERAGE_SOURCE_DIAGNOSTIC,
-            mode="replace",
-            guard=re.escape(_COVERAGE_SOURCE_DIAGNOSTIC),
-            expect_matches=1,
-            rationale="HI168: remove coverage implementation from the production link graph",
-        ),
-        # No link edit. The dispatch layer has no external dependencies -- the
-        # only one it ever had was SQLite, and record mode writes JSON Lines
-        # instead. Leaving an edit that inserts nothing would be a permanent
-        # false positive in every patch report.
     ),
 )
 
