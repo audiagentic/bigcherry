@@ -48,7 +48,8 @@ def _make_cache_blob(*, entry_count: int = 1, version: int | None = None) -> byt
     payload = entry * entry_count + name
     header = bytearray()
     header += struct.pack(
-        "<III", replay_module.MAGIC, version or replay_module.REPLAY_VERSION,
+        "<III", replay_module.MAGIC,
+        replay_module.REPLAY_VERSION if version is None else version,
         replay_module.ARTIFACT_VERSION,
     )
     header += struct.pack(
@@ -151,6 +152,49 @@ class CompositionDeltaTests(unittest.TestCase):
         with self.assertRaises(re.ReplayEquivalenceError):
             re.require_expected_composition_delta(delta)
 
+    def test_negative_reordered_candidate_is_detected(self):
+        """GPT review (req_19d7a4cde3e84bd8): membership+shared-hash checks
+        alone do not catch a reordered candidate. Real resolution always
+        topologically re-sorts (order-invariant for a consistent catalog),
+        so this exercises require_expected_composition_delta() directly
+        against a hand-built, deliberately reordered SelectorIdentity rather
+        than going through the resolver -- the check itself must be
+        order-sensitive even if the normal resolution path never emits a
+        reordered result in practice."""
+        real_delta = re.resolve_composition_delta(self.cfg, self.catalog)
+        re.require_expected_composition_delta(real_delta)  # sanity: real delta passes
+        reordered_ids = list(real_delta.candidate.patch_ids)
+        self.assertGreaterEqual(len(reordered_ids), 2)
+        reordered_ids[0], reordered_ids[1] = reordered_ids[1], reordered_ids[0]
+        hashes_by_id = dict(real_delta.candidate.module_hashes)
+        reordered_candidate = dataclasses.replace(
+            real_delta.candidate,
+            patch_ids=tuple(reordered_ids),
+            module_hashes=tuple((pid, hashes_by_id[pid]) for pid in reordered_ids),
+        )
+        bad_delta = dataclasses.replace(real_delta, candidate=reordered_candidate)
+        with self.assertRaises(re.ReplayEquivalenceError):
+            re.require_expected_composition_delta(bad_delta)
+
+    def test_negative_differing_source_ref_is_detected(self):
+        candidate_cfg = re.build_serving_core_config(self.cfg)
+        candidate_source = dataclasses.replace(
+            candidate_cfg.sources[re.SERVING_CORE_SOURCE_NAME],
+            ref="0" * 40,
+        )
+        candidate_cfg = dataclasses.replace(
+            candidate_cfg,
+            sources={
+                **candidate_cfg.sources,
+                re.SERVING_CORE_SOURCE_NAME: candidate_source,
+            },
+        )
+        delta = re.resolve_composition_delta(
+            self.cfg, self.catalog, candidate_cfg=candidate_cfg
+        )
+        with self.assertRaises(re.ReplayEquivalenceError):
+            re.require_expected_composition_delta(delta)
+
     def test_negative_unexpected_extra_module_is_detected(self):
         """Candidate accidentally carrying a module the control arm never
         selected (e.g. an RD-experimental patch) must fail closed."""
@@ -223,10 +267,12 @@ class OfflineReceiptTests(unittest.TestCase):
             self.assertEqual(
                 receipt["actual_composition_delta"], receipt["expected_composition_delta"]
             )
-            self.assertEqual(receipt["winner_count"], 1)
+            self.assertEqual(receipt["cache_entry_count"], 1)
             self.assertEqual(len(receipt["winners_sha256"]), 64)
-            self.assertTrue(receipt["decision_equivalent"])
-            self.assertEqual(receipt["differences"], [])
+            self.assertEqual(
+                receipt["decision_equivalence"],
+                {"status": "NOT_EVALUATED", "differences": None},
+            )
             self.assertEqual(receipt["runtime"], {"status": "NOT_EVALUATED"})
             self.assertNotEqual(
                 receipt["control_selector"]["patch_set_id"],

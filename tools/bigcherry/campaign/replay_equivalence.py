@@ -23,10 +23,12 @@ build (0110) halves:
   not a second replay implementation: it calls ``tuning.replay.read_cache``
   and production resolution APIs only.
 
-This module supplies the OFFLINE half of PA26 (composition-delta proof +
-fixed-corpus binding). It intentionally makes no runtime/dispatch claim --
-``build_offline_receipt``'s ``runtime.status`` is always ``NOT_EVALUATED``.
-PA26 cannot close on this alone: a real two-arm HIP build+replay run on real
+This module supplies composition/corpus PREFLIGHT for PA26 -- not an
+equivalence proof. It exactly proves the candidate composition (membership,
+order, and content hash) and binds a fixed winner corpus; it makes no
+runtime/dispatch/build claim at all (``build_offline_receipt``'s
+``decision_equivalence`` and ``runtime`` are always ``NOT_EVALUATED``). PA26
+cannot close on this alone: a real two-arm HIP build+replay run on real
 hardware, comparing actual resolved dispatch/signature/winner/output per
 ``docs/planning/active/patching-patch-system/PA26.md``, is still required.
 """
@@ -153,30 +155,40 @@ def resolve_composition_delta(
 
 def require_expected_composition_delta(delta: CompositionDelta) -> None:
     """Fail closed unless the candidate is EXACTLY control minus
-    ``EXPECTED_REMOVED_MODULES`` -- no extra module, no missing removal, no
-    reordering-induced mismatch, and (via ``SelectorIdentity``'s own
-    ``__post_init__``) no module-hash divergence on any shared module."""
-    if delta.added:
+    ``EXPECTED_REMOVED_MODULES``, in the SAME order, with the SAME content
+    hashes for every surviving module.
+
+    GPT review (req_19d7a4cde3e84bd8) found the original membership+shared-
+    hash check did not actually catch a reordered candidate --
+    ``SelectorIdentity.__post_init__`` validates internal alignment within
+    one identity, not order between two. Comparing the projected
+    ``(patch_ids, module_hashes)`` exactly (control with the expected-removed
+    modules filtered out) checks membership, order, and content identity in
+    one exact-equality assertion.
+    """
+    if delta.control.source_ref != delta.candidate.source_ref:
         raise ReplayEquivalenceError(
-            "serving-core candidate carries module(s) absent from control: "
-            f"{delta.added}"
+            "control and candidate resolve different source refs: "
+            f"{delta.control.source_ref!r} vs {delta.candidate.source_ref!r} "
+            "-- PA26 requires both arms from the same resolved source/ref"
         )
-    if delta.removed != EXPECTED_REMOVED_MODULES:
-        raise ReplayEquivalenceError(
-            "serving-core candidate's removed-module set does not match the "
-            f"expected PA20 serving boundary: got {list(delta.removed)}, "
-            f"want {list(EXPECTED_REMOVED_MODULES)}"
-        )
-    shared_ids = set(delta.control.patch_ids) & set(delta.candidate.patch_ids)
-    control_hashes = dict(delta.control.module_hashes)
-    candidate_hashes = dict(delta.candidate.module_hashes)
-    diverged = sorted(
-        pid for pid in shared_ids if control_hashes[pid] != candidate_hashes[pid]
+    removed = frozenset(EXPECTED_REMOVED_MODULES)
+    expected_ids = tuple(
+        pid for pid in delta.control.patch_ids if pid not in removed
     )
-    if diverged:
+    expected_hashes = tuple(
+        entry for entry in delta.control.module_hashes if entry[0] not in removed
+    )
+    if delta.candidate.patch_ids != expected_ids:
         raise ReplayEquivalenceError(
-            f"module(s) shared by both arms have diverging content hashes: "
-            f"{diverged}"
+            "serving-core candidate's module order/membership does not equal "
+            f"control minus the expected PA20 serving boundary: got "
+            f"{list(delta.candidate.patch_ids)}, want {list(expected_ids)}"
+        )
+    if delta.candidate.module_hashes != expected_hashes:
+        raise ReplayEquivalenceError(
+            "serving-core candidate's module content hashes diverge from "
+            "control's for one or more surviving (shared) modules"
         )
 
 
@@ -240,8 +252,13 @@ def build_offline_receipt(
         "actual_composition_delta": list(delta.removed),
         "winners_sha256": corpus.sha256,
         "winners_header": corpus.header,
-        "winner_count": len(corpus.entries),
-        "decision_equivalent": True,
-        "differences": [],
+        # v5 caches can retain multiple generations/provenance identities
+        # (select_newest_winners(), build()) -- this counts wire entries in
+        # the frozen corpus, not "winners" in any narrower sense.
+        "cache_entry_count": len(corpus.entries),
+        # No replay decision, generated state, build, or runtime output has
+        # been compared yet (GPT review req_19d7a4cde3e84bd8): this receipt
+        # is composition/corpus preflight only, not an equivalence proof.
+        "decision_equivalence": {"status": "NOT_EVALUATED", "differences": None},
         "runtime": {"status": "NOT_EVALUATED"},
     }
