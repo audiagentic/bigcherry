@@ -309,9 +309,13 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
     def test_per_arm_activation_logs_are_written_and_bound(self) -> None:
         result, run_dir, _, _, _ = self._run()
 
+        # Namespaced by architecture under logs/ (RD08/RD73 convention):
+        # the standalone lab driver shares one run_dir across all three
+        # contract architectures, so an un-namespaced pair would be
+        # overwritten by each later architecture.
         # 2 lanes x 3 seeds = 6 real invocations per arm, one header each.
-        subject_text = (run_dir / "activation-rd12-subject.log").read_text(encoding="utf-8")
-        control_text = (run_dir / "activation-rd12-control.log").read_text(encoding="utf-8")
+        subject_text = (run_dir / "logs" / "activation-rd12-gfx1100-subject.log").read_text(encoding="utf-8")
+        control_text = (run_dir / "logs" / "activation-rd12-gfx1100-control.log").read_text(encoding="utf-8")
         self.assertIn(TRACE_MARKER, subject_text)
         self.assertNotIn(TRACE_MARKER, control_text)
         self.assertEqual(subject_text.count("\n---\n"), 5)
@@ -321,8 +325,8 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
         # run dir -- _builtin_trace_marker() re-reads them and re-verifies
         # the marker itself.
         for key, expected_path in (
-            ("subject_log_artifact", "activation-rd12-subject.log"),
-            ("control_log_artifact", "activation-rd12-control.log"),
+            ("subject_log_artifact", "logs/activation-rd12-gfx1100-subject.log"),
+            ("control_log_artifact", "logs/activation-rd12-gfx1100-control.log"),
         ):
             ref = result[key]
             self.assertEqual(ref["path"], expected_path)
@@ -330,14 +334,14 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
             self.assertEqual(
                 ref["sha256"], hashlib.sha256(target.read_bytes()).hexdigest(),
             )
-        self.assertEqual(result["subject_log_path"], "activation-rd12-subject.log")
-        self.assertEqual(result["control_log_path"], "activation-rd12-control.log")
+        self.assertEqual(result["subject_log_path"], "logs/activation-rd12-gfx1100-subject.log")
+        self.assertEqual(result["control_log_path"], "logs/activation-rd12-gfx1100-control.log")
 
         doc = json.loads(
             (run_dir / "artifacts" / "rd12-correctness-gfx1100.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(doc["activation"]["subject_log"], "activation-rd12-subject.log")
-        self.assertEqual(doc["activation"]["control_log"], "activation-rd12-control.log")
+        self.assertEqual(doc["activation"]["subject_log"], "logs/activation-rd12-gfx1100-subject.log")
+        self.assertEqual(doc["activation"]["control_log"], "logs/activation-rd12-gfx1100-control.log")
 
     def test_activation_logs_preserved_even_when_activation_fails(self) -> None:
         # The logs must exist (and stay marker-free) on a FAILED activation
@@ -347,12 +351,112 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
         result, run_dir, _, _, _ = self._run(runner=runner)
 
         self.assertFalse(result["results"]["activation"].passed)
-        subject_text = (run_dir / "activation-rd12-subject.log").read_text(encoding="utf-8")
-        control_text = (run_dir / "activation-rd12-control.log").read_text(encoding="utf-8")
+        subject_text = (run_dir / "logs" / "activation-rd12-gfx1100-subject.log").read_text(encoding="utf-8")
+        control_text = (run_dir / "logs" / "activation-rd12-gfx1100-control.log").read_text(encoding="utf-8")
         self.assertNotIn(TRACE_MARKER, subject_text)
         self.assertNotIn(TRACE_MARKER, control_text)
         self.assertEqual(subject_text.count("\n---\n"), 5)
         self.assertEqual(control_text.count("\n---\n"), 5)
+
+    def test_real_trace_marker_validator_passes_on_producer_logs(self) -> None:
+        # GPT review (req_243e3fcd3d684077): the producer's exposed refs
+        # must satisfy the REAL validator, not just look right. Build the
+        # trace_evidence the --run-rd12-contract CLI builds (from the
+        # producer result) against the activation check DECLARED in the
+        # patch's own validation.toml, and run _builtin_trace_marker().
+        from bigcherry.patch import validation as patch_validation
+
+        result, run_dir, _, _, _ = self._run()
+
+        toml_path = (
+            TOOLS_ROOT.parent
+            / "patches" / "1205_rd12_paired_mmvq_dual_output" / "validation.toml"
+        )
+        specs = patch_validation.parse_validation_toml(
+            toml_path, patch_id="1205_rd12_paired_mmvq_dual_output",
+        )
+        spec = next(s for s in specs if s.validator == "trace-marker")
+        trace_evidence = {
+            "positive": {
+                "marker_regex": spec.config["marker-regex"],
+                "artifact": result["subject_log_artifact"],
+            },
+            "negative": {
+                "marker_regex": spec.config["marker-regex"],
+                "artifact": result["control_log_artifact"],
+            },
+        }
+        ctx = SimpleNamespace(run_dir=run_dir, trace_evidence=trace_evidence)
+        verdict = patch_validation._builtin_trace_marker(spec, ctx)
+        self.assertEqual(verdict.status, patch_validation.PASS, verdict)
+
+    def test_shared_run_dir_architecture_namespacing_prevents_overwrite(self) -> None:
+        # GPT review (req_243e3fcd3d684077): the standalone lab driver
+        # shares one run_dir across all three contract architectures. Each
+        # architecture's logs must land at its own path -- a second run
+        # must not overwrite the first's bound artifacts.
+        temp_root = Path(tempfile.mkdtemp())
+        run_dir = temp_root / "run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        first = self._run_shared(run_dir)
+        second = self._run_shared(run_dir, architecture="gfx1201")
+
+        first_subject = run_dir / "logs" / "activation-rd12-gfx1100-subject.log"
+        first_control = run_dir / "logs" / "activation-rd12-gfx1100-control.log"
+        second_subject = run_dir / "logs" / "activation-rd12-gfx1201-subject.log"
+        second_control = run_dir / "logs" / "activation-rd12-gfx1201-control.log"
+        for path in (first_subject, first_control, second_subject, second_control):
+            self.assertTrue(path.is_file(), path)
+        self.assertIn(TRACE_MARKER, first_subject.read_text(encoding="utf-8"))
+        self.assertNotIn(TRACE_MARKER, first_control.read_text(encoding="utf-8"))
+        self.assertIn(TRACE_MARKER, second_subject.read_text(encoding="utf-8"))
+        self.assertNotIn(TRACE_MARKER, second_control.read_text(encoding="utf-8"))
+
+        # Each run's bound refs point at ITS OWN architecture's files.
+        self.assertEqual(
+            first["subject_log_artifact"]["path"], "logs/activation-rd12-gfx1100-subject.log",
+        )
+        self.assertEqual(
+            second["subject_log_artifact"]["path"], "logs/activation-rd12-gfx1201-subject.log",
+        )
+        for run_result in (first, second):
+            for key in ("subject_log_artifact", "control_log_artifact"):
+                ref = run_result[key]
+                target = run_dir / ref["path"]
+                self.assertEqual(
+                    ref["sha256"], hashlib.sha256(target.read_bytes()).hexdigest(),
+                )
+
+    def _run_shared(self, run_dir: Path, *, architecture: str = "gfx1100"):
+        source = _FakeSourceModule()
+        return vc.run_rd12_correctness_check(
+            base_revision="a" * 40, hip_path=Path("/opt/rocm"),
+            amdgpu_targets=architecture,
+            worktree_root=Path(tempfile.mkdtemp()) / "worktrees",
+            build_root=Path(tempfile.mkdtemp()) / "build",
+            build_env={"HIP_PATH": "/opt/rocm"}, run_dir=run_dir,
+            _source_module=source, _evidence_module=_FakeEvidenceModule(),
+            _runner=_FakeRunner(),
+        )
+
+    def test_record_artifact_refs_include_activation_log_hashes(self) -> None:
+        # GPT review (req_243e3fcd3d684077): make_record() derives
+        # artifact_hashes/campaign_artifacts from _artifact_refs() only --
+        # the namespaced logs must be enumerated there, or a passing
+        # trace-marker check would be recorded with no durable hashes of
+        # the raw logs it re-verified.
+        from bigcherry.patch import evidence as patch_evidence
+
+        _, run_dir, _, _, _ = self._run()
+
+        refs = {ref["path"]: ref["sha256"] for ref in patch_evidence._artifact_refs(run_dir)}
+        for name in ("logs/activation-rd12-gfx1100-subject.log",
+                     "logs/activation-rd12-gfx1100-control.log"):
+            self.assertIn(name, refs, name)
+            self.assertEqual(
+                refs[name], hashlib.sha256((run_dir / name).read_bytes()).hexdigest(),
+            )
 
     def test_unsupported_or_multi_architecture_fails_before_resolution(self) -> None:
         for architecture in ("gfx1151", "gfx1100;gfx1201", ""):

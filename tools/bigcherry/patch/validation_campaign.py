@@ -2887,7 +2887,13 @@ def run_rd12_correctness_check(
         activation_observations.append({
             "arm": arm,
             "seed": seed,
-            "hit": trace_marker in stderr,
+            # Both streams: the per-arm logs below concatenate stdout+stderr
+            # and _builtin_trace_marker() re-searches the WHOLE file, so the
+            # producer's own hit observation must use the same search space
+            # (GPT review req_243e3fcd3d684077: stderr-only here would
+            # disagree with the validator if logging were ever redirected
+            # to stdout).
+            "hit": trace_marker in stdout or trace_marker in stderr,
         })
         # Keep each invocation's raw streams for the per-arm activation
         # logs written below: the declared trace-marker check's validator
@@ -2973,12 +2979,19 @@ def run_rd12_correctness_check(
                 "bit_identical": exact_equal,
             })
 
-    # One raw per-arm log each (RD08/RD58 precedent): these files are the
-    # artifacts the declared trace-marker check binds and re-verifies, so
-    # they carry the real, unfiltered subprocess output. Written even when
-    # activation fails, so a failed run's logs remain inspectable.
-    subject_log_path = run_dir / "activation-rd12-subject.log"
-    control_log_path = run_dir / "activation-rd12-control.log"
+    # One raw per-arm log each (RD08/RD73 precedent: logs/ + per-run
+    # namespacing): these files are the artifacts the declared trace-marker
+    # check binds and re-verifies, so they carry the real, unfiltered
+    # subprocess output. Written even when activation fails, so a failed
+    # run's logs remain inspectable. Namespaced by architecture because the
+    # standalone lab driver (tools/lab/rd12-correctness/run_real.py) shares
+    # one run_dir across all three contract architectures -- without the
+    # namespace, each later architecture would overwrite the earlier
+    # ones' logs out from under their correctness artifacts.
+    log_dir = run_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    subject_log_path = log_dir / f"activation-rd12-{architecture}-subject.log"
+    control_log_path = log_dir / f"activation-rd12-{architecture}-control.log"
     subject_log_path.write_text(
         "\n---\n".join(
             f"{record['arm']}-seed{record['seed']}:\n{record['stdout']}\n{record['stderr']}"
@@ -8929,7 +8942,15 @@ def main(argv: list[str] | None = None) -> int:
              "one architecture. Required with --run-performance-benchmark; never inferred.",
     )
     args = parser.parse_args(argv)
-    if (
+    if args.run_rd12_contract:
+        # RD12's producer consumes no model or manifest -- its workload is
+        # the registered 1258 test-backend-ops case, not a GGUF -- so the
+        # generic runtime-qualification prerequisite does not apply. It
+        # does require one contract architecture, which the producer
+        # validates as exactly one.
+        if args.amdgpu_targets is None:
+            parser.error("--run-rd12-contract requires --amdgpu-targets")
+    elif (
         not args.framework_configuration
         and not args.run_performance_benchmark
         and (args.model is None or args.manifest is None or args.amdgpu_targets is None)
