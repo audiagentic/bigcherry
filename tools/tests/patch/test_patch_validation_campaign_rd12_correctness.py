@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -304,6 +305,54 @@ class RD12CorrectnessCampaignTests(unittest.TestCase):
 
         self.assertFalse(result["results"]["activation"].passed)
         self.assertFalse(result["results"]["bit_identical"].passed)
+
+    def test_per_arm_activation_logs_are_written_and_bound(self) -> None:
+        result, run_dir, _, _, _ = self._run()
+
+        # 2 lanes x 3 seeds = 6 real invocations per arm, one header each.
+        subject_text = (run_dir / "activation-rd12-subject.log").read_text(encoding="utf-8")
+        control_text = (run_dir / "activation-rd12-control.log").read_text(encoding="utf-8")
+        self.assertIn(TRACE_MARKER, subject_text)
+        self.assertNotIn(TRACE_MARKER, control_text)
+        self.assertEqual(subject_text.count("\n---\n"), 5)
+        self.assertEqual(control_text.count("\n---\n"), 5)
+
+        # The exposed bound refs must point at real, matching files in the
+        # run dir -- _builtin_trace_marker() re-reads them and re-verifies
+        # the marker itself.
+        for key, expected_path in (
+            ("subject_log_artifact", "activation-rd12-subject.log"),
+            ("control_log_artifact", "activation-rd12-control.log"),
+        ):
+            ref = result[key]
+            self.assertEqual(ref["path"], expected_path)
+            target = run_dir / ref["path"]
+            self.assertEqual(
+                ref["sha256"], hashlib.sha256(target.read_bytes()).hexdigest(),
+            )
+        self.assertEqual(result["subject_log_path"], "activation-rd12-subject.log")
+        self.assertEqual(result["control_log_path"], "activation-rd12-control.log")
+
+        doc = json.loads(
+            (run_dir / "artifacts" / "rd12-correctness-gfx1100.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(doc["activation"]["subject_log"], "activation-rd12-subject.log")
+        self.assertEqual(doc["activation"]["control_log"], "activation-rd12-control.log")
+
+    def test_activation_logs_preserved_even_when_activation_fails(self) -> None:
+        # The logs must exist (and stay marker-free) on a FAILED activation
+        # too -- that is exactly when the validator needs the real output
+        # to re-verify the negative result itself.
+        runner = _FakeRunner(subject_marker=False)
+        result, run_dir, _, _, _ = self._run(runner=runner)
+
+        self.assertFalse(result["results"]["activation"].passed)
+        subject_text = (run_dir / "activation-rd12-subject.log").read_text(encoding="utf-8")
+        control_text = (run_dir / "activation-rd12-control.log").read_text(encoding="utf-8")
+        self.assertNotIn(TRACE_MARKER, subject_text)
+        self.assertNotIn(TRACE_MARKER, control_text)
+        self.assertEqual(subject_text.count("\n---\n"), 5)
+        self.assertEqual(control_text.count("\n---\n"), 5)
 
     def test_unsupported_or_multi_architecture_fails_before_resolution(self) -> None:
         for architecture in ("gfx1151", "gfx1100;gfx1201", ""):

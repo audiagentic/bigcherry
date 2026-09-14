@@ -134,6 +134,45 @@ class Rd12ContractCliTests(unittest.TestCase):
         self.assertIn('"control": artifact_doc["control_build_identity"]', source)
         self.assertIn('"subject": artifact_doc["subject_build_identity"]', source)
 
+    def test_run_rd12_correctness_check_writes_per_arm_activation_logs(self) -> None:
+        # The declared trace-marker check can only be satisfied from REAL
+        # subprocess output: the producer must write one raw per-arm log
+        # into the run dir and expose bound {path, sha256} refs for the
+        # CLI to consume (RD08/RD58/RD73 precedent).
+        source = inspect.getsource(vc.run_rd12_correctness_check)
+        self.assertIn('run_dir / "activation-rd12-subject.log"', source)
+        self.assertIn('run_dir / "activation-rd12-control.log"', source)
+        self.assertIn('"subject_log_artifact": subject_log_ref', source)
+        self.assertIn('"control_log_artifact": control_log_ref', source)
+        # Raw streams must be captured per invocation, not summarized away
+        # (the old code discarded stdout/stderr entirely).
+        self.assertIn('"stdout": stdout, "stderr": stderr', source)
+
+    def test_binds_trace_evidence_from_per_arm_activation_logs(self) -> None:
+        # --run-rd12-contract skips the generic trace probe, so the RD12
+        # block itself must build trace_evidence -- otherwise the record
+        # carries {} and the declared trace-marker check can never leave
+        # BLOCKED no matter how many real runs pass.
+        block_start = self.run_source.index("if args.run_rd12_contract:")
+        block = self.run_source[block_start:self.run_source.index(
+            "if args.run_rd04_contract:", block_start
+        )]
+        self.assertIn("trace_evidence = {", block)
+        self.assertIn('"marker_regex": trace_marker_regex', block)
+        self.assertIn('rd12_qualification["subject_log_artifact"]', block)
+        self.assertIn('rd12_qualification["control_log_artifact"]', block)
+        # positive must be the subject (marker-present) arm and negative
+        # the control (marker-absent) arm -- swapped arms would silently
+        # invert the check's meaning.
+        self.assertLess(
+            block.index('rd12_qualification["subject_log_artifact"]'),
+            block.index('"negative"'),
+        )
+        self.assertGreater(
+            block.index('rd12_qualification["control_log_artifact"]'),
+            block.index('"negative"'),
+        )
+
     def test_contract_correctness_gate_threads_rd12_named_results(self) -> None:
         # Real bug caught on first real-hardware run (2026-09-13): RD12's
         # bit_identical PASS never reached compute_contract_correctness_gate(),
