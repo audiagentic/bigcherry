@@ -178,9 +178,17 @@ class PatchValidationDocumentationTests(unittest.TestCase):
         )
 
     def test_public_intents_match_the_real_cli_parser(self) -> None:
-        document = _strip_fenced_markdown(CANONICAL.read_text(encoding="utf-8"))
+        # Normalize whitespace: the documented sentence is prose and wraps
+        # across lines, and `.` in the capture must not be made to span a
+        # newline (no DOTALL) or it would swallow the rest of the paragraph.
+        document = re.sub(
+            r"\s+", " ", _strip_fenced_markdown(CANONICAL.read_text(encoding="utf-8"))
+        )
+        # The public-intent list ends at the first clause boundary (; or .)
+        # after "exactly" -- the sentence continues with the internal
+        # intents (AUTHOR/LINT), which are not part of the CLI's choices.
         match = re.search(
-            r"The public\s+`patch-gates`\s+intents are exactly\s+(.+?)\.",
+            r"The public `patch-gates` intents are exactly (.+?)(?:[.;])",
             document,
         )
         self.assertIsNotNone(match)

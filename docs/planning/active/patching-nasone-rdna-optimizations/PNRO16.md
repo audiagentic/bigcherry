@@ -54,9 +54,15 @@ A working offline expert-placement compiler exists, registered in TOOL_DISPOSITI
 
 ## Notes
 
-Original spike's own topology.brutus.example.json expert budgets were explicitly NOT a validated performance recommendation -- re-derive real budgets from the actual target model's inventory at pickup time, don't reuse the old example file's numbers.
+Original spike's own topology.brutus.example.json expert budgets were explicitly NOT a validated performance recommendation -- re-derive real budgets from the actual target model's inventory at pickup time, don't reuse the old example file's numbers. (2026-09-14: file moved to the prefixed patching-nasone-rdna-optimizations/ group, so test_nro_patch_packages' completeness check covers it.)
 
 ## Change Log
 
 - 2026-09-11T04:32:00.691672+00:00 (created-by): Created by agent
 - 2026-09-11T04:32:12.763102+00:00 (updated-by): Updated: priority='P2', section:description, section:steps, section:acceptance_criteria, section:notes
+- 2026-09-14T10:47:56.388459+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20260914_105034_fixed-the-three-long-standing_1994
+- 2026-09-14T10:50:37.293465+00:00 (updated-by): Updated: section:ledger-events
