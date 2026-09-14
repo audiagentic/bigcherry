@@ -1,7 +1,7 @@
 ---
 id: PNRO16
 order: 0
-plan: nasone-rdna-optimizations
+plan: patching-nasone-rdna-optimizations
 state: pending
 created-at: '2026-09-11T04:32:00.691672+00:00'
 breadth: ''
