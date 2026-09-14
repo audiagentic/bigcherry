@@ -1316,34 +1316,6 @@ def _require_fresh(
     return known_good
 
 
-def _require_ordered_subsequence(
-    report_modules: tuple[tuple[str, str], ...],
-    required: tuple[tuple[str, str], ...],
-) -> None:
-    """Fail closed unless ``required`` (exact ``(patch_id, content_hash)``
-    pairs) appears in ``report_modules`` as an order-preserving subsequence.
-
-    PA34 (dev-gpt-agent req_41a3133e657340c7 Q1): the no-source
-    validate/promote path has no named selector to bind an exact identity
-    against, so the report is bound by the composition's exact module
-    content instead. The report may have resolved MORE modules (a larger
-    selection); it must have resolved the required ones, in the same
-    relative order, at the same content hashes.
-    """
-    iterator = iter(report_modules)
-    for pair in required:
-        for candidate in iterator:
-            if candidate == pair:
-                break
-        else:
-            raise StaleRebaseReportError(
-                "the rebase report's resolved modules do not contain the "
-                "required composition as an order-preserving subsequence "
-                f"(first missing/mis-ordered: patch {pair[0]!r}) -- the report "
-                "is not evidence for this evaluation; re-run patch-rebase-check"
-            )
-
-
 def require_fresh_report(
     report: Mapping[str, Any],
     root: Path,
@@ -1362,11 +1334,18 @@ def require_fresh_report(
     experiment/focal/overlay selection.
 
     ``required_module_hashes`` is the mutually-exclusive no-source binding
-    (dev-gpt-agent req_41a3133e657340c7 Q1): instead of a 5th selector
-    kind, the report's resolved modules must contain the supplied exact
-    ``(patch_id, content_hash)`` pairs as an order-preserving subsequence,
-    and an all-patches report is rejected outright (it is evidence for the
-    whole registry, not for a focal's dependency closure).
+    (dev-gpt-agent req_41a3133e657340c7 Q1, corrected round 2 req_1d02cb052310446c
+    Q1): instead of a 5th selector kind, the report's PARSED selector identity
+    (``SelectorIdentity.module_hashes`` -- never ``report["patches"]``, which
+    is only set-checked elsewhere and can be reordered) must EXACTLY equal
+    the supplied ``(patch_id, content_hash)`` pairs, in order. An
+    order-preserving subsequence is not enough: ``quarantine_fixed_point()``
+    threads earlier patches' text into shared source texts, so a focal patch
+    can rebase clean only because an unrelated earlier patch in a larger
+    selection already modified its anchor -- the report must be evidence for
+    EXACTLY this composition, not a superset that happens to contain it. An
+    all-patches report is rejected outright (it is evidence for the whole
+    registry, not for a focal's dependency closure).
     """
     if expected_selector is not None and required_module_hashes is not None:
         raise ValueError(
@@ -1416,13 +1395,13 @@ def require_fresh_report(
                 "registry, not for this focal's dependency closure; re-run "
                 "patch-rebase-check with an explicit --source"
             )
-        _require_ordered_subsequence(
-            tuple(
-                (entry.get("patch_id"), entry.get("implementation_digest"))
-                for entry in report.get("patches", ())
-            ),
-            tuple(required),
-        )
+        if actual.module_hashes != tuple(required):
+            raise StaleRebaseReportError(
+                "the rebase report's selector module_hashes do not exactly "
+                "match the required composition (order and content hashes) "
+                "-- the report is not evidence for this evaluation; re-run "
+                "patch-rebase-check"
+            )
     return known_good
 
 

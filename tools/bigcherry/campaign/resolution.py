@@ -401,6 +401,7 @@ def resolve_patch_set(
     classification: str = "base",
     catalog_directory: object = None,
     composition_names: tuple[str, ...] | None = None,
+    modules: dict[str, patchset.PatchModule] | None = None,
 ) -> ResolvedPatchSet:
     if name == "all":
         raise ResolutionError("'all' is not a valid production patch-set")
@@ -427,30 +428,49 @@ def resolve_patch_set(
     # directory entirely for a genuinely EMPTY custom catalog (a context
     # with zero patch files), which would otherwise silently fall back to
     # the wrong global default.
-    resolved_catalog_directory = (
-        catalog_directory
-        if isinstance(catalog_directory, Path)
-        else ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
-    )
-    selected = patchset.resolve_exact(
-        ids,
-        directory=resolved_catalog_directory,
-        required_state=required_state_override or declared.required_state,
-    )
-    by_id = {module.patch_id: module for module in catalog}
-    if set(by_id) != {
-        module.patch_id
-        for module in patchset.catalog(directory=resolved_catalog_directory)
-    }:
-        raise ResolutionError(
-            "catalog argument does not match the physical patch catalog"
+    if modules is not None:
+        # PA34 (adversarial re-review, dev-gpt-agent req_1d02cb052310446c P1 Q2):
+        # the caller bound this resolution to ONE catalog snapshot (the rebase
+        # identity snapshot). Consume it via the pure validator -- never
+        # re-read the registry, which would admit a concurrent
+        # state/REQUIRES/CONFLICTS edit between identity resolution and
+        # probing. The physical-consistency check below is skipped because
+        # the supplied snapshot IS the authority on this path.
+        selected = patchset.resolve_exact_from_catalog(
+            ids,
+            modules=modules,
+            required_state=required_state_override or declared.required_state,
         )
-    # resolve_exact uses the project catalog; ensure the passed catalog supplies
-    # identical content identities before exposing the result.
-    for module in selected.modules:
-        supplied = by_id.get(module.patch_id)
-        if supplied is None or supplied.content_hash != module.content_hash:
-            raise ResolutionError(f"catalog identity mismatch for {module.patch_id}")
+        by_id = modules
+    else:
+        resolved_catalog_directory = (
+            catalog_directory
+            if isinstance(catalog_directory, Path)
+            else (
+                (catalog[0].catalog_root or catalog[0].path.parent) if catalog else None
+            )
+        )
+        selected = patchset.resolve_exact(
+            ids,
+            directory=resolved_catalog_directory,
+            required_state=required_state_override or declared.required_state,
+        )
+        by_id = {module.patch_id: module for module in catalog}
+        if set(by_id) != {
+            module.patch_id
+            for module in patchset.catalog(directory=resolved_catalog_directory)
+        }:
+            raise ResolutionError(
+                "catalog argument does not match the physical patch catalog"
+            )
+        # resolve_exact uses the project catalog; ensure the passed catalog
+        # supplies identical content identities before exposing the result.
+        for module in selected.modules:
+            supplied = by_id.get(module.patch_id)
+            if supplied is None or supplied.content_hash != module.content_hash:
+                raise ResolutionError(
+                    f"catalog identity mismatch for {module.patch_id}"
+                )
     module_ids = tuple(module.patch_id for module in selected.modules)
     module_hashes = tuple(
         (module.patch_id, module.content_hash) for module in selected.modules
@@ -492,6 +512,7 @@ def resolve_lane_overlay(
     overlay_patch_ids: tuple[str, ...],
     overlay_name: str,
     catalog_directory: object = None,
+    modules: dict[str, patchset.PatchModule] | None = None,
 ) -> ResolvedLane:
     """Resolve ``source_name``'s base lane with an EXACT extra module set
     layered on top, under ``resolve_exact``'s ``context_ids`` semantics (the
@@ -514,21 +535,41 @@ def resolve_lane_overlay(
     """
     if source_name not in cfg.sources:
         raise ResolutionError(f"unknown source {source_name!r}")
-    base = resolve_lane(source_name, cfg, catalog, catalog_directory=catalog_directory)
-    resolved_catalog_directory = (
-        catalog_directory
-        if isinstance(catalog_directory, Path)
-        else ((catalog[0].catalog_root or catalog[0].path.parent) if catalog else None)
+    base = resolve_lane(
+        source_name,
+        cfg,
+        catalog,
+        catalog_directory=catalog_directory,
+        modules=modules,
     )
-    overlay_selection = patchset.resolve_exact(
-        tuple(overlay_patch_ids),
-        directory=resolved_catalog_directory,
-        required_state=None,
-        context_ids=frozenset(base.patch_set.module_ids),
-    )
+    if modules is not None:
+        # PA34 (adversarial re-review, dev-gpt-agent req_1d02cb052310446c P1 Q2):
+        # consume the caller's single catalog snapshot -- never re-read the
+        # registry for the overlay either.
+        overlay_selection = patchset.resolve_exact_from_catalog(
+            tuple(overlay_patch_ids),
+            modules=modules,
+            required_state=None,
+            context_ids=frozenset(base.patch_set.module_ids),
+        )
+        by_id = modules
+    else:
+        resolved_catalog_directory = (
+            catalog_directory
+            if isinstance(catalog_directory, Path)
+            else (
+                (catalog[0].catalog_root or catalog[0].path.parent) if catalog else None
+            )
+        )
+        overlay_selection = patchset.resolve_exact(
+            tuple(overlay_patch_ids),
+            directory=resolved_catalog_directory,
+            required_state=None,
+            context_ids=frozenset(base.patch_set.module_ids),
+        )
+        by_id = {module.patch_id: module for module in catalog}
     if set(base.patch_set.module_ids) & {m.patch_id for m in overlay_selection.modules}:
         raise ResolutionError(f"overlay {overlay_name!r} repeats a base patch module")
-    by_id = {module.patch_id: module for module in catalog}
     # PA34 adversarial-review fix (dev-gpt-agent req_b6af12ef4ad34bad P1 #3):
     # resolve_exact() with context_ids only checks the OVERLAY's conflicts
     # against the base (base IDs enter as context_ids, and only modules in
@@ -588,6 +629,7 @@ def resolve_lane(
     *,
     experiment: str | None = None,
     catalog_directory: object = None,
+    modules: dict[str, patchset.PatchModule] | None = None,
 ) -> ResolvedLane:
     if source_name not in cfg.sources:
         raise ResolutionError(f"unknown source {source_name!r}")
@@ -613,6 +655,7 @@ def resolve_lane(
             classification="experimental" if experiment else "base",
             catalog_directory=catalog_directory,
             composition_names=(base_name,),
+            modules=modules,
         )
     else:
         # Each named set is resolved under its OWN required_state policy,
@@ -631,6 +674,7 @@ def resolve_lane(
                 classification="base",
                 catalog_directory=catalog_directory,
                 composition_names=(name,),
+                modules=modules,
             )
             for name in source.patch_sets
         ]
@@ -644,7 +688,11 @@ def resolve_lane(
                         f"{resolved_set.name!r})"
                     )
                 claimed_by[patch_id] = resolved_set.name
-        by_id = {module.patch_id: module for module in catalog}
+        by_id = (
+            modules
+            if modules is not None
+            else {module.patch_id: module for module in catalog}
+        )
         # RV80 follow-up (GPT deep review, systemic): a GLOBAL (order, patch_id)
         # re-sort here would destroy the dependency order that
         # resolve_patch_set()/resolve_exact() already established whenever
@@ -706,6 +754,7 @@ def resolve_lane(
             overlay_patch_ids=cfg.experiments[experiment].patches,
             overlay_name=f"experiment:{experiment}",
             catalog_directory=resolved_catalog_directory,
+            modules=modules,
         )
         resolved = overlaid.patch_set
     return ResolvedLane(
@@ -807,28 +856,29 @@ def resolve_canonical_selection(
     source = cfg.sources[source_name]
     resolved_ref = cfg.pinned if source.ref == "pinned" else source.ref
 
+    # PA34 (adversarial re-review, dev-gpt-agent req_1d02cb052310446c P1 Q2):
+    # bind the ENTIRE canonical resolution to the caller's supplied catalog
+    # snapshot. Every sub-resolution (patch-set, overlay, focal closure) is
+    # validated against these exact modules -- the registry is never
+    # re-read on this path, so a concurrent state/REQUIRES/CONFLICTS edit
+    # cannot change what is resolved between identity resolution and probing.
+    # The 3 live callers (rebase identity/snapshot, cli patch-gates, patch
+    # selection) all pass a real catalog, so this is always-consume.
+    by_id = {module.patch_id: module for module in catalog}
+
     if focal_overlay_patch_id is not None:
-        if focal_overlay_patch_id not in {m.patch_id for m in catalog}:
+        if focal_overlay_patch_id not in by_id:
             raise ResolutionError(f"unknown focal patch {focal_overlay_patch_id!r}")
         base = resolve_lane(
             source_name,
             cfg,
             catalog,
             catalog_directory=catalog_directory,
+            modules=by_id,
         )
-        # Same catalog-root inference the rest of this module uses (typed:
-        # expand_composition's directory is Path | None, not object).
-        closure = patchset.expand_composition(
+        closure = patchset.expand_composition_from_modules(
             (focal_overlay_patch_id,),
-            directory=(
-                catalog_directory
-                if isinstance(catalog_directory, Path)
-                else (
-                    (catalog[0].catalog_root or catalog[0].path.parent)
-                    if catalog
-                    else None
-                )
-            ),
+            modules=by_id,
         ).expanded
         base_ids = set(base.patch_set.module_ids)
         overlay_ids = tuple(
@@ -843,6 +893,7 @@ def resolve_canonical_selection(
                 SELECTOR_KIND_FOCAL_OVERLAY, focal_overlay_patch_id
             ),
             catalog_directory=catalog_directory,
+            modules=by_id,
         )
         kind = SELECTOR_KIND_FOCAL_OVERLAY
     else:
@@ -852,6 +903,7 @@ def resolve_canonical_selection(
             catalog,
             experiment=experiment,
             catalog_directory=catalog_directory,
+            modules=by_id,
         )
         kind = SELECTOR_KIND_EXPERIMENT if experiment else SELECTOR_KIND_SOURCE
 

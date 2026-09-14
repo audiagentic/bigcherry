@@ -364,6 +364,24 @@ def expand_composition(
     *,
     directory: Path | None = None,
 ) -> CompositionExpansion:
+    """Load the catalog and compute the REQUIRES closure -- see
+    :func:`expand_composition_from_modules` for the closure contract.
+
+    (PA34 adversarial-review fix, dev-gpt-agent req_1d02cb052310446c P1 Q2:
+    the pure half is exposed so a caller bound to one catalog snapshot -- the
+    rebase identity snapshot -- can expand a closure against those exact
+    modules instead of re-reading the registry, which would otherwise admit
+    a concurrent REQUIRES edit between identity resolution and closure
+    expansion.)"""
+    modules = {module.patch_id: module for module in catalog(directory)}
+    return expand_composition_from_modules(patch_ids, modules=modules)
+
+
+def expand_composition_from_modules(
+    patch_ids: tuple[str, ...] | list[str],
+    *,
+    modules: dict[str, PatchModule],
+) -> CompositionExpansion:
     """Compute the full REQUIRES closure of ``patch_ids``, in a stable
     topological order (dependencies before dependents, then canonical
     ``(order, patch_id)`` as a tie-breaker).
@@ -378,10 +396,13 @@ def expand_composition(
     unchanged and does not auto-expand, so no existing recipe/experiment's
     behavior or identity changes by this function merely existing.
 
+    ``modules`` is an already-loaded ``patch_id -> PatchModule`` mapping --
+    the closure is computed against those exact modules and never touches
+    the registry (PA34 identity snapshot).
+
     Raises ``ValueError`` on an unknown patch ID or a REQUIRES cycle
     (reported with the exact cycle path, not just "a cycle exists").
     """
-    modules = {module.patch_id: module for module in catalog(directory)}
     requested = tuple(patch_ids)
     unknown = sorted(set(requested) - set(modules))
     if unknown:

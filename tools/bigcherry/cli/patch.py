@@ -651,11 +651,7 @@ def cmd_patch_gates(args: Namespace) -> int:
     selector_payload = (
         selection.identity.to_payload()
         if selection is not None
-        else (
-            rebase_report.get("selector")
-            if rebase_report is not None
-            else None
-        )
+        else (rebase_report.get("selector") if rebase_report is not None else None)
     )
     payload = {
         "schema_version": 1,

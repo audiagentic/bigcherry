@@ -168,10 +168,48 @@ class PinBumpState:
         # Schema 1 states carry no selector binding at all and keep their
         # version so the resume guard still rejects them.
         raw_version = int(data["schema_version"])
+        # Fail on a structurally incomplete state (missing run_id/target/
+        # tree/resume) the same way any other schema does, BEFORE the
+        # schema-2 selector-shape check below -- a state missing its base
+        # fields is generically invalid, not specifically "legacy/unbound".
+        for _required_key in ("run_id", "target", "tree", "resume"):
+            if _required_key not in data:
+                raise KeyError(_required_key)
         if raw_version >= 3:
             freeze = data.get("selection_freeze") or {}
         elif raw_version == 2:
-            freeze = data.get("selector") or {}
+            # PA34 Q3 (dev-gpt-agent req_1d02cb052310446c Q3): a schema-2
+            # state's "selector" key is the ONLY thing that makes it
+            # resumable (see _validate_resume's schema<2 rejection above).
+            # Promoting raw_version to 3 before checking the legacy shape
+            # would let a missing/malformed "selector" key slip past that
+            # guard as an unbound-but-schema-3 state instead of being
+            # rejected as legacy/unbound. Validate first, fail closed.
+            freeze = data.get("selector")
+            if (
+                not isinstance(freeze, dict)
+                or not isinstance(freeze.get("kind"), str)
+                or not freeze.get("kind")
+                or not isinstance(freeze.get("name"), str)
+                or not freeze.get("name")
+                or not isinstance(freeze.get("patch_ids"), list)
+                or not all(isinstance(pid, str) for pid in freeze.get("patch_ids", []))
+            ):
+                raise PinBumpStop(
+                    "resume",
+                    "LEGACY_STATE_SELECTOR_UNBOUND",
+                    "this schema-2 state's \"selector\" key is missing or "
+                    "malformed -- it cannot prove which selector this run "
+                    "was started with, so resuming it could silently apply "
+                    "a different composition than the original invocation "
+                    "intended",
+                    recommended_actions=[
+                        "start a fresh run instead of resuming this one",
+                        "if this state must be rescued, inspect its coverage "
+                        "report (if the coverage phase already ran) to "
+                        "recover its real selector by hand before resuming",
+                    ],
+                )
             raw_version = 3
         else:
             freeze = {}
