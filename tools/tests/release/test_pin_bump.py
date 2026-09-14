@@ -261,6 +261,71 @@ class SchemaThreeRoundTripTests(unittest.TestCase):
             self.assertEqual(loaded.selector_kind, "")
             self.assertEqual(loaded.selector_patch_ids, ())
 
+    def _schema_two_payload(self, **selector_override):
+        payload = {
+            "schema_version": 2,
+            "run_id": "run-legacy",
+            "target": {
+                "from_ref": "b10502",
+                "from_sha": "a" * 40,
+                "to_ref": "b10680",
+                "to_sha": "b" * 40,
+            },
+            "transition_commit": "c" * 40,
+            "tree": {"name": "local", "path": "/some/path"},
+            "resume": {"completed_phases": ["preflight"], "next_phase": "declare"},
+            "coverage_report_sha256": "deadbeef",
+        }
+        if "selector" in selector_override:
+            payload["selector"] = selector_override["selector"]
+        return payload
+
+    def test_schema_two_missing_selector_key_fails_closed(self):
+        # PA34 Q3 (dev-gpt-agent req_1d02cb052310446c): promoting a
+        # schema-2 state to schema 3 before checking its "selector" shape
+        # would let a state with no selector binding at all slip past the
+        # schema<2 legacy-unbound guard as an already-schema-3 state.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(self._schema_two_payload()), encoding="utf-8"
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_schema_two_malformed_selector_shape_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(selector={"kind": "source"})
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_schema_two_non_string_patch_ids_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(
+                        selector={
+                            "kind": "source",
+                            "name": "bigcherry",
+                            "patch_ids": [1, 2],
+                        }
+                    )
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
 
 class ValidateResumeTests(unittest.TestCase):
     """Resume-time identity checks: a --resume with a different

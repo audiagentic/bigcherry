@@ -682,6 +682,11 @@ class SelectorIdentityAuthorityTests(unittest.TestCase):
         exact shape ``to_payload()`` produces and which no other domain data
         carries. (``from_payload`` / ``describe_diff`` / annotations / comments
         never match: they are not constructor calls nor such dict literals.)
+      * the same payload hand-assembled via the ``dict(...)`` BUILTIN call
+        form instead of a ``{...}`` literal -- ``dict(selector_kind=...,
+        module_hashes=...)`` produces byte-identical data to the dict
+        literal above but was missed by the literal-only check (dev-gpt-agent
+        review req_1d02cb052310446c P3).
     """
 
     _PAYLOAD_MARKER_KEYS = frozenset(("selector_kind", "module_hashes"))
@@ -718,13 +723,24 @@ class SelectorIdentityAuthorityTests(unittest.TestCase):
                             f"{source_file}:{node.lineno} "
                             f"constructs <module>.SelectorIdentity by attribute"
                         )
+                    # (c) the builtin dict(...) call-form of (b): keyword
+                    # names instead of dict-literal keys.
+                    elif isinstance(func, ast.Name) and func.id == "dict":
+                        keyword_names = {
+                            kw.arg for kw in node.keywords if kw.arg is not None
+                        }
+                        if keyword_names.issuperset(self._PAYLOAD_MARKER_KEYS):
+                            offenders.append(
+                                f"{source_file}:{node.lineno} "
+                                f"hand-assembles a selector identity payload "
+                                "via dict(selector_kind=..., module_hashes=...)"
+                            )
                 # (b) a hand-assembled identity payload dict literal.
                 elif isinstance(node, ast.Dict):
                     string_keys = {
                         key.value
                         for key in node.keys
-                        if isinstance(key, ast.Constant)
-                        and isinstance(key.value, str)
+                        if isinstance(key, ast.Constant) and isinstance(key.value, str)
                     }
                     if string_keys.issuperset(self._PAYLOAD_MARKER_KEYS):
                         offenders.append(
