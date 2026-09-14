@@ -34,6 +34,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from . import apply as patcher
@@ -50,7 +51,11 @@ from ..source.workspace import UpstreamRepository, WorkspaceError
 if TYPE_CHECKING:
     from ..campaign import resolution as campaign_resolution
 
-REPORT_SCHEMA_VERSION = 1
+# PA34: schema 2 replaces the ad-hoc ``selection`` block (patch_ids/source/
+# source_ref/source_patch_set_id/all_patches) with the canonical
+# ``SelectorIdentity.to_payload()`` under ``selector`` -- one serializer,
+# one comparison path, exact order and module hashes bound.
+REPORT_SCHEMA_VERSION = 2
 
 # --- patch-level status -------------------------------------------------
 STATUS_CLEAN = "CLEAN"
@@ -187,7 +192,7 @@ def _digest_from_texts(texts: dict[str, str]) -> str:
     return hasher.hexdigest()
 
 
-def _load_module_patches(module: "patchset.PatchModule") -> list["patcher.FilePatch"]:
+def _load_module_patches(module: patchset.PatchModule) -> list[patcher.FilePatch]:
     """Load one patch's implementation bound EXACTLY to the digest already
     recorded for it (``module.content_hash``) via
     ``registry.load_implementation``'s own ``expected_digest`` check.
@@ -204,50 +209,80 @@ def _load_module_patches(module: "patchset.PatchModule") -> list["patcher.FilePa
     registry = patch_registry.load_registry(root)
     descriptor = registry.get(module.patch_id)
     return patch_registry.load_implementation(
-        descriptor, root=root, expected_digest=module.content_hash,
+        descriptor,
+        root=root,
+        expected_digest=module.content_hash,
     )
 
 
-def _resolve_v2_source(source_name: str) -> "campaign_resolution.CanonicalSelection":
-    """The full canonical selection for ``--source NAME`` -- not just
-    ``patch_ids``, so callers that need to bind freshness on
-    ``source_ref``/``patch_set_id`` (not merely the resulting id list) can.
-    Two logically distinct v2 patch-set compositions can resolve to the
-    identical module-id set; ``patch_set_id`` is the identity that actually
-    distinguishes them (gpt-dev-agent review, legacy recipe removal plan,
-    session ses_5307d9c58ec645cb)."""
+def _selector(
+    *,
+    source_name: str | None = None,
+    all_patches: bool = False,
+    experiment: str | None = None,
+    focal_overlay_patch_id: str | None = None,
+) -> campaign_resolution.SelectorIdentity:
+    """The canonical selector identity for a rebase selection (PA34).
+
+    Exactly one of ``source_name``/``all_patches`` must be given; a source
+    selection may be further qualified by exactly one of ``experiment`` /``focal_overlay_patch_id``. Resolution goes
+    through ``campaign.resolution`` exclusively -- this module never
+    hand-assembles a selector identity payload.
+    """
     from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
     from ..core import config as campaign_config  # noqa: PLC0415
     from ..core import paths as core_paths  # noqa: PLC0415
 
-    try:
-        cfg = campaign_config.load(core_paths.RECIPES)
-        return campaign_resolution.resolve_canonical_selection(
-            source_name, cfg, patchset.catalog(),
-        )
-    except (campaign_resolution.ResolutionError, campaign_config.ConfigError) as exc:
-        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
-
-
-def _selection_patch_ids(
-    *, source_name: str | None = None,
-    all_patches: bool,
-) -> tuple[str, ...]:
-    """Resolves through ``campaign.resolution.resolve_canonical_selection``.
-    Exactly one of ``source_name``/``all_patches`` must be given."""
     given = sum(bool(x) for x in (source_name, all_patches))
     if given != 1:
         raise RebaseCheckError(
             "patch-rebase-check: pass exactly one of --source NAME or --all"
         )
-    modules = patchset.catalog()
-    if all_patches:
-        return tuple(m.patch_id for m in modules if m.state not in patchset.RETIRED_STATES)
-    return _resolve_v2_source(source_name).patch_ids
+    if experiment is not None and focal_overlay_patch_id is not None:
+        raise RebaseCheckError(
+            "--experiment and --focal-overlay are mutually exclusive"
+        )
+    if (
+        experiment is not None or focal_overlay_patch_id is not None
+    ) and not source_name:
+        raise RebaseCheckError("--experiment/--focal-overlay require --source NAME")
+    try:
+        if all_patches:
+            return campaign_resolution.build_all_patches_identity(patchset.catalog())
+        if source_name is None:
+            raise RebaseCheckError("patch-rebase-check: --source NAME required")
+        cfg = campaign_config.load(core_paths.RECIPES)
+        return campaign_resolution.resolve_canonical_selection(
+            source_name,
+            cfg,
+            patchset.catalog(),
+            experiment=experiment,
+            focal_overlay_patch_id=focal_overlay_patch_id,
+        ).identity
+    except (campaign_resolution.ResolutionError, campaign_config.ConfigError) as exc:
+        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
+
+
+def _selection_patch_ids(
+    *,
+    source_name: str | None = None,
+    all_patches: bool,
+    experiment: str | None = None,
+    focal_overlay_patch_id: str | None = None,
+) -> tuple[str, ...]:
+    """Resolves through ``campaign.resolution.resolve_canonical_selection``
+    (PA34: the exact ordered identity composition, not a parallel id list)."""
+    return _selector(
+        source_name=source_name,
+        all_patches=all_patches,
+        experiment=experiment,
+        focal_overlay_patch_id=focal_overlay_patch_id,
+    ).patch_ids
 
 
 def _partition_conflict_free(
-    ids: tuple[str, ...], modules: dict[str, "patchset.PatchModule"],
+    ids: tuple[str, ...],
+    modules: dict[str, patchset.PatchModule],
 ) -> list[tuple[str, ...]]:
     """Split ``ids`` into groups with no `conflicts` relationship inside any
     one group. `--all` probing must never hand two mutually-exclusive
@@ -274,8 +309,11 @@ def _partition_conflict_free(
 
 
 def resolve_selection(
-    *, source_name: str | None = None,
+    *,
+    source_name: str | None = None,
     all_patches: bool,
+    experiment: str | None = None,
+    focal_overlay_patch_id: str | None = None,
 ) -> patchset.ResolvedPatchSet:
     """The exact, dependency-complete, topologically-ordered selection to
     probe. Deliberately goes through ``resolve_exact`` (not the flattening
@@ -283,7 +321,10 @@ def resolve_selection(
     a dependency-incomplete selection fails closed here, before probing,
     rather than silently probing an unsound subset."""
     ids = _selection_patch_ids(
-        source_name=source_name, all_patches=all_patches,
+        source_name=source_name,
+        all_patches=all_patches,
+        experiment=experiment,
+        focal_overlay_patch_id=focal_overlay_patch_id,
     )
     try:
         return patchset.resolve_exact(ids, allow_rejected=False)
@@ -307,14 +348,20 @@ def _context_snippet(text: str, offset: int, *, context_lines: int) -> str:
     return "\n".join(numbered)
 
 
-def _diff_context(previous_revision: str | None, revision: str, root: Path, relative: str) -> str | None:
+def _diff_context(
+    previous_revision: str | None, revision: str, root: Path, relative: str
+) -> str | None:
     """Bounded ``git diff`` of one file across the pin bump, when the
     previous revision is known. Purely informational -- never authoritative,
     just what a human reconciling a moved anchor would run by hand anyway."""
     if not previous_revision:
         return None
     diff = _git_ok(
-        root, "diff", f"{previous_revision}..{revision}", "--", relative,
+        root,
+        "diff",
+        f"{previous_revision}..{revision}",
+        "--",
+        relative,
     )
     if not diff:
         return None
@@ -390,7 +437,7 @@ class FileProbe:
 
 
 def _probe_file_patch(
-    patch: "patcher.FilePatch",
+    patch: patcher.FilePatch,
     root: Path,
     texts: dict[str, str],
     *,
@@ -402,11 +449,18 @@ def _probe_file_patch(
     try:
         target = patcher.resolve_contained_target(root, patch.path)
     except PatchError as exc:
-        probe.edits.append(EditProbe(
-            edit_id="<file>", status=EDIT_FAILED, reason_code=REASON_UNSAFE_TARGET,
-            anchor="", expect_matches=0, actual_matches=None, applies_if=None,
-            rationale=str(exc),
-        ))
+        probe.edits.append(
+            EditProbe(
+                edit_id="<file>",
+                status=EDIT_FAILED,
+                reason_code=REASON_UNSAFE_TARGET,
+                anchor="",
+                expect_matches=0,
+                actual_matches=None,
+                applies_if=None,
+                rationale=str(exc),
+            )
+        )
         return probe
 
     if patch.path in texts:
@@ -416,62 +470,100 @@ def _probe_file_patch(
         texts[patch.path] = text
     else:
         for edit in patch.edits:
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_FAILED, reason_code=REASON_TARGET_MISSING,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=edit.rationale,
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_FAILED,
+                    reason_code=REASON_TARGET_MISSING,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=edit.rationale,
+                )
+            )
         return probe
 
     for edit in patch.edits:
         try:
             guard_hit = bool(re.search(edit.guard_pattern(), text, re.MULTILINE))
         except re.error as exc:
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_FAILED, reason_code=REASON_INVALID_ANCHOR_REGEX,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=f"invalid guard regex: {exc}",
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_FAILED,
+                    reason_code=REASON_INVALID_ANCHOR_REGEX,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=f"invalid guard regex: {exc}",
+                )
+            )
             continue
         if guard_hit:
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_ALREADY_APPLIED, reason_code=None,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=edit.rationale,
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_ALREADY_APPLIED,
+                    reason_code=None,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=edit.rationale,
+                )
+            )
             continue
 
         try:
-            single = patcher.FilePatch(path=patch.path, edits=(edit,), language=patch.language)
+            single = patcher.FilePatch(
+                path=patch.path, edits=(edit,), language=patch.language
+            )
             result = patcher.apply_patch(single, root, dry_run=True, texts=dict(texts))
         except re.error as exc:
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_FAILED, reason_code=REASON_INVALID_ANCHOR_REGEX,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=f"invalid anchor regex: {exc}",
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_FAILED,
+                    reason_code=REASON_INVALID_ANCHOR_REGEX,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=f"invalid anchor regex: {exc}",
+                )
+            )
             continue
 
         edit_result = result.results[0]
         if edit_result.status == "not-applicable":
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_NOT_APPLICABLE, reason_code=None,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=edit.rationale,
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_NOT_APPLICABLE,
+                    reason_code=None,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=edit.rationale,
+                )
+            )
             continue
         if edit_result.status == "already-applied":
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_ALREADY_APPLIED, reason_code=None,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=None, applies_if=edit.applies_if,
-                rationale=edit.rationale,
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_ALREADY_APPLIED,
+                    reason_code=None,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=None,
+                    applies_if=edit.applies_if,
+                    rationale=edit.rationale,
+                )
+            )
             continue
         if edit_result.status == "failed":
             reason_code, actual = _reason_for(edit_result.detail)
@@ -481,26 +573,41 @@ def _probe_file_patch(
                 # target file's noise-stripped text -- not authoritative,
                 # just orientation for a human who has no old-pin diff to go on.
                 context = _context_snippet(text, 0, context_lines=context_lines)
-            probe.edits.append(EditProbe(
-                edit_id=edit.id, status=EDIT_FAILED, reason_code=reason_code,
-                anchor=edit.anchor, expect_matches=edit.expect_matches,
-                actual_matches=actual, applies_if=edit.applies_if,
-                rationale=edit.rationale, context=context,
-            ))
+            probe.edits.append(
+                EditProbe(
+                    edit_id=edit.id,
+                    status=EDIT_FAILED,
+                    reason_code=reason_code,
+                    anchor=edit.anchor,
+                    expect_matches=edit.expect_matches,
+                    actual_matches=actual,
+                    applies_if=edit.applies_if,
+                    rationale=edit.rationale,
+                    context=context,
+                )
+            )
             continue
         # applied
-        probe.edits.append(EditProbe(
-            edit_id=edit.id, status=EDIT_APPLIED, reason_code=None,
-            anchor=edit.anchor, expect_matches=edit.expect_matches,
-            actual_matches=None, applies_if=edit.applies_if,
-            rationale=edit.rationale,
-        ))
+        probe.edits.append(
+            EditProbe(
+                edit_id=edit.id,
+                status=EDIT_APPLIED,
+                reason_code=None,
+                anchor=edit.anchor,
+                expect_matches=edit.expect_matches,
+                actual_matches=None,
+                applies_if=edit.applies_if,
+                rationale=edit.rationale,
+            )
+        )
         # Commit this edit's effect into the shared text so later edits in the
         # same file (and later patches) see it, matching apply_all()'s own
         # threaded-``texts`` semantics.
         merged = patcher.apply_patch(
             patcher.FilePatch(path=patch.path, edits=(edit,), language=patch.language),
-            root, dry_run=True, texts=texts,
+            root,
+            dry_run=True,
+            texts=texts,
         )
         if not merged.ok:  # pragma: no cover - contradicts the single-edit probe above
             raise RebaseCheckError(
@@ -556,9 +663,12 @@ def probe_patch(
     file_patches = _load_module_patches(module)
     files = [
         _probe_file_patch(
-            fp, root, texts,
+            fp,
+            root,
+            texts,
             context_lines=context_lines,
-            previous_revision=previous_revision, revision=revision,
+            previous_revision=previous_revision,
+            revision=revision,
         )
         for fp in file_patches
     ]
@@ -611,9 +721,12 @@ def quarantine_fixed_point(
             if patch_id in quarantined or patch_id in blocked:
                 continue
             probe = probe_patch(
-                by_id[patch_id], root, texts,
+                by_id[patch_id],
+                root,
+                texts,
                 context_lines=context_lines,
-                previous_revision=previous_revision, revision=revision,
+                previous_revision=previous_revision,
+                revision=revision,
             )
             round_probes[patch_id] = probe
             if probe.status == STATUS_FAILED:
@@ -634,7 +747,9 @@ def quarantine_fixed_point(
             final_probes[patch_id] = probe
         quarantined |= newly_failed
 
-        newly_blocked = _propagate_dependency_blocks(ordered_ids, by_id, quarantined | blocked)
+        newly_blocked = _propagate_dependency_blocks(
+            ordered_ids, by_id, quarantined | blocked
+        )
         newly_blocked -= quarantined | blocked
         for patch_id in newly_blocked:
             final_probes[patch_id] = PatchProbe(
@@ -693,15 +808,21 @@ def _bigcherry_revision() -> str:
 
 
 def _probe_group(
-    group_ids: tuple[str, ...], *, context_ids: frozenset[str],
-    repository: "UpstreamRepository", revision: str, context_lines: int,
+    group_ids: tuple[str, ...],
+    *,
+    context_ids: frozenset[str],
+    repository: UpstreamRepository,
+    revision: str,
+    context_lines: int,
     overlay_snapshot: dict[str, str],
-) -> tuple[list["patchset.PatchModule"], dict[str, PatchProbe], tuple[str, ...]]:
+) -> tuple[list[patchset.PatchModule], dict[str, PatchProbe], tuple[str, ...]]:
     """One isolated-worktree probe pass for one conflict-free group. Returns
     (this group's modules in resolved order, its probes, its known_good ids)."""
     try:
         selection = patchset.resolve_exact(
-            group_ids, allow_rejected=False, context_ids=context_ids,
+            group_ids,
+            allow_rejected=False,
+            context_ids=context_ids,
         )
     except ValueError as exc:
         raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
@@ -710,7 +831,8 @@ def _probe_group(
         try:
             repository.add_detached_worktree(revision, worktree)
             probes, known_good = quarantine_fixed_point(
-                selection, worktree,
+                selection,
+                worktree,
                 context_lines=context_lines,
                 previous_revision=_previous_upstream_revision(revision),
                 revision=revision,
@@ -731,6 +853,8 @@ def run_rebase_check(
     *,
     source_name: str | None = None,
     all_patches: bool = False,
+    experiment: str | None = None,
+    focal_overlay_patch_id: str | None = None,
     context_lines: int = 3,
 ) -> dict[str, Any]:
     """The full PA16 probe: an isolated detached worktree at the CURRENT
@@ -743,7 +867,21 @@ def run_rebase_check(
     (declared via `conflicts`) are split into separate conflict-free groups,
     each probed in its own isolated worktree, then merged. A patch's
     `requires` on a patch in another group is satisfied via `context_ids`
-    (identity-only, never re-probed as part of the wrong group)."""
+    (identity-only, never re-probed as part of the wrong group).
+
+    PA34: the selection is named by its canonical ``SelectorIdentity`` --
+    source (optionally qualified by exactly one of ``experiment`` /
+    ``focal_overlay_patch_id``) or all-patches. The identity payload is the
+    report's sole authority for what was selected (``report["selector"]``),
+    and it carries exact composition ORDER and per-module content hashes,
+    so a stale report is rejected on ANY identity difference -- including
+    order-only and hash-only drift."""
+    identity = _selector(
+        source_name=source_name,
+        all_patches=all_patches,
+        experiment=experiment,
+        focal_overlay_patch_id=focal_overlay_patch_id,
+    )
     repository = UpstreamRepository(root)
     revision = _git(root, "rev-parse", "HEAD")
     # Snapshot the overlay ONCE, up front: every probe round and the report's
@@ -754,12 +892,12 @@ def run_rebase_check(
     # describing only whatever state disk happened to be in last.
     overlay_snapshot = _overlay_texts()
 
-    all_modules: list["patchset.PatchModule"] = []
+    all_modules: list[patchset.PatchModule] = []
     probes: dict[str, PatchProbe] = {}
     known_good: tuple[str, ...] = ()
 
     if all_patches:
-        ids = _selection_patch_ids(all_patches=True)
+        ids = identity.patch_ids
         modules_by_id = {m.patch_id: m for m in patchset.catalog()}
         for group_ids in _partition_conflict_free(ids, modules_by_id):
             context = frozenset(
@@ -769,8 +907,11 @@ def run_rebase_check(
                 if requirement not in group_ids
             )
             group_modules, group_probes, group_known_good = _probe_group(
-                group_ids, context_ids=context, repository=repository,
-                revision=revision, context_lines=context_lines,
+                group_ids,
+                context_ids=context,
+                repository=repository,
+                revision=revision,
+                context_lines=context_lines,
                 overlay_snapshot=overlay_snapshot,
             )
             all_modules.extend(group_modules)
@@ -778,25 +919,27 @@ def run_rebase_check(
             known_good += group_known_good
     else:
         selection = resolve_selection(
-            source_name=source_name, all_patches=False,
+            source_name=source_name,
+            all_patches=False,
+            experiment=experiment,
+            focal_overlay_patch_id=focal_overlay_patch_id,
         )
         all_modules, group_probes, known_good = _probe_group(
-            tuple(m.patch_id for m in selection.modules), context_ids=frozenset(),
-            repository=repository, revision=revision, context_lines=context_lines,
+            tuple(m.patch_id for m in selection.modules),
+            context_ids=frozenset(),
+            repository=repository,
+            revision=revision,
+            context_lines=context_lines,
             overlay_snapshot=overlay_snapshot,
         )
         probes.update(group_probes)
 
-    source_ref = source_patch_set_id = None
-    if source_name:
-        source_selection = _resolve_v2_source(source_name)
-        source_ref = source_selection.source_ref
-        source_patch_set_id = source_selection.patch_set_id
-
     ordered = [probes[m.patch_id] for m in all_modules if m.patch_id in probes]
     summary = {
         "total": len(ordered),
-        "clean": sum(1 for p in ordered if p.status in (STATUS_CLEAN, STATUS_CLEAN_NOOP)),
+        "clean": sum(
+            1 for p in ordered if p.status in (STATUS_CLEAN, STATUS_CLEAN_NOOP)
+        ),
         "not_applicable": sum(1 for p in ordered if p.status == STATUS_NOT_APPLICABLE),
         "failed": sum(1 for p in ordered if p.status == STATUS_FAILED),
         "blocked_by_dependency": sum(1 for p in ordered if p.status == STATUS_BLOCKED),
@@ -813,21 +956,12 @@ def run_rebase_check(
         "bigcherry_revision": _bigcherry_revision(),
         "patch_application_semantics_version": PATCH_APPLICATION_SEMANTICS_VERSION,
         "overlay_digest": _digest_from_texts(overlay_snapshot),
-        "selection": {
-            "patch_ids": [m.patch_id for m in all_modules],
-            "source": source_name,
-            # Only meaningful when "source" is set -- the exact v2
-            # composition identity, distinct from the resulting patch_ids:
-            # two logically different patch-set compositions (e.g. two
-            # experiments) can resolve to the identical module-id set, and
-            # patch_set_id is what actually distinguishes them.
-            "source_ref": source_ref,
-            "source_patch_set_id": source_patch_set_id,
-            "all_patches": bool(all_patches),
-        },
+        "selector": identity.to_payload(),
         "known_good_patch_ids": list(known_good),
         "summary": summary,
-        "patches": [probes[m.patch_id].to_dict() for m in all_modules if m.patch_id in probes],
+        "patches": [
+            probes[m.patch_id].to_dict() for m in all_modules if m.patch_id in probes
+        ],
     }
 
 
@@ -873,10 +1007,13 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
     """Atomic write (temp file + rename) -- a report is evidence a later
     ``apply --known-good`` trusts; a torn write must never look valid."""
     import os
+
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     json.loads(encoded)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    fd, tmp = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(encoded)
@@ -899,8 +1036,41 @@ def load_report(path: Path) -> dict[str, Any]:
 # ---------------------------------------------------- known-good apply
 
 
+def _live_identity_for(
+    reported: campaign_resolution.SelectorIdentity,
+) -> campaign_resolution.SelectorIdentity:
+    """Re-resolve a schema-2 report's selector against the LIVE config.
+
+    The reported identity tells us exactly which selector to re-run; the
+    staleness decision is then a single exact ``SelectorIdentity`` equality
+    (PA34). Reuses ``_selector`` so every validation rule (mutual
+    exclusion, unknown patch, resolution failure) applies identically to a
+    live check as to a fresh one."""
+    from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
+
+    if reported.selector_kind == campaign_resolution.SELECTOR_KIND_ALL_PATCHES:
+        return campaign_resolution.build_all_patches_identity(patchset.catalog())
+    if reported.source_name is None:
+        raise RebaseCheckError(
+            "schema-2 selector identity names no source for a source-bounded kind"
+        )
+    if reported.selector_kind == campaign_resolution.SELECTOR_KIND_EXPERIMENT:
+        return _selector(
+            source_name=reported.source_name,
+            experiment=reported.selector_name.removeprefix("experiment:"),
+        )
+    if reported.selector_kind == campaign_resolution.SELECTOR_KIND_FOCAL_OVERLAY:
+        return _selector(
+            source_name=reported.source_name,
+            focal_overlay_patch_id=reported.selector_name.removeprefix("focal:"),
+        )
+    return _selector(source_name=reported.source_name)
+
+
 def _require_fresh(
-    report: dict[str, Any], root: Path, *,
+    report: Mapping[str, Any],
+    root: Path,
+    *,
     overlay_snapshot_digest: str | None = None,
 ) -> tuple[str, ...]:
     """Every bound identity must match the LIVE tree exactly. Fails closed
@@ -918,7 +1088,10 @@ def _require_fresh(
             f"report schema_version {report.get('schema_version')!r} != "
             f"current {REPORT_SCHEMA_VERSION!r}"
         )
-    if report.get("patch_application_semantics_version") != PATCH_APPLICATION_SEMANTICS_VERSION:
+    if (
+        report.get("patch_application_semantics_version")
+        != PATCH_APPLICATION_SEMANTICS_VERSION
+    ):
         raise StaleRebaseReportError(
             "report's patch_application_semantics_version no longer matches "
             "the live apply.py -- re-run patch-rebase-check"
@@ -936,59 +1109,48 @@ def _require_fresh(
             f"live HEAD {current_bigcherry!r}"
         )
     live_overlay_digest = (
-        overlay_snapshot_digest if overlay_snapshot_digest is not None else overlay_digest()
+        overlay_snapshot_digest
+        if overlay_snapshot_digest is not None
+        else overlay_digest()
     )
     if report.get("overlay_digest") != live_overlay_digest:
         raise StaleRebaseReportError(
             "report overlay_digest no longer matches src/ -- re-run patch-rebase-check"
         )
 
-    selection_input = report.get("selection", {})
-    selected = tuple(selection_input.get("patch_ids", ()))
-    # Adversarial-review follow-up: none of the checks above notice a
-    # SELECTOR change (e.g. an uncommitted edit to config/recipes.toml that
-    # widens the recipe this report was generated for) -- no patch bytes,
-    # overlay, or revision moved, so re-deriving the id set from the same
-    # selector and requiring it to match exactly closes that gap.
-    source_name = selection_input.get("source")
+    # PA34: the report's canonical selector identity is the sole authority
+    # for what was selected. Its freshness is proven by EXACT identity
+    # match against a live re-resolution of the same selector -- one shared
+    # comparison path for every kind, covering kind, name, source ref,
+    # patch-set id, exact composition ORDER, and every module hash.
+    # (Supersedes the earlier set-based patch_ids/source_ref/patch_set_id
+    # checks, which missed order-only and hash-only drift.)
+    from ..campaign import resolution as _resolution  # noqa: PLC0415
+
+    selector_input = report.get("selector")
+    if not isinstance(selector_input, dict):
+        raise StaleRebaseReportError(
+            "report has no canonical 'selector' identity payload (schema 2) -- "
+            "re-run patch-rebase-check"
+        )
     try:
-        if source_name:
-            # A source selection binds on source_ref + patch_set_id, not
-            # merely the resulting id list: two logically distinct v2
-            # patch-set compositions can resolve to the identical module-id
-            # set, and patch_set_id is the identity that actually
-            # distinguishes them (gpt-dev-agent review, legacy recipe
-            # removal plan, session ses_5307d9c58ec645cb).
-            current_selection = _resolve_v2_source(source_name)
-            current_ids = set(current_selection.patch_ids)
-            if current_selection.source_ref != selection_input.get("source_ref"):
-                raise StaleRebaseReportError(
-                    f"report source_ref {selection_input.get('source_ref')!r} != "
-                    f"live {current_selection.source_ref!r} for source {source_name!r} "
-                    "-- re-run patch-rebase-check"
-                )
-            if current_selection.patch_set_id != selection_input.get("source_patch_set_id"):
-                raise StaleRebaseReportError(
-                    f"report source_patch_set_id "
-                    f"{selection_input.get('source_patch_set_id')!r} != live "
-                    f"{current_selection.patch_set_id!r} for source {source_name!r} "
-                    "-- re-run patch-rebase-check"
-                )
-        else:
-            current_ids = set(_selection_patch_ids(
-                all_patches=bool(selection_input.get("all_patches", False)),
-            ))
+        reported_identity = _resolution.SelectorIdentity.from_payload(selector_input)
+    except Exception as exc:  # ResolutionError (and payload shape errors)
+        raise StaleRebaseReportError(
+            f"report's selector payload is invalid: {exc}"
+        ) from exc
+    selected = reported_identity.patch_ids
+    try:
+        current_identity = _live_identity_for(reported_identity)
     except RebaseCheckError as exc:
         raise StaleRebaseReportError(
             f"report's selector no longer resolves: {exc}"
         ) from exc
-    if current_ids != set(selected):
+    if current_identity != reported_identity:
         raise StaleRebaseReportError(
-            "report's selection.patch_ids no longer matches what its own "
-            "source/--all selector currently resolves to "
-            f"(only in report: {sorted(set(selected) - current_ids)}, "
-            f"only live: {sorted(current_ids - set(selected))}) -- "
-            "re-run patch-rebase-check"
+            "report's selector identity no longer matches the live config "
+            f"(differs in: {reported_identity.describe_diff(current_identity)}) "
+            "-- re-run patch-rebase-check"
         )
     patch_entries = tuple(report.get("patches", ()))
     # Adversarial-review follow-up: a report edited (by hand, or a bug) to
@@ -1011,7 +1173,9 @@ def _require_fresh(
         patch_id = patch_entry["patch_id"]
         current = catalog.get(patch_id)
         if current is None:
-            raise StaleRebaseReportError(f"patch {patch_id!r} no longer exists in the registry")
+            raise StaleRebaseReportError(
+                f"patch {patch_id!r} no longer exists in the registry"
+            )
         if current.content_hash != patch_entry.get("implementation_digest"):
             raise StaleRebaseReportError(
                 f"patch {patch_id!r} implementation changed since the report was written"
@@ -1043,14 +1207,23 @@ def _require_fresh(
 
 
 def require_fresh_report(
-    report: dict[str, Any],
+    report: Mapping[str, Any],
     root: Path,
     *,
+    expected_selector: campaign_resolution.SelectorIdentity | None = None,
     overlay_snapshot_digest: str | None = None,
 ) -> tuple[str, ...]:
-    """Expose the existing freshness authority for read-only gate checks."""
+    """Expose the existing freshness authority for read-only gate checks.
+
+    PA34: ``expected_selector`` adds the G2 binding on top of freshness --
+    a report is only good for the selector the caller is evaluating. A
+    fresh report produced under a DIFFERENT exact selector identity (even
+    one whose module-id set happens to match) is rejected, so the rebase
+    gate can never be satisfied by evidence gathered for another
+    experiment/focal/overlay selection.
+    """
     try:
-        return _require_fresh(
+        known_good = _require_fresh(
             report,
             root,
             overlay_snapshot_digest=overlay_snapshot_digest,
@@ -1059,10 +1232,30 @@ def require_fresh_report(
         raise
     except (KeyError, TypeError, AttributeError) as exc:
         raise StaleRebaseReportError(f"malformed rebase report: {exc}") from exc
+    if expected_selector is not None:
+        from ..campaign import resolution as _resolution  # noqa: PLC0415
+
+        try:
+            actual = _resolution.SelectorIdentity.from_payload(report.get("selector"))
+        except Exception as exc:  # ResolutionError (and payload shape errors)
+            raise StaleRebaseReportError(
+                f"report's selector payload is invalid: {exc}"
+            ) from exc
+        if actual != expected_selector:
+            raise StaleRebaseReportError(
+                "report was produced under selector "
+                f"{actual.selector_name!r}, not the expected "
+                f"{expected_selector.selector_name!r} "
+                f"(differs in: {actual.describe_diff(expected_selector)})"
+            )
+    return known_good
 
 
 def _write_overlay_snapshot(
-    root: Path, texts: dict[str, str], *, dry_run: bool,
+    root: Path,
+    texts: dict[str, str],
+    *,
+    dry_run: bool,
     backup: dict[str, str | None] | None = None,
 ) -> list[str]:
     """Write exactly the overlay bytes already captured in ``texts`` --
@@ -1097,7 +1290,9 @@ def _write_overlay_snapshot(
         if target.is_file() and target.read_bytes().decode("utf-8") == text:
             continue
         if backup is not None and relative_str not in backup:
-            backup[relative_str] = target.read_text(encoding="utf-8") if target.is_file() else None
+            backup[relative_str] = (
+                target.read_text(encoding="utf-8") if target.is_file() else None
+            )
         if not dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8", newline="")
@@ -1141,9 +1336,11 @@ def apply_known_good(
     # could answer differently than the one just verified fresh.
     overlay_snapshot = _overlay_texts()
     known_good = _require_fresh(
-        report, root, overlay_snapshot_digest=_digest_from_texts(overlay_snapshot),
+        report,
+        root,
+        overlay_snapshot_digest=_digest_from_texts(overlay_snapshot),
     )
-    selected = tuple(report.get("selection", {}).get("patch_ids", ()))
+    selected = tuple((report.get("selector") or {}).get("patch_ids", ()))
     partial = set(known_good) != set(selected)
 
     record = releases.record_for_checkout(root)
@@ -1166,21 +1363,34 @@ def apply_known_good(
     # (not merely whatever the registry resolves to right now) -- closes the
     # TOCTOU window between _require_fresh()'s digest check above and the
     # actual load below, on this shared, multi-agent working tree.
-    report_digests = {p["patch_id"]: p["implementation_digest"] for p in report.get("patches", ())}
-    resolved = patchset.resolve_exact(known_good, allow_rejected=True) if known_good else \
-        patchset.ResolvedPatchSet((), None)
+    report_digests = {
+        p["patch_id"]: p["implementation_digest"] for p in report.get("patches", ())
+    }
+    resolved = (
+        patchset.resolve_exact(known_good, allow_rejected=True)
+        if known_good
+        else patchset.ResolvedPatchSet((), None)
+    )
     file_patches: list[patcher.FilePatch] = []
     for module in resolved.modules:
         module_root = module.catalog_root or paths.PATCHES
         module_registry = patch_registry.load_registry(module_root)
         descriptor = module_registry.get(module.patch_id)
-        file_patches.extend(patch_registry.load_implementation(
-            descriptor, root=module_root, expected_digest=report_digests[module.patch_id],
-        ))
+        file_patches.extend(
+            patch_registry.load_implementation(
+                descriptor,
+                root=module_root,
+                expected_digest=report_digests[module.patch_id],
+            )
+        )
 
     overlay_backup: dict[str, str | None] = {}
-    written = _write_overlay_snapshot(root, overlay_snapshot, dry_run=dry_run, backup=overlay_backup)
-    results = patcher.apply_all(file_patches, root, dry_run=dry_run, initial_texts=dict(overlay_snapshot))
+    written = _write_overlay_snapshot(
+        root, overlay_snapshot, dry_run=dry_run, backup=overlay_backup
+    )
+    results = patcher.apply_all(
+        file_patches, root, dry_run=dry_run, initial_texts=dict(overlay_snapshot)
+    )
     ok = all(r.ok for r in results)
     if not ok and not dry_run and overlay_backup:
         patch_overlay.restore_overlay(root, overlay_backup)
