@@ -3,8 +3,10 @@
 This check compiles and runs the two verbatim emitted blocks that 0300 splices
 into upstream mmq.cuh / mmq.cu -- the lifted J-switch helpers (``_HELPERS``)
 and the forced-J variant entry points (``_MMQ_SOURCE``) -- against a minimal
-host stub of the CUDA/ROCm surface they touch.  It proves the emitted C++ is
-behaviourally correct on the host:
+host stub of the CUDA/ROCm surface they touch.  It proves the selected
+behaviour of those two blocks on the host (the patch's remaining forwarding
+edits -- case signature/forward, instantiation macro, public
+declaration/definition -- are exercised by the real build, not this proof):
 
 * the 16-case ``mul_mat_q_launch_forced_J`` switch routes to exactly the J it
   is given, and aborts on any J outside ``8..128 step 8``;
@@ -18,7 +20,12 @@ behaviourally correct on the host:
 * the HI71 dense-shape-aware tail envelope
   (``ggml_cuda_mmq_variant_is_eligible``) rejects a forced J outside the
   envelope that upstream's own J_max search over the real batch width would
-  have produced, and requires a real ``ncols_max`` (asserts on a sentinel).
+  have produced, requires a real ``ncols_max`` (asserts on a sentinel), and
+  accepts exactly at the envelope boundary (required tail == J_max);
+* the ``fallback`` and ``cc`` arguments actually reach the config tables --
+  the stub carries one fallback-only, cc-gated row that none of the Q8_0
+  assertions can see, so dropping or ignoring either argument in the emitted
+  blocks breaks the proof.
 
 It is not evidence of HIP, GPU, or architecture qualification.
 """
@@ -68,6 +75,7 @@ PREAMBLE = r'''
 enum ggml_type {
     GGML_TYPE_Q4_0 = 0,
     GGML_TYPE_Q8_0 = 1,
+    GGML_TYPE_Q6_K = 2,
     GGML_TYPE_COUNT = 64,
 };
 
@@ -86,10 +94,16 @@ struct ggml_cuda_mmq_config {
 static const ggml_cuda_mmq_config kMmqUndefined = { GGML_TYPE_COUNT, 0, 0, 0, 0 };
 
 ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_type type, int J, bool fallback, int cc) {
-    (void)cc;
     if (type == GGML_TYPE_Q8_0 && !fallback) {
         if (J == 8)  return { GGML_TYPE_Q8_0, 8,  1, 256, 1024 };
         if (J == 16) return { GGML_TYPE_Q8_0, 16, 2, 256, 2048 };
+    }
+    // Fallback-only, cc-gated row: the Q8_0 rows above would pass every
+    // assertion even if the emitted blocks dropped or ignored `fallback` or
+    // `cc`, so the stub needs one row that only a (fallback = true, high cc)
+    // caller can see to prove both arguments actually reach the table.
+    if (type == GGML_TYPE_Q4_0 && fallback && cc >= 90000) {
+        if (J == 8)  return { GGML_TYPE_Q4_0, 8, 1, 128, 512 };
     }
     return kMmqUndefined;
 }
@@ -100,10 +114,14 @@ size_t mmq_get_nbytes_shared(const ggml_cuda_mmq_config & config, int cc) {
 }
 
 int ggml_cuda_mmq_get_J_max(ggml_type type, bool fallback, int cc, int64_t ncols) {
-    (void)cc;
-    if (type != GGML_TYPE_Q8_0 || fallback) return 0;
-    if (ncols >= 16) return 16;
-    if (ncols >= 8) return 8;
+    if (type == GGML_TYPE_Q8_0 && !fallback) {
+        if (ncols >= 16) return 16;
+        if (ncols >= 8) return 8;
+        return 0;
+    }
+    if (type == GGML_TYPE_Q4_0 && fallback && cc >= 90000) {
+        return ncols >= 8 ? 8 : 0;
+    }
     return 0;
 }
 
@@ -165,7 +183,7 @@ int main() {
         mul_mat_q_launch_forced_J<GGML_TYPE_Q8_0, false>(ctx, any, stream, J);
         expect(kLaunchJs.size() == 1 && kLaunchJs[0] == J, "switch-routes-J");
     }
-    for (int J : { 4, 136, 0, -8 }) {
+    for (int J : { 4, 12, 136, 0, -8 }) {
         kLaunchJs.clear();
         bool aborted = false;
         try {
@@ -179,8 +197,10 @@ int main() {
     mul_mat_q_switch_J<GGML_TYPE_Q8_0, false>(ctx, native, stream);
     expect(kLaunchJs.size() == 1 && kLaunchJs[0] == 8, "native-scan-answer-launches");
 
-    // PRBE107: ncols_opt=4 with ncols_max=24.  A ncols_opt scan picks J=8; the
-    // pre-fix ncols_max scan would have picked J=128 (the width-filling tile).
+    // PRBE107: ncols_opt=4 with ncols_max=24.  The ncols_opt scan picks J=8
+    // (one tile).  The pre-fix ncols_max scan would have picked J=16 instead
+    // (two tiles beat three on this stub, which only has J=8/J=16 rows), so
+    // this assertion catches a regression to the ncols_max scan.
     const mmq_args moe = { GGML_TYPE_Q8_0, 4, 24 };
     kLaunchJs.clear();
     mul_mat_q_switch_J<GGML_TYPE_Q8_0, false>(ctx, moe, stream);
@@ -206,16 +226,30 @@ int main() {
     expect(!ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q8_0, 8,  false, 90900, 1023), "rejected-smem-limit");
     expect( ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q8_0, 8,  false, 90900, 1024), "eligible-smem-boundary");
 
+    // Fallback/cc plumbing: the Q4_0 stub row exists only for a (fallback =
+    // true, cc >= 90000) caller, so each of these fails if the emitted blocks
+    // stop passing fallback or cc through to the tables.
+    expect( ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q4_0, 8, true, 90900, 65536),  "eligible-fallback-only-row");
+    expect(!ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q4_0, 8, false, 90900, 65536), "fallback-row-requires-fallback-flag");
+    expect(!ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q4_0, 8, true, 11000, 65536),  "cc-gated-row-rejects-lower-cc");
+
     expect( ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q8_0, 8,  false, 0, 0, 16), "envelope-small-j-real-width");
     expect(!ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q8_0, 16, false, 0, 0, 3),  "envelope-tail-exceeds-jmax");
+    // Boundary: required_tail = (16 - (8 % 16)) % 16 = 8 == J_max(8) = 8.
+    // Must PASS under `<=` and FAIL under `<`.
+    expect( ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q8_0, 16, false, 0, 0, 8),  "envelope-tail-equals-jmax");
     bool width_asserted = false;
     try {
         ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q8_0, 8, false, 0, 0, 0);
     } catch (const std::runtime_error &) { width_asserted = true; }
     expect(width_asserted, "envelope-requires-real-width");
+    expect( ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q4_0, 8, true, 0, 0, 12),   "fallback-variant-eligible-resolves-device-cc");
+    expect(!ggml_cuda_mmq_variant_is_eligible(GGML_TYPE_Q4_0, 8, true, 11000, 65536, 12), "fallback-variant-rejects-lower-cc");
 
     expect( ggml_cuda_mmq_type_is_supported(GGML_TYPE_Q8_0, 0, 0), "type-supported-by-table");
-    expect(!ggml_cuda_mmq_type_is_supported(GGML_TYPE_Q4_0, 0, 0), "type-unsupported-not-in-table");
+    expect( ggml_cuda_mmq_type_is_supported(GGML_TYPE_Q4_0, 0, 0), "type-supported-by-fallback-row");
+    expect(!ggml_cuda_mmq_type_is_supported(GGML_TYPE_Q4_0, 11000, 65536), "type-unsupported-at-cc-without-row");
+    expect(!ggml_cuda_mmq_type_is_supported(GGML_TYPE_Q6_K, 0, 0), "type-unsupported-not-in-table");
 
     kMmqCalls = 0;
     kMmqForcedJ = -1;
