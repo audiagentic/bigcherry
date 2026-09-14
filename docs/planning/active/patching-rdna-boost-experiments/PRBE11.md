@@ -69,6 +69,7 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 
 
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.177979+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -87,3 +88,5 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 - 2026-09-12T10:10:15.542955+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260913_064911_rd12s-fork-claim-paired-mmvq_5827
 - 2026-09-13T06:49:14.580560+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260914_093904_fixed-rd12s-activation-valida_1312
+- 2026-09-14T09:39:07.007863+00:00 (updated-by): Updated: section:ledger-events
