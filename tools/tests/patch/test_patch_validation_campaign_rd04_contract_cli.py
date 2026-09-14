@@ -44,7 +44,11 @@ class Rd04ContractCliTests(unittest.TestCase):
         self.assertIn("args.run_rd04_benchmark", block)
         self.assertIn("args.run_rd58_state_restore", block)
         self.assertIn("args.run_rd73_contract", block)
-        self.assertIn("args.run_rd12_contract", block)
+        # RD12 is deliberately NOT in this list: its specialized path
+        # returns from run() before the RD04 block is even reachable
+        # (before the Campaign import), so a --run-rd12-contract
+        # invocation can never reach this guard -- no dead flag kept.
+        self.assertNotIn("args.run_rd12_contract", block)
         self.assertIn("args.run_rd13_contract", block)
         self.assertIn("args.run_rd26_contract", block)
         # Same class of bug caught twice already this session: the
@@ -106,17 +110,20 @@ class Rd04ContractCliTests(unittest.TestCase):
         self.assertNotIn("activation_evidence = ActivationEvidence(", block)
 
     def test_specialized_evidence_mode_exclusions_include_rd04(self) -> None:
+        # RD12 is absent from both lists on purpose: its specialized path
+        # returns from run() before either gate (before the Campaign
+        # import), so it never reaches them -- no dead flag kept.
         self.assertIn(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )
         self.assertIn(
             "trace_result = None if (args.run_rd08_contract or "
             "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd12_contract or "
+            "args.run_rd73_contract or "
             "args.run_rd04_contract) else "
             "run_trace_activation_probes(",
             self.run_source,

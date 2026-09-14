@@ -38,7 +38,7 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         match = re.search(
             r"if not \(args\.run_rd08_contract or args\.run_rd04_benchmark or "
             r"args\.run_rd58_state_restore or args\.run_rd73_contract or "
-            r"args\.run_rd12_contract or args\.run_rd04_contract or "
+            r"args\.run_rd04_contract or "
             r"args\.run_rd13_contract or args\.run_rd26_contract\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
             self.source,
         )
@@ -47,10 +47,11 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
             "campaign.run() must be guarded by "
             "`if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):` -- the generic "
             "tune/promote/export pipeline must never be a hard prerequisite of "
-            "RD08's/RD04's/RD58's/RD73's/RD12's/RD13's/RD26's own contract evidence",
+            "RD08's/RD04's/RD58's/RD73's/RD13's/RD26's own contract evidence "
+            "(RD12's specialized path returns before this point entirely)",
         )
 
     def test_report_md_read_is_also_guarded(self) -> None:
@@ -60,7 +61,7 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         guard_text = (
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):"
         )
         guarded_block = self.source[self.source.index(guard_text):]
@@ -71,7 +72,7 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         match = re.search(
             r"trace_result = None if \(args\.run_rd08_contract or args\.run_rd04_benchmark or "
             r"args\.run_rd58_state_restore or args\.run_rd73_contract or "
-            r"args\.run_rd12_contract or args\.run_rd04_contract\) else "
+            r"args\.run_rd04_contract\) else "
             r"run_trace_activation_probes\(",
             self.source,
         )
@@ -79,8 +80,9 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
             match,
             "the generic tune-binary/fusion-disabled probe must be skipped for "
             "--run-rd08-contract/--run-rd04-benchmark/--run-rd58-state-restore/"
-            "--run-rd73-contract/--run-rd12-contract -- it is redundant with (RD08) "
-            "or invalid for (RD04/RD58/RD73/RD12) the real evidence those modes produce",
+            "--run-rd73-contract -- it is redundant with (RD08) or invalid for "
+            "(RD04/RD58/RD73) the real evidence those modes produce "
+            "(RD12's specialized path returns before this point entirely)",
         )
 
     def test_contract_correctness_gate_uses_a_real_experiment_contract_not_a_binding(self) -> None:
@@ -118,7 +120,7 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         guard_index = self.source.index(
             "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
             "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):"
         )
         self.assertLess(
