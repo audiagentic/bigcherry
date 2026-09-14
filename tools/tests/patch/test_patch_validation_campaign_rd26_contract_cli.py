@@ -96,8 +96,11 @@ class Rd26ContractCliTests(unittest.TestCase):
         self.assertIn("else rd26_correctness_named_results", gate_call)
 
     def test_present_in_standard_campaign_skip(self) -> None:
+        # RD12 is absent from this list on purpose: its specialized path
+        # returns from run() before this gate (before the Campaign import),
+        # so it never reaches it -- no dead flag kept.
         self.assertIn(
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )

@@ -7081,6 +7081,395 @@ def run_rd43_contract_qualification(
     }
 
 
+def _run_rd12_contract(
+    *,
+    args: argparse.Namespace,
+    descriptor: object,
+    cfg: object,
+    registry: object,
+    workdir: Path,
+    worktree_root: Path,
+    build_root: Path,
+    base_revision: str,
+    baseline_source: str,
+    control_src: Path,
+    patched_src: Path,
+    stock_src: Path,
+    control_composition: tuple[str, ...],
+    subject_composition: tuple[str, ...],
+    control_idempotent: bool,
+    subject_idempotent: bool,
+    build_env: dict[str, str],
+    validation_plan: object,
+    tune_build_evidence: object,
+    replay_build_evidence: object,
+    stock_build_evidence: object,
+    control_build_evidence: object,
+    validation_subject_build_evidence: object,
+) -> int:
+    """PA39 / GPT review (req_36cddfd518444cda, MUST 4): RD12's specialized
+    contract path -- model/manifest-free end to end.
+
+    run() returns here (after the five shared builds, before constructing
+    the generic e2e_smoke_campaign.Campaign) when --run-rd12-contract is
+    set. The five shared builds still run in run() on purpose:
+    make_record's build_identities MUST be exactly the {tune,replay,stock}
+    campaign domain, and the declared build check needs the real
+    validation-domain control/subject identities -- but the Campaign
+    itself (which Path()-converts model and manifest in __post_init__)
+    is never constructed, because the documented invocation supplies
+    neither.
+    """
+    from bigcherry.patch import source as psi
+    from bigcherry.patch import validation as patch_validation
+    from bigcherry.patch import evidence as patch_validation_evidence
+
+    if args.correctness_evidence is not None:
+        raise PatchCampaignError(
+            f"{args.patch}: --correctness-evidence and --run-rd12-contract are ambiguous "
+            "together -- --run-rd12-contract already produces its own authoritative "
+            "correctness.json"
+        )
+    if (
+        args.run_rd08_lanes
+        or args.run_rd08_contract
+        or args.run_rd04_benchmark
+        or args.run_rd58_state_restore
+        or args.run_rd73_contract
+        or args.run_rd04_contract
+        or args.run_rd13_contract
+        or args.run_rd26_contract
+    ):
+        raise PatchCampaignError(
+            f"{args.patch}: --run-rd12-contract is mutually exclusive with the "
+            "other specialized evidence-producer modes"
+        )
+    if descriptor.experiment_contract != "RD12-PAIRED-MMVQ-DUAL":
+        raise PatchCampaignError(
+            f"{args.patch}: --run-rd12-contract is RD12-only today"
+        )
+
+    # The declared trace-marker check owns the marker regex -- the same
+    # resolution run() applies for every plan-declared activation check.
+    trace_marker_regex = args.trace_marker_regex
+    trace_description = args.trace_description
+    if validation_plan is not None:
+        trace_specs = tuple(
+            spec for spec in validation_plan.checks
+            if spec.capability == "activation" and spec.validator == "trace-marker"
+        )
+        if len(trace_specs) > 1:
+            raise PatchCampaignError(
+                f"{args.patch}: validation plan declares multiple trace-marker activation checks"
+            )
+        if trace_specs:
+            configured_marker = trace_specs[0].config.get("marker-regex")
+            if not isinstance(configured_marker, str) or not configured_marker:
+                raise PatchCampaignError(
+                    f"{args.patch}: trace-marker activation check has no marker-regex"
+                )
+            if trace_marker_regex is not None and trace_marker_regex != configured_marker:
+                raise PatchCampaignError(
+                    f"{args.patch}: CLI trace marker conflicts with validation.toml"
+                )
+            trace_marker_regex = configured_marker
+            trace_description = trace_description or f"{args.patch} activation"
+        elif trace_marker_regex is not None or trace_description is not None:
+            raise PatchCampaignError(
+                f"{args.patch}: trace CLI options require a trace-marker validation check"
+            )
+
+    _descriptor = descriptor
+    _patch_file = registry.root / _descriptor.implementation_path
+    campaign_run_dir = workdir / "campaign"
+    patch_digest = psi.patch_implementation_digest(args.patch)
+    control_source_tree = psi.git_worktree_tree(control_src)
+    patched_source_tree = psi.git_worktree_tree(patched_src)
+
+    # RD12 consumes no model and no manifest -- its workload is the
+    # registered 1258 test-backend-ops case -- so the generic
+    # e2e_smoke_campaign.Campaign (which Path()-converts both in
+    # __post_init__) is never constructed on this path. The record still
+    # needs a campaign_identity_digest, so bind one from the same facts
+    # the generic Campaign would bind, minus model/manifest, using the
+    # same canonical-JSON sha256 convention as
+    # e2e_smoke_campaign._stable_json_sha256().
+    campaign_build_identities = {
+        "tune": tune_build_evidence.campaign_identity(),
+        "replay": replay_build_evidence.campaign_identity(),
+        "stock": stock_build_evidence.campaign_identity(),
+    }
+    campaign_identity_digest = hashlib.sha256(
+        json.dumps(
+            {
+                "schema": "rd12-contract-campaign-identity-v1",
+                "patch_identity": {"name": args.patch, "digest": patch_digest},
+                "patched_source_tree": patched_source_tree,
+                "gpu_architecture": args.amdgpu_targets,
+                "campaign_build_identities": campaign_build_identities,
+                "base_revision": base_revision,
+            },
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    # PA39: RD12's real bit-identical correctness producer, bound into the
+    # tracked evidence system the same way RD73's is. This is a
+    # CORRECTNESS-EVIDENCE producer only -- it must never populate
+    # contract_promotions (that would falsely qualify RD12's separately-
+    # declared performance/controls claims from a correctness-only run).
+    rd12_qualification = run_rd12_correctness_check(
+        base_revision=base_revision, hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets,
+        worktree_root=worktree_root / "rd12-correctness",
+        build_root=build_root / "rd12-correctness",
+        build_env=build_env, run_dir=campaign_run_dir,
+    )
+    rd12_results = rd12_qualification["results"]
+    bit_identical_result = rd12_results["bit_identical"]
+
+    # Bind correctness evidence: contract.correctness requires only
+    # bit_identical -- that result's disposition is the gate, not the
+    # supplementary backend_reference/activation results also returned.
+    correctness_summary = {
+        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+        "patch_id": args.patch,
+        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+            _patch_file
+        ),
+        "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+        "campaign_identity_digest": campaign_identity_digest,
+        "gpu_architectures": [args.amdgpu_targets],
+        "disposition": "passed" if bit_identical_result.passed else "failed",
+        "mechanism": "rd12-paired-mmvq-bit-identical",
+        "detail": bit_identical_result.detail,
+    }
+    correctness_path = campaign_run_dir / "correctness.json"
+    _atomic_write_json(correctness_path, correctness_summary)
+    # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
+    # at THIS canonical correctness.json (the artifact with a real
+    # "disposition" field, which _builtin_correctness_summary() reads)
+    # -- not rd12_qualification["artifact"] (the raw producer artifact,
+    # which has "passed"/"rows" fields, never "disposition").
+    correctness_evidence = {
+        "artifact": {
+            "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
+            "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
+        }
+    }
+
+    # RD12's activation result is real (the focal patch's own
+    # BIGCHERRY_PATCH_TRACE marker, checked inside the correctness
+    # producer itself) -- bind it the same way RD08/RD58/RD73 do so
+    # the record's top-level activation disposition, not just the
+    # declared trace-marker check, reflects real evidence.
+    activation_result = rd12_results["activation"]
+    # This path skips the generic probe entirely, so this block is the
+    # ONLY source of trace_evidence for the record: the producer wrote
+    # one raw per-arm log from the real subprocess output, and
+    # _builtin_trace_marker() re-reads both logs and re-verifies the
+    # marker itself (positive = subject arm, negative = control arm).
+    # Without this binding the declared trace-marker check could
+    # never leave BLOCKED, no matter how many real runs passed.
+    trace_evidence = {
+        "positive": {
+            "marker_regex": trace_marker_regex,
+            "artifact": rd12_qualification["subject_log_artifact"],
+        },
+        "negative": {
+            "marker_regex": trace_marker_regex,
+            "artifact": rd12_qualification["control_log_artifact"],
+        },
+    }
+    activation_evidence = ActivationEvidence(
+        status="executed" if activation_result.passed else "not_executed",
+        mechanism="rd12-trigger-marker", detail=activation_result.detail,
+    )
+    activation_verdict = verdict(activation_evidence, correctness_passed=None)
+    write_activation_json(
+        campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+        extra={
+            "campaign_identity_digest": campaign_identity_digest,
+            "rd12_activation": {
+                "marker": trace_marker_regex,
+                "subject_log": rd12_qualification["subject_log_path"],
+                "control_log": rd12_qualification["control_log_path"],
+            },
+        },
+    )
+
+    _print(f"rd12 correctness: {rd12_qualification['artifact']['path']}")
+    _print(f"rd12 bit_identical: {'PASS' if bit_identical_result.passed else 'FAIL'}")
+
+    build_evidence = {
+        "control": {
+            "build_id": control_build_evidence.effective_build_id,
+            "source_tree": control_source_tree,
+            "architecture": args.amdgpu_targets,
+            "options": control_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                campaign_run_dir, "build/control-compile-commands.json",
+                control_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                campaign_run_dir, "build/control-runtime-bundle.json",
+                control_build_evidence.runtime_artifacts,
+            ),
+        },
+        "subject": {
+            "build_id": validation_subject_build_evidence.effective_build_id,
+            "source_tree": patched_source_tree,
+            "architecture": args.amdgpu_targets,
+            "options": validation_subject_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                campaign_run_dir, "build/subject-compile-commands.json",
+                validation_subject_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                campaign_run_dir, "build/subject-runtime-bundle.json",
+                validation_subject_build_evidence.runtime_artifacts,
+            ),
+        },
+    }
+    apply_evidence = {
+        "control": {
+            "verified": True, "idempotent": control_idempotent,
+            "artifact": _write_bound_artifact(
+                campaign_run_dir, "apply/control.json",
+                {"source_tree": control_source_tree, "composition": list(control_composition)},
+            ),
+        },
+        "subject": {
+            "verified": True, "idempotent": subject_idempotent,
+            "artifact": _write_bound_artifact(
+                campaign_run_dir, "apply/subject.json",
+                {"source_tree": patched_source_tree, "composition": list(subject_composition)},
+            ),
+        },
+    }
+
+    validation_check_results: dict[str, object] = {}
+    validation_verdict = None
+    if validation_plan is not None:
+        # VA11A: package_root lets a packaged patch's custom validator
+        # actually resolve its check(ctx) file.
+        package_root = (
+            (registry.root / descriptor.package_root)
+            if descriptor.package_root is not None else None
+        )
+        validation_ctx = patch_validation.ValidationContext(
+            descriptor=descriptor, base_revision=base_revision,
+            control_source=control_src, subject_source=patched_src, stock_source=stock_src,
+            package_root=package_root,
+            control_tree=control_source_tree, subject_tree=patched_source_tree,
+            build_identities={
+                "control": control_build_evidence.effective_build_id,
+                "subject": validation_subject_build_evidence.effective_build_id,
+            },
+            build_evidence=build_evidence,
+            apply_evidence=apply_evidence,
+            architecture=args.amdgpu_targets,
+            # RD12 consumes no model -- its workload is the registered
+            # 1258 test-backend-ops case, not a GGUF.
+            model=None,
+            contract=validation_plan.contract,
+            contract_hash=(
+                validation_plan.contract.contract_hash
+                if validation_plan.contract else None
+            ),
+            run_dir=campaign_run_dir,
+            register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
+            trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
+            performance_evidence={},
+        )
+        evaluated = {
+            spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
+            for spec in validation_plan.checks
+        }
+        validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
+
+        # compute_contract_correctness_gate() needs the real
+        # experiment_contract.ExperimentContract -- validation_plan.contract
+        # is a lightweight ContractBinding projection that deliberately
+        # does not carry .correctness/.acceptance (VA15 real-hardware
+        # finding).
+        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
+        # PA39: RD12's real bit-identical result is already evaluated
+        # inside run_rd12_correctness_check(); thread it through the same
+        # way RD08's/RD58's/RD73's named results are, so the gate reflects
+        # the real evidence instead of reporting missing_checks/BLOCKED.
+        contract_correctness_gate = compute_contract_correctness_gate(
+            full_contract, rd12_qualification["results"],
+        )
+        validation_check_results = {
+            check_id: asdict(result) for check_id, result in evaluated.items()
+        }
+        if contract_correctness_gate is not None:
+            validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
+            _print(
+                f"contract correctness gate: "
+                f"{'passed' if contract_correctness_gate.get('passed') else contract_correctness_gate.get('status', 'not passed')}"
+            )
+        _print(
+            f"validation verdict: {'eligible' if validation_verdict.eligible else 'ineligible'} "
+            f"({len(validation_verdict.reasons)} blocking reasons)"
+        )
+
+    validation_contracts, validation_contract_verdicts = build_contract_evidence_for_persistence(
+        validation_plan.contracts if validation_plan is not None else (), {},
+    )
+
+    validation_record = patch_validation_evidence.make_record(
+        patch_id=args.patch, patch_path=_patch_file,
+        patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
+        base_revision=base_revision,
+        framework_baseline_digest=psi.composition_digest(subject_composition),
+        patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
+        activation_evidence=activation_evidence,
+        activation_disposition=activation_verdict,
+        correctness=correctness_summary,
+        campaign_identity_digest=campaign_identity_digest,
+        build_identities=campaign_build_identities,
+        # PA39: RD12's own correctness producer materializes and builds
+        # its own isolated control/subject worktrees
+        # (run_rd12_correctness_check()), distinct from the generic
+        # campaign control/validation-subject builds -- record ITS
+        # identities, the same pattern as RD58. They are already plain
+        # dicts (built from .campaign_identity() inside the producer).
+        validation_build_identities=rd12_qualification["validation_build_identities"],
+        campaign_workdir=workdir / "campaign",
+        check_results=validation_check_results,
+        # RD12 is a correctness-evidence producer only -- contract_promotions
+        # stays empty on purpose (see the PA39 note above the producer call).
+        validation_eligible=compute_persisted_validation_eligible(
+            _descriptor, validation_verdict, {},
+            activation_disposition=activation_verdict, correctness=correctness_summary,
+        ),
+        lane_effects=collect_lane_effect_records(
+            rd08_qualification=None, rd73_qualification=None,
+        ),
+        representation=_descriptor.representation,
+        validation_implementation_digest=_descriptor.validation_digest,
+        contracts=validation_contracts,
+        contract_verdicts=validation_contract_verdicts,
+        baseline_composition={"source": baseline_source, "base_revision": base_revision,
+                              "patches": list(control_composition)},
+        control_composition={"base_revision": base_revision, "patches": list(control_composition)},
+        subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
+        control_tree=control_source_tree,
+        subject_tree=patched_source_tree,
+        stock_tree=psi.git_worktree_tree(stock_src),
+    )
+    validation_record_path = patch_validation_evidence.write_record(validation_record)
+    _print(f"validation evidence: {validation_record_path}")
+    _print(
+        "STATE='validated' eligible: "
+        + ("yes" if validation_record["eligible_for_validated_state"] else "no")
+    )
+
+    return 0
+
+
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -7332,6 +7721,32 @@ def run(args: argparse.Namespace) -> int:
         f"{validation_subject_build_evidence.compile_verification_id[:12]}"
     )
 
+    # GPT review (req_36cddfd518444cda, MUST 4): RD12 is a genuinely
+    # model/manifest-free contract -- the documented invocation runs with
+    # neither --model nor --manifest, and the generic
+    # e2e_smoke_campaign.Campaign Path()-converts both in __post_init__, so
+    # constructing it would crash the documented command. RD12's evidence
+    # still needs the five shared builds above (the record's
+    # build_identities MUST be exactly the {tune,replay,stock} campaign
+    # domain, and the declared build check needs the real validation-domain
+    # control/subject identities), so the specialized path returns HERE --
+    # after all five builds, before the Campaign import below.
+    if getattr(args, "run_rd12_contract", False):
+        return _run_rd12_contract(
+            args=args, descriptor=descriptor, cfg=cfg, registry=registry,
+            workdir=workdir, worktree_root=worktree_root, build_root=build_root,
+            base_revision=base_revision, baseline_source=baseline_source,
+            control_src=control_src, patched_src=patched_src, stock_src=stock_src,
+            control_composition=control_composition, subject_composition=subject_composition,
+            control_idempotent=control_idempotent, subject_idempotent=subject_idempotent,
+            build_env=build_env, validation_plan=validation_plan,
+            tune_build_evidence=tune_build_evidence,
+            replay_build_evidence=replay_build_evidence,
+            stock_build_evidence=stock_build_evidence,
+            control_build_evidence=control_build_evidence,
+            validation_subject_build_evidence=validation_subject_build_evidence,
+        )
+
     from bigcherry.e2e_smoke_campaign import (  # noqa: E402
         Campaign, CampaignError, CampaignIdentityContext,
     )
@@ -7423,7 +7838,10 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract or args.run_rd04_contract) else run_trace_activation_probes(
+    # NB: --run-rd12-contract is not in these skip lists -- its specialized
+    # path returns earlier (before the Campaign import), so it never
+    # reaches this point; no dead flag is kept here.
+    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -7491,7 +7909,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd12_contract or args.run_rd04_contract or args.run_rd13_contract or args.run_rd26_contract):
+    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract or args.run_rd13_contract or args.run_rd26_contract):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -7534,12 +7952,6 @@ def run(args: argparse.Namespace) -> int:
         raise PatchCampaignError(
             f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
             "together -- --run-rd08-contract already produces its own authoritative "
-            "correctness.json"
-        )
-    if args.correctness_evidence is not None and args.run_rd12_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --correctness-evidence and --run-rd12-contract are ambiguous "
-            "together -- --run-rd12-contract already produces its own authoritative "
             "correctness.json"
         )
     if args.correctness_evidence is not None and args.run_rd04_contract:
@@ -8243,121 +8655,9 @@ def run(args: argparse.Namespace) -> int:
             f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
         )
 
-    # PA39: RD12's real bit-identical correctness producer, bound into the
-    # tracked evidence system the same way RD73's block above is. This is a
-    # CORRECTNESS-EVIDENCE producer only -- it must never populate
-    # contract_promotions (that would falsely qualify RD12's separately-
-    # declared performance/controls claims from a correctness-only run).
-    rd12_qualification: dict[str, object] | None = None
-    if args.run_rd12_contract:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-            or args.run_rd04_benchmark
-            or args.run_rd58_state_restore
-            or args.run_rd73_contract
-            or args.run_rd04_contract
-            or args.run_rd13_contract
-            or args.run_rd26_contract
-        ):
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd12-contract is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
-        if descriptor.experiment_contract != "RD12-PAIRED-MMVQ-DUAL":
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd12-contract is RD12-only today"
-            )
-        rd12_worktree_root = worktree_root / "rd12-correctness"
-        rd12_build_root = build_root / "rd12-correctness"
-        rd12_qualification = run_rd12_correctness_check(
-            base_revision=base_revision, hip_path=args.hip_path,
-            amdgpu_targets=args.amdgpu_targets,
-            worktree_root=rd12_worktree_root, build_root=rd12_build_root,
-            build_env=build_env, run_dir=campaign_run_dir,
-        )
-        rd12_results = rd12_qualification["results"]
-        bit_identical_result = rd12_results["bit_identical"]
-
-        # Bind correctness evidence: contract.correctness requires only
-        # bit_identical -- that result's disposition is the gate, not the
-        # supplementary backend_reference/activation results also returned.
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": "passed" if bit_identical_result.passed else "failed",
-            "mechanism": "rd12-paired-mmvq-bit-identical",
-            "detail": bit_identical_result.detail,
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
-        # at THIS canonical correctness.json (the artifact with a real
-        # "disposition" field, which _builtin_correctness_summary() reads)
-        # -- not rd12_qualification["artifact"] (the raw producer artifact,
-        # which has "passed"/"rows" fields, never "disposition"). Pointing
-        # at the wrong file made the generic adapter's correctness check
-        # report ERROR even when the contract correctness gate (which reads
-        # rd12_correctness_named_results directly, a separate code path)
-        # correctly showed PASS.
-        correctness_evidence = {
-            "artifact": {
-                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
-                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
-            }
-        }
-
-        # RD12's activation result is real (the focal patch's own
-        # BIGCHERRY_PATCH_TRACE marker, checked inside the correctness
-        # producer itself) -- bind it the same way RD08/RD58/RD73 do so
-        # the record's top-level activation disposition, not just the
-        # declared trace-marker check, reflects real evidence.
-        activation_result = rd12_results["activation"]
-        # --run-rd12-contract skips the generic probe, so this block is
-        # the ONLY source of trace_evidence for the record: the producer
-        # wrote one raw per-arm log from the real subprocess output, and
-        # _builtin_trace_marker() re-reads both logs and re-verifies the
-        # marker itself (positive = subject arm, negative = control arm).
-        # Without this binding the declared trace-marker check could
-        # never leave BLOCKED, no matter how many real runs passed.
-        trace_evidence = {
-            "positive": {
-                "marker_regex": trace_marker_regex,
-                "artifact": rd12_qualification["subject_log_artifact"],
-            },
-            "negative": {
-                "marker_regex": trace_marker_regex,
-                "artifact": rd12_qualification["control_log_artifact"],
-            },
-        }
-        activation_evidence = ActivationEvidence(
-            status="executed" if activation_result.passed else "not_executed",
-            mechanism="rd12-trigger-marker", detail=activation_result.detail,
-        )
-        activation_verdict = verdict(activation_evidence, correctness_passed=None)
-        write_activation_json(
-            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
-            extra={
-                "campaign_identity_digest": campaign.campaign_identity_digest,
-                "rd12_activation": {
-                    "marker": trace_marker_regex,
-                    "subject_log": rd12_qualification["subject_log_path"],
-                    "control_log": rd12_qualification["control_log_path"],
-                },
-            },
-        )
-
-        _print(f"rd12 correctness: {rd12_qualification['artifact']['path']}")
-        _print(f"rd12 bit_identical: {'PASS' if bit_identical_result.passed else 'FAIL'}")
-
     # PA39: RD04's real backend_reference+ppl_equality correctness producer,
-    # bound the same way RD12's block above is. Correctness-evidence
+    # bound the same way RD73's block above is (RD12's own producer now
+    # lives in _run_rd12_contract()). Correctness-evidence
     # producer only -- must never populate contract_promotions (would
     # falsely qualify RD04's separately-declared performance claim).
     # UNLIKE RD12, RD04 has no real activation marker in its source yet
@@ -8373,7 +8673,6 @@ def run(args: argparse.Namespace) -> int:
             or args.run_rd04_benchmark
             or args.run_rd58_state_restore
             or args.run_rd73_contract
-            or args.run_rd12_contract
             or args.run_rd13_contract
             or args.run_rd26_contract
         ):
@@ -8601,13 +8900,6 @@ def run(args: argparse.Namespace) -> int:
             rd08_contract if rd08_qualification is not None
             else patch_validation.load_contract_for_descriptor(descriptor)
         )
-        # PA39: RD12's real bit-identical result is already evaluated
-        # inside run_rd12_correctness_check(); thread it through the same
-        # way RD08's/RD58's/RD73's named results are, so the gate reflects
-        # the real evidence instead of reporting missing_checks/BLOCKED.
-        rd12_correctness_named_results = (
-            rd12_qualification["results"] if rd12_qualification is not None else None
-        )
         # PA39: RD04's real backend_reference+ppl_equality results are
         # already evaluated inside run_rd04_contract_correctness(); thread
         # them through the same way, so the gate reflects real evidence.
@@ -8637,8 +8929,6 @@ def run(args: argparse.Namespace) -> int:
                 # reflects the evidence instead of reporting missing_checks.
                 else rd73_qualification["correctness_named_results"]
                 if rd73_qualification is not None
-                else rd12_correctness_named_results
-                if rd12_qualification is not None
                 else rd04_correctness_named_results
                 if rd04_qualification is not None
                 else rd13_correctness_named_results
@@ -8687,24 +8977,17 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (blocker #1): RD58's real validation build is
         # test-save-load-state, not the generic llama-bench control/
         # validation-subject builds -- record ITS identities when RD58 ran.
-        # PA39: RD12's own correctness producer materializes and builds its
-        # own isolated control/subject worktrees (run_rd12_correctness_check()),
-        # distinct from the generic campaign control/validation-subject
-        # builds above -- record ITS identities when RD12 ran, the same
-        # pattern as RD58. rd12_qualification's identities are already
-        # plain dicts (built from .campaign_identity() inside the producer),
-        # not objects needing .campaign_identity() called here.
+        # (RD12's own identities are recorded inside _run_rd12_contract(),
+        # which never reaches this generic make_record call.)
         validation_build_identities=(
             {
                 "control": rd58_control_build_evidence.campaign_identity(),
                 "subject": rd58_subject_build_evidence.campaign_identity(),
             }
             if args.run_rd58_state_restore
-            else rd12_qualification["validation_build_identities"]
-            if rd12_qualification is not None
             # GPT review (req_5631b12dc3fb4a23): RD04's producer also
             # materializes and builds its OWN isolated control/subject
-            # worktrees (same shape as RD12), NOT the generic campaign's --
+            # worktrees (same shape as RD12's), NOT the generic campaign's --
             # falling through to the generic identities below was wrong.
             else rd04_qualification["validation_build_identities"]
             if rd04_qualification is not None

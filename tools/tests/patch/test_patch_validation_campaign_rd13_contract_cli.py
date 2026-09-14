@@ -104,15 +104,18 @@ class Rd13ContractCliTests(unittest.TestCase):
         self.assertIn(
             "trace_result = None if (args.run_rd08_contract or "
             "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd12_contract or "
+            "args.run_rd73_contract or "
             "args.run_rd04_contract) else "
             "run_trace_activation_probes(",
             self.run_source,
         )
 
     def test_present_in_standard_campaign_skip(self) -> None:
+        # RD12 is absent from this list on purpose: its specialized path
+        # returns from run() before this gate (before the Campaign import),
+        # so it never reaches it -- no dead flag kept.
         self.assertIn(
-            "args.run_rd12_contract or args.run_rd04_contract or "
+            "args.run_rd04_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )

@@ -16,13 +16,30 @@ authoritative active successor to RD12 and is **independent of
 PRBE19/RD25** -- PRBE11's own text says it "must not invent an RD25
 dependency" (historical RD25 does not touch the paired-MMVQ
 implementation) and its acceptance criteria state "RD25/PRBE19 is not a
-prerequisite". Its real bar is: exact K/V paired-MMVQ patterns correct
-under the declared composition, unsafe/near-miss graphs fall back,
-isolated causal performance, and 1207 never silently combined (the
-declared `CONFLICTS`). The real correctness and activation evidence below
-closes PRBE11's correctness legs on all three contract architectures; the
-remaining gap is real causal **performance** evidence (the declared
-`performance`/`controls` checks).
+prerequisite". PRBE11's full bar (its own Steps/Validation/Acceptance
+sections) is itemized below -- the real 2026-09-13 evidence covers only
+the first bullet, and nothing here claims more:
+
+- **Covered:** one exact-pattern positive case -- the registered 1258
+  `test-backend-ops` case (two distinct Q6_K projections over one shared
+  F32 activation, the same-shape K/V-projection production shape) is
+  bit-identical against the unfused numerical reference (6/6 rows on all
+  three contract architectures), with real activation proof (subject
+  marker hit, control zero-hit) in the same runs.
+- **Not yet covered (non-performance):** the remaining exact-pattern
+  gates beyond that single positive case (the full compatible op/type
+  and safe view/data-interval gate set, same-source
+  overlap/disjoint-output gates); unsafe/near-miss graph fallback to the
+  unfused reference (false-positive handling, GLU fusion precedence,
+  views/no-ops); graph capture as an explicit validation leg; and the
+  declared-composition arms (isolated vs. declared-composition causal
+  arms, per PRBE11's step 5).
+- **Not yet covered (performance):** real causal performance evidence
+  (the declared `performance`/`controls` checks) -- isolated performance
+  and any composition result separately attributable.
+- **Met structurally:** 1207 is never silently combined -- the declared
+  `CONFLICTS = ("1207_rd17_moe_topk_down_fold",)` fails the anchor
+  loudly, and no dedicated recipe declares an order combining the two.
 
 ## Scope
 
@@ -77,10 +94,10 @@ PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py
 A real `--run-rd12-contract` run binds its evidence into the record: a
 canonical `correctness.json` (the bit_identical disposition),
 `activation.json`, and one raw per-arm activation log
-(`activation-rd12-{subject,control}.log`) bound as the declared
-trace-marker check's positive/negative artifacts -- the validator
-re-reads those logs and re-verifies the marker itself, so the check
-cannot be satisfied by fixture output. The declared
+(`logs/activation-rd12-{architecture}-{subject,control}.log`) bound as
+the declared trace-marker check's positive/negative artifacts -- the
+validator re-reads those logs and re-verifies the marker itself, so the
+check cannot be satisfied by fixture output. The declared
 `performance`/`controls` checks stay BLOCKED until real performance
 evidence exists.
 
@@ -92,10 +109,11 @@ flag) the first time the dual-output fusion path is actually taken under
 fusion path was really exercised, not merely that the build succeeded and
 a benchmark ran without crashing.
 
-The remaining gap to full PRBE11 qualification is real performance
-evidence (the declared `performance`/`controls` checks), tracked under
-PRBE11. Nothing prerequisites that work on RD25 (see the PRBE11 note
-above) -- it simply has not been measured yet.
+The remaining gaps to full PRBE11 qualification are itemized above --
+the non-performance exact-pattern/fallback/composition gates plus the
+real causal performance evidence (the declared `performance`/`controls`
+checks) -- all tracked under PRBE11. Nothing prerequisites that work on
+RD25 (see the PRBE11 note above) -- it simply has not been covered yet.
 
 ## Real bit-identical correctness evidence (2026-09-13, all three architectures)
 
@@ -121,11 +139,12 @@ fixed by making both outputs independent graph roots (see 1258's own
 README for the full finding).
 
 **This is real, clean multi-architecture correctness evidence -- but it
-does NOT by itself satisfy PRBE11's full qualification bar**, which also
-requires isolated causal **performance** evidence under the declared
-composition. No real performance evidence has been gathered (the
-declared `performance`/`controls` checks remain BLOCKED). This closes
-the "prove the fork's bit-identical claim on real hardware" gap
+does NOT by itself satisfy PRBE11's full qualification bar**, which
+also requires the remaining exact-pattern/fallback gates and isolated
+causal **performance** evidence under the declared composition (see the
+itemized list above). No real performance evidence has been gathered
+(the declared `performance`/`controls` checks remain BLOCKED). This
+closes the "prove the fork's bit-identical claim on real hardware" gap
 specifically -- it does not by itself authorize promotion.
 
 ## Known limitations
