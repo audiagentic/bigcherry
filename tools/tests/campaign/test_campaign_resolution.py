@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.campaign import resolution as campaign_resolution
 from bigcherry.core import config, paths
-from bigcherry.patch import patchset # noqa: E402
+from bigcherry.patch import patchset  # noqa: E402
 
 
 def _write_patch(patches_root: Path, patch_id: str, *, marker_text: str) -> None:
@@ -46,17 +46,20 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(lane.patch_set.classification, "upstream")
 
     def test_base_is_exactly_the_fifteen_validated_core_modules(self):
-        lane = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-native", self.cfg, self.catalog
+        )
         # Scoped to the framework + upstream-fixes patch-sets' own declared
         # lists (bigcherry-native's real composition, PPS03), not "every
         # validated module in the catalog" -- since RD19's promotion
         # (2026-08-24), a validated module can also live in
         # validated-enhancements, which bigcherry-native must NOT pull in.
-        native_patch_ids = frozenset(self.cfg.patch_sets["framework"].patches) | frozenset(
-            self.cfg.patch_sets["upstream-fixes"].patches
-        )
+        native_patch_ids = frozenset(
+            self.cfg.patch_sets["framework"].patches
+        ) | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         expected = tuple(
-            module.patch_id for module in self.catalog
+            module.patch_id
+            for module in self.catalog
             if module.state == "validated" and module.patch_id in native_patch_ids
         )
         # HI70: patches/1100_hi70_direct_op_evidence/patch.py added a 15th
@@ -70,10 +73,12 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(len(expected), 15)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
-            len(self.cfg.patch_sets["framework"].patches), 14,
+            len(self.cfg.patch_sets["framework"].patches),
+            14,
         )
         self.assertEqual(
-            len(self.cfg.patch_sets["upstream-fixes"].patches), 1,
+            len(self.cfg.patch_sets["upstream-fixes"].patches),
+            1,
         )
         # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
         # a promoted enhancement. That separation is what makes it usable as
@@ -95,7 +100,8 @@ class CampaignResolutionTests(unittest.TestCase):
         non_empty = self.cfg.patch_sets["validated-enhancements"].patches
         for patch_id in non_empty:
             self.assertNotIn(
-                patch_id, lane.patch_set.module_ids,
+                patch_id,
+                lane.patch_set.module_ids,
                 f"{patch_id} leaked into the framework-only control source",
             )
 
@@ -105,9 +111,9 @@ class CampaignResolutionTests(unittest.TestCase):
         promoting a patch does not break the test -- only breaking the
         composition does."""
         native = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog)
-        release = campaign_resolution.resolve_lane(
-            "bigcherry", self.cfg, self.catalog)
+            "bigcherry-native", self.cfg, self.catalog
+        )
+        release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
 
         native_ids = set(native.patch_set.module_ids)
         release_ids = set(release.patch_set.module_ids)
@@ -122,14 +128,19 @@ class CampaignResolutionTests(unittest.TestCase):
         by_id = {module.patch_id: module for module in self.catalog}
         for patch_id in release.promoted_enhancements:
             self.assertEqual(
-                by_id[patch_id].state, "validated",
+                by_id[patch_id].state,
+                "validated",
                 f"{patch_id} is in a release patch-set but is not validated",
             )
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(
-            name="one-fix", patches=("1002_hip_unsafe_math_opt_in",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="one-fix",
+            patches=("1002_hip_unsafe_math_opt_in",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         lane = campaign_resolution.resolve_lane(
@@ -137,7 +148,9 @@ class CampaignResolutionTests(unittest.TestCase):
         )
         self.assertEqual(len(lane.patch_set.module_ids), 16)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
-        self.assertNotIn("1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids)
+        self.assertNotIn(
+            "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids
+        )
         self.assertEqual(lane.patch_set.classification, "experimental")
 
 
@@ -184,8 +197,12 @@ class CanonicalSelectionTests(unittest.TestCase):
 
     def test_experiment_forwards_through_to_the_resolved_patch_set(self):
         experiment = config.Experiment(
-            name="one-fix", patches=("1002_hip_unsafe_math_opt_in",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="one-fix",
+            patches=("1002_hip_unsafe_math_opt_in",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         selection = campaign_resolution.resolve_canonical_selection(
@@ -203,7 +220,9 @@ class PatchSetIdentityTests(unittest.TestCase):
     def test_all_is_rejected_and_identity_changes_with_content(self):
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "not a valid"):
             campaign_resolution.resolve_patch_set("all", self.cfg, self.catalog)
-        first = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
+        first = campaign_resolution.resolve_lane(
+            "bigcherry-native", self.cfg, self.catalog
+        )
         changed = dataclasses.replace(
             self.cfg.patch_sets["framework"],
             patches=self.cfg.patch_sets["framework"].patches[:-1],
@@ -224,7 +243,9 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
     genuinely different named-set compositions resolving to the same
     modules/state/classification collided on one patch_set_id."""
 
-    def test_two_different_multiset_compositions_resolving_to_the_same_modules_do_not_collide(self):
+    def test_two_different_multiset_compositions_resolving_to_the_same_modules_do_not_collide(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             patches_root = Path(directory) / "patches"
             _write_patch(patches_root, "0001_a", marker_text="a")
@@ -234,10 +255,17 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             cfg = config.Config(
                 pinned="unused",
                 patch_sets={
-                    "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                    "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                    "set-a": config.PatchSet(
+                        name="set-a", patches=("0001_a",), required_state="validated"
+                    ),
+                    "set-b": config.PatchSet(
+                        name="set-b", patches=("0002_b",), required_state="validated"
+                    ),
                     "set-ab": config.PatchSet(
-                        name="set-ab", patches=("0001_a", "0002_b"), required_state="validated"),
+                        name="set-ab",
+                        patches=("0001_a", "0002_b"),
+                        required_state="validated",
+                    ),
                 },
                 sources={
                     # Two-set composition [set-a, set-b] and single-set
@@ -245,26 +273,43 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                     # ("0001_a", "0002_b") -- same bytes, different
                     # reviewed logical composition.
                     "via-two-sets": config.Source(
-                        name="via-two-sets", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b")),
+                        name="via-two-sets",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b"),
+                    ),
                     "via-one-set": config.Source(
-                        name="via-one-set", ref="pinned", overlay=False,
-                        patch_sets=("set-ab",)),
+                        name="via-one-set",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-ab",),
+                    ),
                 },
-                builds={}, platforms={}, experiments={}, campaigns={},
+                builds={},
+                platforms={},
+                experiments={},
+                campaigns={},
                 path=Path(directory) / "recipes.toml",
             )
 
             lane_two_sets = campaign_resolution.resolve_lane(
-                "via-two-sets", cfg, catalog, catalog_directory=patches_root)
+                "via-two-sets", cfg, catalog, catalog_directory=patches_root
+            )
             lane_one_set = campaign_resolution.resolve_lane(
-                "via-one-set", cfg, catalog, catalog_directory=patches_root)
+                "via-one-set", cfg, catalog, catalog_directory=patches_root
+            )
 
-            self.assertEqual(lane_two_sets.patch_set.module_ids, lane_one_set.patch_set.module_ids)
+            self.assertEqual(
+                lane_two_sets.patch_set.module_ids, lane_one_set.patch_set.module_ids
+            )
             self.assertNotEqual(
-                lane_two_sets.patch_set.patch_set_id, lane_one_set.patch_set.patch_set_id)
+                lane_two_sets.patch_set.patch_set_id,
+                lane_one_set.patch_set.patch_set_id,
+            )
 
-    def test_two_different_two_set_compositions_resolving_to_the_same_modules_do_not_collide(self):
+    def test_two_different_two_set_compositions_resolving_to_the_same_modules_do_not_collide(
+        self,
+    ):
         # The narrower case: TWO different multi-set compositions (both
         # going through the "__merged__" synthetic-name path), not one
         # multi-set vs one single-set.
@@ -277,30 +322,51 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             cfg = config.Config(
                 pinned="unused",
                 patch_sets={
-                    "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                    "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
-                    "set-empty-1": config.PatchSet(name="set-empty-1", patches=(), required_state="validated"),
-                    "set-empty-2": config.PatchSet(name="set-empty-2", patches=(), required_state="validated"),
+                    "set-a": config.PatchSet(
+                        name="set-a", patches=("0001_a",), required_state="validated"
+                    ),
+                    "set-b": config.PatchSet(
+                        name="set-b", patches=("0002_b",), required_state="validated"
+                    ),
+                    "set-empty-1": config.PatchSet(
+                        name="set-empty-1", patches=(), required_state="validated"
+                    ),
+                    "set-empty-2": config.PatchSet(
+                        name="set-empty-2", patches=(), required_state="validated"
+                    ),
                 },
                 sources={
                     "via-a-then-empty1": config.Source(
-                        name="via-a-then-empty1", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b", "set-empty-1")),
+                        name="via-a-then-empty1",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b", "set-empty-1"),
+                    ),
                     "via-a-then-empty2": config.Source(
-                        name="via-a-then-empty2", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b", "set-empty-2")),
+                        name="via-a-then-empty2",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b", "set-empty-2"),
+                    ),
                 },
-                builds={}, platforms={}, experiments={}, campaigns={},
+                builds={},
+                platforms={},
+                experiments={},
+                campaigns={},
                 path=Path(directory) / "recipes.toml",
             )
 
             lane_1 = campaign_resolution.resolve_lane(
-                "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root)
+                "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root
+            )
             lane_2 = campaign_resolution.resolve_lane(
-                "via-a-then-empty2", cfg, catalog, catalog_directory=patches_root)
+                "via-a-then-empty2", cfg, catalog, catalog_directory=patches_root
+            )
 
             self.assertEqual(lane_1.patch_set.module_ids, lane_2.patch_set.module_ids)
-            self.assertNotEqual(lane_1.patch_set.patch_set_id, lane_2.patch_set.patch_set_id)
+            self.assertNotEqual(
+                lane_1.patch_set.patch_set_id, lane_2.patch_set.patch_set_id
+            )
 
 
 class EmptyBaseExperimentResolutionTests(unittest.TestCase):
@@ -316,38 +382,57 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
         _write_patch(self.patches_root, "0001_a", marker_text="a")
         self.catalog = patchset.catalog(directory=self.patches_root)
         experiment = config.Experiment(
-            name="exp-a", patches=("0001_a",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="exp-a",
+            patches=("0001_a",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         self.cfg = config.Config(
             pinned="unused",
             patch_sets={},
             sources={
                 "clean": config.Source(
-                    name="clean", ref="pinned", overlay=False, patch_sets=()),
+                    name="clean", ref="pinned", overlay=False, patch_sets=()
+                ),
             },
-            builds={}, platforms={}, experiments={"exp-a": experiment}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={"exp-a": experiment},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
 
     def test_empty_base_no_experiment_resolves_empty(self):
         lane = campaign_resolution.resolve_lane(
-            "clean", self.cfg, self.catalog, catalog_directory=self.patches_root)
+            "clean", self.cfg, self.catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
     def test_empty_base_with_experiment_resolves_exactly_the_experiment(self):
         lane = campaign_resolution.resolve_lane(
-            "clean", self.cfg, self.catalog, experiment="exp-a",
-            catalog_directory=self.patches_root)
+            "clean",
+            self.cfg,
+            self.catalog,
+            experiment="exp-a",
+            catalog_directory=self.patches_root,
+        )
         self.assertEqual(lane.patch_set.module_ids, ("0001_a",))
         self.assertEqual(lane.patch_set.classification, "experimental")
 
     def test_empty_base_with_unknown_experiment_fails_closed(self):
-        with self.assertRaisesRegex(campaign_resolution.ResolutionError, "unknown experiment"):
+        with self.assertRaisesRegex(
+            campaign_resolution.ResolutionError, "unknown experiment"
+        ):
             campaign_resolution.resolve_lane(
-                "clean", self.cfg, self.catalog, experiment="not-real",
-                catalog_directory=self.patches_root)
+                "clean",
+                self.cfg,
+                self.catalog,
+                experiment="not-real",
+                catalog_directory=self.patches_root,
+            )
 
 
 class MultiSetIndependentRequiredStateTests(unittest.TestCase):
@@ -363,15 +448,19 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         _write_patch(self.patches_root, "0001_a", marker_text="a")
         _write_patch(self.patches_root, "0002_b", marker_text="b")
 
-    def _catalog_with_states(self, state_a: str, state_b: str) -> list[patchset.PatchModule]:
+    def _catalog_with_states(
+        self, state_a: str, state_b: str
+    ) -> list[patchset.PatchModule]:
         (self.patches_root / "0001_a.py").write_text(
-            (self.patches_root / "0001_a.py").read_text(encoding="utf-8").replace(
-                "STATE = 'validated'", f"STATE = {state_a!r}"),
+            (self.patches_root / "0001_a.py")
+            .read_text(encoding="utf-8")
+            .replace("STATE = 'validated'", f"STATE = {state_a!r}"),
             encoding="utf-8",
         )
         (self.patches_root / "0002_b.py").write_text(
-            (self.patches_root / "0002_b.py").read_text(encoding="utf-8").replace(
-                "STATE = 'validated'", f"STATE = {state_b!r}"),
+            (self.patches_root / "0002_b.py")
+            .read_text(encoding="utf-8")
+            .replace("STATE = 'validated'", f"STATE = {state_b!r}"),
             encoding="utf-8",
         )
         return patchset.catalog(directory=self.patches_root)
@@ -390,18 +479,30 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="untested"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="untested"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         lane = campaign_resolution.resolve_lane(
-            "multi", cfg, catalog, catalog_directory=self.patches_root)
+            "multi", cfg, catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
         # Two genuinely different policies were used -- the composite
         # required_state is honestly ambiguous, not silently the first
@@ -419,19 +520,31 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="validated"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         with self.assertRaisesRegex(ValueError, "does not satisfy required state"):
             campaign_resolution.resolve_lane(
-                "multi", cfg, catalog, catalog_directory=self.patches_root)
+                "multi", cfg, catalog, catalog_directory=self.patches_root
+            )
 
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
         # Today's only real production shape (bigcherry: framework +
@@ -442,18 +555,30 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="validated"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         lane = campaign_resolution.resolve_lane(
-            "multi", cfg, catalog, catalog_directory=self.patches_root)
+            "multi", cfg, catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(lane.patch_set.required_state, "validated")
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
 
@@ -469,6 +594,7 @@ class PerLaneExperimentTests(unittest.TestCase):
 
     def setUp(self):
         from bigcherry.core import config, paths
+
         self.cfg = config.load(paths.RECIPES)
 
     def test_profile_declares_patched_and_unpatched_arms(self):
@@ -508,7 +634,8 @@ class PerLaneExperimentTests(unittest.TestCase):
         lanes = plan(
             CampaignRequest(
                 selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
-                architectures=("gfx1100",), experiment="rd73-only",
+                architectures=("gfx1100",),
+                experiment="rd73-only",
             ),
             self.cfg,
         )
@@ -522,7 +649,9 @@ class PerLaneExperimentTests(unittest.TestCase):
         # time, not silently plan an arm that is identical to its baseline --
         # which would make the comparison quietly meaningless.
         text = paths.RECIPES.read_text(encoding="utf-8").replace(
-            'experiment = "rd73-only"', 'experiment = "no-such-experiment"', 1,
+            'experiment = "rd73-only"',
+            'experiment = "no-such-experiment"',
+            1,
         )
         with tempfile.TemporaryDirectory() as tmp:
             recipes = Path(tmp) / "recipes.toml"
@@ -530,3 +659,46 @@ class PerLaneExperimentTests(unittest.TestCase):
             with self.assertRaises(config.ConfigError) as caught:
                 config.load(recipes)
         self.assertIn("no-such-experiment", str(caught.exception))
+
+
+class SelectorIdentityAuthorityTests(unittest.TestCase):
+    """PA34.2 structural invariant: the canonical selector identity is
+    constructed ONLY inside campaign/resolution.py.
+
+    rebase/gates/validation consumers must never hand-assemble a selector
+    identity (the dataclass) or its payload -- they obtain it through
+    ``resolve_canonical_selection()`` / ``build_all_patches_identity()`` and
+    validate it through ``SelectorIdentity.from_payload()``. This test walks
+    the whole production tree and fails closed if any other module constructs
+    the identity directly (an AST constructor call, so annotations,
+    ``from_payload``, comments and strings never match)."""
+
+    def test_identity_is_constructed_only_in_the_authority_module(self) -> None:
+        import ast
+
+        repo_root = Path(__file__).resolve().parents[3]
+        production = repo_root / "tools" / "bigcherry"
+        authority = production / "campaign" / "resolution.py"
+
+        offenders = []
+        for source_file in sorted(production.rglob("*.py")):
+            if source_file == authority:
+                continue
+            tree = ast.parse(
+                source_file.read_text(encoding="utf-8"),
+                filename=str(source_file),
+            )
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "SelectorIdentity"
+                ):
+                    offenders.append(f"{source_file}:{node.lineno}")
+        self.assertEqual(
+            offenders,
+            [],
+            "selector identity must be constructed only in "
+            "campaign/resolution.py; consumers must use "
+            "resolve_canonical_selection()/build_all_patches_identity()",
+        )

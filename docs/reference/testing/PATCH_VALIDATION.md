@@ -152,11 +152,48 @@ dependency/conflict metadata, and a focal ID in `known_good_patch_ids`.
 Report generation does not mutate lifecycle state or the shared vendor
 checkout.
 
+## Exact selector identity (PA34)
+
+Every rebase report and gate context is bound to one immutable
+`SelectorIdentity` value object owned by `campaign.resolution`. It is the
+single authority for the serializable selection: `selector_kind`, a
+deterministic `selector_name`, `source_name`/`source_ref` where applicable,
+`patch_set_id` where applicable, and the exact ordered `patch_ids` with their
+ordered `module_hashes`. `CanonicalSelection` carries this object and exposes
+source/ref/patch-set/IDs only as read-only projections of it. There is exactly
+one serializer/validator (`SelectorIdentity.to_payload()` / `from_payload()`) and
+one comparison path; a mismatch in kind, name, ref, **order**, or hash is
+rejected by that shared path. No rebase/gates/validation consumer assembles its
+own selector dictionary -- a structural test enforces this.
+
+Three selector kinds share one payload shape, with non-applicable fields
+explicitly null rather than ad-hoc variants:
+
+- **source** -- `--source <name>`; the plain source selection.
+- **named experiment** -- `--source <name> --experiment <name>`; layers a named
+  `[experiment.<name>]` over the source. Selector name is `experiment:<name>`.
+- **focal overlay** -- the focal patch's own `REQUIRES` closure layered over the
+  source. The base is resolved first, the closure is expanded, IDs already in the
+  base are removed, and only the remaining dependency-complete overlay is applied.
+  Selector name is `focal:<patch-id>`. It is never an arbitrary user patch list.
+- **all-patches** -- `--all`; the coverage report. This is coverage identity, not
+  a claim that mutually conflicting patches form one production composition.
+
+Rebase reports are **schema 2**: the report carries the canonical `selector`
+payload (the `to_payload()` dict) rather than a hand-built `selection` dict.
+Older reports fail freshness.
+
 Use the canonical configured source name, not a filesystem placeholder:
 
 ```bash
 PYTHONPATH=tools python -m bigcherry patch-rebase-check \
   --source <source-name> --json <fresh-report.json>
+# Named experiment selector (mutually exclusive with --focal-overlay):
+PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+  --source <source-name> --experiment <experiment-name> --json <fresh-report.json>
+# Deterministic focal-overlay selector (takes the overlay PATCH_ID):
+PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+  --source <source-name> --focal-overlay <patch-id> --json <fresh-report.json>
 PYTHONPATH=tools python -m bigcherry apply --source <source-name> --dry-run
 ```
 
@@ -173,11 +210,28 @@ PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --sou
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent rebase --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
+# Named experiment (mutually exclusive with --focal-overlay): layer [experiment.<name>] over --source.
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+  --experiment <experiment-name> --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
+# Focal overlay: the <patch-id> is the overlay patch (a boolean flag, not a PATCH_ID arg).
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+  --focal-overlay --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 ```
 
 Build and rebase need the canonical `--source` selection and the fresh
 all-patches report because they also evaluate G6. A stale or identity-mismatched
 report is not made current by applying it.
+
+G2 (`evaluate_rebase_gate`) delegates exact matching and freshness to
+`patch.rebase.require_fresh_report(..., expected_selector=...)`: the report's
+`selector` payload must equal the context's expected `SelectorIdentity`, not
+merely be fresh for the same checkout. The gate JSON embeds the canonical
+`SelectorIdentity.to_payload()` (never duplicate selector fields beside it).
+
+When the focal patch is **not** in a successfully resolved selector, `patch-gates`
+returns a top-level `selection_status = "NOT_EVALUATED"` **before** any gate
+runs (exit code 1). This does not synthesize a G7 `NA` or overload
+`GateStatus` -- the gate matrix is simply not evaluated for an unselected focal.
 
 ## G3 — Validation definition and package
 
