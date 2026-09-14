@@ -16,25 +16,25 @@ from bigcherry.patch.validation import (
 
 
 ROOT = Path(__file__).resolve().parents[3]
-CHECKS = ROOT / "patches/0100_cmake_options/validation/checks.py"
+CHECKS = ROOT / "patches/0110_campaign_tune_record_build/validation/checks.py"
 
 
 def _load_checks():
     import importlib.util
-    spec = importlib.util.spec_from_file_location("cmake_validation_checks", CHECKS)
+    spec = importlib.util.spec_from_file_location("cmake_campaign_validation_checks", CHECKS)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-class CMakeValidationAdapterTests(unittest.TestCase):
+class CMakeCampaignValidationAdapterTests(unittest.TestCase):
     def test_missing_context_is_blocked(self):
         self.assertEqual(_load_checks().check(SimpleNamespace()).status, BLOCKED)
 
     def test_missing_cmake_is_blocked(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=lambda *_: None)
             old = shutil.which
             try:
@@ -53,19 +53,19 @@ class CMakeValidationAdapterTests(unittest.TestCase):
                 ref = real_register(name, path)
                 bound.append(ref)
                 return ref
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=register)
             result = checks.check(ctx)
             self.assertEqual(result.status, PASS, result)
-            self.assertEqual({ref.name for ref in bound}, {"serving-selection.cmake", "serving-selection.json"})
-            report = json.loads((Path(directory) / "artifacts/serving-selection.json").read_text())
-            self.assertEqual([item["returncode"] for item in report["observations"]], [0, 0])
+            self.assertEqual({ref.name for ref in bound}, {"campaign-selection.cmake", "campaign-selection.json"})
+            report = json.loads((Path(directory) / "artifacts/campaign-selection.json").read_text())
+            self.assertEqual([item["returncode"] for item in report["observations"]], [0, 0, 0, 0])
             self.assertFalse(report["patch_second_changed"])
 
     def test_matrix_failure_is_fail(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory),
                                   register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
@@ -90,7 +90,7 @@ class CMakeValidationAdapterTests(unittest.TestCase):
     def test_invalid_artifact_registration_is_error(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=lambda *_: None)
             result = checks.check(ctx)
             self.assertEqual(result.status, ERROR)
@@ -99,7 +99,7 @@ class CMakeValidationAdapterTests(unittest.TestCase):
     def test_cmake_version_failure_is_error(self):
         checks = _load_checks()
         with tempfile.TemporaryDirectory() as directory:
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory),
                                   register_artifact=make_default_register_artifact(Path(directory)))
             old_run = checks.subprocess.run
@@ -121,10 +121,10 @@ class CMakeValidationAdapterTests(unittest.TestCase):
             real_register = make_default_register_artifact(Path(directory))
             def register(name, path):
                 ref = real_register(name, path)
-                if name == "serving-selection.json":
+                if name == "campaign-selection.json":
                     return ArtifactRef(ref.name, ref.path, "0" * 64)
                 return ref
-            ctx = SimpleNamespace(package_root=ROOT / "patches/0100_cmake_options",
+            ctx = SimpleNamespace(package_root=ROOT / "patches/0110_campaign_tune_record_build",
                                   run_dir=Path(directory), register_artifact=register)
             result = checks.check(ctx)
             self.assertEqual(result.status, ERROR)
