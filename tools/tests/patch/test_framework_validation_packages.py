@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3] / "patches"
 
 @pytest.mark.parametrize("patch_id,check_id", [
     ("0100_cmake_options", "coverage-source-selection"),
+    ("0300_mmq_forced_j", "mmq-forced-j-transform"),
     ("0700_coverage_counters", "family-hook-isolation"),
 ])
 def test_framework_fixture_success_does_not_supply_apply_or_hip_build(patch_id, check_id):
@@ -29,7 +30,8 @@ def test_framework_fixture_success_does_not_supply_apply_or_hip_build(patch_id, 
         "apply", "build"}
 
 
-@pytest.mark.parametrize("patch_id", ["0100_cmake_options", "0700_coverage_counters"])
+@pytest.mark.parametrize("patch_id", [
+    "0100_cmake_options", "0300_mmq_forced_j", "0700_coverage_counters"])
 def test_framework_apply_and_build_are_package_custom_producers(patch_id):
     descriptor = registry.load_registry(ROOT).get(patch_id)
     plan = validation_policy.require_execution_package(descriptor, root=ROOT)
@@ -49,7 +51,8 @@ def test_framework_apply_and_build_are_package_custom_producers(patch_id):
     assert validation.evaluate_check(checks["build"], ctx).status == validation.BLOCKED
 
 
-@pytest.mark.parametrize("patch_id", ["0100_cmake_options", "0700_coverage_counters"])
+@pytest.mark.parametrize("patch_id", [
+    "0100_cmake_options", "0300_mmq_forced_j", "0700_coverage_counters"])
 def test_framework_custom_producers_pass_single_composition_with_bound_builds(patch_id):
     descriptor = registry.load_registry(ROOT).get(patch_id)
     plan = validation_policy.require_execution_package(descriptor, root=ROOT)
@@ -82,7 +85,8 @@ def test_framework_custom_producers_pass_single_composition_with_bound_builds(pa
         assert validation.evaluate_check(checks["build"], ctx).status == validation.PASS
 
 
-@pytest.mark.parametrize("patch_id", ["0100_cmake_options", "0700_coverage_counters"])
+@pytest.mark.parametrize("patch_id", [
+    "0100_cmake_options", "0300_mmq_forced_j", "0700_coverage_counters"])
 def test_framework_custom_producers_reject_stale_or_tampered_single_composition_proof(patch_id):
     descriptor = registry.load_registry(ROOT).get(patch_id)
     plan = validation_policy.require_execution_package(descriptor, root=ROOT)
