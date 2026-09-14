@@ -11,23 +11,26 @@ bound in `patch.toml`, and the bespoke correctness producer is
 `tools/lab/rd12-correctness/run_real.py`). Its `validation.toml` wires
 `apply`/`build`/`activation`/`correctness`/`performance`/`controls`.
 
-**HARD PREREQUISITE, not yet met (PRBE11's own steps)**: RD25's batch-vs-seq
-consistency fix (fork commit `8cdf1ab08`) must land first -- the frozen
-paired-mmvq code this patch ports is known to carry that inconsistency, and
-PRBE11 explicitly requires it be "resolved" before qualification. RD25 has
-not been ported as a standalone patch yet (it is currently only a bake-in
-rule referenced in this patch's own provenance notes). **Do not run a real
-qualification campaign for a promotion decision on this patch until RD25 is
-resolved** -- the generic S1-S7 campaign below (apply/build/activation) is
-still safe to run for basic package-health/activation confirmation, but its
-result cannot stand in for the real correctness/performance qualification
-PRBE11 actually requires.
+**What PRBE11 actually requires (per PRBE11.md)**: PRBE11 is the
+authoritative active successor to RD12 and is **independent of
+PRBE19/RD25** -- PRBE11's own text says it "must not invent an RD25
+dependency" (historical RD25 does not touch the paired-MMVQ
+implementation) and its acceptance criteria state "RD25/PRBE19 is not a
+prerequisite". Its real bar is: exact K/V paired-MMVQ patterns correct
+under the declared composition, unsafe/near-miss graphs fall back,
+isolated causal performance, and 1207 never silently combined (the
+declared `CONFLICTS`). The real correctness and activation evidence below
+closes PRBE11's correctness legs on all three contract architectures; the
+remaining gap is real causal **performance** evidence (the declared
+`performance`/`controls` checks).
 
 ## Scope
 
-No `validation-architectures` are declared in `patch.toml` yet. The fork's
-own reported evidence (see below) is specific to gfx1201; that has not been
-independently confirmed on this project's own hardware. Backend: HIP.
+`patch.toml` declares `validation-architectures = ["gfx1100", "gfx1201",
+"gfx1030"]`. The fork's own reported performance evidence (see below) is
+specific to gfx1201 and has not been independently measured on this
+project's own hardware; the real correctness/activation evidence below was
+produced on all three declared architectures. Backend: HIP.
 
 ## What it does
 
@@ -62,8 +65,10 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
 ```
 
 The standalone lab driver used for the 2026-09-13 real runs calls the same
-producer for all three architectures in sequence (writing under
-`artifacts/lab/rd12-correctness/`):
+producer for all three architectures in sequence into ONE shared run dir
+(writing under `artifacts/lab/rd12-correctness/`) -- the per-arm logs below
+are therefore namespaced by architecture so each later run cannot
+overwrite an earlier one:
 
 ```
 PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py
@@ -87,10 +92,10 @@ flag) the first time the dual-output fusion path is actually taken under
 fusion path was really exercised, not merely that the build succeeded and
 a benchmark ran without crashing.
 
-The remaining gap to RD08's level of qualification is real performance
+The remaining gap to full PRBE11 qualification is real performance
 evidence (the declared `performance`/`controls` checks), tracked under
-PRBE11 -- blocked on the RD25 prerequisite above before that work is
-meaningful.
+PRBE11. Nothing prerequisites that work on RD25 (see the PRBE11 note
+above) -- it simply has not been measured yet.
 
 ## Real bit-identical correctness evidence (2026-09-13, all three architectures)
 
@@ -116,13 +121,12 @@ fixed by making both outputs independent graph roots (see 1258's own
 README for the full finding).
 
 **This is real, clean multi-architecture correctness evidence -- but it
-does NOT satisfy PRBE11's full qualification bar.** The RD25 hard
-prerequisite above (batch-vs-seq consistency fix) is still unmet and no
-real performance evidence has been gathered (the declared
-`performance`/`controls` checks remain BLOCKED without it). This closes
+does NOT by itself satisfy PRBE11's full qualification bar**, which also
+requires isolated causal **performance** evidence under the declared
+composition. No real performance evidence has been gathered (the
+declared `performance`/`controls` checks remain BLOCKED). This closes
 the "prove the fork's bit-identical claim on real hardware" gap
-specifically -- it does not by itself authorize promotion or supersede
-PRBE11's blocking prerequisite.
+specifically -- it does not by itself authorize promotion.
 
 ## Known limitations
 
@@ -144,14 +148,15 @@ a real negative): ran `BIGCHERRY_PATCH_TRACE=1 llama-bench -p 512 -n 32`
 `gpt-oss-20b-UD-Q6_K_XL`, single gfx1100): **0 of 0**
 `BIGCHERRY_PATCH_HIT patch=1205_rd12` marker hits in either run.
 
-**Root cause found and corrected: this patch's marker uses
-`GGML_LOG_INFO`, not `GGML_LOG_WARN`** (`patch.py` line 155) -- the exact
-same class of bug this project already found and fixed for RD08
+**Root cause found and corrected: at the time, this patch's marker used
+`GGML_LOG_INFO`, not `GGML_LOG_WARN`** -- the exact same class of bug
+this project already found and fixed for RD08
 (`GGML_LOG_INFO`->`GGML_LOG_WARN`, commit `991e761`, VA21): `llama-bench`
 gates INFO-level ggml logs behind its own `--verbose` flag, which the
 round-1 command above did not pass. **This was a real methodology bug in
 my own test command, not a real negative finding about the patch or the
-model.**
+model.** (The marker now uses `GGML_LOG_WARN` -- see the round-2 entry
+below.)
 
 **Activation, round 2 (2026-09-13, real, POSITIVE, all three
 architectures).** Rerunning the identical command with `--verbose` added,
@@ -168,17 +173,19 @@ hardware, across every available architecture.** The `GGML_LOG_INFO` ->
 2026-09-13; the marker now uses `GGML_LOG_WARN`, matching RD08's
 precedent).
 
-Per this patch's hard prerequisite (RD25 not yet ported), no performance
-qualification has been attempted -- that remains deliberately scoped out
-until RD25 lands. The 2026-09-13 correctness runs above were done as
-real bit-identical proof of the fork's claim, not as a promotion
+No performance qualification has been attempted yet -- the declared
+`performance`/`controls` checks remain BLOCKED, and PRBE11 does not
+prerequisite that work on RD25 (see above), so it is open work rather
+than a blocked prerequisite. The 2026-09-13 correctness runs above were
+done as real bit-identical proof of the fork's claim, not as a promotion
 decision.
 
 From this run forward, `--run-rd12-contract` persists one raw per-arm
-activation log (`activation-rd12-{subject,control}.log`) in the campaign
-run directory and binds them into the record's trace evidence, so the
-declared trace-marker check can independently re-verify the marker from
-the real subprocess output.
+activation log per architecture
+(`logs/activation-rd12-{architecture}-{subject,control}.log`) in the
+campaign run directory and binds them into the record's trace evidence,
+so the declared trace-marker check can independently re-verify the
+marker from the real subprocess output.
 
 ## Real three-arm baseline comparison (2026-09-13, standardized criteria)
 

@@ -1,9 +1,11 @@
 """Ad-hoc real-hardware driver for run_rd12_correctness_check().
 
-No --run-rd12-correctness CLI flag exists yet (separate follow-up scope).
 Mirrors tools/lab/rd30-correctness/run_real.py's pattern. RD12's contract
 (RD12-PAIRED-MMVQ-DUAL) scopes gfx1100/gfx1201/gfx1030 -- runs all three
-in sequence, one real build+run per architecture.
+in sequence, one real build+run per architecture. The CLI equivalent is
+`--run-rd12-contract` (one contract architecture per invocation); this
+driver exists to exercise all three against one shared run_dir, which is
+why the producer namespaces its per-architecture artifacts and logs.
 
 Usage:
   PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py

@@ -257,11 +257,19 @@ def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
         "artifacts/rd73-resource.json",
         "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
         # PA39: RD12's real bit-identical correctness producer
-        # (run_rd12_correctness_check()) namespaces its artifact by the
-        # architecture the run actually executed against.
+        # (run_rd12_correctness_check()) namespaces its artifacts by the
+        # architecture the run actually executed against. The per-arm
+        # activation logs (the declared trace-marker check's
+        # positive/negative artifacts) are namespaced the same way -- the
+        # standalone lab driver shares one run_dir across all three
+        # contract architectures, so a single un-namespaced pair would be
+        # silently overwritten by each later architecture.
         "artifacts/rd12-correctness-gfx1100.json",
         "artifacts/rd12-correctness-gfx1201.json",
         "artifacts/rd12-correctness-gfx1030.json",
+        "logs/activation-rd12-gfx1100-subject.log", "logs/activation-rd12-gfx1100-control.log",
+        "logs/activation-rd12-gfx1201-subject.log", "logs/activation-rd12-gfx1201-control.log",
+        "logs/activation-rd12-gfx1030-subject.log", "logs/activation-rd12-gfx1030-control.log",
         # PA39: RD04's real backend_reference+ppl_equality correctness
         # producer (run_rd04_contract_correctness()) namespaces its
         # artifact by the architecture the run actually executed against.

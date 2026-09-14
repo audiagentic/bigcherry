@@ -138,15 +138,55 @@ class Rd12ContractCliTests(unittest.TestCase):
         # The declared trace-marker check can only be satisfied from REAL
         # subprocess output: the producer must write one raw per-arm log
         # into the run dir and expose bound {path, sha256} refs for the
-        # CLI to consume (RD08/RD58/RD73 precedent).
+        # CLI to consume (RD08/RD73 precedent). Namespaced by architecture
+        # under logs/ (GPT review req_243e3fcd3d684077): the standalone
+        # lab driver shares one run_dir across all three contract
+        # architectures, so an un-namespaced pair would be overwritten by
+        # each later architecture.
         source = inspect.getsource(vc.run_rd12_correctness_check)
-        self.assertIn('run_dir / "activation-rd12-subject.log"', source)
-        self.assertIn('run_dir / "activation-rd12-control.log"', source)
+        self.assertIn('run_dir / "logs"', source)
+        self.assertIn(
+            'log_dir / f"activation-rd12-{architecture}-subject.log"', source,
+        )
+        self.assertIn(
+            'log_dir / f"activation-rd12-{architecture}-control.log"', source,
+        )
+        self.assertNotIn('"activation-rd12-subject.log"', source)
+        self.assertNotIn('"activation-rd12-control.log"', source)
         self.assertIn('"subject_log_artifact": subject_log_ref', source)
         self.assertIn('"control_log_artifact": control_log_ref', source)
         # Raw streams must be captured per invocation, not summarized away
         # (the old code discarded stdout/stderr entirely).
         self.assertIn('"stdout": stdout, "stderr": stderr', source)
+        # The producer's own hit observation must search the same
+        # stream space the validator does (both streams).
+        self.assertIn(
+            '"hit": trace_marker in stdout or trace_marker in stderr', source,
+        )
+
+    def test_cli_prerequisite_is_model_free_for_rd12(self) -> None:
+        # GPT review (req_243e3fcd3d684077): the documented
+        # --run-rd12-contract command cannot execute unless the CLI
+        # prerequisite stops demanding --model/--manifest for RD12 --
+        # the producer consumes neither (its workload is the registered
+        # 1258 test-backend-ops case). RD12 keeps its own precise
+        # requirement (one contract architecture).
+        main_source = self.main_source
+        rd12_gate = main_source.index("if args.run_rd12_contract:")
+        elif_pos = main_source.index("elif (", rd12_gate)
+        prerequisite_block = main_source[rd12_gate:elif_pos]
+        self.assertIn(
+            'parser.error("--run-rd12-contract requires --amdgpu-targets")',
+            prerequisite_block,
+        )
+        self.assertNotIn("args.model", prerequisite_block)
+        self.assertNotIn("args.manifest", prerequisite_block)
+        # The generic model/manifest requirement must remain for the other
+        # modes, and must sit in the RD12 branch's else, not before it.
+        generic = main_source.index(
+            "runtime qualification requires --model, --manifest, and --amdgpu-targets"
+        )
+        self.assertGreater(generic, elif_pos)
 
     def test_binds_trace_evidence_from_per_arm_activation_logs(self) -> None:
         # --run-rd12-contract skips the generic trace probe, so the RD12
