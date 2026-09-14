@@ -307,6 +307,30 @@ class SchemaThreeRoundTripTests(unittest.TestCase):
                 pin_bump.PinBumpState.load(state_dir)
             self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
 
+    def test_schema_two_non_source_kind_fails_closed(self):
+        # dev-gpt-agent round-3 (req_ab94edd31aa04419 Q3): schema-2 state
+        # only ever represented SOURCE selectors -- a malformed/foreign
+        # kind like "experiment" must not be promoted, since
+        # _selector_patch_ids() ignores selector_kind entirely and always
+        # resolves selector_name as a source.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(
+                        selector={
+                            "kind": "experiment",
+                            "name": "bigcherry",
+                            "patch_ids": ["0100_x"],
+                        }
+                    )
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
     def test_schema_two_non_string_patch_ids_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
