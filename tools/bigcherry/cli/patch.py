@@ -644,11 +644,26 @@ def cmd_patch_gates(args: Namespace) -> int:
     )
     results = patch_gates.evaluate_patch_gates(context)
 
+    # PA34 (dev-gpt-agent req_41a3133e657340c7 Q1/P2#5): the successful path
+    # reports its selection status and the selector it was evaluated under.
+    # A named selection carries its canonical identity; the no-source path
+    # carries the rebase report's selector (the only selector in evidence).
+    selector_payload = (
+        selection.identity.to_payload()
+        if selection is not None
+        else (
+            rebase_report.get("selector")
+            if rebase_report is not None
+            else None
+        )
+    )
     payload = {
         "schema_version": 1,
         "patch_id": args.patch_id,
         "intent": intent.value,
         "source": args.source,
+        "selection_status": "EVALUATED",
+        "selector": selector_payload,
         "composition": [module.patch_id for module in composition.modules],
         "gates": [
             {

@@ -26,6 +26,7 @@ import json
 import subprocess
 import sys
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ class PinBumpStop(Exception):
         human_required: bool = True,
         retryable: bool = True,
         evidence: dict[str, Any] | None = None,
-        recommended_actions: tuple[str, ...] = (),
+        recommended_actions: Sequence[str] = (),
     ):
         super().__init__(summary)
         self.phase = phase
@@ -75,7 +76,9 @@ class PinBumpStop(Exception):
         self.human_required = human_required
         self.retryable = retryable
         self.evidence = evidence or {}
-        self.recommended_actions = recommended_actions
+        # Canonical immutable shape: callers pass lists; the envelope and
+        # any persistence see one tuple form (never a mutable list).
+        self.recommended_actions = tuple(recommended_actions)
         # Set by run() before re-raising, once a run_id has been assigned --
         # never set here, since most call sites raise before a run exists.
         self.run_id: str | None = None
@@ -132,8 +135,14 @@ class PinBumpState:
                 "next_phase": self.next_phase,
             },
         }
-        if self.schema_version >= 2:
-            d["selector"] = {
+        # PA34 (dev-gpt-agent req_41a3133e657340c7 Q3): the persisted
+        # membership freeze is its OWN resume record, not a serialization of
+        # the canonical SelectorIdentity -- the identity schema is owned
+        # exclusively by campaign.resolution. Renamed "selector" ->
+        # "selection_freeze" at schema 3 so no downstream consumer owns an
+        # object named "selector" with a competing shape. Never both keys.
+        if self.schema_version >= 3:
+            d["selection_freeze"] = {
                 "kind": self.selector_kind,
                 "name": self.selector_name,
                 "patch_ids": list(self.selector_patch_ids),
@@ -151,11 +160,23 @@ class PinBumpState:
         return path
 
     @classmethod
-    def load(cls, state_dir: Path) -> "PinBumpState":
+    def load(cls, state_dir: Path) -> PinBumpState:
         data = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
-        selector = data.get("selector") or {}
+        # PA34 Q3 migration: schema 3 renames "selector" -> "selection_freeze".
+        # A loaded schema-2 state migrates to schema 3 IN MEMORY (it persists
+        # under the new key at the next successful save; never both keys).
+        # Schema 1 states carry no selector binding at all and keep their
+        # version so the resume guard still rejects them.
+        raw_version = int(data["schema_version"])
+        if raw_version >= 3:
+            freeze = data.get("selection_freeze") or {}
+        elif raw_version == 2:
+            freeze = data.get("selector") or {}
+            raw_version = 3
+        else:
+            freeze = {}
         return cls(
-            schema_version=data["schema_version"],
+            schema_version=raw_version,
             run_id=data["run_id"],
             from_ref=data["target"]["from_ref"],
             from_sha=data["target"]["from_sha"],
@@ -166,9 +187,9 @@ class PinBumpState:
             tree_path=data["tree"]["path"],
             completed_phases=list(data["resume"]["completed_phases"]),
             next_phase=data["resume"]["next_phase"],
-            selector_kind=selector.get("kind", ""),
-            selector_name=selector.get("name", ""),
-            selector_patch_ids=tuple(selector.get("patch_ids", ())),
+            selector_kind=freeze.get("kind", ""),
+            selector_name=freeze.get("name", ""),
+            selector_patch_ids=tuple(freeze.get("patch_ids", ())),
             coverage_report_sha256=data.get("coverage_report_sha256", ""),
         )
 
@@ -252,7 +273,7 @@ def check_overlay_self_heal(audit_report: dict) -> tuple[bool, list[str]]:
         for check in audit_report["checks"]
         if check["id"] == "overlay.vendor_sync"
     )
-    drifted = list(overlay_check.get("actual", ()) or ())
+    drifted: list[str] = [str(item) for item in (overlay_check.get("actual", ()) or ())]
     return True, drifted
 
 
@@ -327,7 +348,6 @@ def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None
             f"{type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
-        pass
 
 
 def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
@@ -496,7 +516,7 @@ def run(
     # _load_state_or_stop() can both raise before any assignment below
     # would otherwise run, and the except block needs `state` defined
     # either way (None means "fall back to a best-effort disk re-read").
-    state: "PinBumpState | None" = None
+    state: PinBumpState | None = None
     try:
         # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
         # --resume must never silently reinterpret a missing/wrong state as
@@ -574,7 +594,7 @@ def run(
         raise
 
 
-def _load_state_or_stop(report_dir: Path) -> "PinBumpState":
+def _load_state_or_stop(report_dir: Path) -> PinBumpState:
     """Wraps PinBumpState.load() so a corrupt/unreadable state.json becomes
     a structured PinBumpStop (gpt-dev-agent review, session
     ses_5307d9c58ec645cb, second pass) -- pin_bump's own contract is "raise
@@ -600,7 +620,7 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
+def _require_coverage_report(state: PinBumpState, report_path: Path) -> None:
     """Unconditional pre-apply gate (gpt-dev-agent review of c236acc, P1,
     session ses_5307d9c58ec645cb): the coverage phase's rebase-recipe.json
     must exist, and its live bytes must match what coverage actually wrote,
@@ -672,7 +692,7 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
 
 
 def _validate_resume(
-    state: "PinBumpState",
+    state: PinBumpState,
     *,
     target_ref: str,
     vendor_root: Path,
@@ -738,7 +758,7 @@ def _selector_patch_ids(*, selector_kind: str, selector_name: str) -> tuple[str,
 
 
 def _resume_selector(
-    state: "PinBumpState",
+    state: PinBumpState,
     *,
     source_name: str | None = None,
 ) -> tuple[str, str]:
@@ -769,7 +789,7 @@ def _resume_selector(
 
 
 def _require_selector_membership_unchanged(
-    state: "PinBumpState",
+    state: PinBumpState,
     *,
     selector_kind: str,
     selector_name: str,
@@ -806,7 +826,7 @@ def _require_selector_membership_unchanged(
 
 def _run_phases(
     *,
-    state: "PinBumpState | None",
+    state: PinBumpState | None,
     target_ref: str,
     selector_kind: str,
     selector_name: str,
@@ -814,9 +834,9 @@ def _run_phases(
     vendor_root: Path,
     dispositions_dir: Path,
     report_dir: Path,
-) -> "PinBumpResult":
-    from ..source import audit as source_audit
+) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
+    from ..source import audit as source_audit
 
     with acquire_maintenance_lock(repo_root):
         if state is None:
@@ -831,7 +851,7 @@ def _run_phases(
                 )
             )
             state = PinBumpState(
-                schema_version=2,
+                schema_version=3,
                 run_id=uuid.uuid4().hex,
                 from_ref=from_ref,
                 from_sha="",
@@ -856,8 +876,9 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "pull":
-            from ..cli import source as cli_source
             from argparse import Namespace
+
+            from ..cli import source as cli_source
 
             # The orchestrator already owns the exact target ref -- pull
             # must not be made composition-dependent (source=None, not

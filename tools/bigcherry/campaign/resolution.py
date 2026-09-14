@@ -96,7 +96,14 @@ def _split_selector_name(kind: str, selector_name: str) -> str:
             f"selector name {selector_name!r} does not carry the {kind!r} "
             f"{prefix!r} prefix"
         )
-    return selector_name[len(prefix) :]
+    suffix = selector_name[len(prefix) :]
+    if not suffix:
+        raise ResolutionError(
+            f"selector name {selector_name!r} carries an empty "
+            f"{prefix!r} qualifier -- experiment/focal names must be "
+            "non-empty"
+        )
+    return suffix
 
 
 @dataclass(frozen=True)
@@ -125,15 +132,41 @@ class SelectorIdentity:
             raise ResolutionError(f"unknown selector kind {self.selector_kind!r}")
         if not isinstance(self.selector_name, str) or not self.selector_name:
             raise ResolutionError("selector name must be a non-empty string")
+        # PA34 adversarial-review fix (dev-gpt-agent req_b6af12ef4ad34bad
+        # P3 #7): frozen=True only stops attribute re-assignment -- it does
+        # not stop a caller passing a mutable list or non-string elements.
+        # The identity is the shared serialization authority, so its shape
+        # is validated here, at construction, not at payload time.
+        if not isinstance(self.patch_ids, tuple) or not all(
+            isinstance(patch_id, str) and patch_id for patch_id in self.patch_ids
+        ):
+            raise ResolutionError(
+                "selector identity patch_ids must be a tuple of non-empty strings"
+            )
+        if not isinstance(self.module_hashes, tuple) or not all(
+            isinstance(entry, tuple)
+            and len(entry) == 2
+            and all(isinstance(item, str) and item for item in entry)
+            for entry in self.module_hashes
+        ):
+            raise ResolutionError(
+                "selector identity module_hashes must be a tuple of "
+                "(patch_id, content_hash) non-empty string pairs"
+            )
         if self.selector_kind in _SOURCE_BOUNDED_KINDS:
             if (
                 self.source_name is None
                 or self.source_ref is None
                 or self.patch_set_id is None
+                or not all(
+                    isinstance(value, str) and value
+                    for value in (self.source_name, self.source_ref, self.patch_set_id)
+                )
             ):
                 raise ResolutionError(
                     f"{self.selector_kind!r} selector identity requires "
-                    "source_name, source_ref, and patch_set_id"
+                    "non-empty string source_name, source_ref, and "
+                    "patch_set_id"
                 )
             if self.selector_kind == SELECTOR_KIND_SOURCE:
                 expected = selector_name_for(SELECTOR_KIND_SOURCE, self.source_name)
@@ -496,6 +529,23 @@ def resolve_lane_overlay(
     if set(base.patch_set.module_ids) & {m.patch_id for m in overlay_selection.modules}:
         raise ResolutionError(f"overlay {overlay_name!r} repeats a base patch module")
     by_id = {module.patch_id: module for module in catalog}
+    # PA34 adversarial-review fix (dev-gpt-agent req_b6af12ef4ad34bad P1 #3):
+    # resolve_exact() with context_ids only checks the OVERLAY's conflicts
+    # against the base (base IDs enter as context_ids, and only modules in
+    # the resolved set are conflict-checked). The reverse direction -- a
+    # base module declaring CONFLICTS on an overlay module -- is invisible
+    # there, so the merged composition would silently contain a declared
+    # conflict. Check it explicitly at the single merge site (both the
+    # experiment and focal-overlay paths flow through here).
+    overlay_id_set = {m.patch_id for m in overlay_selection.modules}
+    for base_pid in base.patch_set.module_ids:
+        base_conflicts = set(by_id[base_pid].conflicts) & overlay_id_set
+        if base_conflicts:
+            raise ResolutionError(
+                f"base module {base_pid!r} conflicts with overlay "
+                f"{overlay_name!r} module(s): "
+                f"{', '.join(sorted(base_conflicts))}"
+            )
     merged_ids = [
         *base.patch_set.module_ids,
         *(m.patch_id for m in overlay_selection.modules),

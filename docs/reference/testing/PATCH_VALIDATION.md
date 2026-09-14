@@ -223,15 +223,34 @@ all-patches report because they also evaluate G6. A stale or identity-mismatched
 report is not made current by applying it.
 
 G2 (`evaluate_rebase_gate`) delegates exact matching and freshness to
-`patch.rebase.require_fresh_report(..., expected_selector=...)`: the report's
-`selector` payload must equal the context's expected `SelectorIdentity`, not
-merely be fresh for the same checkout. The gate JSON embeds the canonical
-`SelectorIdentity.to_payload()` (never duplicate selector fields beside it).
+`patch.rebase.require_fresh_report(...)`, which takes exactly one binding:
 
-When the focal patch is **not** in a successfully resolved selector, `patch-gates`
-returns a top-level `selection_status = "NOT_EVALUATED"` **before** any gate
-runs (exit code 1). This does not synthesize a G7 `NA` or overload
-`GateStatus` -- the gate matrix is simply not evaluated for an unselected focal.
+- **Named selection** (`expected_selector=...`): the report's `selector`
+  payload must equal the context's expected `SelectorIdentity`, not merely be
+  fresh for the same checkout. Used by every `--source`/`--experiment`/
+  `--focal-overlay` evaluation.
+- **No-source** (`required_module_hashes=...`): the no-source validate/promote
+  path evaluates the focal's own dependency closure and has no named selector
+  to bind an exact identity against. Rather than invent a 5th selector kind, it
+  binds by the composition's exact ordered `(patch_id, content_hash)` pairs:
+  the report's resolved modules must contain them as an **order-preserving
+  subsequence** (the report may have resolved a larger selection), and an
+  all-patches report is rejected outright -- it is evidence for the whole
+  registry, not for a focal's closure. The two bindings are mutually exclusive
+  (passing both is an error).
+
+The gate JSON embeds the canonical `SelectorIdentity.to_payload()` for a named
+selection (never duplicate selector fields beside it); on the no-source path it
+embeds the rebase report's `selector` payload, the only selector in evidence.
+
+`patch-gates` reports a top-level `selection_status`:
+
+- **`"EVALUATED"`** -- the focal was in the resolved selection (or the no-source
+  closure) and the gate matrix ran.
+- **`"NOT_EVALUATED"`** -- the focal patch is **not** in a successfully resolved
+  selector; `patch-gates` returns this **before** any gate runs (exit code 1).
+  This does not synthesize a G7 `NA` or overload `GateStatus` -- the gate matrix
+  is simply not evaluated for an unselected focal.
 
 ## G3 — Validation definition and package
 

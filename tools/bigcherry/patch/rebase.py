@@ -27,14 +27,15 @@ report and apply fails closed, same as it always has for a plain ``apply``.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from . import apply as patcher
@@ -42,6 +43,7 @@ from . import overlay as patch_overlay
 from . import patchset
 from . import registry as patch_registry
 from .. import pin_transition
+from ..pin_transition import MarkerError
 from ..core import paths
 from .apply import PATCH_APPLICATION_SEMANTICS_VERSION
 from .apply import PatchError
@@ -259,7 +261,17 @@ def _selector(
             experiment=experiment,
             focal_overlay_patch_id=focal_overlay_patch_id,
         ).identity
-    except (campaign_resolution.ResolutionError, campaign_config.ConfigError) as exc:
+    except (
+        campaign_resolution.ResolutionError,
+        campaign_config.ConfigError,
+        # resolve_lane/resolve_lane_overlay escape raw ValueError from
+        # patchset.resolve_exact (unknown/conflicting/rejected modules in a
+        # named experiment or focal closure) -- PA34 adversarial-review fix
+        # (dev-gpt-agent req_b6af12ef4ad34bad P2 #4): a rejected/conflicting
+        # selector must return the controlled selector-resolution failure
+        # contract, never a raw traceback.
+        ValueError,
+    ) as exc:
         raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
 
 
@@ -278,6 +290,101 @@ def _selection_patch_ids(
         experiment=experiment,
         focal_overlay_patch_id=focal_overlay_patch_id,
     ).patch_ids
+
+
+@dataclass(frozen=True)
+class _SelectorSnapshot:
+    """One resolution of a rebase selection, bound to ONE catalog load
+    (PA34 adversarial-review fix, dev-gpt-agent req_41a3133e657340c7 Q2).
+
+    Carries the canonical ``SelectorIdentity`` together with the exact
+    ``PatchModule`` objects (including REQUIRES/CONFLICTS metadata) it was
+    resolved against. Every probe must consume this snapshot -- never
+    re-resolve through ``patchset.catalog()``/``resolve_exact()`` -- or a
+    concurrent config/registry edit between identity resolution and probing
+    could make ``report["selector"]`` describe a different ordered
+    composition, hashes, or dependency graph than the one actually probed.
+    """
+
+    identity: campaign_resolution.SelectorIdentity
+    modules: tuple[patchset.PatchModule, ...]
+    modules_by_id: dict[str, patchset.PatchModule]
+
+
+def _resolve_selector_snapshot(
+    *,
+    source_name: str | None = None,
+    all_patches: bool = False,
+    experiment: str | None = None,
+    focal_overlay_patch_id: str | None = None,
+) -> _SelectorSnapshot:
+    """Resolve the selector identity AND bind its modules from a single
+    catalog load (PA34 Q2 single-snapshot seam). See
+    :class:`_SelectorSnapshot` for why the two must come from one
+    resolution."""
+    from ..campaign import resolution as campaign_resolution  # noqa: PLC0415
+    from ..core import config as campaign_config  # noqa: PLC0415
+    from ..core import paths as core_paths  # noqa: PLC0415
+
+    given = sum(bool(x) for x in (source_name, all_patches))
+    if given != 1:
+        raise RebaseCheckError(
+            "patch-rebase-check: pass exactly one of --source NAME or --all"
+        )
+    if experiment is not None and focal_overlay_patch_id is not None:
+        raise RebaseCheckError(
+            "--experiment and --focal-overlay are mutually exclusive"
+        )
+    if (
+        experiment is not None or focal_overlay_patch_id is not None
+    ) and not source_name:
+        raise RebaseCheckError("--experiment/--focal-overlay require --source NAME")
+    try:
+        if all_patches:
+            catalog = patchset.catalog()  # the ONE load for this run
+            identity = campaign_resolution.build_all_patches_identity(catalog)
+        else:
+            if source_name is None:
+                raise RebaseCheckError("patch-rebase-check: --source NAME required")
+            cfg = campaign_config.load(core_paths.RECIPES)
+            catalog = patchset.catalog()  # the ONE load for this run
+            identity = campaign_resolution.resolve_canonical_selection(
+                source_name,
+                cfg,
+                catalog,
+                experiment=experiment,
+                focal_overlay_patch_id=focal_overlay_patch_id,
+            ).identity
+    except (
+        campaign_resolution.ResolutionError,
+        campaign_config.ConfigError,
+        # resolve_lane/resolve_lane_overlay escape raw ValueError from
+        # patchset.resolve_exact (unknown/conflicting/rejected modules in a
+        # named experiment or focal closure) -- PA34 adversarial-review fix
+        # (dev-gpt-agent req_b6af12ef4ad34bad P2 #4): a rejected/conflicting
+        # selector must return the controlled selector-resolution failure
+        # contract, never a raw traceback.
+        ValueError,
+    ) as exc:
+        raise RebaseCheckError(f"patch-rebase-check: {exc}") from exc
+    modules_by_id = {module.patch_id: module for module in catalog}
+    modules = tuple(modules_by_id[patch_id] for patch_id in identity.patch_ids)
+    # Snapshot self-consistency: the identity and the modules it names must
+    # come from the same catalog state. (They do -- both are built from the
+    # single load above -- but assert it so a future edit cannot silently
+    # split them.)
+    if (
+        tuple((module.patch_id, module.content_hash) for module in modules)
+        != identity.module_hashes
+    ):
+        raise RebaseCheckError(
+            "patch-rebase-check: internal inconsistency -- the selector "
+            "identity does not match the catalog snapshot it was resolved "
+            "from"
+        )
+    return _SelectorSnapshot(
+        identity=identity, modules=modules, modules_by_id=modules_by_id
+    )
 
 
 def _partition_conflict_free(
@@ -796,7 +903,7 @@ def _propagate_dependency_blocks(
 def _previous_upstream_revision(revision: str) -> str | None:
     try:
         marker = pin_transition.load()
-    except pin_transition.MarkerError:
+    except MarkerError:
         return None
     if marker is not None and marker.to_sha == revision:
         return marker.from_sha
@@ -815,12 +922,20 @@ def _probe_group(
     revision: str,
     context_lines: int,
     overlay_snapshot: dict[str, str],
+    modules_by_id: dict[str, patchset.PatchModule],
 ) -> tuple[list[patchset.PatchModule], dict[str, PatchProbe], tuple[str, ...]]:
     """One isolated-worktree probe pass for one conflict-free group. Returns
-    (this group's modules in resolved order, its probes, its known_good ids)."""
+    (this group's modules in resolved order, its probes, its known_good ids).
+
+    ``modules_by_id`` is the run's single catalog snapshot -- validation uses
+    the pure ``resolve_exact_from_catalog`` over those exact modules instead
+    of re-reading the registry (PA34 Q2: a concurrent REQUIRES/CONFLICTS edit
+    between identity resolution and probing must not change what is probed).
+    """
     try:
-        selection = patchset.resolve_exact(
+        selection = patchset.resolve_exact_from_catalog(
             group_ids,
+            modules=modules_by_id,
             allow_rejected=False,
             context_ids=context_ids,
         )
@@ -841,10 +956,8 @@ def _probe_group(
         except WorkspaceError as exc:
             raise RebaseCheckError(f"isolated worktree probe failed: {exc}") from exc
         finally:
-            try:
+            with contextlib.suppress(WorkspaceError):
                 repository.remove_worktree(worktree)
-            except WorkspaceError:
-                pass
     return list(selection.modules), probes, known_good
 
 
@@ -876,12 +989,15 @@ def run_rebase_check(
     and it carries exact composition ORDER and per-module content hashes,
     so a stale report is rejected on ANY identity difference -- including
     order-only and hash-only drift."""
-    identity = _selector(
+    # PA34 Q2: resolve the identity AND its modules from ONE catalog load.
+    # Every probe below consumes this snapshot; nothing re-reads the registry.
+    snapshot = _resolve_selector_snapshot(
         source_name=source_name,
         all_patches=all_patches,
         experiment=experiment,
         focal_overlay_patch_id=focal_overlay_patch_id,
     )
+    identity = snapshot.identity
     repository = UpstreamRepository(root)
     revision = _git(root, "rev-parse", "HEAD")
     # Snapshot the overlay ONCE, up front: every probe round and the report's
@@ -898,12 +1014,12 @@ def run_rebase_check(
 
     if all_patches:
         ids = identity.patch_ids
-        modules_by_id = {m.patch_id: m for m in patchset.catalog()}
-        for group_ids in _partition_conflict_free(ids, modules_by_id):
+        # Same single catalog load the identity came from (no second read).
+        for group_ids in _partition_conflict_free(ids, snapshot.modules_by_id):
             context = frozenset(
                 requirement
                 for pid in group_ids
-                for requirement in modules_by_id[pid].requires
+                for requirement in snapshot.modules_by_id[pid].requires
                 if requirement not in group_ids
             )
             group_modules, group_probes, group_known_good = _probe_group(
@@ -913,24 +1029,20 @@ def run_rebase_check(
                 revision=revision,
                 context_lines=context_lines,
                 overlay_snapshot=overlay_snapshot,
+                modules_by_id=snapshot.modules_by_id,
             )
             all_modules.extend(group_modules)
             probes.update(group_probes)
             known_good += group_known_good
     else:
-        selection = resolve_selection(
-            source_name=source_name,
-            all_patches=False,
-            experiment=experiment,
-            focal_overlay_patch_id=focal_overlay_patch_id,
-        )
         all_modules, group_probes, known_good = _probe_group(
-            tuple(m.patch_id for m in selection.modules),
+            tuple(m.patch_id for m in snapshot.modules),
             context_ids=frozenset(),
             repository=repository,
             revision=revision,
             context_lines=context_lines,
             overlay_snapshot=overlay_snapshot,
+            modules_by_id=snapshot.modules_by_id,
         )
         probes.update(group_probes)
 
@@ -977,7 +1089,7 @@ def render_report(report: dict[str, Any]) -> str:
     for patch in report["patches"]:
         lines.append(f"{patch['patch_id']:<45} {patch['status']}")
         if patch["status"] == STATUS_BLOCKED:
-            blockers = [r for r in patch["requires"]]
+            blockers = list(patch["requires"])
             lines.append(f"  BLOCKED (requires {', '.join(blockers)})")
             continue
         for file_probe in patch["files"]:
@@ -1019,10 +1131,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             handle.write(encoded)
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 
@@ -1206,11 +1316,40 @@ def _require_fresh(
     return known_good
 
 
+def _require_ordered_subsequence(
+    report_modules: tuple[tuple[str, str], ...],
+    required: tuple[tuple[str, str], ...],
+) -> None:
+    """Fail closed unless ``required`` (exact ``(patch_id, content_hash)``
+    pairs) appears in ``report_modules`` as an order-preserving subsequence.
+
+    PA34 (dev-gpt-agent req_41a3133e657340c7 Q1): the no-source
+    validate/promote path has no named selector to bind an exact identity
+    against, so the report is bound by the composition's exact module
+    content instead. The report may have resolved MORE modules (a larger
+    selection); it must have resolved the required ones, in the same
+    relative order, at the same content hashes.
+    """
+    iterator = iter(report_modules)
+    for pair in required:
+        for candidate in iterator:
+            if candidate == pair:
+                break
+        else:
+            raise StaleRebaseReportError(
+                "the rebase report's resolved modules do not contain the "
+                "required composition as an order-preserving subsequence "
+                f"(first missing/mis-ordered: patch {pair[0]!r}) -- the report "
+                "is not evidence for this evaluation; re-run patch-rebase-check"
+            )
+
+
 def require_fresh_report(
     report: Mapping[str, Any],
     root: Path,
     *,
     expected_selector: campaign_resolution.SelectorIdentity | None = None,
+    required_module_hashes: tuple[tuple[str, str], ...] | None = None,
     overlay_snapshot_digest: str | None = None,
 ) -> tuple[str, ...]:
     """Expose the existing freshness authority for read-only gate checks.
@@ -1221,7 +1360,19 @@ def require_fresh_report(
     one whose module-id set happens to match) is rejected, so the rebase
     gate can never be satisfied by evidence gathered for another
     experiment/focal/overlay selection.
+
+    ``required_module_hashes`` is the mutually-exclusive no-source binding
+    (dev-gpt-agent req_41a3133e657340c7 Q1): instead of a 5th selector
+    kind, the report's resolved modules must contain the supplied exact
+    ``(patch_id, content_hash)`` pairs as an order-preserving subsequence,
+    and an all-patches report is rejected outright (it is evidence for the
+    whole registry, not for a focal's dependency closure).
     """
+    if expected_selector is not None and required_module_hashes is not None:
+        raise ValueError(
+            "expected_selector and required_module_hashes are mutually "
+            "exclusive -- pass one binding, not both"
+        )
     try:
         known_good = _require_fresh(
             report,
@@ -1232,15 +1383,18 @@ def require_fresh_report(
         raise
     except (KeyError, TypeError, AttributeError) as exc:
         raise StaleRebaseReportError(f"malformed rebase report: {exc}") from exc
-    if expected_selector is not None:
-        from ..campaign import resolution as _resolution  # noqa: PLC0415
+    if expected_selector is None and required_module_hashes is None:
+        return known_good
 
-        try:
-            actual = _resolution.SelectorIdentity.from_payload(report.get("selector"))
-        except Exception as exc:  # ResolutionError (and payload shape errors)
-            raise StaleRebaseReportError(
-                f"report's selector payload is invalid: {exc}"
-            ) from exc
+    from ..campaign import resolution as _resolution  # noqa: PLC0415
+
+    try:
+        actual = _resolution.SelectorIdentity.from_payload(report.get("selector"))
+    except Exception as exc:  # ResolutionError (and payload shape errors)
+        raise StaleRebaseReportError(
+            f"report's selector payload is invalid: {exc}"
+        ) from exc
+    if expected_selector is not None:
         if actual != expected_selector:
             raise StaleRebaseReportError(
                 "report was produced under selector "
@@ -1248,6 +1402,27 @@ def require_fresh_report(
                 f"{expected_selector.selector_name!r} "
                 f"(differs in: {actual.describe_diff(expected_selector)})"
             )
+    else:
+        # required_module_hashes is not None here (the both-None case
+        # returned above; both-set raised at entry). Bind to a local to
+        # narrow the type for mypy without an assert.
+        required = required_module_hashes
+        if required is None:
+            return known_good  # unreachable: both-None returned above
+        if actual.selector_kind == _resolution.SELECTOR_KIND_ALL_PATCHES:
+            raise StaleRebaseReportError(
+                "an all-patches rebase report cannot bind a no-source "
+                "composition evaluation -- it is evidence for the entire "
+                "registry, not for this focal's dependency closure; re-run "
+                "patch-rebase-check with an explicit --source"
+            )
+        _require_ordered_subsequence(
+            tuple(
+                (entry.get("patch_id"), entry.get("implementation_digest"))
+                for entry in report.get("patches", ())
+            ),
+            tuple(required),
+        )
     return known_good
 
 
