@@ -1,0 +1,684 @@
+"""PA26 stage 2: two-arm HIP hardware-run harness -- offline-testable via
+injected lane_executor/runtime_runner. Real execute_campaign_lane and
+real_hardware_runtime_runner are NEVER invoked here (no GPU, no compile).
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import struct
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bigcherry.core import config as campaign_config  # noqa: E402
+from bigcherry.core import paths  # noqa: E402
+from bigcherry.core.artifacts import ArtifactRef  # noqa: E402
+from bigcherry.build.builds import BuildPlan  # noqa: E402
+from bigcherry.patch import patchset  # noqa: E402
+from bigcherry.campaign import replay_equivalence as offline  # noqa: E402
+from bigcherry.campaign import replay_equivalence_hardware as hw  # noqa: E402
+from bigcherry.campaign.lane import CampaignLaneResult  # noqa: E402
+from bigcherry.tuning import replay as replay_module  # noqa: E402
+
+_RECIPES_PATH = paths.RECIPES
+
+
+def _make_cache_blob(*, entry_count: int = 1) -> bytes:
+    """Minimal structurally valid v5 replay cache blob (mirrors
+    test_replay_equivalence.py's helper of the same name/layout -- kept
+    local rather than cross-imported since test discovery does not
+    guarantee sibling test modules are importable by bare name)."""
+    name = b"winner-a\0"
+    entry = (
+        b"\x11" * 16
+        + b"\x22" * 16
+        + struct.pack("<I", 0)
+        + struct.pack("<H", 1)
+        + struct.pack("<iii", 0, 0, 0)
+        + struct.pack("<BBBB", 0, 0, 0, 0)
+        + b"\x33" * 16
+        + b"\x44" * 16
+        + struct.pack("<I", 0)
+        + struct.pack("<H", 0)
+        + struct.pack("<B", 0)
+    )
+    assert len(entry) == replay_module.ENT_SIZE, len(entry)
+    payload = entry * entry_count + name
+    header = bytearray()
+    header += struct.pack(
+        "<III", replay_module.MAGIC, replay_module.REPLAY_VERSION,
+        replay_module.ARTIFACT_VERSION,
+    )
+    header += struct.pack(
+        "<HH", replay_module.SIGNATURE_SCHEMA_VERSION,
+        replay_module.HARDWARE_SCHEMA_VERSION,
+    )
+    header += struct.pack("<II", entry_count, len(name))
+    header += b"\x55" * 16
+    header += replay_module.blake2b_digest(payload)
+    assert len(header) == replay_module.REPLAY_HEADER_SIZE
+    return bytes(header) + payload
+
+
+def _ref(kind: str, digest: str) -> ArtifactRef:
+    return ArtifactRef(
+        kind=kind, path=Path(f"/tmp/{kind}"), content_hash=digest, provenance={}
+    )
+
+
+def _fake_result(
+    *,
+    source_name: str,
+    resolved_revision: str = "a" * 40,
+    inventory_digest: str = "inv-1",
+    winners_digest: str = "win-1",
+    binary_digest: str = "bin-1",
+    bundle_digest: str = "bundle-1",
+    effective_build_id: str | None = "effective-1",
+    targets: tuple[str, ...] = ("gfx1100",),
+) -> CampaignLaneResult:
+    build_plan = BuildPlan(
+        source_slice_id=f"slice-{source_name}",
+        phase="replay",
+        platform="linux-multi",
+        targets=targets,
+        input_hashes=(("inventory", inventory_digest), ("promoted-winners", winners_digest)),
+    )
+    bundle_provenance = (
+        {"build": {"effective_build_id": effective_build_id}}
+        if effective_build_id is not None
+        else {}
+    )
+    return CampaignLaneResult(
+        run_id=f"run-{source_name}",
+        resolved_revision=resolved_revision,
+        source_slice_id=f"slice-{source_name}",
+        source_root=Path(f"/tmp/{source_name}"),
+        build_plan=build_plan,
+        workload_id="workload-1",
+        source_metadata_ref=_ref("source-metadata", "meta-1"),
+        input_refs=(
+            ("inventory", _ref("inventory", inventory_digest)),
+            ("promoted-winners", _ref("promoted-winners", winners_digest)),
+        ),
+        manifest_ref=_ref("manifest", "manifest-1"),
+        generated_tree_ref=_ref("generated-tree", "tree-1"),
+        binary_ref=_ref("binary", binary_digest),
+        runtime_bundle_ref=ArtifactRef(
+            kind="runtime-bundle",
+            path=Path("/tmp/runtime-bundle"),
+            content_hash=bundle_digest,
+            provenance=bundle_provenance,
+        ),
+        smoke_ref=None,
+    )
+
+
+def _fake_lane_executor(results_by_source: dict[str, CampaignLaneResult]):
+    def executor(spec, *, cfg, context, store, run_id):
+        return results_by_source[spec.source_name]
+
+    return executor
+
+
+def _entry(**overrides) -> hw.RuntimeEntryResult:
+    base = dict(
+        dispatch="d1",
+        signature="s1",
+        winner="w1",
+        config_binding="cfg-digest-1",
+        transform_id=0,
+        match_kind=0,
+        call_count=1,
+        outcome="hit",
+    )
+    base.update(overrides)
+    return hw.RuntimeEntryResult(**base)
+
+
+def _arm(**overrides) -> hw.ArmRuntimeResult:
+    base = dict(
+        process_success=True,
+        clean_shutdown=True,
+        output_digest="out-1",
+        correctness_status="pass",
+        model_hash="model-1",
+        gpu_identity="gpu-1",
+        runtime_args_digest="args-1",
+        entries=(_entry(),),
+    )
+    base.update(overrides)
+    return hw.ArmRuntimeResult(**base)
+
+
+class ArmBuildIdentityTests(unittest.TestCase):
+    def test_from_result_extracts_real_fields(self):
+        result = _fake_result(source_name="bigcherry-native")
+        identity = hw.ArmBuildIdentity.from_result(result)
+        self.assertEqual(identity.resolved_revision, "a" * 40)
+        self.assertEqual(identity.binary_digest, "bin-1")
+        self.assertEqual(identity.runtime_bundle_digest, "bundle-1")
+        self.assertEqual(identity.effective_build_id, "effective-1")
+        self.assertEqual(
+            identity.input_hashes, (("inventory", "inv-1"), ("promoted-winners", "win-1"))
+        )
+        self.assertNotIn(
+            "source_slice_id", dict(identity.build_plan_projection)
+        )
+
+    def test_missing_effective_build_id_reads_as_none(self):
+        result = _fake_result(source_name="bigcherry-native", effective_build_id=None)
+        identity = hw.ArmBuildIdentity.from_result(result)
+        self.assertIsNone(identity.effective_build_id)
+
+
+class RequireSharedBuildInputsTests(unittest.TestCase):
+    def test_matching_inputs_pass(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(_fake_result(source_name="control")),
+            candidate=hw.ArmBuildIdentity.from_result(_fake_result(source_name="candidate")),
+        )
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+    def test_negative_differing_revision_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", resolved_revision="a" * 40)
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", resolved_revision="b" * 40)
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_winners_input_is_detected(self):
+        """If the two arms were fed different winner corpora, any later
+        runtime divergence would be meaningless -- this must fail before
+        the runner ever runs."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", winners_digest="win-1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", winners_digest="win-2")
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_inventory_input_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", inventory_digest="inv-1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", inventory_digest="inv-2")
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_build_plan_projection_is_detected(self):
+        """A BuildPlan field other than source_slice_id/composition
+        diverging (e.g. compiled targets) must fail -- an unfair comparison."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", targets=("gfx1100",))
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", targets=("gfx1201",))
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_missing_effective_build_id_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", effective_build_id="e1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_build_id=None)
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_effective_build_id_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", effective_build_id="e1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_build_id="e2")
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_differing_source_slice_and_build_plan_id_are_tolerated(self):
+        """Composition legitimately differs between arms -- source_slice_id
+        and build_plan_id must NOT be required to match."""
+        control_result = _fake_result(source_name="control")
+        candidate_result = _fake_result(source_name="candidate")
+        self.assertNotEqual(
+            control_result.source_slice_id, candidate_result.source_slice_id
+        )
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(control_result),
+            candidate=hw.ArmBuildIdentity.from_result(candidate_result),
+        )
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+
+class DiagnosticCompanionCompositionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = campaign_config.load(_RECIPES_PATH)
+
+    def test_diagnostic_candidate_is_production_candidate_plus_0810(self):
+        diagnostic_cfg = offline.build_serving_core_diagnostic_config(self.cfg)
+        diagnostic_ids = diagnostic_cfg.patch_sets[
+            offline.SERVING_CORE_DIAGNOSTIC_PATCH_SET_NAME
+        ].patches
+        production_cfg = offline.build_serving_core_config(self.cfg)
+        production_ids = production_cfg.patch_sets[
+            offline.SERVING_CORE_PATCH_SET_NAME
+        ].patches
+        offline.require_diagnostic_matches_production(production_ids, diagnostic_ids)
+        self.assertIn(offline.DIAGNOSTIC_ADDBACK_MODULE, diagnostic_ids)
+        self.assertNotIn(offline.DIAGNOSTIC_ADDBACK_MODULE, production_ids)
+
+    def test_negative_diagnostic_missing_addback_module_is_detected(self):
+        with self.assertRaises(offline.ReplayEquivalenceError):
+            offline.require_diagnostic_matches_production(
+                ("0100_cmake_options", "0200_dispatch_hook"),
+                ("0100_cmake_options", "0200_dispatch_hook"),
+            )
+
+    def test_negative_diagnostic_composition_drift_is_detected(self):
+        with self.assertRaises(offline.ReplayEquivalenceError):
+            offline.require_diagnostic_matches_production(
+                ("0100_cmake_options", "0200_dispatch_hook"),
+                ("0100_cmake_options", offline.DIAGNOSTIC_ADDBACK_MODULE),
+            )
+
+
+class ExecuteTwoArmBuildTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = campaign_config.load(_RECIPES_PATH)
+        cls.catalog = patchset.catalog()
+
+    def test_real_composition_plus_fake_build_wires_together(self):
+        control_spec, candidate_spec = hw.build_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+        self.assertEqual(control_spec.source_name, "bigcherry-native")
+        self.assertEqual(candidate_spec.source_name, offline.SERVING_CORE_SOURCE_NAME)
+
+        results_by_source = {
+            "bigcherry-native": _fake_result(source_name="bigcherry-native"),
+            offline.SERVING_CORE_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_SOURCE_NAME
+            ),
+        }
+        build_delta, control_result, candidate_result = hw.execute_two_arm_build(
+            self.cfg,
+            self.catalog,
+            context=SimpleNamespace(),
+            store=SimpleNamespace(),
+            control_spec=control_spec,
+            candidate_spec=candidate_spec,
+            run_id_prefix="pa26-test",
+            lane_executor=_fake_lane_executor(results_by_source),
+        )
+        self.assertEqual(control_result.source_slice_id, "slice-bigcherry-native")
+        self.assertEqual(
+            candidate_result.source_slice_id,
+            f"slice-{offline.SERVING_CORE_SOURCE_NAME}",
+        )
+        self.assertEqual(
+            build_delta.control.input_hashes, build_delta.candidate.input_hashes
+        )
+
+    def test_stale_composition_fails_before_any_build_call(self):
+        """If the offline composition check would fail, the fake executor
+        must never even be called -- confirms build never proceeds on a bad
+        composition."""
+        pruned_framework = dataclasses.replace(
+            self.cfg.patch_sets["framework"],
+            patches=tuple(
+                pid
+                for pid in self.cfg.patch_sets["framework"].patches
+                if pid != offline.EXPECTED_REMOVED_MODULES[0]
+            ),
+        )
+        stale_cfg = dataclasses.replace(
+            self.cfg,
+            patch_sets={**self.cfg.patch_sets, "framework": pruned_framework},
+        )
+        control_spec, candidate_spec = hw.build_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+
+        def executor(spec, *, cfg, context, store, run_id):
+            raise AssertionError("lane_executor must not be called")
+
+        with self.assertRaises(offline.ReplayEquivalenceError):
+            hw.execute_two_arm_build(
+                stale_cfg,
+                self.catalog,
+                context=SimpleNamespace(),
+                store=SimpleNamespace(),
+                control_spec=control_spec,
+                candidate_spec=candidate_spec,
+                run_id_prefix="pa26-test",
+                lane_executor=executor,
+            )
+
+    def test_diagnostic_pair_wires_through_the_diagnostic_builder(self):
+        control_spec, candidate_spec = hw.build_diagnostic_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+        self.assertEqual(
+            candidate_spec.source_name, offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME
+        )
+        results_by_source = {
+            "bigcherry-native": _fake_result(source_name="bigcherry-native"),
+            offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME
+            ),
+        }
+        build_delta, control_result, candidate_result = hw.execute_two_arm_build(
+            self.cfg,
+            self.catalog,
+            context=SimpleNamespace(),
+            store=SimpleNamespace(),
+            control_spec=control_spec,
+            candidate_spec=candidate_spec,
+            run_id_prefix="pa26-diag-test",
+            candidate_cfg_builder=offline.build_serving_core_diagnostic_config,
+            lane_executor=_fake_lane_executor(results_by_source),
+        )
+        self.assertEqual(
+            candidate_result.source_slice_id,
+            f"slice-{offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME}",
+        )
+
+
+class CompareRuntimeResultsTests(unittest.TestCase):
+    def _compare(self, control, candidate, expected=frozenset({"d1"})):
+        return hw.compare_runtime_results(
+            control, candidate, expected_dispatches=expected
+        )
+
+    def test_identical_arms_are_equivalent(self):
+        comparison = self._compare(_arm(), _arm())
+        self.assertTrue(comparison.equivalent)
+        self.assertEqual(comparison.differences, ())
+
+    def test_negative_two_empty_result_sets_are_not_equivalent(self):
+        """The coverage gap GPT flagged: empty vs empty must never read as
+        equivalent when dispatches were actually expected."""
+        empty = _arm(entries=())
+        comparison = self._compare(empty, empty, expected=frozenset({"d1"}))
+        self.assertFalse(comparison.equivalent)
+        reasons = {d.get("reason") for d in comparison.differences}
+        self.assertIn("missing", reasons)
+
+    def test_negative_output_digest_mismatch_is_detected(self):
+        comparison = self._compare(
+            _arm(output_digest="o1"), _arm(output_digest="o2")
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_process_failure_is_detected(self):
+        comparison = self._compare(
+            _arm(process_success=True), _arm(process_success=False)
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_clean_shutdown_mismatch_is_detected(self):
+        comparison = self._compare(
+            _arm(clean_shutdown=True), _arm(clean_shutdown=False)
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_model_or_gpu_identity_mismatch_is_detected(self):
+        comparison = self._compare(
+            _arm(model_hash="m1"), _arm(model_hash="m2")
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_winner_or_signature_mismatch_is_detected(self):
+        comparison = self._compare(
+            _arm(entries=(_entry(winner="w1"),)),
+            _arm(entries=(_entry(winner="w2"),)),
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_call_count_mismatch_is_detected(self):
+        """Changed execution multiplicity (e.g. an extra fallback
+        invocation) must be visible, not silently dropped."""
+        comparison = self._compare(
+            _arm(entries=(_entry(call_count=1),)),
+            _arm(entries=(_entry(call_count=2),)),
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_outcome_mismatch_is_detected(self):
+        comparison = self._compare(
+            _arm(entries=(_entry(outcome="hit"),)),
+            _arm(entries=(_entry(outcome="fallback"),)),
+        )
+        self.assertFalse(comparison.equivalent)
+
+    def test_negative_missing_entry_in_one_arm_is_detected(self):
+        control = _arm(entries=(_entry(dispatch="d1"), _entry(dispatch="d2")))
+        candidate = _arm(entries=(_entry(dispatch="d1"),))
+        comparison = self._compare(control, candidate, expected=frozenset({"d1", "d2"}))
+        self.assertFalse(comparison.equivalent)
+        reasons = {d.get("reason") for d in comparison.differences}
+        self.assertTrue({"missing", "missing-in-candidate"} & reasons)
+
+    def test_negative_extra_entry_in_candidate_is_detected(self):
+        control = _arm(entries=(_entry(dispatch="d1"),))
+        candidate = _arm(
+            entries=(_entry(dispatch="d1"), _entry(dispatch="d2"))
+        )
+        comparison = self._compare(control, candidate, expected=frozenset({"d1"}))
+        self.assertFalse(comparison.equivalent)
+
+
+class RealHardwareRuntimeRunnerTests(unittest.TestCase):
+    def test_default_runner_raises_runtime_not_evaluated(self):
+        with self.assertRaises(hw.RuntimeNotEvaluated):
+            hw.real_hardware_runtime_runner(
+                _fake_result(source_name="x"),
+                offline.WinnersCorpus(sha256="0" * 64, header={}, entries=()),
+            )
+
+    def test_runtime_not_evaluated_is_not_a_bare_not_implemented_error(self):
+        """A runner that raises a plain NotImplementedError (a real bug, or
+        an unrelated missing-feature error) must NOT be silently downgraded
+        to NOT_EVALUATED by build_hardware_receipt -- only the specific
+        RuntimeNotEvaluated exception may do that."""
+        self.assertFalse(issubclass(hw.RuntimeNotEvaluated, NotImplementedError))
+
+
+class BuildHardwareReceiptTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = campaign_config.load(_RECIPES_PATH)
+        cls.catalog = patchset.catalog()
+
+    def _cache_path(self, directory: str, entry_count: int = 1) -> Path:
+        cache_path = Path(directory) / "winners.cache"
+        cache_path.write_bytes(_make_cache_blob(entry_count=entry_count))
+        return cache_path
+
+    def _specs_and_results(self):
+        control_spec, candidate_spec = hw.build_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+        results_by_source = {
+            "bigcherry-native": _fake_result(source_name="bigcherry-native"),
+            offline.SERVING_CORE_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_SOURCE_NAME
+            ),
+        }
+        return control_spec, candidate_spec, results_by_source
+
+    def test_default_runner_yields_not_evaluated_receipt_with_real_build_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = self._cache_path(directory)
+            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            receipt = hw.build_hardware_receipt(
+                self.cfg,
+                self.catalog,
+                cache_path,
+                bigcherry_revision="0" * 40,
+                context=SimpleNamespace(),
+                store=SimpleNamespace(),
+                control_spec=control_spec,
+                candidate_spec=candidate_spec,
+                run_id_prefix="pa26-test",
+                lane_executor=_fake_lane_executor(results_by_source),
+                # runtime_runner omitted: exercises the real default stub.
+            )
+            self.assertEqual(receipt["runtime"]["status"], "NOT_EVALUATED")
+            self.assertEqual(
+                receipt["decision_equivalence"]["status"], "NOT_EVALUATED"
+            )
+            self.assertIn("control", receipt["build_identity"])
+            self.assertIn("candidate", receipt["build_identity"])
+            self.assertEqual(
+                receipt["build_identity"]["control"]["binary_digest"], "bin-1"
+            )
+            self.assertEqual(
+                receipt["build_identity"]["control"]["effective_build_id"],
+                "effective-1",
+            )
+
+    def test_unexpected_error_from_runner_propagates_not_downgraded(self):
+        """A runner defect (not RuntimeNotEvaluated) must propagate as a
+        real failure, never read as NOT_EVALUATED."""
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = self._cache_path(directory)
+            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+
+            def broken_runner(result, corpus):
+                raise ValueError("parser bug")
+
+            with self.assertRaises(ValueError):
+                hw.build_hardware_receipt(
+                    self.cfg,
+                    self.catalog,
+                    cache_path,
+                    bigcherry_revision="0" * 40,
+                    context=SimpleNamespace(),
+                    store=SimpleNamespace(),
+                    control_spec=control_spec,
+                    candidate_spec=candidate_spec,
+                    run_id_prefix="pa26-test",
+                    lane_executor=_fake_lane_executor(results_by_source),
+                    runtime_runner=broken_runner,
+                )
+
+    def test_injected_runner_producing_matching_results_yields_evaluated_equivalent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = self._cache_path(directory)
+            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+
+            def matching_runner(result, corpus):
+                return _arm(
+                    entries=tuple(
+                        _entry(
+                            dispatch=entry["dispatch"],
+                            signature=entry["signature"],
+                            winner=entry["winner"],
+                        )
+                        for entry in corpus.entries
+                    )
+                )
+
+            receipt = hw.build_hardware_receipt(
+                self.cfg,
+                self.catalog,
+                cache_path,
+                bigcherry_revision="0" * 40,
+                context=SimpleNamespace(),
+                store=SimpleNamespace(),
+                control_spec=control_spec,
+                candidate_spec=candidate_spec,
+                run_id_prefix="pa26-test",
+                lane_executor=_fake_lane_executor(results_by_source),
+                runtime_runner=matching_runner,
+            )
+            self.assertEqual(receipt["runtime"]["status"], "EVALUATED")
+            self.assertTrue(receipt["runtime"]["equivalent"])
+            self.assertEqual(receipt["decision_equivalence"]["differences"], [])
+
+    def test_injected_runner_producing_divergent_output_fails_receipt(self):
+        """The most important hardware-stage negative fixture: a real
+        divergence in resolved output must surface as a non-equivalent,
+        EVALUATED receipt -- never silently pass."""
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = self._cache_path(directory)
+            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            call_state = {"n": 0}
+
+            def divergent_runner(result, corpus):
+                call_state["n"] += 1
+                digest = "control-output" if call_state["n"] == 1 else "candidate-output"
+                return _arm(
+                    output_digest=digest,
+                    entries=tuple(
+                        _entry(
+                            dispatch=entry["dispatch"],
+                            signature=entry["signature"],
+                            winner=entry["winner"],
+                        )
+                        for entry in corpus.entries
+                    ),
+                )
+
+            receipt = hw.build_hardware_receipt(
+                self.cfg,
+                self.catalog,
+                cache_path,
+                bigcherry_revision="0" * 40,
+                context=SimpleNamespace(),
+                store=SimpleNamespace(),
+                control_spec=control_spec,
+                candidate_spec=candidate_spec,
+                run_id_prefix="pa26-test",
+                lane_executor=_fake_lane_executor(results_by_source),
+                runtime_runner=divergent_runner,
+            )
+            self.assertEqual(receipt["runtime"]["status"], "EVALUATED")
+            self.assertFalse(receipt["runtime"]["equivalent"])
+            self.assertTrue(receipt["decision_equivalence"]["differences"])
+
+
+if __name__ == "__main__":
+    unittest.main()
