@@ -12,8 +12,11 @@ The real authoritative multi-contract fixture on this branch is
 1203_rd050607_rdna4_wmma_fa_q6k_mmq, which binds
 RD05-WMMA-FA-CORRECTNESS-BARRIERS, RD06-RDNA4-WMMA-FA-CONFIG, and
 RD07-Q6K-MMQ-PREFILL-FOLD -- used here as the real descriptor/contract-set
-fixture (it has no validation.toml yet, so it is NOT used as an
-end-to-end plan fixture -- that is future, separate work). Plan-level
+fixture. PA37 later gave it a real validation.toml + patch-local producer
+(see test_1203_validation_producer.py for the end-to-end plan/producer
+exercise); the descriptor/binding-level scenarios below stay independent
+synthetic CheckSpecs, per GPT's original direction not to fabricate a
+fourth, made-up contract. Plan-level
 scoping/coverage scenarios are built from these three contracts' real
 bind_contract() output plus synthetic CheckSpecs, per GPT's explicit
 direction not to fabricate a fourth, made-up contract.
@@ -71,14 +74,19 @@ class RealDescriptorResolutionTests(unittest.TestCase):
             },
         )
 
-    def test_real_1203_descriptor_has_no_adapter_yet(self) -> None:
-        # Confirms this fixture is a real descriptor/contract-set fixture
-        # only -- not (yet) an end-to-end plan fixture.
+    def test_real_1203_descriptor_now_has_a_real_adapter(self) -> None:
+        # PA37: 1203 gained a real validation.toml + patch-local
+        # "rd050607" producer (validation/producer.toml,
+        # validation/producer.py) -- it is no longer a descriptor/
+        # contract-set-only fixture. See
+        # tools/tests/patch/test_1203_validation_producer.py for the real
+        # end-to-end plan/producer exercise (hardware-free, controlled
+        # execution results).
         reg = patch_registry.load_registry(paths.PATCHES)
         descriptor = next(
             d for d in reg.descriptors if d.patch_id == "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
         )
-        self.assertIsNone(descriptor.validation_path)
+        self.assertIsNotNone(descriptor.validation_path)
 
 
 class MultiContractCoverageTests(unittest.TestCase):
