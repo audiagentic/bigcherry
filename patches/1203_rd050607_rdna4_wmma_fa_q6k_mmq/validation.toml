@@ -1,0 +1,51 @@
+schema = 1
+
+# PA37: plural-contract validation plan for RD05/RD06/RD07 (patch 1203).
+# Every check is explicitly scoped via contracts=[...] -- unscoped checks
+# do not satisfy plural contract-derived requirements (PA37.md step 3).
+# All five checks are producer-supplied at runtime by validation/producer.py
+# (producer id "rd050607", see validation/producer.toml); the callables
+# below are the framework-required fallback only (evaluate_check() is
+# reached when the check is run WITHOUT --validation-producer) and
+# deliberately return FAIL, not a fabricated PASS, per this patch's
+# fail-closed correctness/performance claims (see validation/checks.py).
+
+[[check]]
+id = "rd05-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD05-WMMA-FA-CORRECTNESS-BARRIERS"]
+callable = "validation/checks.py:rd05_backend_reference"
+
+[[check]]
+id = "rd06-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_backend_reference"
+
+[[check]]
+id = "rd06-performance"
+capability = "performance"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_performance"
+
+[[check]]
+id = "rd07-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_backend_reference"
+
+[[check]]
+id = "rd07-performance"
+capability = "performance"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_performance"
