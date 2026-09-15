@@ -56,6 +56,14 @@ _RD06_PASSING_POSITIVE_STATS = {
 _RD06_PASSING_CONTROL_STATS = {
     "effect_pct": -0.1, "ci95_low": -0.4, "ci95_high": 0.2, "paired_rounds": 10,
 }
+# RD06's contract declares BOTH decode and prefill as positive workloads
+# (config/experiment-contracts.toml [contract.RD06-RDNA4-WMMA-FA-CONFIG.
+# positive]) -- PA39 P0 defect #2 fix. Same passing numbers as decode by
+# default; tests that need to prove the missing-lane fail-closed path
+# override this directly.
+_RD06_PASSING_PREFILL_STATS = {
+    "effect_pct": 2.0, "ci95_low": 1.0, "ci95_high": 3.0, "paired_rounds": 10,
+}
 
 
 def _paired_lane_run(
@@ -91,24 +99,38 @@ class _FakeProducerRuntime:
     def __init__(
         self, run_dir: Path, *, device_map, benchmark_should_fail: bool = False,
         rd06_positive_stats: dict | None = None, rd06_control_stats: dict | None = None,
+        rd06_prefill_stats: dict | None = None, rd06_missing_prefill: bool = False,
     ):
         self.run_dir = run_dir
         self._device_map = device_map
         self.benchmark_should_fail = benchmark_should_fail
         self.build_pair_calls = 0
+        self.build_pair_targets: list[str] = []
         self.rd06_positive_stats = rd06_positive_stats or _RD06_PASSING_POSITIVE_STATS
         self.rd06_control_stats = rd06_control_stats or _RD06_PASSING_CONTROL_STATS
+        self.rd06_prefill_stats = rd06_prefill_stats or _RD06_PASSING_PREFILL_STATS
+        # PA39 P0 defect #2 proof knob: when True, the positive lane's
+        # paired-benchmark outcome omits "prefill" entirely (as if a real
+        # llama-bench run had somehow not produced that lane), so tests can
+        # prove the producer fails closed rather than silently aggregating
+        # decode-only evidence.
+        self.rd06_missing_prefill = rd06_missing_prefill
         self.paired_benchmark_calls: list[dict] = []
 
-    def build_pair(self, **_kwargs) -> vp.ProducerBuildPair:
+    def build_pair(self, *, primary_target: str, **_kwargs) -> vp.ProducerBuildPair:
+        # PA39 P0 defect #1 proof: real primary_target-specific binary
+        # paths, so a test can assert exactly which binary a given
+        # run_paired_llama_benchmark() call actually received.
         self.build_pair_calls += 1
+        self.build_pair_targets.append(primary_target)
+        exe = "" if sys.platform != "win32" else ".exe"
         return vp.ProducerBuildPair(
             base_revision="a" * 40,
             control_source=self.run_dir / "control-src",
             subject_source=self.run_dir / "subject-src",
             control_composition=(), subject_composition=(),
-            control_bin=self.run_dir / "control-bin" / "llama-perplexity",
-            subject_bin=self.run_dir / "subject-bin" / "llama-perplexity",
+            control_bin=self.run_dir / "control-bin" / f"{primary_target}{exe}",
+            subject_bin=self.run_dir / "subject-bin" / f"{primary_target}{exe}",
             validation_build_identities={
                 "control": _fake_build_identity("control"),
                 "subject": _fake_build_identity("subject"),
@@ -142,17 +164,22 @@ class _FakeProducerRuntime:
         )
 
     def run_paired_llama_benchmark(
-        self, *, log_context: str, model, workloads, **_kwargs,
+        self, *, log_context: str, model, workloads, control_binary=None,
+        subject_binary=None, **_kwargs,
     ) -> vp.ProducerPairedBenchmarkOutcome:
-        self.paired_benchmark_calls.append(
-            {"log_context": log_context, "model": model, "workloads": workloads}
-        )
+        self.paired_benchmark_calls.append({
+            "log_context": log_context, "model": model, "workloads": workloads,
+            "control_binary": control_binary, "subject_binary": subject_binary,
+        })
         if self.benchmark_should_fail:
             raise vc.PatchCampaignError("simulated benchmark failure")
         if log_context == "rd06-performance-positive":
+            runs = {"decode": _paired_lane_run(**self.rd06_positive_stats)}
+            if not self.rd06_missing_prefill:
+                runs["prefill"] = _paired_lane_run(**self.rd06_prefill_stats)
             return vp.ProducerPairedBenchmarkOutcome(
-                runs={"decode": _paired_lane_run(**self.rd06_positive_stats)},
-                commands={"decode": {"control": ("x",), "subject": ("x",)}},
+                runs=runs,
+                commands={w: {"control": ("x",), "subject": ("x",)} for w in runs},
                 raw_logs=(),
             )
         if log_context == "rd06-performance-control":
@@ -185,7 +212,8 @@ def _run_producer(
     *, run_dir: Path, device_map: dict[str, tuple[int, ...]],
     model: Path | None, corpus: Path | None, benchmark_should_fail: bool = False,
     control_model: Path | None = _MISSING, rd06_positive_stats: dict | None = None,
-    rd06_control_stats: dict | None = None,
+    rd06_control_stats: dict | None = None, rd06_prefill_stats: dict | None = None,
+    rd06_missing_prefill: bool = False,
 ):
     checks = pv.parse_validation_toml(_PATCH_DIR / "validation.toml", patch_id=_PATCH_ID)
     plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=checks, universal_capabilities=())
@@ -203,6 +231,7 @@ def _run_producer(
     runtime = _FakeProducerRuntime(
         run_dir, device_map=device_map, benchmark_should_fail=benchmark_should_fail,
         rd06_positive_stats=rd06_positive_stats, rd06_control_stats=rd06_control_stats,
+        rd06_prefill_stats=rd06_prefill_stats, rd06_missing_prefill=rd06_missing_prefill,
     )
     producer_context = vp.ProducerContext(
         repo_root=REPO_ROOT, patch_dir=_PATCH_DIR, workdir=run_dir,
@@ -276,7 +305,14 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
                 model=self.model, corpus=self.corpus,
             )
 
-        self.assertEqual(runtime.build_pair_calls, 1, "one atomic build pair only")
+        # PA39 P0 defect #1 fix: two build pairs (one binary set each,
+        # never rebuilt per architecture) -- llama-perplexity for
+        # backend-reference correctness, llama-bench for paired
+        # performance benchmarking.
+        self.assertEqual(runtime.build_pair_calls, 2, "one build pair per binary set")
+        self.assertEqual(
+            sorted(runtime.build_pair_targets), ["llama-bench", "llama-perplexity"],
+        )
         self.assertTrue(execution.verdict.eligible, execution.verdict.reasons)
         for check_id in (
             "rd05-backend-reference", "rd06-backend-reference", "rd06-performance",
@@ -496,6 +532,87 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
             )
         self.assertEqual(execution.evaluated["rd06-performance"].status, pv.PASS)
         self.assertIs(record["contract_verdicts"][_RD06]["passed"], True)
+
+    # --- PA39 P0 defect #1: real llama-bench binary, never llama-perplexity
+
+    def test_rd06_performance_uses_real_llama_bench_binary_not_perplexity(self) -> None:
+        # PA39 P0 defect #1 proof (GPT review req_e3d28b6b104a4a01): before
+        # this fix, the ONE build_pair() call used
+        # primary_target="llama-perplexity" for everything, so
+        # run_paired_llama_benchmark() -- which constructs llama-bench-
+        # style argv -- was handed a llama-perplexity binary path. This
+        # test proves the real fix: the control/subject binaries actually
+        # passed to run_paired_llama_benchmark() for RD06's positive AND
+        # control lanes are llama-bench, never llama-perplexity.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            _execution, _record, runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        calls_by_context = {c["log_context"]: c for c in runtime.paired_benchmark_calls}
+        for context in ("rd06-performance-positive", "rd06-performance-control", "rd07-performance"):
+            control_binary = calls_by_context[context]["control_binary"]
+            subject_binary = calls_by_context[context]["subject_binary"]
+            self.assertIn("llama-bench", control_binary.name, context)
+            self.assertIn("llama-bench", subject_binary.name, context)
+            self.assertNotIn("llama-perplexity", control_binary.name, context)
+            self.assertNotIn("llama-perplexity", subject_binary.name, context)
+        # And the backend_reference (PPL) comparisons build_pair() is the
+        # llama-perplexity one -- a genuinely different pair, not the same
+        # object reused under a different name.
+        self.assertEqual(sorted(runtime.build_pair_targets), ["llama-bench", "llama-perplexity"])
+
+    # --- PA39 P0 defect #2: prefill lane evidence actually gathered ------
+
+    def test_rd06_prefill_positive_lane_actually_benchmarked(self) -> None:
+        # PA39 P0 defect #2 proof: RD06's contract declares BOTH decode
+        # and prefill as positive workloads. Before this fix, the
+        # producer only ever requested "decode" -- this proves the real
+        # fix requests both.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            _execution, _record, runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        calls_by_context = {c["log_context"]: c for c in runtime.paired_benchmark_calls}
+        self.assertEqual(
+            set(calls_by_context["rd06-performance-positive"]["workloads"]),
+            {"decode", "prefill"},
+        )
+
+    def test_rd06_missing_prefill_evidence_fails_closed(self) -> None:
+        # PA39 P0 defect #2 proof: if the positive lane's paired-benchmark
+        # outcome does not actually contain "prefill" evidence (simulating
+        # a real llama-bench run that somehow didn't produce that lane),
+        # the producer must fail closed rather than silently calling
+        # aggregate_contract_effects()/evaluate_promotion_gate() with a
+        # partial lane set -- aggregate_contract_effects() itself is NOT
+        # contract-aware and would happily compute a gain from decode
+        # alone, which is exactly the false-positive-promotion risk this
+        # fix closes.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus, rd06_missing_prefill=True,
+            )
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.FAIL)
+        self.assertIs(record["contract_verdicts"][_RD06]["passed"], False)
+        self.assertFalse(execution.verdict.eligible)
+        # RD05/RD07 (unaffected by RD06's missing prefill lane) still pass
+        # -- proves the failure is genuinely scoped to RD06.
+        self.assertEqual(execution.evaluated["rd05-backend-reference"].status, pv.PASS)
 
     def test_rd06_control_model_actually_benchmarked_separately(self) -> None:
         # PA39 defect #3 proof: the control model (tierM-gptoss20b-q6k, via
