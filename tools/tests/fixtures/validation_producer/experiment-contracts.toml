@@ -1,0 +1,57 @@
+[contract.SYN-C1]
+title = "synthetic contract one (PA36-F step 7 fixture)"
+
+[contract.SYN-C1.source]
+source_id = "stew675-rdna-boosts"
+commits = ["abc123def456"]
+atomic_part = "syn1"
+
+[contract.SYN-C1.hypothesis]
+family = "mmvq"
+expected_effect = "performance"
+rationale = "synthetic fixture contract one"
+
+[contract.SYN-C1.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.SYN-C1.positive]
+models = ["m1"]
+workloads = ["decode"]
+
+[contract.SYN-C1.controls]
+models = ["m1"]
+workloads = ["prefill"]
+
+[contract.SYN-C1.acceptance]
+target_kernel_gain_pct = 1
+max_control_regression_pct = 1
+
+[contract.SYN-C2]
+title = "synthetic contract two (PA36-F step 7 fixture)"
+
+[contract.SYN-C2.source]
+source_id = "stew675-rdna-boosts"
+commits = ["abc123def456"]
+atomic_part = "syn2"
+
+[contract.SYN-C2.hypothesis]
+family = "mmvq"
+expected_effect = "performance"
+rationale = "synthetic fixture contract two"
+
+[contract.SYN-C2.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.SYN-C2.positive]
+models = ["m1"]
+workloads = ["decode"]
+
+[contract.SYN-C2.controls]
+models = ["m1"]
+workloads = ["prefill"]
+
+[contract.SYN-C2.acceptance]
+target_kernel_gain_pct = 1
+max_control_regression_pct = 1
