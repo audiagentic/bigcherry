@@ -259,6 +259,40 @@ def _stage_inventory_record(*, record_db_path: Path, workdir: Path) -> tuple[Pat
     return inventory_path, inventory_db_path
 
 
+def run_tune_signature_workload(runner: ServerRunner, runtime_profile: campaign_config.RuntimeProfile) -> None:
+    """The real request sequence used to drive live dispatch signatures
+    through a running server: one decode-shaped completion (cheap, and the
+    right shape for measuring mmvq/decode signatures) plus a synthetic
+    prefill sweep bounded to fit ``runtime_profile.tune_context`` (HI167:
+    the tuner/replay path measures/dispatches a signature once, on its
+    first live occurrence, so a shape never dispatched here is never
+    exercised at all -- however many candidates a build compiled in).
+
+    Extracted (GPT design correction, req_a6a387bdefbc474c) from
+    ``_stage_tune``'s own inline sequence so PA26's hardware replay-
+    equivalence runner can drive the SAME real workload against a built
+    replay-diagnostic server, rather than inventing a second, per-dispatch-
+    digest request construction -- GPT confirmed there is no real inverse
+    mapping from a dispatch digest back to a request shape, and driving
+    signatures through the same real workload that produced them in the
+    first place is the correct approach.
+    """
+    # Original short decode-shaped smoke request -- kept: cheap, and still
+    # the right shape for measuring mmvq/decode signatures.
+    runner.run_completion("Write a short paragraph about the ocean.", n_predict=96)
+    # Filtered to what fits tune_context specifically -- REAL bug found on
+    # real hardware: tune_context is deliberately smaller than
+    # production_context (every current runtime profile sets
+    # tune-context=4096 vs. production-context=8192), and the unfiltered
+    # largest discovery prompt (~4100 words) overflowed it, producing a
+    # real HTTP 400 from the live tune-mode server. See
+    # _discovery_word_counts_fitting_context.
+    for word_count in _discovery_word_counts_fitting_context(
+        runtime_profile.tune_context, n_predict=8,
+    ):
+        runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
+
+
 def _stage_tune(
     *, context, cfg, store, run_id, platform_name, source_name,
     inventory_path: Path, model_path: Path, devices: str,
@@ -288,32 +322,7 @@ def _stage_tune(
         log_path=workdir / "tune-server.log",
     )
     with runner:
-        # Original short decode-shaped smoke request -- kept: cheap, and
-        # still the right shape for measuring mmvq/decode signatures.
-        runner.run_completion("Write a short paragraph about the ocean.", n_predict=96)
-        # HI167 (unblocked by HI166 landing): the tuner measures a signature
-        # once, on its FIRST live dispatch -- internally looping its own
-        # screen_samples/final_samples timing synchronously within that one
-        # interception, then caching the result (g_results.find() in
-        # hip-autotune-tuner.cu short-circuits every later occurrence). So a
-        # signature that never gets dispatched here never gets measured at
-        # all, however many MMQ candidates the inventory-driven build
-        # compiled in. This is the exact same prefill-shape gap _stage_record
-        # had -- one exposure per shape point is sufficient, no repeats
-        # needed, since the tuner's own internal loop does the repeated
-        # timing.
-        #
-        # Filtered to what fits tune_context specifically -- REAL bug found
-        # on real hardware: tune_context is deliberately smaller than
-        # production_context (every current runtime profile sets
-        # tune-context=4096 vs. production-context=8192), and the
-        # unfiltered largest discovery prompt (~4100 words) overflowed it,
-        # producing a real HTTP 400 from the live tune-mode server. See
-        # _discovery_word_counts_fitting_context.
-        for word_count in _discovery_word_counts_fitting_context(
-            runtime_profile.tune_context, n_predict=8,
-        ):
-            runner.run_completion(_synthetic_prefill_prompt(word_count), n_predict=8)
+        run_tune_signature_workload(runner, runtime_profile)
     measurements_path = Path(f"{tune_db_path}.measurements.jsonl")
     if not measurements_path.is_file():
         raise TuneCampaignError(f"tune stage produced no measurements at {measurements_path}")
