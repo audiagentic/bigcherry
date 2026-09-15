@@ -103,17 +103,33 @@ def _load_signature_dict(conn: sqlite3.Connection, signature_id: int) -> dict[st
 
 
 def _observed_signature_hex(
-    binary: Path, *, moe_glu_file: Path, seed: int, runner=subprocess.run,
+    binary: Path, *,
+    test_file: Path | None = None, moe_glu_file: Path | None = None,
+    seed: int, runner=subprocess.run,
 ) -> str:
     """HI119's mandatory evidence gate (dev-gpt-agent design review,
-    2026-08-25): correctness PASS must require proof the fused dispatch
-    signature this evidence is FOR was actually executed, not just that
-    CPU-vs-GPU numerics happened to match -- a future ggml-cuda fusion-
-    detection regression could make the harness silently execute two
-    ordinary MUL_MAT_IDs plus a standalone GLU instead of a real fused
-    dispatch, and CPU comparison would still pass, wrongly certifying
-    correctness for a candidate that was never actually exercised as
-    fused.
+    2026-08-25): correctness PASS must require proof the dispatch signature
+    this evidence is FOR was actually executed, not just that CPU-vs-GPU
+    numerics happened to match -- a future ggml-cuda fusion-detection
+    regression could make the harness silently execute two ordinary
+    MUL_MAT_IDs plus a standalone GLU instead of a real fused dispatch, and
+    CPU comparison would still pass, wrongly certifying correctness for a
+    candidate that was never actually exercised as fused.
+
+    PA26 (2026-09-15, dev-gpt-agent design review, req_488640d20a7f4fa6):
+    originally GLU-only, despite the underlying primitive already being
+    signature-shape-generic (``test_file=`` xor ``moe_glu_file=``). Extended
+    to cover ordinary MUL_MAT/MUL_MAT_ID evidence too, closing the same gap
+    for the far more common non-fused case: ``signature_mapping.py``
+    reconstructs a synthetic test-backend-ops graph from canonical
+    signature JSON (assumed/reconstructed tensor strides and shapes, by its
+    own docstring), and nothing previously verified that C++ regenerating
+    the signature FROM that synthetic graph actually reproduces the
+    original requested signature bit-for-bit -- a reconstruction
+    discrepancy here would let ``can_execute()`` legitimately (and
+    correctly) refuse a candidate for the REGENERATED signature while the
+    evidence pipeline believes it is evidencing the originally requested
+    one, surfacing only as an opaque STRICT-abort failure.
 
     HI121/HI125 (2026-08-27): thin delegation to
     signature_digest_verification.observed_test_backend_ops_signature_hex(),
@@ -125,7 +141,7 @@ def _observed_signature_hex(
     half of that primitive's return is for signature_digest_verification's
     own poisoned-canonical check, not used here."""
     observed_hex, _observed_canonical = sdv.observed_test_backend_ops_signature_hex(
-        binary, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
+        binary, test_file=test_file, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
     )
     return observed_hex
 
@@ -285,6 +301,25 @@ def generate_for_candidate(
             handle.write(test_file_line + "\n")
             test_file_path = Path(handle.name)
         try:
+            # PA26 (2026-09-15): same mandatory evidence gate as the GLU
+            # branch above, extended to the ordinary (far more common)
+            # MUL_MAT/MUL_MAT_ID case -- verify the synthetic test-file
+            # graph's C++-regenerated signature actually equals the
+            # requested row's own signature before trusting any correctness
+            # comparison run against it.
+            observed_hex = _observed_signature_hex(
+                binary, test_file=test_file_path, seed=seeds[0], runner=runner,
+            )
+            if observed_hex != signature_hex:
+                raise CliError(
+                    f"dispatch={dispatch_hex}: observed dispatch signature "
+                    f"{observed_hex!r} does not match the requested row's own "
+                    f"signature {signature_hex!r} -- the synthetic --test-file "
+                    f"graph did not reproduce the real dispatch (possible "
+                    f"signature_mapping reconstruction mismatch); refusing to "
+                    f"certify correctness for a candidate that may not have run "
+                    f"against the requested signature"
+                )
             aggregate = ce.generate_correctness_evidence(
                 binary, test_file=test_file_path, target_tensor=target_tensor,
                 digest_tensor=digest_tensor,
@@ -294,7 +329,7 @@ def generate_for_candidate(
             )
         finally:
             test_file_path.unlink(missing_ok=True)
-        subprocess_runs = 0
+        subprocess_runs = 1  # the observed-signature-hex preflight probe
 
     # Every seed's candidate leg always ran; the native leg only ran for
     # seeds NOT already present in native_seed_cache -- count both, and
