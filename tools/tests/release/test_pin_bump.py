@@ -468,11 +468,11 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             completed_phases=[],
             next_phase="coverage",
             selector_kind="source",
-            selector_name="bigcherry-native",
+            selector_name="bigcherry-serving-base",
             selector_patch_ids=tuple(
                 sorted(
                     pin_bump.patch_rebase._selection_patch_ids(
-                        source_name="bigcherry-native",
+                        source_name="bigcherry-serving-base",
                         all_patches=False,
                     )
                 )
@@ -481,7 +481,7 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
         pin_bump._require_selector_membership_unchanged(
             state,
             selector_kind="source",
-            selector_name="bigcherry-native",
+            selector_name="bigcherry-serving-base",
         )  # no raise -- real catalog, unchanged since state was built above
 
     def test_drifted_membership_fails_closed(self):
@@ -498,14 +498,14 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
             completed_phases=[],
             next_phase="coverage",
             selector_kind="source",
-            selector_name="bigcherry-native",
+            selector_name="bigcherry-serving-base",
             selector_patch_ids=("this_patch_id_does_not_exist_anymore",),
         )
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._require_selector_membership_unchanged(
                 state,
                 selector_kind="source",
-                selector_name="bigcherry-native",
+                selector_name="bigcherry-serving-base",
             )
         self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
 

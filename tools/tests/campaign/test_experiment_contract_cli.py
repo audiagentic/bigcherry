@@ -81,7 +81,7 @@ class ExperimentContractCliTests(unittest.TestCase):
         rc = self._run([
             "experiment-contract", "plan", "SMOKE-TEST-001",
             "--contracts", str(self.contracts_path),
-            "--source", "bigcherry-native", "--build", "control", "--platform", "linux-multi",
+            "--source", "bigcherry-tuning", "--build", "control", "--platform", "linux-multi",
         ])
         self.assertEqual(rc, 0)
 

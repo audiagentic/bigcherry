@@ -5977,7 +5977,7 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     args.amdgpu_targets = ";".join(targets)
     from bigcherry.core.context import ProjectContext
     base_repo = ProjectContext.resolve(work_root=os.environ.get("BC_CACHE")).upstream_repo
-    baseline_source = "bigcherry-native"
+    baseline_source = "bigcherry-qualification-tuning"
     base_revision, composition = psi.resolve_source_composition(
         baseline_source, focal=None, base_ref=cfg.pinned, base_repo=base_repo,
     )

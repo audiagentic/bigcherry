@@ -45,55 +45,51 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
-    def test_base_is_exactly_the_fifteen_validated_core_modules(self):
+    def test_base_is_exactly_the_sixteen_validated_core_modules(self):
         lane = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
-        # Scoped to the framework + upstream-fixes patch-sets' own declared
-        # lists (bigcherry-native's real composition, PPS03), not "every
-        # validated module in the catalog" -- since RD19's promotion
-        # (2026-08-24), a validated module can also live in
-        # validated-enhancements, which bigcherry-native must NOT pull in.
-        native_patch_ids = frozenset(
-            self.cfg.patch_sets["framework"].patches
-        ) | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
+        # PA31: bigcherry-qualification-tuning (serving-core + campaign-support
+        # + qualification-support + upstream-fixes) is the canonical semantic
+        # replacement for the deleted framework+upstream-fixes composition
+        # (GPT design review, PA31 disposition). Scoped to those patch-sets'
+        # own declared lists, not "every validated module in the catalog" --
+        # since RD19's promotion (2026-08-24), a validated module can also
+        # live in validated-enhancements, which this source must NOT pull in.
+        core_patch_ids = (
+            frozenset(self.cfg.patch_sets["serving-core"].patches)
+            | frozenset(self.cfg.patch_sets["campaign-support"].patches)
+            | frozenset(self.cfg.patch_sets["qualification-support"].patches)
+            | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
         expected = tuple(
             module.patch_id
             for module in self.catalog
-            if module.state == "validated" and module.patch_id in native_patch_ids
+            if module.state == "validated" and module.patch_id in core_patch_ids
         )
-        # HI70: patches/1100_hi70_direct_op_evidence/patch.py added a 15th
-        # validated core module (deterministic direct-op correctness corpus
-        # for MMQ fb1 / MMF nwarps candidates). PPS03 (2026-09-11) moved
-        # 1000_rdna4_mmq_q2k_q6k_fix (an upstream correctness backport, not
-        # framework plumbing) out of the framework patch-set into its own
-        # upstream-fixes patch-set, still composed into bigcherry-native --
-        # the total stays 15, now correctly split 14 framework + 1
-        # upstream-fixes instead of bundled as 15 "framework".
-        # PA27 (2026-09-14) split 0100_cmake_options into a narrowed
-        # serving/shared package plus the new 0110_campaign_tune_record_build
-        # package, both in the framework set -- the total becomes 16, split
-        # 15 framework + 1 upstream-fixes.
+        # 15 serving/campaign/qualification modules (HI70's 1100 the 15th,
+        # PPS03's upstream-fixes split, PA27's 0100/0110 split) + 1
+        # upstream-fixes module = 16.
         self.assertEqual(len(expected), 16)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
-            len(self.cfg.patch_sets["framework"].patches),
+            len(core_patch_ids - frozenset(self.cfg.patch_sets["upstream-fixes"].patches)),
             15,
         )
         self.assertEqual(
             len(self.cfg.patch_sets["upstream-fixes"].patches),
             1,
         )
-        # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
-        # a promoted enhancement. That separation is what makes it usable as
+        # bigcherry-qualification-tuning must never report or build a
+        # promoted enhancement. That separation is what makes it usable as
         # the control arm of a validation campaign: if enhancements leaked in
         # here, every A/B would be measured against a moving baseline.
         #
         # This assertion caught a real defect the moment validated-enhancements
         # stopped being empty (2026-09-05, RD73): promoted_enhancements
-        # returned the whole global set for EVERY source, so the
-        # framework-only control source reported an enhancement it does not
-        # build. Selection itself was always correct; the report was not.
+        # returned the whole global set for EVERY source, so a control
+        # source reported an enhancement it does not build. Selection itself
+        # was always correct; the report was not.
         #
         # (RD19 was briefly in validated-enhancements on 2026-08-24; that
         # promotion post-dated the HI83 evidence contract with no qualifying
@@ -106,7 +102,7 @@ class CampaignResolutionTests(unittest.TestCase):
             self.assertNotIn(
                 patch_id,
                 lane.patch_set.module_ids,
-                f"{patch_id} leaked into the framework-only control source",
+                f"{patch_id} leaked into the enhancement-free control source",
             )
 
     def test_release_source_is_serving_core_plus_validated_enhancements(self):
@@ -116,11 +112,12 @@ class CampaignResolutionTests(unittest.TestCase):
         promoting a patch does not break the test -- only breaking the
         composition does.
 
-        Post-cutover, ``bigcherry-native`` (still framework+upstream-fixes,
-        an OLD name kept resolvable only for PA30/PA31) is no longer a
-        subset of the release: framework is the larger, pre-PA20-split set,
-        and serving-core is its narrower serving-relevant complement -- the
-        subset relationship instead runs the other way for the non-enhancement
+        Post-PA31, the old ``framework``/``bigcherry-native`` aggregate
+        identifiers no longer exist -- the semantic replacement
+        (``bigcherry-qualification-tuning``, serving-core + campaign-support
+        + qualification-support + upstream-fixes) is a strict superset of
+        the release build's serving-core baseline, not a subset -- the
+        subset relationship runs the other way for the non-enhancement
         ids."""
         serving = campaign_resolution.resolve_lane(
             "bigcherry-serving-base", self.cfg, self.catalog
@@ -156,10 +153,10 @@ class CampaignResolutionTests(unittest.TestCase):
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         lane = campaign_resolution.resolve_lane(
-            "bigcherry-native", cfg, self.catalog, experiment="one-fix"
+            "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
-        # PA27 (2026-09-14) added 0110_campaign_tune_record_build to the
-        # framework set, so the 15 native modules + 1 overlay patch = 17.
+        # 16 core modules (serving-core + campaign-support +
+        # qualification-support + upstream-fixes) + 1 overlay patch = 17.
         self.assertEqual(len(lane.patch_set.module_ids), 17)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn(
@@ -220,7 +217,7 @@ class CanonicalSelectionTests(unittest.TestCase):
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         selection = campaign_resolution.resolve_canonical_selection(
-            "bigcherry-native", cfg, self.catalog, experiment="one-fix"
+            "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
         self.assertIn("1002_hip_unsafe_math_opt_in", selection.patch_ids)
 
@@ -235,16 +232,18 @@ class PatchSetIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "not a valid"):
             campaign_resolution.resolve_patch_set("all", self.cfg, self.catalog)
         first = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
         changed = dataclasses.replace(
-            self.cfg.patch_sets["framework"],
-            patches=self.cfg.patch_sets["framework"].patches[:-1],
+            self.cfg.patch_sets["serving-core"],
+            patches=self.cfg.patch_sets["serving-core"].patches[:-1],
         )
         cfg = dataclasses.replace(
-            self.cfg, patch_sets={**self.cfg.patch_sets, "framework": changed}
+            self.cfg, patch_sets={**self.cfg.patch_sets, "serving-core": changed}
         )
-        second = campaign_resolution.resolve_lane("bigcherry-native", cfg, self.catalog)
+        second = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", cfg, self.catalog
+        )
         self.assertNotEqual(first.patch_set.patch_set_id, second.patch_set.patch_set_id)
 
 
@@ -561,8 +560,9 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             )
 
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
-        # Today's only real production shape (bigcherry: framework +
-        # validated-enhancements, both 'validated') -- required_state must
+        # Today's only real production shape (bigcherry: serving-core +
+        # upstream-fixes + validated-enhancements, all 'validated') --
+        # required_state must
         # resolve to the shared string, not None, so patch_set_id does not
         # silently change for every currently-configured multi-set source.
         catalog = self._catalog_with_states("validated", "validated")
@@ -599,47 +599,83 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
 
 class PA28SemanticPatchSetTests(unittest.TestCase):
     """PA28: additive serving-core/campaign-support/qualification-support
-    patch-sets and their three composed sources, carved from `framework`.
-    Pins module membership, the no-orphan/no-duplicate-claim property
-    against PA26's own EXPECTED_REMOVED_MODULES, and that the new sources
-    resolve deterministically. PA29 (GPT design review req_964ec5fc21c14848)
-    then cut source.bigcherry over from framework to serving-core -- the old
-    framework patch-set and bigcherry-native source themselves remain
-    untouched (required by PA29.md step 8 for PA30/PA31), but bigcherry's
-    own composition is no longer framework-derived; see the tests below."""
+    patch-sets and their composed sources, originally carved from the old
+    aggregate `framework` patch-set. Pins module membership, the
+    no-orphan/no-duplicate-claim property, and that the sources resolve
+    deterministically. PA29 (GPT design review req_964ec5fc21c14848) cut
+    source.bigcherry over from framework to serving-core; PA31 (GPT design
+    review, PA31 disposition) then deleted the old `framework` patch-set and
+    `bigcherry-native` source entirely -- bigcherry-qualification-tuning
+    (serving-core + campaign-support + qualification-support +
+    upstream-fixes) is now the canonical semantic replacement, and module
+    membership below is pinned directly rather than derived from the
+    deleted aggregate."""
+
+    # The 7 modules actually owned by campaign-support/qualification-support
+    # today (GPT design-review correction, PA31 final review): NOT PA26's
+    # historical 8-element EXPECTED_REMOVED_MODULES -- that PA26-era set
+    # included 0700_coverage_counters, which PA28 deliberately put back into
+    # serving-core (see test_serving_core_membership below), so treating it
+    # as "non-serving" here would be actively wrong, not just stale
+    # terminology. Hardcoded since PA31 deleted the historical
+    # replay_equivalence.py module that used to define EXPECTED_REMOVED_MODULES.
+    _CAMPAIGN_AND_QUALIFICATION_MODULES = frozenset(
+        {
+            "0110_campaign_tune_record_build",
+            "0800_server_shutdown_endpoint",
+            "0810_replay_hit_diagnostics",
+            "0820_measurement_signature_shapes",
+            "0830_split_reduce_telemetry",
+            "0900_pool_workspace_metrics",
+            "1100_hi70_direct_op_evidence",
+        }
+    )
+
+    # The former semantic `framework` patch-set's full 15-module membership
+    # (serving-core's 8 + the 7 above), pinned directly -- not derived from
+    # any PA26 terminology.
+    _FORMER_FRAMEWORK_MEMBERSHIP = frozenset(
+        {
+            "0100_cmake_options",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+        }
+    ) | _CAMPAIGN_AND_QUALIFICATION_MODULES
 
     @classmethod
     def setUpClass(cls):
         cls.cfg = config.load(paths.RECIPES)
         cls.catalog = patchset.catalog()
 
-    def test_serving_core_is_framework_minus_pa26_removed_modules_except_0700(self):
+    def test_serving_core_membership(self):
         # GPT design-review consult (req_d9bf628dc9954595, 2026-09-15): 0700
         # contains real serving-relevant dispatch-family routing, not only
         # diagnostics counters, so PA28 deliberately keeps it whole in
         # serving-core (the GPT-approved minimal-safe fallback) rather than
-        # campaign-support, pending a future real patch-split. serving-core
-        # is therefore framework minus PA26's EXPECTED_REMOVED_MODULES, with
-        # 0700 added back.
-        from bigcherry.campaign import replay_equivalence
-
-        framework = set(self.cfg.patch_sets["framework"].patches)
+        # campaign-support, pending a future real patch-split.
         serving_core = set(self.cfg.patch_sets["serving-core"].patches)
-        removed = set(replay_equivalence.EXPECTED_REMOVED_MODULES)
-        self.assertEqual(serving_core, (framework - removed) | {"0700_coverage_counters"})
+        self.assertEqual(
+            serving_core,
+            self._FORMER_FRAMEWORK_MEMBERSHIP - self._CAMPAIGN_AND_QUALIFICATION_MODULES,
+        )
         self.assertIn("0700_coverage_counters", serving_core)
         self.assertEqual(len(serving_core), 8)
 
-    def test_campaign_support_and_qualification_support_partition_removed_modules_minus_0700(self):
-        from bigcherry.campaign import replay_equivalence
-
-        removed = set(replay_equivalence.EXPECTED_REMOVED_MODULES)
+    def test_campaign_support_and_qualification_support_partition_the_campaign_and_qualification_modules(self):
         campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
         qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
-        # No orphan among the modules genuinely owned by these two sets:
-        # every removed module except 0700 (now in serving-core, see the
-        # test above) has exactly one documented owner here.
-        self.assertEqual(campaign_support | qualification_support, removed - {"0700_coverage_counters"})
+        # No orphan: every module genuinely owned by campaign/qualification
+        # has exactly one documented owner here (0700 is NOT among these --
+        # it belongs to serving-core, see test_serving_core_membership).
+        self.assertEqual(
+            campaign_support | qualification_support,
+            self._CAMPAIGN_AND_QUALIFICATION_MODULES,
+        )
         # No duplicate claim: the two sets are disjoint.
         self.assertEqual(campaign_support & qualification_support, set())
         self.assertNotIn("0700_coverage_counters", campaign_support)
@@ -653,14 +689,18 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
         serving_core = set(self.cfg.patch_sets["serving-core"].patches)
         campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
         qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        # Pairwise disjoint...
         self.assertEqual(serving_core & campaign_support, set())
         self.assertEqual(serving_core & qualification_support, set())
         self.assertEqual(campaign_support & qualification_support, set())
-        # Together they reconstitute the whole framework set exactly.
+        # ...and together they reconstitute exactly the former semantic
+        # `framework` patch-set's 15-module membership, pinned directly
+        # rather than derived from any PA26 terminology.
         self.assertEqual(
             serving_core | campaign_support | qualification_support,
-            set(self.cfg.patch_sets["framework"].patches),
+            self._FORMER_FRAMEWORK_MEMBERSHIP,
         )
+        self.assertEqual(len(self._FORMER_FRAMEWORK_MEMBERSHIP), 15)
 
     def test_bigcherry_serving_base_is_serving_core_plus_upstream_fixes(self):
         lane = campaign_resolution.resolve_lane(
@@ -772,23 +812,26 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             lanes["bigcherry-qualification-tuning"].patch_set.module_ids,
         )
 
-    def test_old_framework_and_native_still_resolve_unchanged_after_pa29(self):
-        # PA29 cutover (GPT design review req_964ec5fc21c14848): the old
-        # framework patch-set and bigcherry-native source themselves are
-        # UNCHANGED and must keep resolving exactly as before -- PA29.md
-        # step 8 requires both stay resolvable for PA30/PA31. What DID
-        # change is source.bigcherry, which now composes serving-core
-        # instead of framework -- so native is no longer a subset of
-        # release; see test_release_source_is_serving_core_plus_validated_
-        # enhancements above for the new (post-cutover) relationship.
-        native = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog
+    def test_old_framework_and_native_identifiers_are_gone_after_pa31(self):
+        # PA31 (GPT design review, PA31 disposition): the old aggregate
+        # `framework` patch-set and `bigcherry-native` source are DELETED,
+        # not aliased or shimmed -- no compatibility layer. The semantic
+        # sources (serving-core/campaign-support/qualification-support and
+        # their composed bigcherry-* sources) resolve as declared instead.
+        self.assertNotIn("framework", self.cfg.patch_sets)
+        self.assertNotIn("bigcherry-native", self.cfg.sources)
+
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
-        self.assertEqual(len(self.cfg.patch_sets["framework"].patches), 15)
-        native_patch_ids = frozenset(
-            self.cfg.patch_sets["framework"].patches
-        ) | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
-        self.assertEqual(set(native.patch_set.module_ids), set(native_patch_ids))
+        expected = (
+            frozenset(self.cfg.patch_sets["serving-core"].patches)
+            | frozenset(self.cfg.patch_sets["campaign-support"].patches)
+            | frozenset(self.cfg.patch_sets["qualification-support"].patches)
+            | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), set(expected))
+        self.assertEqual(len(expected), 16)
 
     def test_0800_and_1100_are_not_orphaned(self):
         # PA28's own Validation section calls this out explicitly.

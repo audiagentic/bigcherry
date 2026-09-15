@@ -547,8 +547,9 @@ def run(
     under ``report_dir``, and exit non-zero.
 
     ``source_name`` unsupplied on a fresh run defaults to ``bigcherry`` (the
-    real v2 ``patch-set.framework`` composition; see
-    ``_resolve_fresh_selector``). A ``--resume`` with no selector reuses
+    real v2 release-source composition -- serving-core + upstream-fixes +
+    validated-enhancements; see ``_resolve_fresh_selector``). A ``--resume``
+    with no selector reuses
     whatever the original invocation was started with (``_resume_selector``),
     rather than re-defaulting.
     """
@@ -792,7 +793,7 @@ def _resolve_fresh_selector(
     source_name: str | None,
 ) -> tuple[str, str]:
     """Fresh-run selector default: no ``--source`` supplied -> "bigcherry"
-    -- the real v2 patch-set.framework composition."""
+    -- the real v2 release-source composition."""
     return "source", source_name if source_name is not None else "bigcherry"
 
 
