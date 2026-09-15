@@ -39,11 +39,17 @@ PA26's obsolete 8-removal composition.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
+from typing import Any
 
 from ..core import config
+from ..core.artifacts import ArtifactStore
+from ..core.context import ProjectContext
 from ..patch import patchset
 from . import resolution
 from . import replay_equivalence as pa26
+from . import replay_equivalence_hardware as pa26_hw
+from .lane import CampaignLaneExecutionSpec, CampaignLaneResult
 
 REAL_EXPECTED_REMOVED_MODULES: tuple[str, ...] = (
     "0110_campaign_tune_record_build",
@@ -210,3 +216,317 @@ def require_real_diagnostic_matches_production(
         raise Pa30ReplayEquivalenceError(
             f"diagnostic candidate does not carry {DIAGNOSTIC_ADDBACK_MODULE!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Real-hardware receipt (gates 1-3).
+#
+# GPT design review (dev-gpt-agent session ses_c2892cdae7f14feb,
+# req_92fb5a4fe596449e), following req_c7cc2be3aca4415d: reuse
+# replay_equivalence_hardware.py's execute_two_arm_build/
+# require_corpus_candidate_semantics/compare_runtime_results/
+# make_real_hardware_runtime_runner UNCHANGED (never a second
+# implementation of those safeguards), but:
+#
+# - candidate_cfg_builder=identity (real sources already exist in
+#   config/recipes.toml -- no ephemeral cfg mutation for the production
+#   pair), with THIS module performing resolve_real_composition_delta() /
+#   require_real_expected_composition_delta() itself immediately before
+#   calling execute_two_arm_build (execute_two_arm_build's own internal
+#   PA26 composition check is gated on `candidate_cfg_builder is
+#   offline.build_serving_core_config`, which is false for identity, so it
+#   is correctly skipped rather than silently wrong).
+# - allowed_removed_modules is OVERRIDDEN to the real PA30 7-module delta
+#   for the production pair (REAL_EXPECTED_REMOVED_MODULES) and the real
+#   6-module delta (7 minus 0810) for the diagnostic pair -- GPT: reusing
+#   PA26's 8-module allowance (which still includes 0700) would be wrong
+#   for the real-source comparison, since PA28 kept 0700 in serving-core.
+def require_pre_cutover_release_identity(
+    cfg: config.Config,
+    catalog: list[patchset.PatchModule],
+    *,
+    native_source: str = "bigcherry-native",
+) -> resolution.SelectorIdentity:
+    """Gate 2's control must be the EXPLICIT pre-cutover release identity
+    (``framework`` + ``upstream-fixes`` + ``validated-enhancements``), not
+    an unproven assumption that ``bigcherry-native`` (``framework`` +
+    ``upstream-fixes`` only) stands in for it. Resolves that explicit
+    reconstruction as an ephemeral source, asserts it against
+    ``native_source``'s own real resolution, and returns the (now-proven)
+    real identity to use as gate 2's control -- so provenance never rests
+    on "validated-enhancements currently happens to be empty" as an
+    implicit assumption (GPT design review, req_92fb5a4fe596449e)."""
+    if native_source not in cfg.sources:
+        raise Pa30ReplayEquivalenceError(f"cfg carries no {native_source!r} source")
+    native = cfg.sources[native_source]
+    reconstructed_set = config.PatchSet(
+        name="__pa30_pre_cutover_release_set",
+        patches=(
+            *cfg.patch_sets["framework"].patches,
+            *cfg.patch_sets["upstream-fixes"].patches,
+            *cfg.patch_sets["validated-enhancements"].patches,
+        ),
+        required_state=cfg.patch_sets["framework"].required_state,
+    )
+    reconstructed_source = config.Source(
+        name="__pa30_pre_cutover_release",
+        ref=native.ref,
+        overlay=native.overlay,
+        patch_sets=("__pa30_pre_cutover_release_set",),
+        backend=native.backend,
+    )
+    ephemeral_cfg = dataclasses.replace(
+        cfg,
+        patch_sets={
+            **cfg.patch_sets,
+            "__pa30_pre_cutover_release_set": reconstructed_set,
+        },
+        sources={**cfg.sources, "__pa30_pre_cutover_release": reconstructed_source},
+    )
+    reconstructed = resolution.resolve_canonical_selection(
+        "__pa30_pre_cutover_release", ephemeral_cfg, catalog
+    )
+    native_resolved = resolution.resolve_canonical_selection(
+        native_source, cfg, catalog
+    )
+    if reconstructed.identity.patch_ids != native_resolved.identity.patch_ids:
+        raise Pa30ReplayEquivalenceError(
+            "explicit pre-cutover release reconstruction (framework + "
+            "upstream-fixes + validated-enhancements) does NOT equal "
+            f"{native_source!r}'s own resolution -- got "
+            f"{list(reconstructed.identity.patch_ids)} vs "
+            f"{list(native_resolved.identity.patch_ids)}; gate 2 must use "
+            "the explicit reconstruction as its control, not "
+            f"{native_source!r}"
+        )
+    if reconstructed.identity.module_hashes != native_resolved.identity.module_hashes:
+        raise Pa30ReplayEquivalenceError(
+            "explicit pre-cutover release reconstruction matches "
+            f"{native_source!r} on patch_ids but not module_hashes -- "
+            "content divergence, not merely membership"
+        )
+    return native_resolved.identity
+
+
+def build_real_hardware_specs(
+    *,
+    platform_name: str,
+    architectures: tuple[str, ...],
+    inventory_ref: Any,
+    winners_ref: Any,
+    build_name: str = "replay",
+    binary_relative_path: str = "bin/llama-server",
+    control_source: str = "bigcherry-native",
+    candidate_source: str = "bigcherry-serving-base",
+) -> tuple[CampaignLaneExecutionSpec, CampaignLaneExecutionSpec]:
+    """The real-source PRODUCTION pair -- exact ``control_source`` vs exact
+    ``candidate_source``, both real named sources already in
+    config/recipes.toml. Mirrors
+    ``replay_equivalence_hardware.build_hardware_specs`` but never resolves
+    ``offline.SERVING_CORE_SOURCE_NAME``."""
+    inputs = (("inventory", inventory_ref), ("promoted-winners", winners_ref))
+    control_spec = CampaignLaneExecutionSpec(
+        source_name=control_source,
+        build_name=build_name,
+        platform_name=platform_name,
+        architectures=architectures,
+        inputs=inputs,
+        binary_relative_path=binary_relative_path,
+    )
+    candidate_spec = dataclasses.replace(control_spec, source_name=candidate_source)
+    return control_spec, candidate_spec
+
+
+def build_real_diagnostic_hardware_specs(
+    *,
+    platform_name: str,
+    architectures: tuple[str, ...],
+    inventory_ref: Any,
+    winners_ref: Any,
+    build_name: str = pa26_hw.PA26_DIAGNOSTIC_BUILD_NAME,
+    binary_relative_path: str = "bin/llama-server",
+    control_source: str = "bigcherry-native",
+) -> tuple[CampaignLaneExecutionSpec, CampaignLaneExecutionSpec]:
+    """The real-source DIAGNOSTIC companion pair -- same control, candidate
+    is ``SERVING_BASE_DIAGNOSTIC_SOURCE_NAME`` (real ``bigcherry-serving-
+    base`` + 0810). Reuses PA26's own ephemeral diagnostic build profile
+    name so ``build_pa26_diagnostic_build_config`` (unchanged) still applies."""
+    inputs = (("inventory", inventory_ref), ("promoted-winners", winners_ref))
+    control_spec = CampaignLaneExecutionSpec(
+        source_name=control_source,
+        build_name=build_name,
+        platform_name=platform_name,
+        architectures=architectures,
+        inputs=inputs,
+        binary_relative_path=binary_relative_path,
+    )
+    candidate_spec = dataclasses.replace(
+        control_spec, source_name=SERVING_BASE_DIAGNOSTIC_SOURCE_NAME
+    )
+    return control_spec, candidate_spec
+
+
+def build_real_hardware_receipt(
+    cfg: config.Config,
+    catalog: list[patchset.PatchModule],
+    winners_cache_path: Path,
+    *,
+    bigcherry_revision: str,
+    context: ProjectContext,
+    store: ArtifactStore,
+    control_spec: CampaignLaneExecutionSpec,
+    candidate_spec: CampaignLaneExecutionSpec,
+    run_id_prefix: str,
+    diagnostic_control_spec: CampaignLaneExecutionSpec,
+    diagnostic_candidate_spec: CampaignLaneExecutionSpec,
+    corpus_producer_manifest_path: Path,
+    control_source: str = "bigcherry-native",
+    candidate_source: str = "bigcherry-serving-base",
+    lane_executor: pa26_hw.LaneExecutor = pa26_hw.execute_campaign_lane,
+    runtime_runner: pa26_hw.RuntimeRunner = pa26_hw.real_hardware_runtime_runner,
+) -> dict[str, Any]:
+    """PA30 gates 1-3 real-hardware receipt -- mirrors
+    ``replay_equivalence_hardware.build_hardware_receipt`` exactly in
+    structure and safeguards (corpus-producer semantic compatibility before
+    REVISION_MATCH=0, diagnostic-vs-production composition binding, exact
+    arm-level + per-dispatch comparison), but resolved against the REAL
+    named sources instead of PA26's ephemeral composition, with
+    ``allowed_removed_modules`` overridden to PA30's real 7-/6-module delta
+    (GPT design review req_92fb5a4fe596449e)."""
+    delta = resolve_real_composition_delta(
+        cfg, catalog, control_source=control_source, candidate_source=candidate_source,
+    )
+    require_real_expected_composition_delta(delta)
+    corpus = pa26.load_winners_corpus(winners_cache_path)
+    receipt: dict[str, Any] = {
+        "schema_version": pa26.RECEIPT_SCHEMA_VERSION,
+        "bigcherry_revision": bigcherry_revision,
+        "control_selector": delta.control.to_payload(),
+        "candidate_selector": delta.candidate.to_payload(),
+        "expected_composition_delta": list(REAL_EXPECTED_REMOVED_MODULES),
+        "actual_composition_delta": list(delta.removed),
+        "winners_sha256": corpus.sha256,
+        "winners_header": corpus.header,
+    }
+
+    identity_cfg_builder = lambda c: c  # noqa: E731 -- real sources need no mutation
+    build_delta, control_result, candidate_result = pa26_hw.execute_two_arm_build(
+        cfg,
+        catalog,
+        context=context,
+        store=store,
+        control_spec=control_spec,
+        candidate_spec=candidate_spec,
+        run_id_prefix=run_id_prefix,
+        candidate_cfg_builder=identity_cfg_builder,
+        lane_executor=lane_executor,
+        allowed_removed_modules=frozenset(REAL_EXPECTED_REMOVED_MODULES),
+    )
+    receipt["build_identity"] = {
+        "control": dataclasses.asdict(build_delta.control),
+        "candidate": dataclasses.asdict(build_delta.candidate),
+    }
+
+    expected = {
+        entry["dispatch"]: pa26_hw.ReplayExpectation(
+            dispatch=entry["dispatch"],
+            signature=entry["signature"],
+            winner=entry["winner"],
+            transform_id=entry["transform_id"],
+            match_kind=entry["match_kind"],
+            manifest_hash=entry["manifest_hash"],
+        )
+        for entry in corpus.entries
+    }
+
+    is_default_runner = runtime_runner is pa26_hw.real_hardware_runtime_runner
+    if is_default_runner:
+        receipt["decision_equivalence"] = {"status": "NOT_EVALUATED", "differences": None,
+                                            "reason": "default stub runtime_runner"}
+        receipt["runtime"] = {"status": "NOT_EVALUATED", "reason": "default stub runtime_runner"}
+        return receipt
+
+    if diagnostic_control_spec.build_name != pa26_hw.PA26_DIAGNOSTIC_BUILD_NAME or (
+        diagnostic_candidate_spec.build_name != pa26_hw.PA26_DIAGNOSTIC_BUILD_NAME
+    ):
+        raise Pa30ReplayEquivalenceError(
+            "diagnostic specs must both use build_name="
+            f"{pa26_hw.PA26_DIAGNOSTIC_BUILD_NAME!r}"
+        )
+    diagnostic_build_cfg = pa26_hw.build_pa26_diagnostic_build_config(cfg)
+    diag_delta, diag_control_result, diag_candidate_result = pa26_hw.execute_two_arm_build(
+        diagnostic_build_cfg,
+        catalog,
+        context=context,
+        store=store,
+        control_spec=diagnostic_control_spec,
+        candidate_spec=diagnostic_candidate_spec,
+        run_id_prefix=f"{run_id_prefix}-diagnostic",
+        candidate_cfg_builder=build_serving_base_diagnostic_config,
+        lane_executor=lane_executor,
+        allowed_removed_modules=frozenset(REAL_EXPECTED_REMOVED_MODULES)
+        - {DIAGNOSTIC_ADDBACK_MODULE},
+    )
+    diagnostic_cfg = build_serving_base_diagnostic_config(cfg)
+    diagnostic_selection = resolution.resolve_canonical_selection(
+        SERVING_BASE_DIAGNOSTIC_SOURCE_NAME, diagnostic_cfg, catalog
+    )
+    require_real_diagnostic_matches_production(
+        delta.candidate.patch_ids, diagnostic_selection.identity.patch_ids,
+    )
+    receipt["diagnostic_build_identity"] = {
+        "control": dataclasses.asdict(diag_delta.control),
+        "candidate": dataclasses.asdict(diag_delta.candidate),
+    }
+
+    producer_manifest = pa26_hw._read_json_ref(corpus_producer_manifest_path)
+    if producer_manifest is None:
+        raise Pa30ReplayEquivalenceError(
+            f"cannot read corpus_producer_manifest_path {corpus_producer_manifest_path!r}"
+        )
+    runtime_architecture = diagnostic_control_spec.architectures[0]
+    if len(diagnostic_control_spec.architectures) != 1 or (
+        diagnostic_candidate_spec.architectures != diagnostic_control_spec.architectures
+    ):
+        raise Pa30ReplayEquivalenceError(
+            "both diagnostic arms must be built for exactly one shared "
+            f"runtime architecture -- got control="
+            f"{diagnostic_control_spec.architectures!r} candidate="
+            f"{diagnostic_candidate_spec.architectures!r}"
+        )
+    for label, lane_result in (
+        ("control", diag_control_result), ("candidate", diag_candidate_result),
+    ):
+        target_manifest = (
+            pa26_hw._read_json_ref(Path(lane_result.manifest_ref.path))
+            if lane_result.manifest_ref else None
+        )
+        if target_manifest is None:
+            raise Pa30ReplayEquivalenceError(
+                f"{label}: diagnostic arm produced no readable manifest_ref"
+            )
+        pa26_hw.require_corpus_candidate_semantics(
+            corpus,
+            producer_manifest=producer_manifest,
+            target_manifest=target_manifest,
+            target_label=label,
+            runtime_architecture=runtime_architecture,
+        )
+
+    try:
+        control_runtime = runtime_runner(diag_control_result, corpus)
+        candidate_runtime = runtime_runner(diag_candidate_result, corpus)
+    except pa26_hw.RuntimeNotEvaluated as exc:
+        receipt["decision_equivalence"] = {
+            "status": "NOT_EVALUATED", "differences": None, "reason": str(exc),
+        }
+        receipt["runtime"] = {"status": "NOT_EVALUATED", "reason": str(exc)}
+        return receipt
+    comparison = pa26_hw.compare_runtime_results(
+        control_runtime, candidate_runtime, expected=expected
+    )
+    receipt["decision_equivalence"] = {
+        "status": "EVALUATED", "differences": list(comparison.differences),
+    }
+    receipt["runtime"] = {"status": "EVALUATED", "equivalent": comparison.equivalent}
+    return receipt
