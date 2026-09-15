@@ -19,17 +19,61 @@ bigcherry.experiment.contract.aggregate_contract_effects()/
 evaluate_promotion_gate() -- the same real evaluator used elsewhere in this
 codebase, not a parallel gate re-implementation.
 
-Build/device shape (PA37.md step 5): ONE atomic control/subject build pair,
-built once as fat gfx1100;gfx1201;gfx1030 via ``ctx.runtime.build_pair()``,
-then run per real device slot supplied in ``ctx.device_map``. RD05/RD06
-consume the same gfx1201 result (RD05/RD06 are materially inseparable in
+Build/device shape (PA37.md step 5): ONE atomic control/subject build pair
+PER BINARY SET, each built once as fat gfx1100;gfx1201;gfx1030 via
+``ctx.runtime.build_pair()`` -- never rebuilt per architecture or per
+check. ``ProducerRuntime.build_pair()``'s own contract is "a producer
+wanting multiple binaries calls build_pair() once per binary set", so this
+producer calls it exactly twice: once for ``llama-perplexity`` (backend-
+reference correctness, ``_ppl_pair``) and once for ``llama-bench``
+(paired performance benchmarking, ``_bench_pair``) -- PA39 P0 defect #1
+fix (GPT review req_e3d28b6b104a4a01): the prior single build_pair() call
+used ``primary_target="llama-perplexity"`` for BOTH backend-reference
+comparisons AND ``run_paired_llama_benchmark()``, which constructs
+llama-bench-style argv -- a real llama-bench-invoked-as-llama-perplexity
+mismatch that fake-runtime tests could not expose. ``run()`` is still one
+atomic control/subject SOURCE pair (both builds share the same resolved
+control/subject composition); it is the two binaries built from that one
+source pair, not two independent source pairs. RD05/RD06 consume the same
+gfx1201 backend-reference result (RD05/RD06 are materially inseparable in
 the atomic 1203 patch -- see validation_campaign.py's superseded RD05
 producer docstring for the same reasoning, carried forward here); RD07
-requires all three architectures to be present at once.
+requires all three architectures to be present at once. The canonical
+``ProducerResult.validation_build_identities`` (and every disposition-
+bearing correctness check) is bound to the ``llama-perplexity`` pair's
+identities; the ``llama-bench`` pair's identities are recorded separately
+inside the performance artifacts for audit.
 
-Fail-closed by construction: a missing device, missing model/corpus, or a
-failed backend-reference comparison always yields ``passed=False`` with a
-truthful detail string -- never a default/fabricated PASS.
+RD06's positive lanes are BOTH decode and prefill (config/experiment-
+contracts.toml's ``[contract.RD06-RDNA4-WMMA-FA-CONFIG.positive]``) --
+PA39 P0 defect #2 fix (same GPT review): the prior code only ever
+benchmarked decode, and ``aggregate_contract_effects()`` is not itself
+contract-aware -- it happily computes a gain from whatever positive-role
+lane effects it is handed and never notices a declared lane is missing,
+so a decode-only call could reach "promote" with zero prefill evidence.
+This producer now runs every workload the contract declares for BOTH the
+positive and control roles, and explicitly fails closed (no gate call at
+all) if any declared workload's evidence did not come back, rather than
+letting the gate silently aggregate a partial lane set.
+
+Fail-closed by construction: a missing device, missing model/corpus, a
+missing/mismatched declared lane, or a failed backend-reference comparison
+always yields ``passed=False`` with a truthful detail string -- never a
+default/fabricated PASS.
+
+PA39 P1 spec-drift note (GPT review req_e3d28b6b104a4a01, not fixed here):
+RD06's ``hypothesis.rationale`` in config/experiment-contracts.toml says
+"must verify gfx1100 does not select or regress", but RD06's own formal
+``[scope]`` is ``architectures = ["gfx1201"]`` only, and this producer
+correspondingly only ever exercises RD06's checks on the gfx1201 device
+context (``_RD0506_ARCH``). No gfx1100 negative check exists anywhere in
+this producer or its evidence. This is a real, honest gap, not
+overclaimed here or in PA37/PA39's plan docs: RD06's real evidence proves
+gfx1201 behavior only; formalizing a gfx1100 non-selection/non-regression
+check (which would need real hardware plus RD06's own activation marker,
+not just a backend-reference/performance comparison) is out of this
+change's scope and left for a future item if PA39 needs to claim that
+coverage.
 """
 
 from __future__ import annotations
@@ -81,6 +125,57 @@ def _load_rd06_contract() -> experiment_contract.ExperimentContract:
     # producer re-implementing the gate's own bound logic.
     registry = experiment_contract.load_contracts(bc_paths.EXPERIMENT_CONTRACTS)
     return registry[_RD06]
+
+
+def _verify_control_model_identity(
+    control_model: Path, *, expected_model_id: str,
+) -> tuple[bool, str]:
+    """PA39 P1 fix (GPT review req_e3d28b6b104a4a01): the supplied
+    ``--producer-input control_model=<path>`` is a bare filesystem path
+    with no inherent tie to the contract's declared control model
+    identity -- an arbitrary GGUF could otherwise be silently mislabeled
+    as RD06's control lane. Reads config/models.toml directly (via
+    tomllib, never through validation_campaign.py's
+    resolve_benchmark_model(), which this module must not import) and
+    checks the supplied path's basename and real file size against the
+    registry's declared entry for ``expected_model_id``.
+
+    This is a best-effort identity check, not full provenance (it trusts
+    the filesystem's basename/size, not a content hash) -- deliberately
+    never raises: the caller always records both the check's outcome and
+    its detail string in the performance artifact, so a mismatch stays
+    visible/auditable even where full verification is out of scope."""
+    import tomllib
+
+    try:
+        raw = tomllib.loads(bc_paths.MODELS.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return False, f"control_model identity: could not read {bc_paths.MODELS}: {exc}"
+    entries = {
+        entry.get("id"): entry for entry in raw.get("models", [])
+        if isinstance(entry, dict)
+    }
+    entry = entries.get(expected_model_id)
+    if entry is None:
+        return False, (
+            f"control_model identity: {expected_model_id!r} not found in "
+            f"{bc_paths.MODELS}"
+        )
+    declared_name = Path(str(entry.get("path", ""))).name
+    declared_size = entry.get("size-bytes")
+    basename_ok = control_model.name == declared_name
+    size_ok = (
+        isinstance(declared_size, int) and not isinstance(declared_size, bool)
+        and control_model.is_file() and control_model.stat().st_size == declared_size
+    )
+    ok = basename_ok and size_ok
+    detail = (
+        f"control_model identity: supplied={control_model} "
+        f"expected_model_id={expected_model_id!r} expected_basename={declared_name!r} "
+        f"basename_match={basename_ok} expected_size_bytes={declared_size!r} "
+        f"size_match={size_ok}"
+    )
+    return ok, detail
 
 
 def _perplexity_module():
@@ -151,10 +246,16 @@ def _check_result(
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
-    # One atomic control/subject build pair, built once at the full fat
-    # target list -- never rebuilt per architecture (PA37.md step 5).
-    pair = ctx.runtime.build_pair(
+    # Two build pairs, one per binary set, each built once at the full fat
+    # target list -- never rebuilt per architecture (PA37.md step 5; PA39
+    # P0 defect #1 fix -- see module docstring). backend_reference
+    # correctness comparisons use the llama-perplexity pair; every
+    # run_paired_llama_benchmark() call uses the llama-bench pair.
+    ppl_pair = ctx.runtime.build_pair(
         targets=ctx.fat_targets.targets, primary_target="llama-perplexity",
+    )
+    bench_pair = ctx.runtime.build_pair(
+        targets=ctx.fat_targets.targets, primary_target="llama-bench",
     )
     devices = ctx.runtime.device_contexts(device_map=ctx.device_map)
     devices_by_arch: Mapping[str, vp.ProducerDeviceContext] = {
@@ -175,7 +276,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     else:
         rd0506_ok, rd0506_detail, comparison = _run_backend_reference(
-            control_bin=pair.control_bin, subject_bin=pair.subject_bin,
+            control_bin=ppl_pair.control_bin, subject_bin=ppl_pair.subject_bin,
             model=ctx.model, corpus=ctx.corpus, device=gfx1201, log_context="rd0506",
         )
         rd0506_artifact = ctx.runtime.write_artifact(
@@ -189,8 +290,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                     _perplexity_module().comparison_to_dict(comparison)
                     if comparison is not None else None
                 ),
-                "control_build_identity": pair.validation_build_identities["control"],
-                "subject_build_identity": pair.validation_build_identities["subject"],
+                "control_build_identity": ppl_pair.validation_build_identities["control"],
+                "subject_build_identity": ppl_pair.validation_build_identities["subject"],
             },
         )
         emitted_artifacts.add(rd0506_artifact.name)
@@ -210,14 +311,19 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # PA39 defects #2 (ci95_threshold_bound_v1 never evaluated) and #3
     # (RD06's declared control model tierM-gptoss20b-q6k never benchmarked)
     # fix: run the paired benchmark for BOTH RD06's positive model
-    # (ctx.model, decode -- tg128 is the metric target_kernel_gain_pct is
-    # bound to) and its declared control model (ctx.inputs["control_model"],
-    # decode), then route both real PairedLaneRuns through
-    # lane_effect_from_run()/aggregate_contract_effects()/
-    # evaluate_promotion_gate() -- the same real evaluator machinery
-    # already used elsewhere in this codebase (e.g. RD58's promotion path
-    # in validation_campaign.py) -- instead of the prior execution-only
-    # `bool(outcome.runs)` stub.
+    # (ctx.model, every workload the contract declares as positive) and
+    # its declared control model (ctx.inputs["control_model"], every
+    # workload the contract declares as control), then route the real
+    # PairedLaneRuns through lane_effect_from_run()/
+    # aggregate_contract_effects()/evaluate_promotion_gate() -- the same
+    # real evaluator machinery already used elsewhere in this codebase
+    # (e.g. RD58's promotion path in validation_campaign.py) -- instead
+    # of the prior execution-only `bool(outcome.runs)` stub.
+    #
+    # PA39 P0 defect #1 fix: uses bench_pair (built with
+    # primary_target="llama-bench"), never ppl_pair -- run_paired_
+    # llama_benchmark() constructs llama-bench-style argv, so handing it
+    # a llama-perplexity binary path is a real mismatch.
     rd06_perf_artifact = None
     control_model_raw = ctx.inputs.get("control_model")
     control_model = Path(control_model_raw) if control_model_raw else None
@@ -229,63 +335,116 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
         rd06_gate_result: dict[str, object] | None = None
     else:
+        rd06_contract = _load_rd06_contract()
+        # PA39 P1 fix: control_model is a bare --producer-input path with
+        # no inherent tie to RD06's declared control model identity
+        # (tierM-gptoss20b-q6k) -- an arbitrary GGUF could otherwise be
+        # silently mislabeled as the control lane. Best-effort identity
+        # check against config/models.toml (read directly -- never via
+        # validation_campaign.py, per this module's import restriction);
+        # always recorded in the artifact regardless of outcome so a
+        # mismatch is visible/auditable even though this is not full
+        # cryptographic provenance.
+        control_model_identity_ok, control_model_identity_detail = (
+            _verify_control_model_identity(
+                control_model, expected_model_id=rd06_contract.controls.models[0],
+            )
+        )
+        # PA39 P0 defect #2 fix: run every workload the contract declares
+        # for each role, not just decode -- and fail closed (no gate call)
+        # if any declared workload's evidence does not come back, rather
+        # than letting aggregate_contract_effects() (which is not itself
+        # contract-aware) silently aggregate a partial lane set.
+        positive_workloads = tuple(rd06_contract.positive.workloads)
+        control_workloads = tuple(rd06_contract.controls.workloads)
         positive_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
-            model=ctx.model, workloads=("decode",),
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
+            model=ctx.model, workloads=positive_workloads,
             pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-positive",
             device=gfx1201,
         )
         control_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
-            model=control_model, workloads=("decode",),
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
+            model=control_model, workloads=control_workloads,
             pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-control",
             device=gfx1201,
         )
-        metric = _PAIRED_BENCH_METRIC_NAME["decode"]
-        positive_lane = experiment_execution.lane_effect_from_run(
-            "positive", metric, positive_outcome.runs["decode"],
-        )
-        control_lane = experiment_execution.lane_effect_from_run(
-            "control", metric, control_outcome.runs["decode"],
-        )
-        rd06_contract = _load_rd06_contract()
-        aggregated_effects = experiment_contract.aggregate_contract_effects(
-            rd06_contract, [positive_lane, control_lane], target_metric=metric,
-        )
-        rd06_correctness_gate = experiment_contract.evaluate_correctness_gate(
-            rd06_contract,
-            {"backend_reference": experiment_contract.CorrectnessResult(
-                check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
-            )},
-        )
-        rd06_gate_result = experiment_contract.evaluate_promotion_gate(
-            rd06_contract, correctness_gate=rd06_correctness_gate,
-            aggregated_effects=aggregated_effects,
-        )
-        rd06_perf_ok = bool(rd06_gate_result["passed"])
-        rd06_perf_detail = (
-            f"rd06 performance: ci95_threshold_bound_v1 gate status="
-            f"{rd06_gate_result['status']!r} passed={rd06_perf_ok} "
-            f"reasons={list(rd06_gate_result['reasons'])} "
-            f"positive_model={ctx.model} control_model={control_model} "
-            f"target_kernel_gain_pct={_RD06_TARGET_KERNEL_GAIN_PCT} "
-            f"max_control_regression_pct={_RD06_MAX_CONTROL_REGRESSION_PCT}"
-        )
+        missing_positive = [w for w in positive_workloads if w not in positive_outcome.runs]
+        missing_control = [w for w in control_workloads if w not in control_outcome.runs]
+        if missing_positive or missing_control:
+            rd06_perf_ok = False
+            aggregated_effects = None
+            rd06_gate_result = None
+            rd06_perf_detail = (
+                f"rd06 performance: contract declares positive workloads "
+                f"{list(positive_workloads)} and control workloads "
+                f"{list(control_workloads)}, but evidence is missing for "
+                f"positive={missing_positive} control={missing_control} -- "
+                "failing closed rather than aggregating a partial lane set"
+            )
+        else:
+            target_metric = _PAIRED_BENCH_METRIC_NAME["decode"]
+            positive_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "positive", _PAIRED_BENCH_METRIC_NAME[workload],
+                    positive_outcome.runs[workload],
+                )
+                for workload in positive_workloads
+            ]
+            control_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "control", _PAIRED_BENCH_METRIC_NAME[workload],
+                    control_outcome.runs[workload],
+                )
+                for workload in control_workloads
+            ]
+            aggregated_effects = experiment_contract.aggregate_contract_effects(
+                rd06_contract, positive_lanes + control_lanes, target_metric=target_metric,
+            )
+            rd06_correctness_gate = experiment_contract.evaluate_correctness_gate(
+                rd06_contract,
+                {"backend_reference": experiment_contract.CorrectnessResult(
+                    check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
+                )},
+            )
+            rd06_gate_result = experiment_contract.evaluate_promotion_gate(
+                rd06_contract, correctness_gate=rd06_correctness_gate,
+                aggregated_effects=aggregated_effects,
+            )
+            rd06_perf_ok = bool(rd06_gate_result["passed"])
+            rd06_perf_detail = (
+                f"rd06 performance: ci95_threshold_bound_v1 gate status="
+                f"{rd06_gate_result['status']!r} passed={rd06_perf_ok} "
+                f"reasons={list(rd06_gate_result['reasons'])} "
+                f"positive_model={ctx.model} positive_workloads={list(positive_workloads)} "
+                f"control_model={control_model} control_workloads={list(control_workloads)} "
+                f"target_kernel_gain_pct={_RD06_TARGET_KERNEL_GAIN_PCT} "
+                f"max_control_regression_pct={_RD06_MAX_CONTROL_REGRESSION_PCT} "
+                f"{control_model_identity_detail}"
+            )
         rd06_perf_artifact = ctx.runtime.write_artifact(
             name="rd06-performance.json",
             payload={
-                "schema_version": 2,
+                "schema_version": 3,
                 "contract_id": _RD06,
                 "effect_evidence_policy": _RD06_EFFECT_EVIDENCE_POLICY,
                 "min_paired_rounds": _RD06_MIN_PAIRED_ROUNDS,
                 "target_kernel_gain_pct": _RD06_TARGET_KERNEL_GAIN_PCT,
                 "max_control_regression_pct": _RD06_MAX_CONTROL_REGRESSION_PCT,
                 "positive_model": str(ctx.model),
+                "positive_workloads": list(positive_workloads),
                 "control_model": str(control_model),
+                "control_workloads": list(control_workloads),
+                "control_model_identity_ok": control_model_identity_ok,
+                "control_model_identity_detail": control_model_identity_detail,
+                "missing_positive_workloads": missing_positive,
+                "missing_control_workloads": missing_control,
                 "aggregated_effects": aggregated_effects,
                 "gate_result": rd06_gate_result,
                 "positive_commands": positive_outcome.commands,
                 "control_commands": control_outcome.commands,
+                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
+                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
             },
         )
         emitted_artifacts.add(rd06_perf_artifact.name)
@@ -309,7 +468,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         rd07_by_arch: dict[str, dict[str, object]] = {}
         for arch in _RD07_ARCHS:
             ok, detail, _comparison = _run_backend_reference(
-                control_bin=pair.control_bin, subject_bin=pair.subject_bin,
+                control_bin=ppl_pair.control_bin, subject_bin=ppl_pair.subject_bin,
                 model=ctx.model, corpus=ctx.corpus, device=devices_by_arch[arch],
                 log_context=f"rd07-{arch}",
             )
@@ -324,8 +483,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "schema_version": 1,
                 "contract_id": _RD07,
                 "architectures": rd07_by_arch,
-                "control_build_identity": pair.validation_build_identities["control"],
-                "subject_build_identity": pair.validation_build_identities["subject"],
+                "control_build_identity": ppl_pair.validation_build_identities["control"],
+                "subject_build_identity": ppl_pair.validation_build_identities["subject"],
             },
         )
         emitted_artifacts.add(rd07_artifact.name)
@@ -344,8 +503,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             f"rd07 performance: missing required architecture(s) {list(missing_rd07)}"
         )
     else:
+        # PA39 P0 defect #1 fix: bench_pair (llama-bench), never ppl_pair.
         outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
             model=ctx.model, workloads=("decode", "prefill"),
             pairs=3, log_context="rd07-performance", device=devices_by_arch[_RD0506_ARCH],
         )
@@ -358,10 +518,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         rd07_perf_artifact = ctx.runtime.write_artifact(
             name="rd07-performance.json",
             payload={
-                "schema_version": 1,
+                "schema_version": 2,
                 "contract_id": _RD07,
                 "max_control_regression_pct": _RD07_MAX_CONTROL_REGRESSION_PCT,
                 "commands": outcome.commands,
+                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
+                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
             },
         )
         emitted_artifacts.add(rd07_perf_artifact.name)
@@ -374,7 +536,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     return vp.ProducerResult(
         correctness=None,
-        validation_build_identities=pair.validation_build_identities,
+        validation_build_identities=ppl_pair.validation_build_identities,
         activation_evidence=None,
         performance_evidence=None,
         trace_evidence=None,
