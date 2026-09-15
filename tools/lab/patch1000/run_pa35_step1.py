@@ -91,7 +91,15 @@ def main() -> int:
         "amdgpu_targets": architecture,
         "workdir": build_workdir,
         "targets": ["test-backend-ops"],
-        "extra_cmake_args": [],
+        # CMAKE_SKIP_INSTALL_RPATH works around a real environment issue hit
+        # on Brutus: CMake's Ninja-generator RPATH-relink step fails to
+        # recognize the HIP/Clang-toolchain build as ELF-based for several
+        # unrelated llama.cpp install() targets (cvector-generator,
+        # export-lora, fit-params, results, app) during the full-project
+        # configure/generate step, even though only test-backend-ops is
+        # actually built. This is a local build-environment workaround, not
+        # a change to shared production cmake args.
+        "extra_cmake_args": ["-DCMAKE_SKIP_INSTALL_RPATH=ON"],
     }
     control_bin = vc.build_tree(name="patch1000-pa35-control", source=control_src, **build_args)
     subject_bin = vc.build_tree(name="patch1000-pa35-subject", source=subject_src, **build_args)
