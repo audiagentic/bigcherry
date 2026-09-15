@@ -23,6 +23,71 @@ patches = [
 ]
 required-state = "validated"
 
+# PA28 (PA20 taxonomy, post-PA26/PA27): additive-only semantic patch-sets,
+# carved from the existing `framework` set without moving any live consumer.
+# `framework`/`bigcherry-native`/`bigcherry` above are left untouched here --
+# PA29 performs the cutover after migration inventory is complete.
+#
+# serving-core is PA26's real-hardware-proven serving boundary: `framework`
+# minus the eight PA20 non-serving modules (tune/record, coverage/hit-log/
+# measurement/split-reduce diagnostics, shutdown endpoint, pool-workspace
+# metrics, HI70 direct-op evidence) -- confirmed behaviorally equivalent for
+# production replay by PA26's real two-arm hardware comparison (EVALUATED,
+# equivalent=true, 0 differences, two independent runs). This is the literal
+# complement PA26's own `EXPECTED_REMOVED_MODULES` in
+# tools/bigcherry/campaign/replay_equivalence.py encodes -- keep both lists
+# in sync if either changes.
+[patch-set.serving-core]
+# GPT design-review consult (dev-gpt-agent, req_d9bf628dc9954595, 2026-09-15):
+# PA26's own notes flagged that 0700_coverage_counters is not purely
+# diagnostic -- its family-entry block calls ggml_hip_dispatch_family(...)
+# under GGML_HIP_DISPATCH outside the diagnostics-only counter guard, i.e.
+# real serving-relevant dispatch-interception plumbing, not just coverage
+# instrumentation. Splitting 0700 into a serving hook half and a
+# diagnostics-counter half is real patch-authoring work, out of scope for
+# PA28's additive/config-only pass. GPT's approved minimal-safe fallback
+# (bigcherry-tuning already composes serving-core, so nothing is lost for
+# tuning consumers either way): keep 0700 WHOLE, and place it here in
+# serving-core rather than campaign-support, so no serving-relevant code can
+# ever be omitted by a source that only requests serving-core. Revisit when
+# 0700 is actually split (separate plan item).
+patches = [
+  "0100_cmake_options",
+  "0200_dispatch_hook",
+  "0300_mmq_forced_j",
+  "0400_mmvf_forced_block",
+  "0500_mmf_forced_nwarps",
+  "0600_mmvq_geometry",
+  "0650_mmvq_native_variant",
+  "0700_coverage_counters",
+]
+required-state = "validated"
+
+# The PA27 tune/record half (0110) plus the shutdown-endpoint/hit-log/
+# measurement/pool-metrics modules PA28 step 2 assigns here -- 0800/0810/
+# 0820/0900. 0700 moved to serving-core above (GPT review, see its comment);
+# 0830 goes to qualification-support below per GPT's PA26-flagged
+# serving-boundary adjudication, not here.
+[patch-set.campaign-support]
+patches = [
+  "0110_campaign_tune_record_build",
+  "0800_server_shutdown_endpoint",
+  "0810_replay_hit_diagnostics",
+  "0820_measurement_signature_shapes",
+  "0900_pool_workspace_metrics",
+]
+required-state = "validated"
+
+# 0830 (split-reduce telemetry, touching the GGML_HIP_REDUCE_PLAN seam) and
+# 1100 (HI70 direct-op evidence corpus) -- PA28 step 3's qualification-only
+# half of the removed-module set.
+[patch-set.qualification-support]
+patches = [
+  "0830_split_reduce_telemetry",
+  "1100_hi70_direct_op_evidence",
+]
+required-state = "validated"
+
 [patch-set.upstream-fixes]
 # Correctness backports for real upstream bugs, temporary by design (each
 # carries upstream-ref + retirement in its own patch.toml). Composed into
@@ -239,6 +304,34 @@ patch-sets = ["framework", "upstream-fixes"]
 ref = "pinned"
 overlay = true
 patch-sets = ["framework", "upstream-fixes", "validated-enhancements"]
+
+# PA28: additive, transitional semantic sources composed from the new
+# serving-core/campaign-support/qualification-support patch-sets above.
+# None of these are wired into any campaign profile yet and `source.bigcherry`
+# remains the production release owner -- PA29 cuts real consumers over.
+
+# The serving control composition: serving-core + upstream-fixes only. No
+# tune/record/diagnostic/qualification plumbing at all.
+[source.bigcherry-serving-base]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "upstream-fixes"]
+
+# Tuning/campaign composition: serving-core + campaign-support (tune/record/
+# coverage/diagnostics) + upstream-fixes. Enhancements/experiments remain
+# explicit overlays (--experiment), never implicit additions.
+[source.bigcherry-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "upstream-fixes"]
+
+# Qualification composition: serving-core + qualification-support (0830 +
+# 1100) + upstream-fixes. A campaign that also needs campaign-support must
+# request that composition explicitly -- this source does not imply it.
+[source.bigcherry-qualification]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "qualification-support", "upstream-fixes"]
 
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."

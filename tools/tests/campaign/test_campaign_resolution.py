@@ -589,6 +589,154 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
 
 
+class PA28SemanticPatchSetTests(unittest.TestCase):
+    """PA28: additive-only serving-core/campaign-support/qualification-support
+    patch-sets and their three composed sources, carved from `framework`
+    without moving any live consumer. Pins module membership, the no-orphan/
+    no-duplicate-claim property against PA26's own EXPECTED_REMOVED_MODULES,
+    and that the new sources resolve deterministically and don't touch the
+    old framework/bigcherry-native/bigcherry identities."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load(paths.RECIPES)
+        cls.catalog = patchset.catalog()
+
+    def test_serving_core_is_framework_minus_pa26_removed_modules_except_0700(self):
+        # GPT design-review consult (req_d9bf628dc9954595, 2026-09-15): 0700
+        # contains real serving-relevant dispatch-family routing, not only
+        # diagnostics counters, so PA28 deliberately keeps it whole in
+        # serving-core (the GPT-approved minimal-safe fallback) rather than
+        # campaign-support, pending a future real patch-split. serving-core
+        # is therefore framework minus PA26's EXPECTED_REMOVED_MODULES, with
+        # 0700 added back.
+        from bigcherry.campaign import replay_equivalence
+
+        framework = set(self.cfg.patch_sets["framework"].patches)
+        serving_core = set(self.cfg.patch_sets["serving-core"].patches)
+        removed = set(replay_equivalence.EXPECTED_REMOVED_MODULES)
+        self.assertEqual(serving_core, (framework - removed) | {"0700_coverage_counters"})
+        self.assertIn("0700_coverage_counters", serving_core)
+        self.assertEqual(len(serving_core), 8)
+
+    def test_campaign_support_and_qualification_support_partition_removed_modules_minus_0700(self):
+        from bigcherry.campaign import replay_equivalence
+
+        removed = set(replay_equivalence.EXPECTED_REMOVED_MODULES)
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        # No orphan among the modules genuinely owned by these two sets:
+        # every removed module except 0700 (now in serving-core, see the
+        # test above) has exactly one documented owner here.
+        self.assertEqual(campaign_support | qualification_support, removed - {"0700_coverage_counters"})
+        # No duplicate claim: the two sets are disjoint.
+        self.assertEqual(campaign_support & qualification_support, set())
+        self.assertNotIn("0700_coverage_counters", campaign_support)
+        self.assertNotIn("0700_coverage_counters", qualification_support)
+        self.assertEqual(
+            qualification_support,
+            {"0830_split_reduce_telemetry", "1100_hi70_direct_op_evidence"},
+        )
+
+    def test_no_module_claimed_by_more_than_one_of_the_three_new_sets(self):
+        serving_core = set(self.cfg.patch_sets["serving-core"].patches)
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        self.assertEqual(serving_core & campaign_support, set())
+        self.assertEqual(serving_core & qualification_support, set())
+        self.assertEqual(campaign_support & qualification_support, set())
+        # Together they reconstitute the whole framework set exactly.
+        self.assertEqual(
+            serving_core | campaign_support | qualification_support,
+            set(self.cfg.patch_sets["framework"].patches),
+        )
+
+    def test_bigcherry_serving_base_is_serving_core_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-serving-base", self.cfg, self.catalog
+        )
+        expected = set(self.cfg.patch_sets["serving-core"].patches) | set(
+            self.cfg.patch_sets["upstream-fixes"].patches
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+
+    def test_bigcherry_tuning_is_serving_core_plus_campaign_support_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-tuning", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["campaign-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        self.assertNotIn(
+            "0830_split_reduce_telemetry", lane.patch_set.module_ids
+        )
+        self.assertNotIn(
+            "1100_hi70_direct_op_evidence", lane.patch_set.module_ids
+        )
+
+    def test_bigcherry_qualification_is_serving_core_plus_qualification_support_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["qualification-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        # 0700 is now part of serving-core (GPT review), so it's present via
+        # that -- only the campaign-support-only modules must be absent.
+        self.assertNotIn(
+            "0110_campaign_tune_record_build", lane.patch_set.module_ids
+        )
+        self.assertNotIn(
+            "0800_server_shutdown_endpoint", lane.patch_set.module_ids
+        )
+
+    def test_new_sources_have_distinct_deterministic_patch_set_ids(self):
+        lanes = {
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            for name in (
+                "bigcherry-serving-base",
+                "bigcherry-tuning",
+                "bigcherry-qualification",
+            )
+        }
+        ids = {name: lane.patch_set.patch_set_id for name, lane in lanes.items()}
+        self.assertEqual(len(set(ids.values())), 3, f"patch_set_ids collided: {ids}")
+        # Deterministic: resolving again gives byte-identical identity.
+        for name, lane in lanes.items():
+            again = campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            self.assertEqual(again.patch_set.patch_set_id, lane.patch_set.patch_set_id)
+            self.assertEqual(again.patch_set.module_ids, lane.patch_set.module_ids)
+
+    def test_old_framework_native_and_release_sources_are_unchanged(self):
+        # PA28 is additive-only -- the coexistence-phase names must keep
+        # resolving to exactly what they did before this change.
+        native = campaign_resolution.resolve_lane(
+            "bigcherry-native", self.cfg, self.catalog
+        )
+        release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+        self.assertEqual(len(self.cfg.patch_sets["framework"].patches), 15)
+        native_patch_ids = frozenset(
+            self.cfg.patch_sets["framework"].patches
+        ) | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
+        self.assertEqual(set(native.patch_set.module_ids), set(native_patch_ids))
+        self.assertTrue(
+            set(native.patch_set.module_ids) <= set(release.patch_set.module_ids)
+        )
+
+    def test_0800_and_1100_are_not_orphaned(self):
+        # PA28's own Validation section calls this out explicitly.
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        self.assertIn("0800_server_shutdown_endpoint", campaign_support)
+        self.assertIn("1100_hi70_direct_op_evidence", qualification_support)
+
+
 if __name__ == "__main__":
     unittest.main()
 
