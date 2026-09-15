@@ -1,0 +1,14 @@
+# Validator configuration only. Experiment Contract fields do not belong here.
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
