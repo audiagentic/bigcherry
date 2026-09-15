@@ -779,6 +779,15 @@ def make_real_hardware_runtime_runner(
         clean_shutdown = bool(shutdown and shutdown.clean)
         hits = execution_audit.load_hit_log(hit_log_path if hit_log_path.is_file() else None)
         entries = tuple(sorted(hits.values(), key=lambda h: h.dispatch))
+        # PA26 harness-measurement fix: GGML_HIP_DISPATCH_HIT_LOG is a
+        # per-arm diagnostic output path (built from this arm's own
+        # source_slice_id/build_plan_id, both of which legitimately differ
+        # between arms by PA26 design -- see _PA26_DERIVED_PATH_CONFIGURE_KEYS
+        # above for the same class of by-design per-arm path). It was never
+        # meant to be identical between arms and must not be digested into
+        # runtime_args_digest, which exists to catch real server-args/
+        # environment config drift, not this harness's own per-arm bookkeeping.
+        digest_env = {k: v for k, v in env.items() if k != "GGML_HIP_DISPATCH_HIT_LOG"}
         return ArmRuntimeResult(
             process_success=process_success,
             clean_shutdown=clean_shutdown,
@@ -787,7 +796,7 @@ def make_real_hardware_runtime_runner(
             model_hash=model_digest,
             gpu_identity=devices,
             runtime_args_digest=hashlib.sha256(
-                repr(sorted(env.items())).encode("utf-8")
+                repr(sorted(digest_env.items())).encode("utf-8")
             ).hexdigest(),
             entries=entries,
         )
