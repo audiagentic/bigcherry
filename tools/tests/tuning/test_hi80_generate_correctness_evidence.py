@@ -62,9 +62,26 @@ def _write_fixture_vendor(tmp_path: Path) -> Path:
     return vendor
 
 
-def _fake_runner_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_runner_factory(
+    *, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=SIGNATURE_HEX,
+):
+    """Handles all GGML_HIP_DISPATCH_MODE values generate_for_row's ordinary
+    (non-GLU) MUL_MAT/MUL_MAT_ID branch now drives, mirroring
+    _fake_glu_runner_factory below: "record" (PA26's observed-signature
+    preflight gate, extended from GLU-only to this branch too -- writes a
+    JSONL observation row to env["GGML_HIP_DISPATCH_DB"]) and
+    "native"/"replay" (the actual correctness comparison)."""
+
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             # HI80 (2026-08-23): the --test-file/test_generic_op path's
@@ -291,7 +308,7 @@ class HI112BatchedSrc1PipelineTests(_Base):
             self.conn, self.batched_row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
             seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
             contract_version=ce.CONTRACT_VERSION, tool_version="test",
-            runner=_fake_runner_factory(),
+            runner=_fake_runner_factory(observed_hex=self.BATCHED_SIGNATURE_HEX),
         )
         self.assertIn("wrote evidence_id=", outcome)
         identity = gate.resolve_promotion_identity(
@@ -347,9 +364,19 @@ def _write_fixture_vendor_with_mul_mat_id(tmp_path: Path) -> Path:
     return vendor
 
 
-def _fake_mul_mat_id_runner_factory(*, digest="deadc0de", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_mul_mat_id_runner_factory(
+    *, digest="deadc0de", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=MUL_MAT_ID_SIGNATURE_HEX,
+):
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             # HI105: digest_tensor is "leaf_2" (the ids/routing tensor) for
@@ -666,9 +693,19 @@ class GluGenerateForRowTests(unittest.TestCase):
         self.assertIn("0 distinct signature(s)", str(ctx.exception))
 
 
-def _fake_runner_with_digests_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_runner_with_digests_factory(
+    *, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=SIGNATURE_HEX,
+):
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             f"BIGCHERRY_REF_DIGEST name=leaf_0 call_index=0 digest={digest} nels=16\n"
@@ -749,8 +786,10 @@ class GenerateForCandidateTests(_Base):
             origin=ce.EvidenceOrigin(reason="promotion_winner"),
             native_seed_cache=cache, runner=_fake_runner_factory(),
         )
-        # First candidate for this signature: 3 native + 3 candidate runs.
-        self.assertEqual(first.subprocess_runs, 6)
+        # First candidate for this signature: 1 observed-signature preflight
+        # + 3 native + 3 candidate runs (PA26: the preflight, previously
+        # GLU-only, now also runs for this ordinary MUL_MAT branch).
+        self.assertEqual(first.subprocess_runs, 7)
         self.assertEqual(len(cache), 3)
 
         second = cli.generate_for_candidate(
@@ -761,9 +800,10 @@ class GenerateForCandidateTests(_Base):
             origin=ce.EvidenceOrigin(reason="recovery_alternative"),
             native_seed_cache=cache, runner=_fake_runner_factory(),
         )
-        # Second candidate, same signature, native already cached: 3
-        # candidate runs only -- HTR01's whole cost-amortization point.
-        self.assertEqual(second.subprocess_runs, 3)
+        # Second candidate, same signature, native already cached: 1
+        # preflight + 3 candidate runs -- HTR01's cost-amortization point
+        # covers the native leg only, not the (per-candidate) preflight.
+        self.assertEqual(second.subprocess_runs, 4)
 
     def test_output_digests_are_persisted_on_the_seed_rows(self):
         result = cli.generate_for_candidate(
