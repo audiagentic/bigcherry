@@ -63,9 +63,39 @@ required-state = "validated"
 # carries upstream-ref + retirement in its own patch.toml). Composed into
 # every serving-relevant source below -- a correctness fix is never
 # optional the way a performance enhancement is (PPS03).
-patches = [
-  "1000_rdna4_mmq_q2k_q6k_fix",
-]
+#
+# Membership here is SEMANTIC: correctness/behavior fixes only. Upstream
+# provenance (kind = "upstream-backport") alone does not qualify a patch
+# for this set -- a performance-optimization patch that happens to be an
+# upstream cherry-pick belongs in validated-enhancements once qualified,
+# not here.
+#
+# REJECTED 2026-09-16 (PA35, docs/planning/active/patching-patch-system/PA35.md):
+# 1000_rdna4_mmq_q2k_q6k_fix was mis-slotted here -- its own SUMMARY.md
+# justification is literally the upstream PR's reported performance numbers
+# (Q6_K 1.90x, Q2_K 28.2x at n=512), an optimization claim, not a described
+# correctness/output-mismatch bug. Real hardware evidence (gfx1201/RDNA4,
+# exact-shape backend-ops paired A/B, 5 rounds, correctness PASS both arms
+# both dtypes) measured Q6_K 1.365x [CI95 1.362x-1.367x] (real gain, below
+# claim) and Q2_K 0.959x [CI95 0.954x-0.963x] (real, statistically
+# significant REGRESSION, directly contradicting the claimed 28.2x gain).
+# GPT design-review (dev-gpt-agent, req_24ceb64100cb41dd) confirmed: the
+# combined package cannot remain validated once it contains a measured
+# regression; the two fixes are structurally independent edits, so the
+# correct action is to reject the combined 1000 package (original evidence
+# and claim preserved verbatim in
+# patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
+# patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
+# and extract the independently-real Q6_K gain into a new patch
+# (1006_rdna4_mmq_q6k_codegen_fix, currently untested pending its own
+# fresh Q6-only hardware A/B before promotion -- the combined-package
+# measurement is not reused as sufficient evidence for the new composition
+# identity). No production patch currently exists for the Q2_K change.
+# patch.toml state set validated -> rejected accordingly, following the
+# same append-only-evidence / deliberate-separate-decision pattern as
+# RD73's 2026-09-09 demotion (see [patch-set.validated-enhancements]
+# comment below).
+patches = []
 required-state = "validated"
 
 [patch-set.validated-enhancements]
