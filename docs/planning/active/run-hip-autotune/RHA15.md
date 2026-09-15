@@ -5,29 +5,21 @@ plan: run-hip-autotune
 state: pending
 created-at: '2026-09-15T02:19:11.114837+00:00'
 breadth: ''
-skill: advanced
+skill: null
 created-by: agent
-work: M
-priority: P1
+work: null
+priority: null
 ---
 
-# Correctness-evidence FAIL for every candidate in real tune-campaign runs (not reproducible in isolation)
+# 
 
 ## Description
 
-ROOT CAUSE FOUND AND CONFIRMED (2026-09-15, cross-validated by two independent investigations): `tools/bigcherry/tuning/workflow.py::_stage_correctness_evidence()` (line ~488) builds its own `test-backend-ops` lane with `build_name="tune"` and passes that binary into `hi80.generate_for_row()`. That function internally calls `signature_digest_verification.observed_test_backend_ops_signature_hex()` with `GGML_HIP_DISPATCH_MODE=record` to independently verify the signature hex before trusting any correctness comparison (HI121/HI125 gate). But `config/recipes.toml`'s `[build.tune]` only sets `GGML_HIP_AUTOTUNE=ON` / `GGML_HIP_WORKSPACE_METRICS=ON` -- never `GGML_HIP_AUTOTUNE_RECORD=ON`. The tune-lane binary is therefore NEVER compiled with record capability, so `dispatch_mode="record"` silently falls back to native mode (`ggml_hip_parse_mode: this build cannot record (configure with GGML_HIP_AUTOTUNE_RECORD=ON); using native`) and never writes a dispatch_db -- guaranteed `EvidenceError: signature-verification record-mode run failed ... cannot independently observe the real signature hex` for every row, unconditionally. This explains the 31/31 (now 31/36) consistent failure and why isolated manual repros using `dispatch_mode=replay` (a different code path) never caught it.
 
-The codebase ALREADY has the correctly-built binary for this: `_stage_signature_verifier()` (workflow.py ~345) builds a dedicated `build_name="record"` lane specifically because record-mode capability is required for signature verification -- but that lane is only wired into the separate ingest-time `signature_digest_verifier` hook, never into `_stage_correctness_evidence`'s own `generate_for_row()` calls, which still (wrongly) use the tune-lane binary for the same kind of record-mode preflight probe.
-
-Discovered while trying to produce a fixed promoted-winners corpus for PA26 (docs/planning/active/patching-patch-system/PA26.md). Blocks winners-corpus production project-wide, not just PA26.
 
 ## Steps
 
-1. DONE: land the real orchestration fix (commit 3af8ad2f) so the stage attempts every row instead of aborting on the first failure -- this was necessary to even SEE the real per-row diagnostic.
-2. DONE: real hardware re-run with both the diagnostic hardening (4a1939d0) and the orchestration fix (3af8ad2f) confirmed the exact root cause above via a live Python repro on Brutus reproducing the identical EvidenceError plus the binary's own plaintext stdout confirming no-record-capability.
-3. NEXT: design and land the actual fix -- route `hi80.generate_for_row()`'s internal `_observed_signature_hex` preflight through a record-capable binary (reuse `_stage_signature_verifier()`'s already-built `build_name="record"` lane, e.g. by threading its `binary_ref.path`/`source_root` into `_stage_correctness_evidence` as a separate `verifier_binary`/`verifier_vendor_root` parameter distinct from the main candidate-replay binary, which still needs the tune-lane build to have the tuned candidate registered/resolvable). Consult GPT (session ses_c2892cdae7f14feb) on the exact fix design before implementing, since this touches the shared dispatch signature-matching path used well beyond PA26/RHA15.
-4. Verify the fix with a clean full campaign re-run: correctness-evidence should genuinely PASS for real candidates (not just avoid the EvidenceError).
-5. Once fixed, PA26's corpus-generation and two-arm hardware comparison can proceed.
+
 
 ## Detailed Solution & Technical Design
 
@@ -64,6 +56,20 @@ Standing user authorization (2026-09-15): "start it - always start hardware test
 Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
 
 Investigation chain (chronological): diagnostic hardening (4a1939d0/8ce29dfc) -> cwd ruled out -> orchestration bug found+fixed (3af8ad2f/1ab802be, the whole-stage-abort-on-row-1 bug) -> fresh campaign re-run with both fixes launched on Brutus (pa26-rha15-verify1, artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify1/, 13M) -> real per-row diagnostics obtained (31/36 rows failed with the IDENTICAL EvidenceError) -> root cause confirmed via code inspection + live repro (this update). Full narrative detail from the investigation preserved in this item's change history (the ad-hoc field names from an earlier malformed update are superseded by this consolidated description/steps).
+
+## 2026-09-15 (continued): fix implemented per GPT design review, landed, real re-verification campaign launched
+
+GPT design review (req_f7f5a793c0ce4244) confirmed the root-cause analysis and gave a concrete threading design: keep the tune-lane binary (build.tune, variant-set="workload-max") for the actual native-vs-forced-candidate correctness execution (it must resolve the tuned candidate; build.record's variant-set="inventory" is native-only and cannot), but route the mandatory HI121/HI125 signature-verification preflight through the already-built record-capable `signature_digest_verifier` callable from `_stage_signature_verifier()` instead of letting `_observed_signature_hex()` re-derive its own probe against the tune binary.
+
+**Implemented** (commit `c2ee3a99`, pushed to both remotes):
+- `hi80_generate_correctness_evidence.py`: `generate_for_candidate()`/`generate_for_row()` gain an optional `signature_digest_verifier` parameter; when supplied, it replaces the `_observed_signature_hex()` fallback for both the GLU and ordinary MUL_MAT/MUL_MAT_ID branches. Standalone/direct-call compatibility preserved (falls back to the original probe when omitted).
+- `workflow.py::_stage_correctness_evidence()`: now takes `signature_digest_verifier`, `signature_verifier_result`, and `devices`; passes the verifier into every `generate_for_row()` call, uses a GPU-scoped candidate runner (RHA15 secondary gap: was implicitly depending on physical GPU 0) via the campaign's real device selection, and added a provenance guard -- raises `TuneCampaignError` closed if the tune lane's and verifier lane's `source_slice_id` ever differ, before combining their evidence.
+- `recovery.py::AssignmentExecutor`: gained the same optional `signature_digest_verifier` field, threaded into its own `generate_for_candidate()` call -- lazy recovery-alternative qualification had inherited the identical bug once the mandatory preflight was generalized.
+- `workflow.py::_stage_replay_validate()`/`run_tune_campaign()`: thread the same memoized verifier instance through to recovery.
+
+7 new offline tests added (verifier receives canonical signature, `_observed_signature_hex` fallback skipped when verifier supplied, forced-candidate execution still uses tune binary, source-mismatch fails closed, recovery receives verifier). Full `tools/tests/tuning` suite: 1238 passed, only the same 1 pre-existing unrelated HI104 failure noted throughout this session.
+
+**Re-verification launched**: fast-forwarded `/home/audumla/bc-pa-work` to `c2ee3a99` and launched a fresh real campaign (`pa26-rha15-verify2`, log at `/home/audumla/bc-pa-work/pa26-rha15-verify2.log`) with the fix in place. Result pending -- will report the real per-row outcome once it completes (expected per GPT: the 31 no-dispatch_db failures should disappear; any remaining per-row failures would be genuine RHA15 correctness/signature/candidate issues, not build-capability artifacts).
 
 ## 2026-09-15 (continued): REAL ROOT CAUSE FOUND AND VERIFIED (not HIP_VISIBLE_DEVICES)
 
@@ -123,3 +129,4 @@ This matches the original PA26 failure shape exactly: the campaign's first promo
 - chg_20260915_034425_found-and-verified-the-real-ca_3031
 - 2026-09-15T03:44:28.747732+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-15T03:44:53.844246+00:00 (updated-by): Updated: section:title, work='M', skill='advanced', priority='P1', section:description, section:steps, section:notes
+- 2026-09-15T04:02:55.575012+00:00 (updated-by): Updated: section:title, work=None, skill=None, priority=None, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
