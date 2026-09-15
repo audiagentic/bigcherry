@@ -328,6 +328,13 @@ class ProducerModulesCannotImportCampaignTests(unittest.TestCase):
                             ".validation_campaign"
                         ):
                             offenders.append(str(path))
+                        # `from bigcherry.patch import validation_campaign`:
+                        # the forbidden module is one of the imported NAMES,
+                        # not the dotted `module` prefix itself.
+                        if module in ("bigcherry.patch", "patch") and any(
+                            alias.name == "validation_campaign" for alias in node.names
+                        ):
+                            offenders.append(str(path))
         self.assertEqual(
             offenders, [],
             f"patch-local producer module(s) import validation_campaign.py: {offenders} "
