@@ -33,7 +33,9 @@ class ResolveCliSelectionTests(unittest.TestCase):
         # the enhancement set grows as patches qualify, and pinning a literal
         # here would make every legitimate promotion look like a regression.
         native = selection.resolve_cli_selection(_args(source="bigcherry-native"))
-        self.assertEqual(len(native.patch_ids), 15)  # real framework patch-set
+        # PA27 split 0100_cmake_options into serving (0100) and campaign
+        # tune/record/coverage build (0110) halves -- framework grew 15 -> 16.
+        self.assertEqual(len(native.patch_ids), 16)  # real framework patch-set
         self.assertGreaterEqual(len(sel.patch_ids), len(native.patch_ids))
         self.assertTrue(set(native.patch_ids) <= set(sel.patch_ids))
         self.assertIsNotNone(sel.patch_set_id)

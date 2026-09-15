@@ -65,7 +65,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
                 } for role in ("production", "diagnostic")
             },
             check_results={k: {"status": "pass", "capability": ("apply" if k == "apply" else "build" if k == "build" else "configuration"), "check_id": k, "artifacts": ({"path": "report", "sha256": HEX},)}
-                           for k in ("apply", "build", "coverage-source-selection")},
+                           for k in ("apply", "build", "serving-source-selection")},
             artifact_hashes={"report": HEX}, campaign_workdir=Path(directory),
         )
 
