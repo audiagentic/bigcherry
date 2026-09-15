@@ -65,6 +65,25 @@ Remaining live hypothesis: an order/state-dependent effect across the ~31 sequen
 
 Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
 
+
+## 2026-09-15: real orchestration bug found and fixed (not root-caused by more hardware repro)
+
+Re-read the actual call path (tools/bigcherry/hi80_generate_correctness_evidence.py and tools/bigcherry/tuning/workflow.py) instead of running another hardware repro pass, and found the real bug via code inspection, confirmed offline (a standalone script replicating the exact loop shape showed an EvidenceError on row1 aborted before row2/row3 were reached under the pre-fix code) and via dev-gpt-agent design review (session ses_c2892cdae7f14feb, req_7e5ae686e055404e):
+
+`generate_for_row()`'s own docstring: "raises CliError, scm.SignatureMappingError or ce.EvidenceError on failure -- the caller decides whether that is fatal to the whole run." Two callers exist -- the standalone CLI's `main()` already catches SignatureMappingError (skip) and (CorrectnessGateError, EvidenceError, CliError) (count as failed, continue), so every row gets an independent attempt. `workflow.py::_stage_correctness_evidence()` -- the function the REAL `bigcherry tune-campaign` actually calls -- only caught SignatureMappingError. An EvidenceError/CliError on the FIRST row processed propagated straight out and aborted the ENTIRE stage before any subsequent row was even attempted.
+
+This matches the original PA26 failure shape exactly: the campaign's first promotion pass correctly classified 31 rows as needing correctness evidence, the stage was invoked, and it most likely aborted on the first problematic row it reached -- reported as "FAILED at the correctness-evidence stage", not 31 independent failures. The manual isolated repro from an earlier pass ("the top provisional winner" from promoted.jsonl) may simply never have tested the row that actually raised.
+
+**Fixed** (commit `3af8ad2f`, pushed both remotes): centralized `hi80.ROW_FAILURE_EXCEPTIONS`, `_stage_correctness_evidence` now attempts every row and raises the existing `TuneCampaignError` only after a full pass if any failed (with per-row dispatch+candidate identity in the message), matching the CLI's own already-established per-row-tolerant design. An unclassified exception still propagates immediately (never widened to generic Exception, per GPT's explicit instruction). 7 new tests; full tools/tests/tuning suite 1230 tests, only the same 1 pre-existing unrelated failure (HI104) noted throughout this session.
+
+**This fixes the confirmed orchestration bug. It does NOT explain WHY the original first-row EvidenceError/CliError fired** -- per GPT: "This fixes the confirmed orchestration bug without claiming it fixes the underlying candidate/signature failure." Next step (per GPT and this item's own step 1): a real tune-campaign rerun, now with BOTH this fix and the earlier diagnostic hardening (4a1939d0/8ce29dfc) in place -- the campaign should now report the REAL per-row reason for any genuine failures instead of a whole-stage abort, finally letting root-cause analysis proceed with real per-row evidence. Not yet attempted in this pass (a fresh hardware pass is the natural next step, not bundled into this fix-landing pass).
+
 ## Change Log
 
 - 2026-09-15T02:19:11.114837+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260915_023104_fixed-a-real-bug-where-a-singl_7530
+- 2026-09-15T02:31:07.679293+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-15T02:31:25.750063+00:00 (updated-by): Updated: section:notes
