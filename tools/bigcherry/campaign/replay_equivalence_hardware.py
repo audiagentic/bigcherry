@@ -666,6 +666,125 @@ class ArmRuntimeResult:
 RuntimeRunner = Callable[[CampaignLaneResult, offline.WinnersCorpus], ArmRuntimeResult]
 
 
+# GPT design review (req_84d3b6a9af934170): the RHA15-verify2 corpus was
+# recorded/tuned/exported by a DIFFERENT build (the tune-lane's own
+# manifest_hash) than either PA26 diagnostic arm -- by PA26's own design,
+# composition legitimately changes the generated manifest identity, so
+# requiring manifest_hash equality would make this cross-build comparison
+# impossible by construction. GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0
+# (real-hardware-validated in HI130/HI131, hip-autotune-replay.cpp) is the
+# correct PA26-local mechanism to let a genuinely stale-by-manifest-hash
+# entry still resolve -- but GPT flagged the missing safety boundary
+# disabling revision matching creates: PA26 must independently prove the
+# cached winner names still mean the same thing in the binaries under test,
+# not merely that the two target arms agree with each other (the existing
+# build-identity gate proves only the latter). This function is that proof.
+_CORPUS_CANDIDATE_SEMANTIC_FIELDS = (
+    "stable_name", "family", "source_class", "implementation_version",
+    "architectures", "config", "graph_safe", "deterministic",
+)
+
+
+def require_corpus_candidate_semantics(
+    corpus: offline.WinnersCorpus,
+    *,
+    producer_manifest: dict[str, Any],
+    target_manifest: dict[str, Any],
+    target_label: str,
+    runtime_architecture: str,
+) -> None:
+    """Fail closed unless every winner the corpus actually references means
+    the same thing in ``target_manifest`` as it did in ``producer_manifest``
+    (the manifest the corpus's own dispatch cache was exported/rebound
+    against -- see ``tune-campaign-receipt.json``'s ``replay.manifest_path``
+    for the real corpus this was verified against).
+
+    - Every corpus entry must have ``transform_id == 0`` -- GPT: "Nonzero
+      transforms still require freshness; do not weaken that." A transformed
+      entry is not covered by this proof and must keep failing the revision-
+      match gate closed.
+    - Every corpus winner name must exist in BOTH manifests.
+    - Every semantic field GPT named must match exactly, EXCEPT
+      ``architectures``: PA26 always builds a single-target catalog
+      (``architectures=(runtime_architecture,)``) while the corpus producer
+      build may have compiled a wider multi-arch catalog for the same
+      candidate -- confirmed via real evidence (this is, in fact, the ONLY
+      field that ever differs for the real RHA15-verify2 corpus against
+      PA26's real diagnostic-arm manifests). Requiring exact list equality
+      would fail closed on that benign, understood difference, so
+      ``architectures`` is instead validated the same way
+      ``can_execute``'s own runtime check works: the actual hardware
+      architecture this comparison runs on must be declared in BOTH lists.
+      ``implementation_digest``/``implementation_source_files`` are not
+      compared here for the same reason PA26's build-identity gate already
+      excludes them (raw per-arm source-byte digests, not candidate
+      semantics).
+    """
+    by_dispatch = {entry["dispatch"]: entry for entry in corpus.entries}
+    transformed = sorted(
+        dispatch for dispatch, entry in by_dispatch.items()
+        if entry.get("transform_id", 0) != 0
+    )
+    if transformed:
+        raise ReplayEquivalenceHardwareError(
+            "corpus contains transformed entries (transform_id != 0) for "
+            f"dispatch(es) {transformed} -- GGML_HIP_DISPATCH_REPLAY_"
+            "REVISION_MATCH=0 must not be relied on for a transformed "
+            "entry's freshness; PA26 cannot safely relax revision-match "
+            "while any such entry exists in the fixed corpus"
+        )
+
+    producer_by_name = {c["stable_name"]: c for c in producer_manifest.get("candidates", ())}
+    target_by_name = {c["stable_name"]: c for c in target_manifest.get("candidates", ())}
+    winners = sorted({entry["winner"] for entry in corpus.entries})
+
+    missing_producer = [w for w in winners if w not in producer_by_name]
+    if missing_producer:
+        raise ReplayEquivalenceHardwareError(
+            f"corpus winner(s) {missing_producer} not found in the corpus "
+            "producer's own manifest -- cannot prove candidate-semantic "
+            "compatibility"
+        )
+    missing_target = [w for w in winners if w not in target_by_name]
+    if missing_target:
+        raise ReplayEquivalenceHardwareError(
+            f"{target_label}: corpus winner(s) {missing_target} not found "
+            "in this arm's own generated manifest -- a cache entry naming "
+            "an unregistered candidate on this build"
+        )
+
+    mismatches: list[str] = []
+    for winner in winners:
+        producer_candidate = producer_by_name[winner]
+        target_candidate = target_by_name[winner]
+        for field in _CORPUS_CANDIDATE_SEMANTIC_FIELDS:
+            producer_value = producer_candidate.get(field)
+            target_value = target_candidate.get(field)
+            if field == "architectures":
+                producer_archs = producer_value if isinstance(producer_value, list) else []
+                target_archs = target_value if isinstance(target_value, list) else []
+                if (
+                    runtime_architecture not in producer_archs
+                    or runtime_architecture not in target_archs
+                ):
+                    mismatches.append(
+                        f"{winner}.architectures: runtime arch "
+                        f"{runtime_architecture!r} not declared in both "
+                        f"(producer={producer_archs}, target={target_archs})"
+                    )
+                continue
+            if producer_value != target_value:
+                mismatches.append(
+                    f"{winner}.{field}: producer={producer_value!r} vs "
+                    f"target={target_value!r}"
+                )
+    if mismatches:
+        raise ReplayEquivalenceHardwareError(
+            f"{target_label}: corpus winner candidate semantics diverge from "
+            f"the corpus producer's own manifest -- {mismatches}"
+        )
+
+
 def real_hardware_runtime_runner(
     result: CampaignLaneResult, corpus: offline.WinnersCorpus
 ) -> ArmRuntimeResult:
@@ -753,6 +872,22 @@ def make_real_hardware_runtime_runner(
             "GGML_HIP_DISPATCH_CACHE": str(winners_cache_path),
             "GGML_HIP_REPLAY_DIAGNOSTICS": "1",
             "GGML_HIP_DISPATCH_HIT_LOG": str(hit_log_path),
+            # GPT design review (req_84d3b6a9af934170): PA26 replays a corpus
+            # recorded/exported against the RHA15-verify2 tune-lane's own
+            # manifest_hash, not this (diagnostic control/candidate) build's
+            # -- by PA26's own design, composition legitimately changes the
+            # generated manifest identity, so the default exact
+            # source_revision+manifest_hash freshness gate
+            # (hip-autotune-replay.cpp's g_require_revision_match) rejects
+            # every entry as stale here. "0" is the real-hardware-validated
+            # cross-build fallback (HI130/HI131) -- PA26-local ONLY (never a
+            # production/campaign default), and only safe because
+            # build_hardware_receipt separately proves
+            # (require_corpus_candidate_semantics) that every corpus
+            # winner's candidate semantics still match between the corpus
+            # producer and this target build before this runner is ever
+            # invoked.
+            "GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH": "0",
         }
         runner = ServerRunner(
             binary=result.binary_ref.path, model=model_path, extra_args=common_args,
@@ -932,6 +1067,7 @@ def build_hardware_receipt(
     run_id_prefix: str,
     diagnostic_control_spec: CampaignLaneExecutionSpec | None = None,
     diagnostic_candidate_spec: CampaignLaneExecutionSpec | None = None,
+    corpus_producer_manifest_path: Path | None = None,
     control_source: str = "bigcherry-native",
     lane_executor: LaneExecutor = execute_campaign_lane,
     runtime_runner: RuntimeRunner = real_hardware_runtime_runner,
@@ -1051,6 +1187,56 @@ def build_hardware_receipt(
             "candidate": dataclasses.asdict(diag_delta.candidate),
         }
         runtime_control_result, runtime_candidate_result = diag_control_result, diag_candidate_result
+
+        # GPT design review (req_84d3b6a9af934170): the missing safety
+        # boundary that makes GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0 safe
+        # here -- prove every corpus winner still means the same candidate
+        # in each diagnostic arm as it did in the corpus's own producer
+        # build, BEFORE any runtime execution against a stale-by-manifest-
+        # hash cache is trusted.
+        if corpus_producer_manifest_path is None:
+            raise ReplayEquivalenceHardwareError(
+                "a non-default runtime_runner requires corpus_producer_"
+                "manifest_path (the manifest the fixed corpus's dispatch "
+                "cache was exported/rebound against) to prove cross-build "
+                "candidate-semantic compatibility before relaxing replay "
+                "revision-match"
+            )
+        producer_manifest = _read_json_ref(corpus_producer_manifest_path)
+        if producer_manifest is None:
+            raise ReplayEquivalenceHardwareError(
+                f"cannot read corpus_producer_manifest_path "
+                f"{corpus_producer_manifest_path!r}"
+            )
+        runtime_architecture = diagnostic_control_spec.architectures[0]
+        if len(diagnostic_control_spec.architectures) != 1 or (
+            diagnostic_candidate_spec.architectures != diagnostic_control_spec.architectures
+        ):
+            raise ReplayEquivalenceHardwareError(
+                "PA26 hardware runtime comparison requires both diagnostic "
+                "arms built for exactly one, shared runtime architecture -- "
+                f"got control={diagnostic_control_spec.architectures!r} "
+                f"candidate={diagnostic_candidate_spec.architectures!r}"
+            )
+        for label, lane_result in (
+            ("control", diag_control_result), ("candidate", diag_candidate_result),
+        ):
+            target_manifest = (
+                _read_json_ref(Path(lane_result.manifest_ref.path))
+                if lane_result.manifest_ref else None
+            )
+            if target_manifest is None:
+                raise ReplayEquivalenceHardwareError(
+                    f"{label}: diagnostic arm produced no readable manifest_ref "
+                    "-- cannot prove candidate-semantic compatibility"
+                )
+            require_corpus_candidate_semantics(
+                corpus,
+                producer_manifest=producer_manifest,
+                target_manifest=target_manifest,
+                target_label=label,
+                runtime_architecture=runtime_architecture,
+            )
 
     try:
         control_runtime = runtime_runner(runtime_control_result, corpus)
