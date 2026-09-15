@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "evidence_role": "production",
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "server_args": ["-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096", "-np", "1"],
+  "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1", "LLAMA_SERVER_ENABLE_SHUTDOWN": "1"},
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": ["gfx1100", "gfx1100"],
+    "locators": ["0000:03:00.0", "0000:06:00.0"]
+  },
+  "bench_configs": "default",
+  "required_metrics": ["pp512_tps", "tg128_tps"],
+  "repetitions": 1,
+  "arms": [
+    {"name": "bigcherry-native", "mode": "native", "binary": "/home/audumla/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/bin/llama-server"},
+    {"name": "bigcherry-serving-base", "mode": "native", "binary": "/home/audumla/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/bin/llama-server", "shutdown_method": "sigint"}
+  ]
+}
