@@ -776,7 +776,7 @@ def make_real_hardware_runtime_runner(
         except ServerError:
             process_success = False
         shutdown = runner.last_shutdown
-        clean_shutdown = bool(shutdown and shutdown.clean())
+        clean_shutdown = bool(shutdown and shutdown.clean)
         hits = execution_audit.load_hit_log(hit_log_path if hit_log_path.is_file() else None)
         entries = tuple(sorted(hits.values(), key=lambda h: h.dispatch))
         return ArmRuntimeResult(
