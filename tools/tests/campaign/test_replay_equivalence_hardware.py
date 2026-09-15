@@ -24,6 +24,7 @@ from bigcherry.campaign import replay_equivalence as offline  # noqa: E402
 from bigcherry.campaign import replay_equivalence_hardware as hw  # noqa: E402
 from bigcherry.campaign.lane import CampaignLaneResult  # noqa: E402
 from bigcherry.tuning import replay as replay_module  # noqa: E402
+from bigcherry.tuning import execution_audit  # noqa: E402
 
 _RECIPES_PATH = paths.RECIPES
 
@@ -126,19 +127,29 @@ def _fake_lane_executor(results_by_source: dict[str, CampaignLaneResult]):
     return executor
 
 
-def _entry(**overrides) -> hw.RuntimeEntryResult:
+def _hit(**overrides) -> execution_audit.HitRecord:
+    base = dict(
+        dispatch="d1",
+        signature="s1",
+        candidate="w1",
+        from_cache=True,
+        recorded_calls=1,
+    )
+    base.update(overrides)
+    return execution_audit.HitRecord(**base)
+
+
+def _expectation(**overrides) -> hw.ReplayExpectation:
     base = dict(
         dispatch="d1",
         signature="s1",
         winner="w1",
-        config_binding="cfg-digest-1",
         transform_id=0,
         match_kind=0,
-        call_count=1,
-        outcome="hit",
+        manifest_hash="mh-1",
     )
     base.update(overrides)
-    return hw.RuntimeEntryResult(**base)
+    return hw.ReplayExpectation(**base)
 
 
 def _arm(**overrides) -> hw.ArmRuntimeResult:
@@ -150,7 +161,7 @@ def _arm(**overrides) -> hw.ArmRuntimeResult:
         model_hash="model-1",
         gpu_identity="gpu-1",
         runtime_args_digest="args-1",
-        entries=(_entry(),),
+        entries=(_hit(),),
     )
     base.update(overrides)
     return hw.ArmRuntimeResult(**base)
@@ -423,10 +434,10 @@ class ExecuteTwoArmBuildTests(unittest.TestCase):
 
 
 class CompareRuntimeResultsTests(unittest.TestCase):
-    def _compare(self, control, candidate, expected=frozenset({"d1"})):
-        return hw.compare_runtime_results(
-            control, candidate, expected_dispatches=expected
-        )
+    def _compare(self, control, candidate, expected=None):
+        if expected is None:
+            expected = {"d1": _expectation()}
+        return hw.compare_runtime_results(control, candidate, expected=expected)
 
     def test_identical_arms_are_equivalent(self):
         comparison = self._compare(_arm(), _arm())
@@ -437,7 +448,7 @@ class CompareRuntimeResultsTests(unittest.TestCase):
         """The coverage gap GPT flagged: empty vs empty must never read as
         equivalent when dispatches were actually expected."""
         empty = _arm(entries=())
-        comparison = self._compare(empty, empty, expected=frozenset({"d1"}))
+        comparison = self._compare(empty, empty, expected={"d1": _expectation()})
         self.assertFalse(comparison.equivalent)
         reasons = {d.get("reason") for d in comparison.differences}
         self.assertIn("missing", reasons)
@@ -468,42 +479,45 @@ class CompareRuntimeResultsTests(unittest.TestCase):
 
     def test_negative_winner_or_signature_mismatch_is_detected(self):
         comparison = self._compare(
-            _arm(entries=(_entry(winner="w1"),)),
-            _arm(entries=(_entry(winner="w2"),)),
+            _arm(entries=(_hit(candidate="w1"),)),
+            _arm(entries=(_hit(candidate="w2"),)),
         )
         self.assertFalse(comparison.equivalent)
 
-    def test_negative_call_count_mismatch_is_detected(self):
-        """Changed execution multiplicity (e.g. an extra fallback
-        invocation) must be visible, not silently dropped."""
+    def test_call_count_mismatch_alone_is_not_detected(self):
+        """recorded_calls is NOT authoritative (L1/L2 warm-cache bypass) --
+        GPT design correction: it must be excluded from equality."""
         comparison = self._compare(
-            _arm(entries=(_entry(call_count=1),)),
-            _arm(entries=(_entry(call_count=2),)),
+            _arm(entries=(_hit(recorded_calls=1),)),
+            _arm(entries=(_hit(recorded_calls=99),)),
         )
-        self.assertFalse(comparison.equivalent)
+        self.assertTrue(comparison.equivalent)
 
-    def test_negative_outcome_mismatch_is_detected(self):
+    def test_negative_from_cache_mismatch_is_detected(self):
         comparison = self._compare(
-            _arm(entries=(_entry(outcome="hit"),)),
-            _arm(entries=(_entry(outcome="fallback"),)),
+            _arm(entries=(_hit(from_cache=True),)),
+            _arm(entries=(_hit(from_cache=False),)),
         )
         self.assertFalse(comparison.equivalent)
 
     def test_negative_missing_entry_in_one_arm_is_detected(self):
-        control = _arm(entries=(_entry(dispatch="d1"), _entry(dispatch="d2")))
-        candidate = _arm(entries=(_entry(dispatch="d1"),))
-        comparison = self._compare(control, candidate, expected=frozenset({"d1", "d2"}))
+        control = _arm(entries=(_hit(dispatch="d1"), _hit(dispatch="d2")))
+        candidate = _arm(entries=(_hit(dispatch="d1"),))
+        expected = {"d1": _expectation(dispatch="d1"), "d2": _expectation(dispatch="d2")}
+        comparison = self._compare(control, candidate, expected=expected)
         self.assertFalse(comparison.equivalent)
         reasons = {d.get("reason") for d in comparison.differences}
-        self.assertTrue({"missing", "missing-in-candidate"} & reasons)
+        self.assertIn("missing", reasons)
 
-    def test_negative_extra_entry_in_candidate_is_detected(self):
-        control = _arm(entries=(_entry(dispatch="d1"),))
+    def test_extra_entry_beyond_expected_is_not_detected(self):
+        """GPT design correction: extra/fallback dispatches in the hit log
+        beyond the expected corpus are NOT a PA26 failure."""
+        control = _arm(entries=(_hit(dispatch="d1"),))
         candidate = _arm(
-            entries=(_entry(dispatch="d1"), _entry(dispatch="d2"))
+            entries=(_hit(dispatch="d1"), _hit(dispatch="d2"))
         )
-        comparison = self._compare(control, candidate, expected=frozenset({"d1"}))
-        self.assertFalse(comparison.equivalent)
+        comparison = self._compare(control, candidate, expected={"d1": _expectation()})
+        self.assertTrue(comparison.equivalent)
 
 
 class RealHardwareRuntimeRunnerTests(unittest.TestCase):
@@ -545,8 +559,19 @@ class BuildHardwareReceiptTests(unittest.TestCase):
             offline.SERVING_CORE_SOURCE_NAME: _fake_result(
                 source_name=offline.SERVING_CORE_SOURCE_NAME
             ),
+            offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME
+            ),
         }
         return control_spec, candidate_spec, results_by_source
+
+    def _diagnostic_specs(self):
+        return hw.build_diagnostic_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
 
     def test_default_runner_yields_not_evaluated_receipt_with_real_build_identity(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -586,6 +611,8 @@ class BuildHardwareReceiptTests(unittest.TestCase):
             cache_path = self._cache_path(directory)
             control_spec, candidate_spec, results_by_source = self._specs_and_results()
 
+            diagnostic_control_spec, diagnostic_candidate_spec = self._diagnostic_specs()
+
             def broken_runner(result, corpus):
                 raise ValueError("parser bug")
 
@@ -599,23 +626,52 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                     store=SimpleNamespace(),
                     control_spec=control_spec,
                     candidate_spec=candidate_spec,
+                    diagnostic_control_spec=diagnostic_control_spec,
+                    diagnostic_candidate_spec=diagnostic_candidate_spec,
                     run_id_prefix="pa26-test",
                     lane_executor=_fake_lane_executor(results_by_source),
                     runtime_runner=broken_runner,
+                )
+
+    def test_non_default_runner_without_diagnostic_specs_fails_closed(self):
+        """A non-default runtime_runner supplied without the diagnostic
+        pair specs must fail closed, never silently run against the
+        (diagnostics-free) production pair."""
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = self._cache_path(directory)
+            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+
+            def matching_runner(result, corpus):
+                return _arm(entries=())
+
+            with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+                hw.build_hardware_receipt(
+                    self.cfg,
+                    self.catalog,
+                    cache_path,
+                    bigcherry_revision="0" * 40,
+                    context=SimpleNamespace(),
+                    store=SimpleNamespace(),
+                    control_spec=control_spec,
+                    candidate_spec=candidate_spec,
+                    run_id_prefix="pa26-test",
+                    lane_executor=_fake_lane_executor(results_by_source),
+                    runtime_runner=matching_runner,
                 )
 
     def test_injected_runner_producing_matching_results_yields_evaluated_equivalent(self):
         with tempfile.TemporaryDirectory() as directory:
             cache_path = self._cache_path(directory)
             control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            diagnostic_control_spec, diagnostic_candidate_spec = self._diagnostic_specs()
 
             def matching_runner(result, corpus):
                 return _arm(
                     entries=tuple(
-                        _entry(
+                        _hit(
                             dispatch=entry["dispatch"],
                             signature=entry["signature"],
-                            winner=entry["winner"],
+                            candidate=entry["winner"],
                         )
                         for entry in corpus.entries
                     )
@@ -630,6 +686,8 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                 store=SimpleNamespace(),
                 control_spec=control_spec,
                 candidate_spec=candidate_spec,
+                diagnostic_control_spec=diagnostic_control_spec,
+                diagnostic_candidate_spec=diagnostic_candidate_spec,
                 run_id_prefix="pa26-test",
                 lane_executor=_fake_lane_executor(results_by_source),
                 runtime_runner=matching_runner,
@@ -645,6 +703,7 @@ class BuildHardwareReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             cache_path = self._cache_path(directory)
             control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            diagnostic_control_spec, diagnostic_candidate_spec = self._diagnostic_specs()
             call_state = {"n": 0}
 
             def divergent_runner(result, corpus):
@@ -653,10 +712,10 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                 return _arm(
                     output_digest=digest,
                     entries=tuple(
-                        _entry(
+                        _hit(
                             dispatch=entry["dispatch"],
                             signature=entry["signature"],
-                            winner=entry["winner"],
+                            candidate=entry["winner"],
                         )
                         for entry in corpus.entries
                     ),
@@ -671,6 +730,8 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                 store=SimpleNamespace(),
                 control_spec=control_spec,
                 candidate_spec=candidate_spec,
+                diagnostic_control_spec=diagnostic_control_spec,
+                diagnostic_candidate_spec=diagnostic_candidate_spec,
                 run_id_prefix="pa26-test",
                 lane_executor=_fake_lane_executor(results_by_source),
                 runtime_runner=divergent_runner,

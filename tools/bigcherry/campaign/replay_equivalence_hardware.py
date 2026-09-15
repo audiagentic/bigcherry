@@ -68,6 +68,7 @@ from ..core.artifacts import ArtifactStore
 from ..core.context import ProjectContext
 from ..core import config
 from ..patch import patchset
+from ..tuning.execution_audit import HitRecord
 from . import replay_equivalence as offline
 from .lane import CampaignLaneExecutionSpec, CampaignLaneResult, execute_campaign_lane
 
@@ -305,31 +306,32 @@ def execute_two_arm_build(
 
 
 @dataclasses.dataclass(frozen=True)
-class RuntimeEntryResult:
-    """One winner-corpus entry's real resolved replay outcome. Per-dispatch
-    fields only -- arm-wide facts (process success, output, correctness,
-    model/GPU identity) live on ``ArmRuntimeResult`` instead, since they are
-    not naturally per-dispatch."""
+class ReplayExpectation:
+    """One winner-corpus entry's STATIC, expected identity -- from the
+    frozen cache itself (``tuning.replay.read_cache``), never from a live
+    observation. GPT design correction (req_a6a387bdefbc474c): the real
+    ``GGML_HIP_DISPATCH_HIT_LOG`` JSONL format does not carry
+    ``config_binding``/``transform_id``/``match_kind``/``outcome`` at all --
+    those belong on the corpus's own static expectation, not on a runtime
+    observation."""
 
     dispatch: str
     signature: str
     winner: str
-    #: A canonical digest of the resolved candidate descriptor/config
-    #: (including implementation identity) -- not a free-form label.
-    config_binding: str
     transform_id: int
     match_kind: int
-    #: Aggregated invocation count for this dispatch digest, from the
-    #: hit-log's own call-count field -- a changed execution multiplicity
-    #: (e.g. a fallback path invoked more or fewer times) must be visible.
-    call_count: int
-    #: One of "hit" / "miss" / "fallback" / "error".
-    outcome: str
+    manifest_hash: str
 
 
 @dataclasses.dataclass(frozen=True)
 class ArmRuntimeResult:
-    """One arm's complete real runtime observation."""
+    """One arm's complete real runtime observation.
+
+    ``entries`` reuses ``tuning.execution_audit.HitRecord`` directly (GPT
+    design correction) rather than inventing a second per-dispatch type --
+    it is exactly the shape ``execution_audit.load_hit_log`` already parses
+    from a real ``GGML_HIP_DISPATCH_HIT_LOG`` JSONL: ``{dispatch,
+    signature, candidate, from_cache, calls}``."""
 
     process_success: bool
     clean_shutdown: bool
@@ -339,7 +341,7 @@ class ArmRuntimeResult:
     gpu_identity: str
     #: Canonical digest of the resolved runtime args + environment.
     runtime_args_digest: str
-    entries: tuple[RuntimeEntryResult, ...]
+    entries: tuple[HitRecord, ...]
 
 
 #: Real signature: (built lane result, fixed corpus) -> this arm's full
@@ -378,6 +380,105 @@ def real_hardware_runtime_runner(
     )
 
 
+def make_real_hardware_runtime_runner(
+    *,
+    model_path: Path,
+    devices: str,
+    runtime_profile: Any,
+    workdir: Path,
+    winners_cache_path: Path,
+) -> RuntimeRunner:
+    """The real implementation of ``real_hardware_runtime_runner``'s own
+    docstring, bound to a concrete model/devices/runtime-profile/workdir/
+    winners-cache -- the bare two-argument ``RuntimeRunner`` shape has no
+    room to carry that configuration, so it is supplied here via closure
+    and the resulting callable is passed as ``runtime_runner=`` to
+    ``build_hardware_receipt`` (exactly the mechanism the stub's own
+    docstring names). This process is expected to run ON the real hardware
+    host (e.g. invoked over SSH on Brutus, the same way ``bigcherry
+    tune-campaign`` itself is invoked) -- it launches the server locally via
+    ``ServerRunner``, exactly like ``tuning.workflow._stage_replay_validate``
+    already does for the in-campaign behavioral gate.
+
+    Per GPT's design correction (req_a6a387bdefbc474c): the lane result
+    passed in here MUST be from the DIAGNOSTIC pair (candidate = serving-core
+    + 0810_replay_hit_diagnostics, built with replay-diagnostic's
+    diagnostics-enabled options) -- the production pair is diagnostics-free
+    and cannot emit a hit log at all. ``build_hardware_receipt`` enforces
+    this by building and passing the diagnostic pair's results to whichever
+    runner is supplied.
+    """
+    from ..tuning import execution_audit
+    from ..tuning import workflow as workflow_mod
+    from ..tuning.server_runner import ServerError, ServerRunner
+    import hashlib
+    import json
+
+    model_digest = hashlib.sha256(Path(model_path).read_bytes()).hexdigest()
+    env_unset = (
+        "GGML_HIP_FORCE_CANDIDATE", "GGML_HIP_FORCE_CANDIDATE_STRICT",
+        "GGML_HIP_DISPATCH_DB", "GGML_HIP_DISPATCH_CACHE",
+        "GGML_HIP_DISPATCH_COVERAGE", "GGML_HIP_DISPATCH_HIT_LOG",
+    )
+    common_args = (
+        "-ngl", "99", "-c", str(runtime_profile.production_context),
+        *runtime_profile.server_args,
+    )
+
+    def _runner(result: CampaignLaneResult, corpus: offline.WinnersCorpus) -> ArmRuntimeResult:
+        tag = f"{result.source_slice_id[:16]}-{result.build_plan.build_plan_id[:12]}"
+        hit_log_path = Path(workdir) / f"pa26-hit-log-{tag}.jsonl"
+        log_path = Path(workdir) / f"pa26-server-{tag}.log"
+        if hit_log_path.exists():
+            hit_log_path.unlink()
+        env = {
+            "HIP_VISIBLE_DEVICES": devices,
+            "GGML_HIP_DISPATCH_MODE": "replay",
+            "GGML_HIP_DISPATCH_CACHE": str(winners_cache_path),
+            "GGML_HIP_REPLAY_DIAGNOSTICS": "1",
+            "GGML_HIP_DISPATCH_HIT_LOG": str(hit_log_path),
+        }
+        runner = ServerRunner(
+            binary=result.binary_ref.path, model=model_path, extra_args=common_args,
+            env_overrides=env, env_unset=env_unset, log_path=log_path,
+            shutdown_method="sigint",
+        )
+        process_success = True
+        output_digest: str | None = None
+        try:
+            with runner:
+                workflow_mod.run_tune_signature_workload(runner, runtime_profile)
+                final = runner.run_completion(
+                    "Explain how a compass works.", n_predict=64
+                )
+                # Digest the generated content only -- not the full response
+                # (timings/other volatile fields would make two otherwise-
+                # identical arms compare unequal for no real reason).
+                output_digest = hashlib.sha256(
+                    json.dumps(final.get("content", final), sort_keys=True).encode("utf-8")
+                ).hexdigest()
+        except ServerError:
+            process_success = False
+        shutdown = runner.last_shutdown
+        clean_shutdown = bool(shutdown and shutdown.clean())
+        hits = execution_audit.load_hit_log(hit_log_path if hit_log_path.is_file() else None)
+        entries = tuple(sorted(hits.values(), key=lambda h: h.dispatch))
+        return ArmRuntimeResult(
+            process_success=process_success,
+            clean_shutdown=clean_shutdown,
+            output_digest=output_digest,
+            correctness_status="pass" if process_success else "fail",
+            model_hash=model_digest,
+            gpu_identity=devices,
+            runtime_args_digest=hashlib.sha256(
+                repr(sorted(env.items())).encode("utf-8")
+            ).hexdigest(),
+            entries=entries,
+        )
+
+    return _runner
+
+
 @dataclasses.dataclass(frozen=True)
 class RuntimeComparison:
     equivalent: bool
@@ -399,15 +500,22 @@ def compare_runtime_results(
     control: ArmRuntimeResult,
     candidate: ArmRuntimeResult,
     *,
-    expected_dispatches: frozenset[str],
+    expected: dict[str, ReplayExpectation],
 ) -> RuntimeComparison:
-    """Exact equality, arm-level AND per-entry (GPT design review: "Require
-    exact equality; do not normalize away ordering or identities").
+    """Arm-level exact equality, plus per-entry comparison against the
+    frozen corpus's own static ``ReplayExpectation`` (GPT design correction,
+    req_a6a387bdefbc474c):
 
-    ``expected_dispatches`` (derived from the frozen winner corpus) closes
-    the coverage gap GPT flagged: two empty per-dispatch result sets can no
-    longer read as equivalent -- each arm's OBSERVED dispatch set must
-    exactly equal the expected set before any per-entry comparison counts.
+    - Coverage is ``expected <= observed`` per arm, NOT exact-set equality
+      -- extra/fallback dispatches appearing in the hit log are not a PA26
+      failure (GPT: "extra/fallback dispatches in the hit log are NOT a
+      PA26 failure"), only a MISSING expected dispatch is.
+    - Per-entry comparison excludes ``recorded_calls`` (L1/L2 warm-cache
+      bypass makes it a non-authoritative counter per
+      ``execution_audit.py``'s own documented caveat) -- compares
+      ``from_cache``, ``candidate == expected.winner``, and ``signature``
+      only, for both arms against the SAME static expectation and against
+      each other.
     """
     differences: list[dict[str, Any]] = []
 
@@ -424,49 +532,62 @@ def compare_runtime_results(
                 }
             )
 
-    control_dispatches = frozenset(entry.dispatch for entry in control.entries)
-    candidate_dispatches = frozenset(entry.dispatch for entry in candidate.entries)
+    control_by_dispatch = {hit.dispatch: hit for hit in control.entries}
+    candidate_by_dispatch = {hit.dispatch: hit for hit in candidate.entries}
     for label, observed in (
-        ("control", control_dispatches),
-        ("candidate", candidate_dispatches),
+        ("control", control_by_dispatch),
+        ("candidate", candidate_by_dispatch),
     ):
-        missing = expected_dispatches - observed
-        extra = observed - expected_dispatches
+        missing = set(expected) - set(observed)
         if missing:
             differences.append(
                 {"scope": "coverage", "arm": label, "reason": "missing", "dispatches": sorted(missing)}
             )
-        if extra:
-            differences.append(
-                {"scope": "coverage", "arm": label, "reason": "extra", "dispatches": sorted(extra)}
-            )
 
-    control_by_dispatch = {entry.dispatch: entry for entry in control.entries}
-    candidate_by_dispatch = {entry.dispatch: entry for entry in candidate.entries}
-    for dispatch in sorted(set(control_by_dispatch) | set(candidate_by_dispatch)):
-        control_entry = control_by_dispatch.get(dispatch)
-        candidate_entry = candidate_by_dispatch.get(dispatch)
-        if control_entry is None or candidate_entry is None:
-            differences.append(
-                {
-                    "scope": "entry",
-                    "dispatch": dispatch,
-                    "reason": "missing-in-control"
-                    if control_entry is None
-                    else "missing-in-candidate",
-                }
-            )
+    for dispatch, exp in sorted(expected.items()):
+        control_hit = control_by_dispatch.get(dispatch)
+        candidate_hit = candidate_by_dispatch.get(dispatch)
+        if control_hit is None or candidate_hit is None:
+            continue  # already reported as a coverage "missing" difference
+        for label, hit in (("control", control_hit), ("candidate", candidate_hit)):
+            if not hit.from_cache or hit.candidate != exp.winner or hit.signature != exp.signature:
+                differences.append(
+                    {
+                        "scope": "entry",
+                        "dispatch": dispatch,
+                        "arm": label,
+                        "reason": "mismatch",
+                        "expected": {"winner": exp.winner, "signature": exp.signature},
+                        "observed": {
+                            "from_cache": hit.from_cache,
+                            "candidate": hit.candidate,
+                            "signature": hit.signature,
+                        },
+                    }
+                )
+        if (
+            control_hit.from_cache == candidate_hit.from_cache
+            and control_hit.candidate == candidate_hit.candidate
+            and control_hit.signature == candidate_hit.signature
+        ):
             continue
-        if control_entry != candidate_entry:
-            differences.append(
-                {
-                    "scope": "entry",
-                    "dispatch": dispatch,
-                    "reason": "mismatch",
-                    "control": dataclasses.asdict(control_entry),
-                    "candidate": dataclasses.asdict(candidate_entry),
-                }
-            )
+        differences.append(
+            {
+                "scope": "entry",
+                "dispatch": dispatch,
+                "reason": "arm-divergence",
+                "control": {
+                    "from_cache": control_hit.from_cache,
+                    "candidate": control_hit.candidate,
+                    "signature": control_hit.signature,
+                },
+                "candidate": {
+                    "from_cache": candidate_hit.from_cache,
+                    "candidate": candidate_hit.candidate,
+                    "signature": candidate_hit.signature,
+                },
+            }
+        )
 
     return RuntimeComparison(
         equivalent=not differences, differences=tuple(differences)
@@ -484,24 +605,30 @@ def build_hardware_receipt(
     control_spec: CampaignLaneExecutionSpec,
     candidate_spec: CampaignLaneExecutionSpec,
     run_id_prefix: str,
+    diagnostic_control_spec: CampaignLaneExecutionSpec | None = None,
+    diagnostic_candidate_spec: CampaignLaneExecutionSpec | None = None,
     control_source: str = "bigcherry-native",
     lane_executor: LaneExecutor = execute_campaign_lane,
     runtime_runner: RuntimeRunner = real_hardware_runtime_runner,
 ) -> dict[str, Any]:
     """The full staged PA26 receipt: composition/corpus preflight, build
-    identity binding for the PRODUCTION pair, and (when a real runner is
-    available) runtime execution + exact comparison against the caller-
-    supplied lane results.
+    identity binding for the PRODUCTION pair (always built and reported --
+    process/output/correctness equivalence is proven against it), and (when
+    a real runner is supplied) a SEPARATE diagnostic-pair build + runtime
+    execution + exact comparison.
 
-    Callers wanting the diagnostic-companion runtime source must build the
-    diagnostic pair themselves (``build_diagnostic_hardware_specs`` +
-    ``execute_two_arm_build(..., candidate_cfg_builder=
-    offline.build_serving_core_diagnostic_config)``, validated against the
-    production candidate via ``offline.require_diagnostic_matches_production``)
-    and pass ITS ``CampaignLaneResult`` pair to ``runtime_runner`` -- this
-    function always builds and reports the PRODUCTION pair's identity, since
-    that is what process/output/correctness equivalence must ultimately be
-    proven against.
+    GPT's blocking correction (req_a6a387bdefbc474c): the production pair
+    is intentionally diagnostics-free on both arms and CANNOT emit a hit
+    log -- a non-default ``runtime_runner`` is therefore run against the
+    DIAGNOSTIC pair (built here from ``diagnostic_control_spec``/
+    ``diagnostic_candidate_spec``, which are REQUIRED whenever
+    ``runtime_runner`` is not the default stub), whose candidate composition
+    is validated (``offline.require_diagnostic_matches_production``) against
+    the production candidate's resolved composition before any diagnostic
+    result is trusted. The default stub is still exercised directly against
+    the production pair (it never touches real hardware either way, so no
+    diagnostic build is needed just to observe it raise
+    ``RuntimeNotEvaluated``).
 
     Never fabricates a positive runtime result: only ``RuntimeNotEvaluated``
     (the default stub, or a real runner reporting a real but-currently-
@@ -531,10 +658,59 @@ def build_hardware_receipt(
         "candidate": dataclasses.asdict(build_delta.candidate),
     }
     corpus = offline.load_winners_corpus(winners_cache_path)
-    expected_dispatches = frozenset(entry["dispatch"] for entry in corpus.entries)
+    expected = {
+        entry["dispatch"]: ReplayExpectation(
+            dispatch=entry["dispatch"],
+            signature=entry["signature"],
+            winner=entry["winner"],
+            transform_id=entry["transform_id"],
+            match_kind=entry["match_kind"],
+            manifest_hash=entry["manifest_hash"],
+        )
+        for entry in corpus.entries
+    }
+
+    is_default_runner = runtime_runner is real_hardware_runtime_runner
+    if is_default_runner:
+        runtime_control_result, runtime_candidate_result = control_result, candidate_result
+    else:
+        if diagnostic_control_spec is None or diagnostic_candidate_spec is None:
+            raise ReplayEquivalenceHardwareError(
+                "a non-default runtime_runner requires diagnostic_control_spec/"
+                "diagnostic_candidate_spec -- the production pair is "
+                "diagnostics-free and cannot emit a hit log"
+            )
+        diag_delta, diag_control_result, diag_candidate_result = execute_two_arm_build(
+            cfg,
+            catalog,
+            context=context,
+            store=store,
+            control_spec=diagnostic_control_spec,
+            candidate_spec=diagnostic_candidate_spec,
+            run_id_prefix=f"{run_id_prefix}-diagnostic",
+            candidate_cfg_builder=offline.build_serving_core_diagnostic_config,
+            lane_executor=lane_executor,
+        )
+        diagnostic_cfg = offline.build_serving_core_diagnostic_config(cfg)
+        diagnostic_selection = offline.resolution.resolve_canonical_selection(
+            offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME, diagnostic_cfg, catalog
+        )
+        production_delta = offline.resolve_composition_delta(
+            cfg, catalog, control_source=control_source
+        )
+        offline.require_diagnostic_matches_production(
+            production_delta.candidate.patch_ids,
+            diagnostic_selection.identity.patch_ids,
+        )
+        receipt["diagnostic_build_identity"] = {
+            "control": dataclasses.asdict(diag_delta.control),
+            "candidate": dataclasses.asdict(diag_delta.candidate),
+        }
+        runtime_control_result, runtime_candidate_result = diag_control_result, diag_candidate_result
+
     try:
-        control_runtime = runtime_runner(control_result, corpus)
-        candidate_runtime = runtime_runner(candidate_result, corpus)
+        control_runtime = runtime_runner(runtime_control_result, corpus)
+        candidate_runtime = runtime_runner(runtime_candidate_result, corpus)
     except RuntimeNotEvaluated as exc:
         receipt["decision_equivalence"] = {
             "status": "NOT_EVALUATED",
@@ -544,7 +720,7 @@ def build_hardware_receipt(
         receipt["runtime"] = {"status": "NOT_EVALUATED", "reason": str(exc)}
         return receipt
     comparison = compare_runtime_results(
-        control_runtime, candidate_runtime, expected_dispatches=expected_dispatches
+        control_runtime, candidate_runtime, expected=expected
     )
     receipt["decision_equivalence"] = {
         "status": "EVALUATED",
