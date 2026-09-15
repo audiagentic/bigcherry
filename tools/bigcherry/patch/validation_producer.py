@@ -34,7 +34,9 @@ from typing import Mapping, Protocol
 
 import tomllib
 
-from .validation import CheckSpec, ValidationContext, ValidationPlan, ValidationResult
+from bigcherry.experiment.attestation import ExecutionIdentity
+
+from .validation import ArtifactRef, CheckSpec, ValidationContext, ValidationPlan, ValidationResult
 
 # Reuse the project's real build-identity shape (CompletedBuildEvidence.
 # campaign_identity()'s return type) rather than inventing a parallel
@@ -121,6 +123,99 @@ class ProducerSpec:
 
 
 @dataclass(frozen=True)
+class ProducerBuildPair:
+    """The build-once-fat-multiarch control/subject build pair
+    ``ProducerRuntime.build_pair()`` hands back (PA36-F step 1). One
+    control build and one subject build, each built exactly once
+    regardless of how many devices/architectures the producer will run
+    against -- ``CampaignProducerRuntime.build_pair()`` (validation_
+    campaign.py) is the one authority enforcing that rule; this is just
+    its immutable result shape."""
+
+    base_revision: str
+    control_source: Path
+    subject_source: Path
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    control_bin: Path
+    subject_bin: Path
+    validation_build_identities: BuildIdentityMap
+
+
+@dataclass(frozen=True)
+class ProducerDeviceContext:
+    """One real, verified physical device a producer may run against
+    (PA36-F step 1). ``env_overrides``/``env_unset`` are the exact HIP-
+    only selector env a producer's subprocess must be launched with --
+    never ambient HIP_VISIBLE_DEVICES, never a ROCR_VISIBLE_DEVICES
+    double-filter (PNRO17)."""
+
+    architecture: str
+    device_index: int
+    execution_identity: ExecutionIdentity
+    env_overrides: Mapping[str, str]
+    env_unset: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProducerPairedBenchmarkOutcome:
+    """The public shape of ``validation_campaign.PairedBenchmarkOutcome``,
+    exposed to patch-local producers (PA36-F step 1) without exposing the
+    campaign module itself. The real implementation stays owned by
+    ``validation_campaign.run_paired_llama_benchmark()``; this is only the
+    producer-facing result type."""
+
+    runs: Mapping[str, object]
+    commands: Mapping[str, Mapping[str, tuple[str, ...]]]
+    raw_logs: tuple[JsonObject, ...]
+
+
+class ProducerRuntime(Protocol):
+    """The campaign-owned runtime a producer receives via
+    ``ProducerContext.runtime`` (PA36-F step 1). Patch-local producer
+    modules must never import ``validation_campaign.py`` directly --
+    this Protocol is the sanctioned seam instead; ``validation_campaign.
+    CampaignProducerRuntime`` is the one concrete implementation."""
+
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+    ) -> ProducerBuildPair: ...
+
+    def device_contexts(
+        self,
+        *,
+        device_map: Mapping[str, tuple[int, ...]],
+    ) -> tuple[ProducerDeviceContext, ...]: ...
+
+    def write_artifact(
+        self,
+        *,
+        name: str,
+        payload: JsonObject,
+    ) -> ArtifactRef: ...
+
+    def run_paired_llama_benchmark(
+        self,
+        *,
+        control_binary: Path,
+        subject_binary: Path,
+        model: Path,
+        workloads: tuple[str, ...] = ("decode", "prefill"),
+        patch_args: tuple[str, ...] = (),
+        runtime_args: tuple[str, ...] = (),
+        pairs: int = 3,
+        log_context: str,
+        device: ProducerDeviceContext | None = None,
+    ) -> ProducerPairedBenchmarkOutcome: ...
+
+
+@dataclass(frozen=True)
 class ProducerContext:
     """What a producer receives. Deliberately NOT an argparse.Namespace --
     patch-local producer code must never become coupled to CLI structure,
@@ -143,6 +238,9 @@ class ProducerContext:
     # isolated control/subject worktrees (RD12's shape) replaces these in
     # its ProducerResult rather than reusing them.
     validation_build_identities: BuildIdentityMap
+    patch_id: str
+    device_map: Mapping[str, tuple[int, ...]]
+    runtime: ProducerRuntime
 
 
 @dataclass(frozen=True)
