@@ -1,14 +1,15 @@
-# Validator configuration only. Experiment Contract fields do not belong here.
 schema = 1
 
 [[check]]
 id = "apply"
 capability = "apply"
-validator = "apply"
+validator = "custom"
+callable = "validation/checks.py:check_apply"
 required = true
 
 [[check]]
 id = "build"
 capability = "build"
-validator = "build"
+validator = "custom"
+callable = "validation/checks.py:check_build"
 required = true
