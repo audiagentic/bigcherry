@@ -26,7 +26,9 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
         from bigcherry.core import config
         from bigcherry.campaign import resolution
         catalog = patchset.catalog(cls.root / "patches")
-        lane = resolution.resolve_lane("bigcherry-native", config.load(cls.root / "config/recipes.toml"), catalog)
+        lane = resolution.resolve_lane(
+            "bigcherry-qualification-tuning", config.load(cls.root / "config/recipes.toml"), catalog
+        )
         resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=cls.root / "patches")
         descriptors = registry.load_registry(cls.root / "patches")
         cls.composition = tuple((member.patch_id, descriptors.get(member.patch_id).implementation_digest)
@@ -45,7 +47,7 @@ class FrameworkConfigurationEvidenceTests(unittest.TestCase):
         manifest = build_manifest(generated, compile_inputs=(header,))
         return evidence.make_framework_configuration_record(
             descriptor=self.descriptor, patch_path=patch, base_ref="bigcherry", base_revision="b" * 40,
-            source_name="bigcherry-native", source_composition=self.composition, source_tree="c" * 40,
+            source_name="bigcherry-qualification-tuning", source_composition=self.composition, source_tree="c" * 40,
             source_slice_id="a" * 32, compiled_targets=("gfx1100",),
             builds={"production": IDENTITY, "diagnostic": IDENTITY},
             source_identity=self.source_identity,

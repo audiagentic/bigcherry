@@ -3,40 +3,10 @@
 version = 2
 pinned = "b10901"
 
-[patch-set.framework]
-patches = [
-  "0100_cmake_options",
-  "0110_campaign_tune_record_build",
-  "0200_dispatch_hook",
-  "0300_mmq_forced_j",
-  "0400_mmvf_forced_block",
-  "0500_mmf_forced_nwarps",
-  "0600_mmvq_geometry",
-  "0650_mmvq_native_variant",
-  "0700_coverage_counters",
-  "0800_server_shutdown_endpoint",
-  "0810_replay_hit_diagnostics",
-  "0820_measurement_signature_shapes",
-  "0830_split_reduce_telemetry",
-  "0900_pool_workspace_metrics",
-  "1100_hi70_direct_op_evidence",
-]
-required-state = "validated"
-
-# PA28 (PA20 taxonomy, post-PA26/PA27): additive-only semantic patch-sets,
-# carved from the existing `framework` set without moving any live consumer.
-# `framework`/`bigcherry-native`/`bigcherry` above are left untouched here --
-# PA29 performs the cutover after migration inventory is complete.
-#
-# serving-core is PA26's real-hardware-proven serving boundary: `framework`
-# minus the eight PA20 non-serving modules (tune/record, coverage/hit-log/
-# measurement/split-reduce diagnostics, shutdown endpoint, pool-workspace
-# metrics, HI70 direct-op evidence) -- confirmed behaviorally equivalent for
-# production replay by PA26's real two-arm hardware comparison (EVALUATED,
-# equivalent=true, 0 differences, two independent runs). This is the literal
-# complement PA26's own `EXPECTED_REMOVED_MODULES` in
-# tools/bigcherry/campaign/replay_equivalence.py encodes -- keep both lists
-# in sync if either changes.
+# serving-core is PA26's real-hardware-proven serving boundary, confirmed
+# behaviorally equivalent for production replay by PA26's real two-arm
+# hardware comparison (EVALUATED, equivalent=true, 0 differences, two
+# independent runs).
 [patch-set.serving-core]
 # GPT design-review consult (dev-gpt-agent, req_d9bf628dc9954595, 2026-09-15):
 # PA26's own notes flagged that 0700_coverage_counters is not purely
@@ -91,7 +61,7 @@ required-state = "validated"
 [patch-set.upstream-fixes]
 # Correctness backports for real upstream bugs, temporary by design (each
 # carries upstream-ref + retirement in its own patch.toml). Composed into
-# BOTH bigcherry-native and bigcherry below -- a correctness fix is never
+# every serving-relevant source below -- a correctness fix is never
 # optional the way a performance enhancement is (PPS03).
 patches = [
   "1000_rdna4_mmq_q2k_q6k_fix",
@@ -100,8 +70,8 @@ required-state = "validated"
 
 [patch-set.validated-enhancements]
 # The production/release enhancement set: performance patches that have
-# ACTUALLY qualified, composed on top of `framework` by [source.bigcherry].
-# This is what separates a release build from bigcherry-native.
+# ACTUALLY qualified, composed on top of `serving-core` by [source.bigcherry].
+# This is what separates a release build from the plain serving-core sources.
 #
 # Entry bar is deliberately higher than `required-state = "validated"` alone.
 # STATE is a durable lifecycle label; it does NOT mean current qualifying
@@ -141,7 +111,7 @@ required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
 # its own [experiment.<name>] entry so `bigcherry build --experiment <name>`
-# adds those patches on top of a source's normal framework patch-set
+# adds those patches on top of a source's normal serving-relevant patch-sets
 # (resolve_lane's experiment= is additive, not a replacement -- see
 # campaign_resolution.py) -- the isolated single-patch(-chain)-vs-native
 # bench unit. Most entries below are still exactly one patch, so benching
@@ -295,19 +265,14 @@ overlay = false
 patch-sets = []
 backend = "vulkan"
 
-[source.bigcherry-native]
-ref = "pinned"
-overlay = true
-patch-sets = ["framework", "upstream-fixes"]
-
 [source.bigcherry]
 ref = "pinned"
 overlay = true
 # PA29 cutover (GPT design review req_964ec5fc21c14848): release composition
-# now resolves through serving-core (PA26 hardware-proven equivalent to the
-# old framework composition) instead of the old aggregate framework
-# patch-set. Role/name are unchanged -- this is still THE release source --
-# only the internal composition narrows to the serving-relevant modules.
+# resolves through serving-core (PA26 hardware-proven equivalent to the
+# old aggregate framework composition, removed by PA31). Role/name are
+# unchanged -- this is still THE release source -- only the internal
+# composition narrows to the serving-relevant modules.
 patch-sets = ["serving-core", "upstream-fixes", "validated-enhancements"]
 
 # PA28: additive, transitional semantic sources composed from the new
@@ -338,15 +303,23 @@ ref = "pinned"
 overlay = true
 patch-sets = ["serving-core", "qualification-support", "upstream-fixes"]
 
-# PA30 gate 5/1100 fix: 1100's deterministic test_mul_mat corpus only
-# produces real tuner candidate/correctness evidence when run in
+# Originally added for PA30 gate 5/1100: 1100's deterministic test_mul_mat
+# corpus only produces real tuner candidate/correctness evidence when run in
 # GGML_HIP_DISPATCH_MODE=tune, which needs campaign-support's tune/record
 # build plumbing -- bigcherry-qualification intentionally omits
 # campaign-support, so there is no truthful invocation of 1100's tune
-# evidence path through bigcherry-qualification alone. This explicit
-# combined source exists only for that exceptional qualification+tuning
-# case (GPT design review, PA30 gate 5). Not wired into any campaign
-# profile; select it explicitly.
+# evidence path through bigcherry-qualification alone (GPT design review,
+# PA30 gate 5).
+#
+# PA31 (GPT design review, PA31 disposition) widened this source's role: it
+# is now also the canonical semantic replacement for the deleted aggregate
+# `framework`+`upstream-fixes` composition (serving-core + campaign-support
+# + qualification-support + upstream-fixes is the literal union PA28 carved
+# `framework` into) -- used by evidence.py's
+# verify_framework_configuration_patch() and validation_campaign.py's
+# --framework-configuration baseline, and by tests asserting the old
+# aggregate composition's full module membership. Not wired into any
+# campaign profile; select it explicitly.
 [source.bigcherry-qualification-tuning]
 ref = "pinned"
 overlay = true
@@ -526,7 +499,7 @@ lanes = [
 #
 #   llama-native        upstream, unpatched -- what everything is ultimately
 #                       measured against
-#   bc-native           framework only -- the control for the isolated
+#   bc-native           serving-core only -- the control for the isolated
 #                       comparison, and (vs llama-native) the cost of our own
 #                       instrumentation
 #   bc-native + patch   the patch's ISOLATED effect

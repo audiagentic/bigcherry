@@ -29,12 +29,12 @@ class ResolveCliSelectionTests(unittest.TestCase):
         sel = selection.resolve_cli_selection(_args(source="bigcherry"))
         self.assertEqual(sel.source_name, "bigcherry")
         # PA29 cutover (GPT design review req_964ec5fc21c14848): bigcherry is
-        # now the RELEASE source: serving-core + validated-enhancements, not
-        # framework + validated-enhancements. bigcherry-native (the OLD,
-        # still-resolvable framework-only control) is therefore no longer a
-        # subset of bigcherry -- serving-core is a narrower complement of
-        # framework, not a superset. Compare against serving-base instead,
-        # which IS still the direct analog (serving-core + upstream-fixes).
+        # the RELEASE source: serving-core + upstream-fixes +
+        # validated-enhancements. Compare against serving-base, the direct
+        # composition analog (serving-core + upstream-fixes) -- the old
+        # aggregate `framework`/`bigcherry-native` identifiers were deleted
+        # by PA31, so there is no longer a wider control source to compare
+        # against here.
         serving = selection.resolve_cli_selection(_args(source="bigcherry-serving-base"))
         self.assertGreaterEqual(len(sel.patch_ids), len(serving.patch_ids))
         self.assertTrue(set(serving.patch_ids) <= set(sel.patch_ids))

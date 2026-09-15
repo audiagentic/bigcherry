@@ -82,7 +82,7 @@ A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch comp
 
 | Axis | Meaning | Scope | Examples |
 |------|---------|-------|----------|
-| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-native`, `bigcherry` |
+| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-serving-base`, `bigcherry` |
 | **Build** | A cmake variant set | Named independently, composed per-lane | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
 | **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on the build server), `windows-gfx1100` (workstation) |
 | **Patch state** | Patch acceptance status | Per-patch metadata, informational only under v2 | `validated`, `untested`, `rejected` |
@@ -111,7 +111,7 @@ Under v2, patch state is informational metadata on the patch itself, not a selec
 
 A selection's effective tree state is a 16-character hex digest of the ref, the resolved `patch_set_id`, and the overlay digest (when the source has `overlay = true`). This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
 
-**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-native` + `bigcherry`) resolves to 3 distinct tree states as of the PA29 cutover -- `llama-native` is unpatched, `bigcherry-native` applies the (unchanged) framework patch-set, and `bigcherry` applies serving-core+upstream-fixes+validated-enhancements, no longer the same composition as `bigcherry-native` -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
+**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-serving-base` + `bigcherry`) resolves to 3 distinct tree states as of the PA31 cutover -- `llama-native` is unpatched, `bigcherry-serving-base` applies serving-core+upstream-fixes, and `bigcherry` additionally applies validated-enhancements -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
 
 ### The bootstrap dependency chain
 

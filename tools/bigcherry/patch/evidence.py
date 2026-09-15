@@ -529,8 +529,10 @@ def verify_framework_configuration_record(
         problems.append("record is not eligible")
     if source_composition is None or record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]:
         problems.append("source composition mismatch")
-    if record.get("source_name") != "bigcherry-native":
-        problems.append("source is not canonical bigcherry-native framework")
+    # source_name is receipt provenance only (PA31): historical records may
+    # legitimately retain the deleted "bigcherry-native" name. Composition/
+    # base/source identity are the actual authority checks, enforced above
+    # via source_identity/source_composition.
     if source_composition is not None and (descriptor.patch_id, descriptor.implementation_digest) not in source_composition:
         problems.append("focal implementation absent from composition")
     for field, lengths in (("base_revision", (40,64)), ("source_tree", (40,64)), ("source_slice_id", (32,))):
@@ -564,7 +566,9 @@ def verify_framework_configuration_patch(
         from bigcherry.campaign import resolution
         catalog_root = module.catalog_root or paths.PATCHES
         cfg = config.load(paths.RECIPES)
-        lane = resolution.resolve_lane("bigcherry-native", cfg, patchset.catalog(directory=catalog_root))
+        lane = resolution.resolve_lane(
+            "bigcherry-qualification-tuning", cfg, patchset.catalog(directory=catalog_root)
+        )
         resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=catalog_root)
         registry = patch_registry.load_registry(catalog_root)
         composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
@@ -574,7 +578,8 @@ def verify_framework_configuration_patch(
             raise ValidationEvidenceError("resolved base revision required for source identity")
         identity = patch_source._make_source_identity_v2(
             resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.REPO_ROOT / "src" if cfg.sources["bigcherry-native"].overlay else None,
+            overlay_root=patch_source.REPO_ROOT / "src"
+            if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
         )
         identity["materialization_plan_id"] = identity["source_key"]
     except Exception as exc:
