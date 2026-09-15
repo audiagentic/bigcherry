@@ -1,6 +1,6 @@
 # 1000_rdna4_mmq_q2k_q6k_fix: Upstream backport: RDNA4 MMQ codegen fixes for Q2_K and Q6_K
 
-**Status:** rejected (2026-09-16, see DEMOTION section below)
+**Status:** rejected
 **Plan item:** PA35
 
 ## What it does

@@ -1,6 +1,6 @@
 # 1006_rdna4_mmq_q6k_codegen_fix: Upstream backport, RDNA4 MMQ codegen fix for Q6_K only
 
-**Status:** untested (pending fresh Q6-only hardware A/B)
+**Status:** untested
 **Plan item:** PA35
 
 ## What it does
