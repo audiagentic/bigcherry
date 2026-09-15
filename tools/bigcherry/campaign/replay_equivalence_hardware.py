@@ -61,6 +61,7 @@ downgraded to "not evaluated".
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -90,6 +91,71 @@ class RuntimeNotEvaluated(Exception):
 LaneExecutor = Callable[..., CampaignLaneResult]
 
 
+# GPT design correction (req_579777e899454ed9), following req_9cd5b140ca544ef8:
+# raw generated_compile_inputs_hash exact equality is ALSO over-strong for
+# PA26 -- candidate_implementation_digest() hashes raw source-file bytes for
+# each candidate, and hip-autotune-build-hash.h embeds the manifest/build
+# identity itself, so ANY expected source-composition removal touching an
+# implementation-mapped file legitimately changes this hash even when
+# registry/config semantics are identical. generated_tree.compile_inputs_hash
+# is a byte-identity/reuse mechanism, not a semantic-equivalence oracle.
+#
+# STRICT_GENERATED_FILES must hash byte-identical between arms (registry
+# tables, arch header, MMVQ instance geometry -- the actual compiled
+# candidate surface). EXPECTED_IDENTITY_ONLY_FILE (the build-hash header,
+# which embeds manifest_hash/build_descriptor -- themselves derived from
+# generated_at and other real per-arm identity) is the one file explicitly
+# NOT required to match.
+STRICT_GENERATED_FILES: frozenset[str] = frozenset({
+    "hip-autotune-registry.inc",
+    "hip-autotune-arch.h",
+    "hip-autotune-mmvq-instances.inc",
+})
+EXPECTED_IDENTITY_ONLY_FILE = "hip-autotune-build-hash.h"
+
+#: Top-level manifest fields that are real per-arm/per-run identity, not
+#: candidate-registry/config semantics -- excluded from the manifest
+#: projection compared below.
+_MANIFEST_IDENTITY_ONLY_FIELDS = ("generated_at", "manifest_hash", "build_descriptor")
+#: Per-candidate fields excluded for the same reason (raw source-byte
+#: digests of files that may differ between arms for an expected removed-
+#: module reason without changing runtime candidate configuration).
+_CANDIDATE_IDENTITY_ONLY_FIELDS = ("implementation_digest", "implementation_source_files")
+
+
+def _strip_manifest_identity_only_fields(manifest: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(manifest)
+    for key in _MANIFEST_IDENTITY_ONLY_FIELDS:
+        projected.pop(key, None)
+    candidates = projected.get("candidates")
+    if isinstance(candidates, list):
+        projected["candidates"] = [
+            {
+                field: value
+                for field, value in candidate.items()
+                if field not in _CANDIDATE_IDENTITY_ONLY_FIELDS
+            }
+            if isinstance(candidate, dict)
+            else candidate
+            for candidate in candidates
+        ]
+    return projected
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _read_json_ref(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 @dataclasses.dataclass(frozen=True)
 class ArmBuildIdentity:
     """Per-arm identity extracted from a real ``CampaignLaneResult`` --
@@ -116,10 +182,25 @@ class ArmBuildIdentity:
     #: equality of this field AFTER the narrow, caller-supplied
     #: ``pa26_effective_configure_projection`` normalization.
     effective_configure: tuple[tuple[str, str], ...]
-    #: The generated-catalog identity the build actually compiled against
-    #: (``workers.py``'s ``compile_inputs_hash``) -- required exact between
-    #: arms (GPT design, req_9cd5b140ca544ef8).
+    #: The generated-catalog byte-reuse identity (``workers.py``'s
+    #: ``compile_inputs_hash``) -- recorded for provenance only. GPT design
+    #: correction (req_579777e899454ed9): raw equality is over-strong for
+    #: PA26 (it folds in per-candidate source-byte digests that legitimately
+    #: differ for an expected removed-module reason); ``require_shared_
+    #: build_inputs`` instead requires the semantic projection fields below.
     generated_compile_inputs_hash: str | None
+    #: Canonical JSON of the generated manifest with real per-run/per-arm
+    #: identity fields stripped (see ``_strip_manifest_identity_only_fields``)
+    #: -- required exact. None when the build has no generate stage.
+    generated_manifest_projection: str | None
+    #: The generated tree's declared compile-input filename set -- required
+    #: exact (same files must be compiled against on both arms).
+    generated_tree_compile_inputs: tuple[str, ...]
+    #: Byte hashes of ``STRICT_GENERATED_FILES`` only (the actual compiled
+    #: candidate-registry/arch/MMVQ-instance surface) -- required exact.
+    #: ``EXPECTED_IDENTITY_ONLY_FILE`` (the build-hash header, which embeds
+    #: manifest_hash/build_descriptor) is deliberately excluded here.
+    generated_strict_file_hashes: tuple[tuple[str, str], ...]
     input_hashes: tuple[tuple[str, str], ...]
     binary_digest: str
     runtime_bundle_digest: str
@@ -130,6 +211,30 @@ class ArmBuildIdentity:
     def from_result(cls, result: CampaignLaneResult) -> "ArmBuildIdentity":
         canonical = dict(result.build_plan.canonical())
         canonical.pop("source_slice_id", None)
+        manifest_doc = _read_json_ref(
+            result.manifest_ref.path if result.manifest_ref else None
+        )
+        tree_doc = _read_json_ref(
+            result.generated_tree_ref.path if result.generated_tree_ref else None
+        )
+        generated_manifest_projection = (
+            _canonical_json(_strip_manifest_identity_only_fields(manifest_doc))
+            if manifest_doc is not None
+            else None
+        )
+        tree_files = tree_doc.get("files", {}) if tree_doc is not None else {}
+        tree_compile_inputs = (
+            tuple(sorted(tree_doc.get("compile_inputs", ())))
+            if tree_doc is not None
+            else ()
+        )
+        strict_hashes = tuple(
+            sorted(
+                (name, tree_files[name])
+                for name in STRICT_GENERATED_FILES
+                if isinstance(tree_files, dict) and name in tree_files
+            )
+        )
         return cls(
             resolved_revision=result.resolved_revision,
             source_slice_id=result.source_slice_id,
@@ -138,6 +243,9 @@ class ArmBuildIdentity:
             effective_build_id=result.effective_build_id,
             effective_configure=tuple(sorted(result.effective_configure.items())),
             generated_compile_inputs_hash=result.generated_compile_inputs_hash,
+            generated_manifest_projection=generated_manifest_projection,
+            generated_tree_compile_inputs=tree_compile_inputs,
+            generated_strict_file_hashes=strict_hashes,
             input_hashes=tuple(
                 sorted((name, ref.content_hash) for name, ref in result.input_refs)
             ),
@@ -255,17 +363,32 @@ def require_shared_build_inputs(
             f"{dict(delta.control.build_plan_projection)} vs "
             f"{dict(delta.candidate.build_plan_projection)}"
         )
-    if not delta.control.generated_compile_inputs_hash or not delta.candidate.generated_compile_inputs_hash:
+    # GPT design correction (req_579777e899454ed9): raw
+    # generated_compile_inputs_hash equality is over-strong (it folds in
+    # per-candidate source-byte digests that legitimately differ between
+    # arms for an expected removed-module reason). Require instead: the
+    # same compile-input filename set, byte-identical STRICT_GENERATED_FILES
+    # content, and an identical manifest after stripping real per-run/per-arm
+    # identity fields -- raw generated_compile_inputs_hash is still recorded
+    # on each arm for provenance but no longer compared directly.
+    if delta.control.generated_tree_compile_inputs != delta.candidate.generated_tree_compile_inputs:
         raise ReplayEquivalenceHardwareError(
-            "both arms must report a non-empty generated_compile_inputs_hash "
-            f"from a real build: control={delta.control.generated_compile_inputs_hash!r}, "
-            f"candidate={delta.candidate.generated_compile_inputs_hash!r}"
+            "control and candidate declare different generated compile-input "
+            f"filename sets: {list(delta.control.generated_tree_compile_inputs)} "
+            f"vs {list(delta.candidate.generated_tree_compile_inputs)}"
         )
-    if delta.control.generated_compile_inputs_hash != delta.candidate.generated_compile_inputs_hash:
+    if delta.control.generated_strict_file_hashes != delta.candidate.generated_strict_file_hashes:
         raise ReplayEquivalenceHardwareError(
-            "control and candidate were built from different generated "
-            f"compile inputs: {delta.control.generated_compile_inputs_hash!r} "
-            f"vs {delta.candidate.generated_compile_inputs_hash!r}"
+            "control and candidate compiled different STRICT_GENERATED_FILES "
+            f"content: {dict(delta.control.generated_strict_file_hashes)} vs "
+            f"{dict(delta.candidate.generated_strict_file_hashes)}"
+        )
+    if delta.control.generated_manifest_projection != delta.candidate.generated_manifest_projection:
+        raise ReplayEquivalenceHardwareError(
+            "control and candidate generated manifests diverge after "
+            "stripping real per-run identity fields (generated_at, "
+            "manifest_hash, build_descriptor, per-candidate "
+            "implementation_digest/implementation_source_files)"
         )
     projected_control, projected_candidate = pa26_effective_configure_projection(
         dict(delta.control.effective_configure),
