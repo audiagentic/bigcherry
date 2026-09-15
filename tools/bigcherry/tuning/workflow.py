@@ -496,6 +496,25 @@ def _stage_correctness_evidence(
     rows = hi80.find_candidate_rows(results)
     import sqlite3
     conn = sqlite3.connect(str(dispatch_db))
+    # RHA15 (2026-09-15, dev-gpt-agent design review req_7e5ae686e055404e):
+    # generate_for_row()'s own docstring says it "raises CliError,
+    # scm.SignatureMappingError or ce.EvidenceError on failure -- the caller
+    # decides whether that is fatal to the whole run." This loop used to
+    # catch only SignatureMappingError, so hi80.ROW_FAILURE_EXCEPTIONS on
+    # the FIRST row processed propagated straight out of this function and
+    # aborted the stage before any subsequent row was even attempted -- a
+    # real production tune-campaign observed exactly this shape (a single
+    # early-row failure reported as "FAILED at the correctness-evidence
+    # stage" with the batch's true per-candidate outcomes never determined),
+    # unlike hi80_generate_correctness_evidence.py's own standalone CLI
+    # main(), which already catches this same shared taxonomy per row and
+    # continues. Mirror that here: attempt every row, keep the campaign
+    # failed overall if any supported row fails (run()'s promotion/replay
+    # stages must not proceed on a partially-successful evidence batch),
+    # but only raise after every row got an independent attempt -- do NOT
+    # widen to generic Exception, an unexpected SQLite/programming failure
+    # must still abort immediately.
+    failures: list[str] = []
     try:
         for row in rows:
             try:
@@ -510,8 +529,20 @@ def _stage_correctness_evidence(
                 )
             except hi80.scm.SignatureMappingError:
                 continue  # unsupported signature domain -- same as the CLI's own honest skip
+            except hi80.ROW_FAILURE_EXCEPTIONS as exc:
+                dispatch = row.get("dispatch", "?")
+                candidate = row.get("provisional_winner", "?")
+                failures.append(
+                    f"dispatch={dispatch} candidate={candidate}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
     finally:
         conn.close()
+    if failures:
+        raise TuneCampaignError(
+            f"correctness-evidence generation failed for "
+            f"{len(failures)}/{len(rows)} row(s):\n" + "\n".join(failures)
+        )
     return lane_result
 
 
