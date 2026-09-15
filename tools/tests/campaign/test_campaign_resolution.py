@@ -724,6 +724,54 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             self.assertEqual(again.patch_set.patch_set_id, lane.patch_set.patch_set_id)
             self.assertEqual(again.patch_set.module_ids, lane.patch_set.module_ids)
 
+    def test_bigcherry_qualification_tuning_is_serving_core_plus_campaign_support_plus_qualification_support_plus_upstream_fixes(self):
+        # PA30 gate 5/1100 fix (GPT design review): 1100's deterministic
+        # test_mul_mat corpus only produces real tuner candidate/correctness
+        # evidence under GGML_HIP_DISPATCH_MODE=tune, which needs
+        # campaign-support's tune/record build plumbing -- omitted by
+        # bigcherry-qualification. This explicit combined source composes
+        # serving-core + campaign-support + qualification-support +
+        # upstream-fixes for that exceptional qualification+tuning case.
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["campaign-support"].patches)
+            | set(self.cfg.patch_sets["qualification-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        # No orphan/duplicate claim: this is exactly the union of the
+        # already-disjoint component sets, plus upstream-fixes.
+        self.assertIn("0110_campaign_tune_record_build", lane.patch_set.module_ids)
+        self.assertIn("0830_split_reduce_telemetry", lane.patch_set.module_ids)
+        self.assertIn("1100_hi70_direct_op_evidence", lane.patch_set.module_ids)
+
+    def test_bigcherry_qualification_tuning_has_distinct_deterministic_patch_set_id(self):
+        lanes = {
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            for name in (
+                "bigcherry-serving-base",
+                "bigcherry-tuning",
+                "bigcherry-qualification",
+                "bigcherry-qualification-tuning",
+            )
+        }
+        ids = {name: lane.patch_set.patch_set_id for name, lane in lanes.items()}
+        self.assertEqual(len(set(ids.values())), 4, f"patch_set_ids collided: {ids}")
+        again = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        self.assertEqual(
+            again.patch_set.patch_set_id,
+            lanes["bigcherry-qualification-tuning"].patch_set.patch_set_id,
+        )
+        self.assertEqual(
+            again.patch_set.module_ids,
+            lanes["bigcherry-qualification-tuning"].patch_set.module_ids,
+        )
+
     def test_old_framework_and_native_still_resolve_unchanged_after_pa29(self):
         # PA29 cutover (GPT design review req_964ec5fc21c14848): the old
         # framework patch-set and bigcherry-native source themselves are
