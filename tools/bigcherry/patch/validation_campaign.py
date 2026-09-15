@@ -4752,6 +4752,184 @@ def execute_validation_producer(
     )
 
 
+# --------------------------------------------------------- PA36-F step 5: CLI
+
+
+def _parse_validation_producer_selector(value: str) -> tuple[str, str]:
+    """``PATCH/PRODUCER_ID`` -> ``(patch_id, producer_id)``. Uses
+    ``rsplit("/", 1)`` (per GPT design section 5) so a producer_id can never
+    itself be misread as containing a ``/`` -- only the patch component
+    could (it never does today, but the split direction is the one that
+    stays correct if it ever did)."""
+    if "/" not in value:
+        raise PatchCampaignError(
+            f"--validation-producer {value!r} must be PATCH/PRODUCER_ID"
+        )
+    patch_id, _, producer_id = value.rsplit("/", 1)
+    if not patch_id or not producer_id:
+        raise PatchCampaignError(
+            f"--validation-producer {value!r}: patch and producer id must both be non-empty"
+        )
+    return patch_id, producer_id
+
+
+def _parse_producer_inputs(values: Iterable[str]) -> dict[str, str]:
+    """Repeated ``--producer-input NAME=VALUE`` -> ``{name: value}``. Fails
+    closed on a missing ``=``, an empty name, or the same name given
+    twice -- ambiguity is never silently resolved by last-one-wins."""
+    inputs: dict[str, str] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise PatchCampaignError(
+                f"--producer-input {raw!r} must be NAME=VALUE"
+            )
+        name, _, value = raw.partition("=")
+        if not name:
+            raise PatchCampaignError(f"--producer-input {raw!r}: name must not be empty")
+        if name in inputs:
+            raise PatchCampaignError(f"--producer-input: duplicate name {name!r}")
+        inputs[name] = value
+    return inputs
+
+
+def _parse_producer_device_map(entries: list[str]) -> dict[str, tuple[int, ...]]:
+    """Same ARCH=ID[,ID...] shape as ``parse_device_map()``, but a
+    producer's ``ProducerRuntime.device_contexts()`` addresses real devices
+    by integer index (``bigcherry.core.environment`` device inventory), not
+    the opaque string ids the legacy ``--run-performance-benchmark`` device
+    pool uses -- so this fails closed on a non-integer id instead of
+    passing an unusable string through."""
+    raw_map = parse_device_map(entries)
+    device_map: dict[str, tuple[int, ...]] = {}
+    for architecture, ids in raw_map.items():
+        try:
+            device_map[architecture] = tuple(int(i) for i in ids)
+        except ValueError as exc:
+            raise PatchCampaignError(
+                f"--device-map {architecture}={','.join(ids)}: device ids must be integers "
+                "for --validation-producer"
+            ) from exc
+    return device_map
+
+
+def _run_validation_producer(
+    args: argparse.Namespace, *, producer_id: str, provided_inputs: Mapping[str, str],
+) -> int:
+    """PA36-F step 5 entry point: resolve+execute one patch-local producer
+    through the generic dispatcher end to end, entirely outside the legacy
+    tune/replay/stock campaign-build flow ``run()`` otherwise always runs --
+    every build this path performs goes through
+    ``CampaignProducerRuntime.build_pair()`` instead (the PA36 build-once-
+    fat-multiarch authority), mirroring how ``_run_performance_benchmark()``
+    is already its own self-contained path rather than a branch bolted onto
+    the legacy one.
+
+    Binding this producer's typed result into a persisted, tracked
+    ``patch_validation_evidence`` record (the shape GPT's design section 3
+    sketches for a caller) is real per-patch MIGRATION work -- it requires
+    that migration's own campaign-build identity domain decisions (what
+    ``build_identities`` even means for a patch with no tune/replay/stock
+    build) and is explicitly out of PA36-F's scope (see the atomic
+    migration sequence). This prints the verdict and writes the generic,
+    typed execution outcome as a workdir-local JSON artifact -- the same
+    diagnostic-artifact pattern ``--run-performance-benchmark`` already
+    uses for ``performance-matrix.json`` -- and exits 0 iff the plan is
+    eligible.
+    """
+    import os
+
+    from bigcherry.core import paths as bc_paths
+    from bigcherry.core import config as campaign_config
+    from bigcherry.patch import registry as patch_registry
+    from bigcherry.patch import source as psi
+    from bigcherry.patch import validation as patch_validation
+    from bigcherry.patch import validation_policy as patch_validation_policy
+
+    os.environ["ROCM_PATH"] = str(args.hip_path)
+    os.environ["HIP_PATH"] = str(args.hip_path)
+    os.environ["PATH"] = os.pathsep.join(
+        [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
+    )
+
+    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    descriptor = registry.get(args.patch)
+    cfg = campaign_config.load(bc_paths.RECIPES)
+
+    validation_plan = patch_validation_policy.require_execution_package(
+        descriptor, root=bc_paths.PATCHES,
+    )
+    if validation_plan is None:
+        raise PatchCampaignError(
+            f"{args.patch}: --validation-producer requires a resolvable validation plan"
+        )
+
+    full_contract = patch_validation.load_contract_for_descriptor(descriptor)
+    validation_context = patch_validation.ValidationContext(
+        descriptor=descriptor, base_revision=cfg.pinned,
+        control_source=None, subject_source=None,
+        contracts=(full_contract,) if full_contract is not None else (),
+        contract_hashes=(
+            {full_contract.id: full_contract.contract_hash}
+            if full_contract is not None else {}
+        ),
+    )
+
+    workdir: Path = args.workdir
+    workdir.mkdir(parents=True, exist_ok=True)
+    run_dir = workdir / "producer" / producer_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    amdgpu_targets = args.amdgpu_targets
+    fat_targets = FatTargetPlan(
+        targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
+    )
+    device_map = _parse_producer_device_map(list(args.device_map or ()))
+
+    patch_dir = bc_paths.PATCHES / args.patch
+    runtime = CampaignProducerRuntime(
+        repo_root=REPO_ROOT, patch_id=args.patch, base_revision=cfg.pinned,
+        workdir=args.worktree_root, hip_path=args.hip_path, fat_targets=fat_targets,
+        run_dir=run_dir,
+    )
+    producer_context = ProducerContext(
+        repo_root=REPO_ROOT, patch_dir=patch_dir, workdir=workdir,
+        campaign_id=f"{args.patch}/{producer_id}", base_revision=cfg.pinned,
+        hip_path=args.hip_path, fat_targets=fat_targets, model=args.model,
+        corpus=None, build_env=_hip_env(args.hip_path), inputs={},
+        validation_build_identities={}, patch_id=args.patch, device_map=device_map,
+        runtime=runtime,
+    )
+
+    execution = execute_validation_producer(
+        patch_dir=patch_dir, producer_id=producer_id, provided_inputs=provided_inputs,
+        producer_context=producer_context, validation_plan=validation_plan,
+        validation_context=validation_context,
+        correctness_evidence_requested=args.correctness_evidence is not None,
+        performance_benchmark_requested=bool(args.run_performance_benchmark),
+    )
+
+    outcome_doc = {
+        "patch_id": args.patch, "producer_id": producer_id,
+        "eligible": execution.verdict.eligible,
+        "reasons": list(execution.verdict.reasons),
+        "blocked": execution.verdict.blocked,
+        "errors": list(execution.verdict.errors),
+        "check_results": {
+            check_id: asdict(result) for check_id, result in execution.evaluated.items()
+        },
+        "contract_verdicts": dict(execution.contract_verdicts),
+        "validation_build_identities": dict(execution.result.validation_build_identities),
+    }
+    outcome_path = run_dir / "producer-execution.json"
+    _atomic_write_json(outcome_path, outcome_doc)
+    _print(
+        f"validation producer {args.patch}/{producer_id}: "
+        f"{'eligible' if execution.verdict.eligible else 'ineligible'} "
+        f"({len(execution.verdict.reasons)} blocking reasons) -- {outcome_path}"
+    )
+    return 0 if execution.verdict.eligible else 1
+
+
 # PA35: real verification producer for patch 1000_rdna4_mmq_q2k_q6k_fix.
 # Its own README documents an unverified gap (2026-09-11 process audit):
 # the patch's claimed Q6_K 1.90x / Q2_K 28.2x gains are entirely upstream
@@ -9586,9 +9764,66 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--device-map", action="append", default=None,
         help="PVPS02: ARCH=ID[,ID...] (repeatable) -- the real, ordered device pool for "
-             "one architecture. Required with --run-performance-benchmark; never inferred.",
+             "one architecture. Required with --run-performance-benchmark; never inferred. "
+             "Also consumed by --validation-producer (device indices there must be integers).",
+    )
+    parser.add_argument(
+        "--validation-producer",
+        dest="validation_producer",
+        metavar="PATCH/PRODUCER_ID",
+        default=None,
+        help="PA36-F step 5: select one patch-local validation producer "
+             "(patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
+             "and execute it through the generic execute_validation_producer() "
+             "dispatcher. Mutually exclusive with every --run-rdXX-*/--run-patchXXXX-* "
+             "legacy execution mode -- this is the non-legacy replacement path "
+             "(PA36's atomic migration sequence retires the legacy flags one at a "
+             "time). Repeatable --producer-input NAME=VALUE supplies its declared "
+             "inputs.",
+    )
+    parser.add_argument(
+        "--producer-input",
+        dest="producer_inputs",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="PA36-F step 5: one producer-declared input (repeatable). Fails closed "
+             "if the producer does not declare NAME, a required NAME is missing, or "
+             "the same NAME is given twice.",
     )
     args = parser.parse_args(argv)
+    if args.validation_producer is not None:
+        # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
+        # dispatch plugs in immediately after parse_args()/common patch
+        # resolution, before the first args.run_rd12_contract/other RD-only
+        # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
+        # of known RD flags -- a new --run-rdNN-* flag added later is caught
+        # automatically, with no edit required here.
+        legacy_modes = tuple(
+            name for name, value in vars(args).items()
+            if value
+            and (
+                re.fullmatch(r"run_rd\d+.*", name)
+                or re.fullmatch(r"run_patch\d+.*", name)
+            )
+        )
+        if legacy_modes:
+            parser.error(
+                "--validation-producer is mutually exclusive with legacy execution "
+                f"mode(s): {', '.join(sorted(legacy_modes))}"
+            )
+        selector_patch, producer_id = _parse_validation_producer_selector(args.validation_producer)
+        # --patch stays required at the parser level (retiring that
+        # requirement is the atomic migration sequence's job, not step 5's);
+        # while it is, this just enforces it can never silently diverge from
+        # the selector instead of asking the user to specify the patch twice.
+        if args.patch != selector_patch:
+            parser.error(
+                f"--patch {args.patch!r} does not match --validation-producer's patch "
+                f"component {selector_patch!r} -- do not specify a different patch twice"
+            )
+        provided_inputs = _parse_producer_inputs(args.producer_inputs)
+        return _run_validation_producer(args, producer_id=producer_id, provided_inputs=provided_inputs)
     if args.run_rd12_contract:
         # RD12's producer consumes no model or manifest -- its workload is
         # the registered 1258 test-backend-ops case, not a GGUF -- so the
