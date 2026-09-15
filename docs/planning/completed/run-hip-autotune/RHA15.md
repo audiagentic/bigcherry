@@ -2,7 +2,7 @@
 id: RHA15
 order: 0
 plan: run-hip-autotune
-state: pending
+state: completed
 created-at: '2026-09-15T02:19:11.114837+00:00'
 breadth: ''
 skill: null
@@ -35,7 +35,7 @@ priority: null
 
 ## Validation
 
-
+Verified on real hardware (Brutus, gfx1100 x4, single-GPU devices=0): re-ran the exact real tune-campaign invocation (source=bigcherry-native, model=tierA-qwen4b-q6k, runtime-profile=production-safe-single) end-to-end with the fix in place (commit c2ee3a99). Confirmed via the full campaign log (`grep -c 'correctness-evidence generation failed|TuneCampaignError|Traceback'` = 0 matches, vs 31/36 rows failing identically before the fix) and the printed WorkflowReceipt: promoted_after_evidence 0 -> 19, verified_winners=62, replay coverage total_dispatched==total_executed (5895/5895) across all families, rerun_required=0, stale=false. Offline: 7 new unit tests (test_workflow.py, test_hi80_generate_correctness_evidence.py, test_recovery.py) covering verifier-receives-canonical, fallback-skipped-when-verifier-supplied, forced-candidate-still-uses-tune-binary, source-mismatch-fails-closed, and recovery-receives-verifier. Full tools/tests/tuning suite: 1238 passed, only the same 1 pre-existing unrelated HI104 failure noted throughout this session (not caused by this change). Artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify2/ before cleanup.
 
 ## Effort & Risk
 
@@ -47,7 +47,7 @@ priority: null
 
 ## Acceptance Criteria
 
-
+Every candidate row in a real tune-campaign (tierA-qwen4b-q6k, production-safe-single, gfx1100, current pin) genuinely passes or fails correctness-evidence generation with real per-row diagnostics -- no single-row abort of the whole stage, and no uniform build-capability artifact masquerading as a correctness failure. Met: the orchestration fix (3af8ad2f) ensures every row is independently attempted and reported; this fix ensures the signature-verification preflight uses a record-capable binary, eliminating the false EvidenceError that previously affected 100% of rows. Confirmed via a real campaign re-run producing genuine promotions (19 candidates) with real correctness_evidence rows bound to seeds 1/2/3, not merely an absence of exceptions.
 
 ## Notes
 
@@ -56,6 +56,23 @@ Standing user authorization (2026-09-15): "start it - always start hardware test
 Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
 
 Investigation chain (chronological): diagnostic hardening (4a1939d0/8ce29dfc) -> cwd ruled out -> orchestration bug found+fixed (3af8ad2f/1ab802be, the whole-stage-abort-on-row-1 bug) -> fresh campaign re-run with both fixes launched on Brutus (pa26-rha15-verify1, artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify1/, 13M) -> real per-row diagnostics obtained (31/36 rows failed with the IDENTICAL EvidenceError) -> root cause confirmed via code inspection + live repro (this update). Full narrative detail from the investigation preserved in this item's change history (the ad-hoc field names from an earlier malformed update are superseded by this consolidated description/steps).
+
+
+
+## 2026-09-15 (continued): FIX VERIFIED ON REAL HARDWARE -- RHA15 resolved
+
+Re-ran the real campaign (`pa26-rha15-verify2`) end-to-end on Brutus with the fix (commit `c2ee3a99`) in place, same tierA-qwen4b-q6k / production-safe-single / gfx1100 / devices=0 configuration as every prior attempt. Full log preserved at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/campaign.log` (1287 lines) and workdir artifacts at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/workdir/` (13M), copied before any cleanup.
+
+**Real result: clean end-to-end success, zero correctness-evidence failures.**
+- `grep -c 'correctness-evidence generation failed\|TuneCampaignError\|Traceback'` on the full log: 0 matches (was 31/36 rows failing identically before the fix).
+- `promoted_before_evidence: 0` -> `promoted_after_evidence: 19` -- 19 real candidates genuinely passed correctness evidence and promoted (not merely "didn't crash": each has a real dispatchable correctness_evidence row bound to seeds 1/2/3).
+- `verified_winners: 62`, `quarantined_unsupported_winners: 5`.
+- Replay build/export/verify completed and passed its own behavioral gate: coverage `total_dispatched: 5895` == `total_executed: 5895` across all families (blas/mmf/mmq/mmvf/mmvq), replay `exact: 40/62`, `misses: 27` (non-fatal cache misses, not failures), `rerun_required: 0`, `stale: false`.
+- Full receipt (schema_version 4) printed cleanly with `signature_verifier`, `tune`, `record`, `replay_validation` sections all present and consistent -- the provenance guard (source_slice_id match) never fired, confirming the tune and verifier lanes' source compositions genuinely agreed.
+
+This is genuinely resolved per this item's own acceptance bar (step 3: "correctness-evidence should genuinely PASS (not just avoid crashing) for real candidates") -- confirmed with real dispatchable evidence and real promotion counts, not just an absence of exceptions. PA26's corpus-generation and two-arm hardware comparison (the work this item was blocking) can now proceed.
+
+Marking this item completed. Remaining PA26 work (real winners-corpus build via `replay.build(enforce_schema=True)` and the two-arm `build_hardware_receipt()` hardware comparison) continues under PA26 itself, not here.
 
 ## 2026-09-15 (continued): fix implemented per GPT design review, landed, real re-verification campaign launched
 
@@ -130,3 +147,8 @@ This matches the original PA26 failure shape exactly: the campaign's first promo
 - 2026-09-15T03:44:28.747732+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-15T03:44:53.844246+00:00 (updated-by): Updated: section:title, work='M', skill='advanced', priority='P1', section:description, section:steps, section:notes
 - 2026-09-15T04:02:55.575012+00:00 (updated-by): Updated: section:title, work=None, skill=None, priority=None, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- chg_20260915_040708_fixed-the-real-tune-campaign-c_8272
+- 2026-09-15T04:07:11.236485+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-15T04:07:27.697201+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- 2026-09-15T04:07:45.008923+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- 2026-09-15T04:07:49.197411+00:00 (state-transition): State: pending → completed
