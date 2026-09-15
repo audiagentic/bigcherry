@@ -109,23 +109,31 @@ class CampaignResolutionTests(unittest.TestCase):
                 f"{patch_id} leaked into the framework-only control source",
             )
 
-    def test_release_source_is_framework_plus_validated_enhancements(self):
-        """[source.bigcherry] is the release build: framework + whatever has
+    def test_release_source_is_serving_core_plus_validated_enhancements(self):
+        """[source.bigcherry] is the release build: serving-core (PA29
+        cutover, GPT design review req_964ec5fc21c14848) + whatever has
         actually qualified. This pins the STRUCTURE rather than a count, so
         promoting a patch does not break the test -- only breaking the
-        composition does."""
-        native = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog
+        composition does.
+
+        Post-cutover, ``bigcherry-native`` (still framework+upstream-fixes,
+        an OLD name kept resolvable only for PA30/PA31) is no longer a
+        subset of the release: framework is the larger, pre-PA20-split set,
+        and serving-core is its narrower serving-relevant complement -- the
+        subset relationship instead runs the other way for the non-enhancement
+        ids."""
+        serving = campaign_resolution.resolve_lane(
+            "bigcherry-serving-base", self.cfg, self.catalog
         )
         release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
 
-        native_ids = set(native.patch_set.module_ids)
+        serving_ids = set(serving.patch_set.module_ids)
         release_ids = set(release.patch_set.module_ids)
 
-        # The release build is a strict superset of the native baseline...
-        self.assertTrue(native_ids <= release_ids)
+        # The release build is a strict superset of the serving-core baseline...
+        self.assertTrue(serving_ids <= release_ids)
         # ...and everything extra is exactly the promoted enhancements.
-        self.assertEqual(release_ids - native_ids, set(release.promoted_enhancements))
+        self.assertEqual(release_ids - serving_ids, set(release.promoted_enhancements))
         # Every promoted enhancement must really be STATE="validated" --
         # required-state on the patch-set is what enforces this, and a
         # release build must never ship an unvalidated patch.
@@ -590,12 +598,15 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
 
 
 class PA28SemanticPatchSetTests(unittest.TestCase):
-    """PA28: additive-only serving-core/campaign-support/qualification-support
-    patch-sets and their three composed sources, carved from `framework`
-    without moving any live consumer. Pins module membership, the no-orphan/
-    no-duplicate-claim property against PA26's own EXPECTED_REMOVED_MODULES,
-    and that the new sources resolve deterministically and don't touch the
-    old framework/bigcherry-native/bigcherry identities."""
+    """PA28: additive serving-core/campaign-support/qualification-support
+    patch-sets and their three composed sources, carved from `framework`.
+    Pins module membership, the no-orphan/no-duplicate-claim property
+    against PA26's own EXPECTED_REMOVED_MODULES, and that the new sources
+    resolve deterministically. PA29 (GPT design review req_964ec5fc21c14848)
+    then cut source.bigcherry over from framework to serving-core -- the old
+    framework patch-set and bigcherry-native source themselves remain
+    untouched (required by PA29.md step 8 for PA30/PA31), but bigcherry's
+    own composition is no longer framework-derived; see the tests below."""
 
     @classmethod
     def setUpClass(cls):
@@ -713,21 +724,23 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             self.assertEqual(again.patch_set.patch_set_id, lane.patch_set.patch_set_id)
             self.assertEqual(again.patch_set.module_ids, lane.patch_set.module_ids)
 
-    def test_old_framework_native_and_release_sources_are_unchanged(self):
-        # PA28 is additive-only -- the coexistence-phase names must keep
-        # resolving to exactly what they did before this change.
+    def test_old_framework_and_native_still_resolve_unchanged_after_pa29(self):
+        # PA29 cutover (GPT design review req_964ec5fc21c14848): the old
+        # framework patch-set and bigcherry-native source themselves are
+        # UNCHANGED and must keep resolving exactly as before -- PA29.md
+        # step 8 requires both stay resolvable for PA30/PA31. What DID
+        # change is source.bigcherry, which now composes serving-core
+        # instead of framework -- so native is no longer a subset of
+        # release; see test_release_source_is_serving_core_plus_validated_
+        # enhancements above for the new (post-cutover) relationship.
         native = campaign_resolution.resolve_lane(
             "bigcherry-native", self.cfg, self.catalog
         )
-        release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
         self.assertEqual(len(self.cfg.patch_sets["framework"].patches), 15)
         native_patch_ids = frozenset(
             self.cfg.patch_sets["framework"].patches
         ) | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         self.assertEqual(set(native.patch_set.module_ids), set(native_patch_ids))
-        self.assertTrue(
-            set(native.patch_set.module_ids) <= set(release.patch_set.module_ids)
-        )
 
     def test_0800_and_1100_are_not_orphaned(self):
         # PA28's own Validation section calls this out explicitly.
@@ -779,7 +792,7 @@ class PerLaneExperimentTests(unittest.TestCase):
         # survive), not a lane count -- the profile legitimately grows as
         # build variants like tune/replay are added.
         self.assertEqual(len(ids), len(set(ids)), f"lane ids collided: {ids}")
-        native = [i for i in ids if i.startswith("bigcherry-native:control")]
+        native = [i for i in ids if i.startswith("bigcherry-tuning:control")]
         self.assertEqual(len(native), 2, "expected a patched and unpatched pair")
 
     def test_lane_experiment_overrides_request_level(self):

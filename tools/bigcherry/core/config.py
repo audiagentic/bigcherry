@@ -142,7 +142,7 @@ class CampaignLaneSelector:
     platform: str
     #: Optional per-lane experiment (a [experiment.<name>] entry). Needed
     #: because a patch-qualification profile must hold arms that DO carry the
-    #: patch and arms that must NOT: llama-native and bigcherry-native are the
+    #: patch and arms that must NOT: llama-native and bigcherry-tuning are the
     #: baselines the patched arms are measured against, so a single
     #: request-level --experiment (which applies to every lane) cannot express
     #: that profile at all. Request-level --experiment remains the right tool

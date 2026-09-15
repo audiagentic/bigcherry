@@ -303,7 +303,12 @@ patch-sets = ["framework", "upstream-fixes"]
 [source.bigcherry]
 ref = "pinned"
 overlay = true
-patch-sets = ["framework", "upstream-fixes", "validated-enhancements"]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): release composition
+# now resolves through serving-core (PA26 hardware-proven equivalent to the
+# old framework composition) instead of the old aggregate framework
+# patch-set. Role/name are unchanged -- this is still THE release source --
+# only the internal composition narrows to the serving-relevant modules.
+patch-sets = ["serving-core", "upstream-fixes", "validated-enhancements"]
 
 # PA28: additive, transitional semantic sources composed from the new
 # serving-core/campaign-support/qualification-support patch-sets above.
@@ -457,11 +462,22 @@ backend = "vulkan"
 # means the same production build roles `build --all` always covered, not
 # a silently narrower set.
 [campaign.standard]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): source.bigcherry no
+# longer carries 0110_campaign_tune_record_build (it moved to serving-core's
+# sibling campaign-support patch-set), and build.control/record/tune all
+# require 0110's plumbing (0110 fails closed when it is absent) -- so these
+# three lanes move to bigcherry-tuning (serving-core+campaign-support+
+# upstream-fixes), NOT bigcherry-serving-base (control-only, no
+# campaign-support) and NOT plain bigcherry (no campaign-support at all).
+# build.replay is what actually ships, so it alone stays on source=bigcherry
+# (now serving-core+upstream-fixes+validated-enhancements -- the real
+# release composition). Tuning lanes deliberately exclude
+# validated-enhancements per PA29's release/campaign semantic split.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
-  { source = "bigcherry", build = "record", platform = "linux-multi" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi" },
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
@@ -473,14 +489,19 @@ lanes = [
 # audit/full-max remains opt-in: compiling every candidate is unnecessary for
 # an end-to-end workload-specific comparison.
 [campaign.e2e-build-matrix]
+# PA29 cutover: build.native is serving-only (no tuner/diagnostics), so its
+# lane moves to bigcherry-serving-base. control/record/tune/replay-diagnostic
+# all need 0110's campaign plumbing (see campaign.standard's comment above),
+# so they move to bigcherry-tuning. build.replay is the only lane that stays
+# on source=bigcherry (the real release composition).
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-serving-base", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # VA26: the repeatable patch-qualification matrix. `standard` above varies the
@@ -518,34 +539,45 @@ lanes = [
 # (Brutus bench runner)") drives a running llama-server via
 # bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
 #
-# ARM 4 AND ALREADY-SHIPPED PATCHES. Arm 4 is the release composition WITH the
-# patch. How it is written depends on whether the patch has already shipped:
+# ARM 4 AND ALREADY-SHIPPED PATCHES -- PA29 NOTE (GPT design review
+# req_964ec5fc21c14848 approved the lane-source mapping below, but did not
+# catch this consequence; found by actually resolving the profile with
+# tools/tests/campaign/test_campaign_resolution.py::PerLaneExperimentTests,
+# not asserted from theory): arm 4 ("the patch IN SITU, on top of
+# everything already shipped") required source=bigcherry specifically
+# BECAUSE that was the only source carrying validated-enhancements. Every
+# control-family lane (control/record/tune/replay-diagnostic) now requires
+# 0110's campaign plumbing, which only bigcherry-tuning carries among the
+# PA28 sources -- and bigcherry-tuning deliberately EXCLUDES
+# validated-enhancements (PA29's release/campaign semantic split). There is
+# currently no source that composes serving-core + campaign-support +
+# upstream-fixes + validated-enhancements, so arm 4 can no longer be
+# expressed as "release, in-situ, under the instrumented control build" --
+# doing so would silently drop validated-enhancements from what it measures.
 #
-#   not yet shipped -> source = "bigcherry", experiment = "<patch>-only"
-#   already shipped -> source = "bigcherry" alone; the release set already
-#                      contains it, and adding the experiment is rejected with
-#                      "experiment repeats a base patch module" (correctly).
-#
-# RD73 was demoted out of validated-enhancements on 2026-09-09 (e548aaee,
-# HI162: its balanced A/B measured a regression on its own promotion
-# workload), so the release composition no longer contains it. Arm 4 carries
-# no experiment and is the pure release set (framework + upstream-fixes, with
-# validated-enhancements currently empty); arm 3 carries RD73 via the
-# rd73-only experiment. That makes arm 4 versus arm 3 the actual
-# release-without-vs-with RD73 contrast -- the one that measured the
-# regression -- an independent data point, not a consistency check. Until the
-# next enhancement ships, arm 4 compiles the same composition as the control
-# lanes; once it ships, arm 4 diverges in the usual already-shipped way.
+# Until a real "instrumented release" source exists (tracked as follow-up
+# work, not created here), arm 4's original degenerate case -- source=
+# bigcherry, build=control, no experiment, from back when validated-
+# enhancements was empty and arm 4 == arm 2's composition anyway -- is
+# removed from this checked-in profile rather than left as a literal
+# duplicate-selector lane (bigcherry-tuning:control:linux-multi would
+# otherwise collide with arm 2). Re-add a real arm 4 explicitly, scoped to
+# the specific campaign that needs an in-situ release comparison, once that
+# source exists; do not resurrect the plain-bigcherry control lane, it no
+# longer resolves the composition its own name implies.
 #
 # `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
 # it, so a lane left at the default publishes -- and therefore builds -- only
 # llama-bench, and produces no server to measure at all.
 [campaign.patch-qualification]
+# PA29 cutover: build.control requires 0110's campaign plumbing (GPT design
+# review req_964ec5fc21c14848), so every control/tune/replay-diagnostic arm
+# here moves to bigcherry-tuning; only the release-composition replay arm (if
+# ever added) would stay on source=bigcherry.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
   # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
   # so comparing it against llama-native measures our instrumentation, not our
   # optimisations. replay is "applies stored winners without measuring -- what
@@ -556,7 +588,7 @@ lanes = [
   # These carry `needs` (tune: inventory; replay: inventory + promoted-winners),
   # so a bare `build --profile patch-qualification` cannot satisfy them --
   # supply --inventory/--winners, or select the control-only lanes explicitly.
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 

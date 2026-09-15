@@ -28,16 +28,16 @@ class ResolveCliSelectionTests(unittest.TestCase):
     def test_source_selection_has_real_patch_set_identity(self):
         sel = selection.resolve_cli_selection(_args(source="bigcherry"))
         self.assertEqual(sel.source_name, "bigcherry")
-        # bigcherry is the RELEASE source: framework + validated-enhancements.
-        # Asserted as "at least the framework's 15", not an exact count --
-        # the enhancement set grows as patches qualify, and pinning a literal
-        # here would make every legitimate promotion look like a regression.
-        native = selection.resolve_cli_selection(_args(source="bigcherry-native"))
-        # PA27 split 0100_cmake_options into serving (0100) and campaign
-        # tune/record/coverage build (0110) halves -- framework grew 15 -> 16.
-        self.assertEqual(len(native.patch_ids), 16)  # real framework patch-set
-        self.assertGreaterEqual(len(sel.patch_ids), len(native.patch_ids))
-        self.assertTrue(set(native.patch_ids) <= set(sel.patch_ids))
+        # PA29 cutover (GPT design review req_964ec5fc21c14848): bigcherry is
+        # now the RELEASE source: serving-core + validated-enhancements, not
+        # framework + validated-enhancements. bigcherry-native (the OLD,
+        # still-resolvable framework-only control) is therefore no longer a
+        # subset of bigcherry -- serving-core is a narrower complement of
+        # framework, not a superset. Compare against serving-base instead,
+        # which IS still the direct analog (serving-core + upstream-fixes).
+        serving = selection.resolve_cli_selection(_args(source="bigcherry-serving-base"))
+        self.assertGreaterEqual(len(sel.patch_ids), len(serving.patch_ids))
+        self.assertTrue(set(serving.patch_ids) <= set(sel.patch_ids))
         self.assertIsNotNone(sel.patch_set_id)
         self.assertEqual(sel.overlay, True)
         self.assertIsNotNone(sel.overlay_digest)  # overlay=True -> real digest

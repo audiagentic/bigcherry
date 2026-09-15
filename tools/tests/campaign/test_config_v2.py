@@ -218,9 +218,11 @@ states = ["validated"]
         self.assertEqual(
             loaded.sources["bigcherry-native"].patch_sets, ("framework", "upstream-fixes")
         )
+        # PA29 cutover (GPT design review req_964ec5fc21c14848): the release
+        # source now composes serving-core, not framework.
         self.assertEqual(
             loaded.sources["bigcherry"].patch_sets,
-            ("framework", "upstream-fixes", "validated-enhancements"),
+            ("serving-core", "upstream-fixes", "validated-enhancements"),
         )
         self.assertEqual(loaded.builds["control"].options, (("GGML_HIP_AUTOTUNE", "ON"),))
         self.assertEqual(loaded.builds["tune"].needs, frozenset({"inventory"}))
