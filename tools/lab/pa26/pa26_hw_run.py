@@ -36,6 +36,17 @@ WORKDIR.mkdir(parents=True, exist_ok=True)
 WINNERS_CACHE = Path(
     "/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/workdir/dispatch.cache"
 )
+# The manifest the corpus's own dispatch cache was exported/rebound against
+# (_stage_replay_export uses the "replay" build's manifest, not tune's --
+# see tune-campaign-receipt.json's replay.manifest_path for this run).
+# require_corpus_candidate_semantics() proves every corpus winner still
+# means the same candidate in each diagnostic arm's own manifest before
+# GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0 is relied on for cross-build
+# replay.
+CORPUS_PRODUCER_MANIFEST_PATH = Path(
+    "/home/audumla/.cache/bigcherry/artifacts-store/runs/"
+    "pa26-rha15-verify2-replay-cb4187d0a830/generate/hip-autotune-manifest.json"
+)
 INVENTORY_PATH = Path(
     "/home/audumla/bc-pa-artifacts/pa26-rha15-verify2/workdir/inventory.json"
 )
@@ -61,6 +72,10 @@ print(f"PA26 hardware run starting. workdir={WORKDIR}", flush=True)
 print(f"winners_cache={WINNERS_CACHE} exists={WINNERS_CACHE.is_file()}", flush=True)
 print(f"inventory={INVENTORY_PATH} exists={INVENTORY_PATH.is_file()}", flush=True)
 print(f"model={MODEL_PATH} exists={MODEL_PATH.is_file()}", flush=True)
+print(
+    f"corpus_producer_manifest={CORPUS_PRODUCER_MANIFEST_PATH} "
+    f"exists={CORPUS_PRODUCER_MANIFEST_PATH.is_file()}", flush=True,
+)
 
 control_spec, candidate_spec = hw.build_hardware_specs(
     platform_name=PLATFORM,
@@ -94,6 +109,7 @@ receipt = hw.build_hardware_receipt(
     candidate_spec=candidate_spec,
     diagnostic_control_spec=diagnostic_control_spec,
     diagnostic_candidate_spec=diagnostic_candidate_spec,
+    corpus_producer_manifest_path=CORPUS_PRODUCER_MANIFEST_PATH,
     # A prior pass already wrote content under the fixed "pa26-hw1" run-scoped
     # artifact-store path with different bytes (immutable-store collision) --
     # unique per-invocation prefix avoids colliding with stale prior-run
