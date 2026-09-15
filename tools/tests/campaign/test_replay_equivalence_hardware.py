@@ -549,6 +549,63 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
         hw.require_shared_build_inputs(delta)  # must not raise
 
 
+class Pa26DerivedPathConfigureKeyTests(unittest.TestCase):
+    """GPT design (req_13b71975cbe94c8d): GGML_HIP_AUTOTUNE_GENERATED_DIR is
+    a build-local path derived from (source_slice_id, build_plan_id), which
+    already legitimately differ between arms -- it must be validated then
+    canonicalized (never blindly dropped), not compared raw."""
+
+    def _identity_pair(self, *, control_dir: str, candidate_dir: str):
+        control_result = _fake_result(
+            source_name="control",
+            effective_configure={"GGML_HIP_AUTOTUNE_GENERATED_DIR": control_dir},
+        )
+        candidate_result = _fake_result(
+            source_name="candidate",
+            effective_configure={"GGML_HIP_AUTOTUNE_GENERATED_DIR": candidate_dir},
+        )
+        control = hw.ArmBuildIdentity.from_result(control_result)
+        candidate = hw.ArmBuildIdentity.from_result(candidate_result)
+        return control, candidate
+
+    def test_expected_shape_normalizes_and_passes(self):
+        # Build once with placeholder paths just to learn the real
+        # (source_slice_id, build_plan_id) ArmBuildIdentity.from_result
+        # derives, then rebuild with the actual expected-shape paths.
+        control, candidate = self._identity_pair(
+            control_dir="placeholder", candidate_dir="placeholder"
+        )
+        control_dir = (
+            f"/home/x/.cache/bigcherry/builds/{control.source_slice_id}/"
+            f"{control.build_plan_id}/generated-inputs"
+        )
+        candidate_dir = (
+            f"/home/x/.cache/bigcherry/builds/{candidate.source_slice_id}/"
+            f"{candidate.build_plan_id}/generated-inputs"
+        )
+        control, candidate = self._identity_pair(
+            control_dir=control_dir, candidate_dir=candidate_dir
+        )
+        delta = hw.BuildStageDelta(control=control, candidate=candidate)
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+    def test_negative_unexpected_shape_fails_closed(self):
+        control, candidate = self._identity_pair(
+            control_dir="placeholder", candidate_dir="placeholder"
+        )
+        control_dir = "/not/the/expected/shape"
+        candidate_dir = (
+            f"/home/x/.cache/bigcherry/builds/{candidate.source_slice_id}/"
+            f"{candidate.build_plan_id}/generated-inputs"
+        )
+        control, candidate = self._identity_pair(
+            control_dir=control_dir, candidate_dir=candidate_dir
+        )
+        delta = hw.BuildStageDelta(control=control, candidate=candidate)
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+
 class Pa26EffectiveConfigureProjectionTests(unittest.TestCase):
     """GPT design's required test list (req_9cd5b140ca544ef8): each
     whitelisted OFF->absent normalizes and passes; every other asymmetry
