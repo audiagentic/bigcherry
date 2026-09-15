@@ -899,8 +899,24 @@ def make_real_hardware_runtime_runner(
         try:
             with runner:
                 workflow_mod.run_tune_signature_workload(runner, runtime_profile)
-                final = runner.run_completion(
-                    "Explain how a compass works.", n_predict=64
+                # Real hardware evidence (pa26-hardware-receipt.json, before
+                # this fix): output_digest differed between two otherwise-
+                # identical arms -- root cause is sampling non-determinism,
+                # not a real divergence. ServerRunner.run_completion() (and
+                # the /completion endpoint by default) carries no seed, so
+                # each arm's own llama-server process draws its own random
+                # seed. A fixed seed here is a PA26-local completion
+                # parameter, not a change to run_completion's shared
+                # contract -- posted directly rather than widening
+                # run_completion() for one caller's determinism need.
+                final = runner.post_json(
+                    "/completion",
+                    {
+                        "prompt": "Explain how a compass works.",
+                        "n_predict": 64,
+                        "seed": 20260915,
+                    },
+                    timeout_s=300,
                 )
                 # Digest the generated content only -- not the full response
                 # (timings/other volatile fields would make two otherwise-
