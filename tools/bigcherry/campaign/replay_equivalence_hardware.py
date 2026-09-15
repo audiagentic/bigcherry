@@ -292,6 +292,52 @@ _PA26_REMOVED_OPTION_OWNERS: dict[str, str] = {
 }
 
 
+# GPT design correction (req_13b71975cbe94c8d): a build-local path derived
+# from (source_slice_id, build_plan_id) -- both of which already legitimately
+# differ between arms by PA26 design -- is itself non-semantic identity
+# noise, not behavioral content. A FIXED allowlist only (never a generic
+# "contains source_slice_id/build_plan_id" rule -- GPT explicit: that could
+# hide a future semantically important option that happens to embed one of
+# those IDs). Validated-then-canonicalized, not blindly deleted: this proves
+# each arm actually used ITS OWN expected content-addressed generated
+# directory before discarding the pathname difference. Safe because the
+# generated directory's actual CONTENTS are separately bound by the
+# stronger semantic checks above (compile-input filename set, strict
+# generated files, manifest projection) -- this key carries location
+# identity only.
+_PA26_DERIVED_PATH_CONFIGURE_KEYS: frozenset[str] = frozenset({
+    "GGML_HIP_AUTOTUNE_GENERATED_DIR",
+})
+
+
+def _normalize_pa26_derived_path_keys(
+    identity: "ArmBuildIdentity", configure: dict[str, str]
+) -> None:
+    """Mutates ``configure`` in place: for each key in
+    ``_PA26_DERIVED_PATH_CONFIGURE_KEYS``, requires it be present and end
+    with the exact expected build-local suffix
+    (``/builds/<source_slice_id>/<build_plan_id>/generated-inputs``), then
+    replaces its value with a fixed placeholder so the two arms' otherwise-
+    identical records can compare equal. Fails closed (never silently drops
+    the key) if it is missing or does not match the expected shape --
+    GPT explicit: validate then canonicalize, never blindly delete."""
+    expected_suffix = (
+        f"/builds/{identity.source_slice_id}/{identity.build_plan_id}/generated-inputs"
+    )
+    for key in _PA26_DERIVED_PATH_CONFIGURE_KEYS:
+        value = configure.get(key)
+        if value is None:
+            continue
+        normalized = value.replace("\\", "/")
+        if not normalized.endswith(expected_suffix):
+            raise ReplayEquivalenceHardwareError(
+                f"{key} is not the expected build-local generated-input path "
+                f"for this arm's own (source_slice_id, build_plan_id): {value!r} "
+                f"(expected suffix {expected_suffix!r})"
+            )
+        configure[key] = "<PA26_BUILD_LOCAL_GENERATED_DIR>"
+
+
 def pa26_effective_configure_projection(
     control: dict[str, str],
     candidate: dict[str, str],
@@ -390,9 +436,16 @@ def require_shared_build_inputs(
             "manifest_hash, build_descriptor, per-candidate "
             "implementation_digest/implementation_source_files)"
         )
+    # Ordering (GPT design, req_13b71975cbe94c8d): raw effective_configure
+    # -> validate+canonicalize known build-local path keys -> directional
+    # OFF->absent removed-module normalization -> exact equality.
+    control_configure = dict(delta.control.effective_configure)
+    candidate_configure = dict(delta.candidate.effective_configure)
+    _normalize_pa26_derived_path_keys(delta.control, control_configure)
+    _normalize_pa26_derived_path_keys(delta.candidate, candidate_configure)
     projected_control, projected_candidate = pa26_effective_configure_projection(
-        dict(delta.control.effective_configure),
-        dict(delta.candidate.effective_configure),
+        control_configure,
+        candidate_configure,
         allowed_removed_modules=allowed_removed_modules,
     )
     if projected_control != projected_candidate:
