@@ -5,33 +5,21 @@ plan: run-hip-autotune
 state: pending
 created-at: '2026-09-15T02:19:11.114837+00:00'
 breadth: ''
-skill: advanced
+skill: null
 created-by: agent
-work: M
-priority: P1
+work: null
+priority: null
 ---
 
-# Correctness-evidence FAIL for every candidate in real tune-campaign runs (not reproducible in isolation)
+# 
 
 ## Description
 
-A real tune campaign (tierA-qwen4b-q6k, production-safe-single, gfx1100, current pin b10901) runs record+tune successfully (67 dispatch rows, 31 real candidates found) but EVERY candidate fails correctness-evidence generation with seed=1/2/3 native=ok candidate=failed. Confirmed non-transient across two independent full campaign runs (byte-identical failure). Manually reproducing the exact same binary+signature+candidate+environment in isolation PASSES cleanly, both times tested.
 
-Discovered while trying to produce a fixed promoted-winners corpus for PA26 (docs/planning/active/patching-patch-system/PA26.md) -- see that item's notes history for the full multi-pass investigation chain and exact commands/evidence. This blocks winners-corpus production project-wide, not just PA26.
-
-Investigation so far (3 forked passes, see PA26.md notes for full detail):
-1. First pass: deep-dived one specific failing row/signature, manually reproduced the exact binary+signature+candidate+environment in isolation -- passed cleanly both times. Ruled out: registry mismatch, environment stripping, wrong binary.
-2. Second pass: traced hip-autotune-dispatch.cu, found a real previously-undetected second GGML_HIP_FORCE_CANDIDATE_STRICT abort path ("is not eligible for this signature", distinct from "not found in registry") that was silently folding into a generic undiagnostic "failed" status. Landed DIAGNOSTIC HARDENING (new abort-path detection + extended preflight matching the fused-GLU path's existing signature preflight) as commits 4a1939d0/8ce29dfc -- deliberately not claimed as a fix, since the original failure's temp artifacts had been auto-cleaned so the new diagnostics couldn't be checked against the real failure.
-3. Third pass: re-tested with the new diagnostics in place. Directly tested and RULED OUT cwd as a variable (byte-identical SIGABRT in ggml_hip_dispatch_resolve from both the binary's own bin/ directory and the real campaign's bc-pa-work working directory, using the -p ".*" fixed synthetic corpus). This conclusively eliminates cwd but did not independently reproduce the original bug (used a synthetic corpus, not the original failing signature's exact --test-file line).
-
-Remaining live hypothesis: an order/state-dependent effect across the ~31 sequential correctness-evidence subprocess calls the real campaign makes back-to-back, that a single isolated manual invocation cannot reproduce. Untested. Needs either a full campaign re-run under the now-landed diagnostic hardening (which should surface the actual abort reason/preflight mismatch this time instead of a generic FAIL), or a dedicated multi-invocation stress harness that calls the correctness-evidence path N times in the same process/sequence a real campaign does.
 
 ## Steps
 
-1. Run a full real tune campaign (or a scoped repro harness making the same ~31 sequential correctness-evidence calls in order) with the diagnostic hardening from 4a1939d0/8ce29dfc in place, and capture the actual abort-path/preflight diagnostic this time (don't let temp artifacts get auto-cleaned before inspection).
-2. If the diagnostics reveal a genuine state-dependent bug (e.g. a stale/shared GPU context, cached device state, or a preflight that only breaks after N prior invocations), design and land a real fix -- consult GPT (session ses_c2892cdae7f14feb or a fresh one) on the fix design given this touches the general dispatch signature-matching path used far beyond PA26.
-3. Verify the fix with a clean full campaign re-run: correctness-evidence should genuinely PASS (not just avoid crashing) for real candidates.
-4. Once fixed, PA26's corpus-generation and two-arm hardware comparison can proceed (currently blocked on this).
+
 
 ## Detailed Solution & Technical Design
 
@@ -65,6 +53,37 @@ Remaining live hypothesis: an order/state-dependent effect across the ~31 sequen
 
 Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
 
+## 2026-09-15 (continued): REAL ROOT CAUSE FOUND AND VERIFIED (not HIP_VISIBLE_DEVICES)
+
+The campaign (pa26-rha15-verify1) ran to completion with both fixes in place: build succeeded (506/506), record+tune succeeded (67 rows, 31 candidates), and correctness-evidence now correctly attempted all 36 rows and reported a real aggregate: `correctness-evidence generation failed for 31/36 row(s)` with full per-row detail (the orchestration fix from 3af8ad2f working exactly as designed -- no more single-row abort). Artifacts preserved at `/home/audumla/bc-pa-artifacts/pa26-rha15-verify1/` (workdir + full campaign log, 13M) before any cleanup.
+
+Every one of the 31 failing rows hit the IDENTICAL new diagnostic (from the 4a1939d0/8ce29dfc hardening): `EvidenceError: signature-verification record-mode run failed (exit 0) or produced no dispatch_db -- cannot independently observe the real signature hex`.
+
+**Investigated and found the real root cause via code inspection + a live repro on Brutus** (not another blind hardware pass): `tools/bigcherry/tuning/workflow.py::_stage_correctness_evidence()` (line ~488-529) calls `hi80.generate_for_row(conn, row, binary=lane_result.binary_ref.path, ...)` using the **`build_name="tune"`** lane's `test-backend-ops` binary, with NO `runner=` override (defaults to bare `subprocess.run`). That binary internally calls `signature_digest_verification.observed_test_backend_ops_signature_hex()` with `GGML_HIP_DISPATCH_MODE=record` to independently verify the signature hex BEFORE trusting any correctness comparison (HI121/HI125 gate). Ran this exact call directly against the real tune-lane binary and a real row's canonical signature from the campaign's own `promoted.jsonl` (op=29/MUL_MAT, m=2560/n=512/k=4096) via a live Python repro on Brutus -- reproduced the EXACT same EvidenceError, and the binary's own stdout revealed the real cause in plain text:
+```
+ggml_hip_parse_mode: this build cannot record (configure with GGML_HIP_AUTOTUNE_RECORD=ON); using native
+```
+**The tune-lane binary was never compiled with `GGML_HIP_AUTOTUNE_RECORD=ON`, so `dispatch_mode="record"` silently falls back to native mode and never writes a `dispatch_db` -- guaranteed EvidenceError for every single row, unconditionally.** This is a build-capability mismatch, not a state/order/env effect -- explains why it's 31/31 identical and why a prior isolated manual repro (which used `dispatch_mode=replay` + `FORCE_CANDIDATE_STRICT`, a different code path that doesn't need record capability) never caught it.
+
+Also separately confirmed (via a second repro leg) that `HIP_VISIBLE_DEVICES` scoping is NOT the cause -- the error reproduces identically with or without it set to match `_stage_signature_verifier`'s existing device-scoped runner. That comment/reasoning in workflow.py (about env= replacing ambient env) is real and correctly motivated `_gpu_scoped_test_backend_ops_runner`, but is not what's breaking this call site.
+
+**The codebase already has the correctly-built binary for this need**: `_stage_signature_verifier()` (workflow.py ~345-392) builds a dedicated **`build_name="record"`** lane specifically because record-mode capability is required for signature verification -- but that lane's binary/verifier is only wired into the SEPARATE ingest-time `signature_digest_verifier` hook (`inventory.load_measurements`), never into `_stage_correctness_evidence`'s own `generate_for_row()` calls, which still use the tune-lane binary for the exact same kind of record-mode preflight probe.
+
+**Fix direction (not yet implemented, pending GPT design review)**: `_stage_correctness_evidence` (or `hi80.generate_for_row`/`generate_for_candidate`) needs to route the `_observed_signature_hex` preflight specifically through a record-capable binary (the same one `_stage_signature_verifier` already builds), while the actual correctness candidate replay (`dispatch_mode=replay` + `FORCE_CANDIDATE_STRICT`) still needs the tune-lane binary (to have the tuned candidate registered/resolvable). This likely means adding a separate `verifier_binary`/`signature_verifier_runner`-shaped parameter through `generate_for_candidate` -> `_observed_signature_hex`, distinct from the main `binary` used for the candidate run itself -- consulting GPT (session ses_c2892cdae7f14feb) before implementing, since this touches the shared dispatch signature-matching path.
+
+## 2026-09-15 (continued): fresh hardware campaign launched with both fixes in place
+
+Started a fresh session to re-run RHA15 step 1 (real tune-campaign with both the diagnostic-hardening commits 4a1939d0/8ce29dfc AND the orchestration fix 3af8ad2f/1ab802be in place). Verified Brutus idle (0% GPU all 4 devices, no live processes) before touching anything.
+
+Found `/home/audumla/bc-pa-work` had leftover untracked debris (`pa26-repro3/`, 528K) from a prior pass, which made the tree dirty and caused `tune-campaign`'s materialize stage to fail closed ("BigCherry repository is dirty; use explicit development override") -- correct fail-closed behavior, not a bug. Preserved it (moved to `/home/audumla/bc-pa-artifacts/pa26-repro3-prior-pass/`, not deleted) rather than removing it, per artifact-preservation discipline. Tree now clean.
+
+Also found the real invocation needs the venv python (`/home/audumla/bc-pytest-venv/bin/python`, not bare `python`/`python3`) with `PYTHONPATH=tools` from within `bc-pa-work`.
+
+Launched (PID 2089964, nohup, log at `/home/audumla/bc-pa-work/pa26-rha15-verify1.log`):
+```
+cd /home/audumla/bc-pa-work && PYTHONPATH=tools /home/audumla/bc-pytest-venv/bin/python -m bigcherry tune-campaign --platform linux-multi --model /mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf --devices 0 --runtime-profile production-safe-single --source bigcherry-native --run-id pa26-rha15-verify1 --json
+```
+Build in progress as of this note (HIP object compile, ~125/506). Will let it run to completion (build + record + tune + correctness stages), preserve artifacts before any cleanup, and report real per-row diagnostics once correctness-evidence runs.
 
 ## 2026-09-15: real orchestration bug found and fixed (not root-caused by more hardware repro)
 
@@ -84,6 +103,11 @@ This matches the original PA26 failure shape exactly: the campaign's first promo
 
 ## Ledger-events
 
+
 - chg_20260915_023104_fixed-a-real-bug-where-a-singl_7530
 - 2026-09-15T02:31:07.679293+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-15T02:31:25.750063+00:00 (updated-by): Updated: section:notes
+- 2026-09-15T03:31:00.025020+00:00 (updated-by): Updated: section:title, work=None, skill=None, priority=None, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- 2026-09-15T03:44:03.613854+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- chg_20260915_034425_found-and-verified-the-real-ca_3031
+- 2026-09-15T03:44:28.747732+00:00 (updated-by): Updated: section:ledger-events
