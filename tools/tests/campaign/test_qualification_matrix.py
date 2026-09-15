@@ -171,8 +171,8 @@ class QualificationMatrixFixture(unittest.TestCase):
                     required_state="validated"),
             },
             sources={
-                "bigcherry-native": config.Source(
-                    name="bigcherry-native", ref="pinned", overlay=False,
+                "bigcherry-tuning": config.Source(
+                    name="bigcherry-tuning", ref="pinned", overlay=False,
                     patch_sets=("framework",)),
                 "bigcherry": config.Source(
                     name="bigcherry", ref="pinned", overlay=False,
@@ -223,7 +223,7 @@ class BuildQualificationMatrixPlanTests(QualificationMatrixFixture):
         isolated = next(c for c in plan.cells if c.contrast == "isolated")
         release_delta = next(c for c in plan.cells if c.contrast == "release_delta")
         native = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog, catalog_directory=self.patches_root)
+            "bigcherry-tuning", self.cfg, self.catalog, catalog_directory=self.patches_root)
         release = campaign_resolution.resolve_lane(
             "bigcherry", self.cfg, self.catalog, catalog_directory=self.patches_root)
         self.assertEqual(isolated.control.patch_set_id, native.patch_set.patch_set_id)

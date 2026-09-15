@@ -4607,13 +4607,18 @@ def run_patch1000_verification(
     VALIDATION_CRITERIA.md's "build once, run per-device" rule).
 
       stock   = pinned upstream, no overlay/patches
-      control = BigCherry overlay + framework, patch 1000 absent
+      control = BigCherry overlay + serving-core, patch 1000 absent
       subject = control + patch 1000
 
     The subject composition is additionally required to equal the current
-    named bigcherry-native composition -- if config later gains another
+    named bigcherry-serving-base composition -- if config later gains another
     upstream-fix, fail closed rather than silently changing this audit's
     meaning.
+
+    PA29 cutover (GPT design review req_964ec5fc21c14848): this is live
+    producer code, not PA26/PA30 historical comparison apparatus, so it
+    migrates with every other real consumer -- framework -> serving-core,
+    bigcherry-native -> bigcherry-serving-base.
     """
     import tomllib
 
@@ -4644,27 +4649,27 @@ def run_patch1000_verification(
     recipes_path = _recipes_path or (REPO_ROOT / "config" / "recipes.toml")
     recipes = tomllib.loads(recipes_path.read_text(encoding="utf-8"))
     try:
-        framework_ids = tuple(recipes["patch-set"]["framework"]["patches"])
+        serving_core_ids = tuple(recipes["patch-set"]["serving-core"]["patches"])
     except (KeyError, TypeError):
         raise PatchCampaignError(
-            "patch1000: recipes.toml has no valid patch-set.framework"
+            "patch1000: recipes.toml has no valid patch-set.serving-core"
         ) from None
 
-    if _PATCH1000_ID in framework_ids:
-        raise PatchCampaignError("patch1000: focal patch unexpectedly appears in framework")
+    if _PATCH1000_ID in serving_core_ids:
+        raise PatchCampaignError("patch1000: focal patch unexpectedly appears in serving-core")
 
     stock_revision, stock_composition = psi.resolve_source_composition(
         "llama-native", base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
     )
     control_revision, control_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=framework_ids, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "llama-native", extra_patches=serving_core_ids, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=(*framework_ids, _PATCH1000_ID),
+        "llama-native", extra_patches=(*serving_core_ids, _PATCH1000_ID),
         base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
     )
     production_revision, production_composition = psi.resolve_source_composition(
-        "bigcherry-native", base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "bigcherry-serving-base", base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
     )
 
     revisions = {stock_revision, control_revision, subject_revision, production_revision}
@@ -4673,7 +4678,7 @@ def run_patch1000_verification(
 
     if subject_composition != production_composition:
         raise PatchCampaignError(
-            "patch1000: framework + focal no longer equals the current bigcherry-native "
+            "patch1000: serving-core + focal no longer equals the current bigcherry-serving-base "
             "composition; update this audit producer rather than silently including/"
             "excluding another upstream fix"
         )

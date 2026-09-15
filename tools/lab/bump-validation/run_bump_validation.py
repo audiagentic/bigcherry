@@ -49,8 +49,11 @@ from bigcherry.core.context import ProjectContext
 # Only the real production lane -- NOT the full 'standard' profile, which
 # also plans record/tune/replay lanes that need inputs (inventory,
 # promoted-winners) this smoke matrix has no reason to provide.
+# PA29 cutover (GPT design review req_964ec5fc21c14848): build.control needs
+# 0110's campaign plumbing, so this moves to bigcherry-tuning, matching
+# [campaign.standard]'s own migrated control lane.
 _CONTROL_LANE = campaign_config.CampaignLaneSelector(
-    source="bigcherry-native", build="control", platform="linux-multi",
+    source="bigcherry-tuning", build="control", platform="linux-multi",
 )
 
 SMOKE_MODEL = "tierB-qwen9b-q6k"

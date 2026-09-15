@@ -137,7 +137,7 @@ class Patch1000FatBuildTests(unittest.TestCase):
             root = Path(td)
             recipes = root / "recipes.toml"
             recipes.write_text(
-                '[patch-set.framework]\npatches = ["0100_fake_framework"]\n',
+                '[patch-set.serving-core]\npatches = ["0100_fake_framework"]\n',
                 encoding="utf-8",
             )
             (root / "src").mkdir()
@@ -153,7 +153,7 @@ class Patch1000FatBuildTests(unittest.TestCase):
 
             def resolve_source_composition(source_name, *, focal=None, extra_patches=(), **kwargs):  # noqa: ANN001
                 self.assertIsNone(focal)
-                if source_name == "bigcherry-native":
+                if source_name == "bigcherry-serving-base":
                     return "base-sha", subject_comp
                 if source_name != "llama-native":
                     raise AssertionError(source_name)

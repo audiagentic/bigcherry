@@ -61,7 +61,7 @@ def run_profile_campaign(
     devices: str,
     runtime_profile_name: str,
     workload_label: str,
-    source_name: str = "bigcherry-native",
+    source_name: str = "bigcherry-tuning",
     build_name: str = "control",
     experiment: str | None = None,
     run_id: str | None = None,

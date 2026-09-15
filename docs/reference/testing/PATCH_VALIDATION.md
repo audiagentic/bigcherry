@@ -334,8 +334,13 @@ automatically a `ported-validated` proof.
 
 For packaged local framework patches without RD or Experiment Contract
 bindings, use the explicit configuration mode. It builds the exact named
-`bigcherry-native` composition once per role; it does not pretend the focal
-framework patch can be removed to form a causal CONTROL.
+`bigcherry-native` composition once per role (this specific "framework
+configuration" evidence mode is scoped to `kind="framework"` patches and
+intentionally still validates against the old framework/bigcherry-native
+identity, unlike PA29's cutover of the general release/control consumers --
+see `verify_framework_configuration_patch` in `tools/bigcherry/patch/
+evidence.py`); it does not pretend the focal framework patch can be removed
+to form a causal CONTROL.
 
 ```bash
 source tools/env/bigcherry-env.sh

@@ -774,7 +774,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="name of a [experiment.<name>] entry in config/recipes.toml (an exact "
         "extra patch list) -- for benching one experimental patch in "
         "isolation against the source's normal patch-set, e.g. "
-        "'--source bigcherry-native --experiment rd19-only'",
+        "'--source bigcherry-tuning --experiment rd19-only'",
     )
     new_build_cmd.set_defaults(func=cmd_build_new)
 
@@ -860,7 +860,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(GPU/runtime; CPU call-graph via perf is a separate future item)",
     )
     profile_campaign_cmd.add_argument("--llama-root", default=None)
-    profile_campaign_cmd.add_argument("--source", default="bigcherry-native")
+    profile_campaign_cmd.add_argument("--source", default="bigcherry-tuning")
     profile_campaign_cmd.add_argument(
         "--build",
         default="control",
