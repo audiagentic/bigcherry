@@ -338,6 +338,20 @@ ref = "pinned"
 overlay = true
 patch-sets = ["serving-core", "qualification-support", "upstream-fixes"]
 
+# PA30 gate 5/1100 fix: 1100's deterministic test_mul_mat corpus only
+# produces real tuner candidate/correctness evidence when run in
+# GGML_HIP_DISPATCH_MODE=tune, which needs campaign-support's tune/record
+# build plumbing -- bigcherry-qualification intentionally omits
+# campaign-support, so there is no truthful invocation of 1100's tune
+# evidence path through bigcherry-qualification alone. This explicit
+# combined source exists only for that exceptional qualification+tuning
+# case (GPT design review, PA30 gate 5). Not wired into any campaign
+# profile; select it explicitly.
+[source.bigcherry-qualification-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "qualification-support", "upstream-fixes"]
+
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."
 options = {}
