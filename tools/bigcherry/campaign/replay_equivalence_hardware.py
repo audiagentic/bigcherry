@@ -109,6 +109,17 @@ class ArmBuildIdentity:
     #: necessarily changes.
     build_plan_projection: tuple[tuple[str, Any], ...]
     effective_build_id: str | None
+    #: PA26 (req_9cd5b140ca544ef8): the raw post-configure CMakeCache record
+    #: (not merely its digest), as a sorted-items tuple -- kept alongside
+    #: ``effective_build_id`` for provenance. ``require_shared_build_inputs``
+    #: no longer requires ``effective_build_id`` equality; it requires exact
+    #: equality of this field AFTER the narrow, caller-supplied
+    #: ``pa26_effective_configure_projection`` normalization.
+    effective_configure: tuple[tuple[str, str], ...]
+    #: The generated-catalog identity the build actually compiled against
+    #: (``workers.py``'s ``compile_inputs_hash``) -- required exact between
+    #: arms (GPT design, req_9cd5b140ca544ef8).
+    generated_compile_inputs_hash: str | None
     input_hashes: tuple[tuple[str, str], ...]
     binary_digest: str
     runtime_bundle_digest: str
@@ -125,6 +136,8 @@ class ArmBuildIdentity:
             build_plan_id=result.build_plan.build_plan_id,
             build_plan_projection=tuple(sorted(canonical.items())),
             effective_build_id=result.effective_build_id,
+            effective_configure=tuple(sorted(result.effective_configure.items())),
+            generated_compile_inputs_hash=result.generated_compile_inputs_hash,
             input_hashes=tuple(
                 sorted((name, ref.content_hash) for name, ref in result.input_refs)
             ),
@@ -147,14 +160,80 @@ class BuildStageDelta:
     candidate: ArmBuildIdentity
 
 
-def require_shared_build_inputs(delta: BuildStageDelta) -> None:
+# GPT design correction (req_9cd5b140ca544ef8): the exact effective_build_id
+# equality check in require_shared_build_inputs() is over-strong for PA26 --
+# removing the PA20 serving boundary (0110/0810) makes several GGML_HIP_*
+# cmake option() declarations go entirely UNDECLARED in the candidate's
+# CMakeCache.txt vs present-and-OFF in control, even though every such
+# option's VALUE is inert (OFF) on both arms for a plain replay build. This
+# is a PA26-LOCAL semantic-equivalence rule -- it does NOT change
+# build.effective_build_id()'s global semantics, which correctly fingerprints
+# exact resolved CMake state for every other caller.
+#
+# Maps each removed-module-owned option to the module that declares it.
+# Normalization is applied ONLY for an option whose owning module is
+# actually absent from the candidate for the comparison at hand (see
+# ``allowed_removed_modules`` below) -- never blanket-applied.
+_PA26_REMOVED_OPTION_OWNERS: dict[str, str] = {
+    "GGML_HIP_AUTOTUNE": "0110_campaign_tune_record_build",
+    "GGML_HIP_AUTOTUNE_RECORD": "0110_campaign_tune_record_build",
+    "GGML_HIP_DISPATCH_DIAGNOSTICS": "0110_campaign_tune_record_build",
+    "GGML_HIP_ROUTING_TRANSFORM": "0110_campaign_tune_record_build",
+    "GGML_HIP_WORKSPACE_METRICS": "0110_campaign_tune_record_build",
+    "GGML_HIP_REPLAY_DIAGNOSTICS": "0810_replay_hit_diagnostics",
+}
+
+
+def pa26_effective_configure_projection(
+    control: dict[str, str],
+    candidate: dict[str, str],
+    *,
+    allowed_removed_modules: frozenset[str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Narrow, directional normalization of two ``effective_configure``
+    records before requiring exact equality.
+
+    The ONLY tolerated asymmetry: for an option owned by a module in
+    ``allowed_removed_modules`` (i.e. a module this specific comparison
+    legitimately removes from the candidate), control declares it at
+    literal ``"OFF"`` and candidate does not declare it at all -- that
+    combination is dropped from ``control`` so the two records can compare
+    equal. Nothing else is normalized: not ``"FALSE"``/``"0"``/empty/any
+    other CMake-false spelling, not ``ON``-vs-absent, and not any option
+    whose owner is not in ``allowed_removed_modules`` for this call. Any
+    other difference -- including an option unrelated to a removed module,
+    or an owned option in the wrong direction (absent in control, OFF in
+    candidate) -- is left in place so the caller's exact-equality check
+    still fails on it.
+    """
+    control = dict(control)
+    candidate = dict(candidate)
+
+    for key, owner in _PA26_REMOVED_OPTION_OWNERS.items():
+        if owner not in allowed_removed_modules:
+            continue
+        if control.get(key) == "OFF" and key not in candidate:
+            control.pop(key)
+
+    return control, candidate
+
+
+def require_shared_build_inputs(
+    delta: BuildStageDelta,
+    *,
+    allowed_removed_modules: frozenset[str] = frozenset(),
+) -> None:
     """Fail closed unless both arms are a fair comparison: same resolved
     upstream revision, same generated inputs (inventory, promoted-winners --
     the same fixed winner corpus), the same BuildPlan in every respect
-    except the composition-driven ``source_slice_id``, and the same
-    ACTUAL resolved configure/toolchain identity (``effective_build_id``).
-    ``source_slice_id``/``build_plan_id`` are deliberately NOT compared
-    directly (composition is the variable under test)."""
+    except the composition-driven ``source_slice_id``, the same generated
+    compile-inputs identity, and the same PA26-normalized effective
+    configure record. ``source_slice_id``/``build_plan_id`` are deliberately
+    NOT compared directly (composition is the variable under test); raw
+    ``effective_build_id`` is recorded on each arm for provenance but is no
+    longer required to match exactly -- ``effective_configure`` (after the
+    narrow ``pa26_effective_configure_projection`` normalization) is the
+    stronger, more relevant check GPT's design calls for instead."""
     if delta.control.resolved_revision != delta.candidate.resolved_revision:
         raise ReplayEquivalenceHardwareError(
             "control and candidate were materialized from different "
@@ -176,17 +255,28 @@ def require_shared_build_inputs(delta: BuildStageDelta) -> None:
             f"{dict(delta.control.build_plan_projection)} vs "
             f"{dict(delta.candidate.build_plan_projection)}"
         )
-    if not delta.control.effective_build_id or not delta.candidate.effective_build_id:
+    if not delta.control.generated_compile_inputs_hash or not delta.candidate.generated_compile_inputs_hash:
         raise ReplayEquivalenceHardwareError(
-            "both arms must report a non-empty effective_build_id from a "
-            f"real build: control={delta.control.effective_build_id!r}, "
-            f"candidate={delta.candidate.effective_build_id!r}"
+            "both arms must report a non-empty generated_compile_inputs_hash "
+            f"from a real build: control={delta.control.generated_compile_inputs_hash!r}, "
+            f"candidate={delta.candidate.generated_compile_inputs_hash!r}"
         )
-    if delta.control.effective_build_id != delta.candidate.effective_build_id:
+    if delta.control.generated_compile_inputs_hash != delta.candidate.generated_compile_inputs_hash:
         raise ReplayEquivalenceHardwareError(
-            "control and candidate resolved different effective_build_id "
-            f"identities: {delta.control.effective_build_id!r} vs "
-            f"{delta.candidate.effective_build_id!r}"
+            "control and candidate were built from different generated "
+            f"compile inputs: {delta.control.generated_compile_inputs_hash!r} "
+            f"vs {delta.candidate.generated_compile_inputs_hash!r}"
+        )
+    projected_control, projected_candidate = pa26_effective_configure_projection(
+        dict(delta.control.effective_configure),
+        dict(delta.candidate.effective_configure),
+        allowed_removed_modules=allowed_removed_modules,
+    )
+    if projected_control != projected_candidate:
+        raise ReplayEquivalenceHardwareError(
+            "control and candidate resolved different effective configure "
+            f"state (after PA26 removed-module normalization): "
+            f"{projected_control} vs {projected_candidate}"
         )
 
 
@@ -218,20 +308,67 @@ def build_hardware_specs(
     return control_spec, candidate_spec
 
 
+#: GPT design correction (req_9cd5b140ca544ef8): the recipes.toml
+#: ``[build.replay-diagnostic]`` profile turns on
+#: ``GGML_HIP_DISPATCH_DIAGNOSTICS`` (0110's unrelated dispatch-diagnostics
+#: instrumentation) as well as ``GGML_HIP_REPLAY_DIAGNOSTICS`` (0810's hit
+#: observer). In the control arm, 0110 is present and turns that option into
+#: real compile definitions/coverage sources; in the serving candidate, 0110
+#: is absent, so the same cache variable cannot provide that implementation
+#: -- a genuine observer asymmetry, not an OFF/absent artifact PA26's
+#: narrow normalization is allowed to tolerate. PA26's diagnostic pair must
+#: therefore use its OWN ephemeral build profile (never persisted to
+#: ``config/recipes.toml`` -- same "ephemeral in-code override" pattern
+#: ``replay_equivalence.py`` already uses for source/patch-set composition):
+#: replay + 0810's hit observer ON, 0110's dispatch diagnostics explicitly
+#: OFF on both arms so neither arm depends on 0110 for it.
+PA26_DIAGNOSTIC_BUILD_NAME = "__pa26_replay_diagnostic"
+
+
+def build_pa26_diagnostic_build_config(cfg: config.Config) -> config.Config:
+    """Return an ephemeral copy of ``cfg`` carrying
+    ``PA26_DIAGNOSTIC_BUILD_NAME``, cloned from ``[build.replay-diagnostic]``
+    but with ``GGML_HIP_DISPATCH_DIAGNOSTICS`` forced ``OFF`` instead of
+    ``ON`` (GPT design, see ``PA26_DIAGNOSTIC_BUILD_NAME``'s docstring
+    above). Never persisted to ``config/recipes.toml``."""
+    base = cfg.builds.get("replay-diagnostic")
+    if base is None:
+        raise ReplayEquivalenceHardwareError(
+            "cfg carries no 'replay-diagnostic' build to derive PA26's "
+            "ephemeral diagnostic build profile from"
+        )
+    ephemeral = dataclasses.replace(
+        base,
+        name=PA26_DIAGNOSTIC_BUILD_NAME,
+        options=(
+            ("GGML_HIP_DISPATCH_REPLAY", "ON"),
+            ("GGML_HIP_REPLAY_DIAGNOSTICS", "ON"),
+            ("GGML_HIP_DISPATCH_DIAGNOSTICS", "OFF"),
+        ),
+    )
+    return dataclasses.replace(
+        cfg, builds={**cfg.builds, PA26_DIAGNOSTIC_BUILD_NAME: ephemeral}
+    )
+
+
 def build_diagnostic_hardware_specs(
     *,
     platform_name: str,
     architectures: tuple[str, ...],
     inventory_ref: Any,
     winners_ref: Any,
-    build_name: str = "replay-diagnostic",
+    build_name: str = PA26_DIAGNOSTIC_BUILD_NAME,
     binary_relative_path: str = "bin/llama-server",
     control_source: str = "bigcherry-native",
 ) -> tuple[CampaignLaneExecutionSpec, CampaignLaneExecutionSpec]:
     """The DIAGNOSTIC companion pair -- same control, but the candidate is
     the serving-core composition PLUS 0810 (the hit-log observer), built
-    with ``[build.replay-diagnostic]``'s diagnostics-enabled options.
-    Supplies the per-dispatch runtime data the production pair cannot."""
+    with PA26's own ephemeral diagnostic build profile
+    (``PA26_DIAGNOSTIC_BUILD_NAME`` -- see its docstring for why this is not
+    simply ``[build.replay-diagnostic]``). Supplies the per-dispatch runtime
+    data the production pair cannot. The caller's ``cfg`` must carry this
+    build entry -- ``build_hardware_receipt`` ensures this via
+    ``build_pa26_diagnostic_build_config`` before executing this pair."""
     inputs = (("inventory", inventory_ref), ("promoted-winners", winners_ref))
     control_spec = CampaignLaneExecutionSpec(
         source_name=control_source,
@@ -260,6 +397,7 @@ def execute_two_arm_build(
         offline.build_serving_core_config
     ),
     lane_executor: LaneExecutor = execute_campaign_lane,
+    allowed_removed_modules: frozenset[str] = frozenset(offline.EXPECTED_REMOVED_MODULES),
 ) -> tuple[BuildStageDelta, CampaignLaneResult, CampaignLaneResult]:
     """Re-proves composition (stage 1) before spending any build time, then
     materializes+builds both arms through the REAL production pipeline
@@ -301,7 +439,9 @@ def execute_two_arm_build(
         control=ArmBuildIdentity.from_result(control_result),
         candidate=ArmBuildIdentity.from_result(candidate_result),
     )
-    require_shared_build_inputs(build_delta)
+    require_shared_build_inputs(
+        build_delta, allowed_removed_modules=allowed_removed_modules
+    )
     return build_delta, control_result, candidate_result
 
 
@@ -680,8 +820,21 @@ def build_hardware_receipt(
                 "diagnostic_candidate_spec -- the production pair is "
                 "diagnostics-free and cannot emit a hit log"
             )
+        if diagnostic_control_spec.build_name != PA26_DIAGNOSTIC_BUILD_NAME or (
+            diagnostic_candidate_spec.build_name != PA26_DIAGNOSTIC_BUILD_NAME
+        ):
+            raise ReplayEquivalenceHardwareError(
+                "diagnostic_control_spec/diagnostic_candidate_spec must both "
+                f"use build_name={PA26_DIAGNOSTIC_BUILD_NAME!r} (PA26's own "
+                "ephemeral diagnostic profile -- see build_pa26_diagnostic_"
+                "build_config's docstring for why [build.replay-diagnostic] "
+                f"itself is not fair here), got "
+                f"{diagnostic_control_spec.build_name!r}/"
+                f"{diagnostic_candidate_spec.build_name!r}"
+            )
+        diagnostic_build_cfg = build_pa26_diagnostic_build_config(cfg)
         diag_delta, diag_control_result, diag_candidate_result = execute_two_arm_build(
-            cfg,
+            diagnostic_build_cfg,
             catalog,
             context=context,
             store=store,
@@ -690,6 +843,12 @@ def build_hardware_receipt(
             run_id_prefix=f"{run_id_prefix}-diagnostic",
             candidate_cfg_builder=offline.build_serving_core_diagnostic_config,
             lane_executor=lane_executor,
+            # The diagnostic candidate re-adds 0810 (DIAGNOSTIC_ADDBACK_MODULE)
+            # -- only 0110's owned options may tolerate OFF->absent here;
+            # GGML_HIP_REPLAY_DIAGNOSTICS must match identically between arms
+            # since both diagnostic arms are expected to carry 0810.
+            allowed_removed_modules=frozenset(offline.EXPECTED_REMOVED_MODULES)
+            - {offline.DIAGNOSTIC_ADDBACK_MODULE},
         )
         diagnostic_cfg = offline.build_serving_core_diagnostic_config(cfg)
         diagnostic_selection = offline.resolution.resolve_canonical_selection(

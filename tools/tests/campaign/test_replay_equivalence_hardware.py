@@ -6,6 +6,7 @@ real_hardware_runtime_runner are NEVER invoked here (no GPU, no compile).
 from __future__ import annotations
 
 import dataclasses
+import json
 import struct
 import sys
 import tempfile
@@ -72,6 +73,38 @@ def _ref(kind: str, digest: str) -> ArtifactRef:
     )
 
 
+#: One tempdir for the whole test process -- every _fake_result() call
+#: writes its own uniquely-named real runtime-bundle manifest JSON file
+#: into it (CampaignLaneResult.effective_configure/generated_compile_
+#: inputs_hash read the manifest's own published JSON at runtime_bundle_ref
+#: .path, not provenance -- see lane.py's _runtime_bundle_manifest()).
+_MANIFEST_DIR = tempfile.mkdtemp(prefix="pa26-hw-test-manifests-")
+_manifest_counter = [0]
+
+
+def _write_bundle_manifest(
+    *,
+    bundle_digest: str,
+    effective_build_id: str | None,
+    effective_configure: dict[str, str] | None,
+    generated_compile_inputs_hash: str | None,
+) -> Path:
+    _manifest_counter[0] += 1
+    path = Path(_MANIFEST_DIR) / f"bundle-{_manifest_counter[0]}.json"
+    manifest: dict[str, object] = {
+        "entrypoint": "llama-server",
+        "members": {},
+        "runtime_bundle_hash": bundle_digest,
+        "effective_build_id": effective_build_id,
+        "effective_configure": effective_configure,
+        "generated_compile_inputs_hash": generated_compile_inputs_hash,
+        "generated_inputs_verification": "compiled-copy-v1",
+        "toolchain": {},
+    }
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
 def _fake_result(
     *,
     source_name: str,
@@ -81,6 +114,8 @@ def _fake_result(
     binary_digest: str = "bin-1",
     bundle_digest: str = "bundle-1",
     effective_build_id: str | None = "effective-1",
+    effective_configure: dict[str, str] | None = None,
+    generated_compile_inputs_hash: str | None = "gci-1",
     targets: tuple[str, ...] = ("gfx1100",),
 ) -> CampaignLaneResult:
     build_plan = BuildPlan(
@@ -94,6 +129,14 @@ def _fake_result(
         {"build": {"effective_build_id": effective_build_id}}
         if effective_build_id is not None
         else {}
+    )
+    if effective_configure is None:
+        effective_configure = {"GGML_HIP_DISPATCH_REPLAY": "ON"}
+    manifest_path = _write_bundle_manifest(
+        bundle_digest=bundle_digest,
+        effective_build_id=effective_build_id,
+        effective_configure=effective_configure,
+        generated_compile_inputs_hash=generated_compile_inputs_hash,
     )
     return CampaignLaneResult(
         run_id=f"run-{source_name}",
@@ -112,7 +155,7 @@ def _fake_result(
         binary_ref=_ref("binary", binary_digest),
         runtime_bundle_ref=ArtifactRef(
             kind="runtime-bundle",
-            path=Path("/tmp/runtime-bundle"),
+            path=manifest_path,
             content_hash=bundle_digest,
             provenance=bundle_provenance,
         ),
@@ -175,6 +218,10 @@ class ArmBuildIdentityTests(unittest.TestCase):
         self.assertEqual(identity.binary_digest, "bin-1")
         self.assertEqual(identity.runtime_bundle_digest, "bundle-1")
         self.assertEqual(identity.effective_build_id, "effective-1")
+        self.assertEqual(
+            dict(identity.effective_configure), {"GGML_HIP_DISPATCH_REPLAY": "ON"}
+        )
+        self.assertEqual(identity.generated_compile_inputs_hash, "gci-1")
         self.assertEqual(
             identity.input_hashes, (("inventory", "inv-1"), ("promoted-winners", "win-1"))
         )
@@ -249,19 +296,10 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
         with self.assertRaises(hw.ReplayEquivalenceHardwareError):
             hw.require_shared_build_inputs(delta)
 
-    def test_negative_missing_effective_build_id_is_detected(self):
-        delta = hw.BuildStageDelta(
-            control=hw.ArmBuildIdentity.from_result(
-                _fake_result(source_name="control", effective_build_id="e1")
-            ),
-            candidate=hw.ArmBuildIdentity.from_result(
-                _fake_result(source_name="candidate", effective_build_id=None)
-            ),
-        )
-        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
-            hw.require_shared_build_inputs(delta)
-
-    def test_negative_differing_effective_build_id_is_detected(self):
+    def test_differing_raw_effective_build_id_alone_is_tolerated(self):
+        """GPT design correction (req_9cd5b140ca544ef8): raw effective_build_id
+        is recorded for provenance but no longer required to match -- only
+        the (normalized) effective_configure record is."""
         delta = hw.BuildStageDelta(
             control=hw.ArmBuildIdentity.from_result(
                 _fake_result(source_name="control", effective_build_id="e1")
@@ -270,8 +308,65 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
                 _fake_result(source_name="candidate", effective_build_id="e2")
             ),
         )
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+    def test_negative_missing_generated_compile_inputs_hash_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", generated_compile_inputs_hash="g1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", generated_compile_inputs_hash=None)
+            ),
+        )
         with self.assertRaises(hw.ReplayEquivalenceHardwareError):
             hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_generated_compile_inputs_hash_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", generated_compile_inputs_hash="g1")
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", generated_compile_inputs_hash="g2")
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_negative_unnormalized_effective_configure_difference_is_detected(self):
+        """With no allowed_removed_modules, an OFF-vs-absent difference is
+        NOT tolerated -- normalization is opt-in per module ownership."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_AUTOTUNE": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_configure={})
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_whitelisted_off_to_absent_passes_with_owner_allowed(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_AUTOTUNE": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_configure={})
+            ),
+        )
+        hw.require_shared_build_inputs(
+            delta,
+            allowed_removed_modules=frozenset({"0110_campaign_tune_record_build"}),
+        )  # must not raise
 
     def test_differing_source_slice_and_build_plan_id_are_tolerated(self):
         """Composition legitimately differs between arms -- source_slice_id
@@ -286,6 +381,203 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
             candidate=hw.ArmBuildIdentity.from_result(candidate_result),
         )
         hw.require_shared_build_inputs(delta)  # must not raise
+
+
+class Pa26EffectiveConfigureProjectionTests(unittest.TestCase):
+    """GPT design's required test list (req_9cd5b140ca544ef8): each
+    whitelisted OFF->absent normalizes and passes; every other asymmetry
+    remains a hard failure."""
+
+    _OWNER_0110 = frozenset({"0110_campaign_tune_record_build"})
+    _OWNER_0810 = frozenset({"0810_replay_hit_diagnostics"})
+    _OWNER_BOTH = frozenset(
+        {"0110_campaign_tune_record_build", "0810_replay_hit_diagnostics"}
+    )
+
+    def test_whitelisted_off_to_absent_normalizes(self):
+        control, candidate = hw.pa26_effective_configure_projection(
+            {"GGML_HIP_AUTOTUNE": "OFF", "AMDGPU_TARGETS": "gfx1100"},
+            {"AMDGPU_TARGETS": "gfx1100"},
+            allowed_removed_modules=self._OWNER_0110,
+        )
+        self.assertEqual(control, candidate)
+
+    def test_on_to_absent_is_not_normalized(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_AUTOTUNE": "ON"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_configure={})
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                delta, allowed_removed_modules=self._OWNER_0110
+            )
+
+    def test_absent_to_off_wrong_direction_is_not_normalized(self):
+        """The normalization is directional: control=OFF/candidate=absent is
+        tolerated, but control=absent/candidate=OFF (the reverse) is not --
+        that shape never legitimately arises from PA26's removed-module
+        composition and must not be silently accepted."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="control", effective_configure={})
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    effective_configure={"GGML_HIP_AUTOTUNE": "OFF"},
+                )
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                delta, allowed_removed_modules=self._OWNER_0110
+            )
+
+    def test_unknown_option_difference_still_fails(self):
+        """An option difference with no PA26 owner mapping at all is never
+        tolerated, regardless of allowed_removed_modules."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_VULKAN": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_configure={})
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                delta, allowed_removed_modules=self._OWNER_BOTH
+            )
+
+    def test_compiler_or_build_type_difference_still_fails(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"CMAKE_BUILD_TYPE": "Release"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    effective_configure={"CMAKE_BUILD_TYPE": "Debug"},
+                )
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                delta, allowed_removed_modules=self._OWNER_BOTH
+            )
+
+    def test_diagnostic_replay_diagnostics_difference_fails_when_0810_not_allowed(self):
+        """The diagnostic pair's allowed_removed_modules excludes 0810 (it is
+        re-added to the candidate) -- REPLAY_DIAGNOSTICS must match
+        identically between diagnostic arms, never OFF/absent-normalized."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_REPLAY_DIAGNOSTICS": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(source_name="candidate", effective_configure={})
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                delta, allowed_removed_modules=self._OWNER_0110
+            )
+
+    def test_diagnostic_dispatch_diagnostics_must_match_identically(self):
+        """PA26's own ephemeral diagnostic build profile forces
+        GGML_HIP_DISPATCH_DIAGNOSTICS=OFF on BOTH diagnostic arms (never
+        ON/present on either) -- neither arm depends on 0110 for it, and it
+        carries no owner mapping at all, so an identical OFF/OFF pair passes
+        with no normalization needed."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    effective_configure={"GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF"},
+                )
+            ),
+        )
+        hw.require_shared_build_inputs(
+            delta, allowed_removed_modules=self._OWNER_0110
+        )  # must not raise
+
+        # And a mismatch (one arm somehow carrying it ON) must still fail --
+        # DISPATCH_DIAGNOSTICS has no PA26 owner mapping, so it is never
+        # normalized away regardless of allowed_removed_modules.
+        mismatched = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    effective_configure={"GGML_HIP_DISPATCH_DIAGNOSTICS": "OFF"},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    effective_configure={"GGML_HIP_DISPATCH_DIAGNOSTICS": "ON"},
+                )
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(
+                mismatched, allowed_removed_modules=self._OWNER_0110
+            )
+
+
+class Pa26DiagnosticBuildConfigTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = campaign_config.load(_RECIPES_PATH)
+
+    def test_ephemeral_build_forces_dispatch_diagnostics_off(self):
+        ephemeral_cfg = hw.build_pa26_diagnostic_build_config(self.cfg)
+        build = ephemeral_cfg.builds[hw.PA26_DIAGNOSTIC_BUILD_NAME]
+        options = dict(build.options)
+        self.assertEqual(options["GGML_HIP_DISPATCH_REPLAY"], "ON")
+        self.assertEqual(options["GGML_HIP_REPLAY_DIAGNOSTICS"], "ON")
+        self.assertEqual(options["GGML_HIP_DISPATCH_DIAGNOSTICS"], "OFF")
+        # never persisted: the base cfg's own recipes-backed build is
+        # untouched, and [build.replay-diagnostic] itself still carries its
+        # original (unfair for PA26) options.
+        self.assertNotIn(hw.PA26_DIAGNOSTIC_BUILD_NAME, self.cfg.builds)
+        self.assertEqual(
+            dict(self.cfg.builds["replay-diagnostic"].options).get(
+                "GGML_HIP_DISPATCH_DIAGNOSTICS"
+            ),
+            "ON",
+        )
+
+    def test_diagnostic_specs_default_to_the_ephemeral_build_name(self):
+        control_spec, candidate_spec = hw.build_diagnostic_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+        self.assertEqual(control_spec.build_name, hw.PA26_DIAGNOSTIC_BUILD_NAME)
+        self.assertEqual(candidate_spec.build_name, hw.PA26_DIAGNOSTIC_BUILD_NAME)
 
 
 class DiagnosticCompanionCompositionTests(unittest.TestCase):
