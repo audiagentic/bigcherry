@@ -233,52 +233,82 @@ def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
     return paths.PATCHES / "_validation" / f"{patch_id}.json"
 
 
-def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
+# PA36-F step 4: generic, patch/RD-agnostic campaign artifacts every
+# campaign run may produce regardless of which producer executed --
+# always collected, whether or not a declarative producer artifact
+# allowlist is in play.
+_CORE_ARTIFACT_PATHS: tuple[str, ...] = (
+    "status.json", "activation.json", "correctness.json", "bench.json", "report.md",
+    "tune.jsonl.measurements.jsonl", "promoted.jsonl", "coverage.json", "dispatch.cache",
+    "performance.json",
+)
+
+# Legacy (pre-PA36-F) hardcoded, RD/patch-specific artifact names. Only
+# collected when no declarative producer artifact allowlist is supplied
+# (producer_artifact_names=None) -- i.e. the still-unmigrated RD paths.
+# A producer run must NEVER accidentally absorb one of these stale paths
+# belonging to a different, unmigrated RD path.
+_LEGACY_ARTIFACT_PATHS: tuple[str, ...] = (
+    "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
+    "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
+    "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
+    # VA23: RD73's contract artifacts. This list is the record's own
+    # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
+    # a passing performance/controls check whose artifact appears here,
+    # so a contract whose artifacts are absent reports "no recorded
+    # benchmark execution" no matter how real the run was. The
+    # enumeration is deliberate (only known artifact names count, so an
+    # arbitrary file dropped in the workdir cannot become evidence), so
+    # each new contract's artifacts must be added explicitly, exactly as
+    # RD08's are above.
+    "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
+    "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
+    "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
+    "artifacts/rd73-resource.json",
+    "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
+    # PA39: RD12's real bit-identical correctness producer
+    # (run_rd12_correctness_check()) namespaces its artifacts by the
+    # architecture the run actually executed against. The per-arm
+    # activation logs (the declared trace-marker check's
+    # positive/negative artifacts) are namespaced the same way -- the
+    # standalone lab driver shares one run_dir across all three
+    # contract architectures, so a single un-namespaced pair would be
+    # silently overwritten by each later architecture.
+    "artifacts/rd12-correctness-gfx1100.json",
+    "artifacts/rd12-correctness-gfx1201.json",
+    "artifacts/rd12-correctness-gfx1030.json",
+    "logs/activation-rd12-gfx1100-subject.log", "logs/activation-rd12-gfx1100-control.log",
+    "logs/activation-rd12-gfx1201-subject.log", "logs/activation-rd12-gfx1201-control.log",
+    "logs/activation-rd12-gfx1030-subject.log", "logs/activation-rd12-gfx1030-control.log",
+    # PA39: RD04's real backend_reference+ppl_equality correctness
+    # producer (run_rd04_contract_correctness()) namespaces its
+    # artifact by the architecture the run actually executed against.
+    "artifacts/rd04-correctness-gfx1100.json",
+    "artifacts/rd04-correctness-gfx1201.json",
+    "artifacts/rd04-correctness-gfx1030.json",
+    "artifacts/rd13-backend-reference.json",
+    "artifacts/rd26-decode-verify-bit-identity.json",
+)
+
+
+def _artifact_refs(
+    campaign_workdir: Path, *, producer_artifact_names: Iterable[str] | None = None,
+) -> list[dict[str, str]]:
+    """PA36-F step 4: when ``producer_artifact_names`` is ``None`` (no
+    generic producer executed), preserve the complete legacy hardcoded
+    artifact list unchanged. When it is not ``None`` (a generic producer
+    executed via ``execute_validation_producer()``), collect only the
+    generic core campaign artifacts plus the producer's own declared
+    ``artifacts/<basename>`` files -- never any legacy RD-specific path,
+    so a producer run cannot accidentally absorb stale artifacts left
+    behind by an unrelated, unmigrated RD path."""
     root = Path(campaign_workdir).resolve()
-    names = (
-        "status.json", "activation.json", "correctness.json", "bench.json", "report.md",
-        "tune.jsonl.measurements.jsonl", "promoted.jsonl", "coverage.json", "dispatch.cache",
-        "performance.json",
-        "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
-        "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
-        "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
-        # VA23: RD73's contract artifacts. This list is the record's own
-        # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
-        # a passing performance/controls check whose artifact appears here,
-        # so a contract whose artifacts are absent reports "no recorded
-        # benchmark execution" no matter how real the run was. The
-        # enumeration is deliberate (only known artifact names count, so an
-        # arbitrary file dropped in the workdir cannot become evidence), so
-        # each new contract's artifacts must be added explicitly, exactly as
-        # RD08's are above.
-        "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
-        "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
-        "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
-        "artifacts/rd73-resource.json",
-        "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
-        # PA39: RD12's real bit-identical correctness producer
-        # (run_rd12_correctness_check()) namespaces its artifacts by the
-        # architecture the run actually executed against. The per-arm
-        # activation logs (the declared trace-marker check's
-        # positive/negative artifacts) are namespaced the same way -- the
-        # standalone lab driver shares one run_dir across all three
-        # contract architectures, so a single un-namespaced pair would be
-        # silently overwritten by each later architecture.
-        "artifacts/rd12-correctness-gfx1100.json",
-        "artifacts/rd12-correctness-gfx1201.json",
-        "artifacts/rd12-correctness-gfx1030.json",
-        "logs/activation-rd12-gfx1100-subject.log", "logs/activation-rd12-gfx1100-control.log",
-        "logs/activation-rd12-gfx1201-subject.log", "logs/activation-rd12-gfx1201-control.log",
-        "logs/activation-rd12-gfx1030-subject.log", "logs/activation-rd12-gfx1030-control.log",
-        # PA39: RD04's real backend_reference+ppl_equality correctness
-        # producer (run_rd04_contract_correctness()) namespaces its
-        # artifact by the architecture the run actually executed against.
-        "artifacts/rd04-correctness-gfx1100.json",
-        "artifacts/rd04-correctness-gfx1201.json",
-        "artifacts/rd04-correctness-gfx1030.json",
-        "artifacts/rd13-backend-reference.json",
-        "artifacts/rd26-decode-verify-bit-identity.json",
-    )
+    if producer_artifact_names is None:
+        names: tuple[str, ...] = _CORE_ARTIFACT_PATHS + _LEGACY_ARTIFACT_PATHS
+    else:
+        names = _CORE_ARTIFACT_PATHS + tuple(
+            f"artifacts/{name}" for name in producer_artifact_names
+        )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
 
@@ -615,6 +645,7 @@ def make_record(
     campaign_identity_digest: str, build_identities: Mapping[str, Mapping[str, object]],
     validation_build_identities: Mapping[str, Mapping[str, object]],
     campaign_workdir: Path,
+    producer_artifact_names: Iterable[str] | None = None,
     representation: str = "simple", validation_implementation_digest: str | None = None,
     contract_id: str | None = None, contract_hash: str | None = None,
     contracts: Iterable[Mapping[str, str]] = (),
@@ -775,7 +806,7 @@ def make_record(
             "activation": dict(activation), "correctness": dict(correctness_doc),
         }),
         "hardware": {"architectures": list(archs)},
-        "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir) if isinstance(item, Mapping)},
+        "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir, producer_artifact_names=producer_artifact_names) if isinstance(item, Mapping)},
         "blockers": list(blockers),
         "final_eligibility": eligible,
         "patch_id": patch_id,
@@ -802,7 +833,7 @@ def make_record(
         ),
         "campaign_build_identities": builds,
         "validation_build_identities": validation_builds,
-        "campaign_artifacts": _artifact_refs(campaign_workdir),
+        "campaign_artifacts": _artifact_refs(campaign_workdir, producer_artifact_names=producer_artifact_names),
         # RV99: the MEASUREMENTS, not just the verdict derived from them.
         # Before this the record kept identity, provenance, check verdicts and
         # artifact hashes, but the per-lane effects and their pair_ratios lived
