@@ -7362,6 +7362,14 @@ def _run_rd12_contract(
             (registry.root / descriptor.package_root)
             if descriptor.package_root is not None else None
         )
+        # compute_contract_correctness_gate() needs the real
+        # experiment_contract.ExperimentContract -- validation_plan.contract
+        # is a lightweight ContractBinding projection that deliberately
+        # does not carry .correctness/.acceptance (VA15 real-hardware
+        # finding). PA36-F step 2: also the source of ValidationContext's
+        # plural contracts/contract_hashes below -- loaded once, before
+        # the context is constructed, rather than after.
+        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
         validation_ctx = patch_validation.ValidationContext(
             descriptor=descriptor, base_revision=base_revision,
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
@@ -7377,10 +7385,10 @@ def _run_rd12_contract(
             # RD12 consumes no model -- its workload is the registered
             # 1258 test-backend-ops case, not a GGUF.
             model=None,
-            contract=validation_plan.contract,
-            contract_hash=(
-                validation_plan.contract.contract_hash
-                if validation_plan.contract else None
+            contracts=(full_contract,) if full_contract is not None else (),
+            contract_hashes=(
+                {full_contract.id: full_contract.contract_hash}
+                if full_contract is not None else {}
             ),
             run_dir=campaign_run_dir,
             register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
@@ -7392,13 +7400,6 @@ def _run_rd12_contract(
             for spec in validation_plan.checks
         }
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
-
-        # compute_contract_correctness_gate() needs the real
-        # experiment_contract.ExperimentContract -- validation_plan.contract
-        # is a lightweight ContractBinding projection that deliberately
-        # does not carry .correctness/.acceptance (VA15 real-hardware
-        # finding).
-        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
         # PA39: RD12's real bit-identical result is already evaluated
         # inside run_rd12_correctness_check(); thread it through the same
         # way RD08's/RD58's/RD73's named results are, so the gate reflects
@@ -8859,6 +8860,20 @@ def run(args: argparse.Namespace) -> int:
             (registry.root / descriptor.package_root)
             if descriptor.package_root is not None else None
         )
+        # VA15 real-hardware finding: validation_plan.contract is a
+        # patch_validation.ContractBinding -- a lightweight PROJECTION
+        # (contract_id/hash/expected_effect/etc) that deliberately does NOT
+        # carry .correctness/.acceptance/etc. compute_contract_correctness_gate()
+        # needs the real experiment_contract.ExperimentContract, which
+        # run_rd08_contract already loaded as rd08_contract for the
+        # --run-rd08-contract path; other contract-bound patches load it
+        # fresh here the same way that block does. PA36-F step 2: also the
+        # source of ValidationContext's plural contracts/contract_hashes
+        # below -- loaded once, before the context is constructed.
+        full_contract = (
+            rd08_contract if rd08_qualification is not None
+            else patch_validation.load_contract_for_descriptor(descriptor)
+        )
         validation_ctx = patch_validation.ValidationContext(
             descriptor=descriptor, base_revision=base_revision,
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
@@ -8880,8 +8895,11 @@ def run(args: argparse.Namespace) -> int:
             build_evidence=(rd58_build_evidence if args.run_rd58_state_restore else build_evidence),
             apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets, model=str(args.model),
-            contract=validation_plan.contract,
-            contract_hash=(validation_plan.contract.contract_hash if validation_plan.contract else None),
+            contracts=(full_contract,) if full_contract is not None else (),
+            contract_hashes=(
+                {full_contract.id: full_contract.contract_hash}
+                if full_contract is not None else {}
+            ),
             run_dir=campaign_run_dir,
             register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
             trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
@@ -8892,19 +8910,6 @@ def run(args: argparse.Namespace) -> int:
             for spec in validation_plan.checks
         }
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
-
-        # VA15 real-hardware finding: validation_plan.contract is a
-        # patch_validation.ContractBinding -- a lightweight PROJECTION
-        # (contract_id/hash/expected_effect/etc) that deliberately does NOT
-        # carry .correctness/.acceptance/etc. compute_contract_correctness_gate()
-        # needs the real experiment_contract.ExperimentContract, which
-        # run_rd08_contract already loaded as rd08_contract for the
-        # --run-rd08-contract path; other contract-bound patches load it
-        # fresh here the same way that block does.
-        full_contract = (
-            rd08_contract if rd08_qualification is not None
-            else patch_validation.load_contract_for_descriptor(descriptor)
-        )
         # PA39: RD04's real backend_reference+ppl_equality results are
         # already evaluated inside run_rd04_contract_correctness(); thread
         # them through the same way, so the gate reflects real evidence.

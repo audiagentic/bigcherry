@@ -34,6 +34,8 @@ from typing import Mapping, Protocol
 
 import tomllib
 
+from .validation import CheckSpec, ValidationContext, ValidationPlan, ValidationResult
+
 # Reuse the project's real build-identity shape (CompletedBuildEvidence.
 # campaign_identity()'s return type) rather than inventing a parallel
 # concrete type -- it is already exactly Mapping[str, Mapping[str, object]]
@@ -144,6 +146,25 @@ class ProducerContext:
 
 
 @dataclass(frozen=True)
+class ProducerCheckResult:
+    """One producer-supplied, typed per-check result (PA36-F step 2).
+    Replaces the opaque ``named_correctness_results: Mapping[str, object]``
+    /``check_results: Mapping[str, JsonObject]`` pair: ``validation_result``
+    is the real, already-typed ``ValidationResult`` (its own ``.artifacts``
+    is the authoritative bound-artifact set -- there is no second artifact
+    field here), ``contract_ids`` states which bound contract(s) this
+    check's evidence is scoped to (mirroring ``CheckSpec.contract_ids``/
+    ``ValidationContext.contract_ids_for_check()``), and ``disposition``
+    -- when present -- is the raw ``{"passed": bool, ...}`` payload that
+    becomes one entry of ``make_record()``'s ``contract_verdicts``."""
+
+    check_id: str
+    contract_ids: tuple[str, ...]
+    validation_result: ValidationResult
+    disposition: JsonObject | None = None
+
+
+@dataclass(frozen=True)
 class ProducerResult:
     """What a producer returns. Reconciled against the real current
     ``patch_validation_evidence.make_record()`` call (validation_campaign.py)
@@ -157,12 +178,11 @@ class ProducerResult:
     """
 
     correctness: JsonObject | None
-    named_correctness_results: Mapping[str, object]
     validation_build_identities: BuildIdentityMap
     activation_evidence: object | None
     performance_evidence: JsonObject | None
     trace_evidence: JsonObject | None
-    check_results: Mapping[str, JsonObject]
+    check_results: tuple[ProducerCheckResult, ...]
     lane_effects: tuple[JsonObject, ...]
     emitted_artifacts: frozenset[str]
 
@@ -376,14 +396,106 @@ def validate_producer_cli_compatibility(
         )
 
 
-def validate_producer_result(spec: ProducerSpec, result: ProducerResult) -> None:
-    """Fail closed if a producer emits an artifact name it never declared
-    in producer.toml -- the decentralized equivalent of evidence.py's
-    ``_artifact_refs()`` hardcoded allowlist: an arbitrary file dropped in
-    the workdir still cannot become evidence, even post-migration."""
+def validate_producer_result(
+    spec: ProducerSpec,
+    result: ProducerResult,
+    *,
+    plan: ValidationPlan,
+    context: ValidationContext,
+) -> None:
+    """Fail closed on any violation of the producer/typed-result contract
+    (PA36-F step 2/3):
+
+    - every emitted artifact is declared in producer.toml (the
+      decentralized equivalent of evidence.py's ``_artifact_refs()``
+      hardcoded allowlist: an arbitrary file dropped in the workdir still
+      cannot become evidence, even post-migration);
+    - ``validation_build_identities`` role set is exactly
+      ``{control, subject}`` (already enforced by
+      ``ProducerResult.__post_init__``, re-asserted here defensively);
+    - every ``ProducerCheckResult.check_id`` is unique and exists in
+      ``plan``;
+    - the wrapped ``ValidationResult.check_id``/``.capability`` match the
+      plan's ``CheckSpec`` for that check;
+    - ``contract_ids`` matches ``context.contract_ids_for_check(spec)`` --
+      a producer can never silently claim a different contract scope than
+      the shared context/plan already resolved;
+    - every artifact basename referenced by the wrapped
+      ``ValidationResult.artifacts`` is declared by ``spec.artifact_names``;
+    - ``disposition`` is either ``None`` or a well-formed single-contract
+      verdict payload (exactly one contract id, boolean ``passed``, and at
+      most one non-``None`` disposition per contract id across all
+      results).
+    """
     undeclared = sorted(result.emitted_artifacts - spec.artifact_names)
     if undeclared:
         raise ValidationProducerError(
             f"{spec.patch_id}/{spec.producer_id}: producer emitted undeclared "
             f"artifact(s) {undeclared!r}; declared: {sorted(spec.artifact_names)}"
         )
+    if len(set(result.validation_build_identities)) != 2 or set(
+        result.validation_build_identities
+    ) != {"control", "subject"}:
+        raise ValidationProducerError(
+            f"{spec.patch_id}/{spec.producer_id}: validation_build_identities role "
+            f"set must be exactly {{'control', 'subject'}}, got "
+            f"{set(result.validation_build_identities)!r}"
+        )
+
+    seen_check_ids: set[str] = set()
+    disposition_contract_ids: set[str] = set()
+    for record in result.check_results:
+        where = f"{spec.patch_id}/{spec.producer_id}: check {record.check_id!r}"
+        if record.check_id in seen_check_ids:
+            raise ValidationProducerError(f"{where}: duplicate check_id in check_results")
+        seen_check_ids.add(record.check_id)
+
+        try:
+            check_spec: CheckSpec = plan.spec_for(record.check_id)
+        except Exception as exc:
+            raise ValidationProducerError(f"{where}: {exc}") from exc
+
+        vr = record.validation_result
+        if vr.check_id != record.check_id:
+            raise ValidationProducerError(
+                f"{where}: validation_result.check_id {vr.check_id!r} does not match "
+                "ProducerCheckResult.check_id"
+            )
+        if vr.capability != check_spec.capability:
+            raise ValidationProducerError(
+                f"{where}: validation_result.capability {vr.capability!r} does not match "
+                f"plan capability {check_spec.capability!r}"
+            )
+
+        expected_contract_ids = context.contract_ids_for_check(check_spec)
+        if record.contract_ids != expected_contract_ids:
+            raise ValidationProducerError(
+                f"{where}: contract_ids {record.contract_ids!r} does not match "
+                f"context.contract_ids_for_check() {expected_contract_ids!r}"
+            )
+
+        for artifact in vr.artifacts:
+            basename = Path(artifact.name).name
+            if artifact.name != basename or basename not in spec.artifact_names:
+                raise ValidationProducerError(
+                    f"{where}: artifact {artifact.name!r} is not a declared basename; "
+                    f"declared: {sorted(spec.artifact_names)}"
+                )
+
+        if record.disposition is not None:
+            if len(record.contract_ids) != 1:
+                raise ValidationProducerError(
+                    f"{where}: disposition requires exactly one contract_id, got "
+                    f"{record.contract_ids!r}"
+                )
+            if not isinstance(record.disposition.get("passed"), bool):
+                raise ValidationProducerError(
+                    f"{where}: disposition['passed'] must be a bool"
+                )
+            (contract_id,) = record.contract_ids
+            if contract_id in disposition_contract_ids:
+                raise ValidationProducerError(
+                    f"{where}: more than one non-None disposition for contract "
+                    f"{contract_id!r}"
+                )
+            disposition_contract_ids.add(contract_id)
