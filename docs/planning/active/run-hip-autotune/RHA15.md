@@ -5,21 +5,29 @@ plan: run-hip-autotune
 state: pending
 created-at: '2026-09-15T02:19:11.114837+00:00'
 breadth: ''
-skill: null
+skill: advanced
 created-by: agent
-work: null
-priority: null
+work: M
+priority: P1
 ---
 
-# 
+# Correctness-evidence FAIL for every candidate in real tune-campaign runs (not reproducible in isolation)
 
 ## Description
 
+ROOT CAUSE FOUND AND CONFIRMED (2026-09-15, cross-validated by two independent investigations): `tools/bigcherry/tuning/workflow.py::_stage_correctness_evidence()` (line ~488) builds its own `test-backend-ops` lane with `build_name="tune"` and passes that binary into `hi80.generate_for_row()`. That function internally calls `signature_digest_verification.observed_test_backend_ops_signature_hex()` with `GGML_HIP_DISPATCH_MODE=record` to independently verify the signature hex before trusting any correctness comparison (HI121/HI125 gate). But `config/recipes.toml`'s `[build.tune]` only sets `GGML_HIP_AUTOTUNE=ON` / `GGML_HIP_WORKSPACE_METRICS=ON` -- never `GGML_HIP_AUTOTUNE_RECORD=ON`. The tune-lane binary is therefore NEVER compiled with record capability, so `dispatch_mode="record"` silently falls back to native mode (`ggml_hip_parse_mode: this build cannot record (configure with GGML_HIP_AUTOTUNE_RECORD=ON); using native`) and never writes a dispatch_db -- guaranteed `EvidenceError: signature-verification record-mode run failed ... cannot independently observe the real signature hex` for every row, unconditionally. This explains the 31/31 (now 31/36) consistent failure and why isolated manual repros using `dispatch_mode=replay` (a different code path) never caught it.
 
+The codebase ALREADY has the correctly-built binary for this: `_stage_signature_verifier()` (workflow.py ~345) builds a dedicated `build_name="record"` lane specifically because record-mode capability is required for signature verification -- but that lane is only wired into the separate ingest-time `signature_digest_verifier` hook, never into `_stage_correctness_evidence`'s own `generate_for_row()` calls, which still (wrongly) use the tune-lane binary for the same kind of record-mode preflight probe.
+
+Discovered while trying to produce a fixed promoted-winners corpus for PA26 (docs/planning/active/patching-patch-system/PA26.md). Blocks winners-corpus production project-wide, not just PA26.
 
 ## Steps
 
-
+1. DONE: land the real orchestration fix (commit 3af8ad2f) so the stage attempts every row instead of aborting on the first failure -- this was necessary to even SEE the real per-row diagnostic.
+2. DONE: real hardware re-run with both the diagnostic hardening (4a1939d0) and the orchestration fix (3af8ad2f) confirmed the exact root cause above via a live Python repro on Brutus reproducing the identical EvidenceError plus the binary's own plaintext stdout confirming no-record-capability.
+3. NEXT: design and land the actual fix -- route `hi80.generate_for_row()`'s internal `_observed_signature_hex` preflight through a record-capable binary (reuse `_stage_signature_verifier()`'s already-built `build_name="record"` lane, e.g. by threading its `binary_ref.path`/`source_root` into `_stage_correctness_evidence` as a separate `verifier_binary`/`verifier_vendor_root` parameter distinct from the main candidate-replay binary, which still needs the tune-lane build to have the tuned candidate registered/resolvable). Consult GPT (session ses_c2892cdae7f14feb) on the exact fix design before implementing, since this touches the shared dispatch signature-matching path used well beyond PA26/RHA15.
+4. Verify the fix with a clean full campaign re-run: correctness-evidence should genuinely PASS for real candidates (not just avoid the EvidenceError).
+5. Once fixed, PA26's corpus-generation and two-arm hardware comparison can proceed.
 
 ## Detailed Solution & Technical Design
 
@@ -52,6 +60,10 @@ priority: null
 ## Notes
 
 Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
+
+Standing user authorization (2026-09-15): "start it - always start hardware test when needed" -- no need to ask before running real hardware repro attempts on Brutus for this investigation, only verify it's actually idle first.
+
+Investigation chain (chronological): diagnostic hardening (4a1939d0/8ce29dfc) -> cwd ruled out -> orchestration bug found+fixed (3af8ad2f/1ab802be, the whole-stage-abort-on-row-1 bug) -> fresh campaign re-run with both fixes launched on Brutus (pa26-rha15-verify1, artifacts preserved at /home/audumla/bc-pa-artifacts/pa26-rha15-verify1/, 13M) -> real per-row diagnostics obtained (31/36 rows failed with the IDENTICAL EvidenceError) -> root cause confirmed via code inspection + live repro (this update). Full narrative detail from the investigation preserved in this item's change history (the ad-hoc field names from an earlier malformed update are superseded by this consolidated description/steps).
 
 ## 2026-09-15 (continued): REAL ROOT CAUSE FOUND AND VERIFIED (not HIP_VISIBLE_DEVICES)
 
@@ -103,7 +115,6 @@ This matches the original PA26 failure shape exactly: the campaign's first promo
 
 ## Ledger-events
 
-
 - chg_20260915_023104_fixed-a-real-bug-where-a-singl_7530
 - 2026-09-15T02:31:07.679293+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-15T02:31:25.750063+00:00 (updated-by): Updated: section:notes
@@ -111,3 +122,4 @@ This matches the original PA26 failure shape exactly: the campaign's first promo
 - 2026-09-15T03:44:03.613854+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
 - chg_20260915_034425_found-and-verified-the-real-ca_3031
 - 2026-09-15T03:44:28.747732+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-15T03:44:53.844246+00:00 (updated-by): Updated: section:title, work='M', skill='advanced', priority='P1', section:description, section:steps, section:notes
