@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 from bigcherry.core import config as campaign_config
@@ -93,7 +94,11 @@ receipt = hw.build_hardware_receipt(
     candidate_spec=candidate_spec,
     diagnostic_control_spec=diagnostic_control_spec,
     diagnostic_candidate_spec=diagnostic_candidate_spec,
-    run_id_prefix="pa26-hw1",
+    # A prior pass already wrote content under the fixed "pa26-hw1" run-scoped
+    # artifact-store path with different bytes (immutable-store collision) --
+    # unique per-invocation prefix avoids colliding with stale prior-run
+    # output rather than deleting shared ~/.cache/bigcherry state.
+    run_id_prefix=f"pa26-hw-{int(time.time())}",
     runtime_runner=runtime_runner,
 )
 
