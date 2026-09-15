@@ -38,10 +38,37 @@ sub-changes):
     GGML_CUDA_MMQ_J_MAX override + mmq/FA perf test cases
 
 Porting notes:
-  - Six files: fattn-mma-f16.cuh (config table + 2 sync fixes), fattn.cu
-    (softcap read + RDNA4 WMMA head gating), mmq-vec-dot.cuh (Q6_K
-    sub-scale fold), mmq.cuh (J_MAX env), ggml-cuda.cu (op timing),
+  - Seven files: fattn-mma-f16.cuh (config table + 2 sync fixes), fattn.cu
+    (softcap read + RDNA4 WMMA head gating + RD05/RD06 activation
+    markers), mmq-vec-dot.cuh (Q6_K sub-scale fold), mmq.cuh (J_MAX env),
+    mmq.cu (RD07 activation marker only -- the fold itself is in
+    mmq-vec-dot.cuh), ggml-cuda.cu (op timing),
     tests/test-backend-ops.cpp (perf cases + softcap matrix).
+
+Activation evidence (PA37, added after GPT-confirmed host/device boundary
+review, 2026-09-16, gpt-auto req_c2c26de482d845ad): RD05's barrier fix and
+RD07's sub-scale fold both live entirely in device code with no safe
+host-adjacent insertion point, so their BIGCHERRY_PATCH_TRACE markers sit
+at the nearest real host-side dispatch site instead, mirroring
+1204_rd08_q6k_mmvq_vdr2's precedent (once-per-process std::atomic_flag +
+GGML_LOG_WARN, not GGML_LOG_INFO -- VA21 found llama-bench filters INFO):
+  - RD05: fattn.cu's ggml_cuda_flash_attn_ext(), case
+    BEST_FATTN_KERNEL_MMA_F16, immediately before the call into
+    ggml_cuda_flash_attn_ext_mma_f16(). Unconditional -- fires whenever the
+    WMMA-F16 kernel (which contains RD05's barrier fixes) is dispatched.
+    Proves the fixed kernel executed, not that a race was avoided (that is
+    backend-reference correctness evidence, per the RD05 contract).
+    NOTE: GPT explicitly rejected an earlier proposal to place this marker
+    inside ggml_cuda_get_best_fattn_kernel() (the selector) -- that
+    function has non-launch callers too, so a marker there does not prove
+    the kernel actually ran.
+  - RD06: same call site as RD05, second independent marker, additionally
+    gated on GGML_CUDA_CC_IS_RDNA4(cc) && Q->ne[0] > 128 -- proves the
+    RDNA4-extended head ceiling (RD06's chooser change) was the reason
+    this dispatch happened, not merely that some WMMA kernel ran.
+  - RD07: mmq.cu's ggml_cuda_mul_mat_q_switch_type(), case
+    GGML_TYPE_Q6_K, immediately before mul_mat_q_case<GGML_TYPE_Q6_K>().
+    mmq.cu was not previously in 1203's edit set.
   - ADAPTATION (1000 cast): the mmq-vec-dot.cuh sum line in our base
     carries BigCherry patch 1000's "((float) C.x[l])" cast (upstream PR
     #25940, validated in the framework set). The anchor matches the
@@ -182,6 +209,65 @@ _WMMA_OLD = """    if ((amd_wmma_available(cc) && gqa_opt_applies && Q->ne[0] <=
         return BEST_FATTN_KERNEL_MMA_F16;
     }"""
 
+# RD05/RD06 activation markers need std::atomic_flag; fattn.cu does not
+# already include <atomic> (confirmed against the real vendored file,
+# 2026-09-16), same reasoning as 1204_rd08's mmvq.cu include addition.
+_FATTN_INCLUDES_OLD = """#include "common.cuh"
+#include "fattn-common.cuh"
+#include "fattn-mma-f16.cuh"
+#include "fattn-tile.cuh"
+#include "fattn-vec.cuh"
+#include "fattn.cuh"
+"""
+
+_FATTN_INCLUDES_NEW = """#include "common.cuh"
+#include "fattn-common.cuh"
+#include "fattn-mma-f16.cuh"
+#include "fattn-tile.cuh"
+#include "fattn-vec.cuh"
+#include "fattn.cuh"
+
+#include <atomic>
+"""
+
+# RD05/RD06 activation-evidence markers (PA37, GPT-confirmed placement,
+# req_c2c26de482d845ad): ggml_cuda_flash_attn_ext() is the real host-side
+# dispatcher -- its BEST_FATTN_KERNEL_MMA_F16 case is the actual launch
+# site, unlike ggml_cuda_get_best_fattn_kernel() (the selector), which has
+# non-launch callers and so cannot prove the kernel executed. Q and cc are
+# read the same way ggml_cuda_flash_attn_ext_mma_f16() itself reads them
+# a few lines later, so this costs one extra tensor/device-info read when
+# BIGCHERRY_PATCH_TRACE is unset and is still gated by the atomic_flag once
+# it is set. Same once-per-process BIGCHERRY_PATCH_TRACE / atomic_flag /
+# GGML_LOG_WARN pattern as 1204_rd08's real precedent (GGML_LOG_INFO is
+# filtered by llama-bench's default verbosity, per VA21).
+_DISPATCH_OLD = """        case BEST_FATTN_KERNEL_MMA_F16:
+            ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);
+            break;"""
+
+_DISPATCH_NEW = """        case BEST_FATTN_KERNEL_MMA_F16: {
+            // bigcherry: RD05/RD06 activation-evidence instrumentation,
+            // not part of the ported fork change.
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                static std::atomic_flag bigcherry_rd05_logged = ATOMIC_FLAG_INIT;
+                if (!bigcherry_rd05_logged.test_and_set(std::memory_order_relaxed)) {
+                    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD05\\n");
+                }
+
+                const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+                const ggml_tensor * Q = dst->src[0];
+                if (GGML_CUDA_CC_IS_RDNA4(cc) && Q->ne[0] > 128) {
+                    static std::atomic_flag bigcherry_rd06_logged = ATOMIC_FLAG_INIT;
+                    if (!bigcherry_rd06_logged.test_and_set(std::memory_order_relaxed)) {
+                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06\\n");
+                    }
+                }
+            }
+
+            ggml_cuda_flash_attn_ext_mma_f16(ctx, dst);
+            break;
+        }"""
+
 _WMMA_NEW = """    // RDNA4 WMMA has higher throughput than RDNA3; heads up to 576 (incl. the DKQ != DV shapes)
     // are enabled by default there. Set GGML_CUDA_FA_WMMA_256=0 to force the WMMA path off for
     // heads > 128 (e.g. to compare against the tile kernel).
@@ -289,6 +375,45 @@ _SUM_OLD = """                for (int l = 0; l < tile_C::ne; ++l) {
 _SUM_NEW = """                for (int l = 0; l < tile_C::ne; ++l) {
                     sum[(j0/tile_C::J + n)*tile_C::ne + l] += (float) C.x[l] * x_s2_reg[n][l] * dB;
                 }"""
+
+# ---------------------------------------------------------------------- mmq.cu
+
+# RD07 activation marker: the sub-scale fold itself (mmq-vec-dot.cuh) is
+# device code with no safe host-adjacent insertion point (confirmed same
+# as the prior session's finding), so the marker sits at the nearest real
+# host-side Q6_K MMQ dispatch site instead -- structurally identical to
+# 1204_rd08's real mul_mat_vec_q_switch_ncols_dst precedent (GPT-confirmed
+# placement, req_c2c26de482d845ad). mmq.cu is not otherwise touched by
+# 1203 and needs <atomic> added, same reasoning as mmvq.cu in 1204_rd08.
+_MMQ_INCLUDES_OLD = """#include <cstdint>
+
+static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
+
+_MMQ_INCLUDES_NEW = """#include <atomic>
+#include <cstdint>
+
+static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
+
+_MMQ_SWITCH_OLD = """        case GGML_TYPE_Q6_K:
+            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
+            break;"""
+
+_MMQ_SWITCH_NEW = """        case GGML_TYPE_Q6_K: {
+            // bigcherry: RD07 activation-evidence instrumentation, not
+            // part of the ported fork change. Proves the Q6_K MMQ
+            // specialization (which contains RD07's folded sub-scale
+            // kernel) was dispatched, not that the fold instruction itself
+            // executed.
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                static std::atomic_flag bigcherry_rd07_logged = ATOMIC_FLAG_INIT;
+                if (!bigcherry_rd07_logged.test_and_set(std::memory_order_relaxed)) {
+                    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07\\n");
+                }
+            }
+
+            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
+            break;
+        }"""
 
 # ---------------------------------------------------------------------- mmq.cuh
 
@@ -509,9 +634,19 @@ PATCHES = [
     ),
     FilePatch(
         path="ggml/src/ggml-cuda/fattn.cu",
-        description="RDNA4 WMMA head gating + softcap read "
-                    "(rdna-boosts 1d525bd45 / RD05+RD06)",
+        description="RDNA4 WMMA head gating + softcap read + RD05/RD06 "
+                    "activation markers (rdna-boosts 1d525bd45 / RD05+RD06)",
         edits=(
+            Edit(
+                id="rd0506-atomic-include",
+                anchor=re.escape(_FATTN_INCLUDES_OLD),
+                rationale="fattn.cu's RD05/RD06 activation markers need "
+                          "std::atomic_flag; <atomic> is not already "
+                          "included here or transitively",
+                mode="replace",
+                text=_FATTN_INCLUDES_NEW,
+                guard=r"#include <atomic>",
+            ),
             Edit(
                 id="rd0506-softcap-read",
                 anchor=_SOFTCAP_OLD,
@@ -531,6 +666,17 @@ PATCHES = [
                 mode="replace",
                 text=_WMMA_NEW,
                 guard=r"const int wmma_max_head = \(wmma_256 && GGML_CUDA_CC_IS_RDNA4\(cc\)\) \? 576 : 128;",
+            ),
+            Edit(
+                id="rd0506-activation-markers",
+                anchor=re.escape(_DISPATCH_OLD),
+                rationale="ggml_cuda_flash_attn_ext: RD05 (unconditional) "
+                          "and RD06 (RDNA4 + head>128) activation evidence "
+                          "at the real WMMA-F16 launch site -- PA37, "
+                          "GPT-confirmed (req_c2c26de482d845ad)",
+                mode="replace",
+                text=_DISPATCH_NEW,
+                guard=r"BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06",
             ),
         ),
     ),
@@ -567,6 +713,35 @@ PATCHES = [
                 mode="replace",
                 text=_SUM_NEW,
                 guard=r"sum\[\(j0/tile_C::J \+ n\)\*tile_C::ne \+ l\] \+= \(float\) C\.x\[l\] \* x_s2_reg\[n\]\[l\] \* dB;",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/mmq.cu",
+        description="RD07 activation marker at the Q6_K MMQ host-side "
+                    "dispatch site (PA37, not part of the ported fork "
+                    "change)",
+        edits=(
+            Edit(
+                id="rd07-atomic-include",
+                anchor=re.escape(_MMQ_INCLUDES_OLD),
+                rationale="mmq.cu's RD07 activation marker needs "
+                          "std::atomic_flag; <atomic> is not already "
+                          "included here",
+                mode="replace",
+                text=_MMQ_INCLUDES_NEW,
+                guard=r"#include <atomic>\n#include <cstdint>",
+            ),
+            Edit(
+                id="rd07-activation-marker",
+                anchor=re.escape(_MMQ_SWITCH_OLD),
+                rationale="ggml_cuda_mul_mat_q_switch_type: RD07 activation "
+                          "evidence at the real Q6_K MMQ dispatch site -- "
+                          "PA37, GPT-confirmed (req_c2c26de482d845ad), "
+                          "mirrors 1204_rd08's real precedent",
+                mode="replace",
+                text=_MMQ_SWITCH_NEW,
+                guard=r"BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07",
             ),
         ),
     ),
