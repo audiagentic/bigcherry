@@ -348,6 +348,8 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
     def test_build_pair_builds_exactly_two_fat_arms(self) -> None:
         from unittest import mock
 
+        from bigcherry.patch import source as real_psi
+
         fat_targets = vp.FatTargetPlan(targets=("gfx1100", "gfx1201"))
         runtime = vc.CampaignProducerRuntime(
             repo_root=Path("/repo"), patch_id="0000_fake", base_revision="a" * 40,
@@ -374,18 +376,34 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
             evidence_calls.append({"architecture": architecture, "binary": binary})
             return _FakeEvidence("control" if len(evidence_calls) == 1 else "subject")
 
-        fake_psi = mock.Mock()
-        fake_psi.REPO_ROOT = Path("/repo")
-        fake_psi.resolve_source_composition.side_effect = [
-            ("rev123", [("bigcherry", "rev123")]),
-            ("rev123", [("bigcherry", "rev123"), ("0000_fake", "1")]),
-        ]
-        fake_psi.materialize_composition.side_effect = [Path("/src/control"), Path("/src/subject")]
+        def run_once() -> object:
+            # Patching the REAL bigcherry.patch.source module's own
+            # attributes (not swapping sys.modules["bigcherry.patch.source"]
+            # wholesale) -- build_pair()'s `from bigcherry.patch import
+            # source as psi` resolves via the already-imported `bigcherry.
+            # patch` package's cached `source` attribute whenever another
+            # test in the same process already imported it first, which a
+            # module-swap via mock.patch.dict(sys.modules, ...) does not
+            # intercept (a real full-suite-run regression this fixed).
+            with mock.patch.object(
+                real_psi, "resolve_source_composition",
+                side_effect=[
+                    ("rev123", [("bigcherry", "rev123")]),
+                    ("rev123", [("bigcherry", "rev123"), ("0000_fake", "1")]),
+                ],
+            ), mock.patch.object(
+                real_psi, "materialize_composition",
+                side_effect=[Path("/src/control"), Path("/src/subject")],
+            ), mock.patch.object(
+                real_psi, "REPO_ROOT", Path("/repo"),
+            ), mock.patch.object(
+                vc, "build_tree", side_effect=fake_build_tree,
+            ), mock.patch.object(
+                vc, "capture_completed_build_evidence", side_effect=fake_capture,
+            ):
+                return runtime.build_pair(targets=("gfx1100", "gfx1201"), primary_target="llama-bench")
 
-        with mock.patch.object(vc, "build_tree", side_effect=fake_build_tree), \
-             mock.patch.object(vc, "capture_completed_build_evidence", side_effect=fake_capture), \
-             mock.patch.dict(sys.modules, {"bigcherry.patch.source": fake_psi}):
-            pair = runtime.build_pair(targets=("gfx1100", "gfx1201"), primary_target="llama-bench")
+        pair = run_once()
 
         self.assertEqual(len(build_calls), 2, "build_pair() must build exactly two arms")
         self.assertEqual(build_calls[0]["amdgpu_targets"], "gfx1100;gfx1201")
@@ -399,18 +417,9 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
         # own signature has no device-count parameter at all, so calling it
         # again (as a producer with many devices still would, exactly once)
         # produces the same two builds, not more.
-        fake_psi.resolve_source_composition.side_effect = [
-            ("rev123", [("bigcherry", "rev123")]),
-            ("rev123", [("bigcherry", "rev123"), ("0000_fake", "1")]),
-        ]
-        fake_psi.materialize_composition.side_effect = [Path("/src/control"), Path("/src/subject")]
-        fake_psi.REPO_ROOT = Path("/repo")
         build_calls.clear()
         evidence_calls.clear()
-        with mock.patch.object(vc, "build_tree", side_effect=fake_build_tree), \
-             mock.patch.object(vc, "capture_completed_build_evidence", side_effect=fake_capture), \
-             mock.patch.dict(sys.modules, {"bigcherry.patch.source": fake_psi}):
-            runtime.build_pair(targets=("gfx1100", "gfx1201"), primary_target="llama-bench")
+        run_once()
         self.assertEqual(len(build_calls), 2)
 
 
