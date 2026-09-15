@@ -239,6 +239,72 @@ class GenerateForRowTests(_Base):
                 runner=_fake_runner_factory(),
             )
 
+    def test_signature_digest_verifier_receives_the_canonical_signature_dict(self):
+        # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+        # when a caller supplies a signature_digest_verifier, it must be
+        # invoked with THIS row's own canonical signature dict (the same
+        # thing _observed_signature_hex's fallback would otherwise derive
+        # from), not called with something else or skipped.
+        received = []
+
+        def spy_verifier(canonical):
+            received.append(canonical)
+            return SIGNATURE_HEX
+
+        cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=_fake_runner_factory(), signature_digest_verifier=spy_verifier,
+        )
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0], CANONICAL_SIGNATURE)
+
+    def test_observed_signature_hex_fallback_is_not_used_when_verifier_supplied(self):
+        # The runner must never see GGML_HIP_DISPATCH_MODE=record (the
+        # ad hoc preflight _observed_signature_hex would otherwise run
+        # against `binary`) once a signature_digest_verifier is supplied --
+        # this is the actual RHA15 fix: that ad hoc probe is what fails
+        # against a non-record-capable tune-lane binary.
+        modes_seen = []
+        inner_runner = _fake_runner_factory()
+
+        def spying_runner(argv, capture_output, text, env):
+            modes_seen.append(env.get("GGML_HIP_DISPATCH_MODE"))
+            return inner_runner(argv, capture_output, text, env)
+
+        cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=spying_runner, signature_digest_verifier=lambda canonical: SIGNATURE_HEX,
+        )
+        self.assertNotIn("record", modes_seen)
+
+    def test_forced_candidate_execution_still_uses_the_supplied_tune_binary(self):
+        # Even with a signature_digest_verifier supplied for the preflight,
+        # the actual native/candidate correctness comparison legs must
+        # still run against the `binary` this call was given (the tune/
+        # workload-max evidence binary) -- the verifier only replaces the
+        # preflight probe, never the real correctness execution.
+        seen_argv = []
+        inner_runner = _fake_runner_factory()
+
+        def spying_runner(argv, capture_output, text, env):
+            seen_argv.append(argv[0])
+            return inner_runner(argv, capture_output, text, env)
+
+        tune_binary = Path("tune-lane/bin/test-backend-ops")
+        cli.generate_for_row(
+            self.conn, self.row, binary=tune_binary, vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=spying_runner, signature_digest_verifier=lambda canonical: SIGNATURE_HEX,
+        )
+        self.assertTrue(seen_argv)
+        for argv0 in seen_argv:
+            self.assertEqual(argv0, str(tune_binary))
+
     def test_non_mul_mat_signature_raises_signature_mapping_error(self):
         # op=1 is GGML_OP_ADD in the fixture vendor tree -- signature_to_
         # op_filter is MUL_MAT-only this slice (HI80's own documented scope

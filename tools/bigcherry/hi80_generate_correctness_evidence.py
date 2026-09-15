@@ -43,6 +43,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,24 @@ from .tuning import tune_promotion
 
 class CliError(RuntimeError):
     pass
+
+
+#: RHA15 (2026-09-15, dev-gpt-agent design review): the mandatory
+#: HI121/HI125 signature-verification preflight (``_observed_signature_hex``)
+#: needs a RECORD-capable binary (``GGML_HIP_AUTOTUNE_RECORD=ON``) to
+#: independently observe a real dispatch signature hex -- the tune/
+#: workload-max binary this module otherwise runs correctness against was
+#: never built with that capability (``build.record`` uses
+#: ``variant-set="inventory"``, which the catalog makes native-only, so it
+#: cannot itself resolve/force the tuned provisional winner and remains
+#: unsuitable for the actual correctness execution). A caller that already
+#: has a working verifier (``signature_digest_verification.
+#: make_signature_digest_verifier()``, which wraps the real record-lane
+#: binary + matching source root + first-device GPU scoping + memoization)
+#: should supply it here instead of letting this module re-derive a
+#: (binary, vendor_root) pair of its own that would silently point at the
+#: wrong binary.
+SignatureDigestVerifier = Callable[[dict[str, Any]], str]
 
 
 #: RHA15 (2026-09-15, dev-gpt-agent design review req_7e5ae686e055404e):
@@ -199,6 +218,7 @@ def generate_for_candidate(
     candidate_name: str, binary: Path, vendor_root: Path, seeds: tuple[int, ...],
     headroom_fraction: float, contract_version: str, tool_version: str,
     origin: "ce.EvidenceOrigin", native_seed_cache: dict[int, "ce.NativeSeedEvidence"] | None = None,
+    signature_digest_verifier: SignatureDigestVerifier | None = None,
     runner=subprocess.run,
 ) -> EvidenceGenerationResult:
     """The single authoritative evidence-generation primitive -- HI80's own
@@ -219,7 +239,16 @@ def generate_for_candidate(
     ``row["provisional_winner"]`` and ``reason="promotion_winner"`` --
     preserving this module's single-implementation property (HI80's own
     docstring concern: two copies of signature mapping/evidence generation
-    drifting apart)."""
+    drifting apart).
+
+    ``signature_digest_verifier``, when given, is used for the mandatory
+    HI121/HI125 signature-verification preflight instead of re-deriving an
+    ad hoc record-mode probe against ``binary`` (see ``SignatureDigestVerifier``
+    module docstring -- ``binary`` here is the tune/workload-max evidence
+    binary, which generally lacks record capability). When omitted, the
+    original ``_observed_signature_hex(binary, ...)`` behavior is preserved
+    for standalone/direct-call compatibility (e.g. a caller that already
+    has its own record-capable ``binary``)."""
     dispatch_hex = row.get("dispatch")
     signature_hex = row.get("signature")
     hardware_hex = row.get("hardware")
@@ -291,9 +320,12 @@ def generate_for_candidate(
             handle.write(moe_glu_line + "\n")
             moe_glu_path = Path(handle.name)
         try:
-            observed_hex = _observed_signature_hex(
-                binary, moe_glu_file=moe_glu_path, seed=seeds[0], runner=runner,
-            )
+            if signature_digest_verifier is not None:
+                observed_hex = signature_digest_verifier(signature_dict)
+            else:
+                observed_hex = _observed_signature_hex(
+                    binary, moe_glu_file=moe_glu_path, seed=seeds[0], runner=runner,
+                )
             if observed_hex != signature_hex:
                 raise CliError(
                     f"dispatch={dispatch_hex}: observed fused-dispatch signature "
@@ -329,9 +361,12 @@ def generate_for_candidate(
             # graph's C++-regenerated signature actually equals the
             # requested row's own signature before trusting any correctness
             # comparison run against it.
-            observed_hex = _observed_signature_hex(
-                binary, test_file=test_file_path, seed=seeds[0], runner=runner,
-            )
+            if signature_digest_verifier is not None:
+                observed_hex = signature_digest_verifier(signature_dict)
+            else:
+                observed_hex = _observed_signature_hex(
+                    binary, test_file=test_file_path, seed=seeds[0], runner=runner,
+                )
             if observed_hex != signature_hex:
                 raise CliError(
                     f"dispatch={dispatch_hex}: observed dispatch signature "
@@ -383,6 +418,7 @@ def generate_for_row(
     conn: sqlite3.Connection, row: dict[str, Any], *,
     binary: Path, vendor_root: Path, seeds: tuple[int, ...],
     headroom_fraction: float, contract_version: str, tool_version: str,
+    signature_digest_verifier: SignatureDigestVerifier | None = None,
     runner=subprocess.run,
 ) -> str:
     """Thin wrapper over generate_for_candidate() using this row's own
@@ -395,7 +431,8 @@ def generate_for_row(
         conn, row, candidate_name=row["provisional_winner"], binary=binary,
         vendor_root=vendor_root, seeds=seeds, headroom_fraction=headroom_fraction,
         contract_version=contract_version, tool_version=tool_version,
-        origin=ce.EvidenceOrigin(reason="promotion_winner"), runner=runner,
+        origin=ce.EvidenceOrigin(reason="promotion_winner"),
+        signature_digest_verifier=signature_digest_verifier, runner=runner,
     )
     if result.status == "existing":
         return f"skip (already has evidence_id={result.evidence_id})"

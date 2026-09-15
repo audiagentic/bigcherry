@@ -484,6 +484,9 @@ def _stage_correctness_evidence(
     *, context, cfg, store, run_id, platform_name, source_name,
     inventory_path: Path, tune_measurements: Path, dispatch_db: Path,
     seeds: tuple[int, ...],
+    signature_digest_verifier: Callable[[dict[str, Any]], str],
+    signature_verifier_result: CampaignLaneResult,
+    devices: str,
 ) -> CampaignLaneResult:
     lane_result = _plan_and_run_one_lane(
         context=context, cfg=cfg, store=store, source_name=source_name,
@@ -492,10 +495,37 @@ def _stage_correctness_evidence(
         inputs_by_build={"tune": (("inventory", inventory_path),)},
         experiment="hi105-correctness",
     )
+    # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+    # this lane's own binary (build.tune, variant-set="workload-max") is the
+    # correct authority for the actual native-vs-forced-candidate correctness
+    # execution below, but it generally lacks GGML_HIP_AUTOTUNE_RECORD
+    # capability, so it cannot itself serve as the mandatory HI121/HI125
+    # signature-verification preflight -- that requires the DEDICATED
+    # record-capable binary _stage_signature_verifier() already built
+    # (build.record, variant-set="inventory"), packaged as
+    # signature_digest_verifier. Both lanes must still share the same real
+    # source composition before their evidence can be combined -- a silent
+    # mismatch here would mean the preflight verifies a signature against
+    # code the correctness run itself never actually executed.
+    if lane_result.source_slice_id != signature_verifier_result.source_slice_id:
+        raise TuneCampaignError(
+            "correctness evidence and signature verifier source compositions "
+            f"differ (tune={lane_result.source_slice_id!r} vs "
+            f"verifier={signature_verifier_result.source_slice_id!r}) -- "
+            "refusing to combine evidence from mismatched sources"
+        )
     _header, results = hi80._read_measurements(tune_measurements)
     rows = hi80.find_candidate_rows(results)
     import sqlite3
     conn = sqlite3.connect(str(dispatch_db))
+    # RHA15 secondary gap (same review): run_test_backend_ops() passes an
+    # explicit env dict straight to subprocess.run(), which REPLACES the
+    # ambient environment rather than merging with it -- without this,
+    # correctness candidate runs would not inherit HIP_VISIBLE_DEVICES the
+    # way ServerRunner's own env_overrides do for record/tune, and would
+    # silently depend on physical GPU 0 happening to be the intended
+    # device rather than this campaign's own real device selection.
+    candidate_runner = _gpu_scoped_test_backend_ops_runner(devices)
     # RHA15 (2026-09-15, dev-gpt-agent design review req_7e5ae686e055404e):
     # generate_for_row()'s own docstring says it "raises CliError,
     # scm.SignatureMappingError or ce.EvidenceError on failure -- the caller
@@ -526,6 +556,8 @@ def _stage_correctness_evidence(
                     headroom_fraction=hi80.ce.DEFAULT_HEADROOM_FRACTION,
                     contract_version=hi80.ce.CONTRACT_VERSION,
                     tool_version="hi130-tune-campaign-v1",
+                    signature_digest_verifier=signature_digest_verifier,
+                    runner=candidate_runner,
                 )
             except hi80.scm.SignatureMappingError:
                 continue  # unsupported signature domain -- same as the CLI's own honest skip
@@ -753,6 +785,7 @@ def _stage_replay_validate(
     correctness_seeds: tuple[int, ...] = (1, 2, 3), campaign_run_id: str | None = None,
     max_recovery_evaluations: int = recovery_mod.DEFAULT_MAX_RECOVERY_EVALUATIONS,
     max_new_correctness_candidates: int = recovery_mod.DEFAULT_MAX_NEW_CORRECTNESS_CANDIDATES,
+    signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None,
 ) -> dict:
     """HI143: the real pre-promotion behavioral regression gate, wired into
     the actual campaign path (gpt-negotiated integration, 2026-08-29,
@@ -947,6 +980,7 @@ def _stage_replay_validate(
                     recovery_run_id=f"{campaign_run_id}-recovery" if campaign_run_id else None,
                     correctness_seeds=correctness_seeds,
                     max_new_correctness_candidates=max_new_correctness_candidates,
+                    signature_digest_verifier=signature_digest_verifier,
                 )
                 strategy = recovery_mod.BoundedPairedBisectionStrategy()
                 # KNOWN LIMITATION (not yet closed, tracked for follow-up):
@@ -1144,6 +1178,9 @@ def run_tune_campaign(
             platform_name=platform_name, source_name=source_name,
             inventory_path=inventory_path, tune_measurements=tune_measurements,
             dispatch_db=dispatch_db, seeds=correctness_seeds,
+            signature_digest_verifier=signature_digest_verifier,
+            signature_verifier_result=signature_verifier_result,
+            devices=devices,
         )
         _dispatch_db2, _promote_result2, promoted_after, _missing_after = (
             _stage_load_and_promote(
@@ -1216,6 +1253,7 @@ def run_tune_campaign(
                 correctness_result.source_root if correctness_result is not None else None
             ),
             correctness_seeds=correctness_seeds, campaign_run_id=campaign_run_id,
+            signature_digest_verifier=signature_digest_verifier,
         )
         replay_coverage["observation_role"] = "diagnostic-companion"
         replay_coverage["validation_build_plan_id"] = replay_validation_result.build_plan_id

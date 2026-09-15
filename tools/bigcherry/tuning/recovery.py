@@ -52,9 +52,10 @@ search only on actual failure.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from . import behavioral_gate as behavioral_gate_mod
 from . import replay as replay_mod
@@ -491,6 +492,20 @@ class AssignmentExecutor:
     # is about to try.
     correctness_binary_path: Path
     vendor_root: Path
+    # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+    # correctness_binary_path (build.tune, variant-set="workload-max") is
+    # the correct authority for native-vs-forced-candidate correctness
+    # execution, but generally lacks GGML_HIP_AUTOTUNE_RECORD capability,
+    # so it cannot itself serve the mandatory HI121/HI125 signature-
+    # verification preflight hi80.generate_for_candidate() runs before
+    # trusting any correctness comparison -- once that preflight was
+    # generalized (PA26), lazy recovery-alternative qualification inherited
+    # the identical record-capability bug real winner evidence had. Reuse
+    # the SAME memoized verifier the campaign's own strengthened-ingest
+    # signature_digest_verifier() already built (see workflow.py's
+    # _stage_signature_verifier / _stage_replay_validate), rather than
+    # deriving a second one here.
+    signature_digest_verifier: Callable[[dict[str, Any]], str] | None = None
     campaign_run_id: str | None = None
     recovery_run_id: str | None = None
     correctness_seeds: tuple[int, ...] = (1, 2, 3)
@@ -601,6 +616,7 @@ class AssignmentExecutor:
                     recovery_run_id=self.recovery_run_id,
                 ),
                 native_seed_cache=native_cache,
+                signature_digest_verifier=self.signature_digest_verifier,
             )
         except Exception as exc:  # noqa: BLE001 -- any generation failure means "not eligible"
             raise RecoveryError(
