@@ -58,6 +58,28 @@ from bigcherry.experiment.attestation import (
     compare_execution_identity,
 )
 from bigcherry.experiment.server_execution import AttestedServerSession
+from bigcherry.patch.validation import (
+    ArtifactRef,
+    ValidationContext,
+    ValidationPlan,
+    ValidationResult,
+    Verdict,
+)
+from bigcherry.patch.validation_producer import (
+    FatTargetPlan,
+    ProducerBuildPair,
+    ProducerCheckResult,
+    ProducerContext,
+    ProducerDeviceContext,
+    ProducerPairedBenchmarkOutcome,
+    ProducerResult,
+    ProducerSelection,
+    ValidationProducerError,
+    resolve_producer,
+    validate_producer_cli_compatibility,
+    validate_producer_inputs,
+    validate_producer_result,
+)
 
 # GPT review (req_8429aa8e0d35496e, 2026-09-11): every RD73 server session
 # governed by this module's HIP-only selector contract (require_device_
@@ -4396,6 +4418,338 @@ def run_paired_llama_benchmark(
 
 
 BENCHMARK_EXECUTOR_FUNCS["paired-llama-bench-v1"] = run_paired_llama_benchmark
+
+
+# --------------------------------------------------------- PA36-F producer runtime
+
+
+@dataclass(frozen=True)
+class CampaignProducerRuntime:
+    """The one concrete ``ProducerRuntime`` implementation (PA36-F step 1,
+    GPT design req_8ec9b90c05f84a30). Patch-local producer modules never
+    import this module directly -- they receive an instance of this class
+    through ``ProducerContext.runtime`` instead, which is the sanctioned
+    dependency-direction seam validation_producer.py's module docstring
+    establishes.
+
+    Every method here is a thin, faithful wrapper around the existing
+    generic primitives already living in this module
+    (``build_tree()``/``capture_completed_build_evidence()``/
+    ``resolve_selected_device_execution_identity()``/
+    ``run_paired_llama_benchmark()``/``source.resolve_source_composition()``
+    /``source.materialize_composition()``) -- nothing here reimplements
+    them."""
+
+    repo_root: Path
+    patch_id: str
+    base_revision: str
+    workdir: Path
+    hip_path: Path
+    fat_targets: FatTargetPlan
+    run_dir: Path
+
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+    ) -> ProducerBuildPair:
+        """The one authority for the PA36 build-once-fat-multiarch rule:
+        exactly one control build and one subject build, both at
+        ``self.fat_targets.cmake_value``, regardless of how many devices
+        or architectures the producer will later run against."""
+        del targets  # informational for callers; the real build target
+        # list comes from primary_target -- build_tree() itself only ever
+        # builds the single requested target for a producer build pair
+        # (a producer wanting multiple binaries calls build_pair() once
+        # per binary set, never widens this one call).
+        from bigcherry.patch import source as psi
+
+        control_revision, control_composition = psi.resolve_source_composition(
+            baseline_source, focal=None, base_ref=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
+        )
+        subject_revision, subject_composition = psi.resolve_source_composition(
+            baseline_source, focal=self.patch_id, base_ref=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
+        )
+        if control_revision != subject_revision:
+            raise PatchCampaignError(
+                f"{self.patch_id}: build_pair() control/subject resolved different "
+                f"base revisions ({control_revision!r} vs {subject_revision!r})"
+            )
+
+        control_src = psi.materialize_composition(
+            base_repo=LLAMA_CPP_SRC, worktree_root=self.workdir / "control",
+            resolved_revision=control_revision, composition=control_composition,
+            overlay_root=psi.REPO_ROOT / "src", requested_revision=self.base_revision,
+        )
+        subject_src = psi.materialize_composition(
+            base_repo=LLAMA_CPP_SRC, worktree_root=self.workdir / "subject",
+            resolved_revision=subject_revision, composition=subject_composition,
+            overlay_root=psi.REPO_ROOT / "src", requested_revision=self.base_revision,
+        )
+
+        exe = ".exe" if sys.platform == "win32" else ""
+        build_root = self.workdir / "builds"
+        control_name = f"{self.patch_id}-control-{self.fat_targets.cmake_value}"
+        subject_name = f"{self.patch_id}-subject-{self.fat_targets.cmake_value}"
+
+        control_bin = build_tree(
+            name=control_name, hip_path=self.hip_path,
+            amdgpu_targets=self.fat_targets.cmake_value, workdir=build_root,
+            targets=[primary_target], source=control_src,
+            extra_cmake_args=list(control_extra_cmake_args),
+        )
+        subject_bin = build_tree(
+            name=subject_name, hip_path=self.hip_path,
+            amdgpu_targets=self.fat_targets.cmake_value, workdir=build_root,
+            targets=[primary_target], source=subject_src,
+            extra_cmake_args=list(subject_extra_cmake_args),
+        )
+
+        build_env = _hip_env(self.hip_path)
+        control_binary = control_bin / f"{primary_target}{exe}"
+        subject_binary = subject_bin / f"{primary_target}{exe}"
+        control_cmake_args = _full_requested_cmake_args(
+            hip_path=self.hip_path, amdgpu_targets=self.fat_targets.cmake_value,
+            extra_cmake_args=list(control_extra_cmake_args),
+        )
+        subject_cmake_args = _full_requested_cmake_args(
+            hip_path=self.hip_path, amdgpu_targets=self.fat_targets.cmake_value,
+            extra_cmake_args=list(subject_extra_cmake_args),
+        )
+        control_build_evidence = capture_completed_build_evidence(
+            build_root / control_name, source_root=control_src,
+            architecture=self.fat_targets.targets, binary=control_binary,
+            requested_cmake_args=control_cmake_args, build_env=build_env,
+        )
+        subject_build_evidence = capture_completed_build_evidence(
+            build_root / subject_name, source_root=subject_src,
+            architecture=self.fat_targets.targets, binary=subject_binary,
+            requested_cmake_args=subject_cmake_args, build_env=build_env,
+        )
+
+        return ProducerBuildPair(
+            base_revision=control_revision,
+            control_source=control_src, subject_source=subject_src,
+            control_composition=tuple(control_composition),
+            subject_composition=tuple(subject_composition),
+            control_bin=control_binary, subject_bin=subject_binary,
+            validation_build_identities={
+                "control": control_build_evidence.campaign_identity(),
+                "subject": subject_build_evidence.campaign_identity(),
+            },
+        )
+
+    def device_contexts(
+        self, *, device_map: Mapping[str, tuple[int, ...]],
+    ) -> tuple[ProducerDeviceContext, ...]:
+        """The only producer-facing device selector (PA36-F step 1):
+        reuses ``resolve_selected_device_execution_identity()``'s real
+        device-inventory verification per explicit index rather than
+        mutating ambient HIP_VISIBLE_DEVICES, and always returns the
+        HIP-only env shape (``env_overrides={"HIP_VISIBLE_DEVICES":
+        str(index)}``, ``env_unset=("ROCR_VISIBLE_DEVICES",)``) -- no
+        ambient-only selector and no ROCR/HIP double-filtering (PNRO17)."""
+        contexts: list[ProducerDeviceContext] = []
+        for architecture, indices in device_map.items():
+            for index in indices:
+                identity, _selector_env = self._resolve_one_device(architecture, index)
+                contexts.append(
+                    ProducerDeviceContext(
+                        architecture=architecture, device_index=index,
+                        execution_identity=identity,
+                        env_overrides={"HIP_VISIBLE_DEVICES": str(index)},
+                        env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
+                    )
+                )
+        return tuple(contexts)
+
+    def _resolve_one_device(
+        self, architecture: str, index: int,
+    ) -> tuple[ExecutionIdentity, dict[str, str]]:
+        """Resolve exactly ONE device index against the real host
+        inventory -- the same fail-closed checks
+        ``resolve_selected_device_execution_identity()`` performs from
+        ``HIP_VISIBLE_DEVICES``, applied here to an explicit index
+        instead of reading ambient environment, so a multi-device
+        producer never has to mutate process-global env to select each
+        device in turn."""
+        from bigcherry.core import environment as bc_environment
+
+        host_devices = bc_environment.load_default().host().devices
+        matches = [d for d in host_devices if d.index == index]
+        if not matches:
+            raise PatchCampaignError(
+                f"{self.patch_id}: device_contexts() index {index} is not a "
+                f"configured device in config/environment.toml (known indices: "
+                f"{sorted(d.index for d in host_devices)})"
+            )
+        device = matches[0]
+        if device.locator is None:
+            raise PatchCampaignError(
+                f"{self.patch_id}: device_contexts() index {index} "
+                f"({device.arch}) has no verified locator in config/environment.toml"
+            )
+        if device.arch != architecture:
+            raise PatchCampaignError(
+                f"{self.patch_id}: device_contexts() index {index} is configured "
+                f"as {device.arch!r}, but {architecture!r} was requested"
+            )
+        identity = ExecutionIdentity(
+            backend="ROCm", architectures=(device.arch,), locators=(device.locator,),
+        )
+        return identity, {"HIP_VISIBLE_DEVICES": str(index)}
+
+    def write_artifact(self, *, name: str, payload: JsonObject):
+        return _write_bound_artifact_ref(self.run_dir, name, payload)
+
+    def run_paired_llama_benchmark(
+        self,
+        *,
+        control_binary: Path,
+        subject_binary: Path,
+        model: Path,
+        workloads: tuple[str, ...] = ("decode", "prefill"),
+        patch_args: tuple[str, ...] = (),
+        runtime_args: tuple[str, ...] = (),
+        pairs: int = 3,
+        log_context: str,
+        device: ProducerDeviceContext | None = None,
+    ) -> ProducerPairedBenchmarkOutcome:
+        env_overrides = _hip_only(dict(device.env_overrides)) if device is not None else None
+        execution_identity = device.execution_identity if device is not None else None
+        outcome = run_paired_llama_benchmark(
+            control_binary=control_binary, subject_binary=subject_binary, model=model,
+            hip_path=self.hip_path, workloads=workloads, patch_args=patch_args,
+            runtime_args=runtime_args, pairs=pairs, log_context=log_context,
+            env_overrides=env_overrides, execution_identity=execution_identity,
+        )
+        return ProducerPairedBenchmarkOutcome(
+            runs=outcome.runs, commands=outcome.commands, raw_logs=tuple(outcome.raw_logs),
+        )
+
+
+def _write_bound_artifact_ref(run_dir: Path, name: str, payload: JsonObject):
+    """``_write_bound_artifact()`` returns a plain ``{"path", "sha256"}``
+    dict; ``ProducerRuntime.write_artifact()`` must return the real typed
+    ``ArtifactRef`` a ``ValidationResult.artifacts``/``validate_producer_
+    result()`` can bind -- this wraps the former into the latter without
+    duplicating the write logic."""
+    ref = _write_bound_artifact(run_dir, name, payload)
+    return ArtifactRef(name=name, path=ref["path"], sha256=ref["sha256"])
+
+
+@dataclass(frozen=True)
+class ProducerExecution:
+    """The full result of running one producer through the generic
+    dispatcher (PA36-F step 3): the typed producer result plus every
+    downstream value ``make_record()`` needs, computed exactly once so
+    the caller never has to re-derive them."""
+
+    selection: ProducerSelection
+    result: ProducerResult
+    evaluated: Mapping[str, ValidationResult]
+    verdict: Verdict
+    contract_verdicts: Mapping[str, JsonObject]
+
+
+def execute_validation_producer(
+    *,
+    patch_dir: Path,
+    producer_id: str,
+    provided_inputs: Mapping[str, str],
+    producer_context: ProducerContext,
+    validation_plan: ValidationPlan,
+    validation_context: ValidationContext,
+    correctness_evidence_requested: bool,
+    performance_benchmark_requested: bool,
+) -> ProducerExecution:
+    """The one generic entry point that executes a selected patch-local
+    validation producer end to end (PA36-F step 3, GPT design
+    req_8ec9b90c05f84a30). ``validation_campaign.py`` knows how to run
+    the producer this resolves; it never knows which patch/RD it is --
+    all patch identity lives in ``patch_dir``/``producer_id`` and the
+    already-constructed ``producer_context``.
+
+    Exact sequence (per GPT's design, section 3):
+    1. resolve_producer()
+    2. assert selection.spec.patch_id == producer_context.patch_id
+    3. validate_producer_inputs()
+    4. validate_producer_cli_compatibility()
+    5. dataclasses.replace(producer_context, inputs=validated_inputs)
+    6. result = selection.producer(context) -- any exception fails closed
+       as PatchCampaignError; a partial/half-built result is never used.
+    7. validate_producer_result()
+    8. build producer_results = {check_id: validation_result}
+    9. for every plan check in order: producer-supplied result, else
+       evaluate_check()
+    10. verdict = compute_verdict()
+    11. contract_verdicts from every check_result carrying a disposition
+    12. return ProducerExecution(...)
+    """
+    from bigcherry.patch import validation as patch_validation
+
+    selection = resolve_producer(patch_dir=patch_dir, producer_id=producer_id)
+
+    if selection.spec.patch_id != producer_context.patch_id:
+        raise ValidationProducerError(
+            f"execute_validation_producer: resolved producer patch_id "
+            f"{selection.spec.patch_id!r} does not match "
+            f"producer_context.patch_id {producer_context.patch_id!r}"
+        )
+
+    validated_inputs = validate_producer_inputs(selection.spec, provided_inputs)
+    validate_producer_cli_compatibility(
+        selection.spec,
+        correctness_evidence_requested=correctness_evidence_requested,
+        performance_benchmark_requested=performance_benchmark_requested,
+    )
+
+    context = dataclasses.replace(producer_context, inputs=validated_inputs)
+
+    try:
+        result = selection.producer(context)
+    except Exception as exc:
+        raise PatchCampaignError(
+            f"{selection.spec.patch_id}/{selection.spec.producer_id}: producer raised: {exc}"
+        ) from exc
+    if not isinstance(result, ProducerResult):
+        raise PatchCampaignError(
+            f"{selection.spec.patch_id}/{selection.spec.producer_id}: producer returned "
+            f"{type(result).__name__}, not ProducerResult"
+        )
+
+    validate_producer_result(
+        selection.spec, result, plan=validation_plan, context=validation_context,
+    )
+
+    producer_results: dict[str, ValidationResult] = {
+        record.check_id: record.validation_result for record in result.check_results
+    }
+    evaluated: dict[str, ValidationResult] = {}
+    for spec in validation_plan.checks:
+        if spec.check_id in producer_results:
+            evaluated[spec.check_id] = producer_results[spec.check_id]
+        else:
+            evaluated[spec.check_id] = patch_validation.evaluate_check(spec, validation_context)
+
+    verdict = patch_validation.compute_verdict(validation_plan, evaluated)
+
+    contract_verdicts: dict[str, JsonObject] = {}
+    for record in result.check_results:
+        if record.disposition is not None:
+            (contract_id,) = record.contract_ids
+            contract_verdicts[contract_id] = record.disposition
+
+    return ProducerExecution(
+        selection=selection, result=result, evaluated=evaluated, verdict=verdict,
+        contract_verdicts=contract_verdicts,
+    )
 
 
 # PA35: real verification producer for patch 1000_rdna4_mmq_q2k_q6k_fix.
