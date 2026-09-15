@@ -105,6 +105,16 @@ def _write_bundle_manifest(
     return path
 
 
+def _write_json(path: Path, data: dict[str, object]) -> Path:
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def _next_manifest_path(label: str) -> Path:
+    _manifest_counter[0] += 1
+    return Path(_MANIFEST_DIR) / f"{label}-{_manifest_counter[0]}.json"
+
+
 def _fake_result(
     *,
     source_name: str,
@@ -116,6 +126,12 @@ def _fake_result(
     effective_build_id: str | None = "effective-1",
     effective_configure: dict[str, str] | None = None,
     generated_compile_inputs_hash: str | None = "gci-1",
+    #: (files: dict[str, str], compile_inputs: tuple[str, ...]) -- the
+    #: generated-tree document's "files"/"compile_inputs" -- or None to
+    #: leave manifest_ref/generated_tree_ref pointing at nonexistent paths
+    #: (the default, unwritten -tmp- refs every other fixture already uses).
+    generated_tree: tuple[dict[str, str], tuple[str, ...]] | None = None,
+    manifest: dict[str, object] | None = None,
     targets: tuple[str, ...] = ("gfx1100",),
 ) -> CampaignLaneResult:
     build_plan = BuildPlan(
@@ -150,8 +166,33 @@ def _fake_result(
             ("inventory", _ref("inventory", inventory_digest)),
             ("promoted-winners", _ref("promoted-winners", winners_digest)),
         ),
-        manifest_ref=_ref("manifest", "manifest-1"),
-        generated_tree_ref=_ref("generated-tree", "tree-1"),
+        manifest_ref=(
+            ArtifactRef(
+                kind="manifest",
+                path=_write_json(_next_manifest_path("manifest"), manifest),
+                content_hash="manifest-1",
+                provenance={},
+            )
+            if manifest is not None
+            else _ref("manifest", "manifest-1")
+        ),
+        generated_tree_ref=(
+            ArtifactRef(
+                kind="generated-tree",
+                path=_write_json(
+                    _next_manifest_path("tree"),
+                    {
+                        "schema_version": 1,
+                        "files": generated_tree[0],
+                        "compile_inputs": list(generated_tree[1]),
+                    },
+                ),
+                content_hash="tree-1",
+                provenance={},
+            )
+            if generated_tree is not None
+            else _ref("generated-tree", "tree-1")
+        ),
         binary_ref=_ref("binary", binary_digest),
         runtime_bundle_ref=ArtifactRef(
             kind="runtime-bundle",
@@ -310,19 +351,14 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
         )
         hw.require_shared_build_inputs(delta)  # must not raise
 
-    def test_negative_missing_generated_compile_inputs_hash_is_detected(self):
-        delta = hw.BuildStageDelta(
-            control=hw.ArmBuildIdentity.from_result(
-                _fake_result(source_name="control", generated_compile_inputs_hash="g1")
-            ),
-            candidate=hw.ArmBuildIdentity.from_result(
-                _fake_result(source_name="candidate", generated_compile_inputs_hash=None)
-            ),
-        )
-        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
-            hw.require_shared_build_inputs(delta)
-
-    def test_negative_differing_generated_compile_inputs_hash_is_detected(self):
+    def test_differing_raw_generated_compile_inputs_hash_alone_is_tolerated(self):
+        """GPT design correction (req_579777e899454ed9): raw
+        generated_compile_inputs_hash is recorded for provenance but no
+        longer required to match exactly -- it folds in per-candidate
+        source-byte digests that legitimately differ between arms for an
+        expected removed-module reason. The semantic generated-manifest/
+        strict-file checks below are what require_shared_build_inputs
+        actually enforces instead."""
         delta = hw.BuildStageDelta(
             control=hw.ArmBuildIdentity.from_result(
                 _fake_result(source_name="control", generated_compile_inputs_hash="g1")
@@ -331,8 +367,138 @@ class RequireSharedBuildInputsTests(unittest.TestCase):
                 _fake_result(source_name="candidate", generated_compile_inputs_hash="g2")
             ),
         )
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+    def test_negative_differing_compile_input_filename_set_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    generated_tree=({"a.inc": "h1"}, ("a.inc",)),
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    generated_tree=({"a.inc": "h1", "b.inc": "h2"}, ("a.inc", "b.inc")),
+                )
+            ),
+        )
         with self.assertRaises(hw.ReplayEquivalenceHardwareError):
             hw.require_shared_build_inputs(delta)
+
+    def test_negative_differing_strict_generated_file_content_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    generated_tree=(
+                        {"hip-autotune-registry.inc": "h1"},
+                        ("hip-autotune-registry.inc",),
+                    ),
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    generated_tree=(
+                        {"hip-autotune-registry.inc": "h2"},
+                        ("hip-autotune-registry.inc",),
+                    ),
+                )
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_identity_only_generated_file_difference_is_tolerated(self):
+        """hip-autotune-build-hash.h (EXPECTED_IDENTITY_ONLY_FILE) is not in
+        STRICT_GENERATED_FILES -- its content may differ between arms."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    generated_tree=(
+                        {"hip-autotune-build-hash.h": "h1"},
+                        ("hip-autotune-build-hash.h",),
+                    ),
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    generated_tree=(
+                        {"hip-autotune-build-hash.h": "h2"},
+                        ("hip-autotune-build-hash.h",),
+                    ),
+                )
+            ),
+        )
+        hw.require_shared_build_inputs(delta)  # must not raise
+
+    def test_negative_differing_manifest_candidate_config_is_detected(self):
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    manifest={"candidates": [{"stable_name": "c1", "family": "mmq"}]},
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    manifest={"candidates": [{"stable_name": "c2", "family": "mmq"}]},
+                )
+            ),
+        )
+        with self.assertRaises(hw.ReplayEquivalenceHardwareError):
+            hw.require_shared_build_inputs(delta)
+
+    def test_manifest_identity_only_field_difference_is_tolerated(self):
+        """generated_at/manifest_hash/build_descriptor (real per-run
+        identity, not candidate-registry semantics) and per-candidate
+        implementation_digest/implementation_source_files (raw source-byte
+        digests that legitimately differ for an expected removed-module
+        reason) may all differ between arms."""
+        delta = hw.BuildStageDelta(
+            control=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="control",
+                    manifest={
+                        "generated_at": "2026-01-01T00:00:00Z",
+                        "manifest_hash": "mh-1",
+                        "build_descriptor": {"x": 1},
+                        "candidates": [
+                            {
+                                "stable_name": "c1",
+                                "family": "mmq",
+                                "implementation_digest": "d1",
+                                "implementation_source_files": ["a.cu"],
+                            }
+                        ],
+                    },
+                )
+            ),
+            candidate=hw.ArmBuildIdentity.from_result(
+                _fake_result(
+                    source_name="candidate",
+                    manifest={
+                        "generated_at": "2026-01-01T00:00:01Z",
+                        "manifest_hash": "mh-2",
+                        "build_descriptor": {"x": 2},
+                        "candidates": [
+                            {
+                                "stable_name": "c1",
+                                "family": "mmq",
+                                "implementation_digest": "d2",
+                                "implementation_source_files": ["a.cu", "b.cu"],
+                            }
+                        ],
+                    },
+                )
+            ),
+        )
+        hw.require_shared_build_inputs(delta)  # must not raise
 
     def test_negative_unnormalized_effective_configure_difference_is_detected(self):
         """With no allowed_removed_modules, an OFF-vs-absent difference is
