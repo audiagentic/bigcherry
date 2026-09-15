@@ -8,10 +8,16 @@ in the same change that adds this file (no compatibility layer, per the
 project's migrate-up doctrine).
 
 Imports only bigcherry.patch.validation / bigcherry.patch.validation_producer
-/ bigcherry.experiment.perplexity, mirroring the PA36-F synthetic fixture's
-import restriction -- this module must never import
+/ bigcherry.experiment.perplexity / bigcherry.experiment.contract /
+bigcherry.experiment.execution / bigcherry.core.paths, mirroring the PA36-F
+synthetic fixture's import restriction -- this module must never import
 bigcherry.patch.validation_campaign (see
-test_producer_modules_cannot_import_validation_campaign).
+test_producer_modules_cannot_import_validation_campaign). RD06's real
+ci95_threshold_bound_v1 performance bound (PA39 defect #2) is evaluated via
+bigcherry.experiment.execution.lane_effect_from_run() and
+bigcherry.experiment.contract.aggregate_contract_effects()/
+evaluate_promotion_gate() -- the same real evaluator used elsewhere in this
+codebase, not a parallel gate re-implementation.
 
 Build/device shape (PA37.md step 5): ONE atomic control/subject build pair,
 built once as fat gfx1100;gfx1201;gfx1030 via ``ctx.runtime.build_pair()``,
@@ -30,8 +36,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 from typing import Mapping
 
+from bigcherry.core import paths as bc_paths
+from bigcherry.experiment import contract as experiment_contract
+from bigcherry.experiment import execution as experiment_execution
 from bigcherry.patch import validation as pv
 from bigcherry.patch import validation_producer as vp
 
@@ -53,6 +63,24 @@ _RD06_MIN_PAIRED_ROUNDS = 10
 # RD07's own contract policy ([contract.RD07-Q6K-MMQ-PREFILL-FOLD.acceptance]
 # -- no ci95/min_paired_rounds override, unlike RD06).
 _RD07_MAX_CONTROL_REGRESSION_PCT = 1
+
+
+_PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
+
+
+def _load_rd06_contract() -> experiment_contract.ExperimentContract:
+    # Loaded directly from config/experiment-contracts.toml via the
+    # experiment.contract module -- never via validation_campaign.py/
+    # patch_validation.load_contracts_for_descriptor(), which this module
+    # must not import (see module docstring). This is the same real
+    # ci95_threshold_bound_v1/min_paired_rounds=10/target_kernel_gain_pct=
+    # 0.5/max_control_regression_pct=1 policy already encoded as module
+    # constants above -- loading the real ExperimentContract object (rather
+    # than re-deriving the same numbers by hand) is what lets
+    # evaluate_promotion_gate() itself apply that policy instead of this
+    # producer re-implementing the gate's own bound logic.
+    registry = experiment_contract.load_contracts(bc_paths.EXPERIMENT_CONTRACTS)
+    return registry[_RD06]
 
 
 def _perplexity_module():
@@ -179,42 +207,85 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     ))
 
     # --- RD06 performance: RD06's own ci95/min_paired_rounds policy -----
+    # PA39 defects #2 (ci95_threshold_bound_v1 never evaluated) and #3
+    # (RD06's declared control model tierM-gptoss20b-q6k never benchmarked)
+    # fix: run the paired benchmark for BOTH RD06's positive model
+    # (ctx.model, decode -- tg128 is the metric target_kernel_gain_pct is
+    # bound to) and its declared control model (ctx.inputs["control_model"],
+    # decode), then route both real PairedLaneRuns through
+    # lane_effect_from_run()/aggregate_contract_effects()/
+    # evaluate_promotion_gate() -- the same real evaluator machinery
+    # already used elsewhere in this codebase (e.g. RD58's promotion path
+    # in validation_campaign.py) -- instead of the prior execution-only
+    # `bool(outcome.runs)` stub.
     rd06_perf_artifact = None
-    if gfx1201 is None or ctx.model is None:
+    control_model_raw = ctx.inputs.get("control_model")
+    control_model = Path(control_model_raw) if control_model_raw else None
+    if gfx1201 is None or ctx.model is None or control_model is None:
         rd06_perf_ok = False
-        rd06_perf_detail = f"rd06 performance: no {_RD0506_ARCH} device and/or model supplied"
-    else:
-        outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
-            model=ctx.model, workloads=("decode", "prefill"),
-            pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance", device=gfx1201,
-        )
-        # This producer executes the paired benchmark and encodes RD06's
-        # real contract policy alongside the raw outcome; quantitative
-        # ci95-bound-vs-target_kernel_gain_pct evaluation against real
-        # numbers is PA39's real-hardware acceptance job (PA37.md: "PA39
-        # owns only the subsequent real-hardware acceptance/evidence
-        # receipt") -- this hardware-free path proves execution + policy
-        # encoding, not a fabricated performance verdict.
-        rd06_perf_ok = bool(outcome.runs)
         rd06_perf_detail = (
-            f"rd06 performance: paired benchmark executed for "
-            f"{sorted(outcome.runs)}; effect_evidence_policy="
-            f"{_RD06_EFFECT_EVIDENCE_POLICY} min_paired_rounds={_RD06_MIN_PAIRED_ROUNDS} "
+            f"rd06 performance: no {_RD0506_ARCH} device, model, and/or "
+            "--producer-input control_model=<path> supplied"
+        )
+        rd06_gate_result: dict[str, object] | None = None
+    else:
+        positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
+            model=ctx.model, workloads=("decode",),
+            pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-positive",
+            device=gfx1201,
+        )
+        control_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=pair.control_bin, subject_binary=pair.subject_bin,
+            model=control_model, workloads=("decode",),
+            pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-control",
+            device=gfx1201,
+        )
+        metric = _PAIRED_BENCH_METRIC_NAME["decode"]
+        positive_lane = experiment_execution.lane_effect_from_run(
+            "positive", metric, positive_outcome.runs["decode"],
+        )
+        control_lane = experiment_execution.lane_effect_from_run(
+            "control", metric, control_outcome.runs["decode"],
+        )
+        rd06_contract = _load_rd06_contract()
+        aggregated_effects = experiment_contract.aggregate_contract_effects(
+            rd06_contract, [positive_lane, control_lane], target_metric=metric,
+        )
+        rd06_correctness_gate = experiment_contract.evaluate_correctness_gate(
+            rd06_contract,
+            {"backend_reference": experiment_contract.CorrectnessResult(
+                check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
+            )},
+        )
+        rd06_gate_result = experiment_contract.evaluate_promotion_gate(
+            rd06_contract, correctness_gate=rd06_correctness_gate,
+            aggregated_effects=aggregated_effects,
+        )
+        rd06_perf_ok = bool(rd06_gate_result["passed"])
+        rd06_perf_detail = (
+            f"rd06 performance: ci95_threshold_bound_v1 gate status="
+            f"{rd06_gate_result['status']!r} passed={rd06_perf_ok} "
+            f"reasons={list(rd06_gate_result['reasons'])} "
+            f"positive_model={ctx.model} control_model={control_model} "
             f"target_kernel_gain_pct={_RD06_TARGET_KERNEL_GAIN_PCT} "
-            f"max_control_regression_pct={_RD06_MAX_CONTROL_REGRESSION_PCT} "
-            "(quantitative bound evaluation deferred to PA39 real-hardware acceptance)"
+            f"max_control_regression_pct={_RD06_MAX_CONTROL_REGRESSION_PCT}"
         )
         rd06_perf_artifact = ctx.runtime.write_artifact(
             name="rd06-performance.json",
             payload={
-                "schema_version": 1,
+                "schema_version": 2,
                 "contract_id": _RD06,
                 "effect_evidence_policy": _RD06_EFFECT_EVIDENCE_POLICY,
                 "min_paired_rounds": _RD06_MIN_PAIRED_ROUNDS,
                 "target_kernel_gain_pct": _RD06_TARGET_KERNEL_GAIN_PCT,
                 "max_control_regression_pct": _RD06_MAX_CONTROL_REGRESSION_PCT,
-                "commands": outcome.commands,
+                "positive_model": str(ctx.model),
+                "control_model": str(control_model),
+                "aggregated_effects": aggregated_effects,
+                "gate_result": rd06_gate_result,
+                "positive_commands": positive_outcome.commands,
+                "control_commands": control_outcome.commands,
             },
         )
         emitted_artifacts.add(rd06_perf_artifact.name)
