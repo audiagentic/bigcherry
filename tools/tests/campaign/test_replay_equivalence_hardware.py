@@ -110,6 +110,31 @@ def _write_json(path: Path, data: dict[str, object]) -> Path:
     return path
 
 
+#: The corpus fixture's single entry always names winner "winner-a"
+#: (_make_cache_blob's hardcoded name). require_corpus_candidate_semantics
+#: needs both the corpus producer's own manifest and each target arm's own
+#: manifest to declare a semantically-matching "winner-a" candidate before
+#: GGML_HIP_DISPATCH_REPLAY_REVISION_MATCH=0 is considered safe to rely on.
+def _candidate_manifest(*, architectures: tuple[str, ...] = ("gfx1100",)) -> dict[str, object]:
+    return {
+        "manifest_hash": "irrelevant-for-this-test",
+        "candidates": [
+            {
+                "stable_name": "winner-a",
+                "family": "mmvq",
+                "source_class": "native",
+                "implementation_version": 1,
+                "architectures": list(architectures),
+                "config": {},
+                "graph_safe": True,
+                "deterministic": True,
+                "implementation_digest": "irrelevant",
+                "implementation_source_files": ["irrelevant.cu"],
+            }
+        ],
+    }
+
+
 def _next_manifest_path(label: str) -> Path:
     _manifest_counter[0] += 1
     return Path(_MANIFEST_DIR) / f"{label}-{_manifest_counter[0]}.json"
@@ -1080,6 +1105,37 @@ class BuildHardwareReceiptTests(unittest.TestCase):
         }
         return control_spec, candidate_spec, results_by_source
 
+    def _specs_and_results_with_matching_manifests(self):
+        """Same as ``_specs_and_results`` but the DIAGNOSTIC-pair-relevant
+        results (``bigcherry-native``, used for both the production AND
+        diagnostic control specs, and ``SERVING_CORE_DIAGNOSTIC_SOURCE_NAME``)
+        carry a real, semantically-matching manifest -- required by
+        ``require_corpus_candidate_semantics`` before a non-default
+        runtime_runner is exercised. The production candidate
+        (``SERVING_CORE_SOURCE_NAME``) gets the SAME manifest content so
+        ``require_shared_build_inputs``'s generated_manifest_projection
+        equality check on the production pair still holds."""
+        control_spec, candidate_spec = hw.build_hardware_specs(
+            platform_name="linux-multi",
+            architectures=("gfx1100",),
+            inventory_ref=_ref("inventory", "inv-1"),
+            winners_ref=_ref("promoted-winners", "win-1"),
+        )
+        manifest = _candidate_manifest()
+        results_by_source = {
+            "bigcherry-native": _fake_result(
+                source_name="bigcherry-native", manifest=manifest
+            ),
+            offline.SERVING_CORE_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_SOURCE_NAME, manifest=manifest
+            ),
+            offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME: _fake_result(
+                source_name=offline.SERVING_CORE_DIAGNOSTIC_SOURCE_NAME,
+                manifest=manifest,
+            ),
+        }
+        return control_spec, candidate_spec, results_by_source
+
     def _diagnostic_specs(self):
         return hw.build_diagnostic_hardware_specs(
             platform_name="linux-multi",
@@ -1177,8 +1233,13 @@ class BuildHardwareReceiptTests(unittest.TestCase):
     def test_injected_runner_producing_matching_results_yields_evaluated_equivalent(self):
         with tempfile.TemporaryDirectory() as directory:
             cache_path = self._cache_path(directory)
-            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            control_spec, candidate_spec, results_by_source = (
+                self._specs_and_results_with_matching_manifests()
+            )
             diagnostic_control_spec, diagnostic_candidate_spec = self._diagnostic_specs()
+            producer_manifest_path = _write_json(
+                _next_manifest_path("producer-manifest"), _candidate_manifest()
+            )
 
             def matching_runner(result, corpus):
                 return _arm(
@@ -1203,6 +1264,7 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                 candidate_spec=candidate_spec,
                 diagnostic_control_spec=diagnostic_control_spec,
                 diagnostic_candidate_spec=diagnostic_candidate_spec,
+                corpus_producer_manifest_path=producer_manifest_path,
                 run_id_prefix="pa26-test",
                 lane_executor=_fake_lane_executor(results_by_source),
                 runtime_runner=matching_runner,
@@ -1217,8 +1279,13 @@ class BuildHardwareReceiptTests(unittest.TestCase):
         EVALUATED receipt -- never silently pass."""
         with tempfile.TemporaryDirectory() as directory:
             cache_path = self._cache_path(directory)
-            control_spec, candidate_spec, results_by_source = self._specs_and_results()
+            control_spec, candidate_spec, results_by_source = (
+                self._specs_and_results_with_matching_manifests()
+            )
             diagnostic_control_spec, diagnostic_candidate_spec = self._diagnostic_specs()
+            producer_manifest_path = _write_json(
+                _next_manifest_path("producer-manifest"), _candidate_manifest()
+            )
             call_state = {"n": 0}
 
             def divergent_runner(result, corpus):
@@ -1247,6 +1314,7 @@ class BuildHardwareReceiptTests(unittest.TestCase):
                 candidate_spec=candidate_spec,
                 diagnostic_control_spec=diagnostic_control_spec,
                 diagnostic_candidate_spec=diagnostic_candidate_spec,
+                corpus_producer_manifest_path=producer_manifest_path,
                 run_id_prefix="pa26-test",
                 lane_executor=_fake_lane_executor(results_by_source),
                 runtime_runner=divergent_runner,
