@@ -26,6 +26,7 @@ REPO_ROOT = TOOLS_DIR.parent
 sys.path.insert(0, str(TOOLS_DIR))
 
 from bigcherry.experiment import contract as experiment_contract  # noqa: E402
+from bigcherry.experiment import execution as experiment_execution  # noqa: E402
 from bigcherry.patch import evidence as patch_validation_evidence  # noqa: E402
 from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
@@ -38,6 +39,37 @@ _CONTRACTS_TOML = REPO_ROOT / "config" / "experiment-contracts.toml"
 _RD05 = "RD05-WMMA-FA-CORRECTNESS-BARRIERS"
 _RD06 = "RD06-RDNA4-WMMA-FA-CONFIG"
 _RD07 = "RD07-Q6K-MMQ-PREFILL-FOLD"
+
+
+# PA39 defects #2/#3 fix: real stats for RD06's positive (tierA-qwen4b-q6k,
+# decode/tg128) and control (tierM-gptoss20b-q6k, decode) lanes, shaped
+# exactly like block_bootstrap_effect()'s real output
+# (geometric_effect_pct/ci95_low_pct/ci95_high_pct/paired_rounds) --
+# lane_effect_from_run() reads these fields directly. Defaults here clear
+# RD06's real contract bound (target_kernel_gain_pct=0.5,
+# max_control_regression_pct=1, min_paired_rounds=10): a real gain with
+# ci95_low above 0.5, and a near-zero control regression with ci95_high
+# below 1.
+_RD06_PASSING_POSITIVE_STATS = {
+    "effect_pct": 2.0, "ci95_low": 1.0, "ci95_high": 3.0, "paired_rounds": 10,
+}
+_RD06_PASSING_CONTROL_STATS = {
+    "effect_pct": -0.1, "ci95_low": -0.4, "ci95_high": 0.2, "paired_rounds": 10,
+}
+
+
+def _paired_lane_run(
+    *, effect_pct: float, ci95_low: float, ci95_high: float, paired_rounds: int,
+) -> experiment_execution.PairedLaneRun:
+    return experiment_execution.PairedLaneRun(
+        runs=(),
+        stats={
+            "geometric_effect_pct": effect_pct,
+            "ci95_low_pct": ci95_low,
+            "ci95_high_pct": ci95_high,
+            "paired_rounds": paired_rounds,
+        },
+    )
 
 
 def _fake_build_identity(role: str) -> dict[str, object]:
@@ -56,11 +88,17 @@ class _FakeProducerRuntime:
     lets a test simulate a paired-benchmark execution failure without any
     real subprocess/hardware."""
 
-    def __init__(self, run_dir: Path, *, device_map, benchmark_should_fail: bool = False):
+    def __init__(
+        self, run_dir: Path, *, device_map, benchmark_should_fail: bool = False,
+        rd06_positive_stats: dict | None = None, rd06_control_stats: dict | None = None,
+    ):
         self.run_dir = run_dir
         self._device_map = device_map
         self.benchmark_should_fail = benchmark_should_fail
         self.build_pair_calls = 0
+        self.rd06_positive_stats = rd06_positive_stats or _RD06_PASSING_POSITIVE_STATS
+        self.rd06_control_stats = rd06_control_stats or _RD06_PASSING_CONTROL_STATS
+        self.paired_benchmark_calls: list[dict] = []
 
     def build_pair(self, **_kwargs) -> vp.ProducerBuildPair:
         self.build_pair_calls += 1
@@ -103,9 +141,28 @@ class _FakeProducerRuntime:
             name=name, path=f"artifacts/{name}", sha256=hashlib.sha256(encoded).hexdigest(),
         )
 
-    def run_paired_llama_benchmark(self, **_kwargs) -> vp.ProducerPairedBenchmarkOutcome:
+    def run_paired_llama_benchmark(
+        self, *, log_context: str, model, workloads, **_kwargs,
+    ) -> vp.ProducerPairedBenchmarkOutcome:
+        self.paired_benchmark_calls.append(
+            {"log_context": log_context, "model": model, "workloads": workloads}
+        )
         if self.benchmark_should_fail:
             raise vc.PatchCampaignError("simulated benchmark failure")
+        if log_context == "rd06-performance-positive":
+            return vp.ProducerPairedBenchmarkOutcome(
+                runs={"decode": _paired_lane_run(**self.rd06_positive_stats)},
+                commands={"decode": {"control": ("x",), "subject": ("x",)}},
+                raw_logs=(),
+            )
+        if log_context == "rd06-performance-control":
+            return vp.ProducerPairedBenchmarkOutcome(
+                runs={"decode": _paired_lane_run(**self.rd06_control_stats)},
+                commands={"decode": {"control": ("x",), "subject": ("x",)}},
+                raw_logs=(),
+            )
+        # rd07-performance: this pass leaves RD07's execution-only stub
+        # untouched (out of PA39 defect #2/#3's RD06-specific scope).
         return vp.ProducerPairedBenchmarkOutcome(
             runs={"decode": object(), "prefill": object()},
             commands={"decode": {"control": ("x",), "subject": ("x",)}},
@@ -121,9 +178,14 @@ def _ppl_completed(ppl: float, uncertainty: float) -> mock.Mock:
     )
 
 
+_MISSING = object()  # sentinel: "use the default control_model", distinct from None
+
+
 def _run_producer(
     *, run_dir: Path, device_map: dict[str, tuple[int, ...]],
     model: Path | None, corpus: Path | None, benchmark_should_fail: bool = False,
+    control_model: Path | None = _MISSING, rd06_positive_stats: dict | None = None,
+    rd06_control_stats: dict | None = None,
 ):
     checks = pv.parse_validation_toml(_PATCH_DIR / "validation.toml", patch_id=_PATCH_ID)
     plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=checks, universal_capabilities=())
@@ -140,6 +202,7 @@ def _run_producer(
     run_dir.mkdir(parents=True, exist_ok=True)
     runtime = _FakeProducerRuntime(
         run_dir, device_map=device_map, benchmark_should_fail=benchmark_should_fail,
+        rd06_positive_stats=rd06_positive_stats, rd06_control_stats=rd06_control_stats,
     )
     producer_context = vp.ProducerContext(
         repo_root=REPO_ROOT, patch_dir=_PATCH_DIR, workdir=run_dir,
@@ -151,9 +214,17 @@ def _run_producer(
         runtime=runtime,
     )
 
+    resolved_control_model = (
+        run_dir / "control-model.gguf" if control_model is _MISSING else control_model
+    )
+    provided_inputs = (
+        {} if resolved_control_model is None
+        else {"control_model": str(resolved_control_model)}
+    )
+
     execution = vc.execute_validation_producer(
         patch_dir=_PATCH_DIR, producer_id="rd050607",
-        provided_inputs={},
+        provided_inputs=provided_inputs,
         producer_context=producer_context, validation_plan=plan,
         validation_context=context,
         correctness_evidence_requested=False, performance_benchmark_requested=False,
@@ -350,6 +421,117 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         self.assertFalse(execution.verdict.eligible)
         self.assertEqual(execution.evaluated["rd06-performance"].status, pv.FAIL)
         self.assertIs(record["contract_verdicts"][_RD06]["passed"], False)
+
+    # --- PA39 defects #2/#3: RD06 real ci95_threshold_bound_v1 gate -----
+
+    def test_rd06_gate_actually_invoked_with_below_bound_gain_fails(self) -> None:
+        # PA39 defect #2 proof: before this fix, producer.py set
+        # `rd06_perf_ok = bool(outcome.runs)`, which is True for ANY
+        # non-empty paired-benchmark outcome regardless of the measured
+        # numbers -- a gain whose ci95_low sits well BELOW RD06's own
+        # target_kernel_gain_pct=0.5 bound would still have reported PASS
+        # under the old code. This test supplies exactly that: a positive
+        # point estimate whose lower CI bound (0.1) never clears 0.5. Only
+        # the real evaluate_promotion_gate() call added by this fix can
+        # correctly turn that into a FAIL.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        below_bound_positive = {
+            "effect_pct": 0.6, "ci95_low": 0.1, "ci95_high": 1.1, "paired_rounds": 10,
+        }
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            execution, record, runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+                rd06_positive_stats=below_bound_positive,
+            )
+        # The old `bool(outcome.runs)` stub would have passed here (the
+        # benchmark ran and returned non-empty results); the real gate
+        # must not.
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.FAIL)
+        self.assertIs(record["contract_verdicts"][_RD06]["passed"], False)
+        self.assertFalse(execution.verdict.eligible)
+        # And RD05/RD07 (unaffected by RD06's gain) still pass -- proves
+        # the failure is genuinely scoped to RD06's own gate, not a
+        # blanket regression.
+        self.assertEqual(execution.evaluated["rd05-backend-reference"].status, pv.PASS)
+
+    def test_rd06_gate_actually_invoked_with_over_budget_regression_fails(self) -> None:
+        # Mirror case: the GAIN clears its bound but the CONTROL lane's
+        # regression upper bound exceeds max_control_regression_pct=1 --
+        # again something `bool(outcome.runs)` could never detect.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        over_budget_control = {
+            "effect_pct": -1.5, "ci95_low": -2.0, "ci95_high": -1.2, "paired_rounds": 10,
+        }
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+                rd06_control_stats=over_budget_control,
+            )
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.FAIL)
+        self.assertIs(record["contract_verdicts"][_RD06]["passed"], False)
+
+    def test_rd06_gate_passing_bound_actually_passes(self) -> None:
+        # Positive control: a real gain clearing 0.5 and a real control
+        # regression bound under 1 must produce a real PASS through the
+        # actual evaluate_promotion_gate() path (not a default/stubbed
+        # True) -- already implicitly covered by
+        # test_all_required_architectures_present_passes_closed, asserted
+        # directly here for clarity of what the gate itself decided.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.PASS)
+        self.assertIs(record["contract_verdicts"][_RD06]["passed"], True)
+
+    def test_rd06_control_model_actually_benchmarked_separately(self) -> None:
+        # PA39 defect #3 proof: the control model (tierM-gptoss20b-q6k, via
+        # --producer-input control_model=<path>) must be benchmarked in its
+        # OWN paired run, distinct from the positive model (ctx.model) --
+        # never silently reused/skipped.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        control_model = self.run_dir.parent / "control-model.gguf"
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = [
+                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
+            ] * 4
+            _execution, _record, runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus, control_model=control_model,
+            )
+        calls_by_context = {c["log_context"]: c for c in runtime.paired_benchmark_calls}
+        self.assertIn("rd06-performance-positive", calls_by_context)
+        self.assertIn("rd06-performance-control", calls_by_context)
+        self.assertEqual(calls_by_context["rd06-performance-positive"]["model"], self.model)
+        self.assertEqual(calls_by_context["rd06-performance-control"]["model"], control_model)
+        self.assertNotEqual(
+            calls_by_context["rd06-performance-positive"]["model"],
+            calls_by_context["rd06-performance-control"]["model"],
+        )
+
+    def test_missing_control_model_input_fails_closed_before_producer_runs(self) -> None:
+        # control_model is a REQUIRED producer input (producer.toml) --
+        # omitting it must fail closed at input-validation time, not
+        # silently skip RD06's control lane.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus, control_model=None,
+            )
 
     def test_fallback_evaluate_check_is_fail_closed_without_producer(self) -> None:
         # Directly exercise validation.toml's callables (evaluate_check()
