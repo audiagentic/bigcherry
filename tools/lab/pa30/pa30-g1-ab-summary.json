@@ -1,0 +1,28 @@
+{
+  "purpose": "PA30 gate 1 representative-performance sub-clause: balanced/rotated bigcherry-native vs bigcherry-serving-base",
+  "harness": "bigcherry ab-benchmark --server-config tools/lab/pa30/pa30-g1-ab-server-config.json --pairs 6 --schedule-seed 0 --settle-seconds 20",
+  "gpt_design_review": {
+    "session": "ses_05c3e324acd749cc (new session; prior session ses_c2892cdae7f14feb stalled again this pass, routed around per established precedent)",
+    "request_id": "req_7120666e900a4535",
+    "guidance": "--pairs 2 is the documented minimum and sufficient to close gate 1's performance sub-clause per PA30's own wording (representative balanced/rotated run, not a throughput-equivalence proof -- consistent with PA26 requiring no throughput-equivalence criterion). --decision-grade / --practical-threshold-pct explicitly NOT required. This run used --pairs 6, exceeding GPT's stated minimum."
+  },
+  "hardware": "Brutus, devices 0+1, dual gfx1100 (RX 7900 XTX), production-dual-xtx-shaped tensor-split config, qwen3.8-27B Q8_0",
+  "arms": {
+    "bigcherry-native": "/home/audumla/.cache/bigcherry/builds/4da8833b09223861a369c1c133d67d5e/a0aaed3405d709ae507680c74bb87222/bin/llama-server",
+    "bigcherry-serving-base": "/home/audumla/.cache/bigcherry/builds/8cc8049cab1f2ca1509983b1b0892f9a/bde22b7a235d74f83c97c22f34e3643a/bin/llama-server"
+  },
+  "real_defect_found_and_fixed_in_this_pass": "bigcherry-serving-base genuinely omits patch 0800_server_shutdown_endpoint (one of PA30's own documented 7 deliberately-removed modules vs bigcherry-native), so it has no HTTP /shutdown route. The leftover draft config from the interrupted prior pass already had shutdown_method:sigint for that arm; this pass's first two attempts incorrectly removed/misdiagnosed it (thought it was an LLAMA_SERVER_ENABLE_SHUTDOWN env omission) before confirming the real cause via config.recipes.toml resolution and restoring shutdown_method:sigint for bigcherry-serving-base only.",
+  "results": {
+    "rounds": 6,
+    "order_rotated": true,
+    "schedule_seed": 0,
+    "all_shutdowns_clean": true,
+    "all_execution_attestations_verified_real_dual_gfx1100": true,
+    "pp512_tps": {"bigcherry-native_mean": 901.19, "bigcherry-serving-base_mean": 894.01, "delta_pct": -0.80},
+    "tg128_tps": {"bigcherry-native_mean": 33.87, "bigcherry-serving-base_mean": 33.92, "delta_pct": 0.15},
+    "notes": "tg128 (the stable metric) is effectively identical between arms. pp512's ~0.8% native-higher delta is driven by one matched low-outlier pair per arm, both occurring at schedule position 1 (consistent with the project's documented position/thermal-drift effect, which hits both arms equally in a balanced design -- not an arm effect). No material regression in either direction."
+  },
+  "verdict": "No material performance difference between bigcherry-native and bigcherry-serving-base. Representative balanced/rotated performance evidence completed per GPT's explicit guidance -- this is NOT a throughput-equivalence proof (none required by PA30 or by PA26's precedent), it is the required representative-performance evidence closing gate 1's remaining sub-clause.",
+  "full_raw_result": "tools/lab/pa30/pa30-g1-ab-run.json",
+  "advisories": "tools/lab/pa30/pa30-g1-ab-advisories.json (performance_admitted stays false by harness design -- full admission chain, e.g. replay activation, is a separate concern not required for PA30's representative-performance bar per GPT's guidance)"
+}
