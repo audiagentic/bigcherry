@@ -4414,7 +4414,7 @@ def _parse_validation_producer_selector(value: str) -> tuple[str, str]:
         raise PatchCampaignError(
             f"--validation-producer {value!r} must be PATCH/PRODUCER_ID"
         )
-    patch_id, _, producer_id = value.rsplit("/", 1)
+    patch_id, producer_id = value.rsplit("/", 1)
     if not patch_id or not producer_id:
         raise PatchCampaignError(
             f"--validation-producer {value!r}: patch and producer id must both be non-empty"
@@ -4512,15 +4512,17 @@ def _run_validation_producer(
             f"{args.patch}: --validation-producer requires a resolvable validation plan"
         )
 
-    full_contract = patch_validation.load_contract_for_descriptor(descriptor)
+    # Plural-aware (VA17): a --validation-producer patch may bind more than
+    # one Experiment Contract (e.g. 1203's RD05/RD06/RD07) -- the singular
+    # load_contract_for_descriptor()/.experiment_contract compatibility path
+    # fails closed (PatchRegistryError) for exactly that case, so this
+    # generic dispatcher must use the plural loader, never the singular one.
+    bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
     validation_context = patch_validation.ValidationContext(
         descriptor=descriptor, base_revision=cfg.pinned,
         control_source=None, subject_source=None,
-        contracts=(full_contract,) if full_contract is not None else (),
-        contract_hashes=(
-            {full_contract.id: full_contract.contract_hash}
-            if full_contract is not None else {}
-        ),
+        contracts=bound_contracts,
+        contract_hashes={c.id: c.contract_hash for c in bound_contracts},
     )
 
     workdir: Path = args.workdir
@@ -4544,7 +4546,7 @@ def _run_validation_producer(
         repo_root=REPO_ROOT, patch_dir=patch_dir, workdir=workdir,
         campaign_id=f"{args.patch}/{producer_id}", base_revision=cfg.pinned,
         hip_path=args.hip_path, fat_targets=fat_targets, model=args.model,
-        corpus=None, build_env=_hip_env(args.hip_path), inputs={},
+        corpus=args.producer_corpus, build_env=_hip_env(args.hip_path), inputs={},
         validation_build_identities={}, patch_id=args.patch, device_map=device_map,
         runtime=runtime,
     )
@@ -9357,6 +9359,14 @@ def main(argv: list[str] | None = None) -> int:
         "--rd04-corpus", type=Path, default=None,
         help="text corpus for --run-rd04-contract's real whole-model "
              "perplexity comparison.",
+    )
+    parser.add_argument(
+        "--producer-corpus", type=Path, default=None,
+        help="text corpus for --validation-producer's ProducerContext.corpus "
+             "-- the generic (non-RD04/RD73-specific) analog of --rd04-corpus/"
+             "--rd73-corpus, threaded into any patch-local producer that "
+             "declares a correctness check requiring a real backend-reference "
+             "corpus (e.g. 1203's RD05/RD07 backend_reference checks).",
     )
     parser.add_argument(
         "--run-rd13-contract", action="store_true", default=False,
