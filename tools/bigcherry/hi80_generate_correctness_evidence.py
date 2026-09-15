@@ -59,6 +59,28 @@ class CliError(RuntimeError):
     pass
 
 
+#: RHA15 (2026-09-15, dev-gpt-agent design review req_7e5ae686e055404e):
+#: the one canonical set of "this row genuinely failed, but the batch
+#: should keep going" exceptions. generate_for_row()'s own docstring says
+#: it "raises CliError, scm.SignatureMappingError or ce.EvidenceError on
+#: failure -- the caller decides whether that is fatal to the whole run";
+#: SignatureMappingError is its own separate, non-failure skip case (an
+#: honestly unsupported signature domain), handled distinctly by every
+#: caller. Centralized here so main() (below) and
+#: tuning/workflow.py::_stage_correctness_evidence() share one taxonomy
+#: instead of drifting independently -- exactly the drift that caused
+#: workflow.py's caller to only catch SignatureMappingError and let the
+#: first EvidenceError/CliError/CorrectnessGateError abort the entire
+#: batch before every row got an independent attempt. Never widen this to
+#: generic Exception: an unexpected SQLite/programming/infrastructure
+#: failure must still abort immediately, not be swallowed as "row failed".
+ROW_FAILURE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    gate.CorrectnessGateError,
+    ce.EvidenceError,
+    CliError,
+)
+
+
 def _read_measurements(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     try:
         return tune_promotion._read(path)
@@ -427,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{dispatch}: {outcome}", file=sys.stderr)
             except scm.SignatureMappingError as exc:
                 print(f"{dispatch}: SKIPPED (unsupported signature): {exc}", file=sys.stderr)
-            except (gate.CorrectnessGateError, ce.EvidenceError, CliError) as exc:
+            except ROW_FAILURE_EXCEPTIONS as exc:
                 failed += 1
                 print(f"{dispatch}: FAILED: {exc}", file=sys.stderr)
     finally:
