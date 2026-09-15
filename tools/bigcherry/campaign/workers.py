@@ -766,6 +766,7 @@ def make_build_worker(
             "members": bundle_members,
             "runtime_bundle_hash": computed_runtime_bundle_hash,
             "effective_build_id": metadata["build_id"],
+            "effective_configure": metadata["effective_configure"],
             "generated_compile_inputs_hash": metadata.get(
                 "generated_compile_inputs_hash"
             ),
