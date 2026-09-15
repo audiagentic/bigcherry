@@ -26,9 +26,19 @@ GPU architecture evidence.
 
 The universal apply and build checks remain required. Missing source/build
 evidence keeps the full adapter ineligible even if the transform check
-passes. Real HIP artifacts and identity-bound qualification publication
-remain pending the framework execution/evidence integration. No host timing
-from these checks answers any server comparison.
+passes. As of 2026-09-15 (PA26, commit `05feaa92`), real apply/build
+evidence exists at the current pin (`b10901`,
+`28ff0958291ce3465fabd7bd679d4b0edd742bd9`): single-composition apply and
+idempotence pass, and both production and diagnostic HIP builds complete
+and are hash-bound (`patches/0300_mmq_forced_j/evidence/validation.json`,
+`qualification_kind = "framework-configuration-v1"`,
+`eligible_for_validated_state = true`). `hardware_execution_qualified` and
+`runtime_performance_qualified` are both still `false` in that record --
+this closes the apply/build (compile-time) obligation only. No host timing
+from these checks answers any server comparison, and no GPU execution
+evidence exists for this patch. Confirmed current via
+`patch-verify-evidence 0300_mmq_forced_j` -> `framework-configuration-evidence`
+(clean, not stale) against the active pin.
 
 Focused offline check: `PYTHONPATH=tools python -m pytest
 tools/tests/patch/test_mmq_forced_j_validation_adapter.py
