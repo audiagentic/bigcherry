@@ -44,10 +44,10 @@ class Rd04ContractCliTests(unittest.TestCase):
         self.assertIn("args.run_rd04_benchmark", block)
         self.assertIn("args.run_rd58_state_restore", block)
         self.assertIn("args.run_rd73_contract", block)
-        # RD12 is deliberately NOT in this list: its specialized path
-        # returns from run() before the RD04 block is even reachable
-        # (before the Campaign import), so a --run-rd12-contract
-        # invocation can never reach this guard -- no dead flag kept.
+        # RD12's dedicated --run-rd12-contract flag was deleted by the
+        # PA36 RD12 pilot migration (its producer now runs through
+        # --validation-producer 1205_rd12_paired_mmvq_dual_output/rd12)
+        # -- the flag must never reappear in this guard.
         self.assertNotIn("args.run_rd12_contract", block)
         self.assertIn("args.run_rd13_contract", block)
         self.assertIn("args.run_rd26_contract", block)
@@ -131,7 +131,7 @@ class Rd04ContractCliTests(unittest.TestCase):
 
     def test_run_performance_benchmark_exclusion_includes_rd04(self) -> None:
         self.assertIn(
-            '"run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", '
+            '"run_rd58_state_restore", "run_rd73_contract", '
             '"run_rd04_contract",',
             self.main_source,
         )

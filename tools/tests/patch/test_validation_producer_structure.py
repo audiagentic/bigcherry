@@ -35,35 +35,59 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # in validation_campaign.py as of the PA36-F step-6 pass. Migrating a
 # producer deletes its entry from BOTH the source file and this baseline in
 # the same commit -- the baseline only ever shrinks.
-_BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset({
-    "_load_rd08_correctness_module", "_load_rd13_correctness_module",
-    "_load_rd17_correctness_module", "_load_rd19_correctness_module",
-    "_load_rd26_correctness_module", "_load_rd43_correctness_module",
-    "run_patch1000_backend_ops_correctness", "run_patch1000_backend_ops_perf",
-    "run_patch1000_verification",
-    "run_rd04_benchmark_evidence", "run_rd04_contract_correctness",
-    "run_rd05_contract_correctness", "run_rd06_contract_correctness",
-    "run_rd07_contract_correctness", "run_rd08_contract_correctness",
-    "run_rd08_contract_qualification", "run_rd08_contract_trigger",
-    "run_rd08_validation_lanes", "run_rd12_correctness_check",
-    "run_rd13_backend_reference_check", "run_rd13_ppl_check",
-    "run_rd17_ppl_check", "run_rd19_ppl_check",
-    "run_rd26_decode_verify_bit_identity_check", "run_rd26_ppl_check",
-    "run_rd30_correctness_check", "run_rd39_42_contract_qualification",
-    "run_rd43_contract_qualification", "run_rd43_ppl_check",
-    "run_rd58_state_restore_evidence", "run_rd73_contract_qualification",
-    "run_rd73_decode_control_lane", "run_rd73_mtp_server_lane",
-    "run_rd73_resource_burst_session",
-})
+_BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
+    {
+        "_load_rd08_correctness_module",
+        "_load_rd13_correctness_module",
+        "_load_rd17_correctness_module",
+        "_load_rd19_correctness_module",
+        "_load_rd26_correctness_module",
+        "_load_rd43_correctness_module",
+        "run_patch1000_backend_ops_correctness",
+        "run_patch1000_backend_ops_perf",
+        "run_patch1000_verification",
+        "run_rd04_benchmark_evidence",
+        "run_rd04_contract_correctness",
+        "run_rd05_contract_correctness",
+        "run_rd06_contract_correctness",
+        "run_rd07_contract_correctness",
+        "run_rd08_contract_correctness",
+        "run_rd08_contract_qualification",
+        "run_rd08_contract_trigger",
+        "run_rd08_validation_lanes",
+        "run_rd13_backend_reference_check",
+        "run_rd13_ppl_check",
+        "run_rd17_ppl_check",
+        "run_rd19_ppl_check",
+        "run_rd26_decode_verify_bit_identity_check",
+        "run_rd26_ppl_check",
+        "run_rd30_correctness_check",
+        "run_rd39_42_contract_qualification",
+        "run_rd43_contract_qualification",
+        "run_rd43_ppl_check",
+        "run_rd58_state_restore_evidence",
+        "run_rd73_contract_qualification",
+        "run_rd73_decode_control_lane",
+        "run_rd73_mtp_server_lane",
+        "run_rd73_resource_burst_session",
+    }
+)
 
 # --run-rdNN-*/--run-patchNNNN-* string literals already passed to
 # add_argument() in validation_campaign.py as of the PA36-F step-6 pass.
 # Same shrink-only rule.
-_BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset({
-    "--run-rd04-benchmark", "--run-rd04-contract", "--run-rd08-contract",
-    "--run-rd08-lanes", "--run-rd12-contract", "--run-rd13-contract",
-    "--run-rd26-contract", "--run-rd58-state-restore", "--run-rd73-contract",
-})
+_BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
+    {
+        "--run-rd04-benchmark",
+        "--run-rd04-contract",
+        "--run-rd08-contract",
+        "--run-rd08-lanes",
+        "--run-rd13-contract",
+        "--run-rd26-contract",
+        "--run-rd58-state-restore",
+        "--run-rd73-contract",
+    }
+)
 
 
 def _parse(path: Path) -> ast.Module:
@@ -72,7 +96,8 @@ def _parse(path: Path) -> ast.Module:
 
 def _all_function_names(tree: ast.Module) -> set[str]:
     return {
-        node.name for node in ast.walk(tree)
+        node.name
+        for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
 
@@ -97,14 +122,16 @@ class NoNewPatchNamedFunctionsTests(unittest.TestCase):
     def test_shared_campaign_adds_no_new_patch_named_functions(self) -> None:
         tree = _parse(_CAMPAIGN_SRC_PATH)
         current = {
-            name for name in _all_function_names(tree)
+            name
+            for name in _all_function_names(tree)
             if re.fullmatch(r"run_rd\d+.*", name)
             or re.fullmatch(r"run_patch\d+.*", name)
             or re.fullmatch(r"_load_rd\d+.*", name)
         }
         new = current - _BASELINE_LEGACY_FUNCTION_NAMES
         self.assertEqual(
-            new, set(),
+            new,
+            set(),
             f"new patch/RD-named function(s) added to shared validation_campaign.py: "
             f"{sorted(new)} -- a normal producer must not add a run_rdXX_*/"
             "run_patchXXXX_*/_load_rdXX_* function to shared execution code",
@@ -123,13 +150,15 @@ class NoNewPatchNamedCliFlagsTests(unittest.TestCase):
     def test_shared_campaign_adds_no_new_patch_named_cli_flags(self) -> None:
         tree = _parse(_CAMPAIGN_SRC_PATH)
         current = {
-            literal for literal in _all_add_argument_string_literals(tree)
+            literal
+            for literal in _all_add_argument_string_literals(tree)
             if re.fullmatch(r"--run-rd\d+-.*", literal)
             or re.fullmatch(r"--run-patch\d+-.*", literal)
         }
         new = current - _BASELINE_LEGACY_CLI_FLAGS
         self.assertEqual(
-            new, set(),
+            new,
+            set(),
             f"new --run-rdXX-*/--run-patchXXXX-* CLI flag(s) added: {sorted(new)} -- "
             "a normal producer must use --validation-producer/--producer-input, "
             "never a new dedicated flag",
@@ -139,7 +168,9 @@ class NoNewPatchNamedCliFlagsTests(unittest.TestCase):
 class NoSingularContractAccessTests(unittest.TestCase):
     """test_generic_shared_path_never_reads_singular_validation_plan_contract"""
 
-    def test_generic_shared_path_never_reads_singular_validation_plan_contract(self) -> None:
+    def test_generic_shared_path_never_reads_singular_validation_plan_contract(
+        self,
+    ) -> None:
         # validation.py's own ValidationPlan.contract PROPERTY DEFINITION is
         # explicitly permitted (the 0/1-contract compatibility view GPT's
         # design allows to exist) -- what must never appear is a CONSUMER
@@ -148,11 +179,13 @@ class NoSingularContractAccessTests(unittest.TestCase):
         for path in (_CAMPAIGN_SRC_PATH, _PRODUCER_SRC_PATH):
             tree = _parse(path)
             offenders = [
-                node.lineno for node in ast.walk(tree)
+                node.lineno
+                for node in ast.walk(tree)
                 if isinstance(node, ast.Attribute) and node.attr == "contract"
             ]
             self.assertEqual(
-                offenders, [],
+                offenders,
+                [],
                 f"{path.name}: singular '.contract' attribute access at line(s) "
                 f"{offenders} -- shared execution code must use plural "
                 "'.contracts'/'contract_ids_for_check()', never the singular "
@@ -179,68 +212,107 @@ class ProducerResultTypedCheckResultsTests(unittest.TestCase):
         self.assertNotIn("named_correctness_results", field_names)
         self.assertIn("check_results", field_names)
         check_results_field = next(
-            f for f in dataclasses.fields(vp.ProducerResult) if f.name == "check_results"
+            f
+            for f in dataclasses.fields(vp.ProducerResult)
+            if f.name == "check_results"
         )
         self.assertEqual(check_results_field.type, "tuple[ProducerCheckResult, ...]")
 
     def _plan_and_context(self) -> tuple[pv.ValidationPlan, pv.ValidationContext]:
         check = pv.CheckSpec(
-            check_id="c1", capability="correctness", validator="custom", required=True,
+            check_id="c1",
+            capability="correctness",
+            validator="custom",
+            required=True,
             config={"callable": "checks.py:check"},
         )
-        plan = pv.ValidationPlan(patch_id="p", checks=(check,), universal_capabilities=())
+        plan = pv.ValidationPlan(
+            patch_id="p", checks=(check,), universal_capabilities=()
+        )
         context = pv.ValidationContext(
-            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+            descriptor=None,
+            base_revision="a" * 40,
+            control_source=None,
+            subject_source=None,
         )
         return plan, context
 
     def _spec(self) -> vp.ProducerSpec:
         return vp.ProducerSpec(
-            patch_id="p", producer_id="prod", entrypoint=Path("producer.py"),
-            callable_name="run", trace_probe="skip", standard_campaign="skip",
-            correctness_evidence_cli="forbid", performance_benchmark_cli="forbid",
-            artifact_names=frozenset(), inputs={},
+            patch_id="p",
+            producer_id="prod",
+            entrypoint=Path("producer.py"),
+            callable_name="run",
+            trace_probe="skip",
+            standard_campaign="skip",
+            correctness_evidence_cli="forbid",
+            performance_benchmark_cli="forbid",
+            artifact_names=frozenset(),
+            inputs={},
         )
 
     def _result(self, check_results: tuple) -> vp.ProducerResult:
         return vp.ProducerResult(
-            correctness=None, validation_build_identities={"control": {}, "subject": {}},
-            activation_evidence=None, performance_evidence=None, trace_evidence=None,
-            check_results=check_results, lane_effects=(), emitted_artifacts=frozenset(),
+            correctness=None,
+            validation_build_identities={"control": {}, "subject": {}},
+            activation_evidence=None,
+            performance_evidence=None,
+            trace_evidence=None,
+            check_results=check_results,
+            lane_effects=(),
+            emitted_artifacts=frozenset(),
         )
 
     def test_invalid_scope_fails_closed(self) -> None:
         plan, context = self._plan_and_context()
         bad = vp.ProducerCheckResult(
-            check_id="c1", contract_ids=("wrong",),
+            check_id="c1",
+            contract_ids=("wrong",),
             validation_result=pv.ValidationResult(
-                check_id="c1", capability="correctness", status=pv.PASS, summary="ok",
+                check_id="c1",
+                capability="correctness",
+                status=pv.PASS,
+                summary="ok",
             ),
         )
         with self.assertRaises(vp.ValidationProducerError):
-            vp.validate_producer_result(self._spec(), self._result((bad,)), plan=plan, context=context)
+            vp.validate_producer_result(
+                self._spec(), self._result((bad,)), plan=plan, context=context
+            )
 
     def test_invalid_check_id_fails_closed(self) -> None:
         plan, context = self._plan_and_context()
         bad = vp.ProducerCheckResult(
-            check_id="unknown-check", contract_ids=(),
+            check_id="unknown-check",
+            contract_ids=(),
             validation_result=pv.ValidationResult(
-                check_id="unknown-check", capability="correctness", status=pv.PASS, summary="ok",
+                check_id="unknown-check",
+                capability="correctness",
+                status=pv.PASS,
+                summary="ok",
             ),
         )
         with self.assertRaises(vp.ValidationProducerError):
-            vp.validate_producer_result(self._spec(), self._result((bad,)), plan=plan, context=context)
+            vp.validate_producer_result(
+                self._spec(), self._result((bad,)), plan=plan, context=context
+            )
 
     def test_invalid_capability_fails_closed(self) -> None:
         plan, context = self._plan_and_context()
         bad = vp.ProducerCheckResult(
-            check_id="c1", contract_ids=(),
+            check_id="c1",
+            contract_ids=(),
             validation_result=pv.ValidationResult(
-                check_id="c1", capability="performance", status=pv.PASS, summary="ok",
+                check_id="c1",
+                capability="performance",
+                status=pv.PASS,
+                summary="ok",
             ),
         )
         with self.assertRaises(vp.ValidationProducerError):
-            vp.validate_producer_result(self._spec(), self._result((bad,)), plan=plan, context=context)
+            vp.validate_producer_result(
+                self._spec(), self._result((bad,)), plan=plan, context=context
+            )
 
 
 class NoPatchIdentityBranchesTests(unittest.TestCase):
@@ -250,17 +322,23 @@ class NoPatchIdentityBranchesTests(unittest.TestCase):
         tree = _parse(_CAMPAIGN_SRC_PATH)
         target = None
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "execute_validation_producer":
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "execute_validation_producer"
+            ):
                 target = node
                 break
         self.assertIsNotNone(target, "execute_validation_producer() not found")
         offenders = []
         for node in ast.walk(target):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if re.fullmatch(r"RD\d+", node.value) or re.fullmatch(r"\d{4}_.*", node.value):
+                if re.fullmatch(r"RD\d+", node.value) or re.fullmatch(
+                    r"\d{4}_.*", node.value
+                ):
                     offenders.append((node.lineno, node.value))
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             f"execute_validation_producer() contains patch-identity string constant(s): "
             f"{offenders}",
         )
@@ -269,13 +347,23 @@ class NoPatchIdentityBranchesTests(unittest.TestCase):
 class NoProducerSpecificPayloadDecodingTests(unittest.TestCase):
     """test_generic_dispatch_does_not_decode_producer_specific_payload_keys"""
 
-    _FORBIDDEN_ATTRS = {"correctness", "performance_evidence", "trace_evidence", "disposition"}
+    _FORBIDDEN_ATTRS = {
+        "correctness",
+        "performance_evidence",
+        "trace_evidence",
+        "disposition",
+    }
 
-    def test_generic_dispatch_does_not_decode_producer_specific_payload_keys(self) -> None:
+    def test_generic_dispatch_does_not_decode_producer_specific_payload_keys(
+        self,
+    ) -> None:
         tree = _parse(_CAMPAIGN_SRC_PATH)
         target = None
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == "execute_validation_producer":
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "execute_validation_producer"
+            ):
                 target = node
                 break
         self.assertIsNotNone(target)
@@ -286,7 +374,9 @@ class NoProducerSpecificPayloadDecodingTests(unittest.TestCase):
             # forbidden is reaching INTO one of these opaque per-producer
             # payloads for a patch-specific key, e.g. `result.correctness
             # ["some_rd_key"]` or `record.disposition.get("some_rd_key")`.
-            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute):
+            if isinstance(node, ast.Subscript) and isinstance(
+                node.value, ast.Attribute
+            ):
                 if node.value.attr in self._FORBIDDEN_ATTRS:
                     offenders.append((node.lineno, f"{node.value.attr}[...]"))
             if (
@@ -296,9 +386,12 @@ class NoProducerSpecificPayloadDecodingTests(unittest.TestCase):
                 and isinstance(node.func.value, ast.Attribute)
                 and node.func.value.attr in self._FORBIDDEN_ATTRS
             ):
-                offenders.append((node.lineno, f"{node.func.value.attr}.{node.func.attr}(...)"))
+                offenders.append(
+                    (node.lineno, f"{node.func.value.attr}.{node.func.attr}(...)")
+                )
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             f"execute_validation_producer() decodes forbidden producer-specific "
             f"payload key(s): {offenders} -- it may read the declared "
             "ProducerResult/ProducerCheckResult fields themselves "
@@ -324,8 +417,9 @@ class ProducerModulesCannotImportCampaignTests(unittest.TestCase):
                                 offenders.append(str(path))
                     if isinstance(node, ast.ImportFrom):
                         module = node.module or ""
-                        if module == "bigcherry.patch.validation_campaign" or module.endswith(
-                            ".validation_campaign"
+                        if (
+                            module == "bigcherry.patch.validation_campaign"
+                            or module.endswith(".validation_campaign")
                         ):
                             offenders.append(str(path))
                         # `from bigcherry.patch import validation_campaign`:
@@ -336,7 +430,8 @@ class ProducerModulesCannotImportCampaignTests(unittest.TestCase):
                         ):
                             offenders.append(str(path))
         self.assertEqual(
-            offenders, [],
+            offenders,
+            [],
             f"patch-local producer module(s) import validation_campaign.py: {offenders} "
             "-- this is the exact coupling PA36 exists to remove",
         )
@@ -352,15 +447,30 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
 
         fat_targets = vp.FatTargetPlan(targets=("gfx1100", "gfx1201"))
         runtime = vc.CampaignProducerRuntime(
-            repo_root=Path("/repo"), patch_id="0000_fake", base_revision="a" * 40,
-            workdir=Path("/work"), hip_path=Path("/hip"), fat_targets=fat_targets,
+            repo_root=Path("/repo"),
+            patch_id="0000_fake",
+            base_revision="a" * 40,
+            workdir=Path("/work"),
+            hip_path=Path("/hip"),
+            fat_targets=fat_targets,
             run_dir=Path("/work/run"),
         )
 
         build_calls: list[dict[str, object]] = []
 
-        def fake_build_tree(*, name, hip_path, amdgpu_targets, workdir, targets, source, extra_cmake_args):
-            build_calls.append({"name": name, "amdgpu_targets": amdgpu_targets, "source": source})
+        def fake_build_tree(
+            *,
+            name,
+            hip_path,
+            amdgpu_targets,
+            workdir,
+            targets,
+            source,
+            extra_cmake_args,
+        ):
+            build_calls.append(
+                {"name": name, "amdgpu_targets": amdgpu_targets, "source": source}
+            )
             return Path(f"/builds/{name}")
 
         evidence_calls: list[dict[str, object]] = []
@@ -372,7 +482,15 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
             def campaign_identity(self) -> dict[str, str]:
                 return {"role": self._role}
 
-        def fake_capture(build_dir, *, source_root, architecture, binary, requested_cmake_args, build_env):
+        def fake_capture(
+            build_dir,
+            *,
+            source_root,
+            architecture,
+            binary,
+            requested_cmake_args,
+            build_env,
+        ):
             evidence_calls.append({"architecture": architecture, "binary": binary})
             return _FakeEvidence("control" if len(evidence_calls) == 1 else "subject")
 
@@ -385,27 +503,45 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
             # test in the same process already imported it first, which a
             # module-swap via mock.patch.dict(sys.modules, ...) does not
             # intercept (a real full-suite-run regression this fixed).
-            with mock.patch.object(
-                real_psi, "resolve_source_composition",
-                side_effect=[
-                    ("rev123", [("bigcherry", "rev123")]),
-                    ("rev123", [("bigcherry", "rev123"), ("0000_fake", "1")]),
-                ],
-            ), mock.patch.object(
-                real_psi, "materialize_composition",
-                side_effect=[Path("/src/control"), Path("/src/subject")],
-            ), mock.patch.object(
-                real_psi, "REPO_ROOT", Path("/repo"),
-            ), mock.patch.object(
-                vc, "build_tree", side_effect=fake_build_tree,
-            ), mock.patch.object(
-                vc, "capture_completed_build_evidence", side_effect=fake_capture,
+            with (
+                mock.patch.object(
+                    real_psi,
+                    "resolve_source_composition",
+                    side_effect=[
+                        ("rev123", [("bigcherry", "rev123")]),
+                        ("rev123", [("bigcherry", "rev123"), ("0000_fake", "1")]),
+                    ],
+                ),
+                mock.patch.object(
+                    real_psi,
+                    "materialize_composition",
+                    side_effect=[Path("/src/control"), Path("/src/subject")],
+                ),
+                mock.patch.object(
+                    real_psi,
+                    "REPO_ROOT",
+                    Path("/repo"),
+                ),
+                mock.patch.object(
+                    vc,
+                    "build_tree",
+                    side_effect=fake_build_tree,
+                ),
+                mock.patch.object(
+                    vc,
+                    "capture_completed_build_evidence",
+                    side_effect=fake_capture,
+                ),
             ):
-                return runtime.build_pair(targets=("gfx1100", "gfx1201"), primary_target="llama-bench")
+                return runtime.build_pair(
+                    targets=("gfx1100", "gfx1201"), primary_target="llama-bench"
+                )
 
         pair = run_once()
 
-        self.assertEqual(len(build_calls), 2, "build_pair() must build exactly two arms")
+        self.assertEqual(
+            len(build_calls), 2, "build_pair() must build exactly two arms"
+        )
         self.assertEqual(build_calls[0]["amdgpu_targets"], "gfx1100;gfx1201")
         self.assertEqual(build_calls[1]["amdgpu_targets"], "gfx1100;gfx1201")
         self.assertIn("control", build_calls[0]["name"])
@@ -432,13 +568,21 @@ class DeviceContextsAreHipOnlyTests(unittest.TestCase):
 
         fat_targets = vp.FatTargetPlan(targets=("gfx1100",))
         runtime = vc.CampaignProducerRuntime(
-            repo_root=Path("/repo"), patch_id="0000_fake", base_revision="a" * 40,
-            workdir=Path("/work"), hip_path=Path("/hip"), fat_targets=fat_targets,
+            repo_root=Path("/repo"),
+            patch_id="0000_fake",
+            base_revision="a" * 40,
+            workdir=Path("/work"),
+            hip_path=Path("/hip"),
+            fat_targets=fat_targets,
             run_dir=Path("/work/run"),
         )
         devices = (
-            bc_environment.Device(index=0, arch="gfx1100", model="m0", vram_mib=1, locator="0000:01:00.0"),
-            bc_environment.Device(index=1, arch="gfx1100", model="m1", vram_mib=1, locator="0000:02:00.0"),
+            bc_environment.Device(
+                index=0, arch="gfx1100", model="m0", vram_mib=1, locator="0000:01:00.0"
+            ),
+            bc_environment.Device(
+                index=1, arch="gfx1100", model="m1", vram_mib=1, locator="0000:02:00.0"
+            ),
         )
         fake_host = mock.Mock(devices=devices)
         fake_env = mock.Mock()
@@ -449,9 +593,12 @@ class DeviceContextsAreHipOnlyTests(unittest.TestCase):
 
         self.assertEqual(len(contexts), 2)
         for ctx in contexts:
-            self.assertEqual(ctx.env_overrides, {"HIP_VISIBLE_DEVICES": str(ctx.device_index)})
+            self.assertEqual(
+                ctx.env_overrides, {"HIP_VISIBLE_DEVICES": str(ctx.device_index)}
+            )
             self.assertNotIn("ROCR_VISIBLE_DEVICES", ctx.env_overrides)
             self.assertEqual(ctx.env_unset, ("ROCR_VISIBLE_DEVICES",))
+
 
 class BuildPairOverrideParamsTests(unittest.TestCase):
     """test_build_pair_override_params
@@ -466,8 +613,11 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
     @staticmethod
     def _runtime(fat_targets):
         return vc.CampaignProducerRuntime(
-            repo_root=Path("/repo"), patch_id="0000_fake", base_revision="a" * 40,
-            workdir=Path("/work"), hip_path=Path("/hip"),
+            repo_root=Path("/repo"),
+            patch_id="0000_fake",
+            base_revision="a" * 40,
+            workdir=Path("/work"),
+            hip_path=Path("/hip"),
             fat_targets=vp.FatTargetPlan(targets=tuple(fat_targets)),
             run_dir=Path("/work/run"),
         )
@@ -481,9 +631,19 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
         build_calls = []
         evidence_calls = []
 
-        def fake_resolve(source_name, *, focal=None, extra_patches=(),
-                         base_ref="HEAD", base_repo=None, recipes=None, patches_root=None):
-            resolve_calls.append({"focal": focal, "extra_patches": tuple(extra_patches)})
+        def fake_resolve(
+            source_name,
+            *,
+            focal=None,
+            extra_patches=(),
+            base_ref="HEAD",
+            base_repo=None,
+            recipes=None,
+            patches_root=None,
+        ):
+            resolve_calls.append(
+                {"focal": focal, "extra_patches": tuple(extra_patches)}
+            )
             composition = [("bigcherry", "rev123")]
             for extra in extra_patches:
                 composition.append((extra, "1"))
@@ -491,10 +651,22 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
                 composition.append((focal, "1"))
             return "rev123", tuple(composition)
 
-        def fake_build_tree(*, name, hip_path, amdgpu_targets, workdir,
-                           targets, source, extra_cmake_args):
+        def fake_build_tree(
+            *,
+            name,
+            hip_path,
+            amdgpu_targets,
+            workdir,
+            targets,
+            source,
+            extra_cmake_args,
+        ):
             build_calls.append(
-                {"name": name, "amdgpu_targets": amdgpu_targets, "targets": list(targets)}
+                {
+                    "name": name,
+                    "amdgpu_targets": amdgpu_targets,
+                    "targets": list(targets),
+                }
             )
             return Path("/builds/" + str(name))
 
@@ -502,47 +674,89 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
             def campaign_identity(self):
                 return {"role": "x"}
 
-        def fake_capture(build_dir, *, source_root, architecture, binary,
-                         requested_cmake_args, build_env):
-            evidence_calls.append({"architecture": tuple(architecture), "binary": binary})
+        def fake_capture(
+            build_dir,
+            *,
+            source_root,
+            architecture,
+            binary,
+            requested_cmake_args,
+            build_env,
+        ):
+            evidence_calls.append(
+                {"architecture": tuple(architecture), "binary": binary}
+            )
             return _FakeEvidence()
 
-        with mock.patch.object(
-            real_psi, "resolve_source_composition", side_effect=fake_resolve,
-        ), mock.patch.object(
-            real_psi, "materialize_composition",
-            side_effect=[Path("/src/control"), Path("/src/subject")],
-        ), mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")), mock.patch.object(
-            vc, "build_tree", side_effect=fake_build_tree,
-        ), mock.patch.object(
-            vc, "capture_completed_build_evidence", side_effect=fake_capture,
+        with (
+            mock.patch.object(
+                real_psi,
+                "resolve_source_composition",
+                side_effect=fake_resolve,
+            ),
+            mock.patch.object(
+                real_psi,
+                "materialize_composition",
+                side_effect=[Path("/src/control"), Path("/src/subject")],
+            ),
+            mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")),
+            mock.patch.object(
+                vc,
+                "build_tree",
+                side_effect=fake_build_tree,
+            ),
+            mock.patch.object(
+                vc,
+                "capture_completed_build_evidence",
+                side_effect=fake_capture,
+            ),
         ):
             runtime.build_pair(**kwargs)
 
-        return {"resolve": resolve_calls, "build": build_calls, "evidence": evidence_calls}
+        return {
+            "resolve": resolve_calls,
+            "build": build_calls,
+            "evidence": evidence_calls,
+        }
 
     def test_build_pair_common_extra_patches_apply_to_both_arms(self):
         runtime = self._runtime(("gfx1100",))
-        got = self._run(runtime, targets=("gfx1100",), primary_target="test-backend-ops",
-                        common_extra_patches=("1222_e", "1223_e"))
+        got = self._run(
+            runtime,
+            targets=("gfx1100",),
+            primary_target="test-backend-ops",
+            common_extra_patches=("1222_e", "1223_e"),
+        )
         resolve = got["resolve"]
-        self.assertEqual(len(resolve), 2, "build_pair() must resolve exactly control + subject")
+        self.assertEqual(
+            len(resolve), 2, "build_pair() must resolve exactly control + subject"
+        )
         self.assertIsNone(resolve[0]["focal"], "control arm must stay focal-free")
         self.assertEqual(resolve[0]["extra_patches"], ("1222_e", "1223_e"))
-        self.assertEqual(resolve[1]["focal"], "0000_fake", "subject arm must keep its focal")
-        self.assertEqual(resolve[1]["extra_patches"], ("1222_e", "1223_e"),
-                         "common_extra_patches must reach BOTH arms")
+        self.assertEqual(
+            resolve[1]["focal"], "0000_fake", "subject arm must keep its focal"
+        )
+        self.assertEqual(
+            resolve[1]["extra_patches"],
+            ("1222_e", "1223_e"),
+            "common_extra_patches must reach BOTH arms",
+        )
         self.assertEqual(len(got["build"]), 2)
 
     def test_build_pair_targets_override_is_authoritative(self):
         # fat_targets says gfx1100, but an explicit targets=("gfx1030",) override
         # must drive the actual CMake AMDGPU_TARGETS value and the directory slug.
         runtime = self._runtime(("gfx1100",))
-        got = self._run(runtime, targets=("gfx1030",), primary_target="test-backend-ops")
+        got = self._run(
+            runtime, targets=("gfx1030",), primary_target="test-backend-ops"
+        )
         self.assertEqual(len(got["build"]), 2)
         for call in got["build"]:
-            self.assertEqual(call["amdgpu_targets"], "gfx1030",
-                             "non-empty targets must override fat_targets")
+            self.assertEqual(
+                call["amdgpu_targets"],
+                "gfx1030",
+                "non-empty targets must override fat_targets",
+            )
             self.assertIn("gfx1030", str(call["name"]))
             self.assertNotIn("gfx1100", str(call["name"]))
 
@@ -557,8 +771,9 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
         with self.assertRaises(vp.ValidationProducerError):
             self._run(runtime, targets=(), primary_target="llama-bench")
         with self.assertRaises(vp.ValidationProducerError):
-            self._run(runtime, targets=("gfx1100", "gfx1100"),
-                      primary_target="llama-bench")
+            self._run(
+                runtime, targets=("gfx1100", "gfx1100"), primary_target="llama-bench"
+            )
 
 
 if __name__ == "__main__":

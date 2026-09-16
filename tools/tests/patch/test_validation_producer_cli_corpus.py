@@ -85,9 +85,18 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
                     correctness_evidence=None,
                     run_performance_benchmark=False,
                 )
+                # 1203's rd050607 descriptor declares control_model as a
+                # REQUIRED producer input; the dispatcher's fail-fast
+                # validate_producer_inputs() (PA36 sub-slice 2, T5) gates
+                # it before the (stubbed) executor, so the wiring test
+                # supplies it. The gate is a pure membership check -- no
+                # file is read.
                 with self.assertRaises(_CapturedExit):
                     vc._run_validation_producer(
-                        args, producer_id="rd050607", provided_inputs={},
+                        args, producer_id="rd050607",
+                        provided_inputs={
+                            "control_model": str(Path(tmp) / "control.gguf"),
+                        },
                     )
         return captured["producer_context"]
 
@@ -129,6 +138,10 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
                     "--amdgpu-targets", "gfx1100;gfx1201;gfx1030",
                     "--validation-producer", f"{_PATCH_ID}/rd050607",
                     "--producer-corpus", str(corpus_path),
+                    # rd050607 declares control_model required (PA39
+                    # defect #3); the dispatcher's fail-fast input gate
+                    # needs it before the stubbed executor runs.
+                    "--producer-input", "control_model=" + str(Path(tmp) / "control.gguf"),
                 ]
                 with self.assertRaises(_CapturedExit):
                     vc.main(argv)

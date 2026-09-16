@@ -15,6 +15,13 @@ class) that cannot be reasonably unit-tested end to end without real
 hardware and a real git checkout -- consistent with VA14/VA15's
 established scope boundary, this proves the exact fix via direct source
 inspection of the committed function body.
+
+PA36 sub-slice 2 (T2) moved run()'s source resolve/materialize block
+verbatim into _build_standard_campaign_scaffold(); the invariant now
+spans the call boundary -- run() feeds base_ref=cfg.pinned INTO the
+scaffold, and the scaffold must use that base_ref (and never a
+hardcoded HEAD) at every resolve/materialize/verify site. The
+inspections below pin both sides of that boundary.
 """
 
 from __future__ import annotations
@@ -33,7 +40,13 @@ from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 class PinResolutionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.source = inspect.getsource(vc.run)
+        self.run_source = inspect.getsource(vc.run)
+        self.scaffold_source = inspect.getsource(
+            vc._build_standard_campaign_scaffold)
+        # The original pre-T2 tests inspected vc.run only; the combined
+        # view keeps those assertions working AND extends "no HEAD
+        # anywhere" to the scaffold where the resolution now lives.
+        self.source = self.run_source + self.scaffold_source
 
     def test_no_hardcoded_head_is_used_for_source_resolution_or_materialization(self) -> None:
         # The real bug: base_ref="HEAD"/requested_revision="HEAD" silently
@@ -42,18 +55,31 @@ class PinResolutionTests(unittest.TestCase):
         self.assertNotIn('base_ref="HEAD"', self.source)
         self.assertNotIn("requested_revision=\"HEAD\"", self.source)
 
-    def test_cfg_pinned_used_for_both_resolve_source_composition_calls(self) -> None:
-        matches = re.findall(r"resolve_source_composition\(\s*\n\s*baseline_source, [^\n]*base_ref=cfg\.pinned", self.source)
-        self.assertEqual(len(matches), 2, "both control and subject resolve_source_composition() calls must use base_ref=cfg.pinned")
+    def test_run_threads_cfg_pinned_into_the_scaffold(self) -> None:
+        # The VA04 invariant at the call boundary: run() must hand the
+        # configured pin to the scaffold that resolves/materializes the
+        # sources -- never a hardcoded HEAD.
+        # The assignment call (not the docstring/comment mention, which
+        # carries a bare "()" and would truncate the slice).
+        call_index = self.run_source.index("= _build_standard_campaign_scaffold(")
+        call_end = self.run_source.index("\n    )", call_index)
+        self.assertIn(
+            "base_ref=cfg.pinned", self.run_source[call_index:call_end])
 
-    def test_cfg_pinned_used_for_all_four_requested_revision_sites(self) -> None:
+    def test_scaffold_uses_base_ref_for_both_resolve_source_composition_calls(self) -> None:
+        matches = re.findall(
+            r"resolve_source_composition\(\s*\n\s*baseline_source, [^\n]*base_ref=base_ref",
+            self.scaffold_source)
+        self.assertEqual(len(matches), 2, "both control and subject resolve_source_composition() calls must use the base_ref parameter (cfg.pinned, threaded by run())")
+
+    def test_scaffold_uses_base_ref_for_all_four_requested_revision_sites(self) -> None:
         # materialize_composition (control, subject) + verify_composition_idempotent (control, subject).
-        matches = re.findall(r"requested_revision=cfg\.pinned", self.source)
+        matches = re.findall(r"requested_revision=base_ref", self.scaffold_source)
         self.assertEqual(len(matches), 4)
 
     def test_cfg_is_loaded_before_source_resolution(self) -> None:
-        cfg_load_index = self.source.index("cfg = campaign_config.load(")
-        resolve_index = self.source.index("resolve_source_composition(")
+        cfg_load_index = self.run_source.index("cfg = campaign_config.load(")
+        resolve_index = self.run_source.index("_build_standard_campaign_scaffold(")
         self.assertLess(
             cfg_load_index, resolve_index,
             "cfg must be loaded and resolved BEFORE any source resolution/materialization call, "
