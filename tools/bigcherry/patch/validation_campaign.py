@@ -4260,8 +4260,36 @@ class CampaignProducerRuntime:
                 f"{self.patch_id}: device_contexts() index {index} is configured "
                 f"as {device.arch!r}, but {architecture!r} was requested"
             )
+        # NOT locators=(device.locator,): the observed side of this
+        # comparison comes from parse_rocm_attestation() parsing a plain
+        # llama-bench/llama-perplexity stdout device banner ("Device 0:
+        # AMD Radeon Graphics, gfx1201 (0x1201), ..."), which has no PCI
+        # locator at all and hardcodes ObservedDevice.locator=None --
+        # structurally, not as a bug in that parser (llama.cpp does not
+        # print one). Passing a real verified locator here made
+        # compare_execution_identity() require a match this observation
+        # channel can never supply, so every real-hardware run through
+        # this generic --validation-producer device_contexts() path was
+        # guaranteed to fail closed at the first paired-benchmark call
+        # (found on real hardware, PA39 real-hardware acceptance attempt
+        # #3c). The two other ExecutionIdentity(...) call sites in this
+        # same file (~4931, ~5952) already omit locators for the exact
+        # same reason -- this now matches that established precedent
+        # rather than inventing a new, weaker guarantee: device identity
+        # here rests on architecture match + the HIP_VISIBLE_DEVICES
+        # env-scoping this method already returns below, same as those
+        # sibling call sites. Known residual gap (documented, not fixed
+        # here, matching this item's existing gfx1100-coverage-gap
+        # documentation pattern for RD06/RD07): for RD07's gfx1100 arm,
+        # which has TWO real physical devices (index 0 and 1, both
+        # architecture gfx1100), this evidence channel cannot distinguish
+        # which of the two actually ran -- that relies on
+        # HIP_VISIBLE_DEVICES scoping alone, unverified in the
+        # attestation record, for gfx1100 specifically. RD05/RD06 use
+        # gfx1201 only, the sole device of that architecture on this
+        # host, so the gap does not apply to them.
         identity = ExecutionIdentity(
-            backend="ROCm", architectures=(device.arch,), locators=(device.locator,),
+            backend="ROCm", architectures=(device.arch,),
         )
         return identity, {"HIP_VISIBLE_DEVICES": str(index)}
 
