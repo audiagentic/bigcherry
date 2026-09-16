@@ -600,10 +600,27 @@ _SOFTLOOP_OLD = """                            if (hsk != 128 && logit_softcap !
 _SOFTLOOP_NEW = """                            // The mma kernel instantiates logit_softcap for heads 128/256/512 only.
                             if (hsk != 128 && hsk != 256 && hsk != 512 && logit_softcap != 0.0f) continue;"""
 
-# Position adaptation: anchor on the HI70 direct-op corpus (see header).
-_PERF_ANCHOR_OLD = """    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));"""
+# Position adaptation (re-anchored 2026-09-16 against real pin b10901 /
+# 28ff0958291ce3465fabd7bd679d4b0edd742bd9): the original anchor line
+# ("test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 127, 128, 256, {1, 1},
+# {1, 1})") no longer exists anywhere in the current pin's
+# tests/test-backend-ops.cpp (confirmed absent by direct grep of the pin
+# content via `git show b10901:tests/test-backend-ops.cpp`) -- real
+# upstream drift, discovered during PA39's real-hardware acceptance
+# attempt #3 (PatchSourceIsolationError on this exact edit id). Re-anchored
+# on the unique end-of-function tail of make_test_cases_perf() (the
+# {n,16,16,1}/4 l2_norm_batch line + "return test_cases;\n}"), which is a
+# stable insertion point independent of any specific perf test-case
+# ordering upstream chooses to keep/drop.
+_PERF_ANCHOR_OLD = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
+    }
 
-_PERF_NEW = """    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));
+
+    return test_cases;
+}"""
+
+_PERF_NEW = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
+    }
 
     // rdna-boosts (RD05/06/07): Qwen3.6-27B Q6_K prefill shapes + FA perf:
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1})); // ffn_up/ffn_gate
@@ -628,7 +645,9 @@ _PERF_NEW = """    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML
         test_cases.emplace_back(new test_flash_attn_ext(hsk, hsv, nh, {nr2, 1}, 16384, nb, true, false, 0, 0,
                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     }
-"""
+
+    return test_cases;
+}"""
 
 
 PATCHES = [
@@ -880,7 +899,8 @@ PATCHES = [
                 anchor=re.escape(_PERF_ANCHOR_OLD),
                 rationale="make_test_cases_perf: qwen35-27B Q6_K prefill "
                           "shapes + FA perf loop (position adaptation -- "
-                          "after the HI70 direct-op corpus)",
+                          "appended at end of make_test_cases_perf(), "
+                          "re-anchored 2026-09-16 against real pin drift)",
                 mode="replace",
                 text=_PERF_NEW,
                 guard=r"rdna-boosts \(RD05/06/07\): Qwen3.6-27B Q6_K prefill shapes",
