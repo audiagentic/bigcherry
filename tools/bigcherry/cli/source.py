@@ -154,7 +154,14 @@ def cmd_pull(args: Namespace) -> int:
         legacy._run(["git", "-C", str(root), "checkout", "--force", checkout_target])
 
     record = legacy._record_for(root)
-    record.advance_to("pulled")
+    # Pulling a pin is a source-checkout operation, not a release reset.  A
+    # cloned planning/release checkout may already have a later generated or
+    # validated record for this same pin; preserve that progress rather than
+    # attempting the invalid backward transition to ``pulled``.
+    if record.stage not in {
+        "audited", "patched", "generated", "built", "tested", "tuned", "validated"
+    }:
+        record.advance_to("pulled")
     record.save()
     print(
         f"at {record.revision[:12]}"
