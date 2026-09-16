@@ -186,6 +186,63 @@ def patch_validation_subject_digest(path: Path) -> str:
     )
 
 
+MODEL_FREE_CAMPAIGN_IDENTITY_SCHEMA = (
+    "validation-producer-model-free-campaign-identity-v1"
+)
+
+
+def model_free_campaign_identity_digest(
+    *,
+    patch_name: str,
+    patch_digest: str,
+    patched_source_tree: str,
+    gpu_architecture: str,
+    campaign_build_identities: Mapping[str, Mapping[str, object]],
+    base_revision: str,
+) -> str:
+    """Canonical campaign-identity binding for producer runs that consume
+    no model and no manifest (PA36 RD12 pilot, dev-gpt-agent design
+    req_f6fc41bf6bf94468). The generic e2e_smoke_campaign.Campaign never
+    runs for such a patch, so its model/manifest-bearing identity binding
+    does not exist -- this helper binds the record's
+    ``campaign_identity_digest`` from the same facts the generic Campaign
+    would bind, minus model/manifest, using the same canonical-JSON sha256
+    convention. This module is the one owner of evidence-record identity
+    formats: producer code never defines one. ``campaign_build_identities``
+    must be EXACTLY the campaign domain (tune, replay, stock) -- the
+    producer's own correctness-pair identities are a separate domain
+    (VALIDATION_BUILD_ROLES) and never belong here."""
+    if set(campaign_build_identities) != set(CAMPAIGN_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            "model-free campaign identity requires exactly "
+            f"{set(CAMPAIGN_BUILD_ROLES)!r}"
+        )
+    builds = {
+        role: _validate_build_identity(
+            campaign_build_identities[role],
+            field=f"campaign_build_identities.{role}",
+        )
+        for role in CAMPAIGN_BUILD_ROLES
+    }
+    payload = {
+        "schema": MODEL_FREE_CAMPAIGN_IDENTITY_SCHEMA,
+        "patch_identity": {
+            "name": _require_string(patch_name, "patch_name"),
+            "digest": _require_hex(patch_digest, "patch_digest", (64,)),
+        },
+        "patched_source_tree": _require_hex(
+            patched_source_tree, "patched_source_tree", (40, 64)
+        ),
+        "gpu_architecture": _require_string(gpu_architecture, "gpu_architecture"),
+        "campaign_build_identities": builds,
+        "base_revision": _require_hex(base_revision, "base_revision", (40, 64)),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _validate_build_identity(value: object, *, field: str) -> dict[str, object]:
     """Full CompletedBuildEvidence.campaign_identity() shape validation,
     parameterized by the caller's field path (VA07: reused identically for
@@ -266,20 +323,6 @@ _LEGACY_ARTIFACT_PATHS: tuple[str, ...] = (
     "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
     "artifacts/rd73-resource.json",
     "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
-    # PA39: RD12's real bit-identical correctness producer
-    # (run_rd12_correctness_check()) namespaces its artifacts by the
-    # architecture the run actually executed against. The per-arm
-    # activation logs (the declared trace-marker check's
-    # positive/negative artifacts) are namespaced the same way -- the
-    # standalone lab driver shares one run_dir across all three
-    # contract architectures, so a single un-namespaced pair would be
-    # silently overwritten by each later architecture.
-    "artifacts/rd12-correctness-gfx1100.json",
-    "artifacts/rd12-correctness-gfx1201.json",
-    "artifacts/rd12-correctness-gfx1030.json",
-    "logs/activation-rd12-gfx1100-subject.log", "logs/activation-rd12-gfx1100-control.log",
-    "logs/activation-rd12-gfx1201-subject.log", "logs/activation-rd12-gfx1201-control.log",
-    "logs/activation-rd12-gfx1030-subject.log", "logs/activation-rd12-gfx1030-control.log",
     # PA39: RD04's real backend_reference+ppl_equality correctness
     # producer (run_rd04_contract_correctness()) namespaces its
     # artifact by the architecture the run actually executed against.

@@ -48,7 +48,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from bigcherry.build.builds import capture_completed_build_evidence
+from bigcherry.build.builds import (
+    CompletedBuildEvidence,
+    capture_completed_build_evidence,
+)
 from bigcherry.campaign.bench_runner import (  # noqa: F401
     BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
 )
@@ -2372,463 +2375,6 @@ def run_rd04_contract_correctness(
     }
 
 
-def run_rd12_correctness_check(
-    *,
-    base_revision: str,
-    hip_path: Path,
-    amdgpu_targets: str,
-    worktree_root: Path,
-    build_root: Path,
-    build_env: dict[str, str],
-    run_dir: Path,
-    seeds: tuple[int, ...] = (1, 2, 3),
-    _source_module: object | None = None,
-    _evidence_module: object | None = None,
-    _runner=None,
-) -> dict[str, object]:
-    """RD12 exact-output correctness producer.
-
-    Control:
-      normal BigCherry composition
-      + deterministic test-backend-ops seed support (1222)
-      + machine-readable correctness metrics (1223)
-      + paired plain-MUL_MAT whole-graph probe (1258)
-
-    Subject:
-      exact same composition
-      + 1205_rd12_paired_mmvq_dual_output
-
-    A normal signature_to_test_file_line()/--test-file case is
-    intentionally NOT used: it represents one isolated MUL_MAT and cannot
-    satisfy RD12's production selector, which requires two distinct
-    adjacent MUL_MAT nodes sharing the exact src1 tensor. 1236 is not
-    needed -- this graph contains no MUL_MAT_ID routing tensor.
-
-    Exact equality is required independently for the K and V outputs:
-      * CPU-reference output digest,
-      * HIP output digest,
-      * output element count.
-
-    The focal patch's existing BIGCHERRY_PATCH_TRACE marker is also
-    mandatory. This prevents a false green result if control and subject
-    happen to produce identical bytes because the dual-output fusion never
-    activated.
-    """
-    import math as _math
-
-    from bigcherry.experiment import contract as experiment_contract
-
-    if _source_module is None:
-        from bigcherry.patch import source as psi
-    else:
-        psi = _source_module
-
-    if _evidence_module is None:
-        from bigcherry.tuning import (
-            correctness_evidence as correctness_evidence,
-        )
-    else:
-        correctness_evidence = _evidence_module
-
-    targets = tuple(
-        target.strip()
-        for target in amdgpu_targets.replace(",", ";").split(";")
-        if target.strip()
-    )
-    supported_architectures = ("gfx1100", "gfx1201", "gfx1030")
-    if len(targets) != 1 or targets[0] not in supported_architectures:
-        raise PatchCampaignError(
-            "RD12 correctness requires exactly one contract architecture "
-            "per run: gfx1100, gfx1201, or gfx1030; "
-            f"got AMDGPU_TARGETS={amdgpu_targets!r}"
-        )
-    architecture = targets[0]
-    # Real production builds compile ONE fat multi-arch binary and select
-    # the real device to run it against at runtime -- match that instead
-    # of rebuilding per architecture (build_tree()'s cmake-cache-reuse
-    # makes every call after the first a zero-rebuild binary reuse when
-    # the build-dir name and cmake config are identical).
-    fat_targets = ";".join(supported_architectures)
-
-    if not seeds or any(seed == 0 for seed in seeds) or len(set(seeds)) != len(seeds):
-        raise PatchCampaignError(
-            "RD12 correctness requires a non-empty set of unique nonzero seeds"
-        )
-
-    evidence_patches = (
-        "1222_hi67_deterministic_test_backend_ops_seed",
-        "1223_hi67_machine_readable_correctness_metrics",
-        "1258_rd12_paired_mul_mat_test_case",
-    )
-    subject_patch = "1205_rd12_paired_mmvq_dual_output"
-
-    control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", extra_patches=evidence_patches,
-        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
-    )
-    subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry", extra_patches=(*evidence_patches, subject_patch),
-        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
-    )
-    if control_revision != subject_revision:
-        raise PatchCampaignError(
-            "RD12 correctness: control and subject resolved different base revisions"
-        )
-
-    control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd12-correctness-control",
-        resolved_revision=control_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
-    )
-    subject_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "rd12-correctness-subject",
-        resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
-    )
-
-    exe = ".exe" if sys.platform == "win32" else ""
-    correctness_build_root = build_root / "rd12-correctness"
-    control_name = "rd12-correctness-control"
-    subject_name = "rd12-correctness-subject"
-
-    control_bin_dir = build_tree(
-        name=control_name, hip_path=hip_path, amdgpu_targets=fat_targets,
-        workdir=correctness_build_root, targets=["test-backend-ops"], source=control_src,
-        extra_cmake_args=[],
-    )
-    subject_bin_dir = build_tree(
-        name=subject_name, hip_path=hip_path, amdgpu_targets=fat_targets,
-        workdir=correctness_build_root, targets=["test-backend-ops"], source=subject_src,
-        extra_cmake_args=[],
-    )
-    control_binary = control_bin_dir / f"test-backend-ops{exe}"
-    subject_binary = subject_bin_dir / f"test-backend-ops{exe}"
-
-    cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=fat_targets, extra_cmake_args=[],
-    )
-    control_build_evidence = capture_completed_build_evidence(
-        correctness_build_root / control_name, source_root=control_src,
-        architecture=fat_targets, binary=control_binary,
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-    subject_build_evidence = capture_completed_build_evidence(
-        correctness_build_root / subject_name, source_root=subject_src,
-        architecture=fat_targets, binary=subject_binary,
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-
-    # The registered 1258 test case is deliberately unique under -p.
-    shape = {
-        "name": "q6_k-kv-decode1-1024x2560",
-        "weight_type": "Q6_K",
-        "m": 1024, "n": 1, "k": 2560,
-        "params_filter": "bigcherry_rd12=1",
-        "digest_tensor": "rd12_x",
-    }
-    lanes = (("k", "rd12_k_out"), ("v", "rd12_v_out"))
-
-    runner = _runner or subprocess.run
-
-    trace_marker = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion"
-    activation_observations: list[dict[str, object]] = []
-    activation_log_records: list[dict[str, object]] = []
-
-    def _correctness_runner(argv, **kwargs):
-        # correctness_evidence intentionally supplies only the variables
-        # needed by its test. Preserve ambient device-selection variables,
-        # and enable the focal patch's existing activation marker.
-        env = {**os.environ, **(kwargs.pop("env", None) or {})}
-        env["BIGCHERRY_PATCH_TRACE"] = "1"
-
-        completed = runner(argv, env=env, **kwargs)
-
-        executable = str(argv[0])
-        if executable == str(control_binary):
-            arm = "control"
-        elif executable == str(subject_binary):
-            arm = "subject"
-        else:
-            arm = "unknown"
-
-        stdout = completed.stdout or ""
-        stderr = completed.stderr or ""
-        seed = env.get("BIGCHERRY_TEST_DETERMINISTIC_SEED")
-        activation_observations.append({
-            "arm": arm,
-            "seed": seed,
-            # Both streams: the per-arm logs below concatenate stdout+stderr
-            # and _builtin_trace_marker() re-searches the WHOLE file, so the
-            # producer's own hit observation must use the same search space
-            # (GPT review req_243e3fcd3d684077: stderr-only here would
-            # disagree with the validator if logging were ever redirected
-            # to stdout).
-            "hit": trace_marker in stdout or trace_marker in stderr,
-        })
-        # Keep each invocation's raw streams for the per-arm activation
-        # logs written below: the declared trace-marker check's validator
-        # re-reads those files and re-verifies the marker itself, so the
-        # "hit" observation above is NOT what the validator trusts.
-        activation_log_records.append({
-            "arm": arm, "seed": seed, "stdout": stdout, "stderr": stderr,
-        })
-        return completed
-
-    def _finite_or_none(value: float) -> float | None:
-        return float(value) if _math.isfinite(float(value)) else None
-
-    rows: list[dict[str, object]] = []
-
-    for lane, target_tensor in lanes:
-        for seed in seeds:
-            control = correctness_evidence.collect_native_seed_evidence(
-                control_binary, op_filter=shape["params_filter"],
-                target_tensor=target_tensor, digest_tensor=shape["digest_tensor"],
-                seed=seed, runner=_correctness_runner,
-            )
-            subject = correctness_evidence.collect_native_seed_evidence(
-                subject_binary, op_filter=shape["params_filter"],
-                target_tensor=target_tensor, digest_tensor=shape["digest_tensor"],
-                seed=seed, runner=_correctness_runner,
-            )
-
-            control_backend_ok = (
-                control.native_execution_status == "ok"
-                and _math.isfinite(control.e_n_nmse)
-                and _math.isfinite(control.threshold_t)
-                and control.e_n_nmse <= control.threshold_t
-            )
-            subject_backend_ok = (
-                subject.native_execution_status == "ok"
-                and _math.isfinite(subject.e_n_nmse)
-                and _math.isfinite(subject.threshold_t)
-                and subject.e_n_nmse <= subject.threshold_t
-            )
-
-            reference_equal = (
-                control.reference_output_digest is not None
-                and control.reference_output_digest == subject.reference_output_digest
-            )
-            output_equal = (
-                control.native_output_digest is not None
-                and control.native_output_digest == subject.native_output_digest
-            )
-            nels_equal = (
-                control.output_nels is not None
-                and control.output_nels == subject.output_nels
-            )
-
-            exact_equal = (
-                control.native_execution_status == "ok"
-                and subject.native_execution_status == "ok"
-                and reference_equal and output_equal and nels_equal
-            )
-
-            rows.append({
-                "shape": shape["name"], "weight_type": shape["weight_type"],
-                "lane": lane, "target_tensor": target_tensor, "seed": seed,
-                "control_status": control.native_execution_status,
-                "subject_status": subject.native_execution_status,
-                "control_input_digest": control.reference_digest,
-                "subject_input_digest": subject.reference_digest,
-                "control_reference_output_digest": control.reference_output_digest,
-                "subject_reference_output_digest": subject.reference_output_digest,
-                "control_output_digest": control.native_output_digest,
-                "subject_output_digest": subject.native_output_digest,
-                "control_output_nels": control.output_nels,
-                "subject_output_nels": subject.output_nels,
-                "control_nmse": _finite_or_none(control.e_n_nmse),
-                "subject_nmse": _finite_or_none(subject.e_n_nmse),
-                "control_threshold": _finite_or_none(control.threshold_t),
-                "subject_threshold": _finite_or_none(subject.threshold_t),
-                "control_max_abs": _finite_or_none(control.max_abs_native),
-                "subject_max_abs": _finite_or_none(subject.max_abs_native),
-                "reference_equal": reference_equal, "output_equal": output_equal,
-                "nels_equal": nels_equal,
-                "backend_reference_ok": control_backend_ok and subject_backend_ok,
-                "bit_identical": exact_equal,
-            })
-
-    # One raw per-arm log each (RD08/RD73 precedent: logs/ + per-run
-    # namespacing): these files are the artifacts the declared trace-marker
-    # check binds and re-verifies, so they carry the real, unfiltered
-    # subprocess output. Written even when activation fails, so a failed
-    # run's logs remain inspectable. Namespaced by architecture because the
-    # standalone lab driver (tools/lab/rd12-correctness/run_real.py) shares
-    # one run_dir across all three contract architectures -- without the
-    # namespace, each later architecture would overwrite the earlier
-    # ones' logs out from under their correctness artifacts.
-    log_dir = run_dir / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    subject_log_path = log_dir / f"activation-rd12-{architecture}-subject.log"
-    control_log_path = log_dir / f"activation-rd12-{architecture}-control.log"
-    subject_log_path.write_text(
-        "\n---\n".join(
-            f"{record['arm']}-seed{record['seed']}:\n{record['stdout']}\n{record['stderr']}"
-            for record in activation_log_records if record["arm"] == "subject"
-        ),
-        encoding="utf-8",
-    )
-    control_log_path.write_text(
-        "\n---\n".join(
-            f"{record['arm']}-seed{record['seed']}:\n{record['stdout']}\n{record['stderr']}"
-            for record in activation_log_records if record["arm"] == "control"
-        ),
-        encoding="utf-8",
-    )
-    subject_log_ref = {
-        "path": subject_log_path.relative_to(run_dir).as_posix(),
-        "sha256": hashlib.sha256(subject_log_path.read_bytes()).hexdigest(),
-    }
-    control_log_ref = {
-        "path": control_log_path.relative_to(run_dir).as_posix(),
-        "sha256": hashlib.sha256(control_log_path.read_bytes()).hexdigest(),
-    }
-
-    expected_runs_per_arm = len(lanes) * len(seeds)
-    control_activation_runs = [
-        observation for observation in activation_observations if observation["arm"] == "control"
-    ]
-    subject_activation_runs = [
-        observation for observation in activation_observations if observation["arm"] == "subject"
-    ]
-
-    activation_ok = (
-        len(control_activation_runs) == expected_runs_per_arm
-        and len(subject_activation_runs) == expected_runs_per_arm
-        and not any(observation["hit"] for observation in control_activation_runs)
-        and all(observation["hit"] for observation in subject_activation_runs)
-    )
-
-    activation_result = experiment_contract.CorrectnessResult(
-        check="activation", passed=activation_ok,
-        detail=(
-            f"RD12 dual-output MMVQ activation proven for all {expected_runs_per_arm} "
-            "subject runs; control emitted no focal marker"
-            if activation_ok else (
-                "RD12 activation attestation failed: "
-                f"control_runs={len(control_activation_runs)} "
-                f"control_hits={sum(bool(row['hit']) for row in control_activation_runs)} "
-                f"subject_runs={len(subject_activation_runs)} "
-                f"subject_hits={sum(bool(row['hit']) for row in subject_activation_runs)} "
-                f"expected_per_arm={expected_runs_per_arm}"
-            )
-        ),
-    )
-
-    first_exact_failure = next((row for row in rows if not row["bit_identical"]), None)
-
-    if first_exact_failure is None and activation_result.passed:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=True,
-            detail=(
-                f"{len(rows)} RD12 (projection,seed) rows produced byte-identical "
-                "CPU-reference and HIP outputs with focal fusion activation proven"
-            ),
-        )
-    elif first_exact_failure is not None:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False,
-            detail=(
-                f"RD12 exact-output mismatch for shape={first_exact_failure['shape']!r} "
-                f"lane={first_exact_failure['lane']!r} seed={first_exact_failure['seed']}: "
-                f"control_status={first_exact_failure['control_status']} "
-                f"subject_status={first_exact_failure['subject_status']} "
-                f"reference_equal={first_exact_failure['reference_equal']} "
-                f"output_equal={first_exact_failure['output_equal']} "
-                f"nels_equal={first_exact_failure['nels_equal']}"
-            ),
-        )
-    else:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False,
-            detail=(
-                "RD12 exact output digests matched, but the focal dual-output MMVQ "
-                f"path was not proven active: {activation_result.detail}"
-            ),
-        )
-
-    first_backend_failure = next((row for row in rows if not row["backend_reference_ok"]), None)
-    backend_reference_result = experiment_contract.CorrectnessResult(
-        check="backend_reference", passed=first_backend_failure is None,
-        detail=(
-            f"{len(rows)} subject/control rows stayed within each emitted "
-            "backend-reference threshold"
-            if first_backend_failure is None else (
-                f"RD12 backend-reference failure for shape={first_backend_failure['shape']!r} "
-                f"lane={first_backend_failure['lane']!r} seed={first_backend_failure['seed']}: "
-                f"control_nmse={first_backend_failure['control_nmse']} "
-                f"control_threshold={first_backend_failure['control_threshold']} "
-                f"subject_nmse={first_backend_failure['subject_nmse']} "
-                f"subject_threshold={first_backend_failure['subject_threshold']}"
-            )
-        ),
-    )
-
-    artifact_doc = {
-        "schema_version": 1,
-        "contract_id": "RD12-PAIRED-MMVQ-DUAL",
-        "check": "bit_identical",
-        "passed": bit_identical_result.passed,
-        "base_revision": base_revision,
-        "architecture": architecture,
-        "compiled_targets": fat_targets,
-        "mechanism": (
-            "registered whole-graph paired MUL_MAT test-backend-ops subject/control "
-            "CPU-reference + backend1 digest equality"
-        ),
-        "evidence_patches": list(evidence_patches),
-        "subject_patch": subject_patch,
-        "seeds": list(seeds),
-        "shape": {
-            "name": shape["name"], "weight_type": shape["weight_type"],
-            "m": shape["m"], "n": shape["n"], "k": shape["k"],
-            "params_filter": shape["params_filter"], "digest_tensor": shape["digest_tensor"],
-            "target_tensors": [target_tensor for _, target_tensor in lanes],
-        },
-        "activation": {
-            "marker": trace_marker, "passed": activation_result.passed,
-            "subject_log": subject_log_ref["path"],
-            "control_log": control_log_ref["path"],
-            "observations": activation_observations,
-        },
-        "control_source_tree": psi.git_worktree_tree(control_src),
-        "subject_source_tree": psi.git_worktree_tree(subject_src),
-        "control_build_identity": control_build_evidence.campaign_identity(),
-        "subject_build_identity": subject_build_evidence.campaign_identity(),
-        "rows": rows,
-    }
-
-    artifact_ref = _write_bound_artifact(
-        run_dir, f"rd12-correctness-{architecture}.json", artifact_doc,
-    )
-
-    return {
-        "results": {
-            "bit_identical": bit_identical_result,
-            "backend_reference": backend_reference_result,
-            "activation": activation_result,
-        },
-        "artifact": artifact_ref,
-        "rows": rows,
-        # The declared trace-marker check's validator re-reads these two
-        # logs and re-verifies the marker itself; the --run-rd12-contract
-        # CLI binds them as the positive (subject) / negative (control)
-        # trace_evidence artifacts (RD08/RD58/RD73 precedent) so the
-        # check can leave BLOCKED on a real run.
-        "subject_log_path": subject_log_ref["path"],
-        "control_log_path": control_log_ref["path"],
-        "subject_log_artifact": subject_log_ref,
-        "control_log_artifact": control_log_ref,
-        # PA39: exposed so a --run-rd12-contract CLI caller can bind real
-        # validation_build_identities into make_record() without needing
-        # the raw CompletedBuildEvidence objects (already baked into
-        # artifact_doc above as control_build_identity/subject_build_identity).
-        "validation_build_identities": {
-            "control": artifact_doc["control_build_identity"],
-            "subject": artifact_doc["subject_build_identity"],
-        },
-    }
 
 
 def _load_rd43_correctness_module() -> object:
@@ -4374,17 +3920,313 @@ def _write_bound_text_artifact_ref(run_dir: Path, name: str, text: str) -> Artif
 
 
 @dataclass(frozen=True)
+class ProducerEvidenceBindingContext:
+    """The shared-code identity facts a standard_campaign="run" producer's
+    semantic evidence gets bound into (PA36 sub-slice 2, dev-gpt-agent
+    req_2ecda033763949a9 T3). The producer supplies ONLY semantic
+    measurements; the binder owns every canonical identity field -- patch
+    identity, source tree, campaign identity digest -- and writes the
+    root-level evidence artifacts under run_dir."""
+
+    run_dir: Path
+    patch_id: str
+    patch_path: Path
+    base_revision: str
+    patched_source_tree: str
+    campaign_identity_digest: str
+    gpu_architectures: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BoundProducerEvidence:
+    """The evaluation context AFTER a producer's evidence was bound (T3):
+    the same ValidationContext shape with trace/correctness/performance
+    evidence replaced by their canonical bound forms, plus the root
+    correctness document and activation disposition the executor must
+    carry into make_record()."""
+
+    validation_context: ValidationContext
+    correctness: dict[str, object] | None
+    activation_disposition: str | None
+
+
+def _bind_producer_correctness(
+    semantic: JsonObject | None,
+    *,
+    binding: ProducerEvidenceBindingContext,
+) -> tuple[dict[str, object] | None, dict[str, object]]:
+    """Bind a producer's semantic correctness measurement into the
+    canonical correctness document (T3). The producer supplies EXACTLY
+    {disposition, mechanism, detail} -- no identity fields, which the
+    shared binder owns: the root correctness.json under run_dir, its
+    artifact binding, and the schema/patch/source/campaign identity."""
+    from bigcherry.patch import evidence as patch_validation_evidence
+
+    if semantic is None:
+        return None, {}
+
+    values = dict(semantic)
+    expected = {"disposition", "mechanism", "detail"}
+    if set(values) != expected:
+        raise PatchCampaignError(
+            "producer correctness must contain exactly "
+            "{'disposition','mechanism','detail'}"
+        )
+
+    disposition = values["disposition"]
+    mechanism = values["mechanism"]
+    detail = values["detail"]
+    if disposition not in ("passed", "failed"):
+        raise PatchCampaignError(
+            f"producer correctness disposition must be passed/failed, got {disposition!r}"
+        )
+    if not isinstance(mechanism, str) or not mechanism:
+        raise PatchCampaignError("producer correctness mechanism must be non-empty")
+    if not isinstance(detail, str):
+        raise PatchCampaignError("producer correctness detail must be a string")
+
+    document = {
+        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+        "patch_id": binding.patch_id,
+        "patch_validation_subject_digest":
+            patch_validation_evidence.patch_validation_subject_digest(
+                binding.patch_path
+            ),
+        "base_revision": binding.base_revision,
+        "patched_source_tree": binding.patched_source_tree,
+        "campaign_identity_digest": binding.campaign_identity_digest,
+        "gpu_architectures": list(binding.gpu_architectures),
+        "disposition": disposition,
+        "mechanism": mechanism,
+        "detail": detail,
+    }
+
+    path = binding.run_dir / "correctness.json"
+    _atomic_write_json(path, document)
+    artifact = {
+        "path": path.relative_to(binding.run_dir).as_posix(),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+    return document, {"artifact": artifact}
+
+
+def _producer_owned_artifact_ref(
+    artifact: object,
+    role: str,
+    *,
+    declared: frozenset[str],
+    emitted: frozenset[str],
+) -> dict[str, object]:
+    """Manifest-ownership gate on producer-supplied artifact refs
+    (dev-gpt-agent req_f5ba56f4088e4742 finding #1): the ref must be
+    exactly {path, sha256}, the path exactly 'artifacts/<basename>', and
+    the basename must appear BOTH in the producer's declared manifest
+    (spec.artifact_names) and in result.emitted_artifacts.
+    _artifact_is_bound() alone proves only path containment + SHA --
+    without this gate a producer could write an undeclared file and
+    smuggle it into the persisted record through trace/performance
+    evidence."""
+    if not isinstance(artifact, Mapping):
+        raise PatchCampaignError(
+            f"producer {role} artifact reference must be an object"
+        )
+    if set(artifact) != {"path", "sha256"}:
+        raise PatchCampaignError(
+            f"producer {role} artifact reference must contain exactly "
+            f"path/sha256, got {sorted(artifact)!r}"
+        )
+    path = artifact["path"]
+    sha256 = artifact["sha256"]
+    if not isinstance(path, str) or not isinstance(sha256, str):
+        raise PatchCampaignError(
+            f"producer {role} artifact reference path/sha256 must be strings"
+        )
+    if "\\" in path:
+        raise PatchCampaignError(
+            f"producer {role} artifact path must use forward slashes: {path!r}"
+        )
+    parts = path.split("/")
+    if len(parts) != 2 or parts[0] != "artifacts" or not parts[1]:
+        raise PatchCampaignError(
+            f"producer {role} artifact path must be exactly "
+            f"'artifacts/<basename>', got {path!r}"
+        )
+    basename = parts[1]
+    if basename not in declared:
+        raise PatchCampaignError(
+            f"producer {role} artifact {basename!r} is not declared in the "
+            f"producer manifest; declared: {sorted(declared)!r}"
+        )
+    if basename not in emitted:
+        raise PatchCampaignError(
+            f"producer {role} artifact {basename!r} was not claimed in "
+            f"result.emitted_artifacts"
+        )
+    return {"path": path, "sha256": sha256}
+
+
+def _bind_producer_trace_evidence(
+    trace_evidence: JsonObject | None,
+    *,
+    validation_plan: ValidationPlan,
+    declared_artifacts: frozenset[str],
+    emitted_artifacts: frozenset[str],
+) -> dict[str, object]:
+    """Bind a producer's trace observations into the canonical
+    trace_evidence shape (T3). The producer owns ONLY the positive/negative
+    artifact refs; the plan owns the marker semantics -- marker_regex is
+    injected from the single declared trace-marker activation check, and a
+    producer-supplied regex is rejected. Every artifact ref is additionally
+    manifest-gated (declared AND emitted) before evaluation."""
+    if trace_evidence is None:
+        return {}
+
+    trace_specs = tuple(
+        spec
+        for spec in validation_plan.checks
+        if spec.capability == "activation" and spec.validator == "trace-marker"
+    )
+    if len(trace_specs) != 1:
+        raise PatchCampaignError(
+            "producer supplied trace evidence but validation plan does not "
+            "declare exactly one trace-marker activation check"
+        )
+
+    marker = trace_specs[0].config.get("marker-regex")
+    if not isinstance(marker, str) or not marker:
+        raise PatchCampaignError(
+            "trace-marker activation check has no non-empty marker-regex"
+        )
+
+    raw = dict(trace_evidence)
+    if set(raw) != {"positive", "negative"}:
+        raise PatchCampaignError(
+            "producer trace evidence must contain exactly positive/negative"
+        )
+
+    bound: dict[str, object] = {}
+    for role in ("positive", "negative"):
+        observation = raw[role]
+        if not isinstance(observation, Mapping):
+            raise PatchCampaignError(
+                f"producer trace evidence {role} must be an object"
+            )
+        if set(observation) != {"artifact"}:
+            raise PatchCampaignError(
+                f"producer trace evidence {role} must contain exactly 'artifact'"
+            )
+        bound[role] = {
+            "marker_regex": marker,
+            "artifact": _producer_owned_artifact_ref(
+                observation["artifact"],
+                f"trace {role}",
+                declared=declared_artifacts,
+                emitted=emitted_artifacts,
+            ),
+        }
+    return bound
+
+
+def _bind_producer_result_evidence(
+    result: ProducerResult,
+    *,
+    validation_plan: ValidationPlan,
+    validation_context: ValidationContext,
+    binding: ProducerEvidenceBindingContext | None,
+    declared_artifacts: frozenset[str],
+) -> BoundProducerEvidence:
+    """One generic post-producer evidence-binding pass (T3/T4): trace,
+    performance, correctness, and activation evidence are replaced by
+    their canonical bound forms so the fallback validators -- and
+    compute_verdict() -- see exactly what gets persisted. When ``binding``
+    is None (self-contained "skip" producers) the context passes through
+    unchanged except for producer-supplied evidence dicts. Every
+    producer-supplied artifact ref is manifest-gated against
+    ``declared_artifacts`` AND ``result.emitted_artifacts``
+    (req_f5ba56f4088e4742 finding #1)."""
+    trace_evidence = (
+        _bind_producer_trace_evidence(
+            result.trace_evidence,
+            validation_plan=validation_plan,
+            declared_artifacts=declared_artifacts,
+            emitted_artifacts=result.emitted_artifacts,
+        )
+        if result.trace_evidence is not None
+        else validation_context.trace_evidence
+    )
+    performance_evidence = (
+        dict(result.performance_evidence)
+        if result.performance_evidence is not None
+        else validation_context.performance_evidence
+    )
+    if "artifact" in performance_evidence:
+        performance_evidence = {
+            **performance_evidence,
+            "artifact": _producer_owned_artifact_ref(
+                performance_evidence["artifact"],
+                "performance",
+                declared=declared_artifacts,
+                emitted=result.emitted_artifacts,
+            ),
+        }
+
+    correctness: dict[str, object] | None = None
+    correctness_evidence = validation_context.correctness_evidence
+    activation_disposition: str | None = None
+
+    if binding is not None:
+        correctness, correctness_evidence = _bind_producer_correctness(
+            result.correctness,
+            binding=binding,
+        )
+
+        activation_evidence = result.activation_evidence
+        if activation_evidence is not None:
+            if not isinstance(activation_evidence, ActivationEvidence):
+                raise PatchCampaignError(
+                    "ProducerResult.activation_evidence must be ActivationEvidence or None"
+                )
+            activation_disposition = verdict(
+                activation_evidence,
+                correctness_passed=None,
+            )
+            write_activation_json(
+                binding.run_dir / "activation.json",
+                activation_evidence,
+                activation_disposition,
+                extra={
+                    "campaign_identity_digest": binding.campaign_identity_digest,
+                },
+            )
+
+    return BoundProducerEvidence(
+        validation_context=dataclasses.replace(
+            validation_context,
+            trace_evidence=trace_evidence,
+            correctness_evidence=correctness_evidence,
+            performance_evidence=performance_evidence,
+        ),
+        correctness=correctness,
+        activation_disposition=activation_disposition,
+    )
+
+
+@dataclass(frozen=True)
 class ProducerExecution:
     """The full result of running one producer through the generic
     dispatcher (PA36-F step 3): the typed producer result plus every
     downstream value ``make_record()`` needs, computed exactly once so
-    the caller never has to re-derive them."""
+    the caller never has to re-derive them. ``bound_correctness`` and
+    ``activation_disposition`` are the T3/T4 bound evidence values the
+    caller persists -- never re-derived."""
 
     selection: ProducerSelection
     result: ProducerResult
     evaluated: Mapping[str, ValidationResult]
     verdict: Verdict
     contract_verdicts: Mapping[str, JsonObject]
+    bound_correctness: JsonObject | None = None
+    activation_disposition: str | None = None
 
 
 def execute_validation_producer(
@@ -4397,6 +4239,8 @@ def execute_validation_producer(
     validation_context: ValidationContext,
     correctness_evidence_requested: bool,
     performance_benchmark_requested: bool,
+    selection: ProducerSelection | None = None,
+    evidence_binding_context: ProducerEvidenceBindingContext | None = None,
 ) -> ProducerExecution:
     """The one generic entry point that executes a selected patch-local
     validation producer end to end (PA36-F step 3, GPT design
@@ -4423,7 +4267,10 @@ def execute_validation_producer(
     """
     from bigcherry.patch import validation as patch_validation
 
-    selection = resolve_producer(patch_dir=patch_dir, producer_id=producer_id)
+    selection = selection or resolve_producer(
+        patch_dir=patch_dir,
+        producer_id=producer_id,
+    )
 
     if selection.spec.patch_id != producer_context.patch_id:
         raise ValidationProducerError(
@@ -4457,6 +4304,17 @@ def execute_validation_producer(
         selection.spec, result, plan=validation_plan, context=validation_context,
     )
 
+    # T3/T4 (dev-gpt-agent req_2ecda033763949a9): generic post-producer
+    # evidence binding -- the fallback validators see the canonical bound
+    # evidence, not the raw producer dicts, before compute_verdict().
+    bound = _bind_producer_result_evidence(
+        result,
+        validation_plan=validation_plan,
+        validation_context=validation_context,
+        binding=evidence_binding_context,
+        declared_artifacts=selection.spec.artifact_names,
+    )
+
     producer_results: dict[str, ValidationResult] = {
         record.check_id: record.validation_result for record in result.check_results
     }
@@ -4465,7 +4323,9 @@ def execute_validation_producer(
         if spec.check_id in producer_results:
             evaluated[spec.check_id] = producer_results[spec.check_id]
         else:
-            evaluated[spec.check_id] = patch_validation.evaluate_check(spec, validation_context)
+            evaluated[spec.check_id] = patch_validation.evaluate_check(
+                spec, bound.validation_context,
+            )
 
     verdict = patch_validation.compute_verdict(validation_plan, evaluated)
 
@@ -4478,6 +4338,8 @@ def execute_validation_producer(
     return ProducerExecution(
         selection=selection, result=result, evaluated=evaluated, verdict=verdict,
         contract_verdicts=contract_verdicts,
+        bound_correctness=bound.correctness,
+        activation_disposition=bound.activation_disposition,
     )
 
 
@@ -4569,7 +4431,9 @@ def _run_validation_producer(
 
     from bigcherry.core import paths as bc_paths
     from bigcherry.core import config as campaign_config
+    from bigcherry.patch import evidence as patch_validation_evidence
     from bigcherry.patch import registry as patch_registry
+    from bigcherry.patch import source as psi
     from bigcherry.patch import validation as patch_validation
     from bigcherry.patch import validation_policy as patch_validation_policy
 
@@ -4597,17 +4461,31 @@ def _run_validation_producer(
     # fails closed (PatchRegistryError) for exactly that case, so this
     # generic dispatcher must use the plural loader, never the singular one.
     bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
-    validation_context = patch_validation.ValidationContext(
-        descriptor=descriptor, base_revision=cfg.pinned,
-        control_source=None, subject_source=None,
-        contracts=bound_contracts,
-        contract_hashes={c.id: c.contract_hash for c in bound_contracts},
-    )
 
     workdir: Path = args.workdir
     workdir.mkdir(parents=True, exist_ok=True)
-    run_dir = workdir / "producer" / producer_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    patch_dir = bc_paths.PATCHES / args.patch
+
+    # Resolve before expensive scaffold work because manifest policy owns
+    # whether a standard campaign is required.
+    selection = resolve_producer(
+        patch_dir=patch_dir,
+        producer_id=producer_id,
+    )
+    if selection.spec.patch_id != args.patch:
+        raise ValidationProducerError(
+            f"producer patch_id {selection.spec.patch_id!r} does not match "
+            f"requested patch {args.patch!r}"
+        )
+
+    # Fail fast before builds. execute_validation_producer() deliberately
+    # repeats these authoritative gates for direct callers.
+    validate_producer_inputs(selection.spec, provided_inputs)
+    validate_producer_cli_compatibility(
+        selection.spec,
+        correctness_evidence_requested=args.correctness_evidence is not None,
+        performance_benchmark_requested=bool(args.run_performance_benchmark),
+    )
 
     amdgpu_targets = args.amdgpu_targets
     fat_targets = FatTargetPlan(
@@ -4615,49 +4493,338 @@ def _run_validation_producer(
     )
     device_map = _parse_producer_device_map(list(args.device_map or ()))
 
-    patch_dir = bc_paths.PATCHES / args.patch
+    scaffold: StandardCampaignScaffold | None = None
+    evidence_binding: ProducerEvidenceBindingContext | None = None
+    campaign_identity_digest: str | None = None
+
+    if selection.spec.standard_campaign == "run":
+        baseline_source = getattr(args, "baseline_source", "bigcherry")
+        scaffold = _build_standard_campaign_scaffold(
+            patch_id=args.patch,
+            base_ref=cfg.pinned,
+            baseline_source=baseline_source,
+            hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            workdir=workdir,
+            worktree_root=args.worktree_root,
+            build_root=args.build_root,
+        )
+
+        base_revision = scaffold.base_revision
+        run_dir = workdir / "campaign"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        control_tree = psi.git_worktree_tree(scaffold.control_source)
+        subject_tree = psi.git_worktree_tree(scaffold.subject_source)
+        patch_file = registry.root / descriptor.implementation_path
+        patch_digest = psi.patch_implementation_digest(args.patch)
+
+        campaign_identity_digest = (
+            patch_validation_evidence.model_free_campaign_identity_digest(
+                patch_name=args.patch,
+                patch_digest=patch_digest,
+                patched_source_tree=subject_tree,
+                gpu_architecture=args.amdgpu_targets,
+                campaign_build_identities=scaffold.campaign_build_identities,
+                base_revision=base_revision,
+            )
+        )
+
+        build_evidence = {
+            "control": {
+                "build_id":
+                    scaffold.control_build_evidence.effective_build_id,
+                "source_tree": control_tree,
+                "architecture": args.amdgpu_targets,
+                "options":
+                    scaffold.control_build_evidence.effective_configure,
+                "compile_commands": _write_bound_artifact(
+                    run_dir,
+                    "build/control-compile-commands.json",
+                    scaffold.control_build_evidence.verification.to_dict(),
+                ),
+                "runtime_bundle": _write_bound_artifact(
+                    run_dir,
+                    "build/control-runtime-bundle.json",
+                    scaffold.control_build_evidence.runtime_artifacts,
+                ),
+            },
+            "subject": {
+                "build_id":
+                    scaffold.validation_subject_build_evidence.effective_build_id,
+                "source_tree": subject_tree,
+                "architecture": args.amdgpu_targets,
+                "options":
+                    scaffold.validation_subject_build_evidence.effective_configure,
+                "compile_commands": _write_bound_artifact(
+                    run_dir,
+                    "build/subject-compile-commands.json",
+                    scaffold.validation_subject_build_evidence.verification.to_dict(),
+                ),
+                "runtime_bundle": _write_bound_artifact(
+                    run_dir,
+                    "build/subject-runtime-bundle.json",
+                    scaffold.validation_subject_build_evidence.runtime_artifacts,
+                ),
+            },
+        }
+
+        apply_evidence = {
+            "control": {
+                "verified": True,
+                "idempotent": scaffold.control_idempotent,
+                "artifact": _write_bound_artifact(
+                    run_dir,
+                    "apply/control.json",
+                    {
+                        "source_tree": control_tree,
+                        "composition": list(scaffold.control_composition),
+                    },
+                ),
+            },
+            "subject": {
+                "verified": True,
+                "idempotent": scaffold.subject_idempotent,
+                "artifact": _write_bound_artifact(
+                    run_dir,
+                    "apply/subject.json",
+                    {
+                        "source_tree": subject_tree,
+                        "composition": list(scaffold.subject_composition),
+                    },
+                ),
+            },
+        }
+
+        package_root = (
+            registry.root / descriptor.package_root
+            if descriptor.package_root is not None
+            else None
+        )
+        validation_context = patch_validation.ValidationContext(
+            descriptor=descriptor,
+            base_revision=base_revision,
+            control_source=scaffold.control_source,
+            subject_source=scaffold.subject_source,
+            stock_source=scaffold.stock_source,
+            package_root=package_root,
+            control_tree=control_tree,
+            subject_tree=subject_tree,
+            build_identities={
+                "control":
+                    scaffold.control_build_evidence.effective_build_id,
+                "subject":
+                    scaffold.validation_subject_build_evidence.effective_build_id,
+            },
+            build_evidence=build_evidence,
+            apply_evidence=apply_evidence,
+            architecture=args.amdgpu_targets,
+            model=str(args.model) if args.model is not None else None,
+            contracts=bound_contracts,
+            contract_hashes={
+                c.id: c.contract_hash for c in bound_contracts
+            },
+            run_dir=run_dir,
+            register_artifact=
+                patch_validation.make_default_register_artifact(run_dir),
+            trace_evidence={},
+            correctness_evidence={},
+            performance_evidence={},
+        )
+
+        evidence_binding = ProducerEvidenceBindingContext(
+            run_dir=run_dir,
+            patch_id=args.patch,
+            patch_path=patch_file,
+            base_revision=base_revision,
+            patched_source_tree=subject_tree,
+            campaign_identity_digest=campaign_identity_digest,
+            gpu_architectures=fat_targets.targets,
+        )
+        scaffold_validation_ids = (
+            scaffold.scaffold_validation_build_identities
+        )
+    else:
+        # Preserve current self-contained producer semantics.
+        base_revision = cfg.pinned
+        run_dir = workdir / "producer" / producer_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        validation_context = patch_validation.ValidationContext(
+            descriptor=descriptor,
+            base_revision=base_revision,
+            control_source=None,
+            subject_source=None,
+            contracts=bound_contracts,
+            contract_hashes={
+                c.id: c.contract_hash for c in bound_contracts
+            },
+        )
+        scaffold_validation_ids = {}
+
     runtime = CampaignProducerRuntime(
-        repo_root=REPO_ROOT, patch_id=args.patch, base_revision=cfg.pinned,
-        workdir=args.worktree_root, hip_path=args.hip_path, fat_targets=fat_targets,
+        repo_root=REPO_ROOT,
+        patch_id=args.patch,
+        base_revision=base_revision,
+        workdir=args.worktree_root,
+        hip_path=args.hip_path,
+        fat_targets=fat_targets,
         run_dir=run_dir,
     )
     producer_context = ProducerContext(
-        repo_root=REPO_ROOT, patch_dir=patch_dir, workdir=workdir,
-        campaign_id=f"{args.patch}/{producer_id}", base_revision=cfg.pinned,
-        hip_path=args.hip_path, fat_targets=fat_targets, model=args.model,
-        corpus=args.producer_corpus, build_env=_hip_env(args.hip_path), inputs={},
-        validation_build_identities={}, patch_id=args.patch, device_map=device_map,
+        repo_root=REPO_ROOT,
+        patch_dir=patch_dir,
+        workdir=workdir,
+        campaign_id=f"{args.patch}/{producer_id}",
+        base_revision=base_revision,
+        hip_path=args.hip_path,
+        fat_targets=fat_targets,
+        model=args.model,
+        corpus=args.producer_corpus,
+        build_env=_hip_env(args.hip_path),
+        inputs={},
+        validation_build_identities=scaffold_validation_ids,
+        patch_id=args.patch,
+        device_map=device_map,
         runtime=runtime,
     )
 
     execution = execute_validation_producer(
-        patch_dir=patch_dir, producer_id=producer_id, provided_inputs=provided_inputs,
-        producer_context=producer_context, validation_plan=validation_plan,
+        patch_dir=patch_dir,
+        producer_id=producer_id,
+        provided_inputs=provided_inputs,
+        producer_context=producer_context,
+        validation_plan=validation_plan,
         validation_context=validation_context,
         correctness_evidence_requested=args.correctness_evidence is not None,
         performance_benchmark_requested=bool(args.run_performance_benchmark),
+        selection=selection,
+        evidence_binding_context=evidence_binding,
     )
 
+    record_path: Path | None = None
+    validation_contract_verdicts = None
+    if scaffold is not None:
+        assert campaign_identity_digest is not None
+
+        # Contract promotions (evaluate_promotion_gate() results) are a
+        # different semantic type from the producer's check dispositions
+        # (execution.contract_verdicts); the promotion APIs must never be
+        # fed dispositions (req_f5ba56f4088e4742 finding #2). No producer
+        # in this slice produces promotion results, so both persistence
+        # helpers get {} and every bound contract persists its explicit
+        # BLOCKED ("no promotion result produced") verdict.
+        validation_contracts, validation_contract_verdicts = (
+            build_contract_evidence_for_persistence(
+                validation_plan.contracts,
+                {},
+            )
+        )
+
+        validation_record = patch_validation_evidence.make_record(
+            patch_id=args.patch,
+            patch_path=registry.root / descriptor.implementation_path,
+            patch_implementation_digest=
+                psi.patch_implementation_digest(args.patch),
+            base_ref=cfg.pinned,
+            base_revision=scaffold.base_revision,
+            framework_baseline_digest=
+                psi.composition_digest(scaffold.subject_composition),
+            patched_source_tree=
+                psi.git_worktree_tree(scaffold.subject_source),
+            gpu_architectures=args.amdgpu_targets,
+            activation_evidence=execution.result.activation_evidence,
+            activation_disposition=execution.activation_disposition,
+            correctness=execution.bound_correctness,
+            campaign_identity_digest=campaign_identity_digest,
+            build_identities=scaffold.campaign_build_identities,
+            # Deliberately producer-owned isolated pair, NOT scaffold pair.
+            validation_build_identities=
+                execution.result.validation_build_identities,
+            campaign_workdir=run_dir,
+            producer_artifact_names=
+                execution.selection.spec.artifact_names,
+            check_results={
+                check_id: asdict(result)
+                for check_id, result in execution.evaluated.items()
+            },
+            validation_eligible=compute_persisted_validation_eligible(
+                descriptor,
+                execution.verdict,
+                {},
+                activation_disposition=
+                    execution.activation_disposition,
+                correctness=(
+                    dict(execution.bound_correctness)
+                    if execution.bound_correctness is not None
+                    else None
+                ),
+            ),
+            lane_effects=execution.result.lane_effects,
+            representation=descriptor.representation,
+            validation_implementation_digest=descriptor.validation_digest,
+            contracts=validation_contracts,
+            contract_verdicts=validation_contract_verdicts,
+            baseline_composition={
+                "source": getattr(
+                    args, "baseline_source", "bigcherry"
+                ),
+                "base_revision": scaffold.base_revision,
+                "patches": list(scaffold.control_composition),
+            },
+            control_composition={
+                "base_revision": scaffold.base_revision,
+                "patches": list(scaffold.control_composition),
+            },
+            subject_composition={
+                "base_revision": scaffold.base_revision,
+                "patches": list(scaffold.subject_composition),
+            },
+            control_tree=
+                psi.git_worktree_tree(scaffold.control_source),
+            subject_tree=
+                psi.git_worktree_tree(scaffold.subject_source),
+            stock_tree=
+                psi.git_worktree_tree(scaffold.stock_source),
+        )
+        record_path = patch_validation_evidence.write_record(
+            validation_record
+        )
+
     outcome_doc = {
-        "patch_id": args.patch, "producer_id": producer_id,
+        "patch_id": args.patch,
+        "producer_id": producer_id,
         "eligible": execution.verdict.eligible,
         "reasons": list(execution.verdict.reasons),
         "blocked": execution.verdict.blocked,
         "errors": list(execution.verdict.errors),
         "check_results": {
-            check_id: asdict(result) for check_id, result in execution.evaluated.items()
+            check_id: asdict(result)
+            for check_id, result in execution.evaluated.items()
         },
-        "contract_verdicts": dict(execution.contract_verdicts),
-        "validation_build_identities": dict(execution.result.validation_build_identities),
+        "contract_verdicts": (
+            validation_contract_verdicts
+            if scaffold is not None
+            else dict(execution.contract_verdicts)
+        ),
+        "validation_build_identities":
+            dict(execution.result.validation_build_identities),
+        "evidence_record":
+            str(record_path) if record_path is not None else None,
     }
     outcome_path = run_dir / "producer-execution.json"
     _atomic_write_json(outcome_path, outcome_doc)
+
     _print(
         f"validation producer {args.patch}/{producer_id}: "
         f"{'eligible' if execution.verdict.eligible else 'ineligible'} "
-        f"({len(execution.verdict.reasons)} blocking reasons) -- {outcome_path}"
+        f"({len(execution.verdict.reasons)} blocking reasons) -- "
+        f"{outcome_path}"
     )
-    return 0 if execution.verdict.eligible else 1
+
+    # Success means the requested producer execution and, when required,
+    # tracked evidence persistence completed. Eligibility is evidence,
+    # not process success (dev-gpt-agent req_2ecda033763949a9 T5).
+    return 0
 
 
 # PA35: real verification producer for patch 1000_rdna4_mmq_q2k_q6k_fix.
@@ -6227,7 +6394,7 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
         "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-        "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
+        "run_rd58_state_restore", "run_rd73_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
         "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
@@ -7348,394 +7515,280 @@ def run_rd43_contract_qualification(
     }
 
 
-def _run_rd12_contract(
+class StandardCampaignScaffold:
+    """The five standard campaign builds (PA36 sub-slice 2, dev-gpt-agent
+    req_2ecda033763949a9 T2): one control composition, one focal subject
+    composition, and pristine stock -- built in the historical order
+    tune -> replay -> stock -> control -> validation-subject. Deliberately
+    separate from ProducerRuntime.build_pair(): make_record() requires two
+    DISTINCT provenance domains (campaign {tune,replay,stock} vs
+    validation {control,subject}), and a producer's own correctness pair
+    is neither. run() and the generic standard_campaign="run" producer
+    path both consume exactly this helper, so the five-build contract has
+    one owner."""
+
+    base_revision: str
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    control_source: Path
+    subject_source: Path
+    stock_source: Path
+    control_idempotent: bool
+    subject_idempotent: bool
+    build_root: Path
+    build_env: dict[str, str]
+    tune_bin: Path
+    replay_bin: Path
+    stock_bin: Path
+    control_bin: Path
+    validation_subject_bin: Path
+    tune_build_evidence: CompletedBuildEvidence
+    replay_build_evidence: CompletedBuildEvidence
+    stock_build_evidence: CompletedBuildEvidence
+    control_build_evidence: CompletedBuildEvidence
+    validation_subject_build_evidence: CompletedBuildEvidence
+
+    @property
+    def campaign_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "tune": self.tune_build_evidence.campaign_identity(),
+            "replay": self.replay_build_evidence.campaign_identity(),
+            "stock": self.stock_build_evidence.campaign_identity(),
+        }
+
+    @property
+    def scaffold_validation_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "control": self.control_build_evidence.campaign_identity(),
+            "subject": self.validation_subject_build_evidence.campaign_identity(),
+        }
+
+
+def _build_standard_campaign_scaffold(
     *,
-    args: argparse.Namespace,
-    descriptor: object,
-    cfg: object,
-    registry: object,
+    patch_id: str,
+    base_ref: str,
+    baseline_source: str,
+    hip_path: Path,
+    amdgpu_targets: str,
     workdir: Path,
     worktree_root: Path,
-    build_root: Path,
-    base_revision: str,
-    baseline_source: str,
-    control_src: Path,
-    patched_src: Path,
-    stock_src: Path,
-    control_composition: tuple[str, ...],
-    subject_composition: tuple[str, ...],
-    control_idempotent: bool,
-    subject_idempotent: bool,
-    build_env: dict[str, str],
-    validation_plan: object,
-    tune_build_evidence: object,
-    replay_build_evidence: object,
-    stock_build_evidence: object,
-    control_build_evidence: object,
-    validation_subject_build_evidence: object,
-) -> int:
-    """PA39 / GPT review (req_36cddfd518444cda, MUST 4): RD12's specialized
-    contract path -- model/manifest-free end to end.
+    build_root: Path | None,
+) -> StandardCampaignScaffold:
+    """Materialize control/subject/stock sources and build the five
+    standard campaign trees in the historical order, capturing per-build
+    evidence and asserting validation-subject/control parity. Moved
+    verbatim from run() (PA36 sub-slice 2, dev-gpt-agent
+    req_2ecda033763949a9 T2) so the generic producer path and run() share
+    one owner of the five-build contract."""
+    from bigcherry.patch import source as psi # noqa: E402
 
-    run() returns here (after the five shared builds, before constructing
-    the generic e2e_smoke_campaign.Campaign) when --run-rd12-contract is
-    set. The five shared builds still run in run() on purpose:
-    make_record's build_identities MUST be exactly the {tune,replay,stock}
-    campaign domain, and the declared build check needs the real
-    validation-domain control/subject identities -- but the Campaign
-    itself (which Path()-converts model and manifest in __post_init__)
-    is never constructed, because the documented invocation supplies
-    neither.
-    """
-    from bigcherry.patch import source as psi
-    from bigcherry.patch import validation as patch_validation
-    from bigcherry.patch import evidence as patch_validation_evidence
-
-    if args.correctness_evidence is not None:
-        raise PatchCampaignError(
-            f"{args.patch}: --correctness-evidence and --run-rd12-contract are ambiguous "
-            "together -- --run-rd12-contract already produces its own authoritative "
-            "correctness.json"
-        )
-    if (
-        args.run_rd08_lanes
-        or args.run_rd08_contract
-        or args.run_rd04_benchmark
-        or args.run_rd58_state_restore
-        or args.run_rd73_contract
-        or args.run_rd04_contract
-        or args.run_rd13_contract
-        or args.run_rd26_contract
-    ):
-        raise PatchCampaignError(
-            f"{args.patch}: --run-rd12-contract is mutually exclusive with the "
-            "other specialized evidence-producer modes"
-        )
-    if descriptor.experiment_contract != "RD12-PAIRED-MMVQ-DUAL":
-        raise PatchCampaignError(
-            f"{args.patch}: --run-rd12-contract is RD12-only today"
-        )
-
-    # The declared trace-marker check owns the marker regex -- the same
-    # resolution run() applies for every plan-declared activation check.
-    trace_marker_regex = args.trace_marker_regex
-    trace_description = args.trace_description
-    if validation_plan is not None:
-        trace_specs = tuple(
-            spec for spec in validation_plan.checks
-            if spec.capability == "activation" and spec.validator == "trace-marker"
-        )
-        if len(trace_specs) > 1:
-            raise PatchCampaignError(
-                f"{args.patch}: validation plan declares multiple trace-marker activation checks"
-            )
-        if trace_specs:
-            configured_marker = trace_specs[0].config.get("marker-regex")
-            if not isinstance(configured_marker, str) or not configured_marker:
-                raise PatchCampaignError(
-                    f"{args.patch}: trace-marker activation check has no marker-regex"
-                )
-            if trace_marker_regex is not None and trace_marker_regex != configured_marker:
-                raise PatchCampaignError(
-                    f"{args.patch}: CLI trace marker conflicts with validation.toml"
-                )
-            trace_marker_regex = configured_marker
-            trace_description = trace_description or f"{args.patch} activation"
-        elif trace_marker_regex is not None or trace_description is not None:
-            raise PatchCampaignError(
-                f"{args.patch}: trace CLI options require a trace-marker validation check"
-            )
-
-    _descriptor = descriptor
-    _patch_file = registry.root / _descriptor.implementation_path
-    campaign_run_dir = workdir / "campaign"
-    patch_digest = psi.patch_implementation_digest(args.patch)
-    control_source_tree = psi.git_worktree_tree(control_src)
-    patched_source_tree = psi.git_worktree_tree(patched_src)
-
-    # RD12 consumes no model and no manifest -- its workload is the
-    # registered 1258 test-backend-ops case -- so the generic
-    # e2e_smoke_campaign.Campaign (which Path()-converts both in
-    # __post_init__) is never constructed on this path. The record still
-    # needs a campaign_identity_digest, so bind one from the same facts
-    # the generic Campaign would bind, minus model/manifest, using the
-    # same canonical-JSON sha256 convention as
-    # e2e_smoke_campaign._stable_json_sha256().
-    campaign_build_identities = {
-        "tune": tune_build_evidence.campaign_identity(),
-        "replay": replay_build_evidence.campaign_identity(),
-        "stock": stock_build_evidence.campaign_identity(),
-    }
-    campaign_identity_digest = hashlib.sha256(
-        json.dumps(
-            {
-                "schema": "rd12-contract-campaign-identity-v1",
-                "patch_identity": {"name": args.patch, "digest": patch_digest},
-                "patched_source_tree": patched_source_tree,
-                "gpu_architecture": args.amdgpu_targets,
-                "campaign_build_identities": campaign_build_identities,
-                "base_revision": base_revision,
-            },
-            sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-
-    # PA39: RD12's real bit-identical correctness producer, bound into the
-    # tracked evidence system the same way RD73's is. This is a
-    # CORRECTNESS-EVIDENCE producer only -- it must never populate
-    # contract_promotions (that would falsely qualify RD12's separately-
-    # declared performance/controls claims from a correctness-only run).
-    rd12_qualification = run_rd12_correctness_check(
-        base_revision=base_revision, hip_path=args.hip_path,
-        amdgpu_targets=args.amdgpu_targets,
-        worktree_root=worktree_root / "rd12-correctness",
-        build_root=build_root / "rd12-correctness",
-        build_env=build_env, run_dir=campaign_run_dir,
+    control_revision, control_composition = psi.resolve_source_composition(
+        baseline_source, focal=None, base_ref=base_ref, base_repo=LLAMA_CPP_SRC,
     )
-    rd12_results = rd12_qualification["results"]
-    bit_identical_result = rd12_results["bit_identical"]
-
-    # Bind correctness evidence: contract.correctness requires only
-    # bit_identical -- that result's disposition is the gate, not the
-    # supplementary backend_reference/activation results also returned.
-    correctness_summary = {
-        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-        "patch_id": args.patch,
-        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-            _patch_file
-        ),
-        "base_revision": base_revision, "patched_source_tree": patched_source_tree,
-        "campaign_identity_digest": campaign_identity_digest,
-        "gpu_architectures": [args.amdgpu_targets],
-        "disposition": "passed" if bit_identical_result.passed else "failed",
-        "mechanism": "rd12-paired-mmvq-bit-identical",
-        "detail": bit_identical_result.detail,
-    }
-    correctness_path = campaign_run_dir / "correctness.json"
-    _atomic_write_json(correctness_path, correctness_summary)
-    # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
-    # at THIS canonical correctness.json (the artifact with a real
-    # "disposition" field, which _builtin_correctness_summary() reads)
-    # -- not rd12_qualification["artifact"] (the raw producer artifact,
-    # which has "passed"/"rows" fields, never "disposition").
-    correctness_evidence = {
-        "artifact": {
-            "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
-            "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
-        }
-    }
-
-    # RD12's activation result is real (the focal patch's own
-    # BIGCHERRY_PATCH_TRACE marker, checked inside the correctness
-    # producer itself) -- bind it the same way RD08/RD58/RD73 do so
-    # the record's top-level activation disposition, not just the
-    # declared trace-marker check, reflects real evidence.
-    activation_result = rd12_results["activation"]
-    # This path skips the generic probe entirely, so this block is the
-    # ONLY source of trace_evidence for the record: the producer wrote
-    # one raw per-arm log from the real subprocess output, and
-    # _builtin_trace_marker() re-reads both logs and re-verifies the
-    # marker itself (positive = subject arm, negative = control arm).
-    # Without this binding the declared trace-marker check could
-    # never leave BLOCKED, no matter how many real runs passed.
-    trace_evidence = {
-        "positive": {
-            "marker_regex": trace_marker_regex,
-            "artifact": rd12_qualification["subject_log_artifact"],
-        },
-        "negative": {
-            "marker_regex": trace_marker_regex,
-            "artifact": rd12_qualification["control_log_artifact"],
-        },
-    }
-    activation_evidence = ActivationEvidence(
-        status="executed" if activation_result.passed else "not_executed",
-        mechanism="rd12-trigger-marker", detail=activation_result.detail,
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        baseline_source, focal=patch_id, base_ref=base_ref, base_repo=LLAMA_CPP_SRC,
     )
-    activation_verdict = verdict(activation_evidence, correctness_passed=None)
-    write_activation_json(
-        campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
-        extra={
-            "campaign_identity_digest": campaign_identity_digest,
-            "rd12_activation": {
-                "marker": trace_marker_regex,
-                "subject_log": rd12_qualification["subject_log_path"],
-                "control_log": rd12_qualification["control_log_path"],
-            },
-        },
+    if control_revision != subject_revision:
+        raise RuntimeError("control and subject source plans resolved different base revisions")
+    base_revision = subject_revision
+    _print(f"materializing control and subject source plans @ {base_revision[:12]} ...")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
+        resolved_revision=base_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+    )
+    patched_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+    )
+    _print(f"control source: {control_src}")
+    _print(f"subject source: {patched_src}")
+    control_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC, source=control_src, worktree_root=worktree_root / "control",
+        resolved_revision=base_revision, composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+    )
+    subject_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC, source=patched_src, worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision, composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+    )
+    stock_src = psi.materialize_stock_source(
+        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
+    )
+    _print(f"stock source: {stock_src}")
+
+    # Build trees are keyed by --build-root, not --workdir: build_tree()/
+    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
+    # `cmake --build` itself only recompiles what actually changed, so a
+    # build tree is still effectively reusable across runs on this
+    # machine+arch as long as its SOURCE (an isolated, content-addressed
+    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
+    # identity. --workdir (record/tune/promote/replay/bench/report output)
+    # is what needs to be fresh per patch+model.
+    actual_build_root: Path = (build_root or workdir) / patched_src.name
+
+    # One shared out-of-tree registry serves both the tune and replay builds
+    # of this same patched source -- both need it (ggml-hip/CMakeLists.txt
+    # gates on GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY), and it is
+    # pure generated-from-source content, not build-mode-specific.
+    generated_dir = actual_build_root / "generated"
+    generate_registry(
+        source=patched_src, amdgpu_targets=amdgpu_targets, generated_dir=generated_dir,
     )
 
-    _print(f"rd12 correctness: {rd12_qualification['artifact']['path']}")
-    _print(f"rd12 bit_identical: {'PASS' if bit_identical_result.passed else 'FAIL'}")
+    exe = ".exe" if sys.platform == "win32" else ""
+    build_env = _hip_env(hip_path)
 
-    build_evidence = {
-        "control": {
-            "build_id": control_build_evidence.effective_build_id,
-            "source_tree": control_source_tree,
-            "architecture": args.amdgpu_targets,
-            "options": control_build_evidence.effective_configure,
-            "compile_commands": _write_bound_artifact(
-                campaign_run_dir, "build/control-compile-commands.json",
-                control_build_evidence.verification.to_dict(),
-            ),
-            "runtime_bundle": _write_bound_artifact(
-                campaign_run_dir, "build/control-runtime-bundle.json",
-                control_build_evidence.runtime_artifacts,
-            ),
-        },
-        "subject": {
-            "build_id": validation_subject_build_evidence.effective_build_id,
-            "source_tree": patched_source_tree,
-            "architecture": args.amdgpu_targets,
-            "options": validation_subject_build_evidence.effective_configure,
-            "compile_commands": _write_bound_artifact(
-                campaign_run_dir, "build/subject-compile-commands.json",
-                validation_subject_build_evidence.verification.to_dict(),
-            ),
-            "runtime_bundle": _write_bound_artifact(
-                campaign_run_dir, "build/subject-runtime-bundle.json",
-                validation_subject_build_evidence.runtime_artifacts,
-            ),
-        },
-    }
-    apply_evidence = {
-        "control": {
-            "verified": True, "idempotent": control_idempotent,
-            "artifact": _write_bound_artifact(
-                campaign_run_dir, "apply/control.json",
-                {"source_tree": control_source_tree, "composition": list(control_composition)},
-            ),
-        },
-        "subject": {
-            "verified": True, "idempotent": subject_idempotent,
-            "artifact": _write_bound_artifact(
-                campaign_run_dir, "apply/subject.json",
-                {"source_tree": patched_source_tree, "composition": list(subject_composition)},
-            ),
-        },
-    }
-
-    validation_check_results: dict[str, object] = {}
-    validation_verdict = None
-    if validation_plan is not None:
-        # VA11A: package_root lets a packaged patch's custom validator
-        # actually resolve its check(ctx) file.
-        package_root = (
-            (registry.root / descriptor.package_root)
-            if descriptor.package_root is not None else None
-        )
-        # compute_contract_correctness_gate() needs the real
-        # experiment_contract.ExperimentContract -- validation_plan.contract
-        # is a lightweight ContractBinding projection that deliberately
-        # does not carry .correctness/.acceptance (VA15 real-hardware
-        # finding). PA36-F step 2: also the source of ValidationContext's
-        # plural contracts/contract_hashes below -- loaded once, before
-        # the context is constructed, rather than after.
-        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
-        validation_ctx = patch_validation.ValidationContext(
-            descriptor=descriptor, base_revision=base_revision,
-            control_source=control_src, subject_source=patched_src, stock_source=stock_src,
-            package_root=package_root,
-            control_tree=control_source_tree, subject_tree=patched_source_tree,
-            build_identities={
-                "control": control_build_evidence.effective_build_id,
-                "subject": validation_subject_build_evidence.effective_build_id,
-            },
-            build_evidence=build_evidence,
-            apply_evidence=apply_evidence,
-            architecture=args.amdgpu_targets,
-            # RD12 consumes no model -- its workload is the registered
-            # 1258 test-backend-ops case, not a GGUF.
-            model=None,
-            contracts=(full_contract,) if full_contract is not None else (),
-            contract_hashes=(
-                {full_contract.id: full_contract.contract_hash}
-                if full_contract is not None else {}
-            ),
-            run_dir=campaign_run_dir,
-            register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
-            trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
-            performance_evidence={},
-        )
-        evaluated = {
-            spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
-            for spec in validation_plan.checks
-        }
-        validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
-        # PA39: RD12's real bit-identical result is already evaluated
-        # inside run_rd12_correctness_check(); thread it through the same
-        # way RD08's/RD58's/RD73's named results are, so the gate reflects
-        # the real evidence instead of reporting missing_checks/BLOCKED.
-        contract_correctness_gate = compute_contract_correctness_gate(
-            full_contract, rd12_qualification["results"],
-        )
-        validation_check_results = {
-            check_id: asdict(result) for check_id, result in evaluated.items()
-        }
-        if contract_correctness_gate is not None:
-            validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
-            _print(
-                f"contract correctness gate: "
-                f"{'passed' if contract_correctness_gate.get('passed') else contract_correctness_gate.get('status', 'not passed')}"
-            )
-        _print(
-            f"validation verdict: {'eligible' if validation_verdict.eligible else 'ineligible'} "
-            f"({len(validation_verdict.reasons)} blocking reasons)"
-        )
-
-    validation_contracts, validation_contract_verdicts = build_contract_evidence_for_persistence(
-        validation_plan.contracts if validation_plan is not None else (), {},
+    tune_extra_cmake_args = [
+        "-DGGML_HIP_AUTOTUNE=ON", "-DGGML_HIP_AUTOTUNE_RECORD=ON",
+        "-DGGML_HIP_ROUTING_TRANSFORM=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
+    ]
+    tune_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=tune_extra_cmake_args,
     )
-
-    validation_record = patch_validation_evidence.make_record(
-        patch_id=args.patch, patch_path=_patch_file,
-        patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
-        base_revision=base_revision,
-        framework_baseline_digest=psi.composition_digest(subject_composition),
-        patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
-        activation_evidence=activation_evidence,
-        activation_disposition=activation_verdict,
-        correctness=correctness_summary,
-        campaign_identity_digest=campaign_identity_digest,
-        build_identities=campaign_build_identities,
-        # PA39: RD12's own correctness producer materializes and builds
-        # its own isolated control/subject worktrees
-        # (run_rd12_correctness_check()), distinct from the generic
-        # campaign control/validation-subject builds -- record ITS
-        # identities, the same pattern as RD58. They are already plain
-        # dicts (built from .campaign_identity() inside the producer).
-        validation_build_identities=rd12_qualification["validation_build_identities"],
-        campaign_workdir=workdir / "campaign",
-        check_results=validation_check_results,
-        # RD12 is a correctness-evidence producer only -- contract_promotions
-        # stays empty on purpose (see the PA39 note above the producer call).
-        validation_eligible=compute_persisted_validation_eligible(
-            _descriptor, validation_verdict, {},
-            activation_disposition=activation_verdict, correctness=correctness_summary,
-        ),
-        lane_effects=collect_lane_effect_records(
-            rd08_qualification=None, rd73_qualification=None,
-        ),
-        representation=_descriptor.representation,
-        validation_implementation_digest=_descriptor.validation_digest,
-        contracts=validation_contracts,
-        contract_verdicts=validation_contract_verdicts,
-        baseline_composition={"source": baseline_source, "base_revision": base_revision,
-                              "patches": list(control_composition)},
-        control_composition={"base_revision": base_revision, "patches": list(control_composition)},
-        subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
-        control_tree=control_source_tree,
-        subject_tree=patched_source_tree,
-        stock_tree=psi.git_worktree_tree(stock_src),
+    tune_bin = build_tree(
+        name="tune", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        extra_cmake_args=tune_extra_cmake_args,
     )
-    validation_record_path = patch_validation_evidence.write_record(validation_record)
-    _print(f"validation evidence: {validation_record_path}")
+    # HI82 item 7: refuse to hand a build to Campaign() until its actual
+    # compiled command lines are proven to match configured intent -- a
+    # build that silently lost a flag (the HI81 shape) must never reach
+    # benchmarking. Raises BuildIdentityError uncaught, which is the
+    # intended fail-closed behavior: no partial/best-effort campaign runs
+    # against an unverified build. Reuses builds.py's existing identity/
+    # reuse contract (effective_build_id/runtime_bundle_hash) rather than
+    # a second, parallel identity authority -- see HI82 review history.
+    tune_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "tune", source_root=patched_src, architecture=amdgpu_targets,
+        binary=tune_bin / f"llama-server{exe}", extra_binaries=(tune_bin / f"llama-bench{exe}",),
+        requested_cmake_args=tune_cmake_args, build_env=build_env,
+    )
     _print(
-        "STATE='validated' eligible: "
-        + ("yes" if validation_record["eligible_for_validated_state"] else "no")
+        f"tune build: {tune_build_evidence.effective_build_id[:12]} / "
+        f"{tune_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{tune_build_evidence.compile_verification_id[:12]}"
     )
 
-    return 0
+    replay_extra_cmake_args = [
+        "-DGGML_HIP_DISPATCH_REPLAY=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
+    ]
+    replay_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=replay_extra_cmake_args,
+    )
+    replay_bin = build_tree(
+        name="replay", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        extra_cmake_args=replay_extra_cmake_args,
+    )
+    replay_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "replay", source_root=patched_src, architecture=amdgpu_targets,
+        binary=replay_bin / f"llama-server{exe}",
+        extra_binaries=(replay_bin / f"llama-bench{exe}",),
+        requested_cmake_args=replay_cmake_args, build_env=build_env,
+    )
+    _print(
+        f"replay build: {replay_build_evidence.effective_build_id[:12]} / "
+        f"{replay_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{replay_build_evidence.compile_verification_id[:12]}"
+    )
+
+    stock_build_root = (build_root or workdir) / stock_src.name
+    stock_bin = ensure_stock_baseline(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=stock_build_root, stock_src=stock_src,
+    )
+    stock_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+    )
+    stock_build_evidence = capture_completed_build_evidence(
+        stock_build_root / "stock", source_root=stock_src, architecture=amdgpu_targets,
+        binary=stock_bin / f"llama-bench{exe}", requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
+    )
+    _print(
+        f"stock build: {stock_build_evidence.effective_build_id[:12]} / "
+        f"{stock_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{stock_build_evidence.compile_verification_id[:12]}"
+    )
+
+    # RS10: the authoritative control source is independently built as well;
+    # it is not merely a recorded tree next to a subject-only campaign.
+    control_build_root = (build_root or workdir) / control_src.name
+    control_bin = build_tree(
+        name="control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=control_build_root, targets=["llama-server", "llama-bench"],
+        source=control_src, extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        control_build_root / "control", source_root=control_src,
+        architecture=amdgpu_targets, binary=control_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args, build_env=build_env,
+    )
+    _print(
+        f"control build: {control_build_evidence.effective_build_id[:12]} / "
+        f"{control_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{control_build_evidence.compile_verification_id[:12]}"
+    )
+
+    # VA14-B: the validation-domain subject is a real, independently-built
+    # parity binary from patched_src -- NOT the tune-mode binary (that build
+    # carries GGML_HIP_AUTOTUNE/AUTOTUNE_RECORD/ROUTING_TRANSFORM
+    # instrumentation the control build never had, which would confound a
+    # measured RD08 lane effect with instrumentation overhead, not just the
+    # patch). Built with exactly control's extra_cmake_args=[].
+    validation_subject_bin = build_tree(
+        name="validation-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        extra_cmake_args=[],
+    )
+    # GPT round 3 (req_e75c4936e2354351): capture symmetrically with
+    # control_build_evidence below (binary=llama-bench only, no
+    # extra_binaries) -- an asymmetric capture is not a like-for-like
+    # comparison even when the underlying build tree is parity.
+    validation_subject_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "validation-subject", source_root=patched_src,
+        architecture=amdgpu_targets, binary=validation_subject_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args, build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence, validation_subject_build_evidence, patch_id=patch_id,
+    )
+    _print(
+        f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
+        f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{validation_subject_build_evidence.compile_verification_id[:12]}"
+    )
+    return StandardCampaignScaffold(
+        base_revision=base_revision,
+        control_composition=control_composition,
+        subject_composition=subject_composition,
+        control_source=control_src,
+        subject_source=patched_src,
+        stock_source=stock_src,
+        control_idempotent=control_idempotent,
+        subject_idempotent=subject_idempotent,
+        build_root=actual_build_root,
+        build_env=build_env,
+        tune_bin=tune_bin,
+        replay_bin=replay_bin,
+        stock_bin=stock_bin,
+        control_bin=control_bin,
+        validation_subject_bin=validation_subject_bin,
+        tune_build_evidence=tune_build_evidence,
+        replay_build_evidence=replay_build_evidence,
+        stock_build_evidence=stock_build_evidence,
+        control_build_evidence=control_build_evidence,
+        validation_subject_build_evidence=validation_subject_build_evidence,
+    )
+
 
 
 def run(args: argparse.Namespace) -> int:
@@ -7805,215 +7858,39 @@ def run(args: argparse.Namespace) -> int:
     # scan), resolved through the exact-composition validator; the base ref
     # resolves to an immutable SHA that enters the v2 source identity.
     baseline_source = getattr(args, "baseline_source", "bigcherry")
-    control_revision, control_composition = psi.resolve_source_composition(
-        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+    # PA36 sub-slice 2 (dev-gpt-agent req_2ecda033763949a9, T2): the five
+    # standard-campaign builds (tune -> replay -> stock -> control ->
+    # validation-subject) live in _build_standard_campaign_scaffold(),
+    # shared with the generic standard_campaign="run" producer path. Local
+    # aliases below keep the rest of run() structurally unchanged.
+    scaffold = _build_standard_campaign_scaffold(
+        patch_id=args.patch, base_ref=cfg.pinned, baseline_source=baseline_source,
+        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
+        workdir=workdir, worktree_root=worktree_root, build_root=args.build_root,
     )
-    subject_revision, subject_composition = psi.resolve_source_composition(
-        baseline_source, focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
-    )
-    if control_revision != subject_revision:
-        raise RuntimeError("control and subject source plans resolved different base revisions")
-    base_revision = subject_revision
-    _print(f"materializing control and subject source plans @ {base_revision[:12]} ...")
-    control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
-        resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
-    )
-    patched_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
-        resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
-    )
-    _print(f"control source: {control_src}")
-    _print(f"subject source: {patched_src}")
-    control_idempotent = psi.verify_composition_idempotent(
-        base_repo=LLAMA_CPP_SRC, source=control_src, worktree_root=worktree_root / "control",
-        resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
-    )
-    subject_idempotent = psi.verify_composition_idempotent(
-        base_repo=LLAMA_CPP_SRC, source=patched_src, worktree_root=worktree_root / "subject",
-        resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
-    )
-    stock_src = psi.materialize_stock_source(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
-    )
-    _print(f"stock source: {stock_src}")
-
-    # Build trees are keyed by --build-root, not --workdir: build_tree()/
-    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
-    # `cmake --build` itself only recompiles what actually changed, so a
-    # build tree is still effectively reusable across runs on this
-    # machine+arch as long as its SOURCE (an isolated, content-addressed
-    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
-    # identity. --workdir (record/tune/promote/replay/bench/report output)
-    # is what needs to be fresh per patch+model.
-    build_root: Path = (args.build_root or workdir) / patched_src.name
-
-    # One shared out-of-tree registry serves both the tune and replay builds
-    # of this same patched source -- both need it (ggml-hip/CMakeLists.txt
-    # gates on GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY), and it is
-    # pure generated-from-source content, not build-mode-specific.
-    generated_dir = build_root / "generated"
-    generate_registry(
-        source=patched_src, amdgpu_targets=args.amdgpu_targets, generated_dir=generated_dir,
-    )
-
+    base_revision = scaffold.base_revision
+    control_composition = scaffold.control_composition
+    subject_composition = scaffold.subject_composition
+    control_src = scaffold.control_source
+    patched_src = scaffold.subject_source
+    stock_src = scaffold.stock_source
+    control_idempotent = scaffold.control_idempotent
+    subject_idempotent = scaffold.subject_idempotent
+    build_root = scaffold.build_root
+    build_env = scaffold.build_env
+    tune_bin = scaffold.tune_bin
+    replay_bin = scaffold.replay_bin
+    stock_bin = scaffold.stock_bin
+    control_bin = scaffold.control_bin
+    validation_subject_bin = scaffold.validation_subject_bin
+    tune_build_evidence = scaffold.tune_build_evidence
+    replay_build_evidence = scaffold.replay_build_evidence
+    stock_build_evidence = scaffold.stock_build_evidence
+    control_build_evidence = scaffold.control_build_evidence
+    validation_subject_build_evidence = scaffold.validation_subject_build_evidence
     exe = ".exe" if sys.platform == "win32" else ""
-    build_env = _hip_env(args.hip_path)
 
-    tune_extra_cmake_args = [
-        "-DGGML_HIP_AUTOTUNE=ON", "-DGGML_HIP_AUTOTUNE_RECORD=ON",
-        "-DGGML_HIP_ROUTING_TRANSFORM=ON",
-        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
-    ]
-    tune_cmake_args = _full_requested_cmake_args(
-        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        extra_cmake_args=tune_extra_cmake_args,
-    )
-    tune_bin = build_tree(
-        name="tune", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
-        extra_cmake_args=tune_extra_cmake_args,
-    )
-    # HI82 item 7: refuse to hand a build to Campaign() until its actual
-    # compiled command lines are proven to match configured intent -- a
-    # build that silently lost a flag (the HI81 shape) must never reach
-    # benchmarking. Raises BuildIdentityError uncaught, which is the
-    # intended fail-closed behavior: no partial/best-effort campaign runs
-    # against an unverified build. Reuses builds.py's existing identity/
-    # reuse contract (effective_build_id/runtime_bundle_hash) rather than
-    # a second, parallel identity authority -- see HI82 review history.
-    tune_build_evidence = capture_completed_build_evidence(
-        build_root / "tune", source_root=patched_src, architecture=args.amdgpu_targets,
-        binary=tune_bin / f"llama-server{exe}", extra_binaries=(tune_bin / f"llama-bench{exe}",),
-        requested_cmake_args=tune_cmake_args, build_env=build_env,
-    )
-    _print(
-        f"tune build: {tune_build_evidence.effective_build_id[:12]} / "
-        f"{tune_build_evidence.runtime_bundle_hash[:12]} / "
-        f"{tune_build_evidence.compile_verification_id[:12]}"
-    )
 
-    replay_extra_cmake_args = [
-        "-DGGML_HIP_DISPATCH_REPLAY=ON",
-        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
-    ]
-    replay_cmake_args = _full_requested_cmake_args(
-        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        extra_cmake_args=replay_extra_cmake_args,
-    )
-    replay_bin = build_tree(
-        name="replay", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
-        extra_cmake_args=replay_extra_cmake_args,
-    )
-    replay_build_evidence = capture_completed_build_evidence(
-        build_root / "replay", source_root=patched_src, architecture=args.amdgpu_targets,
-        binary=replay_bin / f"llama-server{exe}",
-        extra_binaries=(replay_bin / f"llama-bench{exe}",),
-        requested_cmake_args=replay_cmake_args, build_env=build_env,
-    )
-    _print(
-        f"replay build: {replay_build_evidence.effective_build_id[:12]} / "
-        f"{replay_build_evidence.runtime_bundle_hash[:12]} / "
-        f"{replay_build_evidence.compile_verification_id[:12]}"
-    )
-
-    stock_build_root = (args.build_root or workdir) / stock_src.name
-    stock_bin = ensure_stock_baseline(
-        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=stock_build_root, stock_src=stock_src,
-    )
-    stock_cmake_args = _full_requested_cmake_args(
-        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=[],
-    )
-    stock_build_evidence = capture_completed_build_evidence(
-        stock_build_root / "stock", source_root=stock_src, architecture=args.amdgpu_targets,
-        binary=stock_bin / f"llama-bench{exe}", requested_cmake_args=stock_cmake_args,
-        build_env=build_env,
-    )
-    _print(
-        f"stock build: {stock_build_evidence.effective_build_id[:12]} / "
-        f"{stock_build_evidence.runtime_bundle_hash[:12]} / "
-        f"{stock_build_evidence.compile_verification_id[:12]}"
-    )
-
-    # RS10: the authoritative control source is independently built as well;
-    # it is not merely a recorded tree next to a subject-only campaign.
-    control_build_root = (args.build_root or workdir) / control_src.name
-    control_bin = build_tree(
-        name="control", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=control_build_root, targets=["llama-server", "llama-bench"],
-        source=control_src, extra_cmake_args=[],
-    )
-    control_build_evidence = capture_completed_build_evidence(
-        control_build_root / "control", source_root=control_src,
-        architecture=args.amdgpu_targets, binary=control_bin / f"llama-bench{exe}",
-        requested_cmake_args=stock_cmake_args, build_env=build_env,
-    )
-    _print(
-        f"control build: {control_build_evidence.effective_build_id[:12]} / "
-        f"{control_build_evidence.runtime_bundle_hash[:12]} / "
-        f"{control_build_evidence.compile_verification_id[:12]}"
-    )
-
-    # VA14-B: the validation-domain subject is a real, independently-built
-    # parity binary from patched_src -- NOT the tune-mode binary (that build
-    # carries GGML_HIP_AUTOTUNE/AUTOTUNE_RECORD/ROUTING_TRANSFORM
-    # instrumentation the control build never had, which would confound a
-    # measured RD08 lane effect with instrumentation overhead, not just the
-    # patch). Built with exactly control's extra_cmake_args=[].
-    validation_subject_bin = build_tree(
-        name="validation-subject", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=build_root, targets=["llama-server", "llama-bench"], source=patched_src,
-        extra_cmake_args=[],
-    )
-    # GPT round 3 (req_e75c4936e2354351): capture symmetrically with
-    # control_build_evidence below (binary=llama-bench only, no
-    # extra_binaries) -- an asymmetric capture is not a like-for-like
-    # comparison even when the underlying build tree is parity.
-    validation_subject_build_evidence = capture_completed_build_evidence(
-        build_root / "validation-subject", source_root=patched_src,
-        architecture=args.amdgpu_targets, binary=validation_subject_bin / f"llama-bench{exe}",
-        requested_cmake_args=stock_cmake_args, build_env=build_env,
-    )
-    assert_validation_subject_parity(
-        control_build_evidence, validation_subject_build_evidence, patch_id=args.patch,
-    )
-    _print(
-        f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
-        f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
-        f"{validation_subject_build_evidence.compile_verification_id[:12]}"
-    )
-
-    # GPT review (req_36cddfd518444cda, MUST 4): RD12 is a genuinely
-    # model/manifest-free contract -- the documented invocation runs with
-    # neither --model nor --manifest, and the generic
-    # e2e_smoke_campaign.Campaign Path()-converts both in __post_init__, so
-    # constructing it would crash the documented command. RD12's evidence
-    # still needs the five shared builds above (the record's
-    # build_identities MUST be exactly the {tune,replay,stock} campaign
-    # domain, and the declared build check needs the real validation-domain
-    # control/subject identities), so the specialized path returns HERE --
-    # after all five builds, before the Campaign import below.
-    if getattr(args, "run_rd12_contract", False):
-        return _run_rd12_contract(
-            args=args, descriptor=descriptor, cfg=cfg, registry=registry,
-            workdir=workdir, worktree_root=worktree_root, build_root=build_root,
-            base_revision=base_revision, baseline_source=baseline_source,
-            control_src=control_src, patched_src=patched_src, stock_src=stock_src,
-            control_composition=control_composition, subject_composition=subject_composition,
-            control_idempotent=control_idempotent, subject_idempotent=subject_idempotent,
-            build_env=build_env, validation_plan=validation_plan,
-            tune_build_evidence=tune_build_evidence,
-            replay_build_evidence=replay_build_evidence,
-            stock_build_evidence=stock_build_evidence,
-            control_build_evidence=control_build_evidence,
-            validation_subject_build_evidence=validation_subject_build_evidence,
-        )
 
     from bigcherry.e2e_smoke_campaign import (  # noqa: E402
         Campaign, CampaignError, CampaignIdentityContext,
@@ -8106,9 +7983,6 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    # NB: --run-rd12-contract is not in these skip lists -- its specialized
-    # path returns earlier (before the Campaign import), so it never
-    # reaches this point; no dead flag is kept here.
     trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
@@ -8924,15 +8798,15 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # PA39: RD04's real backend_reference+ppl_equality correctness producer,
-    # bound the same way RD73's block above is (RD12's own producer now
-    # lives in _run_rd12_contract()). Correctness-evidence
+    # bound the same way RD73's block above is (RD12's own producer is the
+    # patch-local 1205 producer). Correctness-evidence
     # producer only -- must never populate contract_promotions (would
     # falsely qualify RD04's separately-declared performance claim).
-    # UNLIKE RD12, RD04 has no real activation marker in its source yet
-    # (confirmed by inspection this session) -- activation_evidence is
-    # deliberately left unbound here; RD04's declared activation check
-    # stays honestly BLOCKED until a real marker exists (see its own
-    # validation.toml/README "Known limitations").
+    # RD04 has no real activation marker in its source yet (confirmed by
+    # inspection this session) -- activation_evidence is deliberately left
+    # unbound here; RD04's declared activation check stays honestly BLOCKED
+    # until a real marker exists (see its own validation.toml/README "Known
+    # limitations").
     rd04_qualification: dict[str, object] | None = None
     if args.run_rd04_contract:
         if (
@@ -8992,10 +8866,10 @@ def run(args: argparse.Namespace) -> int:
         }
         correctness_path = campaign_run_dir / "correctness.json"
         _atomic_write_json(correctness_path, correctness_summary)
-        # GPT review (req_5631b12dc3fb4a23): same fix as RD12's block above
-        # -- correctness_evidence must point at THIS canonical correctness.json
-        # (real "disposition" field), never rd04_qualification["artifact"]
-        # (the raw producer artifact, no "disposition" field).
+        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
+        # at THIS canonical correctness.json (real "disposition" field),
+        # never rd04_qualification["artifact"] (the raw producer artifact,
+        # no "disposition" field).
         correctness_evidence = {
             "artifact": {
                 "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
@@ -9249,8 +9123,6 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (blocker #1): RD58's real validation build is
         # test-save-load-state, not the generic llama-bench control/
         # validation-subject builds -- record ITS identities when RD58 ran.
-        # (RD12's own identities are recorded inside _run_rd12_contract(),
-        # which never reaches this generic make_record call.)
         validation_build_identities=(
             {
                 "control": rd58_control_build_evidence.campaign_identity(),
@@ -9259,7 +9131,7 @@ def run(args: argparse.Namespace) -> int:
             if args.run_rd58_state_restore
             # GPT review (req_5631b12dc3fb4a23): RD04's producer also
             # materializes and builds its OWN isolated control/subject
-            # worktrees (same shape as RD12's), NOT the generic campaign's --
+            # worktrees (its own isolated pair), NOT the generic campaign's --
             # falling through to the generic identities below was wrong.
             else rd04_qualification["validation_build_identities"]
             if rd04_qualification is not None
@@ -9415,15 +9287,6 @@ def main(argv: list[str] | None = None) -> int:
              "RD04/RD08/RD58 execution modes. Requires --rd73-corpus.",
     )
     parser.add_argument(
-        "--run-rd12-contract", action="store_true", default=False,
-        help="PA39: RD12's real bit-identical correctness producer "
-             "(run_rd12_correctness_check()) -- binds current-pin correctness "
-             "evidence into the tracked record. Correctness-evidence producer "
-             "only: does NOT populate contract_promotions or qualify RD12's "
-             "separately-declared performance/controls claims. RD12-only; "
-             "mutually exclusive with the other specialized evidence modes.",
-    )
-    parser.add_argument(
         "--run-rd04-contract", action="store_true", default=False,
         help="PA39: RD04's real backend_reference+ppl_equality correctness "
              "producer (run_rd04_contract_correctness()) -- one real whole-"
@@ -9533,7 +9396,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.validation_producer is not None:
         # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
         # dispatch plugs in immediately after parse_args()/common patch
-        # resolution, before the first args.run_rd12_contract/other RD-only
+        # resolution, before the first other RD-only
         # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
         # of known RD flags -- a new --run-rdNN-* flag added later is caught
         # automatically, with no edit required here.
@@ -9562,15 +9425,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         provided_inputs = _parse_producer_inputs(args.producer_inputs)
         return _run_validation_producer(args, producer_id=producer_id, provided_inputs=provided_inputs)
-    if args.run_rd12_contract:
-        # RD12's producer consumes no model or manifest -- its workload is
-        # the registered 1258 test-backend-ops case, not a GGUF -- so the
-        # generic runtime-qualification prerequisite does not apply. It
-        # does require one contract architecture, which the producer
-        # validates as exactly one.
-        if args.amdgpu_targets is None:
-            parser.error("--run-rd12-contract requires --amdgpu-targets")
-    elif (
+    if (
         not args.framework_configuration
         and not args.run_performance_benchmark
         and (args.model is None or args.manifest is None or args.amdgpu_targets is None)
@@ -9581,7 +9436,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
             "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-            "run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
+            "run_rd58_state_restore", "run_rd73_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)

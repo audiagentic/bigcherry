@@ -1,636 +1,1002 @@
-"""PA39 / GPT review (req_36cddfd518444cda, MUST 4): CLI wiring coverage for
---run-rd12-contract.
+"""PA36 sub-slice 2 (T10, dev-gpt-agent req_2ecda033763949a9): the RD12
+dedicated CLI path (--run-rd12-contract / _run_rd12_contract /
+run_rd12_correctness_check) was DELETED from shared code and replaced by
+the generic standard_campaign="run" producer path
+(--validation-producer 1205_rd12_paired_mmvq_dual_output/rd12).
 
-RD12 is a genuinely model/manifest-free contract -- the documented
-invocation runs with neither --model nor --manifest, and the generic
-e2e_smoke_campaign.Campaign Path()-converts both in __post_init__, so it
-cannot be constructed on this path. The settled shape:
-
-  * run() performs the five shared builds (tune/replay/stock campaign
-    builds + control/validation-subject validation builds -- the record's
-    build_identities MUST be exactly the {tune,replay,stock} campaign
-    domain), then RETURNS EARLY to _run_rd12_contract() BEFORE the
-    ``from bigcherry.e2e_smoke_campaign import Campaign`` line;
-  * _run_rd12_contract() owns the full RD12 evidence pipeline itself and
-    never touches args.model / args.manifest at all.
-
-The source-inspection tests below pin that wiring (matching the
-established pattern for the other specialized modes); the behavioral test
-at the bottom drives run() end to end with the documented model/manifest-
-free invocation, a Campaign-instantiation tripwire, and real make_record()
--- proving the documented command actually reaches a written record
-without constructing the Campaign.
+This file covers the replaced path at three levels:
+  * source-layout regression guards (the deleted surface must not come
+    back),
+  * the shared evidence binder (binder-owned identity, plan-owned marker
+    semantics, producer-supplied semantic measurements only),
+  * the end-to-end dispatcher (_run_validation_producer) driven against
+    the REAL 1205 patch/descriptor/plan with every expensive boundary
+    (scaffold builds, binaries, subprocess) faked -- exit semantics,
+    record identity facts, and the diagnostic-only skip path.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import inspect
 import json
+import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
-from unittest import mock
+from typing import Mapping
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+TOOLS_ROOT = Path(__file__).resolve().parents[2]
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
 
-from bigcherry.patch import validation as patch_validation  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
-from bigcherry.experiment.contract import CorrectnessResult  # noqa: E402
+from bigcherry.patch import evidence as patch_evidence  # noqa: E402
+from bigcherry.patch import source as psi  # noqa: E402
+from bigcherry.patch import validation_producer as vp  # noqa: E402
+from bigcherry.patch.validation import ArtifactRef  # noqa: E402
+from bigcherry.tuning import correctness_evidence  # noqa: E402
 
-
-ROOT = Path(__file__).resolve().parents[3]
 PATCH_ID = "1205_rd12_paired_mmvq_dual_output"
-ARCH = "gfx1100"
-BASE_REVISION = "ab" * 20  # 40-hex
-PATCH_DIGEST = "cd" * 32  # 64-hex
-CONTROL_TREE = "11" * 20  # 40-hex
-SUBJECT_TREE = "22" * 20  # 40-hex
-STOCK_TREE = "33" * 20  # 40-hex
-COMPOSITION_DIGEST = "44" * 32  # 64-hex
-
-_HEX_DIGITS = "0123456789abcdef"
+CAMPAIGN_SRC = (
+    TOOLS_ROOT / "bigcherry" / "patch" / "validation_campaign.py"
+).read_text(encoding="utf-8")
+TRACE_MARKER = "BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion"
 
 
-def _build_identity(tag: int) -> dict:
-    """One full-shape build identity (evidence.BUILD_IDENTITY_KEYS)."""
-    def h(offset: int) -> str:
-        return _HEX_DIGITS[(tag + offset) % 16] * 64
-
-    return {
-        "effective_build_id": h(0),
-        "compile_verification_id": h(1),
-        "compile_commands_digest": h(2),
-        "hip_compile_commands_digest": h(3),
-        "runtime_bundle_hash": h(4),
-        "runtime_artifacts": {"llama-bench.exe": h(5)},
-    }
+# ---------------------------------------------------------- layout guards
 
 
-def _build_evidence(tag: int) -> SimpleNamespace:
-    ident = _build_identity(tag)
-    return SimpleNamespace(
-        effective_build_id=ident["effective_build_id"],
-        runtime_bundle_hash=ident["runtime_bundle_hash"],
-        compile_verification_id=ident["compile_verification_id"],
-        effective_configure=["-DCMAKE_BUILD_TYPE=Release"],
-        verification=SimpleNamespace(to_dict=lambda: {"status": "pass"}),
-        runtime_artifacts=dict(ident["runtime_artifacts"]),
-        campaign_identity=lambda: _build_identity(tag),
-    )
-
-
-def _rd12_qualification() -> dict:
-    """Canned run_rd12_correctness_check() result (real producer shape)."""
-    return {
-        "results": {
-            "bit_identical": CorrectnessResult(
-                check="bit_identical", passed=True,
-                detail="6/6 rows bit-identical (subject vs control)",
-            ),
-            "backend_reference": CorrectnessResult(
-                check="backend_reference", passed=True,
-            ),
-            "activation": CorrectnessResult(
-                check="activation", passed=True,
-                detail="marker emitted on subject, absent on control",
-            ),
-        },
-        "artifact": {"path": "rd12/artifact.json", "sha256": "55" * 32},
-        "rows": 6,
-        "subject_log_path": f"logs/activation-rd12-{ARCH}-subject.log",
-        "control_log_path": f"logs/activation-rd12-{ARCH}-control.log",
-        "subject_log_artifact": {
-            "path": f"logs/activation-rd12-{ARCH}-subject.log", "sha256": "66" * 32,
-        },
-        "control_log_artifact": {
-            "path": f"logs/activation-rd12-{ARCH}-control.log", "sha256": "77" * 32,
-        },
-        "validation_build_identities": {
-            "control": _build_identity(3),
-            "subject": _build_identity(4),
-        },
-    }
-
-
-def _descriptor() -> SimpleNamespace:
-    return SimpleNamespace(
-        patch_id=PATCH_ID,
-        experiment_contract="RD12-PAIRED-MMVQ-DUAL",
-        # compute_persisted_validation_eligible() uses the PLURAL -- empty
-        # here so the adapter verdict alone is the only claim.
-        experiment_contracts=(),
-        implementation_path="patch.py",
-        package_root=None,
-        implementation_digest=PATCH_DIGEST,
-        validation_digest="88" * 32,
-        representation="simple",
-    )
-
-
-def _args(tmp: Path) -> SimpleNamespace:
-    """The documented invocation: --run-rd12-contract with NEITHER
-    --model NOR --manifest (MUST 4)."""
-    return SimpleNamespace(
-        run_rd12_contract=True,
-        model=None,
-        manifest=None,
-        patch=PATCH_ID,
-        amdgpu_targets=ARCH,
-        hip_path=tmp / "rocm",
-        workdir=tmp / "workdir",
-        build_root=tmp / "build",
-        worktree_root=tmp / "worktree",
-        baseline_source="bigcherry",
-        trace_marker_regex=None,
-        trace_description=None,
-        correctness_evidence=None,
-        run_rd08_lanes=False,
-        run_rd08_contract=False,
-        run_rd04_benchmark=False,
-        run_rd58_state_restore=False,
-        run_rd73_contract=False,
-        run_rd04_contract=False,
-        run_rd13_contract=False,
-        run_rd26_contract=False,
-        framework_configuration=False,
-        run_performance_benchmark=False,
-    )
-
-
-class Rd12ContractCliTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.fn_source = inspect.getsource(vc._run_rd12_contract)
-        self.run_source = inspect.getsource(vc.run)
-        self.main_source = inspect.getsource(vc.main)
-
-    # -- early-return placement in run() ---------------------------------
-
-    def test_early_return_precedes_campaign_import(self) -> None:
-        # MUST 4: the specialized path must return before the generic
-        # Campaign is even imported, so the documented model/manifest-free
-        # invocation can never construct it.
-        guard = self.run_source.index(
-            'if getattr(args, "run_rd12_contract", False):'
-        )
-        self.assertLess(
-            guard, self.run_source.index("from bigcherry.e2e_smoke_campaign import"),
-        )
-
-    def test_early_return_sits_after_all_five_shared_builds(self) -> None:
-        # The record's build_identities MUST be exactly the {tune,replay,
-        # stock} campaign domain and the declared build check needs the
-        # real validation-domain control/subject identities -- so the five
-        # shared builds run FIRST, and the last of them (the
-        # validation-subject parity assert) precedes the early return.
-        self.assertLess(
-            self.run_source.index("assert_validation_subject_parity("),
-            self.run_source.index('if getattr(args, "run_rd12_contract", False):'),
-        )
-
-    def test_no_inline_rd12_block_or_dead_flag_remains_in_run(self) -> None:
-        # The old inline RD12 block lived between the shared builds and the
-        # Campaign import; after the MUST 4 refactor it must be gone, and
-        # no bare args.run_rd12_contract reference may linger (the live
-        # guard is the getattr form above).
-        self.assertNotIn("if args.run_rd12_contract:", self.run_source)
-        self.assertNotIn("args.run_rd12_contract", self.run_source)
-
-    def test_skip_lists_do_not_carry_dead_rd12_flag(self) -> None:
-        # --run-rd12-contract returns before both standalone gates, so
-        # neither skip list may mention it (dead flags would imply a path
-        # that never exists). The NB comment records WHY it is absent.
-        self.assertIn(
-            "trace_result = None if (args.run_rd08_contract or "
-            "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or args.run_rd04_contract) else "
-            "run_trace_activation_probes(",
-            self.run_source,
-        )
-        self.assertIn(
-            "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
-            "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd04_contract or args.run_rd13_contract or "
-            "args.run_rd26_contract):",
-            self.run_source,
-        )
-        self.assertIn(
-            "# NB: --run-rd12-contract is not in these skip lists",
-            self.run_source,
-        )
-
-    # -- _run_rd12_contract() invariants ----------------------------------
-
-    def test_mutually_exclusive_with_other_specialized_modes(self) -> None:
-        self.assertIn(
-            "run-rd12-contract is mutually exclusive with the", self.fn_source,
-        )
-        for flag in (
-            "args.run_rd08_lanes", "args.run_rd08_contract",
-            "args.run_rd04_benchmark", "args.run_rd58_state_restore",
-            "args.run_rd73_contract", "args.run_rd04_contract",
-            "args.run_rd13_contract", "args.run_rd26_contract",
+class RD12DedicatedPathDeletionTests(unittest.TestCase):
+    def test_dedicated_cli_surface_is_gone(self) -> None:
+        for needle in (
+            "run_rd12_correctness_check",
+            "_run_rd12_contract",
+            "run_rd12_contract",
+            "run-rd12-contract",
         ):
-            self.assertIn(flag, self.fn_source)
-        # The mutual-exclusion condition must never reference itself --
-        # a real bug caught during authoring: including run_rd12_contract
-        # in its own guard makes the condition always true inside the
-        # branch, so the flag could never actually run.
-        self.assertNotIn('args.run_rd12_contract\n', self.fn_source)
+            self.assertNotIn(needle, CAMPAIGN_SRC, needle)
 
-    def test_rd12_only_gating(self) -> None:
+    def test_exclusion_tuples_do_not_carry_the_dead_flag(self) -> None:
+        for line in CAMPAIGN_SRC.split("\n"):
+            if '"run_rd58_state_restore", "run_rd73_contract"' in line:
+                self.assertNotIn("run_rd12_contract", line)
+
+    def test_generic_producer_path_is_the_only_rd12_entry(self) -> None:
+        toml = TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.toml"
+        self.assertTrue(toml.is_file())
+        self.assertIn('standard_campaign = "run"', toml.read_text(encoding="utf-8"))
+
+    def test_contract_promotions_are_never_fed_dispositions(self) -> None:
+        # req_f5ba56f4088e4742 finding #2: the promotion-semantic
+        # persistence helpers (build_contract_evidence_for_persistence /
+        # compute_persisted_validation_eligible) must never receive
+        # execution.contract_verdicts -- producer check DISPOSITIONS are a
+        # different semantic type than promotion-gate RESULTS. The
+        # dispatcher persists {} promotions, so every bound contract gets
+        # its explicit BLOCKED ("no promotion result produced") verdict.
+        # (The skip-path workdir diagnostic JSON may still DISPLAY
+        # execution.contract_verdicts -- it never persists a record -- but
+        # the two promotion-semantic PERSISTENCE helpers below must be
+        # pinned to {}.)
+        core_src = inspect.getsource(vc._run_validation_producer)
         self.assertIn(
-            'descriptor.experiment_contract != "RD12-PAIRED-MMVQ-DUAL"',
-            self.fn_source,
-        )
-
-    def test_correctness_evidence_ambiguity_guard(self) -> None:
-        self.assertIn("args.correctness_evidence is not None", self.fn_source)
-        self.assertIn(
-            "--correctness-evidence and --run-rd12-contract are ambiguous",
-            self.fn_source,
-        )
-
-    def test_never_reads_model_or_manifest(self) -> None:
-        # MUST 4, the core invariant: the specialized path is
-        # model/manifest-free end to end -- it may not read args.model or
-        # args.manifest anywhere (the old code Path()-converted both via
-        # the Campaign constructor before reaching this point).
-        self.assertNotIn("args.model", self.fn_source)
-        self.assertNotIn("args.manifest", self.fn_source)
-
-    def test_campaign_identity_digest_is_model_free(self) -> None:
-        # The record still needs a campaign_identity_digest: bind one from
-        # the shared-build facts only (same canonical-JSON sha256
-        # convention as e2e_smoke_campaign._stable_json_sha256), never
-        # from model/manifest.
-        self.assertIn('"schema": "rd12-contract-campaign-identity-v1"', self.fn_source)
-        self.assertIn('"campaign_build_identities": campaign_build_identities', self.fn_source)
-
-    def test_binds_correctness_summary_evidence_never_contract_promotions(self) -> None:
-        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must
-        # point at the canonical correctness.json (real "disposition"
-        # field), never rd12_qualification["artifact"] (no "disposition").
-        self.assertNotIn(
-            'correctness_evidence = {"artifact": rd12_qualification["artifact"]}',
-            self.fn_source,
+            "build_contract_evidence_for_persistence(\n"
+            "                validation_plan.contracts,\n"
+            "                {},\n"
+            "            )",
+            core_src,
         )
         self.assertIn(
-            '"path": correctness_path.relative_to(campaign_run_dir).as_posix()',
-            self.fn_source,
-        )
-        self.assertIn(
-            '"sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest()',
-            self.fn_source,
-        )
-        self.assertNotIn("contract_promotions[", self.fn_source)
-
-    def test_disposition_derives_from_bit_identical_not_backend_reference(self) -> None:
-        self.assertIn(
-            '"disposition": "passed" if bit_identical_result.passed else "failed"',
-            self.fn_source,
-        )
-
-    def test_binds_trace_evidence_from_per_arm_activation_logs(self) -> None:
-        # This path skips the generic trace probe, so _run_rd12_contract()
-        # is the ONLY source of trace_evidence for the record -- otherwise
-        # the declared trace-marker check can never leave BLOCKED no
-        # matter how many real runs pass.
-        self.assertIn("trace_evidence = {", self.fn_source)
-        self.assertIn('"marker_regex": trace_marker_regex', self.fn_source)
-        self.assertIn('rd12_qualification["subject_log_artifact"]', self.fn_source)
-        self.assertIn('rd12_qualification["control_log_artifact"]', self.fn_source)
-        # positive must be the subject (marker-present) arm and negative
-        # the control (marker-absent) arm -- swapped arms would silently
-        # invert the check's meaning.
-        self.assertLess(
-            self.fn_source.index('rd12_qualification["subject_log_artifact"]'),
-            self.fn_source.index('"negative"'),
-        )
-        self.assertGreater(
-            self.fn_source.index('rd12_qualification["control_log_artifact"]'),
-            self.fn_source.index('"negative"'),
-        )
-
-    def test_contract_correctness_gate_threads_rd12_results(self) -> None:
-        # Real bug caught on first real-hardware run (2026-09-13): RD12's
-        # bit_identical PASS never reached compute_contract_correctness_
-        # gate(), so the record reported "contract correctness gate:
-        # blocked" despite genuinely passing evidence.
-        self.assertIn(
-            "contract_correctness_gate = compute_contract_correctness_gate(\n"
-            "            full_contract, rd12_qualification[\"results\"],\n"
-            "        )",
-            self.fn_source,
-        )
-
-    def test_validation_build_identities_thread_rd12_qualification(self) -> None:
-        # RD12's producer materializes and builds its OWN isolated
-        # control/subject worktrees -- record ITS identities (the RD58
-        # pattern), never the generic campaign's.
-        self.assertIn(
-            'validation_build_identities=rd12_qualification["validation_build_identities"],',
-            self.fn_source,
-        )
-
-    def test_validation_context_runs_model_free(self) -> None:
-        self.assertIn("model=None,", self.fn_source)
-
-    # -- CLI prerequisite (main) ------------------------------------------
-
-    def test_flag_exists_in_main(self) -> None:
-        self.assertIn('"--run-rd12-contract"', self.main_source)
-
-    def test_cli_prerequisite_is_model_free_for_rd12(self) -> None:
-        # GPT review (req_243e3fcd3d684077): the documented
-        # --run-rd12-contract command cannot execute unless the CLI
-        # prerequisite stops demanding --model/--manifest for RD12 --
-        # the producer consumes neither (its workload is the registered
-        # 1258 test-backend-ops case). RD12 keeps its own precise
-        # requirement (one contract architecture).
-        main_source = self.main_source
-        rd12_gate = main_source.index("if args.run_rd12_contract:")
-        elif_pos = main_source.index("elif (", rd12_gate)
-        prerequisite_block = main_source[rd12_gate:elif_pos]
-        self.assertIn(
-            'parser.error("--run-rd12-contract requires --amdgpu-targets")',
-            prerequisite_block,
-        )
-        self.assertNotIn("args.model", prerequisite_block)
-        self.assertNotIn("args.manifest", prerequisite_block)
-        # The generic model/manifest requirement must remain for the other
-        # modes, and must sit in the RD12 branch's else, not before it.
-        generic = main_source.index(
-            "runtime qualification requires --model, --manifest, and --amdgpu-targets"
-        )
-        self.assertGreater(generic, elif_pos)
-
-    def test_run_performance_benchmark_exclusion_includes_rd12(self) -> None:
-        self.assertIn(
-            '"run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", '
-            '"run_rd04_contract",',
-            self.main_source,
-        )
-
-    # -- producer-level invariants (run_rd12_correctness_check) ------------
-
-    def test_run_rd12_correctness_check_exposes_validation_build_identities(self) -> None:
-        source = inspect.getsource(vc.run_rd12_correctness_check)
-        self.assertIn('"validation_build_identities": {', source)
-        self.assertIn('"control": artifact_doc["control_build_identity"]', source)
-        self.assertIn('"subject": artifact_doc["subject_build_identity"]', source)
-
-    def test_run_rd12_correctness_check_writes_per_arm_activation_logs(self) -> None:
-        # The declared trace-marker check can only be satisfied from REAL
-        # subprocess output: the producer must write one raw per-arm log
-        # into the run dir and expose bound {path, sha256} refs for the
-        # CLI to consume (RD08/RD73 precedent). Namespaced by architecture
-        # under logs/ (GPT review req_243e3fcd3d684077): the standalone
-        # lab driver shares one run_dir across all three contract
-        # architectures, so an un-namespaced pair would be overwritten by
-        # each later architecture.
-        source = inspect.getsource(vc.run_rd12_correctness_check)
-        self.assertIn('run_dir / "logs"', source)
-        self.assertIn(
-            'log_dir / f"activation-rd12-{architecture}-subject.log"', source,
-        )
-        self.assertIn(
-            'log_dir / f"activation-rd12-{architecture}-control.log"', source,
-        )
-        self.assertNotIn('"activation-rd12-subject.log"', source)
-        self.assertNotIn('"activation-rd12-control.log"', source)
-        self.assertIn('"subject_log_artifact": subject_log_ref', source)
-        self.assertIn('"control_log_artifact": control_log_ref', source)
-        # Raw streams must be captured per invocation, not summarized away
-        # (the old code discarded stdout/stderr entirely).
-        self.assertIn('"stdout": stdout, "stderr": stderr', source)
-        # The producer's own hit observation must search the same
-        # stream space the validator does (both streams).
-        self.assertIn(
-            '"hit": trace_marker in stdout or trace_marker in stderr', source,
+            "compute_persisted_validation_eligible(\n"
+            "                descriptor,\n"
+            "                execution.verdict,\n"
+            "                {},",
+            core_src,
         )
 
 
-class Rd12ContractBehavioralTests(unittest.TestCase):
-    """Behavioral proof for MUST 4: drive run() with the documented
-    model/manifest-free invocation and prove the full pipeline reaches a
-    written record WITHOUT ever constructing e2e_smoke_campaign.Campaign
-    (the old code crashed the documented command with Path(None) in
-    Campaign.__post_init__)."""
+# --------------------------------------------------------------- binders
 
-    def _expected_identity_digest(self) -> str:
-        return hashlib.sha256(
-            json.dumps(
-                {
-                    "schema": "rd12-contract-campaign-identity-v1",
-                    "patch_identity": {"name": PATCH_ID, "digest": PATCH_DIGEST},
-                    "patched_source_tree": SUBJECT_TREE,
-                    "gpu_architecture": ARCH,
-                    "campaign_build_identities": {
-                        "tune": _build_identity(0),
-                        "replay": _build_identity(1),
-                        "stock": _build_identity(2),
-                    },
-                    "base_revision": BASE_REVISION,
-                },
-                sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-            ).encode("utf-8")
-        ).hexdigest()
 
-    def test_documented_model_free_invocation_writes_record_without_campaign(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_root = Path(tmp)
-            patches_root = tmp_root / "patches"
-            patches_root.mkdir()
-            # Real file: make_record() and patch_validation_subject_digest()
-            # hash the actual subject bytes.
-            (patches_root / "patch.py").write_text(
-                'STATE = "untested"\nPATCHES = []\n', encoding="utf-8",
-            )
-            registry_stub = SimpleNamespace(root=patches_root, get=lambda _: _descriptor())
-            # Real 1205 adapter (6 checks) -- only evaluate_check itself is
-            # stubbed, so compute_verdict() runs for real.
-            checks = patch_validation.parse_validation_toml(
-                ROOT / "patches" / PATCH_ID / "validation.toml", patch_id=PATCH_ID,
-            )
-            plan = SimpleNamespace(
-                patch_id=PATCH_ID,
-                checks=checks,
-                universal_capabilities=(),
-                contracts=(),
-                contract=None,
-                required_capabilities=tuple({spec.capability for spec in checks}),
-                contract_requirements=(),
-            )
-            evidence_by_build = {
-                "tune": _build_evidence(0),
-                "replay": _build_evidence(1),
-                "stock": _build_evidence(2),
-                "control": _build_evidence(3),
-                "validation-subject": _build_evidence(4),
-            }
+def _binding_context(run_dir: Path) -> vc.ProducerEvidenceBindingContext:
+    return vc.ProducerEvidenceBindingContext(
+        run_dir=run_dir,
+        patch_id=PATCH_ID,
+        patch_path=(TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation.toml"),
+        base_revision="a" * 40,
+        patched_source_tree="tree:subject",
+        campaign_identity_digest="c" * 64,
+        gpu_architectures=("gfx1100",),
+    )
 
-            def fake_capture(build_dir, *args, **kwargs):
-                return evidence_by_build[Path(build_dir).name]
 
-            def fake_materialize(**kwargs):
-                return Path(kwargs["worktree_root"])
-
-            def fake_tree(source_dir):
-                # Names as the fakes above produce them: materialize_*
-                # return their own worktree_root arg (.../control,
-                # .../subject); the stock stub ends in src-stock.
-                return {
-                    "control": CONTROL_TREE,
-                    "subject": SUBJECT_TREE,
-                    "src-stock": STOCK_TREE,
-                }[Path(source_dir).name]
-
-            def fake_evaluate(spec, ctx):
-                # apply/build/activation/correctness pass; performance and
-                # controls stay honestly BLOCKED (no real benchmark
-                # evidence on this path) -- the adapter verdict is
-                # therefore ineligible by design.
-                status = "blocked" if spec.check_id in {"performance", "controls"} else "pass"
-                return patch_validation.ValidationResult(
-                    check_id=spec.check_id, capability=spec.capability,
-                    status=status, summary="stub",
-                )
-
-            # Started as a list (not one giant `with (...)` chain) -- the
-            # compiler rejects a statically-nested with this deep.
-            load_registry = mock.patch(
-                "bigcherry.patch.registry.load_registry", return_value=registry_stub,
-            ).start()
-            load_cfg = mock.patch(
-                "bigcherry.core.config.load",
-                return_value=SimpleNamespace(pinned="b10705"),
-            ).start()
-            require_pkg = mock.patch(
-                "bigcherry.patch.validation_policy.require_execution_package",
-                return_value=plan,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.resolve_source_composition",
-                return_value=(BASE_REVISION, (PATCH_ID,)),
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.materialize_composition",
-                side_effect=fake_materialize,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.verify_composition_idempotent",
-                return_value=True,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.materialize_stock_source",
-                return_value=tmp_root / "worktree" / "src-stock",
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.git_worktree_tree", side_effect=fake_tree,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.composition_digest",
-                return_value=COMPOSITION_DIGEST,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.source.patch_implementation_digest",
-                return_value=PATCH_DIGEST,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.validation.evaluate_check", side_effect=fake_evaluate,
-            ).start()
-            mock.patch(
-                "bigcherry.patch.validation.load_contract_for_descriptor",
-                return_value=None,
-            ).start()
-            write_record = mock.patch(
-                "bigcherry.patch.evidence.write_record",
-                return_value=tmp_root / "evidence" / f"{PATCH_ID}.json",
-            ).start()
-            # THE tripwire: if anything on this path constructs the
-            # generic Campaign (with model=None/manifest=None) the
-            # documented command is broken again.
-            campaign_cls = mock.patch(
-                "bigcherry.e2e_smoke_campaign.Campaign",
-                side_effect=AssertionError(
-                    "Campaign must not be constructed for --run-rd12-contract"
-                ),
-            ).start()
-            mock.patch.object(vc, "generate_registry").start()
-            mock.patch.object(vc, "build_tree", return_value=tmp_root / "bin").start()
-            mock.patch.object(
-                vc, "_full_requested_cmake_args", return_value=[],
-            ).start()
-            mock.patch.object(
-                vc, "ensure_stock_baseline", return_value=tmp_root / "bin",
-            ).start()
-            mock.patch.object(
-                vc, "capture_completed_build_evidence", side_effect=fake_capture,
-            ).start()
-            mock.patch.object(
-                vc, "assert_validation_subject_parity", return_value=None,
-            ).start()
-            mock.patch.object(
-                vc, "run_rd12_correctness_check", return_value=_rd12_qualification(),
-            ).start()
-            try:
-                exit_code = vc.run(_args(tmp_root))
-            finally:
-                mock.patch.stopall()
-
-        self.assertEqual(exit_code, 0)
-        load_registry.assert_called_once()
-        load_cfg.assert_called_once()
-        require_pkg.assert_called_once()
-        # MUST 4's whole point: the generic Campaign was never constructed.
-        campaign_cls.assert_not_called()
-        write_record.assert_called_once()
-        record = write_record.call_args[0][0]
-
-        expected_digest = self._expected_identity_digest()
-        self.assertRegex(record["campaign_identity_digest"], r"^[0-9a-f]{64}$")
-        # Determinism: the digest must be exactly the canonical-JSON sha256
-        # over the shared-build facts -- re-derivable from the record.
-        self.assertEqual(record["campaign_identity_digest"], expected_digest)
-        self.assertEqual(
-            record["correctness"]["campaign_identity_digest"], expected_digest,
+def _trace_plan(marker_specs: int = 1):
+    specs = tuple(
+        SimpleNamespace(
+            capability="activation",
+            validator="trace-marker",
+            check_id=f"activation-{i}",
+            config={"marker-regex": TRACE_MARKER},
         )
-        # The record carries the five real shared builds: exactly the
-        # {tune,replay,stock} campaign domain...
-        self.assertEqual(
-            {role: ident["effective_build_id"]
-             for role, ident in record["campaign_build_identities"].items()},
+        for i in range(marker_specs)
+    )
+    return SimpleNamespace(checks=specs)
+
+
+class ProducerEvidenceBinderTests(unittest.TestCase):
+    def test_bind_correctness_writes_the_root_document(self) -> None:
+        run_dir = Path(tempfile.mkdtemp())
+        binding = _binding_context(run_dir)
+        document, bound = vc._bind_producer_correctness(
             {
-                "tune": _build_identity(0)["effective_build_id"],
-                "replay": _build_identity(1)["effective_build_id"],
-                "stock": _build_identity(2)["effective_build_id"],
+                "disposition": "passed",
+                "mechanism": "rd12-paired-mmvq-bit-identical",
+                "detail": "all rows bit identical",
+            },
+            binding=binding,
+        )
+        self.assertEqual(document["disposition"], "passed")
+        self.assertEqual(document["patch_id"], PATCH_ID)
+        self.assertEqual(document["campaign_identity_digest"], "c" * 64)
+        self.assertEqual(document["patched_source_tree"], "tree:subject")
+        self.assertEqual(document["base_revision"], "a" * 40)
+
+        path = run_dir / "correctness.json"
+        self.assertTrue(path.is_file())
+        on_disk = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk, document)
+        self.assertEqual(set(bound), {"artifact"})
+        artifact = bound["artifact"]
+        self.assertIsInstance(artifact, Mapping)
+        self.assertEqual(artifact["path"], "correctness.json")
+        self.assertEqual(
+            artifact["sha256"],
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+
+    def test_bind_correctness_rejects_identity_smuggling(self) -> None:
+        run_dir = Path(tempfile.mkdtemp())
+        binding = _binding_context(run_dir)
+        semantic = {
+            "disposition": "passed",
+            "mechanism": "m",
+            "detail": "d",
+            "campaign_identity_digest": "h" * 64,
+        }
+        with self.assertRaisesRegex(
+            vc.PatchCampaignError, "exactly " + r"{'disposition','mechanism','detail'}"
+        ):
+            vc._bind_producer_correctness(semantic, binding=binding)
+        self.assertFalse((run_dir / "correctness.json").exists())
+
+    def test_bind_correctness_rejects_bad_disposition(self) -> None:
+        run_dir = Path(tempfile.mkdtemp())
+        binding = _binding_context(run_dir)
+        semantic = {
+            "disposition": "maybe",
+            "mechanism": "m",
+            "detail": "d",
+        }
+        with self.assertRaisesRegex(vc.PatchCampaignError, "disposition"):
+            vc._bind_producer_correctness(semantic, binding=binding)
+
+    def test_bind_correctness_none_passes_through(self) -> None:
+        run_dir = Path(tempfile.mkdtemp())
+        document, bound = vc._bind_producer_correctness(
+            None,
+            binding=_binding_context(run_dir),
+        )
+        self.assertIsNone(document)
+        self.assertEqual(bound, {})
+        self.assertFalse((run_dir / "correctness.json").exists())
+
+    def test_bind_trace_injects_the_plan_owned_marker_regex(self) -> None:
+        bound = vc._bind_producer_trace_evidence(
+            {
+                "positive": {"artifact": {"path": "artifacts/p.log", "sha256": "1"}},
+                "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+            },
+            validation_plan=_trace_plan(),
+            declared_artifacts=frozenset({"p.log", "n.log"}),
+            emitted_artifacts=frozenset({"p.log", "n.log"}),
+        )
+        self.assertEqual(set(bound), {"positive", "negative"})
+        for role in ("positive", "negative"):
+            observation = bound[role]
+            self.assertIsInstance(observation, Mapping)
+            self.assertEqual(observation["marker_regex"], TRACE_MARKER)
+            self.assertIn("artifact", observation)
+
+    def test_bind_trace_rejects_a_producer_owned_marker_regex(self) -> None:
+        with self.assertRaisesRegex(vc.PatchCampaignError, "exactly 'artifact'"):
+            vc._bind_producer_trace_evidence(
+                {
+                    "positive": {
+                        "artifact": {"path": "a", "sha256": "1"},
+                        "marker_regex": ".*",
+                    },
+                    "negative": {"artifact": {"path": "b", "sha256": "2"}},
+                },
+                validation_plan=_trace_plan(),
+                declared_artifacts=frozenset(),
+                emitted_artifacts=frozenset(),
+            )
+
+    def _assert_one_trace_marker_required(self, marker_specs: int) -> None:
+        trace = {
+            "positive": {"artifact": {"path": "a", "sha256": "1"}},
+            "negative": {"artifact": {"path": "b", "sha256": "2"}},
+        }
+        with self.assertRaisesRegex(vc.PatchCampaignError, "exactly one trace-marker"):
+            vc._bind_producer_trace_evidence(
+                trace,
+                validation_plan=_trace_plan(marker_specs),
+                declared_artifacts=frozenset(),
+                emitted_artifacts=frozenset(),
+            )
+
+    def test_bind_trace_zero_declared_checks_rejected(self) -> None:
+        self._assert_one_trace_marker_required(0)
+
+    def test_bind_trace_two_declared_checks_rejected(self) -> None:
+        self._assert_one_trace_marker_required(2)
+
+    def test_bind_result_evidence_orchestrates_run_path(self) -> None:
+        from bigcherry.patch import activation as patch_activation
+
+        run_dir = Path(tempfile.mkdtemp())
+        binding = _binding_context(run_dir)
+        plan = _trace_plan()
+        ctx = vc.ValidationContext(
+            descriptor=object(),  # noqa: B018
+            base_revision="a" * 40,
+            control_source=None,
+            subject_source=None,
+        )
+        result = vp.ProducerResult(
+            correctness={
+                "disposition": "passed",
+                "mechanism": "m",
+                "detail": "d",
+            },
+            validation_build_identities={
+                "control": {"build_id": "c"},
+                "subject": {"build_id": "s"},
+            },
+            activation_evidence=patch_activation.ActivationEvidence(
+                status="executed",
+                mechanism="rd12-trigger-marker",
+                detail="ok",
+            ),
+            performance_evidence={},
+            trace_evidence={
+                "positive": {"artifact": {"path": "artifacts/p.log", "sha256": "1"}},
+                "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+            },
+            check_results=(),
+            lane_effects=(),
+            emitted_artifacts=frozenset({"p.log", "n.log"}),
+        )
+        bound = vc._bind_producer_result_evidence(
+            result,
+            validation_plan=plan,
+            validation_context=ctx,
+            binding=binding,
+            declared_artifacts=frozenset({"p.log", "n.log"}),
+        )
+        # Trace evidence is the PLAN-BOUND form (marker_regex injected).
+        trace = bound.validation_context.trace_evidence
+        self.assertIsInstance(trace, Mapping)
+        positive = trace["positive"]
+        self.assertIsInstance(positive, Mapping)
+        self.assertEqual(positive["marker_regex"], TRACE_MARKER)
+        # Correctness evidence is the bound root artifact.
+        correctness_ev = bound.validation_context.correctness_evidence
+        self.assertIsInstance(correctness_ev, Mapping)
+        artifact = correctness_ev["artifact"]
+        self.assertIsInstance(artifact, Mapping)
+        self.assertEqual(artifact["path"], "correctness.json")
+        # Root artifacts are written under run_dir.
+        self.assertTrue((run_dir / "correctness.json").is_file())
+        activation_doc = json.loads(
+            (run_dir / "activation.json").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(activation_doc["campaign_identity_digest"], "c" * 64)
+        # Disposition is computed once, by the shared verdict helper.
+        self.assertEqual(bound.activation_disposition, activation_doc["verdict"])
+        self.assertEqual(activation_doc["activation"]["status"], "executed")
+        self.assertIsNotNone(bound.correctness)
+
+    def test_bind_result_evidence_skip_path_passes_through(self) -> None:
+        ctx = vc.ValidationContext(
+            descriptor=object(),  # noqa: B018
+            base_revision="a" * 40,
+            control_source=None,
+            subject_source=None,
+        )
+        result = vp.ProducerResult(
+            correctness=None,
+            validation_build_identities={
+                "control": {"build_id": "c"},
+                "subject": {"build_id": "s"},
+            },
+            activation_evidence=None,
+            performance_evidence=None,
+            trace_evidence=None,
+            check_results=(),
+            lane_effects=(),
+            emitted_artifacts=frozenset(),
+        )
+        bound = vc._bind_producer_result_evidence(
+            result,
+            validation_plan=_trace_plan(),
+            validation_context=ctx,
+            binding=None,
+            declared_artifacts=frozenset(),
+        )
+        self.assertIsNone(bound.correctness)
+        self.assertIsNone(bound.activation_disposition)
+        self.assertEqual(bound.validation_context.trace_evidence, {})
+
+    # ---- req_f5ba56f4088e4742 finding #1: manifest-ownership gate ------
+
+    def test_bind_trace_rejects_undeclared_artifact_even_if_on_disk(self) -> None:
+        # The exact bypass GPT named: a file that EXISTS under run_dir,
+        # has the correct SHA, and is contained by run_dir -- but is NOT in
+        # the producer manifest AND not claimed in emitted_artifacts --
+        # must be rejected before any validator can see it.
+        run_dir = Path(tempfile.mkdtemp())
+        sneaky = run_dir / "artifacts" / "sneaky.log"
+        sneaky.parent.mkdir(parents=True)
+        sneaky.write_text("hit", encoding="utf-8")
+        sha = hashlib.sha256(b"hit").hexdigest()
+        with self.assertRaisesRegex(
+                vc.PatchCampaignError, "not declared in the producer manifest"):
+            vc._bind_producer_trace_evidence(
+                {
+                    "positive": {
+                        "artifact": {"path": "artifacts/sneaky.log", "sha256": sha},
+                    },
+                    "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+                },
+                validation_plan=_trace_plan(),
+                declared_artifacts=frozenset({"n.log"}),
+                emitted_artifacts=frozenset(),
+            )
+
+    def test_bind_trace_rejects_declared_but_not_emitted_artifact(self) -> None:
+        # In the manifest but NOT claimed in this run's emitted_artifacts:
+        # a producer may only bind what it actually wrote this run.
+        with self.assertRaisesRegex(
+                vc.PatchCampaignError, "not claimed in result.emitted_artifacts"):
+            vc._bind_producer_trace_evidence(
+                {
+                    "positive": {"artifact": {"path": "artifacts/p.log", "sha256": "1"}},
+                    "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+                },
+                validation_plan=_trace_plan(),
+                declared_artifacts=frozenset({"p.log", "n.log"}),
+                emitted_artifacts=frozenset({"n.log"}),
+            )
+
+    def test_bind_trace_rejects_wrong_path_shape(self) -> None:
+        # Not artifacts/<basename>: bare basename, nested, or a run-dir
+        # escape must all fail before the filesystem is consulted.
+        for bad in ("p.log", "artifacts/sub/p.log", "../outside.log"):
+            with self.subTest(path=bad):
+                with self.assertRaisesRegex(
+                        vc.PatchCampaignError, "artifacts/<basename>"):
+                    vc._bind_producer_trace_evidence(
+                        {
+                            "positive": {"artifact": {"path": bad, "sha256": "1"}},
+                            "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+                        },
+                        validation_plan=_trace_plan(),
+                        declared_artifacts=frozenset({"n.log"}),
+                        emitted_artifacts=frozenset({"n.log"}),
+                    )
+
+    def test_bind_result_rejects_undeclared_performance_artifact(self) -> None:
+        # The same gate covers the generic performance_evidence["artifact"]
+        # channel, not just trace evidence.
+        ctx = vc.ValidationContext(
+            descriptor=object(),  # noqa: B018
+            base_revision="a" * 40,
+            control_source=None,
+            subject_source=None,
+        )
+        result = vp.ProducerResult(
+            correctness=None,
+            validation_build_identities={
+                "control": {"build_id": "c"},
+                "subject": {"build_id": "s"},
+            },
+            activation_evidence=None,
+            performance_evidence={
+                "artifact": {"path": "artifacts/sneaky.json", "sha256": "1"},
+            },
+            trace_evidence=None,
+            check_results=(),
+            lane_effects=(),
+            emitted_artifacts=frozenset(),
+        )
+        with self.assertRaisesRegex(
+                vc.PatchCampaignError, "not declared in the producer manifest"):
+            vc._bind_producer_result_evidence(
+                result,
+                validation_plan=_trace_plan(),
+                validation_context=ctx,
+                binding=None,
+                declared_artifacts=frozenset(),
+            )
+
+
+# ------------------------------------------------------ dispatcher (end-to-end)
+
+
+class _FakeBuildEvidence:
+    def __init__(self, role: str) -> None:
+        self.role = role
+
+    @property
+    def effective_build_id(self) -> str:
+        return f"{self.role}-build-id"
+
+    @property
+    def effective_configure(self) -> dict[str, str]:
+        return {"CMAKE_BUILD_TYPE": "Release", "GGML_HIP": "ON"}
+
+    @property
+    def verification(self) -> SimpleNamespace:
+        return SimpleNamespace(to_dict=lambda: {"verified": True, "role": self.role})
+
+    @property
+    def runtime_artifacts(self) -> dict[str, object]:
+        # Values must be 64-hex digests (evidence._validate_build_identity).
+        digest = hashlib.sha256(self.role.encode("utf-8")).hexdigest()
+        return {"main": digest}
+
+    def campaign_identity(self) -> dict[str, object]:
+        # The exact field set model_free_campaign_identity_digest()
+        # validates (evidence._validate_build_identity).
+        return {
+            "effective_build_id": self.effective_build_id,
+            "compile_verification_id": f"{self.role}-verify-id",
+            "compile_commands_digest": f"{self.role}-cc-digest",
+            "hip_compile_commands_digest": f"{self.role}-hip-cc-digest",
+            "runtime_bundle_hash": f"{self.role}-bundle-hash",
+            "runtime_artifacts": dict(sorted(self.runtime_artifacts.items())),
+        }
+
+
+class _FakeScaffold:
+    def __init__(self, base_dir: Path) -> None:
+        self.base_revision = "b" * 40
+        self.control_composition = ((PATCH_ID, "c1"),)
+        self.subject_composition = ((PATCH_ID, "c1"), (PATCH_ID, "c2"))
+        self.control_source = base_dir / "trees" / "control"
+        self.subject_source = base_dir / "trees" / "subject"
+        self.stock_source = base_dir / "trees" / "stock"
+        # The apply/build validators check the REAL directories exist.
+        for source in (self.control_source, self.subject_source, self.stock_source):
+            source.mkdir(parents=True, exist_ok=True)
+        self.control_idempotent = True
+        self.subject_idempotent = True
+        self.tune_build_evidence = _FakeBuildEvidence("tune")
+        self.replay_build_evidence = _FakeBuildEvidence("replay")
+        self.stock_build_evidence = _FakeBuildEvidence("stock")
+        self.control_build_evidence = _FakeBuildEvidence("control")
+        self.validation_subject_build_evidence = _FakeBuildEvidence(
+            "validation-subject",
+        )
+
+    @property
+    def campaign_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            role: getattr(self, f"{role}_build_evidence").campaign_identity()
+            for role in ("tune", "replay", "stock")
+        }
+
+    @property
+    def scaffold_validation_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "control": self.control_build_evidence.campaign_identity(),
+            "subject": self.validation_subject_build_evidence.campaign_identity(),
+        }
+
+
+class _FakeDispatcherRuntime:
+    """Stand-in for vc.CampaignProducerRuntime: one fake pair, real
+    artifact files under run_dir, one device per run architecture."""
+
+    def __init__(
+        self,
+        *,
+        repo_root,
+        patch_id,
+        base_revision,
+        workdir,
+        hip_path,
+        fat_targets,
+        run_dir,
+    ) -> None:
+        self.run_dir = run_dir
+        self.fat_targets = fat_targets
+        self.pair = vp.ProducerBuildPair(
+            base_revision=base_revision,
+            control_source=workdir / "pair-trees" / "control",
+            subject_source=workdir / "pair-trees" / "subject",
+            control_composition=(
+                ("1222_hi67_deterministic_test_backend_ops_seed", "p1"),
+            ),
+            subject_composition=(
+                ("1222_hi67_deterministic_test_backend_ops_seed", "p1"),
+                (PATCH_ID, "p2"),
+            ),
+            control_bin=workdir / "pair" / "CONTROL-BIN" / "test-backend-ops",
+            subject_bin=workdir / "pair" / "SUBJECT-BIN" / "test-backend-ops",
+            validation_build_identities={
+                "control": {"build_id": "pair-control-build"},
+                "subject": {"build_id": "pair-subject-build"},
             },
         )
-        # ...and the producer's own validation-domain control/subject
-        # identities (never the generic campaign's).
-        self.assertEqual(record["validation_build_identities"], {
-            "control": _build_identity(3),
-            "subject": _build_identity(4),
-        })
-        # Correctness/activation reflect the real (canned) producer result.
-        self.assertEqual(record["correctness"]["disposition"], "passed")
-        self.assertEqual(record["correctness"]["mechanism"], "rd12-paired-mmvq-bit-identical")
-        self.assertEqual(record["activation"]["status"], "executed")
-        # Real adapter verdict (compute_verdict ran for real on the 1205
-        # plan): performance/controls are honestly BLOCKED, so the record
-        # is NOT eligible -- never a fabricated PASS.
-        self.assertEqual(record["check_results"]["performance"]["status"], "blocked")
-        self.assertEqual(record["check_results"]["controls"]["status"], "blocked")
-        self.assertEqual(record["check_results"]["activation"]["status"], "pass")
-        self.assertIs(record["final_eligibility"], False)
-        self.assertEqual(record["validation_disposition"], "incomplete")
-        # RD12 is a correctness-evidence producer only: no contracts, no
-        # promotions.
-        self.assertEqual(record["contracts"], [])
-        self.assertEqual(record["contract_verdicts"], {})
+
+    def build_pair(
+        self,
+        *,
+        targets,
+        primary_target,
+        common_extra_patches=(),
+        baseline_source="bigcherry",
+        control_extra_cmake_args=(),
+        subject_extra_cmake_args=(),
+    ):
+        return self.pair
+
+    def device_contexts(self, *, device_map):
+        from bigcherry.experiment.attestation import ExecutionIdentity
+
+        architecture = self.fat_targets.targets[0]
+        return (
+            vp.ProducerDeviceContext(
+                architecture=architecture,
+                device_index=0,
+                execution_identity=ExecutionIdentity(
+                    backend="ROCm",
+                    architectures=(architecture,),
+                ),
+                env_overrides={"HIP_VISIBLE_DEVICES": "0"},
+                env_unset=("ROCR_VISIBLE_DEVICES",),
+            ),
+        )
+
+    def write_artifact(self, *, name, payload):
+        return self._write(name, json.dumps(payload, indent=2))
+
+    def write_text_artifact(self, *, name, text):
+        return self._write(name, text)
+
+    def _write(self, name: str, text: str) -> ArtifactRef:
+        path = self.run_dir / "artifacts" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+        return ArtifactRef(
+            name=name,
+            path=path.relative_to(self.run_dir).as_posix(),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+
+
+def _fake_tree(path: Path) -> str:
+    """Real psi.git_worktree_tree() returns a git tree hash (hex); the
+    campaign identity validator requires 40/64 hex for the source trees."""
+    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
+
+
+def _fake_collect_pass():
+    def collect_native_seed_evidence(
+        binary,
+        *,
+        op_filter=None,
+        target_tensor=None,
+        digest_tensor=None,
+        seed=None,
+        runner=None,
+        **kwargs,
+    ):
+        assert seed is not None
+        assert runner is not None
+        runner(
+            [str(binary)],
+            capture_output=True,
+            text=True,
+            env={"BIGCHERRY_TEST_DETERMINISTIC_SEED": str(seed)},
+        )
+        return SimpleNamespace(
+            seed=seed,
+            reference_digest=f"input-{seed}",
+            e_n_nmse=1e-6,
+            max_abs_native=0.25,
+            threshold_t=1e-3,
+            native_execution_status="ok",
+            native_output_digest=f"gpu-{target_tensor}-{seed}",
+            reference_output_digest=f"cpu-{target_tensor}-{seed}",
+            output_nels=1024,
+        )
+
+    return collect_native_seed_evidence
+
+
+def _fake_collect_subject_mismatch():
+    def collect_native_seed_evidence(
+        binary,
+        *,
+        op_filter=None,
+        target_tensor=None,
+        digest_tensor=None,
+        seed=None,
+        runner=None,
+        **kwargs,
+    ):
+        assert seed is not None
+        assert runner is not None
+        runner(
+            [str(binary)],
+            capture_output=True,
+            text=True,
+            env={"BIGCHERRY_TEST_DETERMINISTIC_SEED": str(seed)},
+        )
+        native = f"gpu-{target_tensor}-{seed}"
+        if "SUBJECT-BIN" in str(binary) and target_tensor == "rd12_k_out" and seed == 1:
+            native += "-mismatch"
+        return SimpleNamespace(
+            seed=seed,
+            reference_digest=f"input-{seed}",
+            e_n_nmse=1e-6,
+            max_abs_native=0.25,
+            threshold_t=1e-3,
+            native_execution_status="ok",
+            native_output_digest=native,
+            reference_output_digest=f"cpu-{target_tensor}-{seed}",
+            output_nels=1024,
+        )
+
+    return collect_native_seed_evidence
+
+
+def _fake_subprocess_pass():
+    def run(argv, **kwargs):
+        executable = str(argv[0])
+        emit = "SUBJECT-BIN" in executable
+        return SimpleNamespace(
+            returncode=0,
+            stdout="",
+            stderr=(TRACE_MARKER + "\n" if emit else ""),
+        )
+
+    return run
+
+
+class _Recorder:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, **kwargs) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {"record": f"sentinel-{len(self.calls) - 1}"}
+
+
+def _args(tmp: Path, **overrides) -> argparse.Namespace:
+    base = {
+        "patch": PATCH_ID,
+        "model": None,
+        "hip_path": Path("/opt/rocm"),
+        "amdgpu_targets": "gfx1100",
+        "device_map": ["gfx1100=0"],
+        "workdir": tmp / "workdir",
+        "worktree_root": tmp / "worktrees",
+        "build_root": tmp / "build",
+        "correctness_evidence": None,
+        "run_performance_benchmark": False,
+        "producer_corpus": None,
+        "baseline_source": "bigcherry",
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _dispatch(
+    tmp: Path,
+    *,
+    collect=None,
+    selection=None,
+    args_overrides: dict[str, object] | None = None,
+    recorders: dict[str, _Recorder] | None = None,
+):
+    """Run vc._run_validation_producer() against the REAL 1205 patch with
+    every expensive boundary faked. Returns a namespace of everything the
+    tests assert on."""
+    collect = collect or _fake_collect_pass()
+    fake_run = _fake_subprocess_pass()
+    recorders = recorders or {}
+    scaffold_recorder = recorders.setdefault("scaffold", _Recorder())
+    make_record_recorder = recorders.setdefault("make_record", _Recorder())
+    write_record_recorder = recorders.setdefault("write_record", _Recorder())
+
+    scaffold = _FakeScaffold(tmp / "scaffold")
+    env_backup = {key: os.environ.get(key) for key in ("ROCM_PATH", "HIP_PATH", "PATH")}
+
+    def fake_scaffold(**kwargs) -> _FakeScaffold:
+        scaffold_recorder.calls.append(kwargs)
+        return scaffold
+
+    def fake_write_record(record) -> Path:
+        write_record_recorder.calls.append({"record": record})
+        path = tmp / "records" / f"record-{len(write_record_recorder.calls) - 1}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"persisted": True}), encoding="utf-8")
+        return path
+
+    patches = [
+        mock.patch.object(vc, "_build_standard_campaign_scaffold", fake_scaffold),
+        mock.patch.object(vc, "CampaignProducerRuntime", _FakeDispatcherRuntime),
+        mock.patch.object(psi, "git_worktree_tree", _fake_tree),
+        mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
+        mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
+        mock.patch.object(
+            correctness_evidence, "collect_native_seed_evidence", collect
+        ),
+        mock.patch("subprocess.run", fake_run),
+        mock.patch.object(patch_evidence, "make_record", make_record_recorder),
+        mock.patch.object(patch_evidence, "write_record", fake_write_record),
+    ]
+    if selection is not None:
+        patches.append(
+            mock.patch.object(vc, "resolve_producer", lambda **kw: selection)
+        )
+    for patcher in patches:
+        patcher.start()
+    try:
+        exit_code = vc._run_validation_producer(
+            _args(tmp, **(args_overrides or {})),
+            producer_id="rd12",
+            provided_inputs={},
+        )
+    finally:
+        for key, value in env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        for patcher in patches:
+            patcher.stop()
+
+    run_dir = tmp / "workdir" / "campaign"
+    outcome_path = run_dir / "producer-execution.json"
+    outcome = (
+        json.loads(outcome_path.read_text(encoding="utf-8"))
+        if outcome_path.is_file()
+        else None
+    )
+    return SimpleNamespace(
+        exit_code=exit_code,
+        scaffold=scaffold,
+        scaffold_calls=scaffold_recorder.calls,
+        make_record_calls=make_record_recorder.calls,
+        write_record_calls=write_record_recorder.calls,
+        run_dir=run_dir,
+        outcome=outcome,
+    )
+
+
+class RD12GenericDispatcherTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = Path(tempfile.mkdtemp())
+
+    def tearDown(self) -> None:
+        import shutil
+
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_run_path_exit_zero_and_record_persisted(self) -> None:
+        result = _dispatch(self._tmp)
+
+        # Exit 0 iff execution + binding + persistence completed --
+        # eligibility is evidence, not process success.
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(len(result.make_record_calls), 1)
+        self.assertEqual(len(result.write_record_calls), 1)
+        self.assertEqual(len(result.scaffold_calls), 1)
+        scaffold_args = result.scaffold_calls[0]
+        self.assertEqual(scaffold_args["patch_id"], PATCH_ID)
+        self.assertEqual(scaffold_args["baseline_source"], "bigcherry")
+        self.assertEqual(scaffold_args["amdgpu_targets"], "gfx1100")
+
+        self.assertIsNotNone(result.outcome)
+        assert result.outcome is not None
+        # apply/build/activation/correctness PASS; performance/controls
+        # stay BLOCKED (the producer declares both benchmark CLIs
+        # forbidden) -- so the verdict is ineligible but the run succeeds.
+        self.assertFalse(result.outcome["eligible"])
+        # The tracked record WAS persisted (exit 0 requires it).
+        self.assertIsInstance(result.outcome["evidence_record"], str)
+        check_results = result.outcome["check_results"]
+        # Scaffold-backed and producer-backed checks PASS.
+        self.assertEqual(check_results["apply"]["status"], "pass")
+        self.assertEqual(check_results["build"]["status"], "pass")
+        self.assertEqual(check_results["activation"]["status"], "pass")
+        self.assertEqual(check_results["correctness"]["status"], "pass")
+        # The producer forbids both benchmark CLIs: performance/controls
+        # can never pass from this path -- the verdict stays ineligible.
+        for check_id in ("performance", "controls"):
+            self.assertNotEqual(check_results[check_id]["status"], "pass")
+
+        # Root canonical evidence written by the binder.
+        correctness = json.loads(
+            (self._tmp / "workdir" / "campaign" / "correctness.json").read_text(
+                encoding="utf-8"
+            ),
+        )
+        self.assertEqual(correctness["disposition"], "passed")
+        self.assertTrue(
+            (self._tmp / "workdir" / "campaign" / "activation.json").is_file(),
+        )
+
+    def test_run_path_record_identity_facts(self) -> None:
+        result = _dispatch(self._tmp)
+        self.assertEqual(len(result.make_record_calls), 1)
+        kwargs = result.make_record_calls[0]
+
+        self.assertEqual(kwargs["patch_id"], PATCH_ID)
+        self.assertEqual(kwargs["base_ref"], cfg_pinned())
+        self.assertEqual(kwargs["base_revision"], "b" * 40)
+        self.assertEqual(
+            kwargs["patched_source_tree"], _fake_tree(result.scaffold.subject_source)
+        )
+        self.assertEqual(kwargs["gpu_architectures"], "gfx1100")
+        self.assertEqual(kwargs["campaign_workdir"], result.run_dir)
+        # Two DISTINCT provenance domains: campaign identities from the
+        # scaffold, validation identities from the producer's own pair.
+        self.assertEqual(
+            kwargs["build_identities"],
+            result.scaffold.campaign_build_identities,
+        )
+        self.assertEqual(
+            kwargs["validation_build_identities"],
+            {
+                "control": {"build_id": "pair-control-build"},
+                "subject": {"build_id": "pair-subject-build"},
+            },
+        )
+        # The model-free campaign identity is computed from the SCAFFOLD
+        # facts (never the fat-three).
+        expected_digest = patch_evidence.model_free_campaign_identity_digest(
+            patch_name=PATCH_ID,
+            patch_digest="d" * 64,
+            patched_source_tree=_fake_tree(result.scaffold.subject_source),
+            gpu_architecture="gfx1100",
+            campaign_build_identities=result.scaffold.campaign_build_identities,
+            base_revision=result.scaffold.base_revision,
+        )
+        self.assertEqual(kwargs["campaign_identity_digest"], expected_digest)
+        # Producer-owned artifact allowlist, bound correctness, activation.
+        self.assertEqual(kwargs["producer_artifact_names"], _spec_artifact_names())
+        bound_correctness = kwargs["correctness"]
+        self.assertIsInstance(bound_correctness, Mapping)
+        self.assertEqual(bound_correctness["disposition"], "passed")
+        self.assertIsNotNone(kwargs["activation_disposition"])
+        # Lane effects from the producer result.
+        self.assertEqual(kwargs["lane_effects"], ())
+
+    def test_run_path_subject_mismatch_still_exit_zero(self) -> None:
+        result = _dispatch(self._tmp, collect=_fake_collect_subject_mismatch())
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(len(result.make_record_calls), 1)
+        kwargs = result.make_record_calls[0]
+        bound_correctness = kwargs["correctness"]
+        self.assertIsInstance(bound_correctness, Mapping)
+        self.assertEqual(bound_correctness["disposition"], "failed")
+        self.assertFalse(result.outcome["eligible"])
+        check_results = result.outcome["check_results"]
+        self.assertEqual(check_results["correctness"]["status"], "fail")
+        # The record is still persisted -- an INELIGIBLE record is the
+        # whole point of tracked evidence.
+        self.assertFalse(kwargs["validation_eligible"])
+
+    def test_forbid_cli_gates_fail_before_the_scaffold(self) -> None:
+        for overrides, pattern in (
+            (
+                {"correctness_evidence": self._tmp / "ce.json"},
+                "--correctness-evidence is ambiguous",
+            ),
+            (
+                {"run_performance_benchmark": True},
+                "--run-performance-benchmark is mutually exclusive",
+            ),
+        ):
+            with self.subTest(overrides=sorted(overrides)):
+                with self.assertRaisesRegex(vp.ValidationProducerError, pattern):
+                    _dispatch(self._tmp, args_overrides=overrides)
+
+    def test_producer_patch_id_mismatch_fails_closed(self) -> None:
+        selection = vp.ProducerSelection(
+            spec=vp.ProducerSpec(
+                patch_id="9999_not_this_patch",
+                producer_id="rd12",
+                entrypoint=Path("producer.py"),
+                callable_name="run",
+                trace_probe="skip",
+                standard_campaign="run",
+                correctness_evidence_cli="forbid",
+                performance_benchmark_cli="forbid",
+                artifact_names=frozenset(),
+            ),
+            producer=lambda ctx: None,  # type: ignore[return-value]
+        )
+        with self.assertRaisesRegex(vp.ValidationProducerError, "does not match"):
+            _dispatch(self._tmp, selection=selection)
+
+    def test_skip_path_no_scaffold_no_record(self) -> None:
+        def trivial_producer(ctx):
+            return vp.ProducerResult(
+                correctness=None,
+                validation_build_identities={
+                    "control": {"build_id": "c"},
+                    "subject": {"build_id": "s"},
+                },
+                activation_evidence=None,
+                performance_evidence=None,
+                trace_evidence=None,
+                check_results=(),
+                lane_effects=(),
+                emitted_artifacts=frozenset(),
+            )
+
+        selection = vp.ProducerSelection(
+            spec=vp.ProducerSpec(
+                patch_id=PATCH_ID,
+                producer_id="rd12",
+                entrypoint=Path("producer.py"),
+                callable_name="run",
+                trace_probe="skip",
+                standard_campaign="skip",
+                correctness_evidence_cli="forbid",
+                performance_benchmark_cli="forbid",
+                artifact_names=frozenset(),
+            ),
+            producer=trivial_producer,
+        )
+        result = _dispatch(self._tmp, selection=selection)
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(result.scaffold_calls, [])
+        self.assertEqual(result.make_record_calls, [])
+        self.assertEqual(result.write_record_calls, [])
+        # Self-contained producer semantics: its own run_dir, diagnostic
+        # outcome only, no tracked record.
+        skip_run_dir = self._tmp / "workdir" / "producer" / "rd12"
+        self.assertTrue((skip_run_dir / "producer-execution.json").is_file())
+        self.assertIsNone(result.outcome)  # campaign/ outcome never written
+
+
+def cfg_pinned() -> str:
+    from bigcherry.core import config as campaign_config
+    from bigcherry.core import paths as bc_paths
+
+    return campaign_config.load(bc_paths.RECIPES).pinned
+
+
+def _spec_artifact_names() -> frozenset[str]:
+    selection = vp.resolve_producer(
+        patch_dir=TOOLS_ROOT.parent / "patches" / PATCH_ID,
+        producer_id="rd12",
+    )
+    return selection.spec.artifact_names
 
 
 if __name__ == "__main__":

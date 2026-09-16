@@ -4,11 +4,10 @@ Patch id: `1205_rd12_paired_mmvq_dual_output`. Original plan item `RD12` is
 superseded by `PRBE11` (docs/planning/active/patching-rdna-boost-experiments/PRBE11.md,
 capability-rebaseline-v3-2026-09) -- PRBE11 is the authoritative tracking
 item now, not RD12. The `RD12-PAIRED-MMVQ-DUAL` Experiment Contract is
-bound in `patch.toml`, and the bespoke correctness producer is
-`run_rd12_correctness_check()` in
-`tools/bigcherry/patch/validation_campaign.py` (invoked via
-`--run-rd12-contract`, or standalone via
-`tools/lab/rd12-correctness/run_real.py`). Its `validation.toml` wires
+bound in `patch.toml`, and the bespoke correctness producer is the
+patch-local `validation/producer.py` (invoked via
+`--validation-producer 1205_rd12_paired_mmvq_dual_output/rd12`, or
+standalone via `tools/lab/rd12-correctness/run_real.py`). Its `validation.toml` wires
 `apply`/`build`/`activation`/`correctness`/`performance`/`controls`.
 
 **What PRBE11 actually requires (per PRBE11.md)**: PRBE11 is the
@@ -70,32 +69,36 @@ deferred future decision, not an accident to route around.
 
 ## How to invoke validation
 
-The contract-bound correctness/activation path is `--run-rd12-contract`
-(exactly one contract architecture per run: gfx1100, gfx1201, or gfx1030):
+The contract-bound correctness/activation path is the patch-local
+producer (exactly one contract architecture per run: gfx1100, gfx1201,
+or gfx1030, named by `--amdgpu-targets` and mapped to a real device by
+`--device-map`):
 
 ```
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1205_rd12_paired_mmvq_dual_output \
-  --run-rd12-contract \
+  --validation-producer 1205_rd12_paired_mmvq_dual_output/rd12 \
+  --device-map <gfx1100|gfx1201|gfx1030>=<device-index> \
   --hip-path <production-rocm> --amdgpu-targets <gfx1100|gfx1201|gfx1030> \
   --workdir <fresh-workdir>
 ```
 
-The standalone lab driver used for the 2026-09-13 real runs calls the same
-producer for all three architectures in sequence into ONE shared run dir
-(writing under `artifacts/lab/rd12-correctness/`) -- the per-arm logs below
-are therefore namespaced by architecture so each later run cannot
-overwrite an earlier one:
+The standalone lab driver calls the same producer once per contract
+architecture in sequence (writing under `artifacts/lab/rd12-correctness/`),
+sharing the worktree/build roots so the fat multi-arch binaries are built
+once and reused while each run dir stays per-architecture (the producer
+namespaces its own artifacts by architecture either way):
 
 ```
 PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py
 ```
 
-A real `--run-rd12-contract` run binds its evidence into the record: a
+A real `--validation-producer 1205_rd12_paired_mmvq_dual_output/rd12`
+run binds its evidence into the record through the shared binder: a
 canonical `correctness.json` (the bit_identical disposition),
 `activation.json`, and one raw per-arm activation log
-(`logs/activation-rd12-{architecture}-{subject,control}.log`) bound as
-the declared trace-marker check's positive/negative artifacts -- the
+(`artifacts/activation-rd12-{architecture}-{subject,control}.log`) bound
+as the declared trace-marker check's positive/negative artifacts -- the
 validator re-reads those logs and re-verifies the marker itself, so the
 check cannot be satisfied by fixture output. The declared
 `performance`/`controls` checks stay BLOCKED until real performance
@@ -118,8 +121,10 @@ RD25 (see the PRBE11 note above) -- it simply has not been covered yet.
 ## Real bit-identical correctness evidence (2026-09-13, all three architectures)
 
 The correctness-producer piece named above as not-yet-done now exists:
-`run_rd12_correctness_check()` (`tools/bigcherry/patch/validation_campaign.py`)
-uses a new diagnostic support patch, `1258_rd12_paired_mul_mat_test_case`
+the patch-local producer `validation/producer.py` (PA36 sub-slice 2;
+previously `run_rd12_correctness_check()` in shared code, deleted with
+the `--run-rd12-contract` CLI path) uses a new diagnostic support patch,
+`1258_rd12_paired_mul_mat_test_case`
 (a registered whole-graph `test-backend-ops` case with two distinct Q6_K
 MUL_MAT projections over one shared F32 activation, matching the real
 K/V-projection production shape), to prove the fork's bit-identical claim
@@ -199,12 +204,12 @@ than a blocked prerequisite. The 2026-09-13 correctness runs above were
 done as real bit-identical proof of the fork's claim, not as a promotion
 decision.
 
-From this run forward, `--run-rd12-contract` persists one raw per-arm
+From this run forward, the producer path persists one raw per-arm
 activation log per architecture
-(`logs/activation-rd12-{architecture}-{subject,control}.log`) in the
-campaign run directory and binds them into the record's trace evidence,
-so the declared trace-marker check can independently re-verify the
-marker from the real subprocess output.
+(`artifacts/activation-rd12-{architecture}-{subject,control}.log`) in
+the campaign run directory and binds them into the record's trace
+evidence, so the declared trace-marker check can independently
+re-verify the marker from the real subprocess output.
 
 ## Real three-arm baseline comparison (2026-09-13, standardized criteria)
 

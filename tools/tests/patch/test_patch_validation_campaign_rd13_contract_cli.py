@@ -129,7 +129,7 @@ class Rd13ContractCliTests(unittest.TestCase):
     def test_present_in_framework_configuration_exclusion(self) -> None:
         source = inspect.getsource(vc._run_framework_configuration)
         self.assertIn(
-            '"run_rd58_state_restore", "run_rd73_contract", "run_rd12_contract", '
+            '"run_rd58_state_restore", "run_rd73_contract", '
             '"run_rd04_contract", "run_rd13_contract", "run_rd26_contract",',
             source,
         )
