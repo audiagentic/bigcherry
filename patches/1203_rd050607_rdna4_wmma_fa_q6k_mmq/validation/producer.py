@@ -108,23 +108,96 @@ _RD06_MIN_PAIRED_ROUNDS = 10
 # -- no ci95/min_paired_rounds override, unlike RD06).
 _RD07_MAX_CONTROL_REGRESSION_PCT = 1
 
+# RD05 has no min_paired_rounds/effect_evidence_policy override either (its
+# acceptance block declares only max_control_regression_pct=1) -- 3 rounds,
+# matching RD07's own default.
+_RD05_MIN_PAIRED_ROUNDS = 3
+
+# PA39 real-hardware-acceptance fix (2026-09-16): the missing apply/build/
+# activation/controls capability producers found by PA39's real-hardware
+# acceptance attempt #1 (ConfigurationError at plan resolution, before any
+# GPU work -- see PA39.md's 2026-09-16 "real-hardware acceptance attempt #1"
+# note). Real BIGCHERRY_PATCH_TRACE markers, GGML_LOG_WARN once-per-process,
+# already implemented in patch.py (PA37 part 3, commit d94a49d0) at the
+# real host-side dispatch sites GPT confirmed (req_c2c26de482d845ad):
+# ggml_cuda_flash_attn_ext()'s BEST_FATTN_KERNEL_MMA_F16 case (RD06) and
+# ggml_cuda_mul_mat_q_switch_type()'s GGML_TYPE_Q6_K case (RD07). RD05 has
+# no activation marker of its own (bind_contract() never requires
+# 'activation' for a correctness-only contract with no target_kernel_gain/
+# end_to_end_gain -- RD05 declares neither).
+_RD06_ACTIVATION_MARKER = "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06"
+_RD07_ACTIVATION_MARKER = "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07"
+
 
 _PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
 
 
-def _load_rd06_contract() -> experiment_contract.ExperimentContract:
+def _load_contract(contract_id: str) -> experiment_contract.ExperimentContract:
     # Loaded directly from config/experiment-contracts.toml via the
     # experiment.contract module -- never via validation_campaign.py/
     # patch_validation.load_contracts_for_descriptor(), which this module
     # must not import (see module docstring). This is the same real
     # ci95_threshold_bound_v1/min_paired_rounds=10/target_kernel_gain_pct=
-    # 0.5/max_control_regression_pct=1 policy already encoded as module
-    # constants above -- loading the real ExperimentContract object (rather
-    # than re-deriving the same numbers by hand) is what lets
-    # evaluate_promotion_gate() itself apply that policy instead of this
-    # producer re-implementing the gate's own bound logic.
+    # 0.5/max_control_regression_pct=1 (RD06) / max_control_regression_pct=1
+    # only (RD05/RD07) policy already encoded as module constants above --
+    # loading the real ExperimentContract object (rather than re-deriving
+    # the same numbers by hand) is what lets evaluate_promotion_gate()
+    # itself apply that policy instead of this producer re-implementing the
+    # gate's own bound logic.
     registry = experiment_contract.load_contracts(bc_paths.EXPERIMENT_CONTRACTS)
-    return registry[_RD06]
+    return registry[contract_id]
+
+
+def _run_activation_probe(
+    *, subject_binary: Path, control_binary: Path, model: Path,
+    device: vp.ProducerDeviceContext, marker: str, log_context: str,
+) -> tuple[bool, str]:
+    """PA39 activation-capability fix: proves the real BIGCHERRY_PATCH_TRACE
+    marker (already implemented in patch.py) fires on the intended
+    production dispatch path (ctx.trace_evidence is never populated on the
+    --validation-producer path, so the framework's own builtin trace-marker
+    validator cannot be used here; this is the same real evidence, gathered
+    directly).
+
+    GPT review (2026-09-16, dev-gpt-agent): a subject-trace-on vs
+    subject-trace-off comparison is NOT valid negative-control evidence --
+    it only proves logging can be turned off, not that the marker
+    specifically identifies the patched dispatch path. The real negative
+    control is the UNPATCHED control binary: it structurally cannot emit
+    the marker at all, because the marker source line does not exist in
+    its (unpatched) compiled code. Both probes run with
+    BIGCHERRY_PATCH_TRACE=1 -- the subject binary must hit, the control
+    binary must not.
+
+    Also per _run_one_trace_probe()'s real precedent (VA21 real-hardware
+    finding): llama-bench gates ggml's log level on ITS OWN --verbose
+    flag, so GGML_LOG_WARN (and GGML_LOG_INFO) are filtered without it --
+    this probe always passes --verbose for exactly that reason."""
+    def _argv(binary: Path) -> list[str]:
+        return [
+            str(binary), "-m", str(model), "-p", "0", "-n", "16", "-r", "1",
+            "-ngl", "99", "--verbose",
+        ]
+
+    def _run(binary: Path) -> str:
+        env = {**os.environ, **dict(device.env_overrides), "BIGCHERRY_PATCH_TRACE": "1"}
+        for key in device.env_unset:
+            env.pop(key, None)
+        completed = subprocess.run(_argv(binary), env=env, capture_output=True, text=True, check=False)
+        return (completed.stdout or "") + (completed.stderr or "")
+
+    subject_output = _run(subject_binary)
+    control_output = _run(control_binary)
+    subject_hit = marker in subject_output
+    control_hit = marker in control_output
+    ok = subject_hit and not control_hit
+    detail = (
+        f"{log_context}: activation probe marker={marker!r} "
+        f"subject_hit={subject_hit} control_hit={control_hit} "
+        "(both probes run with BIGCHERRY_PATCH_TRACE=1 -- the unpatched control binary "
+        "is the negative control, since it structurally cannot contain the marker)"
+    )
+    return ok, detail
 
 
 def _verify_control_model_identity(
@@ -223,6 +296,7 @@ def _run_backend_reference(
 def _check_result(
     *, check_id: str, contract_id: str, capability: str, passed: bool, detail: str,
     artifact: pv.ArtifactRef | None, carries_disposition: bool,
+    disposition_passed: bool | None = None,
 ) -> vp.ProducerCheckResult:
     # validate_producer_result() allows at most ONE non-None disposition per
     # contract_id across all check_results -- a contract's [[check]] plan
@@ -230,6 +304,17 @@ def _check_result(
     # must pass), but exactly one of them carries the contract's own
     # promotion-eligibility disposition, so contract_verdicts is never
     # double-written for the same contract.
+    #
+    # GPT review (2026-09-16): the disposition-carrying check's OWN local
+    # `passed` is no longer necessarily the whole truth for that contract
+    # once activation/controls checks exist alongside it -- a contract
+    # must not read as eligible (contract_verdicts[...]["passed"]=True)
+    # while one of its OTHER required checks (activation/controls) FAILED.
+    # `disposition_passed` (when given) is the real AND of every required
+    # outcome for that contract, computed by the caller once all of that
+    # contract's checks are known; it defaults to `passed` for the common
+    # single-check-determines-the-contract case.
+    disposition_value = passed if disposition_passed is None else disposition_passed
     return vp.ProducerCheckResult(
         check_id=check_id,
         contract_ids=(contract_id,),
@@ -239,7 +324,7 @@ def _check_result(
             artifacts=(artifact,) if artifact is not None else (),
         ),
         disposition=(
-            {"passed": passed, "contract_id": contract_id, "detail": detail}
+            {"passed": disposition_value, "contract_id": contract_id, "detail": detail}
             if carries_disposition else None
         ),
     )
@@ -264,6 +349,59 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     emitted_artifacts: set[str] = set()
     check_results: list[vp.ProducerCheckResult] = []
+
+    # --- apply/build: universal capabilities, real evidence -------------
+    # PA39 real-hardware-acceptance fix: reaching this point means both
+    # build_pair() calls above already applied the real control/subject
+    # source composition and cmake-built both binary sets successfully --
+    # a build_pair() failure raises (a real infrastructure failure, not a
+    # gracefully-FAILed check, matching how this producer already lets a
+    # genuine build/apply error propagate rather than silently reporting a
+    # FAIL check for it). This is real, truthful apply+build evidence, not
+    # boilerplate that fabricates a PASS independent of what actually
+    # happened -- and it is genuinely universal, unscoped to any one RD
+    # contract (both binary sets are built from the same one atomic
+    # control/subject source composition).
+    apply_artifact = ctx.runtime.write_artifact(
+        name="apply.json",
+        payload={
+            "schema_version": 1,
+            "detail": "control/subject source composition applied for both binary sets",
+            "ppl_control_build_identity": ppl_pair.validation_build_identities["control"],
+            "ppl_subject_build_identity": ppl_pair.validation_build_identities["subject"],
+            "bench_control_build_identity": bench_pair.validation_build_identities["control"],
+            "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+        },
+    )
+    emitted_artifacts.add(apply_artifact.name)
+    check_results.append(vp.ProducerCheckResult(
+        check_id="apply", contract_ids=(),
+        validation_result=pv.ValidationResult(
+            check_id="apply", capability="apply", status=pv.PASS,
+            summary="control/subject source composition applied for both binary sets",
+            artifacts=(apply_artifact,),
+        ),
+    ))
+    build_artifact = ctx.runtime.write_artifact(
+        name="build.json",
+        payload={
+            "schema_version": 1,
+            "detail": "control/subject trees built for both binary sets (llama-perplexity, llama-bench)",
+            "ppl_control_build_identity": ppl_pair.validation_build_identities["control"],
+            "ppl_subject_build_identity": ppl_pair.validation_build_identities["subject"],
+            "bench_control_build_identity": bench_pair.validation_build_identities["control"],
+            "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+        },
+    )
+    emitted_artifacts.add(build_artifact.name)
+    check_results.append(vp.ProducerCheckResult(
+        check_id="build", contract_ids=(),
+        validation_result=pv.ValidationResult(
+            check_id="build", capability="build", status=pv.PASS,
+            summary="control/subject trees built for both binary sets",
+            artifacts=(build_artifact,),
+        ),
+    ))
 
     # --- RD05/RD06 backend_reference: shared gfx1201 comparison ---------
     gfx1201 = devices_by_arch.get(_RD0506_ARCH)
@@ -299,11 +437,154 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     check_results.append(_check_result(
         check_id="rd05-backend-reference", contract_id=_RD05, capability="correctness",
         passed=rd0506_ok, detail=rd0506_detail, artifact=rd0506_artifact,
-        carries_disposition=True,
+        carries_disposition=False,
     ))
     check_results.append(_check_result(
         check_id="rd06-backend-reference", contract_id=_RD06, capability="correctness",
         passed=rd0506_ok, detail=rd0506_detail, artifact=rd0506_artifact,
+        carries_disposition=False,
+    ))
+
+    # --- RD05 controls: prefill regression guard, RD05's own contract ---
+    # PA39 real-hardware-acceptance fix: RD05 is correctness-only (no
+    # target_kernel_gain_pct/end_to_end_gain_pct, so bind_contract() never
+    # requires 'performance'/'activation' for it) but its own contract
+    # still declares a real [positive]/[controls] block (decode/prefill on
+    # tierA-qwen4b-q6k) and acceptance.max_control_regression_pct=1 --
+    # aggregate_contract_effects() structurally requires at least one
+    # positive-role lane even though evaluate_promotion_gate() never checks
+    # target_kernel_gain_pct here (RD05's acceptance declares it as None,
+    # so that half of the gate is a no-op; only max_control_regression_pct
+    # is actually enforced), so both declared workloads are benchmarked.
+    rd05_controls_artifact = None
+    rd05_missing_positive: list[str] = []
+    rd05_missing_control: list[str] = []
+    if gfx1201 is None or ctx.model is None:
+        rd05_controls_ok = False
+        rd05_controls_detail = (
+            f"rd05 controls: no {_RD0506_ARCH} device and/or model supplied"
+        )
+    else:
+        rd05_contract = _load_contract(_RD05)
+        rd05_positive_workloads = tuple(rd05_contract.positive.workloads)
+        rd05_control_workloads = tuple(rd05_contract.controls.workloads)
+        rd05_positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
+            model=ctx.model, workloads=rd05_positive_workloads,
+            pairs=_RD05_MIN_PAIRED_ROUNDS, log_context="rd05-controls-positive",
+            device=gfx1201,
+        )
+        rd05_control_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
+            model=ctx.model, workloads=rd05_control_workloads,
+            pairs=_RD05_MIN_PAIRED_ROUNDS, log_context="rd05-controls-control",
+            device=gfx1201,
+        )
+        rd05_missing_positive = [w for w in rd05_positive_workloads if w not in rd05_positive_outcome.runs]
+        rd05_missing_control = [w for w in rd05_control_workloads if w not in rd05_control_outcome.runs]
+        if rd05_missing_positive or rd05_missing_control:
+            rd05_controls_ok = False
+            rd05_aggregated_effects = None
+            rd05_gate_result = None
+            rd05_controls_detail = (
+                f"rd05 controls: contract declares positive workloads "
+                f"{list(rd05_positive_workloads)} and control workloads "
+                f"{list(rd05_control_workloads)}, but evidence is missing for "
+                f"positive={rd05_missing_positive} control={rd05_missing_control} -- "
+                "failing closed rather than aggregating a partial lane set"
+            )
+        else:
+            rd05_target_metric = _PAIRED_BENCH_METRIC_NAME["decode"]
+            rd05_positive_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "positive", _PAIRED_BENCH_METRIC_NAME[w], rd05_positive_outcome.runs[w],
+                )
+                for w in rd05_positive_workloads
+            ]
+            rd05_control_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "control", _PAIRED_BENCH_METRIC_NAME[w], rd05_control_outcome.runs[w],
+                )
+                for w in rd05_control_workloads
+            ]
+            rd05_aggregated_effects = experiment_contract.aggregate_contract_effects(
+                rd05_contract, rd05_positive_lanes + rd05_control_lanes, target_metric=rd05_target_metric,
+            )
+            rd05_correctness_gate = experiment_contract.evaluate_correctness_gate(
+                rd05_contract,
+                {"backend_reference": experiment_contract.CorrectnessResult(
+                    check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
+                )},
+            )
+            rd05_gate_result = experiment_contract.evaluate_promotion_gate(
+                rd05_contract, correctness_gate=rd05_correctness_gate,
+                aggregated_effects=rd05_aggregated_effects,
+            )
+            rd05_controls_ok = bool(rd05_gate_result["passed"])
+            rd05_controls_detail = (
+                f"rd05 controls: max_control_regression_pct gate status="
+                f"{rd05_gate_result['status']!r} passed={rd05_controls_ok} "
+                f"reasons={list(rd05_gate_result['reasons'])} "
+                f"positive_workloads={list(rd05_positive_workloads)} "
+                f"control_workloads={list(rd05_control_workloads)} "
+                f"max_control_regression_pct_budget={rd05_contract.acceptance.max_control_regression_pct}"
+            )
+        rd05_controls_artifact = ctx.runtime.write_artifact(
+            name="rd05-controls.json",
+            payload={
+                "schema_version": 1,
+                "contract_id": _RD05,
+                "positive_workloads": list(rd05_positive_workloads),
+                "control_workloads": list(rd05_control_workloads),
+                "missing_positive_workloads": rd05_missing_positive,
+                "missing_control_workloads": rd05_missing_control,
+                "aggregated_effects": rd05_aggregated_effects,
+                "gate_result": rd05_gate_result,
+                "positive_commands": rd05_positive_outcome.commands,
+                "control_commands": rd05_control_outcome.commands,
+                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
+                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+            },
+        )
+        emitted_artifacts.add(rd05_controls_artifact.name)
+
+    check_results.append(_check_result(
+        check_id="rd05-controls", contract_id=_RD05, capability="controls",
+        passed=rd05_controls_ok, detail=rd05_controls_detail, artifact=rd05_controls_artifact,
+        carries_disposition=True,
+        disposition_passed=rd0506_ok and rd05_controls_ok,
+    ))
+
+    # --- RD06 activation: real BIGCHERRY_PATCH_TRACE marker probe -------
+    # PA39 real-hardware-acceptance fix: proves patch.py's real RD06
+    # marker (GPT-confirmed placement, req_c2c26de482d845ad; see module
+    # docstring) fires on the intended production dispatch path -- uses
+    # bench_pair.subject_bin (the same binary rd06-performance measures),
+    # never a synthetic probe binary.
+    rd06_activation_artifact = None
+    if gfx1201 is None or ctx.model is None:
+        rd06_activation_ok = False
+        rd06_activation_detail = (
+            f"rd06 activation: no {_RD0506_ARCH} device and/or model supplied"
+        )
+    else:
+        rd06_activation_ok, rd06_activation_detail = _run_activation_probe(
+            subject_binary=bench_pair.subject_bin, control_binary=bench_pair.control_bin,
+            model=ctx.model, device=gfx1201,
+            marker=_RD06_ACTIVATION_MARKER, log_context="rd06-activation",
+        )
+        rd06_activation_artifact = ctx.runtime.write_artifact(
+            name="rd06-activation.json",
+            payload={
+                "schema_version": 1, "contract_id": _RD06, "marker": _RD06_ACTIVATION_MARKER,
+                "passed": rd06_activation_ok, "detail": rd06_activation_detail,
+            },
+        )
+        emitted_artifacts.add(rd06_activation_artifact.name)
+
+    check_results.append(_check_result(
+        check_id="rd06-activation", contract_id=_RD06, capability="activation",
+        passed=rd06_activation_ok, detail=rd06_activation_detail, artifact=rd06_activation_artifact,
         carries_disposition=False,
     ))
 
@@ -327,6 +608,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     rd06_perf_artifact = None
     control_model_raw = ctx.inputs.get("control_model")
     control_model = Path(control_model_raw) if control_model_raw else None
+    control_workloads: tuple[str, ...] = ()
+    missing_control: list[str] = []
+    control_model_identity_ok = False
     if gfx1201 is None or ctx.model is None or control_model is None:
         rd06_perf_ok = False
         rd06_perf_detail = (
@@ -335,7 +619,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
         rd06_gate_result: dict[str, object] | None = None
     else:
-        rd06_contract = _load_rd06_contract()
+        rd06_contract = _load_contract(_RD06)
         # PA39 P1 fix: control_model is a bare --producer-input path with
         # no inherent tie to RD06's declared control model identity
         # (tierM-gptoss20b-q6k) -- an arbitrary GGUF could otherwise be
@@ -452,7 +736,38 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     check_results.append(_check_result(
         check_id="rd06-performance", contract_id=_RD06, capability="performance",
         passed=rd06_perf_ok and rd0506_ok, detail=rd06_perf_detail, artifact=rd06_perf_artifact,
+        carries_disposition=False,
+    ))
+
+    # --- RD06 controls: reuses rd06-performance's own control lane ------
+    # PA39 real-hardware-acceptance fix: RD06's controls capability is
+    # already fully measured above (the control_model/control_workloads
+    # paired-benchmark call, gated through evaluate_promotion_gate()'s
+    # max_control_regression_pct check) -- this check surfaces that same
+    # real evidence under the 'controls' capability specifically, without
+    # a second disposition (validate_producer_result() allows at most one
+    # non-None disposition per contract_id; rd06-performance already
+    # carries RD06's disposition).
+    rd06_controls_ok = bool(rd06_perf_ok) and not missing_control
+    rd06_controls_detail = (
+        f"rd06 controls: reuses rd06-performance's control lane "
+        f"(control_model={control_model}, control_workloads={list(control_workloads)}, "
+        f"missing_control_workloads={missing_control}); underlying gate passed={rd06_perf_ok}"
+    )
+    check_results.append(_check_result(
+        check_id="rd06-controls", contract_id=_RD06, capability="controls",
+        passed=rd06_controls_ok, detail=rd06_controls_detail, artifact=rd06_perf_artifact,
         carries_disposition=True,
+        # Deliberately excludes control_model_identity_ok: that check is a
+        # best-effort filesystem basename/size check (see
+        # _verify_control_model_identity()'s own docstring), recorded for
+        # audit but NOT gating -- same deliberate, already-documented PA37
+        # design decision (part 6 notes) kept here for the same reason
+        # (hardware-free tests use non-existent fake model paths that can
+        # never match config/models.toml's real registry entries).
+        disposition_passed=(
+            rd0506_ok and rd06_perf_ok and rd06_activation_ok and rd06_controls_ok
+        ),
     ))
 
     # --- RD07 backend_reference: requires all three architectures -------
@@ -495,18 +810,82 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         carries_disposition=False,
     ))
 
+    # --- RD07 activation: real BIGCHERRY_PATCH_TRACE marker probe -------
+    # PA39 real-hardware-acceptance fix: proves patch.py's real RD07
+    # marker (mmq.cu's ggml_cuda_mul_mat_q_switch_type(), GGML_TYPE_Q6_K
+    # case) fires on the real Q6_K MMQ dispatch path. Gated on the same
+    # "all three architectures present" requirement as RD07's other
+    # checks (missing_rd07), not "any available" -- RD07's contract scope
+    # is all three architectures, so a real acceptance run with one
+    # missing/failed architecture must fail RD07 closed uniformly across
+    # every one of its checks, matching rd07-backend-reference/
+    # rd07-performance's own fail-closed behavior above.
+    #
+    # GPT review (2026-09-16): RD07's positive AND controls blocks both
+    # declare model=tierM-gptoss20b-q6k (prefill positive, decode control)
+    # -- never ctx.model (tierA-qwen4b-q6k, the generic --model, which is
+    # only RD05/RD06's positive model). Reuses the same already
+    # identity-checked control_model resolved for RD06 (the real path
+    # happens to be the exact model id RD07 needs too), rather than a
+    # second --producer-input. GPT also flagged that this producer only
+    # ever exercises RD07's activation/performance/controls on gfx1201,
+    # despite RD07's contract scope being all three architectures
+    # (gfx1100/gfx1201/gfx1030) -- widening every RD07 check to all three
+    # devices is real additional per-architecture paired-benchmark work
+    # not attempted in this pass; documented honestly here (mirrors
+    # RD06's own documented gfx1100 gap above) rather than silently
+    # overclaiming three-architecture coverage. A future item should
+    # widen these three RD07 checks to run on gfx1100/gfx1201/gfx1030
+    # individually before PA39 claims full RD07 scope.
+    rd07_activation_artifact = None
+    if missing_rd07 or control_model is None:
+        rd07_activation_ok = False
+        rd07_activation_detail = (
+            f"rd07 activation: missing required architecture(s) {list(missing_rd07)} "
+            "and/or --producer-input control_model=<path> (RD07 needs the same model id "
+            "as RD06's control_model, tierM-gptoss20b-q6k)"
+        )
+    else:
+        rd07_activation_device = devices_by_arch[_RD0506_ARCH]
+        rd07_activation_ok, rd07_activation_detail = _run_activation_probe(
+            subject_binary=bench_pair.subject_bin, control_binary=bench_pair.control_bin,
+            model=control_model, device=rd07_activation_device,
+            marker=_RD07_ACTIVATION_MARKER, log_context="rd07-activation",
+        )
+        rd07_activation_artifact = ctx.runtime.write_artifact(
+            name="rd07-activation.json",
+            payload={
+                "schema_version": 1, "contract_id": _RD07, "marker": _RD07_ACTIVATION_MARKER,
+                "architecture": rd07_activation_device.architecture,
+                "passed": rd07_activation_ok, "detail": rd07_activation_detail,
+            },
+        )
+        emitted_artifacts.add(rd07_activation_artifact.name)
+
+    check_results.append(_check_result(
+        check_id="rd07-activation", contract_id=_RD07, capability="activation",
+        passed=rd07_activation_ok, detail=rd07_activation_detail, artifact=rd07_activation_artifact,
+        carries_disposition=False,
+    ))
+
     # --- RD07 performance: max_control_regression_pct only --------------
+    # GPT review (2026-09-16): RD07's positive/controls models are both
+    # tierM-gptoss20b-q6k, not ctx.model -- reuses control_model (see
+    # rd07-activation's comment above for why the same resolved path is
+    # the right model for RD07 too).
     rd07_perf_artifact = None
-    if missing_rd07 or ctx.model is None:
+    outcome: vp.ProducerPairedBenchmarkOutcome | None = None
+    if missing_rd07 or control_model is None:
         rd07_perf_ok = False
         rd07_perf_detail = (
-            f"rd07 performance: missing required architecture(s) {list(missing_rd07)}"
+            f"rd07 performance: missing required architecture(s) {list(missing_rd07)} "
+            "and/or --producer-input control_model=<path>"
         )
     else:
         # PA39 P0 defect #1 fix: bench_pair (llama-bench), never ppl_pair.
         outcome = ctx.runtime.run_paired_llama_benchmark(
             control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=ctx.model, workloads=("decode", "prefill"),
+            model=control_model, workloads=("decode", "prefill"),
             pairs=3, log_context="rd07-performance", device=devices_by_arch[_RD0506_ARCH],
         )
         rd07_perf_ok = bool(outcome.runs)
@@ -531,7 +910,29 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     check_results.append(_check_result(
         check_id="rd07-performance", contract_id=_RD07, capability="performance",
         passed=rd07_perf_ok and rd07_ok, detail=rd07_perf_detail, artifact=rd07_perf_artifact,
+        carries_disposition=False,
+    ))
+
+    # --- RD07 controls: reuses rd07-performance's decode (control) lane -
+    # PA39 real-hardware-acceptance fix: RD07's contract declares
+    # controls.workloads=["decode"] on the same model as its positive
+    # prefill workload -- rd07-performance already benchmarks both decode
+    # and prefill in one call, so this check surfaces that same real
+    # evidence under the 'controls' capability, without a second
+    # disposition (rd07-performance already carries RD07's disposition).
+    rd07_decode_present = outcome is not None and "decode" in outcome.runs
+    rd07_controls_ok = rd07_perf_ok and rd07_ok and rd07_decode_present
+    rd07_controls_detail = (
+        f"rd07 controls: reuses rd07-performance's decode lane "
+        f"(present={rd07_decode_present}); underlying performance check passed={rd07_perf_ok}"
+    )
+    check_results.append(_check_result(
+        check_id="rd07-controls", contract_id=_RD07, capability="controls",
+        passed=rd07_controls_ok, detail=rd07_controls_detail, artifact=rd07_perf_artifact,
         carries_disposition=True,
+        disposition_passed=(
+            rd07_ok and rd07_perf_ok and rd07_activation_ok and rd07_controls_ok
+        ),
     ))
 
     return vp.ProducerResult(

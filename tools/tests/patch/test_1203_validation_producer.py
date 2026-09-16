@@ -65,6 +65,71 @@ _RD06_PASSING_PREFILL_STATS = {
     "effect_pct": 2.0, "ci95_low": 1.0, "ci95_high": 3.0, "paired_rounds": 10,
 }
 
+# PA39 real-hardware-acceptance fix: RD05's new controls check runs its own
+# positive(decode)/control(prefill) paired benchmark on tierA-qwen4b-q6k --
+# aggregate_contract_effects() requires a real positive-role lane even
+# though RD05's gate never checks target_kernel_gain_pct (RD05's acceptance
+# declares it as None); a small real gain plus a near-zero control
+# regression keeps the default fixture path a clean PASS.
+_RD05_PASSING_POSITIVE_STATS = {
+    "effect_pct": 1.0, "ci95_low": 0.5, "ci95_high": 1.5, "paired_rounds": 3,
+}
+_RD05_PASSING_CONTROL_STATS = {
+    "effect_pct": -0.1, "ci95_low": -0.4, "ci95_high": 0.2, "paired_rounds": 3,
+}
+
+# PA39 real-hardware-acceptance fix: the real BIGCHERRY_PATCH_TRACE markers
+# from patch.py (PA37 part 3) -- the new activation checks' default fixture
+# behavior returns both when BIGCHERRY_PATCH_TRACE is set in the probe's
+# env and neither when it is not, so the default happy-path fixture is a
+# clean PASS without every test needing to know about markers.
+_RD06_ACTIVATION_MARKER = (
+    "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06"
+)
+_RD07_ACTIVATION_MARKER = (
+    "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07"
+)
+
+
+def _make_subprocess_side_effect(
+    *, ppl_subject: float = 10.0, ppl_control: float = 10.0, ppl_uncertainty: float = 0.01,
+):
+    """A single robust subprocess.run() fake covering BOTH real subprocess
+    call sites in producer.py: the backend_reference PPL comparisons
+    (_run_backend_reference, alternating subject/control per pair, an
+    unbounded number of pairs -- one for rd0506 plus one per RD07
+    architecture) and the new activation probes (_run_activation_probe,
+    two calls each: BIGCHERRY_PATCH_TRACE=1 then unset). Replaces the old
+    fixed-length side_effect list (which only ever anticipated the PPL
+    calls) so adding the new activation probe's subprocess.run() calls
+    does not exhaust it. Distinguishes the two call sites by binary name
+    (llama-perplexity vs llama-bench), matching producer.py's own real
+    binary-selection contract."""
+    state = {"ppl_calls": 0}
+
+    def _side_effect(command, *, env=None, **_kwargs):
+        binary_name = Path(command[0]).name
+        if "llama-perplexity" in binary_name:
+            state["ppl_calls"] += 1
+            value = ppl_subject if state["ppl_calls"] % 2 == 1 else ppl_control
+            return _ppl_completed(value, ppl_uncertainty)
+        # Activation probe: both the subject and control binaries are
+        # probed with BIGCHERRY_PATCH_TRACE=1 (the real negative control is
+        # the UNPATCHED control binary, not a trace-off run of the subject
+        # -- see _run_activation_probe()'s docstring) -- only the SUBJECT
+        # binary (built at .../subject-bin/... by _FakeProducerRuntime.
+        # build_pair()) can ever emit either real marker; the control
+        # binary structurally cannot, matching the real patched-vs-
+        # unpatched compiled code difference.
+        binary_path = str(command[0])
+        is_subject = "subject-bin" in binary_path.replace("\\", "/")
+        stdout = (
+            f"{_RD06_ACTIVATION_MARKER}\n{_RD07_ACTIVATION_MARKER}\n" if is_subject else ""
+        )
+        return mock.Mock(returncode=0, stdout=stdout, stderr="")
+
+    return _side_effect
+
 
 def _paired_lane_run(
     *, effect_pct: float, ci95_low: float, ci95_high: float, paired_rounds: int,
@@ -100,6 +165,7 @@ class _FakeProducerRuntime:
         self, run_dir: Path, *, device_map, benchmark_should_fail: bool = False,
         rd06_positive_stats: dict | None = None, rd06_control_stats: dict | None = None,
         rd06_prefill_stats: dict | None = None, rd06_missing_prefill: bool = False,
+        rd05_positive_stats: dict | None = None, rd05_control_stats: dict | None = None,
     ):
         self.run_dir = run_dir
         self._device_map = device_map
@@ -109,6 +175,8 @@ class _FakeProducerRuntime:
         self.rd06_positive_stats = rd06_positive_stats or _RD06_PASSING_POSITIVE_STATS
         self.rd06_control_stats = rd06_control_stats or _RD06_PASSING_CONTROL_STATS
         self.rd06_prefill_stats = rd06_prefill_stats or _RD06_PASSING_PREFILL_STATS
+        self.rd05_positive_stats = rd05_positive_stats or _RD05_PASSING_POSITIVE_STATS
+        self.rd05_control_stats = rd05_control_stats or _RD05_PASSING_CONTROL_STATS
         # PA39 P0 defect #2 proof knob: when True, the positive lane's
         # paired-benchmark outcome omits "prefill" entirely (as if a real
         # llama-bench run had somehow not produced that lane), so tests can
@@ -188,6 +256,18 @@ class _FakeProducerRuntime:
                 commands={"decode": {"control": ("x",), "subject": ("x",)}},
                 raw_logs=(),
             )
+        if log_context == "rd05-controls-positive":
+            return vp.ProducerPairedBenchmarkOutcome(
+                runs={"decode": _paired_lane_run(**self.rd05_positive_stats)},
+                commands={"decode": {"control": ("x",), "subject": ("x",)}},
+                raw_logs=(),
+            )
+        if log_context == "rd05-controls-control":
+            return vp.ProducerPairedBenchmarkOutcome(
+                runs={"prefill": _paired_lane_run(**self.rd05_control_stats)},
+                commands={"prefill": {"control": ("x",), "subject": ("x",)}},
+                raw_logs=(),
+            )
         # rd07-performance: this pass leaves RD07's execution-only stub
         # untouched (out of PA39 defect #2/#3's RD06-specific scope).
         return vp.ProducerPairedBenchmarkOutcome(
@@ -213,7 +293,8 @@ def _run_producer(
     model: Path | None, corpus: Path | None, benchmark_should_fail: bool = False,
     control_model: Path | None = _MISSING, rd06_positive_stats: dict | None = None,
     rd06_control_stats: dict | None = None, rd06_prefill_stats: dict | None = None,
-    rd06_missing_prefill: bool = False,
+    rd06_missing_prefill: bool = False, rd05_positive_stats: dict | None = None,
+    rd05_control_stats: dict | None = None,
 ):
     checks = pv.parse_validation_toml(_PATCH_DIR / "validation.toml", patch_id=_PATCH_ID)
     plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=checks, universal_capabilities=())
@@ -232,6 +313,7 @@ def _run_producer(
         run_dir, device_map=device_map, benchmark_should_fail=benchmark_should_fail,
         rd06_positive_stats=rd06_positive_stats, rd06_control_stats=rd06_control_stats,
         rd06_prefill_stats=rd06_prefill_stats, rd06_missing_prefill=rd06_missing_prefill,
+        rd05_positive_stats=rd05_positive_stats, rd05_control_stats=rd05_control_stats,
     )
     producer_context = vp.ProducerContext(
         repo_root=REPO_ROOT, patch_dir=_PATCH_DIR, workdir=run_dir,
@@ -295,11 +377,10 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
     def test_all_required_architectures_present_passes_closed(self) -> None:
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            # Two run_perplexity() calls (subject, control) per each of:
-            # rd0506 (1x) + rd07 x3 archs = 4 comparisons = 8 subprocess calls.
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            # Backend-reference PPL comparisons (rd0506 1x + rd07 x3 archs)
+            # and the new RD06/RD07 activation probes all share this one
+            # robust side_effect (see _make_subprocess_side_effect()).
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, record, runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -356,9 +437,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         # disagrees beyond tolerance -- sigma way past max_sigma=3.0.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(50.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect(ppl_subject=10.0, ppl_control=50.0)
             execution, record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -373,10 +452,20 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         self.assertIs(record["contract_verdicts"][_RD05]["passed"], False)
 
     def test_missing_model_and_corpus_fails_closed(self) -> None:
+        # RD07's activation/performance/controls now key off control_model
+        # (always supplied in this fixture), not ctx.model -- so they are
+        # no longer blocked by ctx.model/corpus being None the way RD05/
+        # RD06 and RD07's own backend_reference correctness check are.
+        # Real subprocess.run() calls (RD07's activation probe) are
+        # mocked so the test stays hardware-free; RD07's disposition still
+        # requires rd07_ok (backend_reference), which fails closed on the
+        # missing corpus, so overall eligibility stays False regardless.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
-        execution, record, _runtime = _run_producer(
-            run_dir=self.run_dir, device_map=device_map, model=None, corpus=None,
-        )
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = _make_subprocess_side_effect()
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map, model=None, corpus=None,
+            )
         self.assertFalse(execution.verdict.eligible)
         for verdict in record["contract_verdicts"].values():
             self.assertIs(verdict["passed"], False)
@@ -384,9 +473,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
     def test_benchmark_execution_failure_propagates_as_producer_error(self) -> None:
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             with self.assertRaises(vc.PatchCampaignError):
                 _run_producer(
                     run_dir=self.run_dir, device_map=device_map,
@@ -396,9 +483,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
     def test_scoped_contract_routing(self) -> None:
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, _record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -416,9 +501,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
     def test_artifact_binding_only_declared_artifacts_are_evidence(self) -> None:
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             _execution, record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -436,9 +519,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         sneaky = self.run_dir / "artifacts" / "sneaky.json"
         sneaky.write_text("{}", encoding="utf-8")
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             _execution2, record2, _runtime2 = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -475,9 +556,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
             "effect_pct": 0.6, "ci95_low": 0.1, "ci95_high": 1.1, "paired_rounds": 10,
         }
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, record, runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -503,9 +582,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
             "effect_pct": -1.5, "ci95_low": -2.0, "ci95_high": -1.2, "paired_rounds": 10,
         }
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -523,9 +600,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         # directly here for clarity of what the gate itself decided.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -546,9 +621,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         # control lanes are llama-bench, never llama-perplexity.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             _execution, _record, runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -575,9 +648,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         # fix requests both.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             _execution, _record, runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus,
@@ -600,9 +671,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         # fix closes.
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             execution, record, _runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus, rd06_missing_prefill=True,
@@ -622,9 +691,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         control_model = self.run_dir.parent / "control-model.gguf"
         with mock.patch("subprocess.run") as run_mock:
-            run_mock.side_effect = [
-                _ppl_completed(10.0, 0.01), _ppl_completed(10.0, 0.01),
-            ] * 4
+            run_mock.side_effect = _make_subprocess_side_effect()
             _execution, _record, runtime = _run_producer(
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus, control_model=control_model,
@@ -649,6 +716,199 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
                 run_dir=self.run_dir, device_map=device_map,
                 model=self.model, corpus=self.corpus, control_model=None,
             )
+
+    # --- PA39 real-hardware-acceptance fix: apply/build/activation/controls
+
+    def test_all_new_capability_checks_pass_in_happy_path(self) -> None:
+        # PA39 real-hardware-acceptance fix proof: apply, build, RD05
+        # controls, RD06 activation, RD06 controls, RD07 activation, RD07
+        # controls all resolve to real PASS results (not just "present in
+        # the plan") when every architecture/model/corpus/control_model is
+        # supplied -- these are exactly the seven checks PA39's real
+        # ConfigurationError (real-hardware acceptance attempt #1) found
+        # missing entirely.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = _make_subprocess_side_effect()
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        self.assertTrue(execution.verdict.eligible, execution.verdict.reasons)
+        for check_id in (
+            "apply", "build", "rd05-controls", "rd06-activation", "rd06-controls",
+            "rd07-activation", "rd07-controls",
+        ):
+            self.assertEqual(execution.evaluated[check_id].status, pv.PASS, check_id)
+
+    def test_rd06_activation_fails_closed_when_marker_never_observed(self) -> None:
+        # If BIGCHERRY_PATCH_TRACE=1 never produces the real marker (e.g.
+        # the patched binary does not actually contain/reach the
+        # instrumented dispatch site), the activation check must FAIL, not
+        # silently PASS on the basis that the benchmark itself executed
+        # without error.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = lambda *a, **k: mock.Mock(returncode=0, stdout="", stderr="")
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        self.assertEqual(execution.evaluated["rd06-activation"].status, pv.FAIL)
+        self.assertEqual(execution.evaluated["rd07-activation"].status, pv.FAIL)
+        self.assertFalse(execution.verdict.eligible)
+
+    def test_rd06_activation_fails_closed_when_marker_observed_on_control_binary(self) -> None:
+        # A marker that fires on the UNPATCHED control binary too would
+        # mean it does not uniquely identify the patched dispatch path
+        # (e.g. a probe bug, or a marker string that isn't actually
+        # gated on the patch's own code) -- the probe must catch that as
+        # a FAIL (control_hit=True), not a PASS.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = lambda *a, **k: mock.Mock(
+                returncode=0, stdout=f"{_RD06_ACTIVATION_MARKER}\n", stderr="",
+            )
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus,
+            )
+        self.assertEqual(execution.evaluated["rd06-activation"].status, pv.FAIL)
+        self.assertFalse(execution.verdict.eligible)
+
+    def test_rd05_controls_regression_over_budget_fails_closed(self) -> None:
+        # RD05's own contract still declares acceptance.max_control_
+        # regression_pct=1 even though it has no target_kernel_gain_pct --
+        # a control (prefill) regression beyond that budget must fail the
+        # new rd05-controls check, proving the gate is genuinely evaluated
+        # rather than a fabricated PASS.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        over_budget = {"effect_pct": -1.5, "ci95_low": -2.0, "ci95_high": -1.2, "paired_rounds": 3}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = _make_subprocess_side_effect()
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir, device_map=device_map,
+                model=self.model, corpus=self.corpus, rd05_control_stats=over_budget,
+            )
+        self.assertEqual(execution.evaluated["rd05-controls"].status, pv.FAIL)
+        self.assertFalse(execution.verdict.eligible)
+        # RD06/RD07 (unaffected by RD05's control regression) still pass.
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.PASS)
+
+    def test_apply_build_fail_closed_if_build_pair_raises(self) -> None:
+        # A real build/apply failure must surface as a real FAIL for both
+        # universal capabilities, never a silently-skipped check -- and
+        # must propagate as a producer error (matching how a genuine
+        # infrastructure failure is already treated elsewhere in this
+        # producer, e.g. test_benchmark_execution_failure_propagates_as_
+        # producer_error), not a fabricated PASS reached by catching the
+        # exception and moving on.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        checks = pv.parse_validation_toml(_PATCH_DIR / "validation.toml", patch_id=_PATCH_ID)
+        plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=checks, universal_capabilities=())
+        registry = experiment_contract.load_contracts(_CONTRACTS_TOML)
+        contracts = (registry[_RD05], registry[_RD06], registry[_RD07])
+        context = pv.ValidationContext(
+            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+            package_root=_PATCH_DIR, contracts=contracts,
+            contract_hashes={c.id: c.contract_hash for c in contracts},
+        )
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        runtime = _FakeProducerRuntime(self.run_dir, device_map=device_map)
+
+        def _raise_build_pair(**_kwargs):
+            raise vc.PatchCampaignError("simulated apply/build failure")
+
+        runtime.build_pair = _raise_build_pair  # type: ignore[assignment]
+        producer_context = vp.ProducerContext(
+            repo_root=REPO_ROOT, patch_dir=_PATCH_DIR, workdir=self.run_dir,
+            campaign_id=f"{_PATCH_ID}/rd050607", base_revision="a" * 40,
+            hip_path=Path("/hip"),
+            fat_targets=vp.FatTargetPlan(targets=("gfx1100", "gfx1201", "gfx1030")),
+            model=self.model, corpus=self.corpus, build_env={}, inputs={},
+            validation_build_identities={}, patch_id=_PATCH_ID, device_map=device_map,
+            runtime=runtime,
+        )
+        with self.assertRaises(vc.PatchCampaignError):
+            vc.execute_validation_producer(
+                patch_dir=_PATCH_DIR, producer_id="rd050607",
+                provided_inputs={"control_model": str(self.run_dir / "control-model.gguf")},
+                producer_context=producer_context, validation_plan=plan,
+                validation_context=context,
+                correctness_evidence_requested=False, performance_benchmark_requested=False,
+            )
+
+    # --- PA39 real-hardware-acceptance fix: real plan-resolution proof ---
+    # This is the exact class of gap PA39's real-hardware acceptance
+    # attempt #1 exposed: every prior hardware-free test drove
+    # execute_validation_producer() directly against a hand-built
+    # ValidationPlan(universal_capabilities=()), so none of them ever
+    # called require_execution_package()/build_validation_plan() against
+    # the REAL validation.toml + producer.toml + bound Experiment
+    # Contracts the real CLI path (_run_validation_producer()) actually
+    # uses. That real path failed closed with ConfigurationError at plan
+    # resolution, before any GPU work, and no existing test could have
+    # caught it.
+
+    def test_real_validation_plan_resolves_via_require_execution_package(self) -> None:
+        from bigcherry.patch import registry as patch_registry
+        from bigcherry.patch import validation_policy as patch_validation_policy
+
+        registry = patch_registry.load_registry(REPO_ROOT / "patches")
+        descriptor = registry.get(_PATCH_ID)
+        # Must not raise ConfigurationError -- this is the real call
+        # _run_validation_producer() makes before ever touching hardware.
+        plan = patch_validation_policy.require_execution_package(
+            descriptor, root=REPO_ROOT / "patches",
+        )
+        self.assertEqual(set(plan.required_capabilities), {
+            "apply", "build", "correctness", "performance", "activation", "controls",
+        })
+        # Every required (contract_id, capability) pair PA39's real error
+        # listed as missing must now have a covering check.
+        required_pairs = set(plan.contract_requirements)
+        self.assertEqual(required_pairs, {
+            (_RD05, "correctness"), (_RD05, "controls"),
+            (_RD06, "correctness"), (_RD06, "performance"),
+            (_RD06, "activation"), (_RD06, "controls"),
+            (_RD07, "correctness"), (_RD07, "performance"),
+            (_RD07, "activation"), (_RD07, "controls"),
+        })
+
+    def test_pre_fix_validation_toml_shape_fails_plan_resolution(self) -> None:
+        # Concretely reproduces PA39's real ConfigurationError: the
+        # ORIGINAL five checks alone (correctness/performance only, no
+        # apply/build/activation/controls) against the same real bound
+        # contracts must fail build_validation_plan() with exactly the
+        # capabilities PA39's real run reported missing. Proves this test
+        # class actually catches the real regression, not just that the
+        # current (fixed) validation.toml happens to resolve.
+        from bigcherry.patch import validation as patch_validation
+
+        checks = pv.parse_validation_toml(_PATCH_DIR / "validation.toml", patch_id=_PATCH_ID)
+        pre_fix_checks = tuple(
+            c for c in checks
+            if c.check_id in (
+                "rd05-backend-reference", "rd06-backend-reference", "rd06-performance",
+                "rd07-backend-reference", "rd07-performance",
+            )
+        )
+        registry = experiment_contract.load_contracts(_CONTRACTS_TOML)
+        bindings = tuple(
+            patch_validation.bind_contract(registry[cid]) for cid in (_RD05, _RD06, _RD07)
+        )
+        with self.assertRaises(patch_validation.ConfigurationError) as ctx:
+            patch_validation.build_validation_plan(
+                _PATCH_ID, pre_fix_checks, bindings=bindings,
+            )
+        message = str(ctx.exception)
+        self.assertIn("apply", message)
+        self.assertIn("build", message)
+        self.assertIn(f"{_RD05}:controls", message)
+        self.assertIn(f"{_RD06}:activation", message)
+        self.assertIn(f"{_RD06}:controls", message)
+        self.assertIn(f"{_RD07}:activation", message)
+        self.assertIn(f"{_RD07}:controls", message)
 
     def test_fallback_evaluate_check_is_fail_closed_without_producer(self) -> None:
         # Directly exercise validation.toml's callables (evaluate_check()

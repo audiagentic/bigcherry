@@ -31,21 +31,49 @@ def _fallback(check_id: str, capability: str) -> pv.ValidationResult:
     )
 
 
+def apply_check(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("apply", "apply")
+
+
+def build_check(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("build", "build")
+
+
 def rd05_backend_reference(ctx: pv.ValidationContext) -> pv.ValidationResult:
     return _fallback("rd05-backend-reference", "correctness")
+
+
+def rd05_controls(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("rd05-controls", "controls")
 
 
 def rd06_backend_reference(ctx: pv.ValidationContext) -> pv.ValidationResult:
     return _fallback("rd06-backend-reference", "correctness")
 
 
+def rd06_activation(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("rd06-activation", "activation")
+
+
 def rd06_performance(ctx: pv.ValidationContext) -> pv.ValidationResult:
     return _fallback("rd06-performance", "performance")
+
+
+def rd06_controls(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("rd06-controls", "controls")
 
 
 def rd07_backend_reference(ctx: pv.ValidationContext) -> pv.ValidationResult:
     return _fallback("rd07-backend-reference", "correctness")
 
 
+def rd07_activation(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("rd07-activation", "activation")
+
+
 def rd07_performance(ctx: pv.ValidationContext) -> pv.ValidationResult:
     return _fallback("rd07-performance", "performance")
+
+
+def rd07_controls(ctx: pv.ValidationContext) -> pv.ValidationResult:
+    return _fallback("rd07-controls", "controls")
