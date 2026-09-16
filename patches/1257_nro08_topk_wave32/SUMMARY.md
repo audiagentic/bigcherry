@@ -1,7 +1,7 @@
 # 1257_nro08_topk_wave32
 
 **Status:** untested
-**Plan item:** PNRO08
+**Plan item:** NRO08
 
 ## What it does
 

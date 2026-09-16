@@ -1,7 +1,7 @@
 # 1254_nro05_gdn_mtp_prefix_tail
 
 **Status:** untested
-**Plan item:** PNRO05
+**Plan item:** NRO05
 
 ## What it does
 

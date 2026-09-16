@@ -1,7 +1,7 @@
 # 1256_nro07_topk_hybrid
 
 **Status:** untested
-**Plan item:** PNRO07
+**Plan item:** NRO07
 
 ## What it does
 
