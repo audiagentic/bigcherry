@@ -69,11 +69,21 @@ GGML_LOG_WARN, not GGML_LOG_INFO -- VA21 found llama-bench filters INFO):
   - RD07: mmq.cu's ggml_cuda_mul_mat_q_switch_type(), case
     GGML_TYPE_Q6_K, immediately before mul_mat_q_case<GGML_TYPE_Q6_K>().
     mmq.cu was not previously in 1203's edit set.
-  - ADAPTATION (1000 cast): the mmq-vec-dot.cuh sum line in our base
-    carries BigCherry patch 1000's "((float) C.x[l])" cast (upstream PR
-    #25940, validated in the framework set). The anchor matches the
-    post-1000 text and the replacement keeps an equivalent single "(float)"
-    cast -- semantically identical to the fork's final line.
+  - ADAPTATION (1000/1006 cast, corrected 2026-09-16): framework patch
+    1000 (upstream PR #25940, combined Q2_K+Q6_K) would add a
+    "((float) C.x[l])" cast to the mmq-vec-dot.cuh sum line, but its state
+    is "rejected" -- not part of the applied patchset. Its Q6_K half was
+    later split out as 1006_rdna4_mmq_q6k_codegen_fix (state "untested",
+    NOT rejected), which independently inserts that same cast at the same
+    site. Depending on which patch selection is composed ahead of 1203
+    (1006 present or absent), the real current-pin base this edit's anchor
+    sees carries the cast or does not -- both are real, both confirmed
+    2026-09-16 against isolated worktrees at pin b10901 /
+    28ff0958291ce3465fabd7bd679d4b0edd742bd9. The 'rd07-sum-line' anchor
+    now matches either shape via a regex alternation (not re.escape() of a
+    single literal); the replacement always applies its own explicit
+    "(float)" cast to C.x[l], so the emitted promotion is semantically
+    identical to the fork's final line regardless of which shape matched.
   - ADAPTATION (test positions): the fork perf-hunk context was added by
     this same commit's earlier lines in a different layout; our base's
     make_test_cases_perf anchors on the HI70 direct-op corpus instead
@@ -119,9 +129,11 @@ PROVENANCE = {
     "snapshot-head": "9e46e1fdc7a880f9ae9a2f9a693ae3e14c142a22",
     "snapshot-base": "4df29be4f4c3673f428170fda944a5b19f743bb8",
     "adaptations": [
-        "mmq-vec-dot.cuh: sum line anchored on post-1000 text "
-        "(\"((float) C.x[l])\" cast from framework patch 1000, upstream "
-        "PR #25940); replacement keeps an equivalent single (float) cast.",
+        "mmq-vec-dot.cuh: sum line anchor accepts either real base shape "
+        "-- plain pin text (no cast; 1000/PR #25940 is rejected) or the "
+        "cast already inserted by active co-tenant patch 1006 (split from "
+        "1000's Q6_K half) -- via a regex alternation; replacement always "
+        "applies its own equivalent single (float) cast.",
         "tests: perf cases inserted after the HI70 direct-op corpus; the "
         "fork eval-test hunk sits in a #if 0 dead block and is omitted.",
     ],
@@ -364,13 +376,45 @@ _SC_FOLD_NEW = """            x_df_reg[n][l] = x_df[i*sram_stride];
 #pragma unroll
         for (int j0 = 0; j0 < J; j0 += ntx*tile_C::J) {"""
 
-# Base line carries framework patch 1000's ((float) C.x[l]) cast; the
-# replacement keeps an equivalent single (float) cast.
-_SUM_OLD = """                for (int l = 0; l < tile_C::ne; ++l) {
+# Base line, two real upstream shapes (checked 2026-09-16 against the real
+# pin b10901 / 28ff0958291ce3465fabd7bd679d4b0edd742bd9, isolated worktree):
+#
+#   1. Plain pin source (no other co-tenant patch applied first): the sum
+#      line has NO explicit float cast --
+#      "sum[...] += C.x[l] * sc[k01/4] * x_df[i*sram_stride] * dB;". This is
+#      what a standalone/focal application of 1203 (its own REQUIRES closure
+#      only, no framework companions) sees -- confirmed against a real
+#      isolated subject worktree and matching the PA39 real-hardware
+#      failure (attempt #2, commit 63b68e88) this anchor was originally
+#      fixed for.
+#   2. Pin source with active co-tenant patch 1006_rdna4_mmq_q6k_codegen_fix
+#      (order 1006 < 1203's order, state "untested" -- NOT rejected; the
+#      rejected patch at this same site is 1000_rdna4_mmq_q2k_q6k_fix, a
+#      different id) applied first: 1006 independently inserts its own
+#      "((float) C.x[l])" cast at this exact line (see
+#      patches/1006_rdna4_mmq_q6k_codegen_fix/patch.py). Any full-registry
+#      composition that includes 1006 ahead of 1203 (e.g.
+#      `patch-rebase-check --all`) presents this cast shape to 1203.
+#
+# Both are real, both are reachable depending on which patch selection is
+# composed, and both are semantically identical to what the replacement
+# below computes -- so the anchor accepts either explicitly rather than
+# assuming one caller's selection is the only one that matters. This is a
+# regex alternation on the anchor text, not re.escape(), since re.escape()
+# cannot express "one of two literal shapes".
+_SUM_OLD_PLAIN = ("sum[(j0/tile_C::J + n)*tile_C::ne + l] += "
+                  "C.x[l] * sc[k01/4] * x_df[i*sram_stride] * dB;")
+_SUM_OLD_CAST = ("sum[(j0/tile_C::J + n)*tile_C::ne + l] += "
+                 "((float) C.x[l]) * sc[k01/4] * x_df[i*sram_stride] * dB;")
+
+_SUM_OLD = re.escape("""                for (int l = 0; l < tile_C::ne; ++l) {
                     const int i = i0 + n*tile_C::I + tile_C::get_i(l);
                     const int8_t * sc = (const int8_t *) (x_sc + i*sram_stride + k00/16);
-                    sum[(j0/tile_C::J + n)*tile_C::ne + l] += ((float) C.x[l]) * sc[k01/4] * x_df[i*sram_stride] * dB;
-                }"""
+                    sum[(j0/tile_C::J + n)*tile_C::ne + l] += """) + (
+    r"(?:" + re.escape(_SUM_OLD_CAST.split("+= ", 1)[1]) + r"|"
+    + re.escape(_SUM_OLD_PLAIN.split("+= ", 1)[1]) + r")"
+) + re.escape("""
+                }""")
 
 _SUM_NEW = """                for (int l = 0; l < tile_C::ne; ++l) {
                     sum[(j0/tile_C::J + n)*tile_C::ne + l] += (float) C.x[l] * x_s2_reg[n][l] * dB;
@@ -706,10 +750,11 @@ PATCHES = [
             ),
             Edit(
                 id="rd07-sum-line",
-                anchor=re.escape(_SUM_OLD),
+                anchor=_SUM_OLD,
                 rationale="Q6_K mmq warp kernel: the j0 accumulation uses "
-                          "the pre-folded scale (fork logic; keeps the "
-                          "1000 float cast, equivalent form)",
+                          "the pre-folded scale (fork logic; matches the "
+                          "sum line whether or not co-tenant patch 1006 "
+                          "already inserted its own float cast here)",
                 mode="replace",
                 text=_SUM_NEW,
                 guard=r"sum\[\(j0/tile_C::J \+ n\)\*tile_C::ne \+ l\] \+= \(float\) C\.x\[l\] \* x_s2_reg\[n\]\[l\] \* dB;",
