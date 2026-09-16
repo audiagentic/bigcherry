@@ -1,7 +1,7 @@
 # 1251_nro02_allreduce_fused_residual
 
 **Status:** untested
-**Plan item:** NRO02
+**Plan item:** PNRO02
 
 ## What it does
 

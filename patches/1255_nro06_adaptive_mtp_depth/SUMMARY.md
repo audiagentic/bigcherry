@@ -1,7 +1,7 @@
 # 1255_nro06_adaptive_mtp_depth
 
 **Status:** untested
-**Plan item:** NRO06
+**Plan item:** PNRO06
 
 ## What it does
 

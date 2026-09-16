@@ -1,7 +1,7 @@
 # 1252_nro03_allreduce_p2p_provider
 
 **Status:** untested
-**Plan item:** NRO03
+**Plan item:** PNRO03
 
 ## What it does
 
