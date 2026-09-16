@@ -82,12 +82,17 @@ def _patch_states(patches_dir: Path | None = None) -> dict[str, str]:
 
 
 def _plan_items_from_patches(patches_dir: Path | None = None) -> dict[str, list[str]]:
-    """plan-item -> [patch_id, ...] from each module's own PROVENANCE dict."""
+    """plan-item -> [patch_id, ...] from package metadata/provenance."""
     by_item: dict[str, list[str]] = {}
     for module in patchset.catalog(patches_dir):
         prov = sources._patch_provenance(module.path)
-        item = (prov or {}).get("plan-item")
-        if item:
+        manifest_path = module.path.parent / "patch.toml"
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+        items = manifest.get("plan-ids") or []
+        if not items:
+            item = (prov or {}).get("plan-item")
+            items = [item] if item else []
+        for item in items:
             by_item.setdefault(item, []).append(module.patch_id)
     return by_item
 

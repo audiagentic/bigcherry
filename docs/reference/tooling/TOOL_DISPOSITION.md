@@ -76,6 +76,7 @@ ownership.
 
 | Path | Disposition | Intended owner / rationale |
 | --- | --- | --- |
+| `tools/lab/rd25-block08-review/block08.diff` | **TRANSITIONAL** | Plan-owned offline RD25 prerequisite review input; retain the pinned diff until block-08 is packaged, reviewed, or explicitly retired. |
 | `.audiagentic/runtime/patch-system/psi_v2_block.py` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `.opencode/node_modules/.bin/download-msgpackr-prebuilds.cmd` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
 | `.opencode/node_modules/.bin/download-msgpackr-prebuilds.ps1` | **TRANSITIONAL** | Repository script outside canonical tooling tree; retain pending ownership audit. |
