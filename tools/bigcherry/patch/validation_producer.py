@@ -182,6 +182,7 @@ class ProducerRuntime(Protocol):
         *,
         targets: tuple[str, ...],
         primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),
@@ -198,6 +199,13 @@ class ProducerRuntime(Protocol):
         *,
         name: str,
         payload: JsonObject,
+    ) -> ArtifactRef: ...
+
+    def write_text_artifact(
+        self,
+        *,
+        name: str,
+        text: str,
     ) -> ArtifactRef: ...
 
     def run_paired_llama_benchmark(

@@ -68,7 +68,6 @@ from bigcherry.patch.validation import (
 from bigcherry.patch.validation_producer import (
     FatTargetPlan,
     ProducerBuildPair,
-    ProducerCheckResult,
     ProducerContext,
     ProducerDeviceContext,
     ProducerPairedBenchmarkOutcome,
@@ -4102,28 +4101,46 @@ class CampaignProducerRuntime:
         *,
         targets: tuple[str, ...],
         primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),
     ) -> ProducerBuildPair:
         """The one authority for the PA36 build-once-fat-multiarch rule:
-        exactly one control build and one subject build, both at
-        ``self.fat_targets.cmake_value``, regardless of how many devices
-        or architectures the producer will later run against."""
-        del targets  # informational for callers; the real build target
-        # list comes from primary_target -- build_tree() itself only ever
-        # builds the single requested target for a producer build pair
-        # (a producer wanting multiple binaries calls build_pair() once
-        # per binary set, never widens this one call).
+        exactly one control build and one subject build, both at the same
+        target set, regardless of how many devices or architectures the
+        producer will later run against.
+
+        ``targets`` is the authoritative, REQUIRED target set (validated
+        through FatTargetPlan, so its non-empty/no-duplicate invariants hold;
+        a producer may request a fat gfx1100;gfx1201;gfx1030 set while the
+        outer run names one execution arch). ``common_extra_patches``
+        resolves into BOTH arms (control = baseline + common; subject =
+        baseline + common + focal) so a producer whose correctness pair
+        needs supplementary evidence patches in both arms passes them here
+        instead of materializing its own pair below the build authority
+        (dev-gpt-agent req_98777b7a51f84820 + review req_052817cb66d14bc1)."""
+        # targets and primary_target are REQUIRED (GPT review
+        # req_052817cb66d14bc1): the pre-existing API already required both,
+        # so silent defaults would only add a path where a future producer
+        # accidentally builds the wrong fat plan or the wrong binary. The
+        # producer names the explicit target set (typically
+        # ctx.fat_targets.targets); FatTargetPlan validates it, and its
+        # cmake_value is the exact AMDGPU_TARGETS string. The binary build
+        # list still comes from primary_target -- build_tree() itself only
+        # ever builds the single requested target for a producer build pair
+        # (a producer wanting multiple binaries calls build_pair() once per
+        # binary set, never widens this one call).
+        target_plan = FatTargetPlan(targets=targets)
         from bigcherry.patch import source as psi
 
         control_revision, control_composition = psi.resolve_source_composition(
-            baseline_source, focal=None, base_ref=self.base_revision,
-            base_repo=LLAMA_CPP_SRC,
+            baseline_source, focal=None, extra_patches=common_extra_patches,
+            base_ref=self.base_revision, base_repo=LLAMA_CPP_SRC,
         )
         subject_revision, subject_composition = psi.resolve_source_composition(
-            baseline_source, focal=self.patch_id, base_ref=self.base_revision,
-            base_repo=LLAMA_CPP_SRC,
+            baseline_source, focal=self.patch_id, extra_patches=common_extra_patches,
+            base_ref=self.base_revision, base_repo=LLAMA_CPP_SRC,
         )
         if control_revision != subject_revision:
             raise PatchCampaignError(
@@ -4144,29 +4161,29 @@ class CampaignProducerRuntime:
 
         exe = ".exe" if sys.platform == "win32" else ""
         build_root = self.workdir / "builds"
-        # Directory NAME must not contain ';' -- self.fat_targets.cmake_value
-        # is the correct CMake AMDGPU_TARGETS *value* (semicolon-joined, as
-        # CMake list syntax requires), but a build directory literally named
-        # with embedded semicolons breaks CMake's own internal argument
-        # handling (real failure found on real hardware, PA39 real-hardware
-        # acceptance attempt #3b: "execute_process given unknown argument
-        # 'gfx1201'" during compiler-id detection, because CMake treats
-        # ';' in certain internal strings as its own list separator). Use a
-        # '+'-joined slug for the directory name only; the actual cmake
-        # invocation still receives the real semicolon-joined value.
-        target_slug = "+".join(self.fat_targets.targets)
+        # Directory NAME must not contain ';' -- target_plan.cmake_value is the
+        # correct CMake AMDGPU_TARGETS *value* (semicolon-joined, as CMake
+        # list syntax requires), but a build directory literally named with
+        # embedded semicolons breaks CMake's own internal argument handling
+        # (real failure found on real hardware, PA39 real-hardware acceptance
+        # attempt #3b: "execute_process given unknown argument 'gfx1201'"
+        # during compiler-id detection, because CMake treats ';' in certain
+        # internal strings as its own list separator). Use a '+'-joined slug
+        # for the directory name only; the actual cmake invocation still
+        # receives the real semicolon-joined value.
+        target_slug = "+".join(target_plan.targets)
         control_name = f"{self.patch_id}-control-{target_slug}"
         subject_name = f"{self.patch_id}-subject-{target_slug}"
 
         control_bin = build_tree(
             name=control_name, hip_path=self.hip_path,
-            amdgpu_targets=self.fat_targets.cmake_value, workdir=build_root,
+            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
             targets=[primary_target], source=control_src,
             extra_cmake_args=list(control_extra_cmake_args),
         )
         subject_bin = build_tree(
             name=subject_name, hip_path=self.hip_path,
-            amdgpu_targets=self.fat_targets.cmake_value, workdir=build_root,
+            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
             targets=[primary_target], source=subject_src,
             extra_cmake_args=list(subject_extra_cmake_args),
         )
@@ -4175,21 +4192,21 @@ class CampaignProducerRuntime:
         control_binary = control_bin / f"{primary_target}{exe}"
         subject_binary = subject_bin / f"{primary_target}{exe}"
         control_cmake_args = _full_requested_cmake_args(
-            hip_path=self.hip_path, amdgpu_targets=self.fat_targets.cmake_value,
+            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
             extra_cmake_args=list(control_extra_cmake_args),
         )
         subject_cmake_args = _full_requested_cmake_args(
-            hip_path=self.hip_path, amdgpu_targets=self.fat_targets.cmake_value,
+            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
             extra_cmake_args=list(subject_extra_cmake_args),
         )
         control_build_evidence = capture_completed_build_evidence(
             build_root / control_name, source_root=control_src,
-            architecture=self.fat_targets.targets, binary=control_binary,
+            architecture=target_plan.targets, binary=control_binary,
             requested_cmake_args=control_cmake_args, build_env=build_env,
         )
         subject_build_evidence = capture_completed_build_evidence(
             build_root / subject_name, source_root=subject_src,
-            architecture=self.fat_targets.targets, binary=subject_binary,
+            architecture=target_plan.targets, binary=subject_binary,
             requested_cmake_args=subject_cmake_args, build_env=build_env,
         )
 
@@ -4296,6 +4313,9 @@ class CampaignProducerRuntime:
     def write_artifact(self, *, name: str, payload: JsonObject):
         return _write_bound_artifact_ref(self.run_dir, name, payload)
 
+    def write_text_artifact(self, *, name: str, text: str) -> ArtifactRef:
+        return _write_bound_text_artifact_ref(self.run_dir, name, text)
+
     def run_paired_llama_benchmark(
         self,
         *,
@@ -4330,6 +4350,27 @@ def _write_bound_artifact_ref(run_dir: Path, name: str, payload: JsonObject):
     duplicating the write logic."""
     ref = _write_bound_artifact(run_dir, name, payload)
     return ArtifactRef(name=name, path=ref["path"], sha256=ref["sha256"])
+
+
+def _write_bound_text_artifact_ref(run_dir: Path, name: str, text: str) -> ArtifactRef:
+    """``write_artifact()`` serializes a JSON payload; ``write_text_artifact()``
+    writes raw text VERBATIM (RD12's raw per-arm activation logs are not JSON,
+    and re-serializing them would change the exact bytes the trace-marker
+    validator re-reads). Same bound-artifact contract as write_artifact():
+    returns the typed ArtifactRef a ValidationResult.artifacts /
+    validate_producer_result() can bind."""
+    target = run_dir / "artifacts" / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Byte-verbatim: a text-mode write would translate newlines on Windows
+    # (\n -> \r\n) and change the exact bytes (and sha256) the trace-marker
+    # validator re-reads (GPT review req_052817cb66d14bc1).
+    data = text.encode("utf-8")
+    target.write_bytes(data)
+    return ArtifactRef(
+        name=name,
+        path=target.relative_to(run_dir).as_posix(),
+        sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
+    )
 
 
 @dataclass(frozen=True)
@@ -4529,7 +4570,6 @@ def _run_validation_producer(
     from bigcherry.core import paths as bc_paths
     from bigcherry.core import config as campaign_config
     from bigcherry.patch import registry as patch_registry
-    from bigcherry.patch import source as psi
     from bigcherry.patch import validation as patch_validation
     from bigcherry.patch import validation_policy as patch_validation_policy
 

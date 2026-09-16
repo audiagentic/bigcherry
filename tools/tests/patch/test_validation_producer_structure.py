@@ -453,6 +453,113 @@ class DeviceContextsAreHipOnlyTests(unittest.TestCase):
             self.assertNotIn("ROCR_VISIBLE_DEVICES", ctx.env_overrides)
             self.assertEqual(ctx.env_unset, ("ROCR_VISIBLE_DEVICES",))
 
+class BuildPairOverrideParamsTests(unittest.TestCase):
+    """test_build_pair_override_params
+
+    PA36 RD12 pilot (dev-gpt-agent req_98777b7a51f84820 + ruling
+    req_7efbe5cb5e434582): ``targets`` is authoritative when non-empty, and
+    ``common_extra_patches`` resolves into BOTH arms (control + subject) so a
+    producer whose correctness pair needs supplementary evidence patches in
+    both arms passes them here instead of materializing its own pair below
+    the build authority."""
+
+    @staticmethod
+    def _runtime(fat_targets):
+        return vc.CampaignProducerRuntime(
+            repo_root=Path("/repo"), patch_id="0000_fake", base_revision="a" * 40,
+            workdir=Path("/work"), hip_path=Path("/hip"),
+            fat_targets=vp.FatTargetPlan(targets=tuple(fat_targets)),
+            run_dir=Path("/work/run"),
+        )
+
+    def _run(self, runtime, **kwargs):
+        from unittest import mock
+
+        from bigcherry.patch import source as real_psi
+
+        resolve_calls = []
+        build_calls = []
+        evidence_calls = []
+
+        def fake_resolve(source_name, *, focal=None, extra_patches=(),
+                         base_ref="HEAD", base_repo=None, recipes=None, patches_root=None):
+            resolve_calls.append({"focal": focal, "extra_patches": tuple(extra_patches)})
+            composition = [("bigcherry", "rev123")]
+            for extra in extra_patches:
+                composition.append((extra, "1"))
+            if focal is not None:
+                composition.append((focal, "1"))
+            return "rev123", tuple(composition)
+
+        def fake_build_tree(*, name, hip_path, amdgpu_targets, workdir,
+                           targets, source, extra_cmake_args):
+            build_calls.append(
+                {"name": name, "amdgpu_targets": amdgpu_targets, "targets": list(targets)}
+            )
+            return Path("/builds/" + str(name))
+
+        class _FakeEvidence:
+            def campaign_identity(self):
+                return {"role": "x"}
+
+        def fake_capture(build_dir, *, source_root, architecture, binary,
+                         requested_cmake_args, build_env):
+            evidence_calls.append({"architecture": tuple(architecture), "binary": binary})
+            return _FakeEvidence()
+
+        with mock.patch.object(
+            real_psi, "resolve_source_composition", side_effect=fake_resolve,
+        ), mock.patch.object(
+            real_psi, "materialize_composition",
+            side_effect=[Path("/src/control"), Path("/src/subject")],
+        ), mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")), mock.patch.object(
+            vc, "build_tree", side_effect=fake_build_tree,
+        ), mock.patch.object(
+            vc, "capture_completed_build_evidence", side_effect=fake_capture,
+        ):
+            runtime.build_pair(**kwargs)
+
+        return {"resolve": resolve_calls, "build": build_calls, "evidence": evidence_calls}
+
+    def test_build_pair_common_extra_patches_apply_to_both_arms(self):
+        runtime = self._runtime(("gfx1100",))
+        got = self._run(runtime, targets=("gfx1100",), primary_target="test-backend-ops",
+                        common_extra_patches=("1222_e", "1223_e"))
+        resolve = got["resolve"]
+        self.assertEqual(len(resolve), 2, "build_pair() must resolve exactly control + subject")
+        self.assertIsNone(resolve[0]["focal"], "control arm must stay focal-free")
+        self.assertEqual(resolve[0]["extra_patches"], ("1222_e", "1223_e"))
+        self.assertEqual(resolve[1]["focal"], "0000_fake", "subject arm must keep its focal")
+        self.assertEqual(resolve[1]["extra_patches"], ("1222_e", "1223_e"),
+                         "common_extra_patches must reach BOTH arms")
+        self.assertEqual(len(got["build"]), 2)
+
+    def test_build_pair_targets_override_is_authoritative(self):
+        # fat_targets says gfx1100, but an explicit targets=("gfx1030",) override
+        # must drive the actual CMake AMDGPU_TARGETS value and the directory slug.
+        runtime = self._runtime(("gfx1100",))
+        got = self._run(runtime, targets=("gfx1030",), primary_target="test-backend-ops")
+        self.assertEqual(len(got["build"]), 2)
+        for call in got["build"]:
+            self.assertEqual(call["amdgpu_targets"], "gfx1030",
+                             "non-empty targets must override fat_targets")
+            self.assertIn("gfx1030", str(call["name"]))
+            self.assertNotIn("gfx1100", str(call["name"]))
+
+    def test_build_pair_targets_required_and_validated(self):
+        # GPT review req_052817cb66d14bc1: no silent defaults -- targets and
+        # primary_target are required, and targets must satisfy the
+        # FatTargetPlan invariants (non-empty, no duplicates); there is no
+        # accidental fallback to the runtime fat plan.
+        runtime = self._runtime(("gfx1100", "gfx1201"))
+        with self.assertRaises(TypeError):
+            runtime.build_pair(primary_target="llama-bench")
+        with self.assertRaises(vp.ValidationProducerError):
+            self._run(runtime, targets=(), primary_target="llama-bench")
+        with self.assertRaises(vp.ValidationProducerError):
+            self._run(runtime, targets=("gfx1100", "gfx1100"),
+                      primary_target="llama-bench")
+
 
 if __name__ == "__main__":
     unittest.main()
