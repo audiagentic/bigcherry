@@ -121,6 +121,18 @@ def _make_subprocess_side_effect(
         # build_pair()) can ever emit either real marker; the control
         # binary structurally cannot, matching the real patched-vs-
         # unpatched compiled code difference.
+        # PA39 real-hardware attempt #3d finding: "-p 0" (no prefill) gave
+        # RD06/RD07's dispatch conditions no honest chance to fire on real
+        # hardware, even on the correctly-patched subject binary -- fixed
+        # to "-p 512" (matching this producer's own pp512 performance
+        # workload). Assert the real argv shape here so a regression back
+        # to a no-prefill probe fails every test using this fixture, not
+        # just a real-hardware rerun.
+        assert "-p" in command, f"activation probe argv missing -p: {command!r}"
+        assert command[command.index("-p") + 1] != "0", (
+            f"activation probe argv uses -p 0 (no prefill) -- PA39 attempt #3d "
+            f"real-hardware regression: {command!r}"
+        )
         binary_path = str(command[0])
         is_subject = "subject-bin" in binary_path.replace("\\", "/")
         stdout = (
