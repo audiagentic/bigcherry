@@ -39,7 +39,7 @@ candidates head-to-head per exact shape and hardware.
 
 from bigcherry.patcher import Edit, FilePatch
 
-GROUP = "upstream-fixes"
+GROUP = "rdna-boosts"
 STATE = "untested"
 
 PATCH = FilePatch(
