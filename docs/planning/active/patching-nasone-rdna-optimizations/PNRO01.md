@@ -77,6 +77,8 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 
 ## Ledger-events
 
+Validation update: all 59 registered patches, including PNRO01's package, rebase cleanly against current pin b10901 (SHA 28ff0958291ce3465fabd7bd679d4b0edd742bd9). Apply/build/correctness/performance gates remain pending.
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.053474+00:00 (updated-by): Updated: section:ledger-events

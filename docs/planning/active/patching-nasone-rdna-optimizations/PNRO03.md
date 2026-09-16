@@ -77,6 +77,8 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 
 ## Ledger-events
 
+Validation update: package rebase is clean against current pin b10901; apply/build/correctness/performance gates remain pending.
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.061978+00:00 (updated-by): Updated: section:ledger-events

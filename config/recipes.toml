@@ -148,6 +148,30 @@ patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 [experiment.rd09-only]
 patches = ["1235_rd09_q81_activation_cache_foundation"]
 
+[experiment.pnro01-only]
+patches = ["1001_hip_internal_allreduce", "1250_nro01_allreduce_q8_wire"]
+
+[experiment.pnro02-only]
+patches = ["1001_hip_internal_allreduce", "1250_nro01_allreduce_q8_wire", "1251_nro02_allreduce_fused_residual"]
+
+[experiment.pnro03-only]
+patches = ["1001_hip_internal_allreduce", "1252_nro03_allreduce_p2p_provider"]
+
+[experiment.pnro04-only]
+patches = ["1221_rd50_gdn_chunked_recurrence", "1253_nro04_gfx1100_bf16_chunked_gdn"]
+
+[experiment.pnro05-only]
+patches = ["1221_rd50_gdn_chunked_recurrence", "1253_nro04_gfx1100_bf16_chunked_gdn", "1254_nro05_gdn_mtp_prefix_tail"]
+
+[experiment.pnro06-only]
+patches = ["1255_nro06_adaptive_mtp_depth"]
+
+[experiment.pnro07-only]
+patches = ["1256_nro07_topk_hybrid"]
+
+[experiment.pnro08-only]
+patches = ["1256_nro07_topk_hybrid", "1257_nro08_topk_wave32"]
+
 [experiment.rd30-only]
 patches = ["1237_rd30_moe_mmq_compact_grid"]
 
