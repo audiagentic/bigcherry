@@ -172,10 +172,29 @@ def _run_activation_probe(
     Also per _run_one_trace_probe()'s real precedent (VA21 real-hardware
     finding): llama-bench gates ggml's log level on ITS OWN --verbose
     flag, so GGML_LOG_WARN (and GGML_LOG_INFO) are filtered without it --
-    this probe always passes --verbose for exactly that reason."""
+    this probe always passes --verbose for exactly that reason.
+
+    PA39 real-hardware acceptance attempt #3d finding (real, not fabricated):
+    "-p 0" (zero prompt tokens, decode-only from an empty prompt) gave both
+    RD06's and RD07's dispatch conditions no honest chance to fire --
+    RD07's marker sits in the Q6_K MMQ switch case (mmq.cu), which
+    llama.cpp only routes larger prefill batches through (single-token
+    decode normally uses mul_mat_vec_q instead); RD06's marker requires
+    Q->ne[0] > 128 at the same FA dispatch site RD05 uses, which also
+    needs a real forward pass to reach. Confirmed directly on real
+    hardware: with "-p 0" neither subject binary emits ANY of the three
+    BIGCHERRY_PATCH_HIT markers (RD05/RD06/RD07) even with
+    BIGCHERRY_PATCH_TRACE=1 set; with "-p 512" (matching this producer's
+    own pp512 performance workload shape) all three fire on the same
+    subject binary, unchanged binary/build. GPT-reviewed (session
+    ses_88ee99d265454e80, req req_042661d677a346ac) before applying:
+    confirmed real workload-selection defect, not a deliberate -p 0
+    design choice (no such rationale exists in the commit that introduced
+    this probe), -p 512 recommended to match the already-established
+    pp512 shape rather than an arbitrary smaller value."""
     def _argv(binary: Path) -> list[str]:
         return [
-            str(binary), "-m", str(model), "-p", "0", "-n", "16", "-r", "1",
+            str(binary), "-m", str(model), "-p", "512", "-n", "16", "-r", "1",
             "-ngl", "99", "--verbose",
         ]
 
