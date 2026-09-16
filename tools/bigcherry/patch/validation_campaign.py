@@ -4144,8 +4144,19 @@ class CampaignProducerRuntime:
 
         exe = ".exe" if sys.platform == "win32" else ""
         build_root = self.workdir / "builds"
-        control_name = f"{self.patch_id}-control-{self.fat_targets.cmake_value}"
-        subject_name = f"{self.patch_id}-subject-{self.fat_targets.cmake_value}"
+        # Directory NAME must not contain ';' -- self.fat_targets.cmake_value
+        # is the correct CMake AMDGPU_TARGETS *value* (semicolon-joined, as
+        # CMake list syntax requires), but a build directory literally named
+        # with embedded semicolons breaks CMake's own internal argument
+        # handling (real failure found on real hardware, PA39 real-hardware
+        # acceptance attempt #3b: "execute_process given unknown argument
+        # 'gfx1201'" during compiler-id detection, because CMake treats
+        # ';' in certain internal strings as its own list separator). Use a
+        # '+'-joined slug for the directory name only; the actual cmake
+        # invocation still receives the real semicolon-joined value.
+        target_slug = "+".join(self.fat_targets.targets)
+        control_name = f"{self.patch_id}-control-{target_slug}"
+        subject_name = f"{self.patch_id}-subject-{target_slug}"
 
         control_bin = build_tree(
             name=control_name, hip_path=self.hip_path,
