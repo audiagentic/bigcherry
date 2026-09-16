@@ -19,14 +19,14 @@ PATCHES = ROOT / "patches"
 PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizations"
 
 EXPECTED = {
-    "1250_nro01_allreduce_q8_wire": ("NRO01", ["1001_hip_internal_allreduce"]),
-    "1251_nro02_allreduce_fused_residual": ("NRO02", ["1250_nro01_allreduce_q8_wire"]),
-    "1252_nro03_allreduce_p2p_provider": ("NRO03", ["1001_hip_internal_allreduce"]),
-    "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", ["1221_rd50_gdn_chunked_recurrence"]),
-    "1254_nro05_gdn_mtp_prefix_tail": ("NRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
-    "1255_nro06_adaptive_mtp_depth": ("NRO06", []),
-    "1256_nro07_topk_hybrid": ("NRO07", []),
-    "1257_nro08_topk_wave32": ("NRO08", ["1256_nro07_topk_hybrid"]),
+    "1250_nro01_allreduce_q8_wire": ("PNRO01", ["1001_hip_internal_allreduce"]),
+    "1251_nro02_allreduce_fused_residual": ("PNRO02", ["1250_nro01_allreduce_q8_wire"]),
+    "1252_nro03_allreduce_p2p_provider": ("PNRO03", ["1001_hip_internal_allreduce"]),
+    "1253_nro04_gfx1100_bf16_chunked_gdn": ("PNRO04", ["1221_rd50_gdn_chunked_recurrence"]),
+    "1254_nro05_gdn_mtp_prefix_tail": ("PNRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
+    "1255_nro06_adaptive_mtp_depth": ("PNRO06", []),
+    "1256_nro07_topk_hybrid": ("PNRO07", []),
+    "1257_nro08_topk_wave32": ("PNRO08", ["1256_nro07_topk_hybrid"]),
 }
 
 # The capability rebaseline gave the active successors a dedicated PNRO

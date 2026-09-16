@@ -1,7 +1,7 @@
 # 1253_nro04_gfx1100_bf16_chunked_gdn
 
 **Status:** untested
-**Plan item:** NRO04
+**Plan item:** PNRO04
 
 ## What it does
 
