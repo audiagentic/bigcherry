@@ -56,7 +56,7 @@ layer), the first matmul also computes the second weight's result as a
 fusion "gate" and writes it to a separate `dst_gate` destination instead of
 combining it into the main output -- one launch instead of two, avoiding a
 second read of the shared activation. Ported from stew675-rdna-boosts fork
-commit `44b51c66a` (https://github.com/stew675/llama.cpp); not merged into
+commit `44b51c66a` (<https://github.com/stew675/llama.cpp>); not merged into
 ggml-org/llama.cpp master. The fork's own claim (not yet independently
 verified): bit-identical output vs. the unfused path across its own
 1194/1194 MUL_MAT backend tests, plus small positive tg64 gains on gfx1201.
@@ -219,3 +219,56 @@ log-level bug described above, not evidence of non-activation -- so
 this measures baseline health, not RD12's own effect): A=178.09,
 B=178.01, C=177.48 -- all within noise, no baseline concern for this
 patch's domain.
+
+## Migrated generic-producer path: hardware equivalence receipt (2026-09-17, gfx1030)
+
+The bespoke `--run-rd12-contract` path was deleted and this patch's
+correctness now runs through the generic validation-producer framework
+(PA36 sub-slice 2, commit a162da91; see "How to invoke validation"
+above). The real-hardware equivalence re-run required by PA36's
+migration design (dev-gpt-agent req_4c04142630ad45ce: gfx1030
+sufficient to close -- the new path's architecture-specific behavior is
+limited to validating/selecting the one execution architecture, while
+the correctness build remains the same fat
+{gfx1100,gfx1201,gfx1030} pair) ran on Brutus gfx1030 (device 3,
+6900 XT) against current pin b10901/28ff0958291c: five-build standard
+scaffold, the fat-three `test-backend-ops` correctness pair, 6/6
+(projection, seed) rows **bit-identical** with real activation
+(subject 6/6 marker hit, control zero-hit), record persisted, exit 0
+(ineligible as designed -- performance/controls still unsatisfied,
+contract verdict blocked/no-promotion, exactly as the 2026-09-13
+evidence).
+
+Record-vs-record (new record vs the 2026-09-13 accepted gfx1030 record,
+same `evidence/validation.json` log): correctness disposition
+`passed`/mechanism `rd12-paired-mmvq-bit-identical`, activation
+`activation-verified` with byte-identical detail, role sets
+{tune,replay,stock}/{control,subject}, apply/build/correctness pass,
+performance/controls unsatisfied, base_ref/base_revision -- all
+semantically identical. `record_digest` differs (required by the new
+validation implementation); `campaign_identity_digest` differs
+(permitted -- the model-free schema replaced the RD12-specific one);
+the scaffold baseline source is `bigcherry-tuning` (the PA29 cutover
+moved 0110's campaign plumbing out of plain `bigcherry` between the
+two runs -- the correctness PAIR itself is unaffected, built by the
+producer with its own `bigcherry` baseline). Two evidence-strength
+additions in the new path (GPT-confirmed as additions, not new
+measurement criteria): the declared activation trace-marker check is
+now actually evaluated and PASSes by re-reading the bound raw logs
+(the 2026-09-13 record left that check `blocked` while recording the
+same activation evidence), and the two raw per-arm activation logs are
+bound as declared producer artifacts, exposing the already-existing
+underlying marker evidence through the declarative artifact contract.
+
+One real bug was found by this hardware run and fixed before the
+equivalence result (commit 240153e9): `StandardCampaignScaffold` had
+lost its `@dataclass` decorator in a162da91, so the first hardware run
+died after all five builds with "takes no arguments"; restored plus a
+structural regression test.
+
+Coverage note: the gfx1100 and gfx1201 legs are the 2026-09-13
+accepted historical coverage (not freshly re-validated through the
+migrated path) -- a fresh generic-path gfx1100 run is optional
+strengthening only (at the time of this run the Brutus dual-7900 XTX
+was occupied; the local Windows host with ROCm 7.1 is available for it).
+gfx1201 was excluded from fresh runs by session constraint.
