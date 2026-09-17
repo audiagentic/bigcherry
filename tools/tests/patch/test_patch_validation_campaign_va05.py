@@ -233,15 +233,19 @@ class Rd58CliWiringTests(unittest.TestCase):
         main_source = inspect.getsource(vc.main)
         self.assertIn('"--run-rd58-state-restore"', main_source)
 
-    def test_mutually_exclusive_with_rd04_and_rd08_modes(self) -> None:
+    def test_mutually_exclusive_with_rd08_and_rd13_rd26_modes(self) -> None:
         self.assertIn(
             "--run-rd58-state-restore is mutually exclusive with the", self.source
         )
         block_start = self.source.index("if args.run_rd58_state_restore:")
         block = self.source[block_start:block_start + 500]
-        self.assertIn("args.run_rd04_benchmark", block)
         self.assertIn("args.run_rd08_lanes", block)
         self.assertIn("args.run_rd08_contract", block)
+        # PA36 RD04/1202 producer migration: RD04's execution flags are gone
+        # from the generic campaign -- the RD58 guard must never reference
+        # them again.
+        self.assertNotIn("args.run_rd04_benchmark", block)
+        self.assertNotIn("args.run_rd04_contract", block)
         self.assertIn("args.run_rd13_contract", block)
         self.assertIn("args.run_rd26_contract", block)
 

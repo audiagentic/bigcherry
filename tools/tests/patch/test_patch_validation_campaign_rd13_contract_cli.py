@@ -100,29 +100,35 @@ class Rd13ContractCliTests(unittest.TestCase):
     def test_absent_from_generic_trace_probe_exclusion(self) -> None:
         # RD13's real trace-probe negative control (GGML_CUDA_DISABLE_FUSION)
         # remains valid and must still run -- RD13 is deliberately NOT added
-        # to this exclusion, unlike every other specialized mode.
+        # to this exclusion, unlike every other specialized mode. (RD04's
+        # flags left this list with the PA36 RD04/1202 producer migration.)
         self.assertIn(
             "trace_result = None if (args.run_rd08_contract or "
-            "args.run_rd04_benchmark or args.run_rd58_state_restore or "
-            "args.run_rd73_contract or "
-            "args.run_rd04_contract) else "
+            "args.run_rd58_state_restore or "
+            "args.run_rd73_contract) else "
             "run_trace_activation_probes(",
             self.run_source,
         )
 
     def test_present_in_standard_campaign_skip(self) -> None:
-        # RD12 is absent from this list on purpose: its specialized path
-        # returns from run() before this gate (before the Campaign import),
-        # so it never reaches it -- no dead flag kept.
+        # RD12 and RD04 are absent from this list on purpose: their
+        # producer-dispatched paths (PA36) return from run() before this
+        # gate (before the Campaign import), so they never reach it -- no
+        # dead flag kept.
         self.assertIn(
-            "args.run_rd04_contract or "
+            "args.run_rd58_state_restore or "
+            "args.run_rd73_contract or "
             "args.run_rd13_contract or args.run_rd26_contract):",
             self.run_source,
         )
+        # The deleted RD04 flags must never reappear in this guard.
+        self.assertNotIn("args.run_rd04_contract or ", self.run_source)
+        self.assertNotIn("args.run_rd04_benchmark or ", self.run_source)
 
     def test_present_in_run_performance_benchmark_exclusion(self) -> None:
         self.assertIn(
-            '"run_rd04_contract", "run_rd13_contract", "run_rd26_contract",',
+            '"run_rd58_state_restore", "run_rd73_contract", '
+            '"run_rd13_contract", "run_rd26_contract",',
             self.main_source,
         )
 
@@ -130,7 +136,7 @@ class Rd13ContractCliTests(unittest.TestCase):
         source = inspect.getsource(vc._run_framework_configuration)
         self.assertIn(
             '"run_rd58_state_restore", "run_rd73_contract", '
-            '"run_rd04_contract", "run_rd13_contract", "run_rd26_contract",',
+            '"run_rd13_contract", "run_rd26_contract",',
             source,
         )
 

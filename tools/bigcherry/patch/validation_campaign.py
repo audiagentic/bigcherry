@@ -55,6 +55,7 @@ from bigcherry.build.builds import (
 from bigcherry.campaign.bench_runner import (  # noqa: F401
     BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
 )
+from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import (
     ExecutionAttestation,
     ExecutionIdentity,
@@ -663,7 +664,8 @@ def run_trace_activation_probes(
 
 
 def compute_contract_correctness_gate(
-    contract: object | None, named_results: "dict[str, object] | None" = None,
+    contract: experiment_contract.ExperimentContract | None,
+    named_results: "dict[str, object] | None" = None,
 ) -> dict[str, object] | None:
     """VA14 final slice (GPT session ses_5bbee8ce5c9a4265, req_75c09f14757640af):
     delegates to the real, native `experiment_contract.evaluate_correctness_gate()`
@@ -691,7 +693,7 @@ def compute_contract_correctness_gate(
 
     try:
         return experiment_contract.evaluate_correctness_gate(contract, dict(named_results or {}))
-    except experiment_contract.ExperimentContractError:
+    except experiment_contract.ExperimentContractError:  # pi-lens-ignore: no-bare-except
         required_checks = contract.correctness.required_checks
         return {
             "passed": False,
@@ -708,7 +710,9 @@ def compute_contract_correctness_gate(
 
 
 def assert_validation_subject_parity(
-    control_build_evidence: object, validation_subject_build_evidence: object, *, patch_id: str,
+    control_build_evidence: CompletedBuildEvidence,
+    validation_subject_build_evidence: CompletedBuildEvidence,
+    *, patch_id: str,
 ) -> None:
     """VA14-B (GPT session ses_5bbee8ce5c9a4265, req_cb50258c7f4c40f1): the
     validation-subject build must be a real build-parity match to control --
@@ -1307,10 +1311,10 @@ def _rd13_stream_completion_rows(
                         "rd13 backend_reference: completion stream event is not an object"
                     )
                 stop = event.get("stop")
-                if stop is True:
+                if stop is True:  # pi-lens-ignore: no-identity-operator-on-literals
                     saw_stop = True
                     continue
-                if stop is not False:
+                if stop is not False:  # pi-lens-ignore: no-identity-operator-on-literals
                     raise PatchCampaignError(
                         "rd13 backend_reference: completion stream event lacks boolean stop=false"
                     )
@@ -2178,200 +2182,6 @@ def run_rd30_correctness_check(
         },
         "artifact": artifact_ref,
         "rows": rows,
-    }
-
-
-def run_rd04_contract_correctness(
-    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
-    build_root: Path, model: Path, corpus: Path, run_dir: Path,
-    _source_module: object | None = None,
-) -> dict[str, object]:
-    """RD04 real backend_reference + ppl_equality correctness producer.
-
-    Both contract checks are derived from one real whole-model perplexity
-    comparison: normal BigCherry control versus the same composition with
-    1202 applied. Each invocation executes exactly one contract architecture.
-    Unlike RD05/RD06/RD07 (bundled in atomic patch 1203), RD04 is a single
-    self-contained patch, so composition CAN isolate it -- but the contract
-    requires both backend_reference and ppl_equality, and this project has
-    only one real whole-model correctness signal available (real PPL), so
-    both checks are legitimately derived from the same comparison, mirroring
-    RD13's own reasoning for the same situation.
-
-    Forces -fa on -ctk bf16 -ctv bf16 so the comparison actually exercises
-    1202's native-BF16 flash-attn path (otherwise the comparison could pass
-    without ever touching the code this contract is about).
-    """
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.experiment import perplexity
-    from bigcherry.patch import source as real_source
-
-    contract_id = "RD04-BF16-FLASH-ATTN-TILE"
-    subject_patch = "1202_rd04_bf16_flash_attn_tile"
-    allowed_architectures = ("gfx1100", "gfx1201", "gfx1030")
-    ppl_extra_args = ("-fa", "on", "-ctk", "bf16", "-ctv", "bf16")
-
-    targets = tuple(
-        target.strip()
-        for target in amdgpu_targets.replace(",", ";").split(";")
-        if target.strip()
-    )
-    if len(targets) != 1 or targets[0] not in allowed_architectures:
-        allowed = ", ".join(allowed_architectures)
-        raise PatchCampaignError(
-            f"rd04 correctness: {contract_id} requires exactly one "
-            f"contract architecture per run ({allowed}); "
-            f"got AMDGPU_TARGETS={amdgpu_targets!r}"
-        )
-    architecture = targets[0]
-    # Real production builds compile ONE fat multi-arch binary and select
-    # the real device to run it against at runtime -- match that instead
-    # of rebuilding per architecture. build_tree()'s own cmake-cache-reuse
-    # makes every call after the first one a zero-rebuild binary reuse
-    # when the build-dir name and cmake config are identical.
-    fat_targets = ";".join(allowed_architectures)
-
-    psi = _source_module or real_source
-
-    control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", focal=None, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
-    )
-    subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry", focal=subject_patch, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
-    )
-    if control_revision != subject_revision:
-        raise PatchCampaignError(
-            "rd04 correctness: control and subject resolved different base revisions"
-        )
-
-    control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
-        resolved_revision=control_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
-    )
-    subject_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
-        resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
-    )
-
-    exe = ".exe" if sys.platform == "win32" else ""
-    ppl_build_root = build_root / "rd04-correctness"
-    subject_name = "rd04-correctness-subject"
-    control_name = "rd04-correctness-control"
-
-    subject_bin = build_tree(
-        name=subject_name, hip_path=hip_path, amdgpu_targets=fat_targets,
-        workdir=ppl_build_root, targets=["llama-perplexity"], source=subject_src,
-        extra_cmake_args=[],
-    )
-    control_bin = build_tree(
-        name=control_name, hip_path=hip_path, amdgpu_targets=fat_targets,
-        workdir=ppl_build_root, targets=["llama-perplexity"], source=control_src,
-        extra_cmake_args=[],
-    )
-
-    build_env = _hip_env(hip_path)
-    cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=fat_targets, extra_cmake_args=[],
-    )
-    subject_build_evidence = capture_completed_build_evidence(
-        ppl_build_root / subject_name, source_root=subject_src,
-        architecture=fat_targets, binary=subject_bin / f"llama-perplexity{exe}",
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-    control_build_evidence = capture_completed_build_evidence(
-        ppl_build_root / control_name, source_root=control_src,
-        architecture=fat_targets, binary=control_bin / f"llama-perplexity{exe}",
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-    assert_validation_subject_parity(
-        control_build_evidence, subject_build_evidence, patch_id=subject_patch,
-    )
-
-    def _ppl_runner(argv, **kwargs):
-        env = {**os.environ, **(kwargs.pop("env", None) or {})}
-        return subprocess.run(argv, env=env, **kwargs)
-
-    try:
-        subject_run = perplexity.run_perplexity(
-            subject_bin / f"llama-perplexity{exe}",
-            model=model, corpus=corpus, runner=_ppl_runner, extra_args=ppl_extra_args,
-        )
-        control_run = perplexity.run_perplexity(
-            control_bin / f"llama-perplexity{exe}",
-            model=model, corpus=corpus, runner=_ppl_runner, extra_args=ppl_extra_args,
-        )
-    except perplexity.PerplexityError as exc:
-        comparison = None
-        passed = False
-        detail = f"could not produce a real BF16 flash-attn perplexity comparison: {exc}"
-    else:
-        comparison = perplexity.PerplexityComparison(subject=subject_run, control=control_run)
-        passed = comparison.ok
-        detail = (
-            f"real BF16 flash-attn perplexity comparison: sigma={comparison.sigma:.4f} "
-            f"vs threshold max_sigma={comparison.max_sigma} "
-            f"(subject={comparison.subject.ppl:.4f}, control={comparison.control.ppl:.4f}, "
-            f"delta={comparison.delta:.5f})"
-        )
-
-    backend_reference_result = experiment_contract.CorrectnessResult(
-        check="backend_reference", passed=passed, detail=detail,
-    )
-    ppl_equality_result = experiment_contract.CorrectnessResult(
-        check="ppl_equality", passed=passed, detail=detail,
-    )
-
-    doc = {
-        "schema_version": 1,
-        "contract_id": contract_id,
-        "base_revision": base_revision,
-        "architecture": architecture,
-        "compiled_targets": fat_targets,
-        "model": str(model),
-        "corpus": str(corpus),
-        "subject_patch": subject_patch,
-        "perplexity_extra_args": list(ppl_extra_args),
-        "results": {
-            "backend_reference": {
-                "check": backend_reference_result.check,
-                "passed": backend_reference_result.passed,
-                "detail": backend_reference_result.detail,
-            },
-            "ppl_equality": {
-                "check": ppl_equality_result.check,
-                "passed": ppl_equality_result.passed,
-                "detail": ppl_equality_result.detail,
-            },
-        },
-        "subject_source_tree": psi.git_worktree_tree(subject_src),
-        "control_source_tree": psi.git_worktree_tree(control_src),
-        "subject_build_identity": subject_build_evidence.campaign_identity(),
-        "control_build_identity": control_build_evidence.campaign_identity(),
-        "comparison": perplexity.comparison_to_dict(comparison) if comparison is not None else None,
-    }
-    artifact_ref = _write_bound_artifact(
-        run_dir, f"rd04-correctness-{architecture}.json", doc,
-    )
-    _print(
-        f"rd04 backend_reference+ppl_equality: {'PASS' if passed else 'FAIL'} -- "
-        f"{artifact_ref['path']}"
-    )
-    return {
-        "results": {
-            "backend_reference": backend_reference_result,
-            "ppl_equality": ppl_equality_result,
-        },
-        "artifact": artifact_ref,
-        # PA39: exposed so a --run-rd04-contract CLI caller can bind real
-        # validation_build_identities into make_record() without needing
-        # the raw CompletedBuildEvidence objects (already baked into
-        # doc above as control_build_identity/subject_build_identity).
-        "validation_build_identities": {
-            "control": doc["control_build_identity"],
-            "subject": doc["subject_build_identity"],
-        },
     }
 
 
@@ -3527,13 +3337,15 @@ def run_paired_llama_benchmark(
     execution_identity: "object | None" = None,
 ) -> PairedBenchmarkOutcome:
     """PVPS02 step 2/4: the shared execution shape behind
-    run_rd04_benchmark_evidence()/run_rd08_validation_lanes() -- a pure,
-    semantics-preserving extraction of their duplicated clean-env/runner/
-    command/raw-log/paired-run logic (docs/planning/active/
-    patching-validation-package-standard/PVPS02.md). Both existing public
-    functions now call this and are kept as compatibility wrappers that
-    do their own result-shaping (performance.json vs validation-lanes.json
-    + LaneEffects) -- their own callers/tests see no behavior change.
+    run_rd08_validation_lanes() (and the 1202/RD04 patch-local producer's
+    paired benchmark, via ProducerRuntime.run_paired_llama_benchmark()) --
+    a pure, semantics-preserving extraction of the duplicated
+    clean-env/runner/command/raw-log/paired-run logic
+    (docs/planning/active/patching-validation-package-standard/PVPS02.md).
+    The remaining public caller (run_rd08_validation_lanes) is kept as a
+    compatibility wrapper that does its own result-shaping
+    (validation-lanes.json + LaneEffects) -- its callers/tests see no
+    behavior change.
 
     ``env_overrides`` (step 4): applied on top of the sanitized/stripped
     environment for THIS call's own subprocesses only -- never mutates
@@ -3651,6 +3463,7 @@ class CampaignProducerRuntime:
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
     ) -> ProducerBuildPair:
         """The one authority for the PA36 build-once-fat-multiarch rule:
         exactly one control build and one subject build, both at the same
@@ -3756,6 +3569,12 @@ class CampaignProducerRuntime:
             requested_cmake_args=subject_cmake_args, build_env=build_env,
         )
 
+        if require_parity:
+            assert_validation_subject_parity(
+                control_build_evidence,
+                subject_build_evidence,
+                patch_id=self.patch_id,
+            )
         return ProducerBuildPair(
             base_revision=control_revision,
             control_source=control_src, subject_source=subject_src,
@@ -4403,6 +4222,26 @@ def _parse_producer_device_map(entries: list[str]) -> dict[str, tuple[int, ...]]
     return device_map
 
 
+def _producer_file_identity(path: Path) -> dict[str, object]:
+    """GPT review req_7a72896b609a48b5 BLOCKER #1: the real file facts
+    ({path, size, sha256}) of a producer input, bound into the campaign
+    identity. A producer run that depends on model/corpus BYTES must show
+    that dependency in its identity -- two runs with different model or
+    corpus bytes never share a campaign identity. Fails closed when the
+    file is missing."""
+    if not path.is_file():
+        raise PatchCampaignError(f"producer input file missing: {path}")
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(path),
+        "size": path.stat().st_size,
+        "sha256": digest.hexdigest(),
+    }
+
+
 def _run_validation_producer(
     args: argparse.Namespace, *, producer_id: str, provided_inputs: Mapping[str, str],
 ) -> int:
@@ -4519,16 +4358,46 @@ def _run_validation_producer(
         patch_file = registry.root / descriptor.implementation_path
         patch_digest = psi.patch_implementation_digest(args.patch)
 
-        campaign_identity_digest = (
-            patch_validation_evidence.model_free_campaign_identity_digest(
-                patch_name=args.patch,
-                patch_digest=patch_digest,
-                patched_source_tree=subject_tree,
-                gpu_architecture=args.amdgpu_targets,
-                campaign_build_identities=scaffold.campaign_build_identities,
-                base_revision=base_revision,
-            )
+        model_identity = (
+            _producer_file_identity(Path(args.model))
+            if args.model is not None
+            else None
         )
+        corpus_identity = (
+            _producer_file_identity(Path(args.producer_corpus))
+            if args.producer_corpus is not None
+            else None
+        )
+        if model_identity is None and corpus_identity is None:
+            # RD12 pilot path: no model/corpus inputs -- the model-free
+            # digest stays bit-identical to the approved pilot records.
+            campaign_identity_digest = (
+                patch_validation_evidence.model_free_campaign_identity_digest(
+                    patch_name=args.patch,
+                    patch_digest=patch_digest,
+                    patched_source_tree=subject_tree,
+                    gpu_architecture=args.amdgpu_targets,
+                    campaign_build_identities=scaffold.campaign_build_identities,
+                    base_revision=base_revision,
+                )
+            )
+        else:
+            # Input-bound identity (GPT review req_7a72896b609a48b5
+            # BLOCKER #1): the producer's real model/corpus file facts are
+            # hashed in, so two runs that differ in model or corpus bytes
+            # never share a campaign identity.
+            campaign_identity_digest = (
+                patch_validation_evidence.producer_campaign_identity_digest(
+                    patch_name=args.patch,
+                    patch_digest=patch_digest,
+                    patched_source_tree=subject_tree,
+                    gpu_architecture=args.amdgpu_targets,
+                    campaign_build_identities=scaffold.campaign_build_identities,
+                    base_revision=base_revision,
+                    model=model_identity,
+                    corpus=corpus_identity,
+                )
+            )
 
         build_evidence = {
             "control": {
@@ -4644,6 +4513,19 @@ def _run_validation_producer(
         scaffold_validation_ids = (
             scaffold.scaffold_validation_build_identities
         )
+        _scaffold_exe = ".exe" if sys.platform == "win32" else ""
+        scaffold_validation_binaries = {
+            "control": {
+                "llama-bench": scaffold.control_bin / f"llama-bench{_scaffold_exe}",
+                "llama-server": scaffold.control_bin / f"llama-server{_scaffold_exe}",
+            },
+            "subject": {
+                "llama-bench":
+                    scaffold.validation_subject_bin / f"llama-bench{_scaffold_exe}",
+                "llama-server":
+                    scaffold.validation_subject_bin / f"llama-server{_scaffold_exe}",
+            },
+        }
     else:
         # Preserve current self-contained producer semantics.
         base_revision = cfg.pinned
@@ -4660,6 +4542,7 @@ def _run_validation_producer(
             },
         )
         scaffold_validation_ids = {}
+        scaffold_validation_binaries = {}
 
     runtime = CampaignProducerRuntime(
         repo_root=REPO_ROOT,
@@ -4686,6 +4569,7 @@ def _run_validation_producer(
         patch_id=args.patch,
         device_map=device_map,
         runtime=runtime,
+        validation_binaries=scaffold_validation_binaries,
     )
 
     execution = execute_validation_producer(
@@ -4700,6 +4584,45 @@ def _run_validation_producer(
         selection=selection,
         evidence_binding_context=evidence_binding,
     )
+
+    # GPT review req_7a72896b609a48b5 BLOCKER #2: the real contract-
+    # correctness gate over the producer's typed named results. The bound
+    # contract is the authority on which named checks are required; the
+    # producer only measures and reports. No producer results -> no gate
+    # (the RD12 pilot record shape stays unchanged).
+    contract_correctness_gate: dict[str, object] | None = None
+    named = execution.result.contract_correctness_results
+    if named:
+        # Fail closed on the plural case (GPT re-review
+        # req_6e79607f075c479b): the dispatcher is plural-aware, but the
+        # named-result gate currently binds to a single contract's
+        # authority. Rather than silently picking bound_contracts[0] when
+        # several are bound, reject the ambiguous case. Duplicate check
+        # names are rejected too -- the {check: result} mapping below
+        # would otherwise silently overwrite one result with another.
+        if len(bound_contracts) != 1:
+            raise PatchCampaignError(
+                "contract_correctness_results currently requires exactly "
+                "one bound contract"
+            )
+        if len({result.check for result in named}) != len(named):
+            raise PatchCampaignError(
+                "contract_correctness_results contains duplicate check "
+                "names"
+            )
+        contract_correctness_gate = compute_contract_correctness_gate(
+            bound_contracts[0],
+            {result.check: result for result in named},
+        )
+    producer_check_results = {
+        check_id: asdict(result)
+        for check_id, result in execution.evaluated.items()
+    }
+    if contract_correctness_gate is not None:
+        producer_check_results = {
+            **producer_check_results,
+            "_contract_correctness_gate": contract_correctness_gate,
+        }
 
     record_path: Path | None = None
     validation_contract_verdicts = None
@@ -4743,10 +4666,7 @@ def _run_validation_producer(
             campaign_workdir=run_dir,
             producer_artifact_names=
                 execution.selection.spec.artifact_names,
-            check_results={
-                check_id: asdict(result)
-                for check_id, result in execution.evaluated.items()
-            },
+            check_results=producer_check_results,
             validation_eligible=compute_persisted_validation_eligible(
                 descriptor,
                 execution.verdict,
@@ -4797,10 +4717,7 @@ def _run_validation_producer(
         "reasons": list(execution.verdict.reasons),
         "blocked": execution.verdict.blocked,
         "errors": list(execution.verdict.errors),
-        "check_results": {
-            check_id: asdict(result)
-            for check_id, result in execution.evaluated.items()
-        },
+        "check_results": producer_check_results,
         "contract_verdicts": (
             validation_contract_verdicts
             if scaffold is not None
@@ -5227,68 +5144,6 @@ def run_patch1000_verification(
     }
 
 
-def run_rd04_benchmark_evidence(
-    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
-    run_dir: Path, campaign_id: str, amdgpu_targets: str,
-    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
-    pairs: int = 3,
-) -> dict[str, object]:
-    """VA04 hardware-free preflight slice (GPT session ses_5bbee8ce5c9a4265,
-    req_da015a1366044ad1): an RD04-scoped validation-domain paired
-    benchmark producer, analogous to RD08's real lanes (run_rd08_
-    validation_lanes()) but deliberately without contract promotion or
-    generalisation -- this slice only proves a real benchmark executed
-    and binds it as evidence; qualification against RD04's real
-    acceptance thresholds is separate, later, real-hardware work. Does
-    NOT depend on the generic S1-S7 campaign succeeding -- that pipeline's
-    own promotion decision is unrelated to RD04's own validation-domain
-    evidence (the exact real bug VA15 found and fixed for RD08).
-
-    ``passed`` means "benchmark evidence executed successfully" (both
-    paired lanes completed with finite statistics), NOT "RD04 met its
-    3.39% target" -- threshold qualification stays separate.
-
-    PVPS02 step 2: now a compatibility wrapper over run_paired_llama_
-    benchmark() -- same argv shape, same performance.json shape, same
-    behavior; the shared execution logic moved, this function's own
-    contract to its callers did not."""
-    import math
-
-    outcome = run_paired_llama_benchmark(
-        control_binary=control_binary, subject_binary=subject_binary, model=model,
-        hip_path=hip_path, patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
-        pairs=pairs, log_context="rd04",
-    )
-    decode_run, prefill_run = outcome.runs["decode"], outcome.runs["prefill"]
-
-    def _finite(stats: dict[str, object]) -> bool:
-        value = stats.get("geometric_effect_pct")
-        return isinstance(value, (int, float)) and math.isfinite(value)
-
-    passed = _finite(decode_run.stats) and _finite(prefill_run.stats)
-
-    performance_doc = {
-        "passed": passed, "campaign_id": campaign_id,
-        "model": str(model), "architecture": amdgpu_targets,
-        "validation_build_identities": {
-            "control": control_build_identity, "subject": subject_build_identity,
-        },
-        "commands": outcome.commands,
-        "raw_logs": outcome.raw_logs,
-        "metrics": {
-            "decode": {"metric": "tg128", "stats": decode_run.stats, "runs": list(decode_run.runs)},
-            "prefill": {"metric": "pp512", "stats": prefill_run.stats, "runs": list(prefill_run.runs)},
-        },
-    }
-    performance_path = run_dir / "performance.json"
-    _atomic_write_json(performance_path, performance_doc)
-    artifact_ref = {
-        "path": "performance.json",
-        "sha256": hashlib.sha256(performance_path.read_bytes()).hexdigest(),
-    }
-    return {"performance_doc": performance_doc, "artifact": artifact_ref, "passed": passed}
-
-
 def run_rd58_state_restore_evidence(
     *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
     run_dir: Path, campaign_id: str,
@@ -5547,7 +5402,7 @@ def compute_persisted_validation_eligible(
         return False
     promotions = contract_promotions or {}
     return all(
-        promotions.get(contract_id, {}).get("passed") is True
+        promotions.get(contract_id, {}).get("passed") is True  # pi-lens-ignore: no-identity-operator-on-literals
         for contract_id in descriptor.experiment_contracts
     )
 
@@ -6393,8 +6248,8 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     if not validation_policy.is_framework_configuration_patch(descriptor):
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
-        "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-        "run_rd58_state_restore", "run_rd73_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
+        "run_rd08_lanes", "run_rd08_contract",
+        "run_rd58_state_restore", "run_rd73_contract", "run_rd13_contract", "run_rd26_contract",
         "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
@@ -7971,11 +7826,6 @@ def run(args: argparse.Namespace) -> int:
     # negative control, GGML_CUDA_DISABLE_FUSION=1, is not). Skipping it
     # here also avoids wasted GPU time on a probe whose result gets
     # overwritten anyway.
-    # VA04: --run-rd04-benchmark also skips the generic probe -- RD04 has
-    # no real activation marker yet (see README.md's Known limitations),
-    # and the generic negative control (GGML_CUDA_DISABLE_FUSION) is not
-    # valid for a flash-attention patch. Activation stays explicitly
-    # BLOCKED for this slice rather than fabricated.
     # VA06: --run-rd73-contract also skips the generic probe -- the
     # generic tune-binary/GGML_CUDA_DISABLE_FUSION negative control is
     # not valid for RD73 (graph-cache keying, not a fusion path), and
@@ -7984,7 +7834,7 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract) else run_trace_activation_probes(
+    trace_result = None if (args.run_rd08_contract or args.run_rd58_state_restore or args.run_rd73_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -8052,7 +7902,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd04_benchmark or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd04_contract or args.run_rd13_contract or args.run_rd26_contract):
+    if not (args.run_rd08_contract or args.run_rd58_state_restore or args.run_rd73_contract or args.run_rd13_contract or args.run_rd26_contract):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -8097,13 +7947,6 @@ def run(args: argparse.Namespace) -> int:
             "together -- --run-rd08-contract already produces its own authoritative "
             "correctness.json"
         )
-    if args.correctness_evidence is not None and args.run_rd04_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --correctness-evidence and --run-rd04-contract are ambiguous "
-            "together -- --run-rd04-contract already produces its own authoritative "
-            "correctness.json"
-        )
-    if args.correctness_evidence is not None and args.run_rd13_contract:
         raise PatchCampaignError(
             f"{args.patch}: --correctness-evidence and --run-rd13-contract are ambiguous "
             "together -- --run-rd13-contract already produces its own authoritative "
@@ -8346,42 +8189,6 @@ def run(args: argparse.Namespace) -> int:
         )
         _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
 
-    # VA04: --run-rd04-benchmark, RD04-only, mutually exclusive with the
-    # RD08 execution modes above (each patch's own real evidence producer
-    # is used only for its own contract). Binds only performance_evidence
-    # -- contract_promotions stays empty for RD04 in this slice, so
-    # eligible_for_validated_state remains False even on a full PASS: this
-    # command produces truthful ported-benched-level evidence, never a
-    # pretend contract-promotion PASS.
-    if args.run_rd04_benchmark:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-            or args.run_rd13_contract
-            or args.run_rd26_contract
-        ):
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd04-benchmark is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
-        if descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE":
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd04-benchmark is RD04-only today"
-            )
-        rd04_result = run_rd04_benchmark_evidence(
-            control_binary=control_bin / f"llama-bench{exe}",
-            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
-            hip_path=args.hip_path, run_dir=campaign_run_dir,
-            campaign_id=campaign.campaign_identity_digest, amdgpu_targets=args.amdgpu_targets,
-            control_build_identity=control_build_evidence.campaign_identity(),
-            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
-        )
-        performance_evidence = {"artifact": rd04_result["artifact"]}
-        _print(
-            f"rd04 benchmark evidence: {rd04_result['artifact']['path']} "
-            f"({'executed' if rd04_result['passed'] else 'did not execute cleanly'})"
-        )
-
     # VA05: --run-rd58-state-restore, RD58-only, mutually exclusive with
     # the RD04/RD08 execution modes. Builds its own parity control/
     # validation-subject test-save-load-state binaries (not
@@ -8392,8 +8199,7 @@ def run(args: argparse.Namespace) -> int:
     # remains False even on a full PASS.
     if args.run_rd58_state_restore:
         if (
-            args.run_rd04_benchmark
-            or args.run_rd08_lanes
+            args.run_rd08_lanes
             or args.run_rd08_contract
             or args.run_rd13_contract
             or args.run_rd26_contract
@@ -8671,7 +8477,6 @@ def run(args: argparse.Namespace) -> int:
         if (
             args.run_rd08_lanes
             or args.run_rd08_contract
-            or args.run_rd04_benchmark
             or args.run_rd58_state_restore
             or args.run_rd13_contract
             or args.run_rd26_contract
@@ -8796,91 +8601,6 @@ def run(args: argparse.Namespace) -> int:
         _print(
             f"rd73 promotion: "
             f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
-        )
-
-    # PA39: RD04's real backend_reference+ppl_equality correctness producer,
-    # bound the same way RD73's block above is (RD12's own producer is the
-    # patch-local 1205 producer). Correctness-evidence
-    # producer only -- must never populate contract_promotions (would
-    # falsely qualify RD04's separately-declared performance claim).
-    # RD04 has no real activation marker in its source yet (confirmed by
-    # inspection this session) -- activation_evidence is deliberately left
-    # unbound here; RD04's declared activation check stays honestly BLOCKED
-    # until a real marker exists (see its own validation.toml/README "Known
-    # limitations").
-    rd04_qualification: dict[str, object] | None = None
-    if args.run_rd04_contract:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-            or args.run_rd04_benchmark
-            or args.run_rd58_state_restore
-            or args.run_rd73_contract
-            or args.run_rd13_contract
-            or args.run_rd26_contract
-        ):
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd04-contract is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
-        if descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE":
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd04-contract is RD04-only today"
-            )
-        if args.rd04_corpus is None:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd04-contract requires --rd04-corpus"
-            )
-        rd04_worktree_root = worktree_root / "rd04-correctness"
-        rd04_build_root = build_root / "rd04-correctness"
-        rd04_qualification = run_rd04_contract_correctness(
-            base_revision=base_revision, hip_path=args.hip_path,
-            amdgpu_targets=args.amdgpu_targets,
-            worktree_root=rd04_worktree_root, build_root=rd04_build_root,
-            model=args.model, corpus=args.rd04_corpus, run_dir=campaign_run_dir,
-        )
-        rd04_results = rd04_qualification["results"]
-        rd04_backend_reference_result = rd04_results["backend_reference"]
-        rd04_ppl_equality_result = rd04_results["ppl_equality"]
-        rd04_all_passed = rd04_backend_reference_result.passed and rd04_ppl_equality_result.passed
-
-        # Bind correctness evidence: contract.correctness requires BOTH
-        # backend_reference and ppl_equality -- the disposition is the
-        # conjunction, matching run_rd04_contract_correctness()'s own gate.
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": "passed" if rd04_all_passed else "failed",
-            "mechanism": "rd04-bf16-flash-attn-ppl-comparison",
-            "detail": (
-                f"backend_reference={'PASS' if rd04_backend_reference_result.passed else 'FAIL'} "
-                f"({rd04_backend_reference_result.detail}); "
-                f"ppl_equality={'PASS' if rd04_ppl_equality_result.passed else 'FAIL'} "
-                f"({rd04_ppl_equality_result.detail})"
-            ),
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-        # GPT review (req_5631b12dc3fb4a23): correctness_evidence must point
-        # at THIS canonical correctness.json (real "disposition" field),
-        # never rd04_qualification["artifact"] (the raw producer artifact,
-        # no "disposition" field).
-        correctness_evidence = {
-            "artifact": {
-                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
-                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
-            }
-        }
-
-        _print(f"rd04 correctness: {rd04_qualification['artifact']['path']}")
-        _print(
-            f"rd04 backend_reference+ppl_equality: {'PASS' if rd04_all_passed else 'FAIL'}"
         )
 
     # RD13 contract-grade backend_reference correctness producer.
@@ -9047,12 +8767,6 @@ def run(args: argparse.Namespace) -> int:
             for spec in validation_plan.checks
         }
         validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
-        # PA39: RD04's real backend_reference+ppl_equality results are
-        # already evaluated inside run_rd04_contract_correctness(); thread
-        # them through the same way, so the gate reflects real evidence.
-        rd04_correctness_named_results = (
-            rd04_qualification["results"] if rd04_qualification is not None else None
-        )
         rd13_correctness_named_results = (
             rd13_qualification["results"] if rd13_qualification is not None else None
         )
@@ -9076,8 +8790,6 @@ def run(args: argparse.Namespace) -> int:
                 # reflects the evidence instead of reporting missing_checks.
                 else rd73_qualification["correctness_named_results"]
                 if rd73_qualification is not None
-                else rd04_correctness_named_results
-                if rd04_qualification is not None
                 else rd13_correctness_named_results
                 if rd13_qualification is not None
                 else rd26_correctness_named_results
@@ -9130,12 +8842,6 @@ def run(args: argparse.Namespace) -> int:
                 "subject": rd58_subject_build_evidence.campaign_identity(),
             }
             if args.run_rd58_state_restore
-            # GPT review (req_5631b12dc3fb4a23): RD04's producer also
-            # materializes and builds its OWN isolated control/subject
-            # worktrees (its own isolated pair), NOT the generic campaign's --
-            # falling through to the generic identities below was wrong.
-            else rd04_qualification["validation_build_identities"]
-            if rd04_qualification is not None
             else rd13_qualification["validation_build_identities"]
             if rd13_qualification is not None
             else rd26_qualification["validation_build_identities"]
@@ -9257,15 +8963,6 @@ def main(argv: list[str] | None = None) -> int:
              "Mutually exclusive with --run-rd08-lanes and --correctness-evidence.",
     )
     parser.add_argument(
-        "--run-rd04-benchmark", action="store_true", default=False,
-        help="VA04: execute RD04's real paired decode/prefill benchmark lanes against the "
-             "parity-verified control/validation-subject builds and bind the result into "
-             "ctx.performance_evidence. Diagnostic-only for eligibility -- does not attempt "
-             "correctness/activation proof or contract promotion, so "
-             "eligible_for_validated_state stays False. RD04-only; an error for any other "
-             "patch. Mutually exclusive with the RD08 execution modes.",
-    )
-    parser.add_argument(
         "--run-rd58-state-restore", action="store_true", default=False,
         help="VA05: build parity control/validation-subject test-save-load-state binaries "
              "and run RD58's real state-restore correctness/activation/controls evidence "
@@ -9273,7 +8970,7 @@ def main(argv: list[str] | None = None) -> int:
              "device visibility is preserved, never restricted to one device). "
              "Diagnostic-only for eligibility -- does not attempt contract promotion, so "
              "eligible_for_validated_state stays False. RD58-only; an error for any other "
-             "patch. Mutually exclusive with the RD04/RD08 execution modes.",
+             "patch. Mutually exclusive with the RD08 execution modes.",
     )
     parser.add_argument(
         "--run-rd73-contract", action="store_true", default=False,
@@ -9285,29 +8982,13 @@ def main(argv: list[str] | None = None) -> int:
              "evidence plus the record's own activation/correctness dispositions, so a "
              "passing run satisfies verify_validated_patch() as well as the eligibility "
              "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
-             "RD04/RD08/RD58 execution modes. Requires --rd73-corpus.",
-    )
-    parser.add_argument(
-        "--run-rd04-contract", action="store_true", default=False,
-        help="PA39: RD04's real backend_reference+ppl_equality correctness "
-             "producer (run_rd04_contract_correctness()) -- one real whole-"
-             "model PPL comparison forcing -fa on -ctk bf16 -ctv bf16, binds "
-             "current-pin correctness evidence into the tracked record. "
-             "Correctness-evidence producer only: does NOT populate "
-             "contract_promotions or qualify RD04's separately-declared "
-             "performance claim. RD04-only; requires --rd04-corpus; mutually "
-             "exclusive with the other specialized evidence modes.",
-    )
-    parser.add_argument(
-        "--rd04-corpus", type=Path, default=None,
-        help="text corpus for --run-rd04-contract's real whole-model "
-             "perplexity comparison.",
+             "RD08/RD58 execution modes. Requires --rd73-corpus.",
     )
     parser.add_argument(
         "--producer-corpus", type=Path, default=None,
         help="text corpus for --validation-producer's ProducerContext.corpus "
-             "-- the generic (non-RD04/RD73-specific) analog of --rd04-corpus/"
-             "--rd73-corpus, threaded into any patch-local producer that "
+             "-- the generic (non-RD73-specific) analog of --rd73-corpus, "
+             "threaded into any patch-local producer that "
              "declares a correctness check requiring a real backend-reference "
              "corpus (e.g. 1203's RD05/RD07 backend_reference checks).",
     )
@@ -9436,8 +9117,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.model_root is None or not args.device_map:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
-            "run_rd08_lanes", "run_rd08_contract", "run_rd04_benchmark",
-            "run_rd58_state_restore", "run_rd73_contract", "run_rd04_contract", "run_rd13_contract", "run_rd26_contract",
+            "run_rd08_lanes", "run_rd08_contract",
+            "run_rd58_state_restore", "run_rd73_contract", "run_rd13_contract", "run_rd26_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)

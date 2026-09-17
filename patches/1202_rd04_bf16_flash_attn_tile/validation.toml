@@ -19,9 +19,13 @@ validator = "benchmark"
 required = true
 # PVPS02: generic --run-performance-benchmark wiring (docs/planning/
 # active/patching-validation-package-standard/PVPS02.md). benchmark-args
-# reproduces RD04's own historical -fa/-ctk/-ctv flags exactly -- see
-# run_rd04_benchmark_evidence()'s docstring for why the legacy flag
-# still exists as a compatibility path.
+# reproduces RD04's own historical -fa/-ctk/-ctv flags exactly -- the
+# patch-local rd04 producer runs its paired benchmark with these same
+# args (via ProducerRuntime.run_paired_llama_benchmark, reusing the
+# standard scaffold's parity llama-bench pair) and binds the resulting
+# performance artifact, which this validator consumes (non-empty
+# metrics + passed=true). The generic --run-performance-benchmark CLI
+# is forbidden for this producer (see validation/producer.toml).
 benchmark-executor = "paired-llama-bench-v1"
 benchmark-extra-args = ["-fa", "on", "-ctk", "bf16", "-ctv", "bf16"]
 
@@ -31,15 +35,19 @@ capability = "controls"
 validator = "benchmark"
 required = true
 
-# PA35 correction (2026-09-13): run_rd04_contract_correctness() is a real
-# whole-model PPL comparison (backend_reference + ppl_equality), not a
-# direct backend-ops invocation -- "backend-ops" with ops=[FLASH_ATTN_EXT]
-# was never the right validator shape for this producer's evidence.
-# correctness-summary consumes the bound patch-level correctness.json a
-# real producer writes, whatever its correctness mechanism. See README.md
-# for RD04's real 3-architecture PASS evidence; the evidence-binding CLI
-# wiring (--run-rd04-contract) that feeds ctx.correctness_evidence is
-# tracked follow-up work, not yet landed.
+# PA35 correction (2026-09-13): RD04's correctness is a real whole-model
+# PPL comparison (backend_reference + ppl_equality), not a direct
+# backend-ops invocation -- "backend-ops" with ops=[FLASH_ATTN_EXT] was
+# never the right validator shape for this producer's evidence.
+# correctness-summary consumes the bound patch-level correctness.json the
+# producer path writes, whatever its correctness mechanism. See README.md
+# for RD04's real 3-architecture PASS evidence. Wired since PA36
+# migration #2 (dev-gpt-agent req_69d011a2acf44acc): the patch-local
+# producer (validation/producer.toml, producer.py) runs one real
+# llama-perplexity comparison per architecture and returns the semantic
+# disposition; the shared binder writes the root correctness.json.
+# Invoked with --validation-producer 1202_rd04_bf16_flash_attn_tile/rd04
+# (replacing the deleted --run-rd04-contract CLI).
 [[check]]
 id = "correctness"
 capability = "correctness"

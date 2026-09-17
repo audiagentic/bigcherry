@@ -30,41 +30,50 @@ satisfy this contract's current-pin evidence obligation
 `--run-rd04-benchmark` run is required before this patch's
 `ported-benched` status can be reported as currently qualified.
 
-## How to invoke validation
+## How to invoke validation (PA36 migration #2, 2026-09-17)
 
-Hardware-free benchmark-evidence producer (VA04):
+The dedicated `--run-rd04-contract` / `--run-rd04-benchmark` /
+`--rd04-corpus` CLI paths were DELETED from shared code (migrate-up
+doctrine) and replaced by the patch-local producer at
+`validation/producer.toml` + `validation/producer.py`. One invocation
+runs BOTH the PPL correctness pair and the paired benchmark:
 
 ```
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1202_rd04_bf16_flash_attn_tile \
+  --validation-producer 1202_rd04_bf16_flash_attn_tile/rd04 \
   --model <tierA-qwen4b-q6k.gguf> \
+  --producer-corpus <ppl-corpus.txt> \
   --hip-path <production-rocm> --amdgpu-targets gfx1100 \
-  --manifest <hip-autotune-manifest.json> \
+  --device-map gfx1100=<idx> \
   --workdir <fresh-workdir> --build-root <build-root> \
   --worktree-root <worktree-root> \
-  --run-rd04-benchmark
+  --baseline-source bigcherry-tuning
 ```
 
-`--run-rd04-benchmark` executes RD04's real paired decode/prefill lanes
-(`tools/bigcherry/experiment/execution.py`, via
-`run_rd04_benchmark_evidence()`) against the parity-built control/
-validation-subject binaries with `-fa on -ctk bf16 -ctv bf16`, and
-binds the real result into `ctx.performance_evidence` so the
-"performance"/"controls" adapter checks reach a real PASS/FAIL. It does
-**not** execute the generic S1-S7 tune/promote/replay campaign (that
-pipeline's own promotion decision is unrelated to RD04's own
-validation-domain evidence -- the exact bug VA15 found and fixed for
-RD08), and it does **not** attempt correctness or activation proof or
-contract promotion -- `eligible_for_validated_state` stays `False`
-after this command; `ported-benched` current-pin qualification (VA08)
-is the honest ceiling this command can produce.
+The producer builds the llama-perplexity pair ONCE (fat multi-arch,
+`baseline_source=bigcherry`, forced `-fa on -ctk bf16 -ctv bf16`) and
+REUSES the standard scaffold's parity llama-bench pair for the
+decode/prefill lanes (`ProducerContext.validation_binaries` -- no
+second build pair). It writes `artifacts/rd04-correctness-<arch>.json`
+
++ `artifacts/rd04-performance-<arch>.json` (static allowlist in
+`producer.toml`). The shared binder writes the root `correctness.json`;
+all six declared `validation.toml` checks are evaluated by their
+fallback validators against the bound evidence. Exit 0 iff execution +
+binding + persistence complete; `eligible_for_validated_state` stays
+`False` because the declared activation check has no real marker probe
+and remains honestly `BLOCKED` (see below). `--correctness-evidence` and
+`--run-performance-benchmark` are FORBIDDEN for this producer.
 
 ## Real RD04 contract correctness evidence (2026-09-13, CONFIRMED)
 
 RD04's contract (`RD04-BF16-FLASH-ATTN-TILE`, requiring both
 `backend_reference` and `ppl_equality`) had no correctness producer until
 this session. `run_rd04_contract_correctness()`
-(`tools/bigcherry/patch/validation_campaign.py`) derives both checks from
+(`tools/bigcherry/patch/validation_campaign.py`) -- now DELETED, its
+measurement moved to `validation/producer.py` in PA36 migration #2 --
+derived both checks from
 one real whole-model PPL comparison (control = 1202 absent, subject = 1202
 applied), forcing `-fa on -ctk bf16 -ctv bf16` so the comparison actually
 exercises RD04's native-BF16 flash-attn path.
@@ -73,7 +82,7 @@ Real run on Brutus, all three contract architectures, **build-once
 fat-multiarch verified** (see below):
 
 | architecture | subject PPL | control PPL | sigma | result |
-|---|---:|---:|---:|---|
+| --- | ---: | ---: | ---: | --- |
 | gfx1100 | 10.5870 | 10.6247 | 0.1826 | **PASS** |
 | gfx1201 | 10.5787 | 10.6406 | 0.3000 | **PASS** |
 | gfx1030 | 10.5978 | 10.5978 | 0.0000 | **PASS** |
@@ -107,13 +116,13 @@ producer in this project going forward.
 
 ## Known limitations
 
-- **Correctness (`backend_reference` + `ppl_equality`) has no real
-  producer yet.** `validation.toml` declares the check honestly against
-  a real validator shape, but no evidence is bound -- it reports
-  `BLOCKED`, not a fabricated pass. Building a real correctness producer
-  (analogous to RD08's `validation/rd04_correctness.py`) is separate,
-  future work.
-- **Activation has no real marker probe yet.** RD04's patch source
++ **Correctness (`backend_reference` + `ppl_equality`)** now has a real
+  producer: `validation/producer.py` (PA36 migration #2, 2026-09-17) runs
+  the one real whole-model PPL comparison per architecture and the shared
+  binder binds it into the root `correctness.json`. The 2026-09-13 table
+  above was produced by the deleted legacy CLI; the fresh current-pin
+  producer run is the pending hardware slice (gfx1100 first).
++ **Activation has no real marker probe yet.** RD04's patch source
   carries no `BIGCHERRY_PATCH_TRACE`-gated marker (unlike RD08). The
   generic tune-binary/`GGML_CUDA_DISABLE_FUSION`-based negative control
   is **not** valid for this patch (RD04 is flash-attention, not a
@@ -121,7 +130,7 @@ producer in this project going forward.
   reused here. `validation.toml`'s activation check stays declared but
   unsatisfied (`BLOCKED`) until a real subject-hit/control-miss RD04
   marker probe exists.
-- These two gaps mean this patch's tracked-status may correctly remain
++ These two gaps mean this patch's tracked-status may correctly remain
   `ported-benched` (real performance evidence) rather than advancing to
   `ported-validated` (which needs both correctness checks AND activation
   proof) until both are built.

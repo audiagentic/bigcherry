@@ -30,10 +30,11 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Mapping, Protocol, cast
 
 import tomllib
 
+from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import ExecutionIdentity
 
 from .validation import ArtifactRef, CheckSpec, ValidationContext, ValidationPlan, ValidationResult
@@ -186,7 +187,14 @@ class ProducerRuntime(Protocol):
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
     ) -> ProducerBuildPair: ...
+
+    # require_parity (GPT review req_7a72896b609a48b5 BLOCKER #3): the
+    # legacy RD04 producer asserted real build parity on its own pair
+    # after capturing both builds; producers whose measurements depend
+    # on build parity (RD04's PPL comparison) pass True and the concrete
+    # runtime calls assert_validation_subject_parity() before returning.
 
     def device_contexts(
         self,
@@ -249,6 +257,15 @@ class ProducerContext:
     patch_id: str
     device_map: Mapping[str, tuple[int, ...]]
     runtime: ProducerRuntime
+    # Standard-campaign scaffold binaries the generic path already built
+    # (role -> target -> binary path: {"control": {"llama-bench": ...,
+    # "llama-server": ...}, "subject": {...}}), populated only when
+    # standard_campaign="run". A producer that consumes scaffold-derived
+    # binaries (RD04's benchmark reuses the scaffold parity llama-bench
+    # pair instead of building a second pair) reads them here; {} for
+    # standard_campaign="skip" (also the default for contexts built
+    # outside a standard campaign).
+    validation_binaries: Mapping[str, Mapping[str, Path]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -291,6 +308,15 @@ class ProducerResult:
     check_results: tuple[ProducerCheckResult, ...]
     lane_effects: tuple[JsonObject, ...]
     emitted_artifacts: frozenset[str]
+    # GPT review req_7a72896b609a48b5 BLOCKER #2: the typed named
+    # contract-correctness results a producer measured. The shared
+    # dispatcher converts these into the real
+    # evaluate_correctness_gate() result and persists it as
+    # check_results._contract_correctness_gate -- the producer never
+    # computes a gate itself (the contract is the authority on which
+    # named checks are required). Promotion is a different semantic type
+    # and stays out of this channel entirely.
+    contract_correctness_results: tuple[experiment_contract.CorrectnessResult, ...] = ()
 
     def __post_init__(self) -> None:
         if len(set(self.validation_build_identities)) != 2 or set(
@@ -450,7 +476,10 @@ def resolve_producer(*, patch_dir: Path, producer_id: str) -> ProducerSelection:
             f"{where}: entrypoint {entrypoint} has no callable {callable_name!r}"
         )
 
-    return ProducerSelection(spec=spec, producer=producer_callable)
+    return ProducerSelection(
+        spec=spec,
+        producer=cast("ValidationProducer", producer_callable),
+    )
 
 
 def validate_producer_inputs(
