@@ -243,6 +243,104 @@ def model_free_campaign_identity_digest(
     return hashlib.sha256(encoded).hexdigest()
 
 
+PRODUCER_CAMPAIGN_IDENTITY_SCHEMA = "bigcherry.producer-campaign-identity.v1"
+
+
+def _require_file_identity(value: object, field: str) -> dict[str, object]:
+    """Validate one producer-input file fact binding: exactly {path, size,
+    sha256} -- a path string alone is never sufficient (GPT review
+    req_7a72896b609a48b5 BLOCKER #1): two runs whose model/corpus BYTES
+    differ must never share a campaign identity."""
+    if not isinstance(value, Mapping):
+        raise ValidationEvidenceError(f"{field} must be an object")
+    required = {"path", "size", "sha256"}
+    if set(value) != required:
+        raise ValidationEvidenceError(
+            f"{field} must have exactly the fields {sorted(required)!r}, got "
+            f"{sorted(map(str, value))!r}"
+        )
+    _require_string(value["path"], f"{field}.path")
+    size = value["size"]
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise ValidationEvidenceError(
+            f"{field}.size must be a non-negative int, got {size!r}"
+        )
+    _require_hex(value["sha256"], f"{field}.sha256", (64,))
+    return {"path": str(value["path"]), "size": size, "sha256": str(value["sha256"])}
+
+
+def producer_campaign_identity_digest(
+    *,
+    patch_name: str,
+    patch_digest: str,
+    patched_source_tree: str,
+    gpu_architecture: str,
+    campaign_build_identities: Mapping[str, Mapping[str, object]],
+    base_revision: str,
+    model: Mapping[str, object] | None = None,
+    corpus: Mapping[str, object] | None = None,
+    producer_inputs: Mapping[str, object] | None = None,
+) -> str:
+    """Input-bound canonical campaign-identity binding for producer runs
+    that consume real model/corpus files (PA36 migration #2, GPT review
+    req_7a72896b609a48b5 BLOCKER #1). RD04's producer run depends on BOTH
+    the model and the PPL corpus, so the model-free digest (which binds
+    neither) would let two materially different RD04 runs share one
+    campaign identity. The binding adds the real file facts ({path, size,
+    sha256}) for model and corpus, plus any validated producer inputs.
+
+    When model, corpus, and producer_inputs are ALL absent the digest is
+    EXACTLY model_free_campaign_identity_digest() -- the RD12 pilot
+    records' digests stay bit-identical (that producer consumes no
+    inputs). Same canonical-JSON sha256 convention; this module remains
+    the one owner of evidence-record identity formats."""
+    if model is None and corpus is None and not producer_inputs:
+        return model_free_campaign_identity_digest(
+            patch_name=patch_name,
+            patch_digest=patch_digest,
+            patched_source_tree=patched_source_tree,
+            gpu_architecture=gpu_architecture,
+            campaign_build_identities=campaign_build_identities,
+            base_revision=base_revision,
+        )
+    if set(campaign_build_identities) != set(CAMPAIGN_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            "producer campaign identity requires exactly "
+            f"{set(CAMPAIGN_BUILD_ROLES)!r}"
+        )
+    builds = {
+        role: _validate_build_identity(
+            campaign_build_identities[role],
+            field=f"campaign_build_identities.{role}",
+        )
+        for role in CAMPAIGN_BUILD_ROLES
+    }
+    payload = {
+        "schema": PRODUCER_CAMPAIGN_IDENTITY_SCHEMA,
+        "patch_identity": {
+            "name": _require_string(patch_name, "patch_name"),
+            "digest": _require_hex(patch_digest, "patch_digest", (64,)),
+        },
+        "patched_source_tree": _require_hex(
+            patched_source_tree, "patched_source_tree", (40, 64)
+        ),
+        "gpu_architecture": _require_string(gpu_architecture, "gpu_architecture"),
+        "campaign_build_identities": builds,
+        "base_revision": _require_hex(base_revision, "base_revision", (40, 64)),
+        "model": (
+            _require_file_identity(model, "model") if model is not None else None
+        ),
+        "corpus": (
+            _require_file_identity(corpus, "corpus") if corpus is not None else None
+        ),
+        "producer_inputs": dict(producer_inputs or {}),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _validate_build_identity(value: object, *, field: str) -> dict[str, object]:
     """Full CompletedBuildEvidence.campaign_identity() shape validation,
     parameterized by the caller's field path (VA07: reused identically for

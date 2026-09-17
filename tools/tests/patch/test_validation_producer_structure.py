@@ -46,8 +46,6 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_patch1000_backend_ops_correctness",
         "run_patch1000_backend_ops_perf",
         "run_patch1000_verification",
-        "run_rd04_benchmark_evidence",
-        "run_rd04_contract_correctness",
         "run_rd05_contract_correctness",
         "run_rd06_contract_correctness",
         "run_rd07_contract_correctness",
@@ -78,8 +76,6 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
 # Same shrink-only rule.
 _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
     {
-        "--run-rd04-benchmark",
-        "--run-rd04-contract",
         "--run-rd08-contract",
         "--run-rd08-lanes",
         "--run-rd13-contract",
@@ -774,6 +770,91 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
             self._run(
                 runtime, targets=("gfx1100", "gfx1100"), primary_target="llama-bench"
             )
+
+    def test_build_pair_require_parity_fails_closed_on_mismatch(self) -> None:
+        # GPT review req_7a72896b609a48b5 BLOCKER #3: with require_parity set,
+        # build_pair() must run the REAL assert_validation_subject_parity()
+        # and fail closed on a configure/build-id mismatch (and return the
+        # pair when parity holds).
+        from unittest import mock
+
+        from bigcherry.patch import source as real_psi
+
+        runtime = self._runtime(("gfx1100",))
+
+        class _Ev:
+            def __init__(self, configure: str, build_id: str) -> None:
+                self.effective_configure = configure
+                self.effective_build_id = build_id
+
+            def campaign_identity(self) -> dict[str, object]:
+                return {"role": "x"}
+
+        def _run_pair(parity_mismatch: bool):
+            evidences = [
+                _Ev("cfg-control", "bid-1"),
+                _Ev(
+                    "cfg-subject-different" if parity_mismatch else "cfg-control",
+                    "bid-1",
+                ),
+            ]
+            with (
+                mock.patch.object(
+                    real_psi,
+                    "resolve_source_composition",
+                    side_effect=[
+                        ("rev123", (("bigcherry", "rev123"),)),
+                        (
+                            "rev123",
+                            (("bigcherry", "rev123"), (runtime.patch_id, "1")),
+                        ),
+                    ],
+                ),
+                mock.patch.object(
+                    real_psi,
+                    "materialize_composition",
+                    side_effect=[Path("/src/control"), Path("/src/subject")],
+                ),
+                mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")),
+                mock.patch.object(
+                    vc,
+                    "build_tree",
+                    side_effect=[
+                        Path("/builds/control"),
+                        Path("/builds/subject"),
+                    ],
+                ),
+                mock.patch.object(
+                    vc,
+                    "capture_completed_build_evidence",
+                    side_effect=evidences,
+                ),
+            ):
+                if parity_mismatch:
+                    with self.assertRaisesRegex(
+                        vc.PatchCampaignError,
+                        "parity",
+                    ):
+                        runtime.build_pair(
+                            targets=("gfx1100",),
+                            primary_target="test-backend-ops",
+                            require_parity=True,
+                        )
+                else:
+                    result = runtime.build_pair(
+                        targets=("gfx1100",),
+                        primary_target="test-backend-ops",
+                        require_parity=True,
+                    )
+                    self.assertEqual(
+                        result.validation_build_identities,
+                        {"control": {"role": "x"}, "subject": {"role": "x"}},
+                    )
+
+        # Mismatched effective_configure -> fail closed before returning.
+        _run_pair(True)
+        # Matching configure + build id -> parity holds, pair returned.
+        _run_pair(False)
 
 
 if __name__ == "__main__":

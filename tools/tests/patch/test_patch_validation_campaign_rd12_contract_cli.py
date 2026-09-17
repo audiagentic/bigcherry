@@ -29,12 +29,13 @@ import unittest
 from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Mapping
+from typing import Mapping, cast
 
 TOOLS_ROOT = Path(__file__).resolve().parents[2]
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
+from bigcherry.patch import registry as patch_registry  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
@@ -109,22 +110,40 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         # "StandardCampaignScaffold() takes no arguments" AFTER all five
         # builds had completed. Pin the decorator contract structurally.
         self.assertTrue(dataclasses.is_dataclass(vc.StandardCampaignScaffold))
+        # __dataclass_params__ is the only surface that exposes frozen=True;
+        # it is private, so the attribute access needs a pyright ignore.
         self.assertTrue(
-            vc.StandardCampaignScaffold.__dataclass_params__.frozen)
+            vc.StandardCampaignScaffold.__dataclass_params__.frozen  # pyright: ignore[reportAttributeAccessIssue]
+        )
         names = frozenset(
-            f.name for f in dataclasses.fields(vc.StandardCampaignScaffold))
+            f.name for f in dataclasses.fields(vc.StandardCampaignScaffold)
+        )
         self.assertEqual(
             names,
-            frozenset({
-                "base_revision", "control_composition", "subject_composition",
-                "control_source", "subject_source", "stock_source",
-                "control_idempotent", "subject_idempotent", "build_root",
-                "build_env", "tune_bin", "replay_bin", "stock_bin",
-                "control_bin", "validation_subject_bin",
-                "tune_build_evidence", "replay_build_evidence",
-                "stock_build_evidence", "control_build_evidence",
-                "validation_subject_build_evidence",
-            }),
+            frozenset(
+                {
+                    "base_revision",
+                    "control_composition",
+                    "subject_composition",
+                    "control_source",
+                    "subject_source",
+                    "stock_source",
+                    "control_idempotent",
+                    "subject_idempotent",
+                    "build_root",
+                    "build_env",
+                    "tune_bin",
+                    "replay_bin",
+                    "stock_bin",
+                    "control_bin",
+                    "validation_subject_bin",
+                    "tune_build_evidence",
+                    "replay_build_evidence",
+                    "stock_build_evidence",
+                    "control_build_evidence",
+                    "validation_subject_build_evidence",
+                }
+            ),
         )
 
 
@@ -143,7 +162,7 @@ def _binding_context(run_dir: Path) -> vc.ProducerEvidenceBindingContext:
     )
 
 
-def _trace_plan(marker_specs: int = 1):
+def _trace_plan(marker_specs: int = 1) -> vc.ValidationPlan:
     specs = tuple(
         SimpleNamespace(
             capability="activation",
@@ -153,7 +172,7 @@ def _trace_plan(marker_specs: int = 1):
         )
         for i in range(marker_specs)
     )
-    return SimpleNamespace(checks=specs)
+    return cast("vc.ValidationPlan", SimpleNamespace(checks=specs))
 
 
 class ProducerEvidenceBinderTests(unittest.TestCase):
@@ -168,6 +187,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             },
             binding=binding,
         )
+        assert document is not None, "binder must return the written document"
         self.assertEqual(document["disposition"], "passed")
         self.assertEqual(document["patch_id"], PATCH_ID)
         self.assertEqual(document["campaign_identity_digest"], "c" * 64)
@@ -179,7 +199,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         on_disk = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(on_disk, document)
         self.assertEqual(set(bound), {"artifact"})
-        artifact = bound["artifact"]
+        artifact = cast(Mapping[str, object], bound["artifact"])
         self.assertIsInstance(artifact, Mapping)
         self.assertEqual(artifact["path"], "correctness.json")
         self.assertEqual(
@@ -235,7 +255,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         )
         self.assertEqual(set(bound), {"positive", "negative"})
         for role in ("positive", "negative"):
-            observation = bound[role]
+            observation = cast(Mapping[str, object], bound[role])
             self.assertIsInstance(observation, Mapping)
             self.assertEqual(observation["marker_regex"], TRACE_MARKER)
             self.assertIn("artifact", observation)
@@ -281,7 +301,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         binding = _binding_context(run_dir)
         plan = _trace_plan()
         ctx = vc.ValidationContext(
-            descriptor=object(),  # noqa: B018
+            descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
             subject_source=None,
@@ -342,7 +362,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
 
     def test_bind_result_evidence_skip_path_passes_through(self) -> None:
         ctx = vc.ValidationContext(
-            descriptor=object(),  # noqa: B018
+            descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
             subject_source=None,
@@ -384,13 +404,16 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         sneaky.write_text("hit", encoding="utf-8")
         sha = hashlib.sha256(b"hit").hexdigest()
         with self.assertRaisesRegex(
-                vc.PatchCampaignError, "not declared in the producer manifest"):
+            vc.PatchCampaignError, "not declared in the producer manifest"
+        ):
             vc._bind_producer_trace_evidence(
                 {
                     "positive": {
                         "artifact": {"path": "artifacts/sneaky.log", "sha256": sha},
                     },
-                    "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+                    "negative": {
+                        "artifact": {"path": "artifacts/n.log", "sha256": "2"}
+                    },
                 },
                 validation_plan=_trace_plan(),
                 declared_artifacts=frozenset({"n.log"}),
@@ -401,11 +424,16 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         # In the manifest but NOT claimed in this run's emitted_artifacts:
         # a producer may only bind what it actually wrote this run.
         with self.assertRaisesRegex(
-                vc.PatchCampaignError, "not claimed in result.emitted_artifacts"):
+            vc.PatchCampaignError, "not claimed in result.emitted_artifacts"
+        ):
             vc._bind_producer_trace_evidence(
                 {
-                    "positive": {"artifact": {"path": "artifacts/p.log", "sha256": "1"}},
-                    "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+                    "positive": {
+                        "artifact": {"path": "artifacts/p.log", "sha256": "1"}
+                    },
+                    "negative": {
+                        "artifact": {"path": "artifacts/n.log", "sha256": "2"}
+                    },
                 },
                 validation_plan=_trace_plan(),
                 declared_artifacts=frozenset({"p.log", "n.log"}),
@@ -416,24 +444,27 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         # Not artifacts/<basename>: bare basename, nested, or a run-dir
         # escape must all fail before the filesystem is consulted.
         for bad in ("p.log", "artifacts/sub/p.log", "../outside.log"):
-            with self.subTest(path=bad):
-                with self.assertRaisesRegex(
-                        vc.PatchCampaignError, "artifacts/<basename>"):
-                    vc._bind_producer_trace_evidence(
-                        {
-                            "positive": {"artifact": {"path": bad, "sha256": "1"}},
-                            "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
+            with (
+                self.subTest(path=bad),
+                self.assertRaisesRegex(vc.PatchCampaignError, "artifacts/<basename>"),
+            ):
+                vc._bind_producer_trace_evidence(
+                    {
+                        "positive": {"artifact": {"path": bad, "sha256": "1"}},
+                        "negative": {
+                            "artifact": {"path": "artifacts/n.log", "sha256": "2"}
                         },
-                        validation_plan=_trace_plan(),
-                        declared_artifacts=frozenset({"n.log"}),
-                        emitted_artifacts=frozenset({"n.log"}),
-                    )
+                    },
+                    validation_plan=_trace_plan(),
+                    declared_artifacts=frozenset({"n.log"}),
+                    emitted_artifacts=frozenset({"n.log"}),
+                )
 
     def test_bind_result_rejects_undeclared_performance_artifact(self) -> None:
         # The same gate covers the generic performance_evidence["artifact"]
         # channel, not just trace evidence.
         ctx = vc.ValidationContext(
-            descriptor=object(),  # noqa: B018
+            descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
             subject_source=None,
@@ -454,7 +485,8 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             emitted_artifacts=frozenset(),
         )
         with self.assertRaisesRegex(
-                vc.PatchCampaignError, "not declared in the producer manifest"):
+            vc.PatchCampaignError, "not declared in the producer manifest"
+        ):
             vc._bind_producer_result_evidence(
                 result,
                 validation_plan=_trace_plan(),
@@ -515,6 +547,11 @@ class _FakeScaffold:
             source.mkdir(parents=True, exist_ok=True)
         self.control_idempotent = True
         self.subject_idempotent = True
+        # The real scaffold builds control/validation-subject with
+        # llama-server+llama-bench targets under these bin dirs; the generic
+        # path exposes them via ProducerContext.validation_binaries.
+        self.control_bin = base_dir / "bin" / "control"
+        self.validation_subject_bin = base_dir / "bin" / "validation-subject"
         self.tune_build_evidence = _FakeBuildEvidence("tune")
         self.replay_build_evidence = _FakeBuildEvidence("replay")
         self.stock_build_evidence = _FakeBuildEvidence("stock")
@@ -947,9 +984,14 @@ class RD12GenericDispatcherTests(unittest.TestCase):
                 "--run-performance-benchmark is mutually exclusive",
             ),
         ):
-            with self.subTest(overrides=sorted(overrides)):
-                with self.assertRaisesRegex(vp.ValidationProducerError, pattern):
-                    _dispatch(self._tmp, args_overrides=overrides)
+            with (
+                self.subTest(overrides=sorted(overrides)),
+                self.assertRaisesRegex(vp.ValidationProducerError, pattern),
+            ):
+                _dispatch(
+                    self._tmp,
+                    args_overrides=cast("dict[str, object]", overrides),
+                )
 
     def test_producer_patch_id_mismatch_fails_closed(self) -> None:
         selection = vp.ProducerSelection(
