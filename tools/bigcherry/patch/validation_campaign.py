@@ -7515,6 +7515,7 @@ def run_rd43_contract_qualification(
     }
 
 
+@dataclass(frozen=True)
 class StandardCampaignScaffold:
     """The five standard campaign builds (PA36 sub-slice 2, dev-gpt-agent
     req_2ecda033763949a9 T2): one control composition, one focal subject

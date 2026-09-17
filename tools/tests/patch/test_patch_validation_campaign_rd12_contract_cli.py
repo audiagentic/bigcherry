@@ -18,6 +18,7 @@ This file covers the replaced path at three levels:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import inspect
 import json
@@ -97,6 +98,33 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
             "                execution.verdict,\n"
             "                {},",
             core_src,
+        )
+
+    def test_standard_campaign_scaffold_is_a_frozen_dataclass(self) -> None:
+        # Real-hardware finding (sub-slice 3, 2026-09-17 gfx1030 run): the
+        # committed class had LOST its @dataclass decorator, so its __init__
+        # was the bare object one. Every offline test fakes
+        # _build_standard_campaign_scaffold(), so the missing __init__ was
+        # never executed -- the first real hardware run died with
+        # "StandardCampaignScaffold() takes no arguments" AFTER all five
+        # builds had completed. Pin the decorator contract structurally.
+        self.assertTrue(dataclasses.is_dataclass(vc.StandardCampaignScaffold))
+        self.assertTrue(
+            vc.StandardCampaignScaffold.__dataclass_params__.frozen)
+        names = frozenset(
+            f.name for f in dataclasses.fields(vc.StandardCampaignScaffold))
+        self.assertEqual(
+            names,
+            frozenset({
+                "base_revision", "control_composition", "subject_composition",
+                "control_source", "subject_source", "stock_source",
+                "control_idempotent", "subject_idempotent", "build_root",
+                "build_env", "tune_bin", "replay_bin", "stock_bin",
+                "control_bin", "validation_subject_bin",
+                "tune_build_evidence", "replay_build_evidence",
+                "stock_build_evidence", "control_build_evidence",
+                "validation_subject_build_evidence",
+            }),
         )
 
 
