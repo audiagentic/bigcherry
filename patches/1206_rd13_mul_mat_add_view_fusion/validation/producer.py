@@ -252,6 +252,7 @@ def _canonical_bytes(values: array) -> bytes:
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     from bigcherry.experiment import contract as experiment_contract
+    from bigcherry.experiment.attestation import ExecutionIdentity
     from bigcherry.experiment.server_execution import AttestedServerSession
     from bigcherry.patch import source as psi
 
@@ -299,15 +300,25 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     device = matches[0]
 
-    # PRBE111 (preserved): only build the locator->arch mapping when the
-    # device identity actually carries real locators; otherwise leave it
-    # None and let attestation fail closed exactly as before (never
-    # guess a mapping).
-    expected = device.execution_identity
-    architecture_by_locator = (
-        dict(zip(expected.locators, expected.architectures, strict=True))
-        if expected.locators is not None else None
-    )
+    # PRBE111 (preserved) + PA36 RD13/1206 migration (GPT req_760c0fe82d7b4609
+    # BLOCKER): the llama-server attestation channel derives the server
+    # architecture ONLY via a verified locator->arch mapping (the
+    # llama-bench/perplexity banner carries no PCI locator, so
+    # device_contexts() omits locators from execution_identity). RD13
+    # runs llama-server, so construct a locator-bearing ExecutionIdentity
+    # from the verified physical locator and the {locator: architecture}
+    # mapping. When the device carries no verified locator (test/mocked),
+    # leave the mapping None and let attestation fail closed exactly as
+    # before (never guess a mapping).
+    if device.locator is not None:
+        expected = ExecutionIdentity(
+            backend="ROCm", architectures=(architecture,),
+            locators=(device.locator,),
+        )
+        architecture_by_locator = {device.locator: architecture}
+    else:
+        expected = device.execution_identity
+        architecture_by_locator = None
 
     # Sanctioned HIP-only device selector env (design ruling Q5): merge
     # the build env with the device overrides, pop env_unset LAST, and
