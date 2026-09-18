@@ -1,229 +1,402 @@
-"""RD26 decode-vs-verify raw-logit orchestration tests -- hardware-free."""
+"""PA36 migration #4 (dev-gpt-agent req_110d0729beb44d8b): RD26
+decode-vs-verify bit-identity producer tests -- hardware-free.
+
+The legacy run_rd26_decode_verify_bit_identity_check() orchestration
+tests are REPLACED by direct tests of the 1210 patch-local producer
+module (validation/producer.py): the legacy function, the
+--run-rd26-contract CLI path, and the rd26_correctness.py module are
+all DELETED from shared code in the same change. The seven measurement
+scenarios are preserved 1:1 (the subprocess.run seam faked with
+deterministic GGUF content per arm/mode/replicate); the
+producer-specific guards (model required, one contract architecture,
+one device, verify-width scope) and the result shape are new coverage
+for the migrated surface.
+
+The historical RD26 record's honest correctness FAIL is the expected
+receipt for a real run against the current 2-of-5 base-standalone
+subset -- these tests prove producer EQUIVALENCE (the oracle mechanics
+are preserved), never RD26 qualification.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
-import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
-import sys
+TOOLS_ROOT = Path(__file__).resolve().parents[2]
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
+from bigcherry.patch import validation_producer as vp  # noqa: E402
+from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+SUBJECT_PATCH = "1210_rd26_bitidentical_decode_verify_standalone"
+PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
+FAT_TARGETS = "gfx1100;gfx1201;gfx1030"
 
-
-class _FakeBuildEvidence:
-    effective_build_id = "same-build"
-    effective_configure = {"CMAKE_BUILD_TYPE": "Release", "GGML_HIP": "ON"}
-    verification = SimpleNamespace(to_dict=lambda: {})
-    runtime_artifacts = {}
-
-    def campaign_identity(self) -> dict[str, object]:
-        return {"effective_build_id": self.effective_build_id}
-
-
-def _fake_build_tree(*, name, hip_path, amdgpu_targets, workdir, targets, source, extra_cmake_args):
-    if targets != ["llama-results"]:
-        raise AssertionError("RD26 bit-identity producer must build llama-results")
-    return Path(f"/fake/{name}/bin")
+_PAIRED_IDENTITIES = {
+    "control": {"build_id": "pair-control-build"},
+    "subject": {"build_id": "pair-subject-build"},
+}
 
 
-def _fake_capture(
-    build_dir, *, source_root, architecture, binary, requested_cmake_args, build_env, extra_binaries=(),
-):
-    return _FakeBuildEvidence()
+def _load_producer() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "_bc_rd26_producer", PATCH_DIR / "validation" / "producer.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # The producer defines a dataclass (_RunRecord); the dataclass
+    # machinery looks the module up by name in sys.modules, so it must
+    # be registered before exec.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def _fake_parity(control_evidence, subject_evidence, *, patch_id):
-    return None
-
-
-class _FakeSourceModule:
-    REPO_ROOT = Path("R:/repo")
-
-    def __init__(self) -> None:
-        self.resolve_extra_patches: list[tuple[str, ...]] = []
-
-    def resolve_source_composition(self, source, *, extra_patches=(), focal=None, base_ref, base_repo):
-        if focal is not None:
-            raise AssertionError("RD26 bit identity must use explicit whole-composition arms")
-        patches = tuple(extra_patches)
-        self.resolve_extra_patches.append(patches)
-        return base_ref, patches
-
-    def materialize_composition(
-        self, *, base_repo, worktree_root, resolved_revision, composition, overlay_root, requested_revision,
-    ):
-        return Path(worktree_root) / "tree"
-
-    def git_worktree_tree(self, source):
-        return f"tree:{source}"
-
-
-class _FakeRunner:
+class _FakeRuntime:
     def __init__(
-        self, *,
-        control_diverges: bool = True,
-        subject_diverges: bool = False,
-        nondeterministic: tuple[str, str] | None = None,
-        fail: tuple[str, str] | None = None,
-        omit_output: tuple[str, str] | None = None,
+        self,
+        *,
+        run_dir: Path,
+        pair: vp.ProducerBuildPair,
+        device: vp.ProducerDeviceContext | None,
     ) -> None:
-        self.control_diverges = control_diverges
-        self.subject_diverges = subject_diverges
-        self.nondeterministic = nondeterministic
-        self.fail = fail
-        self.omit_output = omit_output
-        self.counts: dict[tuple[str, str], int] = {}
-        self.calls: list[dict[str, object]] = []
+        self.run_dir = run_dir
+        self.pair = pair
+        self.device = device
+        self.build_pair_calls: list[dict[str, object]] = []
 
-    def __call__(self, argv, **kwargs):
-        args = [str(value) for value in argv]
-        binary = args[0]
-        arm = "subject" if "subject" in binary else "control"
-        ubatch = int(args[args.index("--ubatch-size") + 1])
-        mode = "decode" if ubatch == 1 else "verify"
-        key = (arm, mode)
-        replicate = self.counts.get(key, 0)
-        self.counts[key] = replicate + 1
-
-        self.calls.append({
-            "arm": arm, "mode": mode, "ubatch": ubatch,
-            "batch": int(args[args.index("--batch-size") + 1]),
-            "ctx": int(args[args.index("--ctx-size") + 1]),
-        })
-
-        if self.fail == key:
-            return subprocess.CompletedProcess(args, 7, "", "synthetic failure")
-
-        output = Path(args[args.index("--output") + 1])
-
-        if self.omit_output == key:
-            return subprocess.CompletedProcess(args, 0, "", "")
-
-        if arm == "control":
-            marker = b"B" if (self.control_diverges and mode == "verify") else b"A"
-        else:
-            marker = b"D" if (self.subject_diverges and mode == "verify") else b"C"
-
-        data = b"GGUF" + marker * 64
-
-        if self.nondeterministic == key and replicate > 0:
-            data = data[:-1] + b"Z"
-
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(data)
-
-        return subprocess.CompletedProcess(args, 0, "ok", "")
-
-
-class RunRd26DecodeVerifyBitIdentityCheckTests(unittest.TestCase):
-    SUBJECT_PATCH = "1210_rd26_bitidentical_decode_verify_standalone"
-
-    def setUp(self) -> None:
-        self._real_build_tree = vc.build_tree
-        self._real_capture = vc.capture_completed_build_evidence
-        self._real_parity = vc.assert_validation_subject_parity
-        vc.build_tree = _fake_build_tree
-        vc.capture_completed_build_evidence = _fake_capture
-        vc.assert_validation_subject_parity = _fake_parity
-
-    def tearDown(self) -> None:
-        vc.build_tree = self._real_build_tree
-        vc.capture_completed_build_evidence = self._real_capture
-        vc.assert_validation_subject_parity = self._real_parity
-
-    def _run(self, *, runner: _FakeRunner | None = None, spec_draft_n_max: int = 4):
-        run_dir = Path(tempfile.mkdtemp())
-        source = _FakeSourceModule()
-        runner = runner or _FakeRunner()
-
-        result = vc.run_rd26_decode_verify_bit_identity_check(
-            base_revision="a" * 40, hip_path=Path("H:/hip"), amdgpu_targets="gfx1100",
-            worktree_root=Path("W:/worktrees"), build_root=Path("B:/build"),
-            model=Path("M:/tierA-qwen4b-q6k.gguf"), run_dir=run_dir, build_env={},
-            spec_draft_n_max=spec_draft_n_max, ctx_size=64,
-            prompt="one two three four five six seven eight nine ten eleven twelve",
-            replicates=2, _source_module=source, _runner=runner,
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
+    ) -> vp.ProducerBuildPair:
+        self.build_pair_calls.append(
+            {
+                "targets": tuple(targets),
+                "primary_target": primary_target,
+                "baseline_source": baseline_source,
+                "require_parity": require_parity,
+            }
         )
-        return result, run_dir, source, runner
+        return self.pair
+
+    def device_contexts(
+        self,
+        *,
+        device_map: object,
+    ) -> tuple[vp.ProducerDeviceContext, ...]:
+        return (self.device,) if self.device is not None else ()
+
+    def run_paired_llama_benchmark(
+        self,
+        *,
+        control_binary: Path,
+        subject_binary: Path,
+        model: Path,
+        workloads: tuple[str, ...] = ("decode", "prefill"),
+        patch_args: tuple[str, ...] = (),
+        runtime_args: tuple[str, ...] = (),
+        pairs: int = 3,
+        log_context: str,
+        device: vp.ProducerDeviceContext | None = None,
+    ) -> vp.ProducerPairedBenchmarkOutcome:
+        raise AssertionError("the RD26 producer must never benchmark")
+
+    def write_artifact(
+        self,
+        *,
+        name: str,
+        payload: vp.JsonObject,
+    ) -> ArtifactRef:
+        return self._write(name, json.dumps(payload, indent=2))
+
+    def write_text_artifact(self, *, name: str, text: str) -> ArtifactRef:
+        return self._write(name, text)
+
+    def _write(self, name: str, text: str) -> ArtifactRef:
+        path = self.run_dir / "artifacts" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+        return ArtifactRef(
+            name=name,
+            path=path.relative_to(self.run_dir).as_posix(),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+
+
+def _make_pair(temp: Path) -> vp.ProducerBuildPair:
+    return vp.ProducerBuildPair(
+        base_revision="a" * 40,
+        control_source=temp / "trees" / "control",
+        subject_source=temp / "trees" / "subject",
+        control_composition=(),
+        subject_composition=((SUBJECT_PATCH, "c2"),),
+        control_bin=temp / "pair" / "CONTROL-BIN" / "llama-results",
+        subject_bin=temp / "pair" / "SUBJECT-BIN" / "llama-results",
+        validation_build_identities=_PAIRED_IDENTITIES,
+    )
+
+
+def _make_device(architecture: str) -> vp.ProducerDeviceContext:
+    return vp.ProducerDeviceContext(
+        architecture=architecture,
+        device_index=0,
+        execution_identity=ExecutionIdentity(
+            backend="ROCm",
+            architectures=(architecture,),
+        ),
+        env_overrides={"HIP_VISIBLE_DEVICES": "0"},
+        env_unset=("ROCR_VISIBLE_DEVICES",),
+    )
+
+
+def _fake_tree(path: Path) -> str:
+    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
+
+
+def _content(
+    arm: str,
+    mode: str,
+    replicate: int,
+    *,
+    subject_identical: bool = True,
+    control_diverges: bool = True,
+    nondeterministic: bool = False,
+) -> bytes:
+    """Deterministic GGUF content per (arm, mode, replicate).
+
+    - subject_identical: subject decode and verify bytes are equal
+      (the RD26 invariant holds for the subject).
+    - control_diverges: control decode and verify bytes differ (the
+      non-vacuous effect gate).
+    - nondeterministic: replicate 1's bytes differ from replicate 0's
+      (same-configuration repeatability breaks).
+
+    Every body is padded to a fixed length: the producer requires the
+    decode and verify artifacts to be the SAME size (a size mismatch
+    invalidates the byte comparison), so the divergent content must
+    differ in bytes, not in length.
+    """
+    if arm == "subject":
+        if subject_identical:
+            body = b"SUBJECT-IDENTICAL-CONTENT"
+        elif mode == "decode":
+            body = b"SUBJECT-DECODE-CONTENT-00"
+        else:
+            body = b"SUBJECT-VERIFY-CONTENT-00"
+    else:
+        if control_diverges:
+            body = (
+                b"CONTROL-DECODE-CONTENT-00"
+                if mode == "decode"
+                else b"CONTROL-VERIFY-CONTENT-00"
+            )
+        else:
+            body = b"CONTROL-IDENTICAL-CONTENT"
+    if nondeterministic and replicate == 1:
+        body = body[:-2] + b"01"
+    return b"GGUF" + body
+
+
+def _fake_run(
+    *,
+    subject_identical: bool = True,
+    control_diverges: bool = True,
+    nondeterministic: bool = False,
+    returncode: int = 0,
+    missing_output: bool = False,
+):
+    calls: list[dict[str, object]] = []
+
+    def run(argv, **kwargs):
+        args = list(argv)
+        output_index = args.index("--output")
+        output = Path(args[output_index + 1])
+        ubatch_index = args.index("--ubatch-size")
+        ubatch = int(args[ubatch_index + 1])
+        executable = str(argv[0])
+        arm = "control" if "CONTROL" in executable.upper() else "subject"
+        mode = "decode" if ubatch == 1 else "verify"
+        calls.append({"arm": arm, "mode": mode, "env": dict(kwargs.get("env") or {})})
+        replicate = int(output.name.rsplit("rep", 1)[1].split(".")[0])
+        if returncode == 0 and not missing_output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(
+                _content(
+                    arm,
+                    mode,
+                    replicate,
+                    subject_identical=subject_identical,
+                    control_diverges=control_diverges,
+                    nondeterministic=nondeterministic,
+                )
+            )
+        return SimpleNamespace(returncode=returncode, stdout="", stderr="fake stderr")
+
+    return run, calls
+
+
+def _run_producer(
+    module: object,
+    *,
+    subject_identical: bool = True,
+    control_diverges: bool = True,
+    nondeterministic: bool = False,
+    returncode: int = 0,
+    missing_output: bool = False,
+    model_none: bool = False,
+    with_device: bool = True,
+    targets: tuple[str, ...] | None = None,
+) -> tuple[vp.ProducerResult | None, _FakeRuntime, list[dict[str, object]]]:
+    temp = Path(tempfile.mkdtemp())
+    run_dir = temp / "run"
+    run_dir.mkdir(parents=True)
+    pair = _make_pair(temp)
+    device = _make_device("gfx1100") if with_device else None
+    runtime = _FakeRuntime(run_dir=run_dir, pair=pair, device=device)
+    architecture = "gfx1100"
+    if targets is None:
+        targets = (architecture,)
+    ctx = vp.ProducerContext(
+        repo_root=TOOLS_ROOT.parent,
+        patch_dir=PATCH_DIR,
+        workdir=run_dir,
+        campaign_id=f"{SUBJECT_PATCH}/rd26",
+        base_revision="a" * 40,
+        hip_path=Path("/opt/rocm"),
+        fat_targets=vp.FatTargetPlan(targets=targets),
+        model=None if model_none else Path("/models/m.gguf"),
+        corpus=None,
+        build_env={"HIP_PATH": "/opt/rocm"},
+        inputs={},
+        validation_build_identities={
+            "control": {"build_id": "scaffold-control-build"},
+            "subject": {"build_id": "scaffold-subject-build"},
+        },
+        patch_id=SUBJECT_PATCH,
+        device_map={architecture: (0,)},
+        runtime=runtime,  # type: ignore[arg-type]
+        validation_binaries={},
+    )
+    fake_run, calls = _fake_run(
+        subject_identical=subject_identical,
+        control_diverges=control_diverges,
+        nondeterministic=nondeterministic,
+        returncode=returncode,
+        missing_output=missing_output,
+    )
+    with (
+        mock.patch("subprocess.run", fake_run),
+        mock.patch("bigcherry.patch.source.git_worktree_tree", _fake_tree),
+    ):
+        try:
+            result = module.run(ctx)  # type: ignore[union-attr]
+        except vp.ValidationProducerError:
+            return None, runtime, calls
+    assert isinstance(result, vp.ProducerResult)
+    return result, runtime, calls
+
+
+class Rd26BitIdentityProducerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.module = _load_producer()
 
     def test_subject_identity_and_control_divergence_pass_nonvacuously(self) -> None:
-        result, run_dir, source, runner = self._run()
-
-        correctness = result["results"]["bit_identical"]
-        self.assertTrue(correctness.passed)
-        self.assertTrue(result["comparison"]["subject_bit_identical"])
-        self.assertTrue(result["comparison"]["control_diverged"])
-        self.assertEqual(result["comparison"]["decode_ubatch"], 1)
-        self.assertEqual(result["comparison"]["verify_ubatch"], 5)
-
+        result, runtime, calls = _run_producer(self.module)
+        assert result is not None
+        self.assertEqual(len(result.contract_correctness_results), 1)
+        check = result.contract_correctness_results[0]
+        self.assertEqual(check.check, "bit_identical")
+        self.assertTrue(check.passed)
+        assert result.correctness is not None
+        self.assertEqual(result.correctness["disposition"], "passed")
         self.assertEqual(
-            source.resolve_extra_patches, [(), (self.SUBJECT_PATCH,)],
+            result.correctness["mechanism"], "rd26-decode-verify-bit-identity"
         )
-
-        self.assertEqual(len(runner.calls), 8)
-        self.assertEqual({call["ubatch"] for call in runner.calls}, {1, 5})
-        self.assertEqual({call["batch"] for call in runner.calls}, {64})
-        self.assertEqual({call["ctx"] for call in runner.calls}, {64})
-
-        artifact = run_dir / "artifacts" / "rd26-decode-verify-bit-identity.json"
-        self.assertTrue(artifact.exists())
-
-        doc = json.loads(artifact.read_text(encoding="utf-8"))
-        self.assertTrue(doc["passed"])
-        self.assertTrue(doc["comparison"]["subject_bit_identical"])
-        self.assertTrue(doc["comparison"]["control_diverged"])
-
-        self.assertFalse((run_dir / "scratch" / "rd26-bit-identity").exists())
+        self.assertEqual(
+            result.emitted_artifacts,
+            frozenset({"rd26-decode-verify-bit-identity.json"}),
+        )
+        self.assertEqual(result.check_results, ())
+        self.assertIsNone(result.activation_evidence)
+        self.assertIsNone(result.performance_evidence)
+        self.assertIsNone(result.trace_evidence)
+        # The pair is built once, fat multi-arch, parity asserted, and
+        # every arm/mode/replicate ran exactly as the oracle specifies.
+        self.assertEqual(len(runtime.build_pair_calls), 1)
+        self.assertEqual(runtime.build_pair_calls[0]["targets"], CONTRACT_ARCHITECTURES)
+        self.assertTrue(runtime.build_pair_calls[0]["require_parity"])
+        self.assertEqual(runtime.build_pair_calls[0]["primary_target"], "llama-results")
+        # 2 arms x 2 modes x 2 replicates = 8 subprocess runs.
+        self.assertEqual(len(calls), 8)
+        self.assertEqual({c["arm"] for c in calls}, {"control", "subject"})
+        self.assertEqual({c["mode"] for c in calls}, {"decode", "verify"})
 
     def test_subject_divergence_fails_even_when_control_diverges(self) -> None:
-        result, _, _, _ = self._run(runner=_FakeRunner(subject_diverges=True))
-
-        correctness = result["results"]["bit_identical"]
-        self.assertFalse(correctness.passed)
-        self.assertFalse(result["comparison"]["subject_bit_identical"])
-        self.assertTrue(result["comparison"]["control_diverged"])
-        self.assertIn("subject decode/verify", correctness.detail)
+        result, _, _ = _run_producer(self.module, subject_identical=False)
+        assert result is not None
+        check = result.contract_correctness_results[0]
+        self.assertFalse(check.passed)
+        assert result.correctness is not None
+        self.assertEqual(result.correctness["disposition"], "failed")
+        self.assertIn("first_file_byte_mismatch", check.detail)
 
     def test_control_identity_fails_nonvacuous_effect_gate(self) -> None:
-        result, _, _, _ = self._run(runner=_FakeRunner(control_diverges=False))
-
-        correctness = result["results"]["bit_identical"]
-        self.assertFalse(correctness.passed)
-        self.assertTrue(result["comparison"]["subject_bit_identical"])
-        self.assertFalse(result["comparison"]["control_diverged"])
-        self.assertIn("control is also bit-identical", correctness.detail)
+        result, _, _ = _run_producer(self.module, control_diverges=False)
+        assert result is not None
+        check = result.contract_correctness_results[0]
+        self.assertFalse(check.passed)
+        self.assertIn("non-authoritative", check.detail)
 
     def test_same_configuration_nondeterminism_is_hard_error(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "subject/verify is not repeatable"):
-            self._run(runner=_FakeRunner(nondeterministic=("subject", "verify")))
+        result, _, _ = _run_producer(self.module, nondeterministic=True)
+        self.assertIsNone(result)
 
     def test_llama_results_process_failure_is_hard_error(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "control/decode/rep0.*exit 7"):
-            self._run(runner=_FakeRunner(fail=("control", "decode")))
+        result, _, _ = _run_producer(self.module, returncode=1)
+        self.assertIsNone(result)
 
     def test_missing_output_is_hard_error(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "did not create its GGUF output"):
-            self._run(runner=_FakeRunner(omit_output=("control", "decode")))
+        result, _, _ = _run_producer(self.module, missing_output=True)
+        self.assertIsNone(result)
 
-    def test_verify_width_over_rd26_scope_fails_before_source_resolution(self) -> None:
-        run_dir = Path(tempfile.mkdtemp())
-        source = _FakeSourceModule()
+    def test_verify_width_over_rd26_scope_fails_before_build(self) -> None:
+        self.module._SPEC_DRAFT_N_MAX = 9  # type: ignore[attr-defined]
+        result, runtime, _ = _run_producer(self.module)
+        self.assertIsNone(result)
+        # The scope guard fires BEFORE any build.
+        self.assertEqual(runtime.build_pair_calls, [])
+        self.module._SPEC_DRAFT_N_MAX = 4  # type: ignore[attr-defined]
 
-        with self.assertRaisesRegex(vc.PatchCampaignError, r"spec_draft_n_max must be in \[1, 7\]"):
-            vc.run_rd26_decode_verify_bit_identity_check(
-                base_revision="a" * 40, hip_path=Path("H:/hip"), amdgpu_targets="gfx1100",
-                worktree_root=Path("W:/worktrees"), build_root=Path("B:/build"),
-                model=Path("M:/tierA-qwen4b-q6k.gguf"), run_dir=run_dir, build_env={},
-                spec_draft_n_max=8, _source_module=source, _runner=_FakeRunner(),
-            )
+    def test_model_required_fails_before_build(self) -> None:
+        result, runtime, _ = _run_producer(self.module, model_none=True)
+        self.assertIsNone(result)
+        self.assertEqual(runtime.build_pair_calls, [])
 
-        self.assertEqual(source.resolve_extra_patches, [])
+    def test_single_contract_architecture_guard(self) -> None:
+        result, _, _ = _run_producer(self.module, targets=("gfx1100", "gfx1030"))
+        self.assertIsNone(result)
+
+    def test_device_selection_guard(self) -> None:
+        result, _, _ = _run_producer(self.module, with_device=False)
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch import validation_policy as patch_validation_policy  # noqa: E402
+from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _PATCH_ID = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
 _PATCH_DIR = REPO_ROOT / "patches" / _PATCH_ID
@@ -56,11 +57,11 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
     hardcoded to ``None`` regardless of any CLI flag) lived entirely in the
     code between those two calls, so stubbing them does not hide it."""
 
-    def _run_with_corpus(self, *, producer_corpus: Path | None) -> object:
+    def _run_with_corpus(self, *, producer_corpus: Path | None) -> vp.ProducerContext:
         import argparse
         import tempfile
 
-        captured: dict[str, object] = {}
+        captured: dict[str, vp.ProducerContext] = {}
 
         def _fake_execute_validation_producer(*, producer_context, **_kwargs):
             captured["producer_context"] = producer_context
@@ -84,6 +85,8 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
                     producer_corpus=producer_corpus,
                     correctness_evidence=None,
                     run_performance_benchmark=False,
+                    bench_prompt=512,
+                    bench_gen=128,
                 )
                 # 1203's rd050607 descriptor declares control_model as a
                 # REQUIRED producer input; the dispatcher's fail-fast
@@ -117,7 +120,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
         parsing all the way into ``ProducerContext.corpus``."""
         import tempfile
 
-        captured: dict[str, object] = {}
+        captured: dict[str, vp.ProducerContext] = {}
 
         def _fake_execute_validation_producer(*, producer_context, **_kwargs):
             captured["producer_context"] = producer_context

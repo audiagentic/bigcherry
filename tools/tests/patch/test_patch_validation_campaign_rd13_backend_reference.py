@@ -1,58 +1,57 @@
-"""RD13 backend_reference orchestration tests -- hardware-free."""
+"""PA36 migration #3 (dev-gpt-agent req_110d0729beb44d8b): RD13
+backend_reference producer tests -- hardware-free.
+
+The legacy run_rd13_backend_reference_check() orchestration tests are
+REPLACED by direct tests of the 1206 patch-local producer module
+(validation/producer.py): the legacy function, its helper trio, the
+_RD13_BACKEND_REFERENCE_* constants, and the --run-rd13-contract CLI
+path are all DELETED from shared code in the same change. The four
+measurement scenarios are preserved 1:1 (a small fake vocabulary via
+the producer's module constants, mirroring the legacy test's
+vocab_size=3/n_predict=2 parameters); the producer-specific guards
+(model required, one contract architecture, one device) and the
+preserved env sanitization (stale GGML_CUDA_DISABLE_FUSION) are new
+coverage for the migrated surface.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from unittest import mock
 
-import sys
+TOOLS_ROOT = Path(__file__).resolve().parents[2]
+if str(TOOLS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TOOLS_ROOT))
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
+from bigcherry.patch import validation_producer as vp  # noqa: E402
+from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+SUBJECT_PATCH = "1206_rd13_mul_mat_add_view_fusion"
+PATCH_DIR = TOOLS_ROOT.parent / "patches" / SUBJECT_PATCH
+CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
+FAT_TARGETS = "gfx1100;gfx1201;gfx1030"
 
-
-class _FakeBuildEvidence:
-    effective_build_id = "same-build"
-    effective_configure = {"CMAKE_BUILD_TYPE": "Release", "GGML_HIP": "ON"}
-    verification = SimpleNamespace(to_dict=lambda: {})
-    runtime_artifacts = {}
-
-    def campaign_identity(self) -> dict[str, object]:
-        return {"effective_build_id": self.effective_build_id}
-
-
-def _fake_build_tree(*, name, hip_path, amdgpu_targets, workdir, targets, source, extra_cmake_args):
-    return Path(f"/fake/{name}/bin")
+_PAIRED_IDENTITIES = {
+    "control": {"build_id": "pair-control-build"},
+    "subject": {"build_id": "pair-subject-build"},
+}
 
 
-def _fake_capture(
-    build_dir, *, source_root, architecture, binary, requested_cmake_args,
-    build_env, extra_binaries=(),
-):
-    return _FakeBuildEvidence()
-
-
-class _FakeSourceModule:
-    REPO_ROOT = Path("R:/repo")
-
-    def __init__(self) -> None:
-        self.resolve_focals: list[str | None] = []
-
-    def resolve_source_composition(self, source, *, focal=None, base_ref, base_repo):
-        self.resolve_focals.append(focal)
-        return base_ref, (() if focal is None else (focal,))
-
-    def materialize_composition(
-        self, *, base_repo, worktree_root, resolved_revision, composition,
-        overlay_root, requested_revision,
-    ):
-        return Path(worktree_root) / "tree"
-
-    def git_worktree_tree(self, source):
-        return f"tree:{source}"
+def _load_producer() -> object:
+    spec = importlib.util.spec_from_file_location(
+        "_bc_rd13_producer", PATCH_DIR / "validation" / "producer.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class _FakeAttestation:
@@ -64,76 +63,257 @@ class _FakeAttestation:
 
 
 class _FakeSession:
-    def __init__(self, **kwargs) -> None:
-        self.binary = Path(kwargs["binary"])
-        self.arm = "control" if "control" in str(self.binary) else "subject"
-        self.attestation = None
-        self.base_url = "http://unused.invalid"
+    """Structural AttestedServerSession stand-in: arm from the binary,
+    per-arm base URL (the fake urlopen routes on it), attestation on
+    enter, and the exact env the producer passed (the test asserts the
+    stale fusion-disable sanitization)."""
 
-    def __enter__(self):
+    def __init__(self, **kwargs: object) -> None:
+        self.binary = Path(str(kwargs["binary"]))
+        self.arm = "control" if "CONTROL" in str(self.binary).upper() else "subject"
+        self.base_url = f"http://{self.arm}.invalid"
+        self.env_overrides = dict(kwargs["env_overrides"])  # type: ignore[arg-type]
+        self.env_unset = tuple(kwargs["env_unset"])  # type: ignore[arg-type]
+        self.attestation: _FakeAttestation | None = None
+
+    def __enter__(self) -> _FakeSession:
         self.attestation = _FakeAttestation(self.arm)
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         pass
+
+
+class _FakeResponse:
+    def __init__(self, lines: list[bytes]) -> None:
+        self._lines = lines
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        pass
+
+    def __iter__(self) -> object:
+        return iter(self._lines)
+
+
+def _sse_lines(rows: list[dict[str, object]]) -> list[bytes]:
+    lines = [
+        f"data: {json.dumps({'stop': False, 'completion_probabilities': [row]})}\n".encode()
+        for row in rows
+    ]
+    lines.append(b"data: [DONE]\n")
+    return lines
+
+
+class _FakeRuntime:
+    def __init__(
+        self,
+        *,
+        run_dir: Path,
+        pair: vp.ProducerBuildPair,
+        device: vp.ProducerDeviceContext | None,
+    ) -> None:
+        self.run_dir = run_dir
+        self.pair = pair
+        self.device = device
+        self.build_pair_calls: list[dict[str, object]] = []
+
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
+    ) -> vp.ProducerBuildPair:
+        self.build_pair_calls.append(
+            {
+                "targets": tuple(targets),
+                "primary_target": primary_target,
+                "baseline_source": baseline_source,
+                "require_parity": require_parity,
+            }
+        )
+        return self.pair
+
+    def device_contexts(
+        self,
+        *,
+        device_map: object,
+    ) -> tuple[vp.ProducerDeviceContext, ...]:
+        return (self.device,) if self.device is not None else ()
+
+    def run_paired_llama_benchmark(
+        self,
+        *,
+        control_binary: Path,
+        subject_binary: Path,
+        model: Path,
+        workloads: tuple[str, ...] = ("decode", "prefill"),
+        patch_args: tuple[str, ...] = (),
+        runtime_args: tuple[str, ...] = (),
+        pairs: int = 3,
+        log_context: str,
+        device: vp.ProducerDeviceContext | None = None,
+    ) -> vp.ProducerPairedBenchmarkOutcome:
+        raise AssertionError("the RD13 producer must never benchmark")
+
+    def write_artifact(
+        self,
+        *,
+        name: str,
+        payload: vp.JsonObject,
+    ) -> ArtifactRef:
+        return self._write(name, json.dumps(payload, indent=2))
+
+    def write_text_artifact(self, *, name: str, text: str) -> ArtifactRef:
+        return self._write(name, text)
+
+    def _write(self, name: str, text: str) -> ArtifactRef:
+        path = self.run_dir / "artifacts" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text.encode("utf-8"))
+        return ArtifactRef(
+            name=name,
+            path=path.relative_to(self.run_dir).as_posix(),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+
+
+def _make_pair(temp: Path) -> vp.ProducerBuildPair:
+    return vp.ProducerBuildPair(
+        base_revision="a" * 40,
+        control_source=temp / "trees" / "control",
+        subject_source=temp / "trees" / "subject",
+        control_composition=(),
+        subject_composition=((SUBJECT_PATCH, "c2"),),
+        control_bin=temp / "pair" / "CONTROL-BIN" / "llama-server",
+        subject_bin=temp / "pair" / "SUBJECT-BIN" / "llama-server",
+        validation_build_identities=_PAIRED_IDENTITIES,
+    )
+
+
+def _make_device(architecture: str) -> vp.ProducerDeviceContext:
+    return vp.ProducerDeviceContext(
+        architecture=architecture,
+        device_index=0,
+        execution_identity=ExecutionIdentity(
+            backend="ROCm",
+            architectures=(architecture,),
+        ),
+        env_overrides={"HIP_VISIBLE_DEVICES": "0"},
+        env_unset=("ROCR_VISIBLE_DEVICES",),
+    )
+
+
+def _fake_tree(path: Path) -> str:
+    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
 
 
 def _row(generated_id: int, values: list[float]) -> dict[str, object]:
     return {
         "id": generated_id,
         "top_logprobs": [
-            {"id": token_id, "logprob": value}
-            for token_id, value in enumerate(values)
+            {"id": token_id, "logprob": value} for token_id, value in enumerate(values)
         ],
     }
 
 
-def _streamer(control_rows, subject_rows):
-    def stream(session, payload, timeout_s):
-        if payload["stream"] is not True:
+def _run_producer(
+    module: object,
+    *,
+    control_rows: list[dict[str, object]],
+    subject_rows: list[dict[str, object]],
+    model: Path | None = None,
+    with_device: bool = True,
+    build_env: dict[str, str] | None = None,
+    targets: tuple[str, ...] | None = None,
+) -> tuple[vp.ProducerResult, _FakeRuntime, list[_FakeSession]]:
+    temp = Path(tempfile.mkdtemp())
+    run_dir = temp / "run"
+    run_dir.mkdir(parents=True)
+    pair = _make_pair(temp)
+    device = _make_device("gfx1100") if with_device else None
+    runtime = _FakeRuntime(run_dir=run_dir, pair=pair, device=device)
+    architecture = "gfx1100"
+    if targets is None:
+        targets = (architecture,)
+    ctx = vp.ProducerContext(
+        repo_root=TOOLS_ROOT.parent,
+        patch_dir=PATCH_DIR,
+        workdir=run_dir,
+        campaign_id=f"{SUBJECT_PATCH}/rd13",
+        base_revision="a" * 40,
+        hip_path=Path("/opt/rocm"),
+        fat_targets=vp.FatTargetPlan(targets=targets),
+        model=model if model is not None else Path("/models/m.gguf"),
+        corpus=None,
+        build_env=build_env if build_env is not None else {"HIP_PATH": "/opt/rocm"},
+        inputs={},
+        validation_build_identities={
+            "control": {"build_id": "scaffold-control-build"},
+            "subject": {"build_id": "scaffold-subject-build"},
+        },
+        patch_id=SUBJECT_PATCH,
+        device_map={architecture: (0,)},
+        runtime=runtime,  # type: ignore[arg-type]
+        validation_binaries={},
+    )
+    # The small fake vocabulary (the legacy test's vocab_size=3 /
+    # n_predict=2 parameters, now module constants).
+    module._VOCAB_SIZE = 3  # type: ignore[attr-defined]
+    module._N_PREDICT = 2  # type: ignore[attr-defined]
+
+    sessions: list[_FakeSession] = []
+
+    def urlopen(request: object, timeout: object = None) -> _FakeResponse:
+        url = str(getattr(request, "full_url", ""))
+        if "control" not in url and "subject" not in url:
+            raise AssertionError(f"unexpected completion URL: {url!r}")
+        rows = control_rows if "control" in url else subject_rows
+        body = json.loads(getattr(request, "data", b"{}"))
+        stream = body.get("stream")
+        if not isinstance(stream, bool) or not stream:
             raise AssertionError("RD13 backend_reference must use streaming completion")
-        if payload["post_sampling_probs"] is not False:
-            raise AssertionError("RD13 backend_reference must compare pre-sampling logprobs")
-        if payload["n_probs"] != 3:
-            raise AssertionError("test expected full fake vocabulary")
-        return iter(control_rows if session.arm == "control" else subject_rows)
+        post_sampling = body.get("post_sampling_probs")
+        if not isinstance(post_sampling, bool) or post_sampling:
+            raise AssertionError(
+                "RD13 backend_reference must compare pre-sampling logprobs"
+            )
+        if body.get("n_probs") != 3:
+            raise AssertionError("test expected the fake full vocabulary")
+        return _FakeResponse(_sse_lines(rows))
 
-    return stream
+    def session_factory(**kwargs: object) -> _FakeSession:
+        session = _FakeSession(**kwargs)
+        sessions.append(session)
+        return session
+
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=urlopen),
+        mock.patch(
+            "bigcherry.experiment.server_execution.AttestedServerSession",
+            side_effect=session_factory,
+        ),
+        mock.patch("bigcherry.patch.source.git_worktree_tree", _fake_tree),
+    ):
+        result = module.run(ctx)  # type: ignore[union-attr]
+    assert isinstance(result, vp.ProducerResult)
+    return result, runtime, sessions
 
 
-class RunRd13BackendReferenceCheckTests(unittest.TestCase):
+class Rd13BackendReferenceProducerTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_build_tree = vc.build_tree
-        self._real_capture = vc.capture_completed_build_evidence
-        vc.build_tree = _fake_build_tree
-        vc.capture_completed_build_evidence = _fake_capture
-
-    def tearDown(self) -> None:
-        vc.build_tree = self._real_build_tree
-        vc.capture_completed_build_evidence = self._real_capture
-
-    def _run(self, *, control_rows, subject_rows):
-        run_dir = Path(tempfile.mkdtemp())
-        source_module = _FakeSourceModule()
-        result = vc.run_rd13_backend_reference_check(
-            base_revision="a" * 40,
-            hip_path=Path("H:/hip"),
-            amdgpu_targets="gfx1100",
-            worktree_root=Path("W:/worktrees"),
-            build_root=Path("B:/build"),
-            model=Path("M:/tierA-qwen4b-q6k.gguf"),
-            run_dir=run_dir,
-            vocab_size=3,
-            n_predict=2,
-            tolerance=0.0005,
-            _session_factory=_FakeSession,
-            _stream_request=_streamer(control_rows, subject_rows),
-            _source_module=source_module,
-        )
-        return result, run_dir, source_module
+        self.module = _load_producer()
 
     def test_within_tolerance_passes_and_binds_full_vocab_summary(self) -> None:
-        result, run_dir, source_module = self._run(
+        result, runtime, sessions = _run_producer(
+            self.module,
             control_rows=[
                 _row(1, [-1.0, -2.0, -3.0]),
                 _row(2, [-1.1, -2.1, -3.1]),
@@ -143,18 +323,33 @@ class RunRd13BackendReferenceCheckTests(unittest.TestCase):
                 _row(2, [-1.1, -2.1002, -3.1]),
             ],
         )
-        correctness = result["results"]["backend_reference"]
-        self.assertTrue(correctness.passed)
-        self.assertEqual(result["comparison"]["logprobs_compared"], 6)
-        self.assertLess(result["comparison"]["max_abs_logprob_diff"], 0.0005)
-        self.assertTrue((run_dir / "artifacts" / "rd13-backend-reference.json").exists())
+        self.assertEqual(len(result.contract_correctness_results), 1)
+        check = result.contract_correctness_results[0]
+        self.assertEqual(check.check, "backend_reference")
+        self.assertTrue(check.passed)
+        assert result.correctness is not None
+        self.assertEqual(result.correctness["disposition"], "passed")
         self.assertEqual(
-            source_module.resolve_focals,
-            [None, "1206_rd13_mul_mat_add_view_fusion"],
+            result.correctness["mechanism"], "rd13-full-vocab-backend-reference"
         )
+        self.assertEqual(
+            result.emitted_artifacts, frozenset({"rd13-backend-reference.json"})
+        )
+        self.assertEqual(result.check_results, ())
+        self.assertIsNone(result.activation_evidence)
+        self.assertIsNone(result.performance_evidence)
+        self.assertIsNone(result.trace_evidence)
+        # The pair is built once, fat multi-arch, parity asserted.
+        self.assertEqual(len(runtime.build_pair_calls), 1)
+        self.assertEqual(runtime.build_pair_calls[0]["targets"], CONTRACT_ARCHITECTURES)
+        self.assertTrue(runtime.build_pair_calls[0]["require_parity"])
+        # Both arms run against the one real device's sanctioned env.
+        self.assertEqual(len(sessions), 2)
+        self.assertEqual({session.arm for session in sessions}, {"control", "subject"})
 
     def test_numeric_delta_over_tolerance_is_a_correctness_failure(self) -> None:
-        result, _, _ = self._run(
+        result, _, _ = _run_producer(
+            self.module,
             control_rows=[
                 _row(1, [-1.0, -2.0, -3.0]),
                 _row(2, [-1.0, -2.0, -3.0]),
@@ -164,13 +359,15 @@ class RunRd13BackendReferenceCheckTests(unittest.TestCase):
                 _row(2, [-1.0, -2.0, -3.0]),
             ],
         )
-        correctness = result["results"]["backend_reference"]
-        self.assertFalse(correctness.passed)
-        self.assertAlmostEqual(result["comparison"]["max_abs_logprob_diff"], 0.001)
-        self.assertIn("tolerance", correctness.detail)
+        check = result.contract_correctness_results[0]
+        self.assertFalse(check.passed)
+        assert result.correctness is not None
+        self.assertEqual(result.correctness["disposition"], "failed")
+        self.assertIn("tolerance", check.detail)
 
     def test_generated_token_divergence_is_a_correctness_failure(self) -> None:
-        result, _, _ = self._run(
+        result, _, _ = _run_producer(
+            self.module,
             control_rows=[
                 _row(1, [-1.0, -2.0, -3.0]),
                 _row(2, [-1.0, -2.0, -3.0]),
@@ -180,14 +377,14 @@ class RunRd13BackendReferenceCheckTests(unittest.TestCase):
                 _row(2, [-1.0, -2.0, -3.0]),
             ],
         )
-        correctness = result["results"]["backend_reference"]
-        self.assertFalse(correctness.passed)
-        self.assertEqual(result["comparison"]["decode_steps_compared"], 1)
-        self.assertEqual(result["comparison"]["first_generated_token_mismatch"]["step"], 0)
+        check = result.contract_correctness_results[0]
+        self.assertFalse(check.passed)
+        self.assertIn("diverged at step 0", check.detail)
 
     def test_incomplete_full_vocab_response_fails_closed(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
-            self._run(
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                self.module,
                 control_rows=[
                     _row(1, [-1.0, -2.0]),
                     _row(2, [-1.0, -2.0, -3.0]),
@@ -197,6 +394,75 @@ class RunRd13BackendReferenceCheckTests(unittest.TestCase):
                     _row(2, [-1.0, -2.0, -3.0]),
                 ],
             )
+
+    def test_model_required_fails_before_build(self) -> None:
+        # model=None must fail BEFORE any build: run through the guard
+        # path directly.
+        temp = Path(tempfile.mkdtemp())
+        run_dir = temp / "run"
+        run_dir.mkdir(parents=True)
+        pair = _make_pair(temp)
+        runtime = _FakeRuntime(
+            run_dir=run_dir, pair=pair, device=_make_device("gfx1100")
+        )
+        ctx = vp.ProducerContext(
+            repo_root=TOOLS_ROOT.parent,
+            patch_dir=PATCH_DIR,
+            workdir=run_dir,
+            campaign_id=f"{SUBJECT_PATCH}/rd13",
+            base_revision="a" * 40,
+            hip_path=Path("/opt/rocm"),
+            fat_targets=vp.FatTargetPlan(targets=("gfx1100",)),
+            model=None,
+            corpus=None,
+            build_env={"HIP_PATH": "/opt/rocm"},
+            inputs={},
+            validation_build_identities={},
+            patch_id=SUBJECT_PATCH,
+            device_map={"gfx1100": (0,)},
+            runtime=runtime,  # type: ignore[arg-type]
+            validation_binaries={},
+        )
+        self.module._VOCAB_SIZE = 3  # type: ignore[attr-defined]
+        self.module._N_PREDICT = 2  # type: ignore[attr-defined]
+        with self.assertRaises(vp.ValidationProducerError):
+            self.module.run(ctx)  # type: ignore[union-attr]
+        self.assertEqual(runtime.build_pair_calls, [])
+
+    def test_single_contract_architecture_guard(self) -> None:
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                self.module,
+                control_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+                subject_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+                targets=("gfx1100", "gfx1030"),
+            )
+
+    def test_device_selection_guard(self) -> None:
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                self.module,
+                control_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+                subject_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+                with_device=False,
+            )
+
+    def test_stale_ambient_fusion_disable_is_sanitized(self) -> None:
+        _, _, sessions = _run_producer(
+            self.module,
+            control_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+            subject_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+            build_env={
+                "HIP_PATH": "/opt/rocm",
+                "GGML_CUDA_DISABLE_FUSION": "1",
+            },
+        )
+        self.assertEqual(len(sessions), 2)
+        for session in sessions:
+            self.assertNotIn("GGML_CUDA_DISABLE_FUSION", session.env_overrides)
+            self.assertIn("GGML_CUDA_DISABLE_FUSION", session.env_unset)
+            # The sanctioned device selector env is still present.
+            self.assertIn("HIP_VISIBLE_DEVICES", session.env_overrides)
 
 
 if __name__ == "__main__":

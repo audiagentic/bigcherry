@@ -38,10 +38,8 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
     {
         "_load_rd08_correctness_module",
-        "_load_rd13_correctness_module",
         "_load_rd17_correctness_module",
         "_load_rd19_correctness_module",
-        "_load_rd26_correctness_module",
         "_load_rd43_correctness_module",
         "run_patch1000_backend_ops_correctness",
         "run_patch1000_backend_ops_perf",
@@ -53,12 +51,8 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_rd08_contract_qualification",
         "run_rd08_contract_trigger",
         "run_rd08_validation_lanes",
-        "run_rd13_backend_reference_check",
-        "run_rd13_ppl_check",
         "run_rd17_ppl_check",
         "run_rd19_ppl_check",
-        "run_rd26_decode_verify_bit_identity_check",
-        "run_rd26_ppl_check",
         "run_rd30_correctness_check",
         "run_rd39_42_contract_qualification",
         "run_rd43_contract_qualification",
@@ -78,8 +72,6 @@ _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
     {
         "--run-rd08-contract",
         "--run-rd08-lanes",
-        "--run-rd13-contract",
-        "--run-rd26-contract",
         "--run-rd58-state-restore",
         "--run-rd73-contract",
     }

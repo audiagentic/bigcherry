@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -67,8 +68,9 @@ class RunRd58StateRestoreEvidenceTests(unittest.TestCase):
         self.assertTrue(doc["passed"])
 
         import hashlib
+        artifact = cast("dict[str, object]", result["correctness_artifact"])
         self.assertEqual(
-            result["correctness_artifact"]["sha256"],
+            artifact["sha256"],
             hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
         )
 
@@ -233,7 +235,7 @@ class Rd58CliWiringTests(unittest.TestCase):
         main_source = inspect.getsource(vc.main)
         self.assertIn('"--run-rd58-state-restore"', main_source)
 
-    def test_mutually_exclusive_with_rd08_and_rd13_rd26_modes(self) -> None:
+    def test_mutually_exclusive_with_rd08_modes(self) -> None:
         self.assertIn(
             "--run-rd58-state-restore is mutually exclusive with the", self.source
         )
@@ -246,8 +248,11 @@ class Rd58CliWiringTests(unittest.TestCase):
         # them again.
         self.assertNotIn("args.run_rd04_benchmark", block)
         self.assertNotIn("args.run_rd04_contract", block)
-        self.assertIn("args.run_rd13_contract", block)
-        self.assertIn("args.run_rd26_contract", block)
+        # PA36 RD13/1206 + RD26/1210 producer migrations: the rd13/rd26
+        # dedicated flags are gone too -- the guard must never reference
+        # them again.
+        self.assertNotIn("args.run_rd13_contract", block)
+        self.assertNotIn("args.run_rd26_contract", block)
 
     def test_rd58_only_gating(self) -> None:
         self.assertIn(

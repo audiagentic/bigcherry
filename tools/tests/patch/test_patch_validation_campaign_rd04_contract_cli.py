@@ -394,6 +394,8 @@ def _args(tmp: Path, **overrides) -> argparse.Namespace:
         "run_performance_benchmark": False,
         "producer_corpus": tmp / "corpus" / "c.txt",
         "baseline_source": "bigcherry",
+        "bench_prompt": 512,
+        "bench_gen": 128,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
