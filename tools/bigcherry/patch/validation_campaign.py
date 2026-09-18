@@ -532,6 +532,8 @@ def _run_one_trace_probe(
     *, name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
     bench_prompt: int, bench_gen: int, disable_fusion: bool,
     extra_flags: tuple[str, ...] = (),
+    env_overrides: Mapping[str, str] | None = None,
+    env_unset: tuple[str, ...] = (),
 ) -> str:
     import subprocess
 
@@ -556,6 +558,15 @@ def _run_one_trace_probe(
         *extra_flags,
     ]
     env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
+    # PA36 RD13/1206 migration (GPT req_760c0fe82d7b4609 MAJOR): a
+    # producer trace probe must run on the SAME physical device as the
+    # correctness measurement -- apply the selected device's HIP-only
+    # selector overrides, then its unsets LAST (the sanctioned selector
+    # always wins; never ambient visibility).
+    if env_overrides:
+        env.update(env_overrides)
+    for key in env_unset:
+        env.pop(key, None)
 
     log_dir = workdir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -588,6 +599,8 @@ def run_trace_activation_probes(
     *, marker_regex: str | None, description: str | None,
     binary: Path, model: Path, hip_path: Path, workdir: Path,
     bench_prompt: int, bench_gen: int,
+    env_overrides: Mapping[str, str] | None = None,
+    env_unset: tuple[str, ...] = (),
 ) -> tuple[ActivationEvidence, dict[str, object]] | None:
     """Run positive + fusion-disabled negative-control activation probes.
 
@@ -612,6 +625,7 @@ def run_trace_activation_probes(
     positive_output = _run_one_trace_probe(
         name="positive", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
         bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
+        env_overrides=env_overrides, env_unset=env_unset,
     )
     positive_hit = pattern.search(positive_output) is not None
 
@@ -619,6 +633,7 @@ def run_trace_activation_probes(
     negative_output = _run_one_trace_probe(
         name="fusion-disabled", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
         bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=True,
+        env_overrides=env_overrides, env_unset=env_unset,
     )
     negative_hit = pattern.search(negative_output) is not None
 
@@ -2461,20 +2476,23 @@ class CampaignProducerRuntime:
         contexts: list[ProducerDeviceContext] = []
         for architecture, indices in device_map.items():
             for index in indices:
-                identity, _selector_env = self._resolve_one_device(architecture, index)
+                identity, _selector_env, locator = self._resolve_one_device(
+                    architecture, index,
+                )
                 contexts.append(
                     ProducerDeviceContext(
                         architecture=architecture, device_index=index,
                         execution_identity=identity,
                         env_overrides={"HIP_VISIBLE_DEVICES": str(index)},
                         env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
+                        locator=locator,
                     )
                 )
         return tuple(contexts)
 
     def _resolve_one_device(
         self, architecture: str, index: int,
-    ) -> tuple[ExecutionIdentity, dict[str, str]]:
+    ) -> tuple[ExecutionIdentity, dict[str, str], str]:
         """Resolve exactly ONE device index against the real host
         inventory -- the same fail-closed checks
         ``resolve_selected_device_execution_identity()`` performs from
@@ -2534,7 +2552,7 @@ class CampaignProducerRuntime:
         identity = ExecutionIdentity(
             backend="ROCm", architectures=(device.arch,),
         )
-        return identity, {"HIP_VISIBLE_DEVICES": str(index)}
+        return identity, {"HIP_VISIBLE_DEVICES": str(index)}, device.locator
 
     def write_artifact(self, *, name: str, payload: JsonObject):
         return _write_bound_artifact_ref(self.run_dir, name, payload)
@@ -2966,12 +2984,31 @@ def _run_producer_trace_probes(
             "trace_probe='run' requires the standard-campaign scaffold "
             "subject llama-bench binary"
         )
+    # PA36 RD13/1206 migration (GPT req_760c0fe82d7b4609 MAJOR): the
+    # activation probe must run on the SAME physical device as the
+    # correctness measurement -- resolve exactly one device for the
+    # invocation architecture and thread its HIP-only selector env
+    # (never ambient visibility).
+    run_architecture = producer_context.fat_targets.targets[0]
+    devices = producer_context.runtime.device_contexts(
+        device_map=producer_context.device_map,
+    )
+    device_matches = [d for d in devices if d.architecture == run_architecture]
+    if len(device_matches) != 1:
+        raise PatchCampaignError(
+            f"trace_probe='run': expected exactly one device mapped for "
+            f"run architecture {run_architecture!r}, got {len(device_matches)}; "
+            "--device-map must select one real device for it"
+        )
+    probe_device = device_matches[0]
     probe = run_trace_activation_probes(
         marker_regex=marker,
         description=f"{producer_context.patch_id} activation",
         binary=subject_binaries["llama-bench"], model=producer_context.model,
         hip_path=producer_context.hip_path, workdir=run_dir,
         bench_prompt=bench_prompt, bench_gen=bench_gen,
+        env_overrides=dict(probe_device.env_overrides),
+        env_unset=probe_device.env_unset,
     )
     if probe is None:
         raise PatchCampaignError(

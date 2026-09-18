@@ -74,6 +74,8 @@ class _FakeSession:
         self.base_url = f"http://{self.arm}.invalid"
         self.env_overrides = dict(kwargs["env_overrides"])  # type: ignore[arg-type]
         self.env_unset = tuple(kwargs["env_unset"])  # type: ignore[arg-type]
+        self.expected = kwargs.get("expected")
+        self.architecture_by_locator = kwargs.get("architecture_by_locator")
         self.attestation: _FakeAttestation | None = None
 
     def __enter__(self) -> _FakeSession:
@@ -208,6 +210,7 @@ def _make_device(architecture: str) -> vp.ProducerDeviceContext:
         ),
         env_overrides={"HIP_VISIBLE_DEVICES": "0"},
         env_unset=("ROCR_VISIBLE_DEVICES",),
+        locator="0000:03:00.0",
     )
 
 
@@ -445,6 +448,28 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
                 control_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
                 subject_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
                 with_device=False,
+            )
+
+    def test_locator_backed_server_attestation_identity(self) -> None:
+        # PA36 RD13/1206 migration (GPT req_760c0fe82d7b4609 BLOCKER): the
+        # llama-server attestation channel derives the server architecture
+        # ONLY via a verified locator->arch mapping, so the producer must
+        # construct a locator-bearing ExecutionIdentity (not the
+        # locator-less device.execution_identity) and the {locator: arch}
+        # mapping from the verified physical locator.
+        _result, _runtime, sessions = _run_producer(
+            self.module,
+            control_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+            subject_rows=[_row(1, [-1.0, -2.0, -3.0]), _row(2, [-1.0, -2.0, -3.0])],
+        )
+        self.assertEqual(len(sessions), 2)
+        for session in sessions:
+            expected = session.expected
+            self.assertIsNotNone(expected)
+            self.assertEqual(expected.locators, ("0000:03:00.0",))
+            self.assertEqual(expected.architectures, ("gfx1100",))
+            self.assertEqual(
+                session.architecture_by_locator, {"0000:03:00.0": "gfx1100"},
             )
 
     def test_stale_ambient_fusion_disable_is_sanitized(self) -> None:
