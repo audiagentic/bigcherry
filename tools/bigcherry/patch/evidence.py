@@ -427,8 +427,6 @@ _LEGACY_ARTIFACT_PATHS: tuple[str, ...] = (
     "artifacts/rd04-correctness-gfx1100.json",
     "artifacts/rd04-correctness-gfx1201.json",
     "artifacts/rd04-correctness-gfx1030.json",
-    "artifacts/rd13-backend-reference.json",
-    "artifacts/rd26-decode-verify-bit-identity.json",
 )
 
 

@@ -14,11 +14,11 @@ required = true
 
 # RD26-DECODE-VERIFY-BIT-IDENTITY requires correctness.bit_identical only
 # (expected_effect = "correctness", no performance claim -- EC02 Appendix-B
-# rule). run_rd26_decode_verify_bit_identity_check() (tools/bigcherry/patch/
-# validation_campaign.py) is the real producer; correctness-summary
-# consumes its bound disposition. No CLI wiring reaches this producer yet
-# (same gap RD04/RD12/RD13 had before their own CLI flags landed) --
-# declared honestly; stays BLOCKED until that lands.
+# rule). The 1210 patch-local producer (validation/producer.py, reachable
+# via --validation-producer
+# 1210_rd26_bitidentical_decode_verify_standalone/rd26) is the real
+# within-build decode-vs-verify bit-identity oracle; correctness-summary
+# consumes its bound disposition.
 [[check]]
 id = "correctness"
 capability = "correctness"
