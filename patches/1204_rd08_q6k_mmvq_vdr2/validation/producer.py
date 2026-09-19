@@ -31,12 +31,8 @@ RD08's contract (RD08-Q6K-MMVQ-VDR2):
 
 from __future__ import annotations
 
-import re
-import subprocess
-
 from bigcherry.patch import validation_producer as vp
 from bigcherry.experiment import execution as experiment_execution
-from bigcherry.experiment.execution import RunnerOutput as ExperimentRunnerOutput
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
@@ -173,15 +169,29 @@ def _run_lanes(
     control_binary = ctx.validation_binaries["control"]["llama-bench"]
     subject_binary = ctx.validation_binaries["subject"]["llama-bench"]
 
+    # GPT round 6 BLOCKER: resolve the selected ProducerDeviceContext
+    # via ctx.runtime.device_contexts(device_map=ctx.device_map) and
+    # pass device=device, failing closed if selection is absent/ambiguous.
+    # This gives authoritative HIP selector + architecture attestation.
+    device_contexts = ctx.runtime.device_contexts(
+        device_map=ctx.device_map
+    )
+    if not device_contexts:
+        raise vp.ValidationProducerError(
+            "RD08: no device context available for the selected architecture"
+        )
+    device = device_contexts[0]  # RD08 uses a single device
+    
     # Use the canonical paired benchmark infrastructure
+    # GPT round 6 BLOCKER: remove hip_path (runtime already owns it)
     outcome = ctx.runtime.run_paired_llama_benchmark(
         control_binary=control_binary,
         subject_binary=subject_binary,
         model=ctx.model,
-        hip_path=ctx.hip_path,
         workloads=("decode", "prefill"),
         pairs=10,
         log_context="rd08",
+        device=device,
     )
 
     # Extract the decode (positive) and prefill (control) lane effects
