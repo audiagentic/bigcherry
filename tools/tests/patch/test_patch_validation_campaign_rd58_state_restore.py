@@ -70,8 +70,10 @@ class _FakeOutcome:
 
 
 class _FakeDeviceVisibility:
+    hip_visible_devices: tuple[str, ...] = ("0", "1")
+
     def document(self) -> dict[str, object]:
-        return {"observed": ["0", "1"], "minimum": 2, "satisfied": True}
+        return {"observed": list(self.hip_visible_devices), "minimum": 2, "satisfied": True}
 
 
 class _FakeRuntime:
@@ -296,6 +298,7 @@ class TestRD58Producer(unittest.TestCase):
         self.assertEqual(call["env_overrides"], {"GGML_CUDA_REGISTER_HOST": "1"})
         self.assertEqual(call["env_unset"], ("ROCR_VISIBLE_DEVICES",))
         self.assertEqual(call["workloads"], ("decode",))
+        self.assertEqual(call["runtime_args"], ("-sm", "tensor"))
 
     def test_env_sanitization(self) -> None:
         # GPT round 3: seed stale sanitizer keys to verify they are

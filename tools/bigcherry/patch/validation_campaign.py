@@ -2656,7 +2656,7 @@ class CampaignProducerRuntime:
             merged_overrides = (
                 dict(env_overrides) if env_overrides else {}
             )
-        execution_identity = device.execution_identity if device is not None else {}
+        execution_identity = device.execution_identity if device is not None else None
         outcome = run_paired_llama_benchmark(
             control_binary=control_binary, subject_binary=subject_binary, model=model,
             hip_path=self.hip_path, workloads=workloads, patch_args=patch_args,
