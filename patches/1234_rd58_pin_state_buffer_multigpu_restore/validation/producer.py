@@ -110,20 +110,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # ROCR_VISIBLE_DEVICES (to avoid the double-filtering bug) and
     # BIGCHERRY_* (to avoid stale overrides), set
     # GGML_CUDA_REGISTER_HOST=1.
-    # GPT round 1 MAJOR #4: match the legacy sanitize_environment(mode="stock")
-    # behavior -- strip stale GGML_HIP_DISPATCH_*, GGML_HIP_FORCE_*,
-    # GGML_HIP_TUNE_*, autotune, and NCCL diagnostics in addition to
-    # BIGCHERRY_* and ROCR_VISIBLE_DEVICES.
-    env = dict(ctx.build_env)
+    # GPT round 2 MAJOR: use the canonical sanitize_environment()
+    # (mode="stock") instead of hand-copying its key list -- the
+    # hand-copied version missed GGML_HIP_AUTOTUNE_MODE and
+    # over-stripped NCCL_* (only NCCL_DEBUG* should be stripped).
+    from bigcherry.campaign.benchmark import sanitize_environment
+    env = sanitize_environment(dict(ctx.build_env), mode="stock")
     for key in list(env):
-        if (
-            key.startswith("BIGCHERRY_")
-            or key.startswith("GGML_HIP_DISPATCH_")
-            or key.startswith("GGML_HIP_FORCE_")
-            or key.startswith("GGML_HIP_TUNE_")
-            or key == "GGML_AUTO_TUNE"
-            or key.startswith("NCCL_")
-        ):
+        if key.startswith("BIGCHERRY_"):
             env.pop(key, None)
     env.pop("ROCR_VISIBLE_DEVICES", None)
     env["GGML_CUDA_REGISTER_HOST"] = "1"
