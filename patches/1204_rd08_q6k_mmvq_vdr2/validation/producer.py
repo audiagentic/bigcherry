@@ -63,7 +63,6 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # GPT round 8 BLOCKER: use the correct LaneEffect fields
     # (geometric_effect_pct, ci95_low_pct, ci95_high_pct, paired_rounds,
     # pair_ratios) instead of nonexistent mean/stddev
-    import dataclasses
     
     decode_ref = ctx.runtime.write_artifact(
         name="rd08-decode-lane.json",
@@ -192,11 +191,16 @@ def _run_lanes(
             f"and cannot proceed with ambiguous device selection"
         )
     device = device_contexts[0]
-    # Verify the device architecture is in the contract's targets
-    if device.architecture not in ctx.fat_targets.targets:
+    # GPT round 9 BLOCKER: check against the contract's scope.architectures,
+    # not ctx.fat_targets.targets (which comes from CLI and is not
+    # contract authority). The contract scope is the authoritative source.
+    contract_architectures = (
+        "gfx1100", "gfx1201", "gfx1030"
+    )  # RD08 contract scope
+    if device.architecture not in contract_architectures:
         raise vp.ValidationProducerError(
             f"RD08: device architecture {device.architecture} is not in "
-            f"the contract's targets {ctx.fat_targets.targets}"
+            f"the contract's scope {contract_architectures}"
         )
     
     # Use the canonical paired benchmark infrastructure
