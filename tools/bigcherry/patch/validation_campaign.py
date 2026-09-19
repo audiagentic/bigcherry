@@ -3893,7 +3893,7 @@ def _run_validation_producer(
             # promotion_resource_results. A resource-bound contract
             # without resource evidence must fail closed.
             resource_gate = None
-            if contract.resource_limits:
+            if contract.acceptance.resource_limits:
                 resource_results = (
                     execution.result.promotion_resource_results.get(
                         contract_id
@@ -3906,8 +3906,19 @@ def _run_validation_producer(
                         "resource-bound contract without resource "
                         "evidence must fail closed)"
                     )
+                # Build a {metric: result} mapping (evaluate_resource_gate
+                # expects a dict, not a list). Reject duplicate metrics.
+                resource_map: dict[str, experiment_contract.ResourceResult] = {}
+                for rr in resource_results:
+                    if rr.metric in resource_map:
+                        raise PatchCampaignError(
+                            f"promotion_resource_results for "
+                            f"{contract_id!r}: duplicate metric "
+                            f"{rr.metric!r}"
+                        )
+                    resource_map[rr.metric] = rr
                 resource_gate = experiment_contract.evaluate_resource_gate(
-                    contract, list(resource_results)
+                    contract, resource_map
                 )
             producer_contract_promotions[contract_id] = (
                 experiment_contract.evaluate_promotion_gate(
