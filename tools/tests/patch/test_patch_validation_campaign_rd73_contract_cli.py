@@ -41,12 +41,26 @@ class _FakeVisibility:
         return {"observed": list(self.device_ids), "exact": 2, "satisfied": True}
 
 
+class _FakeRuntime:
+    def __init__(self) -> None:
+        self.artifacts: dict[str, str] = {}
+
+    def write_artifact(self, *, name: str, payload: str) -> str:
+        self.artifacts[name] = payload
+        return f"artifact://{name}"
+
+    def write_text_artifact(self, *, name: str, content: str) -> str:
+        self.artifacts[name] = content
+        return f"artifact://{name}"
+
+
 class _FakeProducerContext:
     def __init__(self) -> None:
         self.patch_id = "1233_rd73_stable_graph_cache_key"
         self.workdir = Path("/tmp/rd73-test")
         self.model = Path("/tmp/model.gguf")
-        self.build_env = {"PATH": "/usr/bin"}
+        self.corpus = Path("/tmp/corpus.txt")
+        self.build_env = {"PATH": "/usr/bin", "HIP_VISIBLE_DEVICES": "0,1"}
         self.validation_build_identities = {
             "control": {"digest": "ctrl-digest"},
             "subject": {"digest": "subj-digest"},
@@ -55,7 +69,7 @@ class _FakeProducerContext:
             "control": {"llama-server": Path("/tmp/ctrl-server")},
             "subject": {"llama-server": Path("/tmp/subj-server")},
         }
-        self.corpus = None
+        self.runtime = _FakeRuntime()
 
 
 class Rd73ProducerTests(unittest.TestCase):
@@ -63,49 +77,155 @@ class Rd73ProducerTests(unittest.TestCase):
         self.module = _load_producer()
         self.ctx = _FakeProducerContext()
 
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.require_device_visibility")
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.subprocess.run")
-    def test_producer_success(self, mock_run, mock_vis) -> None:
+    @patch(f"{PRODUCER_MODULE}.require_device_visibility")
+    @patch(f"{PRODUCER_MODULE}.AttestedServerSession")
+    @patch(f"{PRODUCER_MODULE}.sc")
+    @patch(f"{PRODUCER_MODULE}.run_paired_lane")
+    def test_producer_success(
+        self, mock_paired, mock_sc, mock_session, mock_vis
+    ) -> None:
         mock_vis.return_value = _FakeVisibility()
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="tg128 100.0\nmtp_wall_tps 50.0\n",
-            stderr="",
-        )
-        result = self.module.run(self.ctx)
-        self.assertEqual(
-            result.correctness["disposition"], "passed"
-        )
+
+        # Mock the corpus loading
+        mock_sc.load_corpus.return_value = (["prompt1", "prompt2"], "sha256")
+        mock_sc.SamplingConfig.return_value = MagicMock()
+        mock_sc.SessionConfig.return_value = MagicMock()
+        mock_sc.HttpTransport.return_value = MagicMock()
+        mock_sc.validate_server.return_value = None
+        mock_sc.run_request.return_value = {
+            "wall_tps": 50.0,
+            "tg128": 100.0,
+            "content": "test content",
+        }
+
+        # Mock the server session context manager
+        mock_session.return_value.__enter__ = MagicMock()
+        mock_session.return_value.__exit__ = MagicMock()
+
+        # Mock the paired lane
+        mock_paired_run = MagicMock()
+        mock_paired_run.stats = {
+            "geometric_effect_pct": 5.0,
+            "ci95_low_pct": -1.0,
+            "ci95_high_pct": 11.0,
+            "paired_rounds": 10,
+            "pair_ratios": [1.05, 0.95, 1.10, 0.90, 1.00],
+            "metric": "mtp_wall_tps",
+        }
+        mock_paired.return_value = mock_paired_run
+
+        # Mock the log file writes
+        def _mock_read_text(self, *args, **kwargs):
+            path_str = str(self)
+            if "resource-burst" in path_str:
+                return "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            if "mtp-subject" in path_str:
+                return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+            if "mtp-control" in path_str:
+                return "no marker here\n"
+            return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+        
+        with patch.object(Path, "read_text", _mock_read_text):
+            with patch.object(Path, "write_text"):
+                result = self.module.run(self.ctx)
+
+        self.assertEqual(result.correctness["disposition"], "passed")
         self.assertEqual(
             result.activation_evidence["disposition"], "activation-verified"
         )
         self.assertEqual(len(result.emitted_artifacts), 8)
 
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.require_device_visibility")
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.subprocess.run")
-    def test_device_visibility_exact_count(self, mock_run, mock_vis) -> None:
+    @patch(f"{PRODUCER_MODULE}.require_device_visibility")
+    @patch(f"{PRODUCER_MODULE}.AttestedServerSession")
+    @patch(f"{PRODUCER_MODULE}.sc")
+    @patch(f"{PRODUCER_MODULE}.run_paired_lane")
+    def test_device_visibility_exact_count(
+        self, mock_paired, mock_sc, mock_session, mock_vis
+    ) -> None:
         mock_vis.return_value = _FakeVisibility()
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="tg128 100.0\nmtp_wall_tps 50.0\n",
-            stderr="",
-        )
-        # Verify that exact_count=2 is passed
-        self.module.run(self.ctx)
+        mock_sc.load_corpus.return_value = (["prompt1"], "sha256")
+        mock_sc.SamplingConfig.return_value = MagicMock()
+        mock_sc.SessionConfig.return_value = MagicMock()
+        mock_sc.HttpTransport.return_value = MagicMock()
+        mock_sc.validate_server.return_value = None
+        mock_sc.run_request.return_value = {
+            "wall_tps": 50.0, "tg128": 100.0, "content": "test",
+        }
+        mock_session.return_value.__enter__ = MagicMock()
+        mock_session.return_value.__exit__ = MagicMock()
+        mock_paired_run = MagicMock()
+        mock_paired_run.stats = {
+            "geometric_effect_pct": 5.0, "ci95_low_pct": -1.0,
+            "ci95_high_pct": 11.0, "paired_rounds": 10,
+            "pair_ratios": [], "metric": "mtp_wall_tps",
+        }
+        mock_paired.return_value = mock_paired_run
+        def _mock_read_text(self, *args, **kwargs):
+            path_str = str(self)
+            if "resource-burst" in path_str:
+                return "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            if "mtp-subject" in path_str:
+                return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+            if "mtp-control" in path_str:
+                return "no marker here\n"
+            return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+        with patch.object(Path, "read_text", _mock_read_text):
+            with patch.object(Path, "write_text"):
+                self.module.run(self.ctx)
         mock_vis.assert_called_once()
         call_kwargs = mock_vis.call_args[1]
         self.assertEqual(call_kwargs["exact_count"], 2)
+        self.assertIn("env", call_kwargs)
 
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.require_device_visibility")
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.subprocess.run")
-    def test_promotion_resource_results(self, mock_run, mock_vis) -> None:
+    @patch(f"{PRODUCER_MODULE}.require_device_visibility")
+    @patch(f"{PRODUCER_MODULE}.AttestedServerSession")
+    @patch(f"{PRODUCER_MODULE}.sc")
+    @patch(f"{PRODUCER_MODULE}.run_paired_lane")
+    def test_promotion_resource_results(
+        self, mock_paired, mock_sc, mock_session, mock_vis
+    ) -> None:
         mock_vis.return_value = _FakeVisibility()
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n",
-            stderr="",
-        )
-        result = self.module.run(self.ctx)
+
+        mock_sc.load_corpus.return_value = (["prompt1"], "sha256")
+        mock_sc.SamplingConfig.return_value = MagicMock()
+        mock_sc.SessionConfig.return_value = MagicMock()
+        mock_sc.HttpTransport.return_value = MagicMock()
+        mock_sc.validate_server.return_value = None
+        mock_sc.run_request.return_value = {
+            "wall_tps": 50.0,
+            "tg128": 100.0,
+            "content": "test",
+        }
+        mock_session.return_value.__enter__ = MagicMock()
+        mock_session.return_value.__exit__ = MagicMock()
+
+        mock_paired_run = MagicMock()
+        mock_paired_run.stats = {
+            "geometric_effect_pct": 5.0,
+            "ci95_low_pct": -1.0,
+            "ci95_high_pct": 11.0,
+            "paired_rounds": 10,
+            "pair_ratios": [],
+            "metric": "mtp_wall_tps",
+        }
+        mock_paired.return_value = mock_paired_run
+
+        # Mock the resource burst log to contain telemetry
+        # The read_text mock needs to return different values for different files
+        def _mock_read_text(self, *args, **kwargs):
+            path_str = str(self)
+            if "resource-burst" in path_str:
+                return "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            if "mtp-subject" in path_str:
+                return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+            if "mtp-control" in path_str:
+                return "no marker here\n"
+            return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+        
+        with patch.object(Path, "read_text", _mock_read_text):
+            with patch.object(Path, "write_text"):
+                result = self.module.run(self.ctx)
+
         self.assertIn(
             "RD73-STABLE-GRAPH-CACHE-KEY",
             result.promotion_resource_results,
@@ -117,20 +237,64 @@ class Rd73ProducerTests(unittest.TestCase):
         self.assertEqual(resources[0].metric, "graph_cache_entries")
         self.assertEqual(resources[0].subject_value, 651.0)
 
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.require_device_visibility")
-    @patch("patches_1233_rd73_stable_graph_cache_key_validation_producer.subprocess.run")
-    def test_contract_correctness_results(self, mock_run, mock_vis) -> None:
+    @patch(f"{PRODUCER_MODULE}.require_device_visibility")
+    @patch(f"{PRODUCER_MODULE}.AttestedServerSession")
+    @patch(f"{PRODUCER_MODULE}.sc")
+    @patch(f"{PRODUCER_MODULE}.run_paired_lane")
+    def test_contract_correctness_results(
+        self, mock_paired, mock_sc, mock_session, mock_vis
+    ) -> None:
         mock_vis.return_value = _FakeVisibility()
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="tg128 100.0\n",
-            stderr="",
-        )
-        result = self.module.run(self.ctx)
+
+        mock_sc.load_corpus.return_value = (["prompt1"], "sha256")
+        mock_sc.SamplingConfig.return_value = MagicMock()
+        mock_sc.SessionConfig.return_value = MagicMock()
+        mock_sc.HttpTransport.return_value = MagicMock()
+        mock_sc.validate_server.return_value = None
+        # Different content for subject vs control (bit-identical fails)
+        # Use a callable that returns different content based on call count
+        call_count = {"n": 0}
+        def _mock_run_request(*args, **kwargs):
+            call_count["n"] += 1
+            # Odd calls = subject, even calls = control (alternating)
+            if call_count["n"] % 2 == 1:
+                return {"wall_tps": 50.0, "tg128": 100.0, "content": "subject content"}
+            return {"wall_tps": 50.0, "tg128": 100.0, "content": "control content"}
+        mock_sc.run_request.side_effect = _mock_run_request
+        mock_session.return_value.__enter__ = MagicMock()
+        mock_session.return_value.__exit__ = MagicMock()
+
+        mock_paired_run = MagicMock()
+        mock_paired_run.stats = {
+            "geometric_effect_pct": 5.0,
+            "ci95_low_pct": -1.0,
+            "ci95_high_pct": 11.0,
+            "paired_rounds": 10,
+            "pair_ratios": [],
+            "metric": "mtp_wall_tps",
+        }
+        mock_paired.return_value = mock_paired_run
+
+        def _mock_read_text(self, *args, **kwargs):
+            path_str = str(self)
+            if "resource-burst" in path_str:
+                return "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            if "mtp-subject" in path_str:
+                return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+            if "mtp-control" in path_str:
+                return "no marker here\n"
+            return "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key\n"
+        
+        with patch.object(Path, "read_text", _mock_read_text):
+            with patch.object(Path, "write_text"):
+                result = self.module.run(self.ctx)
+
         self.assertEqual(len(result.contract_correctness_results), 1)
         self.assertEqual(
             result.contract_correctness_results[0].check, "bit_identical"
         )
+        # Different content means bit-identical should fail
+        self.assertFalse(result.contract_correctness_results[0].passed)
 
 
 if __name__ == "__main__":
