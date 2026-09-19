@@ -3472,24 +3472,47 @@ def _run_validation_producer(
     )
     device_map = _parse_producer_device_map(list(args.device_map or ()))
     
-    # PA36 (dev-gpt-agent req_23ef78886a3140b3): validate requested/measured
-    # architectures against the union of bound contracts' scope.architectures
-    # before producer execution. This is the generic, contract-authority
-    # guard -- not a per-patch hardcoded check.
-    if fat_targets.targets:
+    # PA36 (dev-gpt-agent req_19c0ea3d2d3f40db): validate requested AND
+    # measured architectures against the union of bound contracts'
+    # scope.architectures before producer execution. This is the generic,
+    # contract-authority guard -- not a per-patch hardcoded check.
+    if fat_targets.targets or device_map:
         contract_architectures: set[str] = set()
         for _contract in bound_contracts:
             if _contract.scope.architectures:
                 contract_architectures.update(_contract.scope.architectures)
         if contract_architectures:
-            requested_archs = set(fat_targets.targets)
-            unsupported = requested_archs - contract_architectures
-            if unsupported:
-                raise PatchCampaignError(
-                    f"{args.patch}: requested architectures {sorted(unsupported)} "
-                    f"are not in the bound contract scope "
-                    f"{sorted(contract_architectures)}"
-                )
+            # Validate requested (fat) architectures
+            if fat_targets.targets:
+                requested_archs = set(fat_targets.targets)
+                unsupported_requested = requested_archs - contract_architectures
+                if unsupported_requested:
+                    raise PatchCampaignError(
+                        f"{args.patch}: requested architectures "
+                        f"{sorted(unsupported_requested)} are not in the "
+                        f"bound contract scope {sorted(contract_architectures)}"
+                    )
+            # Validate measured (device_map) architectures
+            if device_map:
+                measured_archs = set(device_map.keys())
+                unsupported_measured = measured_archs - contract_architectures
+                if unsupported_measured:
+                    raise PatchCampaignError(
+                        f"{args.patch}: measured architectures "
+                        f"{sorted(unsupported_measured)} are not in the "
+                        f"bound contract scope {sorted(contract_architectures)}"
+                    )
+                # Require measured architectures to be a subset of fat targets
+                # so a selected device cannot run against a binary not built
+                # for that architecture
+                if fat_targets.targets:
+                    not_in_fat = measured_archs - set(fat_targets.targets)
+                    if not_in_fat:
+                        raise PatchCampaignError(
+                            f"{args.patch}: measured architectures "
+                            f"{sorted(not_in_fat)} are not in the requested "
+                            f"fat targets {sorted(fat_targets.targets)}"
+                        )
 
     scaffold: StandardCampaignScaffold | None = None
     evidence_binding: ProducerEvidenceBindingContext | None = None
