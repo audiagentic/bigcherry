@@ -492,8 +492,71 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
 
 
 def cmd_patch_validate(args: Namespace) -> int:
-    """Verify existing evidence; hardware campaigns remain explicit."""
-    return cmd_patch_verify_evidence(args)
+    """PA33: execute declared validation through PA34+PA36 authorities.
+
+    When --validation-producer is provided, resolves the selector, catalog
+    snapshot, validation plan, bound contracts, platform/device identity,
+    model/fixture inputs, and producer selection, then executes through
+    PA36's shared primitives and binds the evidence into the existing
+    schema. Otherwise, falls back to the read-only verify-evidence behavior.
+    """
+    validation_producer = getattr(args, "validation_producer", None)
+    if validation_producer is None:
+        # No producer selected: fall back to read-only verify-evidence
+        return cmd_patch_verify_evidence(args)
+
+    # PA33: execute through PA36's shared primitives
+    from ..patch import validation_campaign as validation_campaign_module
+
+    # Build a minimal args namespace for the validation campaign
+    campaign_args = Namespace(
+        patch=args.patch_id,
+        validation_producer=validation_producer,
+        producer_input=getattr(args, "producer_input", []),
+        producer_corpus=getattr(args, "producer_corpus", None),
+        amdgpu_targets=getattr(args, "amdgpu_targets", None),
+        device_map=getattr(args, "device_map", None),
+        hip_path=getattr(args, "hip_path", None),
+        model=getattr(args, "model", None),
+        workdir=getattr(args, "workdir", None),
+        worktree_root=getattr(args, "worktree_root", None),
+        baseline_source=getattr(args, "baseline_source", None),
+        # PA34 selector arguments
+        source=getattr(args, "source", None),
+        experiment=getattr(args, "experiment", None),
+        focal_overlay=getattr(args, "focal_overlay", False),
+        # Defaults for other required fields
+        run=None,
+        tune=None,
+        replay=None,
+        stock=None,
+        control=None,
+        validation_subject=None,
+        run_rd04_contract=False,
+        run_rd04_benchmark=False,
+        rd04_corpus=None,
+        run_rd08_lanes=False,
+        run_rd08_contract=False,
+        run_rd12_contract=False,
+        run_rd13_contract=False,
+        run_rd26_contract=False,
+        run_rd58_state_restore=False,
+        run_rd73_contract=False,
+        run_rd30_correctness=False,
+        run_rd17_ppl_check=False,
+        run_rd19_ppl_check=False,
+        run_rd43_ppl_check=False,
+        run_rd05_contract_correctness=False,
+        run_rd06_contract_correctness=False,
+        run_rd07_contract_correctness=False,
+        run_1203_backend_reference_contract_correctness=False,
+        run_1000_exact_shape_backend_ops=False,
+        run_1000_q2k_model_lane=False,
+        run_0300_framework_configuration=False,
+    )
+
+    # Execute through the validation campaign's main()
+    return validation_campaign_module.main(campaign_args)
 
 
 def cmd_patch_gates(args: Namespace) -> int:
