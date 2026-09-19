@@ -60,15 +60,21 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     activation = _run_activation(ctx)
 
     # 5. Write the artifacts
+    # GPT round 8 BLOCKER: use the correct LaneEffect fields
+    # (geometric_effect_pct, ci95_low_pct, ci95_high_pct, paired_rounds,
+    # pair_ratios) instead of nonexistent mean/stddev
+    import dataclasses
+    
     decode_ref = ctx.runtime.write_artifact(
         name="rd08-decode-lane.json",
         payload={
             "role": "positive",
             "metric": "tg128",
+            "geometric_effect_pct": decode_effect.geometric_effect_pct,
+            "ci95_low_pct": decode_effect.ci95_low_pct,
+            "ci95_high_pct": decode_effect.ci95_high_pct,
+            "paired_rounds": decode_effect.paired_rounds,
             "pair_ratios": list(decode_effect.pair_ratios),
-            "mean": decode_effect.mean,
-            "stddev": decode_effect.stddev,
-            "n_pairs": len(decode_effect.pair_ratios),
         },
     )
     prefill_ref = ctx.runtime.write_artifact(
@@ -76,10 +82,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         payload={
             "role": "control",
             "metric": "pp512",
+            "geometric_effect_pct": prefill_effect.geometric_effect_pct,
+            "ci95_low_pct": prefill_effect.ci95_low_pct,
+            "ci95_high_pct": prefill_effect.ci95_high_pct,
+            "paired_rounds": prefill_effect.paired_rounds,
             "pair_ratios": list(prefill_effect.pair_ratios),
-            "mean": prefill_effect.mean,
-            "stddev": prefill_effect.stddev,
-            "n_pairs": len(prefill_effect.pair_ratios),
         },
     )
     correctness_ref = ctx.runtime.write_artifact(
@@ -99,14 +106,16 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         payload={
             "metrics": {
                 "decode_tg128": {
-                    "mean": decode_effect.mean,
-                    "stddev": decode_effect.stddev,
-                    "n_pairs": len(decode_effect.pair_ratios),
+                    "geometric_effect_pct": decode_effect.geometric_effect_pct,
+                    "ci95_low_pct": decode_effect.ci95_low_pct,
+                    "ci95_high_pct": decode_effect.ci95_high_pct,
+                    "paired_rounds": decode_effect.paired_rounds,
                 },
                 "prefill_pp512": {
-                    "mean": prefill_effect.mean,
-                    "stddev": prefill_effect.stddev,
-                    "n_pairs": len(prefill_effect.pair_ratios),
+                    "geometric_effect_pct": prefill_effect.geometric_effect_pct,
+                    "ci95_low_pct": prefill_effect.ci95_low_pct,
+                    "ci95_high_pct": prefill_effect.ci95_high_pct,
+                    "paired_rounds": prefill_effect.paired_rounds,
                 },
             }
         },
