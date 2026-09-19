@@ -505,6 +505,39 @@ def cmd_patch_validate(args: Namespace) -> int:
         # No producer selected: fall back to read-only verify-evidence
         return cmd_patch_verify_evidence(args)
 
+    # PA33: fail-fast validation before doing expensive work
+    # 1. Selector validation
+    if args.patch_id is None:
+        print("patch-validate: patch_id is required", file=sys.stderr)
+        return 2
+    # 2. PA34 selector qualifier validation
+    source = getattr(args, "source", None)
+    experiment = getattr(args, "experiment", None)
+    focal_overlay = getattr(args, "focal_overlay", False)
+    if (experiment is not None or focal_overlay) and not source:
+        print("patch-validate: --experiment/--focal-overlay require --source", file=sys.stderr)
+        return 2
+    # 3. Producer input validation
+    producer_input = getattr(args, "producer_input", [])
+    for entry in producer_input:
+        if "=" not in entry:
+            print(f"patch-validate: --producer-input {entry!r} must be NAME=VALUE", file=sys.stderr)
+            return 2
+    # 4. Device map validation
+    device_map = getattr(args, "device_map", None)
+    if device_map is not None:
+        for entry in device_map.split(","):
+            if "=" not in entry:
+                print(f"patch-validate: --device-map entry {entry!r} must be ARCH=ID[,ID...]", file=sys.stderr)
+                return 2
+    # 5. Producer corpus validation
+    producer_corpus = getattr(args, "producer_corpus", None)
+    if producer_corpus is not None:
+        corpus_path = Path(producer_corpus)
+        if not corpus_path.is_file():
+            print(f"patch-validate: --producer-corpus {producer_corpus!r} is not a file", file=sys.stderr)
+            return 2
+
     # PA33: execute through PA36's shared primitives
     from ..patch import validation_campaign as validation_campaign_module
 
