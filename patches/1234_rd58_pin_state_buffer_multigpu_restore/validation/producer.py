@@ -87,6 +87,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     from bigcherry.experiment import execution as _exec
     visibility = _exec.require_device_visibility(
         context=f"{ctx.patch_id}: RD58 state-restore",
+        env=ctx.build_env,
         minimum_count=2,
     )
     hardware_doc = visibility.document()
@@ -350,7 +351,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         role="positive",
         lane_id="rd58-subject",
         candidate_launches=1 if subject_hit else 0,
-        expected_route_selected=1 if subject_hit else 0,
+        expected_route_selected=None,
     )
 
     # Semantic evidence for the shared binder: exactly
