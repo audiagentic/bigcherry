@@ -240,6 +240,28 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     )
 
     # --- Decode llama-bench (the promotion lane) ---
+    # GPT round 4 MAJOR: the promotion benchmark uses device=None
+    # (ambient visibility), which reads process-global os.environ.
+    # Validate the current ambient selector matches the validated
+    # ctx.build_env selector before benchmarking; fail closed on
+    # mismatch (the restore and promotion must measure the same
+    # GPU pool).
+    ambient_visibility = _exec.require_device_visibility(
+        context=f"{ctx.patch_id}: RD58 promotion ambient check",
+        minimum_count=2,
+    )
+    if (
+        ambient_visibility.hip_visible_devices
+        != visibility.hip_visible_devices
+    ):
+        raise vp.ValidationProducerError(
+            "RD58 promotion: ambient HIP_VISIBLE_DEVICES changed since "
+            f"the restore visibility check. Validated: "
+            f"{visibility.hip_visible_devices!r}, ambient: "
+            f"{ambient_visibility.hip_visible_devices!r}. "
+            "The restore and promotion must measure the same GPU pool."
+        )
+
     # The paired benchmark REUSES the scaffold parity llama-bench pair
     # (design ruling: one standard scaffold, no second build pair).
     bench_control = ctx.validation_binaries.get("control", {}).get("llama-bench")
