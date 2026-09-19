@@ -3,7 +3,7 @@ schema = 1
 [producer.rd08]
 entrypoint = "producer.py"
 callable = "run"
-trace_probe = "run"
+trace_probe = "skip"
 standard_campaign = "run"
 correctness_evidence_cli = "forbid"
 performance_benchmark_cli = "forbid"
@@ -13,4 +13,6 @@ artifacts = [
   "rd08-correctness.json",
   "rd08-activation.json",
   "rd08-performance.json",
+  "rd08-subject-trace.log",
+  "rd08-control-trace.log",
 ]

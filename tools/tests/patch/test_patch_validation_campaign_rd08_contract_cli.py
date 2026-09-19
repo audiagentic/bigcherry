@@ -48,13 +48,13 @@ class TestRD08ProducerStructure(unittest.TestCase):
         producer = data["producer"]["rd08"]
         self.assertEqual(producer["entrypoint"], "producer.py")
         self.assertEqual(producer["callable"], "run")
-        self.assertEqual(producer["trace_probe"], "run")
+        self.assertEqual(producer["trace_probe"], "skip")
         self.assertEqual(producer["standard_campaign"], "run")
         self.assertEqual(producer["correctness_evidence_cli"], "forbid")
         self.assertEqual(producer["performance_benchmark_cli"], "forbid")
 
     def test_producer_toml_has_all_artifacts(self):
-        """The producer.toml must list all 5 required artifacts."""
+        """The producer.toml must list all 7 required artifacts."""
         import tomllib
 
         path = (
@@ -74,6 +74,8 @@ class TestRD08ProducerStructure(unittest.TestCase):
             "rd08-correctness.json",
             "rd08-activation.json",
             "rd08-performance.json",
+            "rd08-subject-trace.log",
+            "rd08-control-trace.log",
         ]
         for artifact in expected:
             self.assertIn(artifact, artifacts)
