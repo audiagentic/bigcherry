@@ -79,17 +79,20 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         # compute_persisted_validation_eligible) must never receive
         # execution.contract_verdicts -- producer check DISPOSITIONS are a
         # different semantic type than promotion-gate RESULTS. The
-        # dispatcher persists {} promotions, so every bound contract gets
-        # its explicit BLOCKED ("no promotion result produced") verdict.
-        # (The skip-path workdir diagnostic JSON may still DISPLAY
+        # dispatcher persists producer_contract_promotions (built from the
+        # producer's typed promotion_lane_effects; {} for non-promoting
+        # producers, so every bound contract gets its explicit BLOCKED
+        # ("no promotion result produced") verdict). (The skip-path
+        # workdir diagnostic JSON may still DISPLAY
         # execution.contract_verdicts -- it never persists a record -- but
         # the two promotion-semantic PERSISTENCE helpers below must be
-        # pinned to {}.)
+        # pinned to producer_contract_promotions, never
+        # execution.contract_verdicts.)
         core_src = inspect.getsource(vc._run_validation_producer)
         self.assertIn(
             "build_contract_evidence_for_persistence(\n"
             "                validation_plan.contracts,\n"
-            "                {},\n"
+            "                producer_contract_promotions,\n"
             "            )",
             core_src,
         )
@@ -97,7 +100,20 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
             "compute_persisted_validation_eligible(\n"
             "                descriptor,\n"
             "                execution.verdict,\n"
-            "                {},",
+            "                producer_contract_promotions,",
+            core_src,
+        )
+        # The promotion dict must be built from the producer's typed
+        # promotion_lane_effects, never from execution.contract_verdicts
+        # (dispositions are a different semantic type).
+        self.assertIn(
+            "execution.result.promotion_lane_effects.items()",
+            core_src,
+        )
+        self.assertNotIn(
+            "build_contract_evidence_for_persistence(\n"
+            "                validation_plan.contracts,\n"
+            "                execution.contract_verdicts",
             core_src,
         )
 
