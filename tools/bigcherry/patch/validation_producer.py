@@ -238,6 +238,8 @@ class ProducerRuntime(Protocol):
         pairs: int = 3,
         log_context: str,
         device: ProducerDeviceContext | None = None,
+        env_overrides: Mapping[str, str] | None = None,
+        env_unset: tuple[str, ...] = (),
     ) -> ProducerPairedBenchmarkOutcome: ...
 
 
@@ -327,6 +329,26 @@ class ProducerResult:
     # named checks are required). Promotion is a different semantic type
     # and stays out of this channel entirely.
     contract_correctness_results: tuple[experiment_contract.CorrectnessResult, ...] = ()
+    # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+    # the typed producer->dispatcher promotion channel. The producer
+    # supplies per-contract lane_effects (real LaneEffect objects, not
+    # JsonObject) + the target_metric to aggregate; the dispatcher owns
+    # aggregate_contract_effects() + evaluate_promotion_gate() (the
+    # producer never computes a gate itself). {} for producers that do
+    # not produce promotion results (the RD12/RD04/RD13/RD26 shape).
+    promotion_lane_effects: dict[
+        str, tuple[experiment_contract.LaneEffect, ...]
+    ] = field(default_factory=dict)
+    promotion_target_metric: dict[str, str] = field(default_factory=dict)
+    # RD58 (PA36 migration #4, dev-gpt-agent req_ecb4b77a4c4e4bdd
+    # BLOCKER): the typed per-contract trigger evidence. The dispatcher
+    # computes evaluate_trigger_proof() on this and passes it to
+    # evaluate_promotion_gate() -- a contract PASS without trigger proof
+    # would be a fail-OPEN (the target code path may never have run).
+    # {} for producers that do not produce promotion results.
+    promotion_trigger_evidence: dict[
+        str, tuple[experiment_contract.TriggerEvidence, ...]
+    ] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if len(set(self.validation_build_identities)) != 2 or set(

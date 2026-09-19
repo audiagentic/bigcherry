@@ -2210,6 +2210,7 @@ def run_paired_llama_benchmark(
     patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
     pairs: int = 3, log_context: str,
     env_overrides: dict[str, str] | None = None,
+    env_unset: tuple[str, ...] = (),
     execution_identity: "object | None" = None,
 ) -> PairedBenchmarkOutcome:
     """PVPS02 step 2/4: the shared execution shape behind
@@ -2256,6 +2257,14 @@ def run_paired_llama_benchmark(
     # explicitly passing ROCR_VISIBLE_DEVICES in env_overrides either --
     # this key has no purpose in this harness any more, full stop.
     clean_env.pop("ROCR_VISIBLE_DEVICES", None)
+    # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
+    # Q3/Q6): a multi-GPU producer (device=None) can name additional
+    # env vars to unset beyond the always-stripped RROC/BIGCHERRY/
+    # GGML_CUDA_DISABLE_FUSION set. Applied AFTER env_overrides so a
+    # caller cannot reintroduce a stripped key by passing it in
+    # env_overrides.
+    for key in env_unset:
+        clean_env.pop(key, None)
 
     raw_logs: list[dict[str, object]] = []
 
@@ -2572,14 +2581,73 @@ class CampaignProducerRuntime:
         pairs: int = 3,
         log_context: str,
         device: ProducerDeviceContext | None = None,
+        env_overrides: Mapping[str, str] | None = None,
+        env_unset: tuple[str, ...] = (),
     ) -> ProducerPairedBenchmarkOutcome:
-        env_overrides = _hip_only(dict(device.env_overrides)) if device is not None else None
+        # RD58 (PA36 migration #4, dev-gpt-agent
+        # req_ecb4b77a4c4e4bdd MAJOR #2): the env selector authority
+        # is the DEVICE, not the caller. When device != None, reject
+        # selector keys (HIP_VISIBLE_DEVICES / ROCR_VISIBLE_DEVICES)
+        # in the caller's env_overrides/env_unset (the caller could
+        # otherwise replace the device selector or delete it, while
+        # execution_identity still describes the device object), and
+        # apply the device selector LAST (so it wins over any
+        # non-selector collision). When device is None (RD58
+        # multi-GPU), preserve the explicit ambient
+        # HIP_VISIBLE_DEVICES (reject it in caller env_overrides so
+        # it is not replaced); the caller may set non-selector
+        # overrides (e.g. GGML_CUDA_REGISTER_HOST=1) and unset
+        # ROCR_VISIBLE_DEVICES.
+        _SELECTOR_KEYS = frozenset(
+            {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"}
+        )
+        if device is not None:
+            for _key in (env_overrides or {}):
+                if _key in _SELECTOR_KEYS:
+                    raise PatchCampaignError(
+                        f"run_paired_llama_benchmark: caller "
+                        f"env_overrides must not set selector key "
+                        f"{_key!r} when a device context is supplied "
+                        "(the device owns the selector)"
+                    )
+            for _key in env_unset:
+                if _key in _SELECTOR_KEYS:
+                    raise PatchCampaignError(
+                        f"run_paired_llama_benchmark: caller "
+                        f"env_unset must not unset selector key "
+                        f"{_key!r} when a device context is supplied "
+                        "(the device owns the selector)"
+                    )
+            # Caller's non-selector overrides first, device selector
+            # LAST (device wins on any collision).
+            merged_overrides: dict[str, str] = {}
+            if env_overrides:
+                merged_overrides.update(env_overrides)
+            merged_overrides.update(_hip_only(dict(device.env_overrides)))
+        else:
+            # device=None (RD58 multi-GPU): preserve the explicit
+            # ambient HIP_VISIBLE_DEVICES (reject it in caller
+            # env_overrides so it is not replaced); the caller may
+            # set non-selector overrides + unset ROCR_VISIBLE_DEVICES.
+            for _key in (env_overrides or {}):
+                if _key == "HIP_VISIBLE_DEVICES":
+                    raise PatchCampaignError(
+                        "run_paired_llama_benchmark: caller "
+                        "env_overrides must not set "
+                        "HIP_VISIBLE_DEVICES when device is None "
+                        "(the explicit ambient selector is preserved)"
+                    )
+            merged_overrides = (
+                dict(env_overrides) if env_overrides else {}
+            )
         execution_identity = device.execution_identity if device is not None else None
         outcome = run_paired_llama_benchmark(
             control_binary=control_binary, subject_binary=subject_binary, model=model,
             hip_path=self.hip_path, workloads=workloads, patch_args=patch_args,
             runtime_args=runtime_args, pairs=pairs, log_context=log_context,
-            env_overrides=env_overrides, execution_identity=execution_identity,
+            env_overrides=merged_overrides or None,
+            env_unset=env_unset,
+            execution_identity=execution_identity,
         )
         return ProducerPairedBenchmarkOutcome(
             runs=outcome.runs, commands=outcome.commands, raw_logs=tuple(outcome.raw_logs),
@@ -3393,6 +3461,31 @@ def _run_validation_producer(
     campaign_identity_digest: str | None = None
 
     if selection.spec.standard_campaign == "run":
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
+        # Q4): generic pre-scaffold GPU-count preflight. A bound
+        # contract that declares scope.gpu_count.minimum (RD58 is
+        # currently the only one) is enforced BEFORE the expensive
+        # 5-build scaffold: fail closed if HIP_VISIBLE_DEVICES does
+        # not declare enough distinct selector tokens. Generic, not an
+        # RD58-specific branch.
+        required_gpu_count: int | None = None
+        for _contract in bound_contracts:
+            if _contract.scope.gpu_count is not None:
+                _minimum = _contract.scope.gpu_count.minimum
+                if _minimum is not None:
+                    required_gpu_count = (
+                        _minimum if required_gpu_count is None
+                        else max(required_gpu_count, _minimum)
+                    )
+        if required_gpu_count is not None:
+            from bigcherry.experiment.execution import (
+                require_device_visibility,
+            )
+
+            require_device_visibility(
+                context=f"{args.patch} pre-scaffold GPU-count preflight",
+                minimum_count=required_gpu_count,
+            )
         baseline_source = getattr(args, "baseline_source", "bigcherry")
         scaffold = _build_standard_campaign_scaffold(
             patch_id=args.patch,
@@ -3687,17 +3780,129 @@ def _run_validation_producer(
     if scaffold is not None:
         assert campaign_identity_digest is not None
 
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
+        # Q6): the typed producer->dispatcher promotion channel. The
+        # producer supplies per-contract lane_effects (real LaneEffect
+        # objects) + target_metric; the dispatcher owns
+        # aggregate_contract_effects() + evaluate_promotion_gate() (the
+        # producer never computes a gate itself). No
+        # promotion_lane_effects -> {} (every bound contract persists
+        # its explicit BLOCKED "no promotion result produced" verdict,
+        # exactly as before for non-promoting producers).
+        bound_by_id = {c.id: c for c in bound_contracts}
+        # RD58 (PA36 migration #4, dev-gpt-agent
+        # req_918c7e1be6614f84 invariant): the contract-ID keysets
+        # of promotion_lane_effects, promotion_target_metric, and
+        # promotion_trigger_evidence must be identical (a
+        # per-contract entry in one without a matching entry in
+        # another is a producer bug, not a silent omission).
+        _lane_keys = set(execution.result.promotion_lane_effects)
+        _metric_keys = set(execution.result.promotion_target_metric)
+        _trigger_keys = set(
+            execution.result.promotion_trigger_evidence
+        )
+        if _lane_keys != _metric_keys or _lane_keys != _trigger_keys:
+            raise PatchCampaignError(
+                "promotion channel keysets must be identical: "
+                f"lane_effects={sorted(_lane_keys)}, "
+                f"target_metric={sorted(_metric_keys)}, "
+                f"trigger_evidence={sorted(_trigger_keys)}"
+            )
+        producer_contract_promotions: dict[str, dict[str, object]] = {}
+        for contract_id, lane_effects in (
+            execution.result.promotion_lane_effects.items()
+        ):
+            contract = bound_by_id.get(contract_id)
+            if contract is None:
+                raise PatchCampaignError(
+                    f"promotion_lane_effects for unknown contract "
+                    f"{contract_id!r}"
+                )
+            target_metric = execution.result.promotion_target_metric.get(
+                contract_id
+            )
+            if target_metric is None:
+                raise PatchCampaignError(
+                    f"promotion_lane_effects for {contract_id!r} requires "
+                    "promotion_target_metric"
+                )
+            # RD58 (PA36 migration #4, dev-gpt-agent
+            # req_ecb4b77a4c4e4bdd MAJOR #3): a producer that
+            # supplies promotion lanes MUST have a matching
+            # evaluated contract correctness gate -- missing
+            # correctness evidence is BLOCKED/absent evidence, not a
+            # measured promotion FAIL.
+            if contract_correctness_gate is None:
+                raise PatchCampaignError(
+                    f"promotion_lane_effects for {contract_id!r} "
+                    "requires an evaluated contract correctness gate "
+                    "(the producer supplied promotion lanes but no "
+                    "contract_correctness_results)"
+                )
+            # RD58 (PA36 migration #4, dev-gpt-agent
+            # req_ecb4b77a4c4e4bdd BLOCKER): a producer that
+            # supplies promotion lanes MUST supply trigger evidence --
+            # a contract PASS without trigger proof would be a
+            # fail-OPEN (the target code path may never have run).
+            trigger_evidence = (
+                execution.result.promotion_trigger_evidence.get(
+                    contract_id
+                )
+            )
+            if not trigger_evidence:
+                raise PatchCampaignError(
+                    f"promotion_lane_effects for {contract_id!r} "
+                    "requires promotion_trigger_evidence (a contract "
+                    "PASS without trigger proof is fail-OPEN)"
+                )
+            trigger_proof = experiment_contract.evaluate_trigger_proof(
+                list(trigger_evidence)
+            )
+            # RD58 (PA36 migration #4, dev-gpt-agent
+            # req_ecb4b77a4c4e4bdd MAJOR #3): require the
+            # lane/metric keysets to match -- a mismatch would
+            # silently aggregate the wrong lanes.
+            lane_metrics = {e.metric for e in lane_effects}
+            if target_metric not in lane_metrics:
+                raise PatchCampaignError(
+                    f"promotion_lane_effects for {contract_id!r}: "
+                    f"target_metric {target_metric!r} not in lane "
+                    f"metrics {sorted(lane_metrics)}"
+                )
+            aggregated = experiment_contract.aggregate_contract_effects(
+                contract, list(lane_effects), target_metric=target_metric
+            )
+            producer_contract_promotions[contract_id] = (
+                experiment_contract.evaluate_promotion_gate(
+                    contract,
+                    correctness_gate=contract_correctness_gate,
+                    aggregated_effects=aggregated,
+                    trigger_proof=trigger_proof,
+                )
+            )
+        # RD58 (PA36 migration #4, dev-gpt-agent
+        # req_ecb4b77a4c4e4bdd additional invariant): persist the
+        # exact promotion_lane_effects used for the verdict in the
+        # record's lane_effects -- otherwise the contract promotion
+        # is derived from ephemeral measurements that cannot be
+        # audited from committed evidence.
+        promotion_lane_json = tuple(
+            asdict(effect)
+            for effects in execution.result.promotion_lane_effects.values()
+            for effect in effects
+        )
+        combined_lane_effects = (
+            execution.result.lane_effects + promotion_lane_json
+        )
+
         # Contract promotions (evaluate_promotion_gate() results) are a
         # different semantic type from the producer's check dispositions
         # (execution.contract_verdicts); the promotion APIs must never be
-        # fed dispositions (req_f5ba56f4088e4742 finding #2). No producer
-        # in this slice produces promotion results, so both persistence
-        # helpers get {} and every bound contract persists its explicit
-        # BLOCKED ("no promotion result produced") verdict.
+        # fed dispositions (req_f5ba56f4088e4742 finding #2).
         validation_contracts, validation_contract_verdicts = (
             build_contract_evidence_for_persistence(
                 validation_plan.contracts,
-                {},
+                producer_contract_promotions,
             )
         )
 
@@ -3732,7 +3937,7 @@ def _run_validation_producer(
             validation_eligible=compute_persisted_validation_eligible(
                 descriptor,
                 execution.verdict,
-                {},
+                producer_contract_promotions,
                 activation_disposition=
                     execution.activation_disposition,
                 correctness=(
@@ -3741,7 +3946,7 @@ def _run_validation_producer(
                     else None
                 ),
             ),
-            lane_effects=execution.result.lane_effects,
+            lane_effects=combined_lane_effects,
             representation=descriptor.representation,
             validation_implementation_digest=descriptor.validation_digest,
             contracts=validation_contracts,

@@ -1784,7 +1784,19 @@ def aggregate_contract_effects(
         effect.geometric_effect_pct for effect in lane_effects
         if effect.role == "positive" and effect.metric == target_metric
     ]
-    if not positive_target:
+    # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+    # a contract that declares NO gain threshold (both acceptance gain
+    # fields are None) legally has only a control lane -- it promotes
+    # on the correctness gate + the regression budget alone, so an
+    # empty positive_target is valid there. A contract that DOES
+    # declare a gain threshold still requires a positive lane (an
+    # empty set is not evidence of a gain). Control evidence stays
+    # mandatory either way.
+    no_gain_claim = (
+        contract.acceptance.target_kernel_gain_pct is None
+        and contract.acceptance.end_to_end_gain_pct is None
+    )
+    if not positive_target and not no_gain_claim:
         raise ExperimentContractError(
             f"contract {contract.id!r}: no positive-role effects for metric "
             f"{target_metric!r} -- cannot compute target_kernel_gain_pct"
@@ -1812,7 +1824,9 @@ def aggregate_contract_effects(
     ]
 
     aggregated: dict[str, object] = {
-        "target_kernel_gain_pct": statistics.mean(positive_target),
+        "target_kernel_gain_pct": (
+            statistics.mean(positive_target) if positive_target else None
+        ),
         "end_to_end_gain_pct": statistics.mean(e2e_effects) if e2e_effects else None,
         "max_control_regression_pct": max_control_regression_pct,
     }

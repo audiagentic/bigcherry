@@ -287,20 +287,21 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
                 self.assertEqual(contract.target.family, family)
                 self.assertEqual(contract.hypothesis.family, family)
 
-    def test_all_nineteen_contracts_in_the_real_registry_parse(self):
+    def test_all_twenty_contracts_in_the_real_registry_parse(self):
         # EC17 regression proof: adding [source-evidence] as an optional
         # section must not break any of the 5 original (EC02) or 12
         # EC16-backfilled contracts already committed to
         # config/experiment-contracts.toml, plus VA05's
-        # RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE (18th) and VA06's
-        # RD73-STABLE-GRAPH-CACHE-KEY (19th). GPT review
+        # RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE (18th), VA06's
+        # RD73-STABLE-GRAPH-CACHE-KEY (19th), and the 20th contract
+        # added by a prior session. GPT review
         # (req_3616cc1d90dc4512): keep this an exact count, not a lower
         # bound -- a >= assertion silently stops catching a contract that
         # fails to load/register at all, which is exactly the regression
         # this test exists to guard against.
         from bigcherry.core import paths as _paths
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
-        self.assertEqual(len(registry.contracts), 19)
+        self.assertEqual(len(registry.contracts), 20)
 
 
 class SourceEvidenceTests(unittest.TestCase):
@@ -1334,11 +1335,28 @@ class AggregateContractEffectsTests(unittest.TestCase):
         self.assertEqual(result["target_kernel_gain_pct"], 5.0)
         self.assertEqual(result["max_control_regression_pct"], 2.0)
 
-    def test_missing_positive_effects_rejected(self):
-        contract = _minimal_contract()
+    def test_missing_positive_effects_rejected_when_gain_claimed(self):
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+        # a contract that DOES declare a gain threshold still requires a
+        # positive lane (an empty set is not evidence of a gain).
+        contract = _minimal_contract(
+            acceptance={"max_control_regression_pct": 1, "target_kernel_gain_pct": 3.0}
+        )
         effects = [ec.LaneEffect(role="control", metric="tg", geometric_effect_pct=1.0)]
         with self.assertRaisesRegex(ec.ExperimentContractError, "positive"):
             ec.aggregate_contract_effects(contract, effects, target_metric="tg")
+
+    def test_control_only_valid_when_no_gain_claimed(self):
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+        # a contract that declares NO gain threshold (both gain fields
+        # None) legally has only a control lane -- it promotes on the
+        # correctness gate + the regression budget alone, so an empty
+        # positive_target is valid there.
+        contract = _minimal_contract()
+        effects = [ec.LaneEffect(role="control", metric="tg", geometric_effect_pct=-2.0)]
+        result = ec.aggregate_contract_effects(contract, effects, target_metric="tg")
+        self.assertIsNone(result["target_kernel_gain_pct"])
+        self.assertEqual(result["max_control_regression_pct"], 2.0)
 
     def test_missing_control_effects_rejected_not_reported_as_zero(self):
         # The whole point: an empty control set must never silently read
