@@ -2637,6 +2637,22 @@ class CampaignProducerRuntime:
                         "HIP_VISIBLE_DEVICES when device is None "
                         "(the explicit ambient selector is preserved)"
                     )
+            # RD58 (PA36 migration #4, dev-gpt-agent
+            # req_2c5e7a0230914eab MAJOR): also reject
+            # HIP_VISIBLE_DEVICES in env_unset -- a multi-GPU
+            # producer could otherwise delete the authoritative
+            # ambient selector via env_unset=("HIP_VISIBLE_DEVICES",
+            # ), defeating the preflight and running with
+            # unrestricted visibility. ROCR_VISIBLE_DEVICES remains
+            # allowed/expected in env_unset.
+            for _key in env_unset:
+                if _key == "HIP_VISIBLE_DEVICES":
+                    raise PatchCampaignError(
+                        "run_paired_llama_benchmark: caller "
+                        "env_unset must not unset "
+                        "HIP_VISIBLE_DEVICES when device is None "
+                        "(the explicit ambient selector is preserved)"
+                    )
             merged_overrides = (
                 dict(env_overrides) if env_overrides else {}
             )
