@@ -54,8 +54,6 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_rd17_ppl_check",
         "run_rd19_ppl_check",
         "run_rd30_correctness_check",
-        "run_rd39_42_contract_qualification",
-        "run_rd43_contract_qualification",
         "run_rd43_ppl_check",
         "run_rd73_contract_qualification",
         "run_rd73_decode_control_lane",
