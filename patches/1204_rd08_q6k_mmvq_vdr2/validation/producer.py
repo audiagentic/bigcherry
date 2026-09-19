@@ -123,12 +123,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # GPT round 3 BLOCKER: use the correct types and shapes
     from bigcherry.experiment.contract import TriggerEvidence, CorrectnessResult
     
-    # Sub-slice 2 must derive real subject-hit/control-miss
-    trigger_evidence = TriggerEvidence(
-        role="positive",
-        lane_id="rd08-decode",
-        candidate_launches=1,  # subject hit
-        expected_route_selected=1,  # expected route
+    # GPT round 4 BLOCKER: trigger evidence must fail closed. Sub-slice 2
+    # must derive real subject-hit/control-miss from trace logs. For the
+    # skeleton, raise an error rather than fabricating PASS evidence.
+    raise vp.ValidationProducerError(
+        "RD08 producer trigger evidence not wired (sub-slice 2)"
     )
     
     correctness_result = CorrectnessResult(
