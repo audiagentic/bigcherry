@@ -3902,19 +3902,23 @@ def _run_validation_producer(
                 prior_records = patch_validation_evidence.load_records(
                     args.patch
                 )
-                # Select records bound to the same contract id + current
-                # contract hash
+                # GPT round 6 BLOCKER: schema-v4 persists contracts as a
+                # list of {"id": ..., "hash": ...}, not a mapping.
                 matching_records = [
                     r for r in prior_records
-                    if r.get("contracts", {}).get(contract_id, {})
-                    .get("contract_hash")
-                    == contract.contract_hash
+                    if any(
+                        entry.get("id") == contract_id
+                        and entry.get("hash") == contract.contract_hash
+                        for entry in r.get("contracts", [])
+                        if isinstance(entry, dict)
+                    )
                 ]
+                # GPT round 6 BLOCKER: use fat_targets.targets (not
+                # ctx.amdgpu_targets which doesn't exist in this scope)
+                session_archs = list(fat_targets.targets)
                 # Build the current-session stub
                 this_session = {
-                    "gpu_architectures": [ctx.amdgpu_targets]
-                    if hasattr(ctx, "amdgpu_targets")
-                    else [target_metric],
+                    "gpu_architectures": session_archs,
                     "lane_effects": [
                         {
                             "role": e.role,
@@ -3936,11 +3940,7 @@ def _run_validation_producer(
                         field=gain_field,
                         role="positive",
                         metric=target_metric,
-                        architectures=[
-                            ctx.amdgpu_targets
-                            if hasattr(ctx, "amdgpu_targets")
-                            else target_metric
-                        ],
+                        architectures=session_archs,
                     )
                 )
             # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
