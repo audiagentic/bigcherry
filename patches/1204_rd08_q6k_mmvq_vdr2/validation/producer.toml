@@ -1,0 +1,16 @@
+schema = 1
+
+[producer.rd08]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "run"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd08-decode-lane.json",
+  "rd08-prefill-control.json",
+  "rd08-correctness.json",
+  "rd08-activation.json",
+  "rd08-performance.json",
+]

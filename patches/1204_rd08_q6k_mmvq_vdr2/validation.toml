@@ -43,3 +43,8 @@ id = "controls"
 capability = "controls"
 validator = "autotune-campaign"
 required = true
+
+# PA36 migration #6 (RD08/1204): patch-local validation producer
+[producer]
+id = "rd08"
+entrypoint = "validation/producer.py"
