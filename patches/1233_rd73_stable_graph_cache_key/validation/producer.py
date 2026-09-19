@@ -357,13 +357,18 @@ def _run_resource_burst(
         env_unset=_ROCR_UNSET,
     )
 
+    # GPT round 7 BLOCKER: the contract/resource bound is explicitly
+    # calibrated on a fixed repeated-shape MTP burst. Cycling corpus
+    # prompts can change graph shapes/cache cardinality, so
+    # graph_cache_entries <= 800 is not equivalent evidence.
+    # Use prompts[0] for all requests.
+    burst_prompt = prompts[0]
     peak_entries = 0
     with session:
         transport = sc.HttpTransport(f"http://{host}:{port}")
         sc.validate_server(transport)
         for i in range(requests):
-            prompt = prompts[i % len(prompts)]
-            sc.run_request(transport, prompt, config, pass_number=1, order_index=i)
+            sc.run_request(transport, burst_prompt, config, pass_number=1, order_index=i)
 
     # GPT round 6 BLOCKER: use the canonical parse_rd73_resource_telemetry()
     # for fail-closed behavior (raises on any malformed prefixed line)
