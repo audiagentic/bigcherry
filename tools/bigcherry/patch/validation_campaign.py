@@ -3889,6 +3889,61 @@ def _run_validation_producer(
                 contract, list(lane_effects), target_metric=target_metric
             )
             # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
+            # session aggregation (dispatcher-owned). Under a session
+            # policy, the gain bound is established across repeated
+            # SESSIONS, not from the pairs inside this one run. Fold the
+            # prior sessions' persisted lane effects together with the one
+            # just measured and re-aggregate over all of them.
+            if (
+                contract.acceptance.effect_evidence_policy
+                == "session_ci95_threshold_bound_v1"
+            ):
+                from bigcherry.patch import evidence as patch_validation_evidence
+                prior_records = patch_validation_evidence.load_records(
+                    args.patch
+                )
+                # Select records bound to the same contract id + current
+                # contract hash
+                matching_records = [
+                    r for r in prior_records
+                    if r.get("contracts", {}).get(contract_id, {})
+                    .get("contract_hash")
+                    == contract.contract_hash
+                ]
+                # Build the current-session stub
+                this_session = {
+                    "gpu_architectures": [ctx.amdgpu_targets]
+                    if hasattr(ctx, "amdgpu_targets")
+                    else [target_metric],
+                    "lane_effects": [
+                        {
+                            "role": e.role,
+                            "metric": e.metric,
+                            "pair_ratios": list(e.pair_ratios),
+                        }
+                        for e in lane_effects
+                    ],
+                }
+                gain_field = (
+                    "end_to_end_gain_pct"
+                    if contract.acceptance.end_to_end_gain_pct is not None
+                    else "target_kernel_gain_pct"
+                )
+                aggregated = dict(aggregated)
+                aggregated.update(
+                    experiment_contract.aggregate_session_effects(
+                        [*matching_records, this_session],
+                        field=gain_field,
+                        role="positive",
+                        metric=target_metric,
+                        architectures=[
+                            ctx.amdgpu_targets
+                            if hasattr(ctx, "amdgpu_targets")
+                            else target_metric
+                        ],
+                    )
+                )
+            # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
             # compute the resource gate from the producer's
             # promotion_resource_results. A resource-bound contract
             # without resource evidence must fail closed.
