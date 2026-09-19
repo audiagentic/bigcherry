@@ -220,19 +220,15 @@ def _run_decode_control_lane(
     host: str = "127.0.0.1",
     control_port: int = 18082,
     subject_port: int = 18083,
-    measured_pairs: int = 10,
 ) -> LaneEffect:
-    """Run RD73's decode control lane (plain server, tg128)."""
-    if ctx.corpus is None:
-        raise ValidationProducerError(
-            "RD73: ctx.corpus is required for the decode control lane"
-        )
-
-    prompts, corpus_sha256 = sc.load_corpus(ctx.corpus)
-    metric_pattern = re.compile(r"BIGCHERRY_RD73_DECODE tg128=([0-9.]+)")
-
-    logs_dir = ctx.workdir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    """Run RD73's decode control lane using run_bench_runner_server_bench.
+    
+    GPT round 5 MAJOR: the decode control lane must use
+    run_bench_runner_server_bench(..., bench_configs="tg128") -- NOT
+    server_completion.run_request() with a wall_tps fallback. The
+    bench runner is the canonical harness for tg128 measurement.
+    """
+    from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
 
     # Plain server args (no MTP flags)
     server_args = ("--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off")
@@ -245,31 +241,10 @@ def _run_decode_control_lane(
     ports = {"control": control_port, "subject": subject_port}
     binaries = {"control": control_binary, "subject": subject_binary}
 
-    sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
-    session_kwargs = dict(
-        corpus_id=ctx.corpus.stem,
-        corpus_sha256=corpus_sha256,
-        bigcherry_revision="rd73-va06",
-        llama_pin="",
-        llama_revision="",
-        model_id=str(ctx.model),
-        server_argv=server_args,
-        sampling=sampling,
-        n_predict=128,
-        order_seed=12345,
-    )
-    configs = {
-        "control": sc.SessionConfig(session_id="rd73-decode-control", **session_kwargs),
-        "subject": sc.SessionConfig(session_id="rd73-decode-subject", **session_kwargs),
-    }
-
-    request_counters = {"control": 0, "subject": 0}
-
     def _runner(command: list[str]) -> RunnerOutput:
         arm = command[-1]
-        index = request_counters[arm]
-        request_counters[arm] += 1
-        log_path = logs_dir / f"rd73-decode-{arm}-server-{index}.log"
+        log_path = ctx.workdir / f"rd73-decode-{arm}-server.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         session = AttestedServerSession(
             binary=binaries[arm],
             model=ctx.model,
@@ -282,31 +257,33 @@ def _run_decode_control_lane(
             env_unset=_ROCR_UNSET,
         )
         with session:
-            transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
-            sc.validate_server(transport)
-            prompt = prompts[index % len(prompts)]
-            record = sc.run_request(
-                transport, prompt, configs[arm], pass_number=1, order_index=index
+            # Use the canonical bench runner for tg128 measurement
+            metrics = run_bench_runner_server_bench(
+                server_url=f"http://{host}:{ports[arm]}",
+                bench_configs="tg128",
+                repetitions=1,
+                env_overrides=rd73_env,
             )
-        # For decode, we use tg128 (tokens per second at 128 context)
-        tg128 = record.get("tg128") or record.get("wall_tps")
-        if not isinstance(tg128, (int, float)):
-            raise ValidationProducerError(
-                f"RD73 decode lane ({arm}, request {index}): no usable tg128 "
-                "in the real completion response"
-            )
+            # Require tg128_tps (the bench runner's metric name)
+            tg128 = metrics.get("tg128_tps")
+            if not isinstance(tg128, (int, float)):
+                raise ValidationProducerError(
+                    f"RD73 decode lane ({arm}): no usable tg128_tps from "
+                    "run_bench_runner_server_bench"
+                )
         return RunnerOutput(
             returncode=0,
             stdout=f"BIGCHERRY_RD73_DECODE tg128={tg128}\n",
             stderr="",
         )
 
+    metric_pattern = re.compile(r"BIGCHERRY_RD73_DECODE tg128=([0-9.]+)")
     paired_run = run_paired_lane(
         metric="tg128",
         control_command=["rd73-decode-lane", "control"],
         subject_command=["rd73-decode-lane", "subject"],
         pattern=metric_pattern,
-        pairs=measured_pairs,
+        pairs=10,
         runner=_runner,
     )
 
@@ -551,10 +528,14 @@ def run(ctx: ProducerContext) -> ProducerResult:
         },
     )
 
-    # 4. rd73-resource-burst-subject.log
+    # 4. rd73-resource-burst-subject.log (GPT round 5 MAJOR: persist
+    # the actual raw burst log, not just peak summary)
+    burst_log_text = (
+        ctx.workdir / "rd73-resource-burst-subject.log"
+    ).read_text(encoding="utf-8", errors="replace")
     burst_log_ref = ctx.runtime.write_text_artifact(
         name="rd73-resource-burst-subject.log",
-        text=f"peak_graph_cache_entries={peak_entries}\n",
+        text=burst_log_text,
     )
 
     # 5. rd73-correctness.json
