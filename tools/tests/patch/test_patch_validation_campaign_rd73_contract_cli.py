@@ -49,8 +49,8 @@ class _FakeRuntime:
         self.artifacts[name] = payload
         return f"artifact://{name}"
 
-    def write_text_artifact(self, *, name: str, content: str) -> str:
-        self.artifacts[name] = content
+    def write_text_artifact(self, *, name: str, text: str) -> str:
+        self.artifacts[name] = text
         return f"artifact://{name}"
 
 
