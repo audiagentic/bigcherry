@@ -329,15 +329,18 @@ class TestRD58Producer(unittest.TestCase):
             self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
             self.assertEqual(env["GGML_CUDA_REGISTER_HOST"], "1")
             self.assertEqual(env["HIP_VISIBLE_DEVICES"], "0,1")
-            # No BIGCHERRY_*, GGML_HIP_DISPATCH_*, GGML_HIP_FORCE_*,
-            # GGML_HIP_TUNE_*, GGML_AUTO_TUNE, or NCCL_* keys
-            # (GPT round 1 MAJOR #4: match legacy sanitize_environment).
+            # No BIGCHERRY_* keys (GPT round 2 MAJOR: use canonical
+            # sanitize_environment(mode="stock") which strips
+            # GGML_HIP_DISPATCH_*, GGML_HIP_FORCE_*, GGML_HIP_TUNE_*,
+            # GGML_HIP_AUTOTUNE_MODE, and NCCL_DEBUG*).
             self.assertFalse(any(k.startswith("BIGCHERRY_") for k in env))
             self.assertFalse(any(k.startswith("GGML_HIP_DISPATCH_") for k in env))
             self.assertFalse(any(k.startswith("GGML_HIP_FORCE_") for k in env))
             self.assertFalse(any(k.startswith("GGML_HIP_TUNE_") for k in env))
-            self.assertNotIn("GGML_AUTO_TUNE", env)
-            self.assertFalse(any(k.startswith("NCCL_") for k in env))
+            self.assertNotIn("GGML_HIP_AUTOTUNE_MODE", env)
+            self.assertNotIn("NCCL_DEBUG", env)
+            self.assertNotIn("NCCL_DEBUG_SUBSYS", env)
+            self.assertNotIn("NCCL_DEBUG_FILE", env)
 
     def test_model_required(self) -> None:
         module = _load_producer()
