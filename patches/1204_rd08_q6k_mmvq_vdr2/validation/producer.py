@@ -169,18 +169,26 @@ def _run_lanes(
     control_binary = ctx.validation_binaries["control"]["llama-bench"]
     subject_binary = ctx.validation_binaries["subject"]["llama-bench"]
 
-    # GPT round 6 BLOCKER: resolve the selected ProducerDeviceContext
-    # via ctx.runtime.device_contexts(device_map=ctx.device_map) and
-    # pass device=device, failing closed if selection is absent/ambiguous.
-    # This gives authoritative HIP selector + architecture attestation.
+    # GPT round 7 BLOCKER: require exactly one device context and verify
+    # the architecture. -device-map permits multiple architectures/devices,
+    # so silently choosing whichever context appears first is not
+    # fail-closed.
     device_contexts = ctx.runtime.device_contexts(
         device_map=ctx.device_map
     )
-    if not device_contexts:
+    if len(device_contexts) != 1:
         raise vp.ValidationProducerError(
-            "RD08: no device context available for the selected architecture"
+            f"RD08: expected exactly one device context, got "
+            f"{len(device_contexts)} -- RD08 is architecture-scoped "
+            f"and cannot proceed with ambiguous device selection"
         )
-    device = device_contexts[0]  # RD08 uses a single device
+    device = device_contexts[0]
+    # Verify the device architecture is in the contract's targets
+    if device.architecture not in ctx.fat_targets.targets:
+        raise vp.ValidationProducerError(
+            f"RD08: device architecture {device.architecture} is not in "
+            f"the contract's targets {ctx.fat_targets.targets}"
+        )
     
     # Use the canonical paired benchmark infrastructure
     # GPT round 6 BLOCKER: remove hip_path (runtime already owns it)
