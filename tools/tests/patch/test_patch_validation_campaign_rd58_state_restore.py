@@ -141,6 +141,7 @@ class _FakeRuntime:
                 "device": device,
                 "env_overrides": env_overrides,
                 "env_unset": env_unset,
+                "runtime_args": runtime_args,
             }
         )
         return _FakeOutcome(
@@ -267,8 +268,10 @@ class TestRD58Producer(unittest.TestCase):
         # The promotion trigger evidence.
         self.assertIn(contract_id, result.promotion_trigger_evidence)
         trigger = result.promotion_trigger_evidence[contract_id][0]
+        self.assertEqual(trigger.role, "positive")
+        self.assertEqual(trigger.lane_id, "rd58-subject")
         self.assertEqual(trigger.candidate_launches, 1)
-        self.assertEqual(trigger.expected_route_selected, 1)
+        self.assertIsNone(trigger.expected_route_selected)
 
     def test_emitted_artifacts(self) -> None:
         result, _ = self._run_producer()
@@ -295,11 +298,22 @@ class TestRD58Producer(unittest.TestCase):
         self.assertEqual(call["workloads"], ("decode",))
 
     def test_env_sanitization(self) -> None:
-        # The producer strips ROCR_VISIBLE_DEVICES and BIGCHERRY_* from
-        # the build env, and sets GGML_CUDA_REGISTER_HOST=1.
+        # GPT round 3: seed stale sanitizer keys to verify they are
+        # stripped (the absence assertions are vacuous without them).
         module = _load_producer()
         runtime = _FakeRuntime()
         ctx = _make_context(runtime)
+        # Seed the stale keys that sanitize_environment(mode="stock") strips.
+        ctx.build_env["GGML_HIP_DISPATCH_MODE"] = "0"
+        ctx.build_env["GGML_HIP_FORCE_DEVICE"] = "0"
+        ctx.build_env["GGML_HIP_TUNE"] = "1"
+        ctx.build_env["GGML_HIP_AUTOTUNE_MODE"] = "0"
+        ctx.build_env["NCCL_DEBUG"] = "INFO"
+        ctx.build_env["NCCL_DEBUG_SUBSYS"] = "INIT"
+        ctx.build_env["NCCL_DEBUG_FILE"] = "/tmp/nccl.log"
+        # A non-debug NCCL key that must SURVIVE sanitization.
+        ctx.build_env["NCCL_SOCKET_IFNAME"] = "eth0"
+        ctx.build_env["BIGCHERRY_STALE"] = "1"
         # Verify the env sanitization by checking the subprocess env.
         captured_envs: list[dict[str, str]] = []
 
@@ -341,6 +355,8 @@ class TestRD58Producer(unittest.TestCase):
             self.assertNotIn("NCCL_DEBUG", env)
             self.assertNotIn("NCCL_DEBUG_SUBSYS", env)
             self.assertNotIn("NCCL_DEBUG_FILE", env)
+            # Non-debug NCCL keys must survive (GPT round 3).
+            self.assertEqual(env.get("NCCL_SOCKET_IFNAME"), "eth0")
 
     def test_model_required(self) -> None:
         module = _load_producer()
