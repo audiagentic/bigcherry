@@ -81,6 +81,16 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "RD58 state-restore requires a model (--model); got None"
         )
 
+    # GPT round 1 MAJOR #4: repeat the visibility check producer-side
+    # (the generic pre-scaffold enforcement remains the primary early
+    # guard; this is the producer's own provenance record).
+    from bigcherry.experiment import execution as _exec
+    visibility = _exec.require_device_visibility(
+        context=f"{ctx.patch_id}: RD58 state-restore",
+        minimum_count=2,
+    )
+    hardware_doc = visibility.document()
+
     # The one sanctioned pair authority: control = baseline; subject =
     # baseline + focal (1234). Singleton gfx1100 (NOT fat-3), parity
     # asserted (the state-restore comparison depends on build parity).
@@ -100,9 +110,20 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # ROCR_VISIBLE_DEVICES (to avoid the double-filtering bug) and
     # BIGCHERRY_* (to avoid stale overrides), set
     # GGML_CUDA_REGISTER_HOST=1.
+    # GPT round 1 MAJOR #4: match the legacy sanitize_environment(mode="stock")
+    # behavior -- strip stale GGML_HIP_DISPATCH_*, GGML_HIP_FORCE_*,
+    # GGML_HIP_TUNE_*, autotune, and NCCL diagnostics in addition to
+    # BIGCHERRY_* and ROCR_VISIBLE_DEVICES.
     env = dict(ctx.build_env)
     for key in list(env):
-        if key.startswith("BIGCHERRY_"):
+        if (
+            key.startswith("BIGCHERRY_")
+            or key.startswith("GGML_HIP_DISPATCH_")
+            or key.startswith("GGML_HIP_FORCE_")
+            or key.startswith("GGML_HIP_TUNE_")
+            or key == "GGML_AUTO_TUNE"
+            or key.startswith("NCCL_")
+        ):
             env.pop(key, None)
     env.pop("ROCR_VISIBLE_DEVICES", None)
     env["GGML_CUDA_REGISTER_HOST"] = "1"
@@ -160,6 +181,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "passed": correctness_passed,
         "campaign_id": ctx.campaign_id,
         "architecture": architecture,
+        "hardware": hardware_doc,
         "validation_build_identities": {
             "control": dict(pair.validation_build_identities["control"]),
             "subject": dict(pair.validation_build_identities["subject"]),
@@ -207,6 +229,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "campaign_id": ctx.campaign_id,
         "passed": controls_passed,
         "repetitions": _REPETITIONS,
+        "hardware": hardware_doc,
         "metrics": {
             "control_pass_count": sum(1 for r in control_runs if r["returncode"] == 0),
             "subject_pass_count": sum(1 for r in subject_runs if r["returncode"] == 0),
@@ -247,6 +270,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         device=None,
         env_overrides={"GGML_CUDA_REGISTER_HOST": "1"},
         env_unset=("ROCR_VISIBLE_DEVICES",),
+        runtime_args=("-sm", "tensor"),
     )
     decode_run = outcome.runs["decode"]
     decode_stats = dict(decode_run.stats)
@@ -272,9 +296,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     contract_id = "RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE"
     decode_lane_effect = experiment_contract.LaneEffect(
         role="control",
-        metric="decode_tps",
+        metric="tg128",
         geometric_effect_pct=float(decode_geometric),
-        decision="pass",
         ci95_low_pct=float(decode_ci_low)
         if isinstance(decode_ci_low, (int, float))
         else None,
@@ -326,15 +349,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # The trigger evidence for the promotion gate (the dispatcher owns
     # evaluate_trigger_proof()). The target code path is the "pinned
     # state buffer (... bytes) for restore" marker (the state-restore
-    # path). candidate_launches is the number of restore cycles
-    # (3); expected_route_selected is the number of restore cycles
-    # that hit the marker (the subject_hit count).
-    subject_hit_count = sum(1 for r in subject_runs if r["marker_hit"])
+    # path). candidate_launches is 1 if the subject hit the marker
+    # (the real positive evidence), 0 otherwise -- NOT the test
+    # invocation count (GPT round 1 BLOCKER #2).
     trigger_evidence = experiment_contract.TriggerEvidence(
-        role="control",
-        lane_id="decode",
-        candidate_launches=_REPETITIONS,
-        expected_route_selected=subject_hit_count,
+        role="positive",
+        lane_id="rd58-subject",
+        candidate_launches=1 if subject_hit else 0,
+        expected_route_selected=1 if subject_hit else 0,
     )
 
     # Semantic evidence for the shared binder: exactly
@@ -377,7 +399,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             contract_id: (decode_lane_effect,),
         },
         promotion_target_metric={
-            contract_id: "decode_tps",
+            contract_id: "tg128",
         },
         promotion_trigger_evidence={
             contract_id: (trigger_evidence,),

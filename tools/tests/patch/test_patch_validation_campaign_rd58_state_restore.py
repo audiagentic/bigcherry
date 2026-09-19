@@ -69,6 +69,11 @@ class _FakeOutcome:
         self.raw_logs = ()
 
 
+class _FakeDeviceVisibility:
+    def document(self) -> dict[str, object]:
+        return {"observed": ["0", "1"], "minimum": 2, "satisfied": True}
+
+
 class _FakeRuntime:
     def __init__(self) -> None:
         self.pair = _FakeBuildPair()
@@ -206,7 +211,11 @@ class TestRD58Producer(unittest.TestCase):
                 args=command, returncode=rc, stdout=stdout, stderr=""
             )
 
-        with mock.patch("subprocess.run", side_effect=_fake_subprocess_run):
+        with mock.patch("subprocess.run", side_effect=_fake_subprocess_run), \
+             mock.patch(
+                 "bigcherry.experiment.execution.require_device_visibility",
+                 return_value=_FakeDeviceVisibility(),
+             ):
             result = cast(vp.ProducerResult, cast(Any, module).run(ctx))
         return result, runtime
 
@@ -251,15 +260,15 @@ class TestRD58Producer(unittest.TestCase):
         lane_effects = result.promotion_lane_effects[contract_id]
         self.assertEqual(len(lane_effects), 1)
         self.assertEqual(lane_effects[0].role, "control")
-        self.assertEqual(lane_effects[0].metric, "decode_tps")
+        self.assertEqual(lane_effects[0].metric, "tg128")
         self.assertEqual(lane_effects[0].geometric_effect_pct, 1.5)
         # The promotion target metric.
-        self.assertEqual(result.promotion_target_metric[contract_id], "decode_tps")
+        self.assertEqual(result.promotion_target_metric[contract_id], "tg128")
         # The promotion trigger evidence.
         self.assertIn(contract_id, result.promotion_trigger_evidence)
         trigger = result.promotion_trigger_evidence[contract_id][0]
-        self.assertEqual(trigger.candidate_launches, 3)
-        self.assertEqual(trigger.expected_route_selected, 3)
+        self.assertEqual(trigger.candidate_launches, 1)
+        self.assertEqual(trigger.expected_route_selected, 1)
 
     def test_emitted_artifacts(self) -> None:
         result, _ = self._run_producer()
@@ -307,7 +316,11 @@ class TestRD58Producer(unittest.TestCase):
                 stderr="",
             )
 
-        with mock.patch("subprocess.run", side_effect=_fake_subprocess_run):
+        with mock.patch("subprocess.run", side_effect=_fake_subprocess_run), \
+             mock.patch(
+                 "bigcherry.experiment.execution.require_device_visibility",
+                 return_value=_FakeDeviceVisibility(),
+             ):
             cast(Any, module).run(ctx)
 
         self.assertTrue(captured_envs)
@@ -316,8 +329,15 @@ class TestRD58Producer(unittest.TestCase):
             self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
             self.assertEqual(env["GGML_CUDA_REGISTER_HOST"], "1")
             self.assertEqual(env["HIP_VISIBLE_DEVICES"], "0,1")
-            # No BIGCHERRY_* keys.
+            # No BIGCHERRY_*, GGML_HIP_DISPATCH_*, GGML_HIP_FORCE_*,
+            # GGML_HIP_TUNE_*, GGML_AUTO_TUNE, or NCCL_* keys
+            # (GPT round 1 MAJOR #4: match legacy sanitize_environment).
             self.assertFalse(any(k.startswith("BIGCHERRY_") for k in env))
+            self.assertFalse(any(k.startswith("GGML_HIP_DISPATCH_") for k in env))
+            self.assertFalse(any(k.startswith("GGML_HIP_FORCE_") for k in env))
+            self.assertFalse(any(k.startswith("GGML_HIP_TUNE_") for k in env))
+            self.assertNotIn("GGML_AUTO_TUNE", env)
+            self.assertFalse(any(k.startswith("NCCL_") for k in env))
 
     def test_model_required(self) -> None:
         module = _load_producer()
