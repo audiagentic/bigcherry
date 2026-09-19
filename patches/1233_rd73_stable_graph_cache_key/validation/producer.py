@@ -198,7 +198,7 @@ def _run_mtp_server_lane(
         log_file.write_text("\n".join(combined), encoding="utf-8")
 
     # Convert to LaneEffect
-    lane_effect = _paired_run_to_lane_effect(paired_run, role="positive")
+    lane_effect = _paired_run_to_lane_effect(paired_run, role="positive", metric="mtp_wall_tps")
 
     return (
         lane_effect,
@@ -309,7 +309,7 @@ def _run_decode_control_lane(
         runner=_runner,
     )
 
-    return _paired_run_to_lane_effect(paired_run, role="control")
+    return _paired_run_to_lane_effect(paired_run, role="control", metric="tg128")
 
 
 def _run_resource_burst(
@@ -407,44 +407,39 @@ def _check_bit_identical(
     subject_records: list[dict[str, Any]],
     control_records: list[dict[str, Any]],
 ) -> bool:
-    """Check if the control and subject MTP content fields are bit-identical."""
+    """Check if the control and subject MTP content fields are bit-identical.
+    
+    GPT round 3 BLOCKER: must check same count, matching order_index,
+    both contents must be strings, exact equality. Two missing contents
+    (None == None) must NOT pass.
+    """
     if len(subject_records) != len(control_records):
         return False
     for s_rec, c_rec in zip(subject_records, control_records):
+        # Both must have the same order_index
+        s_idx = s_rec.get("order_index")
+        c_idx = c_rec.get("order_index")
+        if s_idx != c_idx:
+            return False
+        # Both contents must be strings (None == None must NOT pass)
         s_content = s_rec.get("content")
         c_content = c_rec.get("content")
+        if not isinstance(s_content, str) or not isinstance(c_content, str):
+            return False
         if s_content != c_content:
             return False
     return True
 
 
 def _paired_run_to_lane_effect(
-    paired_run: Any, role: str
+    paired_run: Any, role: str, metric: str
 ) -> LaneEffect:
-    """Convert a PairedLaneRun to a LaneEffect."""
-    stats = paired_run.stats
-    geometric_effect_pct = stats.get("geometric_effect_pct", 0.0)
-    ci95_low = stats.get("ci95_low_pct", 0.0)
-    ci95_high = stats.get("ci95_high_pct", 0.0)
-    paired_rounds = stats.get("paired_rounds", 0)
-
-    # Determine decision from the effect
-    if role == "positive":
-        decision = "pass" if geometric_effect_pct >= 0 else "fail"
-    else:
-        # For control: regression is bad (negative effect = regression)
-        decision = "pass" if geometric_effect_pct >= -5.0 else "fail"
-
-    return LaneEffect(
-        role=role,
-        metric=stats.get("metric", "unknown"),
-        geometric_effect_pct=geometric_effect_pct,
-        decision=decision,
-        ci95_low_pct=ci95_low,
-        ci95_high_pct=ci95_high,
-        paired_rounds=paired_rounds,
-        pair_ratios=tuple(stats.get("pair_ratios", [])),
-    )
+    """Convert a PairedLaneRun to a LaneEffect using the canonical
+    lane_effect_from_run() (GPT round 3 MAJOR: do not fabricate
+    defaults -- missing CI/round data must remain missing/fail-closed).
+    """
+    from bigcherry.experiment.execution import lane_effect_from_run
+    return lane_effect_from_run(role=role, metric=metric, run=paired_run)
 
 
 def run(ctx: ProducerContext) -> ProducerResult:
@@ -520,95 +515,87 @@ def run(ctx: ProducerContext) -> ProducerResult:
 
     # --- Write artifacts through the runtime API ---
     # 1. rd73-mtp-lane.json
-    mtp_lane_doc = {
-        "metric": "mtp_wall_tps",
-        "geometric_effect_pct": mtp_lane.geometric_effect_pct,
-        "decision": mtp_lane.decision,
-        "paired_rounds": mtp_lane.paired_rounds,
-        "ci95_low_pct": mtp_lane.ci95_low_pct,
-        "ci95_high_pct": mtp_lane.ci95_high_pct,
-    }
     mtp_lane_ref = ctx.runtime.write_artifact(
         name="rd73-mtp-lane.json",
-        payload=__import__("json").dumps(mtp_lane_doc, indent=2, sort_keys=True),
+        payload={
+            "metric": "mtp_wall_tps",
+            "geometric_effect_pct": mtp_lane.geometric_effect_pct,
+            "decision": mtp_lane.decision,
+            "paired_rounds": mtp_lane.paired_rounds,
+            "ci95_low_pct": mtp_lane.ci95_low_pct,
+            "ci95_high_pct": mtp_lane.ci95_high_pct,
+        },
     )
 
     # 2. rd73-decode-control.json
-    decode_doc = {
-        "metric": "tg128",
-        "geometric_effect_pct": decode_lane.geometric_effect_pct,
-        "decision": decode_lane.decision,
-        "paired_rounds": decode_lane.paired_rounds,
-        "ci95_low_pct": decode_lane.ci95_low_pct,
-        "ci95_high_pct": decode_lane.ci95_high_pct,
-    }
     decode_ref = ctx.runtime.write_artifact(
         name="rd73-decode-control.json",
-        payload=__import__("json").dumps(decode_doc, indent=2, sort_keys=True),
+        payload={
+            "metric": "tg128",
+            "geometric_effect_pct": decode_lane.geometric_effect_pct,
+            "decision": decode_lane.decision,
+            "paired_rounds": decode_lane.paired_rounds,
+            "ci95_low_pct": decode_lane.ci95_low_pct,
+            "ci95_high_pct": decode_lane.ci95_high_pct,
+        },
     )
 
     # 3. rd73-resource.json
-    resource_doc = {
-        "metric": "graph_cache_entries",
-        "unit": "count",
-        "subject_value": peak_entries,
-    }
     resource_ref = ctx.runtime.write_artifact(
         name="rd73-resource.json",
-        payload=__import__("json").dumps(resource_doc, indent=2, sort_keys=True),
+        payload={
+            "metric": "graph_cache_entries",
+            "unit": "count",
+            "subject_value": peak_entries,
+        },
     )
 
     # 4. rd73-resource-burst-subject.log
-    burst_log_text = f"peak_graph_cache_entries={peak_entries}\n"
     burst_log_ref = ctx.runtime.write_text_artifact(
         name="rd73-resource-burst-subject.log",
-        content=burst_log_text,
+        text=f"peak_graph_cache_entries={peak_entries}\n",
     )
 
     # 5. rd73-correctness.json
-    correctness_doc = {
-        "check": "bit_identical",
-        "passed": bit_identical_passed,
-    }
     correctness_ref = ctx.runtime.write_artifact(
         name="rd73-correctness.json",
-        payload=__import__("json").dumps(correctness_doc, indent=2, sort_keys=True),
+        payload={
+            "check": "bit_identical",
+            "passed": bit_identical_passed,
+        },
     )
 
     # 6. rd73-mtp-subject.log
     subject_log_ref = ctx.runtime.write_text_artifact(
         name="rd73-mtp-subject.log",
-        content=subject_text,
+        text=subject_text,
     )
 
     # 7. rd73-mtp-control.log
     control_log_ref = ctx.runtime.write_text_artifact(
         name="rd73-mtp-control.log",
-        content=control_text,
+        text=control_text,
     )
 
-    # 8. rd73-performance.json
-    performance_doc = {
-        "mtp_wall_tps": mtp_lane.geometric_effect_pct,
-        "tg128": decode_lane.geometric_effect_pct,
-        "artifact": {
-            "mtp_lane": mtp_lane_ref,
-            "decode_control": decode_ref,
-        },
-    }
+    # 8. rd73-performance.json (benchmark validator requires "metrics" dict)
     performance_ref = ctx.runtime.write_artifact(
         name="rd73-performance.json",
-        payload=__import__("json").dumps(performance_doc, indent=2, sort_keys=True),
+        payload={
+            "metrics": {
+                "mtp_verify": mtp_lane.geometric_effect_pct,
+                "decode_control": decode_lane.geometric_effect_pct,
+            },
+        },
     )
 
     # --- Build the ProducerResult ---
     # Trigger evidence: positive lane must have the marker hit;
-    # control marker hit must invalidate promotion
+    # control marker hit must INVALIDATE promotion
     trigger_evidence = (
         TriggerEvidence(
             role="positive",
             lane_id="rd73-mtp-subject",
-            candidate_launches=1 if subject_hit else 0,
+            candidate_launches=1 if (subject_hit and not control_hit) else 0,
         ),
     )
 
@@ -617,33 +604,38 @@ def run(ctx: ProducerContext) -> ProducerResult:
             "disposition": "passed" if bit_identical_passed else "failed",
             "mechanism": "bit_identical",
             "detail": "RD73 MTP bit-identical check",
-            "artifact": correctness_ref,
         },
         validation_build_identities={
             "control": dict(ctx.validation_build_identities["control"]),
             "subject": dict(ctx.validation_build_identities["subject"]),
         },
         activation_evidence={
-            "disposition": "activation-verified" if subject_hit and not control_hit else "activation-failed",
+            "disposition": "activation-verified" if (subject_hit and not control_hit) else "activation-failed",
             "mechanism": "trace-marker",
             "detail": f"marker_regex={_MARKER_REGEX}",
-            "subject_hit": subject_hit,
-            "control_hit": control_hit,
-            "positive": {"artifact": subject_log_ref, "marker_regex": _MARKER_REGEX},
-            "negative": {"artifact": control_log_ref, "marker_regex": _MARKER_REGEX},
         },
         performance_evidence={
             "disposition": "measured",
             "mechanism": "paired-server-bench",
             "detail": "RD73 MTP + decode lanes",
-            "artifact": performance_ref,
+            "artifact": {
+                "path": "rd73-performance.json",
+                "sha256": "placeholder",  # Will be replaced by runtime
+            },
         },
         trace_evidence={
-            "disposition": "measured",
-            "mechanism": "trace-marker",
-            "detail": f"marker_regex={_MARKER_REGEX}",
-            "positive": {"artifact": subject_log_ref, "marker_regex": _MARKER_REGEX},
-            "negative": {"artifact": control_log_ref, "marker_regex": _MARKER_REGEX},
+            "positive": {
+                "artifact": {
+                    "path": "rd73-mtp-subject.log",
+                    "sha256": "placeholder",  # Will be replaced by runtime
+                },
+            },
+            "negative": {
+                "artifact": {
+                    "path": "rd73-mtp-control.log",
+                    "sha256": "placeholder",  # Will be replaced by runtime
+                },
+            },
         },
         check_results=(),
         lane_effects=(),
