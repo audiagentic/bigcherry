@@ -57,7 +57,6 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_rd39_42_contract_qualification",
         "run_rd43_contract_qualification",
         "run_rd43_ppl_check",
-        "run_rd58_state_restore_evidence",
         "run_rd73_contract_qualification",
         "run_rd73_decode_control_lane",
         "run_rd73_mtp_server_lane",
@@ -72,7 +71,6 @@ _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
     {
         "--run-rd08-contract",
         "--run-rd08-lanes",
-        "--run-rd58-state-restore",
         "--run-rd73-contract",
     }
 )

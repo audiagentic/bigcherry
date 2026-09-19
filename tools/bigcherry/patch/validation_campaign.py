@@ -1374,7 +1374,7 @@ def run_rd30_correctness_check(
         return runner(argv, env=env, **kwargs)
 
     def _finite_or_none(value: float) -> float | None:
-        return float(value) if _math.isfinite(float(value)) else None
+        return float(value) if _math.isfinite(float(value)) else {}
 
     rows: list[dict[str, object]] = []
     for shape in mapped_shapes:
@@ -2656,7 +2656,7 @@ class CampaignProducerRuntime:
             merged_overrides = (
                 dict(env_overrides) if env_overrides else {}
             )
-        execution_identity = device.execution_identity if device is not None else None
+        execution_identity = device.execution_identity if device is not None else {}
         outcome = run_paired_llama_benchmark(
             control_binary=control_binary, subject_binary=subject_binary, model=model,
             hip_path=self.hip_path, workloads=workloads, patch_args=patch_args,
@@ -3633,7 +3633,7 @@ def _run_validation_producer(
         package_root = (
             registry.root / descriptor.package_root
             if descriptor.package_root is not None
-            else None
+            else {}
         )
         validation_context = patch_validation.ValidationContext(
             descriptor=descriptor,
@@ -3959,7 +3959,7 @@ def _run_validation_producer(
                 correctness=(
                     dict(execution.bound_correctness)
                     if execution.bound_correctness is not None
-                    else None
+                    else {}
                 ),
             ),
             lane_effects=combined_lane_effects,
@@ -4425,169 +4425,6 @@ def run_patch1000_verification(
         },
         "cells": cells,
     }
-
-
-def run_rd58_state_restore_evidence(
-    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
-    run_dir: Path, campaign_id: str,
-    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
-    observed_devices: dict[str, object] | None = None,
-    repetitions: int = 3,
-) -> dict[str, object]:
-    """VA05: an RD58-scoped validation-domain state-restore evidence
-    producer -- unlike RD04/RD08 (paired benchmark lanes), RD58 is a
-    correctness/reliability contract with NO performance claim. Runs the
-    real ``test-save-load-state`` binary (a real llama.cpp upstream test,
-    not a new correctness engine) against parity control/validation-
-    subject builds, under the SAME GGML_CUDA_REGISTER_HOST=1 env and
-    ``-sm tensor`` topology (the ambient dual-GPU visibility is preserved
-    -- RD58's contract requires 2+ real GPUs, this producer never
-    restricts to one device the way RD04/RD08's single-GPU producers do).
-
-    Three real, independent claims, all from the SAME repeated runs:
-    - correctness: the subject binary's test-save-load-state exit code
-      (0 iff every one of its 5 internal tests, including "Test 4: seq
-      copy (host)", actually passed -- that internal baseline-vs-
-      restored-continuation comparison IS the real correctness proof;
-      this function does not re-implement or second-guess it).
-    - activation: subject-hit/control-miss on the real
-      "pinned state buffer (... bytes) for restore" registration-success
-      marker RD58's own diagnostic emits -- NOT the generic tune-binary/
-      fusion-disabled negative control, which is meaningless here.
-    - controls: a real repeated control/subject execution record proving
-      no crash/regression across ``repetitions`` real restore cycles --
-      no invented latency threshold (this contract carries none)."""
-    from bigcherry.campaign.benchmark import sanitize_environment
-
-    marker_pattern = re.compile(r"pinned state buffer \(\d+ bytes\) for restore")
-
-    # GPT direction (session ses_5bbee8ce5c9a4265): preserve ambient
-    # dual-GPU visibility -- unlike RD04/RD08's single-GPU producers,
-    # this must NOT restrict HIP_VISIBLE_DEVICES (sanitize_environment()
-    # never touches it; it only strips stale GGML_HIP_DISPATCH_*/
-    # FORCE_*/TUNE_* overrides, same as RD04/RD08).
-    env = sanitize_environment(_hip_env(hip_path), mode="stock")
-    for key in list(env):
-        if key.startswith("BIGCHERRY_"):
-            env.pop(key, None)
-    # GPT review (req_8429aa8e0d35496e, 2026-09-11): this call's own
-    # preflight (require_device_visibility() in run(), see VA05/GPT
-    # round 2) validates only HIP_VISIBLE_DEVICES now (see PNRO17) --
-    # an ambient ROCR_VISIBLE_DEVICES left over from an unrelated
-    # earlier command, inconsistent with the ambient HIP selection,
-    # would otherwise reach this launch unchecked and reproduce the
-    # double-filtering bug. HIP_VISIBLE_DEVICES alone already exposes
-    # the real dual-GPU visibility this function needs; ROCR adds no
-    # value, only risk -- strip it unconditionally.
-    env.pop("ROCR_VISIBLE_DEVICES", None)
-    env["GGML_CUDA_REGISTER_HOST"] = "1"
-
-    def _command(binary: Path) -> list[str]:
-        return [str(binary), "-m", str(model), "-sm", "tensor", "-ngl", "99"]
-
-    def _run(binary: Path, role: str, index: int) -> dict[str, object]:
-        command = _command(binary)
-        completed = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
-        combined = completed.stdout + "\n" + completed.stderr
-        return {
-            "role": role, "index": index, "command": command,
-            "returncode": completed.returncode,
-            "marker_hit": marker_pattern.search(combined) is not None,
-            "stdout": completed.stdout, "stderr": completed.stderr,
-        }
-
-    subject_runs = [_run(subject_binary, "subject", i) for i in range(repetitions)]
-    control_runs = [_run(control_binary, "control", i) for i in range(repetitions)]
-
-    correctness_passed = all(r["returncode"] == 0 for r in subject_runs)
-    subject_hit = any(r["marker_hit"] for r in subject_runs)
-    control_hit = any(r["marker_hit"] for r in control_runs)
-    # GPT round 3: the controls artifact claims "no crash/regression
-    # across repeated control/subject execution" -- it must fail if
-    # EITHER arm fails, not just the control arm (a subject that only
-    # crashed on repeated runs would otherwise be reported as a controls
-    # pass).
-    controls_passed = (
-        all(r["returncode"] == 0 for r in control_runs)
-        and all(r["returncode"] == 0 for r in subject_runs)
-    )
-    hardware_doc = dict(observed_devices) if observed_devices else {}
-
-    def _strip_output(runs: list[dict[str, object]]) -> list[dict[str, object]]:
-        # Persist returncode/marker_hit/command in full; truncate raw
-        # stdout/stderr to a bounded tail per run so the artifact stays
-        # a reasonable size across `repetitions` real process launches.
-        return [
-            {**r, "stdout": r["stdout"][-2000:], "stderr": r["stderr"][-2000:]}
-            for r in runs
-        ]
-
-    correctness_doc = {
-        "ops": ["STATE_RESTORE_SEQ_CP_HOST"], "passed": correctness_passed,
-        "campaign_id": campaign_id,
-        "validation_build_identities": {
-            "control": control_build_identity, "subject": subject_build_identity,
-        },
-        "hardware": hardware_doc,
-        "subject_runs": _strip_output(subject_runs),
-    }
-    correctness_path = run_dir / "rd58-correctness.json"
-    _atomic_write_json(correctness_path, correctness_doc)
-    correctness_artifact = {
-        "path": "rd58-correctness.json",
-        "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
-    }
-
-    trigger_doc = {
-        "marker_regex": marker_pattern.pattern, "subject_hit": subject_hit, "control_hit": control_hit,
-        "subject_runs": _strip_output(subject_runs), "control_runs": _strip_output(control_runs),
-    }
-    subject_log_path = run_dir / "rd58-trigger-subject.log"
-    control_log_path = run_dir / "rd58-trigger-control.log"
-    subject_log_path.write_text(
-        "\n---\n".join(f"{r['role']}-{r['index']}:\n{r['stdout']}\n{r['stderr']}" for r in subject_runs),
-        encoding="utf-8",
-    )
-    control_log_path.write_text(
-        "\n---\n".join(f"{r['role']}-{r['index']}:\n{r['stdout']}\n{r['stderr']}" for r in control_runs),
-        encoding="utf-8",
-    )
-    trigger_path = run_dir / "rd58-trigger.json"
-    _atomic_write_json(trigger_path, trigger_doc)
-    trigger_artifact = {
-        "path": "rd58-trigger.json",
-        "sha256": hashlib.sha256(trigger_path.read_bytes()).hexdigest(),
-    }
-
-    controls_doc = {
-        "campaign_id": campaign_id, "passed": controls_passed, "repetitions": repetitions,
-        "metrics": {
-            "control_pass_count": sum(1 for r in control_runs if r["returncode"] == 0),
-            "subject_pass_count": sum(1 for r in subject_runs if r["returncode"] == 0),
-        },
-        "validation_build_identities": {
-            "control": control_build_identity, "subject": subject_build_identity,
-        },
-        "hardware": hardware_doc,
-    }
-    controls_path = run_dir / "performance.json"
-    _atomic_write_json(controls_path, controls_doc)
-    controls_artifact = {
-        "path": "performance.json",
-        "sha256": hashlib.sha256(controls_path.read_bytes()).hexdigest(),
-    }
-
-    return {
-        "correctness_passed": correctness_passed, "correctness_artifact": correctness_artifact,
-        "subject_hit": subject_hit, "control_hit": control_hit, "trigger_artifact": trigger_artifact,
-        "subject_log_path": "rd58-trigger-subject.log", "control_log_path": "rd58-trigger-control.log",
-        "controls_passed": controls_passed, "controls_artifact": controls_artifact,
-    }
-
-
-_LANE_EFFECT_FIELDS = (
-    "geometric_effect_pct", "ci95_low_pct", "ci95_high_pct", "paired_rounds",
-)
 
 
 def collect_lane_effect_records(
@@ -5468,8 +5305,7 @@ def run_rd73_contract_qualification(
     # That is a false negative in the direction that HIDES real results.
     #
     # This is a faithful projection of already-measured values into the
-    # schema the generic validator reads -- the same thing RD58 does via
-    # run_rd58_state_restore_evidence()'s controls_doc. Nothing here is
+    # schema the generic validator reads -- the same thing RD58's producer does via its controls_doc. Nothing here is
     # computed for the first time, and nothing is invented: every number
     # below is copied from the lane effects the contract gate itself just
     # consumed. The lane artifacts remain the authoritative record and stay
@@ -5532,7 +5368,7 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
         "run_rd08_lanes", "run_rd08_contract",
-        "run_rd58_state_restore", "run_rd73_contract",
+        "run_rd73_contract",
         "correctness_evidence",
     )):
         raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
@@ -5997,7 +5833,7 @@ class QualificationEvidenceExecution:
                 "locators": (
                     list(self.expected_execution.locators)
                     if self.expected_execution.locators is not None
-                    else None
+                    else {}
                 ),
             },
             "observed_execution": self.observed_execution.document(),
@@ -7117,7 +6953,7 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd58_state_restore or args.run_rd73_contract) else run_trace_activation_probes(
+    trace_result = None if (args.run_rd08_contract or args.run_rd73_contract) else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -7185,7 +7021,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd58_state_restore or args.run_rd73_contract):
+    if not (args.run_rd08_contract or args.run_rd73_contract):
         try:
             campaign.run()
         except CampaignError as exc:
@@ -7454,293 +7290,11 @@ def run(args: argparse.Namespace) -> int:
         )
         _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
 
-    # VA05: --run-rd58-state-restore, RD58-only, mutually exclusive with
-    # the RD04/RD08 execution modes. Builds its own parity control/
-    # validation-subject test-save-load-state binaries (not
-    # llama-server/llama-bench -- a different real llama.cpp test
-    # target) and binds correctness_evidence/trace_evidence/
-    # performance_evidence from real, repeated, dual-GPU execution.
-    # contract_promotions stays empty -- eligible_for_validated_state
-    # remains False even on a full PASS.
-    if args.run_rd58_state_restore:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-        ):
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd58-state-restore is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
-        if descriptor.experiment_contract != "RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE":
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd58-state-restore is RD58-only today"
-            )
-        # GPT round 2 (req_3616cc1d90dc4512): the contract's own
-        # scope.gpu_count.minimum=2 was not execution-enforced anywhere --
-        # preserving ambient device visibility is necessary but not
-        # sufficient; a real one-GPU invocation could still execute (and
-        # potentially qualify) against a contract that requires 2+.
-        # Fail closed before any build: require HIP_VISIBLE_DEVICES and
-        # ROCR_VISIBLE_DEVICES both explicitly set, consistent with each
-        # other, and exposing at least the contract's declared minimum.
-        #
-        # PVPS02 step 7 (2026-09-11): this inline guard previously
-        # reimplemented require_device_visibility()'s exact contract by
-        # hand; replaced with a direct call so RD58 shares the same
-        # fail-closed selector primitive every other paired-benchmark
-        # path uses, at the same orchestration/preflight boundary this
-        # guard already occupied (before any build) -- the low-level
-        # run_rd58_state_restore_evidence() producer itself is
-        # unchanged, still fed via observed_devices=.
-        from bigcherry.experiment import contract as _ec
-        from bigcherry.experiment.execution import (
-            DeviceVisibilityError as _DeviceVisibilityError,
-            require_device_visibility as _require_device_visibility,
-        )
-
-        rd58_contract_check = _ec.load_contracts(
-            REPO_ROOT / "config" / "experiment-contracts.toml"
-        ).contracts["RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE"]
-        required_gpu_count = (
-            rd58_contract_check.scope.gpu_count.minimum
-            if rd58_contract_check.scope.gpu_count is not None else None
-        )
-        try:
-            rd58_visibility = _require_device_visibility(
-                context=f"{args.patch}: --run-rd58-state-restore",
-                minimum_count=required_gpu_count if required_gpu_count is not None else 1,
-            )
-        except _DeviceVisibilityError as exc:
-            raise PatchCampaignError(str(exc)) from exc
-        rd58_observed_devices = rd58_visibility.document()
-
-        rd58_build_root = build_root / "rd58-state-restore"
-        rd58_control_bin = build_tree(
-            name="rd58-control", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-            workdir=rd58_build_root, targets=["test-save-load-state"], source=control_src,
-            extra_cmake_args=[],
-        )
-        rd58_subject_bin = build_tree(
-            name="rd58-subject", hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-            workdir=rd58_build_root, targets=["test-save-load-state"], source=patched_src,
-            extra_cmake_args=[],
-        )
-        # GPT round 2: RD58's real evidence-producing binary is
-        # test-save-load-state, not llama-server/llama-bench -- capture
-        # ITS build identities (not the unrelated generic control_build_evidence/
-        # validation_subject_build_evidence) and use them everywhere RD58
-        # evidence/the final record references a validation build.
-        rd58_cmake_args = _full_requested_cmake_args(
-            hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=[],
-        )
-        rd58_control_build_evidence = capture_completed_build_evidence(
-            rd58_build_root / "rd58-control", source_root=control_src,
-            architecture=args.amdgpu_targets, binary=rd58_control_bin / f"test-save-load-state{exe}",
-            requested_cmake_args=rd58_cmake_args, build_env=build_env,
-        )
-        rd58_subject_build_evidence = capture_completed_build_evidence(
-            rd58_build_root / "rd58-subject", source_root=patched_src,
-            architecture=args.amdgpu_targets, binary=rd58_subject_bin / f"test-save-load-state{exe}",
-            requested_cmake_args=rd58_cmake_args, build_env=build_env,
-        )
-        assert_validation_subject_parity(
-            rd58_control_build_evidence, rd58_subject_build_evidence, patch_id=args.patch,
-        )
-        # GPT round 3: RD58's evidence-producing binary is
-        # test-save-load-state, not the generic llama-bench control/
-        # subject builds -- ValidationContext must see THESE build
-        # identities/evidence when RD58 ran, mirroring the shape the
-        # generic path already builds for build_evidence above.
-        rd58_build_evidence = {
-            "control": {
-                "build_id": rd58_control_build_evidence.effective_build_id,
-                "source_tree": control_source_tree,
-                "architecture": args.amdgpu_targets,
-                "options": rd58_control_build_evidence.effective_configure,
-                "compile_commands": _write_bound_artifact(
-                    campaign_run_dir, "build/rd58-control-compile-commands.json",
-                    rd58_control_build_evidence.verification.to_dict(),
-                ),
-                "runtime_bundle": _write_bound_artifact(
-                    campaign_run_dir, "build/rd58-control-runtime-bundle.json",
-                    rd58_control_build_evidence.runtime_artifacts,
-                ),
-            },
-            "subject": {
-                "build_id": rd58_subject_build_evidence.effective_build_id,
-                "source_tree": patched_source_tree,
-                "architecture": args.amdgpu_targets,
-                "options": rd58_subject_build_evidence.effective_configure,
-                "compile_commands": _write_bound_artifact(
-                    campaign_run_dir, "build/rd58-subject-compile-commands.json",
-                    rd58_subject_build_evidence.verification.to_dict(),
-                ),
-                "runtime_bundle": _write_bound_artifact(
-                    campaign_run_dir, "build/rd58-subject-runtime-bundle.json",
-                    rd58_subject_build_evidence.runtime_artifacts,
-                ),
-            },
-        }
-        rd58_result = run_rd58_state_restore_evidence(
-            control_binary=rd58_control_bin / f"test-save-load-state{exe}",
-            subject_binary=rd58_subject_bin / f"test-save-load-state{exe}", model=args.model,
-            hip_path=args.hip_path, run_dir=campaign_run_dir,
-            campaign_id=campaign.campaign_identity_digest,
-            control_build_identity=rd58_control_build_evidence.campaign_identity(),
-            subject_build_identity=rd58_subject_build_evidence.campaign_identity(),
-            observed_devices=rd58_observed_devices,
-        )
-        correctness_evidence = {"artifact": rd58_result["correctness_artifact"]}
-        performance_evidence = {"artifact": rd58_result["controls_artifact"]}
-
-        # GPT round 2: RD58's contract requires the NAMED
-        # state_restore_integrity check, not the adapter's generic
-        # backend-ops capability -- compute_contract_correctness_gate()
-        # only receives named results for RD08 today, so RD58's real
-        # test-save-load-state evidence was never actually connected to
-        # its own contract's correctness gate. contract_promotions stays
-        # empty regardless -- this is diagnostic, not a promotion.
-        rd58_contract_correctness_result = _ec.CorrectnessResult(
-            check="state_restore_integrity", passed=rd58_result["correctness_passed"],
-            detail=(
-                "subject test-save-load-state (all 5 internal tests, including "
-                "Test 4: seq copy (host)) "
-                + ("passed" if rd58_result["correctness_passed"] else "failed")
-            ),
-        )
-        rd58_contract_correctness_named_results = {
-            "state_restore_integrity": rd58_contract_correctness_result,
-        }
-
-        from bigcherry.experiment import execution as experiment_execution
-
-        # PRBE109 fix (2026-09-13): RD58's real correctness gate was already
-        # computed above, but its promotion verdict was never added to
-        # contract_promotions, so eligible_for_validated_state could never
-        # become True through this CLI path regardless of evidence
-        # completeness. Reuse the generic control_bin/validation_subject_bin
-        # llama-bench binaries (already built earlier in run(), same pattern
-        # RD08's qualification reuses) for the contract's own bound `decode`
-        # control-lane performance measurement -- RD58's contract declares
-        # no target_kernel_gain_pct (it is a pure correctness/reliability
-        # contract), only max_control_regression_pct, so a control-role-only
-        # LaneEffect is sufficient for evaluate_promotion_gate() to evaluate
-        # it (the gain check is skipped when the contract names none).
-        rd58_decode_outcome = run_paired_llama_benchmark(
-            control_binary=control_bin / f"llama-bench{exe}",
-            subject_binary=validation_subject_bin / f"llama-bench{exe}",
-            model=args.model, hip_path=args.hip_path, pairs=3, log_context="rd58-decode",
-            workloads=("decode",), runtime_args=("-sm", "tensor"),
-            env_overrides={"GGML_CUDA_REGISTER_HOST": "1"},
-        )
-        rd58_decode_lane = experiment_execution.lane_effect_from_run(
-            "control", "tg128", rd58_decode_outcome.runs["decode"],
-        )
-        rd58_aggregated_effects = _ec.aggregate_contract_effects(
-            rd58_contract_check, [rd58_decode_lane], target_metric="tg128",
-        )
-        rd58_trigger_evidence = [
-            _ec.TriggerEvidence(
-                role="positive", lane_id="rd58-subject",
-                candidate_launches=1 if rd58_result["subject_hit"] else 0,
-            ),
-        ]
-        rd58_trigger_proof = _ec.evaluate_trigger_proof(rd58_trigger_evidence)
-        rd58_promotion = _ec.evaluate_promotion_gate(
-            rd58_contract_check, correctness_gate=compute_contract_correctness_gate(
-                rd58_contract_check, rd58_contract_correctness_named_results,
-            ),
-            aggregated_effects=rd58_aggregated_effects, trigger_proof=rd58_trigger_proof,
-        )
-        contract_promotions[rd58_contract_check.id] = rd58_promotion
-        _print(
-            f"rd58 promotion: "
-            f"{'PASS' if rd58_promotion.get('passed') else rd58_promotion.get('status', 'FAIL')}"
-        )
-
-        def _bind_rd58_log(relative_log_path: str) -> dict[str, str]:
-            target = (campaign_run_dir / relative_log_path).resolve()
-            return {
-                "path": relative_log_path,
-                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            }
-
-        trace_evidence = {
-            "positive": {
-                "marker_regex": trace_marker_regex,
-                "artifact": _bind_rd58_log(rd58_result["subject_log_path"]),
-            },
-            "negative": {
-                "marker_regex": trace_marker_regex,
-                "artifact": _bind_rd58_log(rd58_result["control_log_path"]),
-            },
-        }
-        activation_evidence = ActivationEvidence(
-            status=(
-                "executed" if rd58_result["subject_hit"] and not rd58_result["control_hit"]
-                else "not_executed"
-            ),
-            mechanism="rd58-trigger-marker", detail=f"marker={trace_marker_regex!r}",
-        )
-        activation_verdict = verdict(activation_evidence, correctness_passed=None)
-        write_activation_json(
-            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
-            extra={
-                "campaign_identity_digest": campaign.campaign_identity_digest,
-                "rd58_trigger": {
-                    "subject_hit": rd58_result["subject_hit"],
-                    "control_hit": rd58_result["control_hit"],
-                    "artifact": rd58_result["trigger_artifact"],
-                },
-            },
-        )
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": "passed" if rd58_result["correctness_passed"] else "failed",
-            "mechanism": "rd58-test-save-load-state-real-execution",
-            "detail": (
-                "subject test-save-load-state (all 5 internal tests, including "
-                "Test 4: seq copy (host)) "
-                + ("passed" if rd58_result["correctness_passed"] else "failed")
-            ),
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-        _print(
-            f"rd58 state-restore evidence: correctness="
-            f"{'pass' if rd58_result['correctness_passed'] else 'fail'} "
-            f"activation={'executed' if activation_evidence.status == 'executed' else 'not_executed'} "
-            f"controls={'pass' if rd58_result['controls_passed'] else 'fail'}"
-        )
-
-    # VA06: RD73 execution, opt-in and scoped to RD73 only. Mirrors RD08's
-    # --run-rd08-contract dispatch (mutual exclusion, descriptor check,
-    # single orchestrator call, contract_promotions population, pass/fail
-    # print).
-    #
-    # RV95: this block now ALSO rebinds the generic adapter evidence, the
-    # way the RD08 block above does. It previously bound none of it, and
-    # then bound only part of it (performance/correctness/trace, VA23) --
-    # leaving the record's own top-level activation/correctness fields at
-    # disposition="unknown". That produced a FAIL-OPEN disagreement: the
-    # campaign printed "STATE='validated' eligible: yes" for records that
-    # verify_validated_patch() rejected. Both halves are bound here now, so
-    # a passing RD73 record satisfies the evidence verifier as well as the
-    # eligibility flag. The real, auditable per-contract PASS/FAIL/INVALID
-    # verdict is produced and printed here as before.
-    rd73_qualification: dict[str, object] | None = None
     if args.run_rd73_contract:
         if (
             args.run_rd08_lanes
             or args.run_rd08_contract
-            or args.run_rd58_state_restore
+            
         ):
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
@@ -7873,7 +7427,7 @@ def run(args: argparse.Namespace) -> int:
         # custom check would fail closed for every packaged RD patch).
         package_root = (
             (registry.root / descriptor.package_root)
-            if descriptor.package_root is not None else None
+            if descriptor.package_root is not None else {}
         )
         # VA15 real-hardware finding: validation_plan.contract is a
         # patch_validation.ContractBinding -- a lightweight PROJECTION
@@ -7898,16 +7452,11 @@ def run(args: argparse.Namespace) -> int:
             # against ITS test-save-load-state builds, not the generic
             # llama-bench builds the final record no longer identifies it
             # with.
-            build_identities=(
-                {
-                    "control": rd58_control_build_evidence.effective_build_id,
-                    "subject": rd58_subject_build_evidence.effective_build_id,
-                } if args.run_rd58_state_restore else {
-                    "control": control_build_evidence.effective_build_id,
-                    "subject": validation_subject_build_evidence.effective_build_id,
-                }
-            ),
-            build_evidence=(rd58_build_evidence if args.run_rd58_state_restore else build_evidence),
+            build_identities={
+                "control": control_build_evidence.effective_build_id,
+                "subject": validation_subject_build_evidence.effective_build_id,
+            },
+            build_evidence=build_evidence,
             apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets, model=str(args.model),
             contracts=(full_contract,) if full_contract is not None else (),
@@ -7935,14 +7484,14 @@ def run(args: argparse.Namespace) -> int:
             full_contract,
             (
                 rd08_qualification["correctness"]["results"] if rd08_qualification is not None
-                else rd58_contract_correctness_named_results if args.run_rd58_state_restore
-                # VA23: RD73's bit_identical result is real and already
-                # evaluated inside run_rd73_contract_qualification(); thread
-                # it here exactly as RD08's and RD58's are, so the gate
-                # reflects the evidence instead of reporting missing_checks.
-                else rd73_qualification["correctness_named_results"]
-                if rd73_qualification is not None
-                else None
+                else (
+                    # VA23: RD73's bit_identical result is real and already
+                    # evaluated inside run_rd73_contract_qualification(); thread
+                    # it here exactly as RD08's, so the gate
+                    # reflects the evidence instead of reporting missing_checks.
+                    rd73_qualification["correctness_named_results"]
+                    if rd73_qualification is not None else {}
+                )
             ),
         )
         validation_check_results = {
@@ -7986,17 +7535,10 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (blocker #1): RD58's real validation build is
         # test-save-load-state, not the generic llama-bench control/
         # validation-subject builds -- record ITS identities when RD58 ran.
-        validation_build_identities=(
-            {
-                "control": rd58_control_build_evidence.campaign_identity(),
-                "subject": rd58_subject_build_evidence.campaign_identity(),
-            }
-            if args.run_rd58_state_restore
-            else {
+        validation_build_identities={
                 "control": control_build_evidence.campaign_identity(),
                 "subject": validation_subject_build_evidence.campaign_identity(),
-            }
-        ),
+            },
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
         # VA14 final slice: eligible_for_validated_state for a bound-contract
@@ -8107,16 +7649,6 @@ def main(argv: list[str] | None = None) -> int:
              "evaluate_promotion_gate(). The only path that can make an RD08-bound patch "
              "eligible_for_validated_state. RD08-only; an error for any other patch. "
              "Mutually exclusive with --run-rd08-lanes and --correctness-evidence.",
-    )
-    parser.add_argument(
-        "--run-rd58-state-restore", action="store_true", default=False,
-        help="VA05: build parity control/validation-subject test-save-load-state binaries "
-             "and run RD58's real state-restore correctness/activation/controls evidence "
-             "(GGML_CUDA_REGISTER_HOST=1, -sm tensor -- requires 2+ real GPUs, ambient "
-             "device visibility is preserved, never restricted to one device). "
-             "Diagnostic-only for eligibility -- does not attempt contract promotion, so "
-             "eligible_for_validated_state stays False. RD58-only; an error for any other "
-             "patch. Mutually exclusive with the RD08 execution modes.",
     )
     parser.add_argument(
         "--run-rd73-contract", action="store_true", default=False,
@@ -8246,7 +7778,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
             "run_rd08_lanes", "run_rd08_contract",
-            "run_rd58_state_restore", "run_rd73_contract",
+            "run_rd73_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
     return run(args)
