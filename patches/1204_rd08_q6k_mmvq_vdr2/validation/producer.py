@@ -41,7 +41,7 @@ from bigcherry.experiment.execution import RunnerOutput as ExperimentRunnerOutpu
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     """Run RD08's validation producer.
-    
+
     Returns a ProducerResult with:
     - promotion_lane_effects: the decode (positive) and prefill (control)
       lane effects for the dispatcher to aggregate
@@ -51,22 +51,18 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     - emitted_artifacts: the 5 required artifacts
     """
     if ctx.model is None:
-        raise vp.ValidationProducerError(
-            "RD08: ctx.model is required"
-        )
-    
-    # 1. Run the decode (positive) lane
-    decode_effect = _run_decode_lane(ctx)
-    
-    # 2. Run the prefill (control) lane
-    prefill_effect = _run_prefill_control_lane(ctx)
-    
+        raise vp.ValidationProducerError("RD08: ctx.model is required")
+
+    # 1. Run the decode (positive) and prefill (control) lanes using the
+    # canonical run_paired_llama_benchmark() infrastructure
+    decode_effect, prefill_effect = _run_lanes(ctx)
+
     # 3. Run the correctness check (backend_reference)
     correctness = _run_correctness(ctx)
-    
+
     # 4. Run the activation check (trace-marker)
     activation = _run_activation(ctx)
-    
+
     # 5. Write the artifacts
     decode_ref = ctx.runtime.write_artifact(
         name="rd08-decode-lane.json",
@@ -119,34 +115,28 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             }
         },
     )
-    
+
     # GPT round 3 BLOCKER: use the correct types and shapes
     from bigcherry.experiment.contract import TriggerEvidence, CorrectnessResult
-    
+
     # GPT round 4 BLOCKER: trigger evidence must fail closed. Sub-slice 2
     # must derive real subject-hit/control-miss from trace logs. For the
     # skeleton, raise an error rather than fabricating PASS evidence.
     raise vp.ValidationProducerError(
         "RD08 producer trigger evidence not wired (sub-slice 2)"
     )
-    
+
     correctness_result = CorrectnessResult(
         check="backend_reference",
         passed=False,  # Sub-slice 2 will fill in real value
         detail="RD08 producer correctness measurement not wired (sub-slice 2)",
     )
-    
+
     return vp.ProducerResult(
         validation_build_identities=ctx.validation_build_identities,
-        promotion_lane_effects={
-            "RD08-Q6K-MMVQ-VDR2": (decode_effect, prefill_effect)
-        },
-        promotion_target_metric={
-            "RD08-Q6K-MMVQ-VDR2": "tg128"
-        },
-        promotion_trigger_evidence={
-            "RD08-Q6K-MMVQ-VDR2": (trigger_evidence,)
-        },
+        promotion_lane_effects={"RD08-Q6K-MMVQ-VDR2": (decode_effect, prefill_effect)},
+        promotion_target_metric={"RD08-Q6K-MMVQ-VDR2": "tg128"},
+        promotion_trigger_evidence={"RD08-Q6K-MMVQ-VDR2": (trigger_evidence,)},
         contract_correctness_results=(correctness_result,),
         performance_evidence=None,
         trace_evidence=None,
@@ -154,102 +144,63 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         lane_effects=(),
         correctness=correctness,
         activation_evidence=activation,
-        emitted_artifacts=frozenset([
-            "rd08-decode-lane.json",
-            "rd08-prefill-control.json",
-            "rd08-correctness.json",
-            "rd08-activation.json",
-            "rd08-performance.json",
-            "rd08-subject-trace.log",
-            "rd08-control-trace.log",
-        ]),
+        emitted_artifacts=frozenset(
+            [
+                "rd08-decode-lane.json",
+                "rd08-prefill-control.json",
+                "rd08-correctness.json",
+                "rd08-activation.json",
+                "rd08-performance.json",
+                "rd08-subject-trace.log",
+                "rd08-control-trace.log",
+            ]
+        ),
     )
 
 
-def _run_decode_lane(ctx: vp.ProducerContext) -> experiment_execution.LaneEffect:
-    """Run RD08's decode (positive) lane using llama-bench.
-    
-    GPT round 1 BLOCKER: use the correct API names.
+def _run_lanes(
+    ctx: vp.ProducerContext,
+) -> tuple[experiment_execution.LaneEffect, experiment_execution.LaneEffect]:
+    """Run RD08's decode (positive) and prefill (control) lanes using
+    the canonical run_paired_llama_benchmark() infrastructure.
+
+    GPT round 5 MAJOR: replace direct/incorrect llama-bench subprocess
+    commands with ctx.runtime.run_paired_llama_benchmark(... workloads=
+    ("decode","prefill"), pairs=10) which already owns -p 0 -n 128,
+    -p 512 -n 0, -ngl 99, parsing, env sanitation, and paired stats.
     """
     # GPT round 1 BLOCKER: use ctx.validation_binaries[role]["llama-bench"]
     control_binary = ctx.validation_binaries["control"]["llama-bench"]
     subject_binary = ctx.validation_binaries["subject"]["llama-bench"]
-    
-    # The decode lane uses llama-bench with tg128
-    # (tokens generated per second at 128 context)
-    metric_pattern = re.compile(r"tg128\s+([0-9.]+)")
-    
-    def _runner(command: list[str]) -> ExperimentRunnerOutput:
-        # Run the llama-bench command
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        return ExperimentRunnerOutput(
-            returncode=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
-    
-    paired_run = experiment_execution.run_paired_lane(
-        metric="tg128",
-        control_command=[str(control_binary), "--model", str(ctx.model), "--pp", "128"],
-        subject_command=[str(subject_binary), "--model", str(ctx.model), "--pp", "128"],
-        pattern=metric_pattern,
-        pairs=10,  # GPT round 1 BLOCKER: use 10 (not ctx.paired_rounds)
-        runner=_runner,
-    )
-    
-    return experiment_execution.lane_effect_from_run(
-        "positive", "tg128", paired_run
+
+    # Use the canonical paired benchmark infrastructure
+    outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=control_binary,
+        subject_binary=subject_binary,
+        model=ctx.model,
+        hip_path=ctx.hip_path,
+        workloads=("decode", "prefill"),
+        pairs=10,
+        log_context="rd08",
     )
 
+    # Extract the decode (positive) and prefill (control) lane effects
+    decode_run = outcome.runs["decode"]
+    prefill_run = outcome.runs["prefill"]
 
-def _run_prefill_control_lane(ctx: vp.ProducerContext) -> experiment_execution.LaneEffect:
-    """Run RD08's prefill (control) lane using llama-bench.
-    
-    GPT round 1 BLOCKER: use the correct API names.
-    """
-    # GPT round 1 BLOCKER: use ctx.validation_binaries[role]["llama-bench"]
-    control_binary = ctx.validation_binaries["control"]["llama-bench"]
-    subject_binary = ctx.validation_binaries["subject"]["llama-bench"]
-    
-    # The prefill lane uses llama-bench with pp512
-    # (prompt processing tokens per second at 512 context)
-    metric_pattern = re.compile(r"pp512\s+([0-9.]+)")
-    
-    def _runner(command: list[str]) -> ExperimentRunnerOutput:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        return ExperimentRunnerOutput(
-            returncode=result.returncode,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
-    
-    paired_run = experiment_execution.run_paired_lane(
-        metric="pp512",
-        control_command=[str(control_binary), "--model", str(ctx.model), "--pp", "512"],
-        subject_command=[str(subject_binary), "--model", str(ctx.model), "--pp", "512"],
-        pattern=metric_pattern,
-        pairs=10,  # GPT round 1 BLOCKER: use 10 (not ctx.paired_rounds)
-        runner=_runner,
+    decode_effect = experiment_execution.lane_effect_from_run(
+        "positive", "tg128", decode_run
     )
-    
-    return experiment_execution.lane_effect_from_run(
-        "control", "pp512", paired_run
+    prefill_effect = experiment_execution.lane_effect_from_run(
+        "control", "pp512", prefill_run
     )
+
+    return decode_effect, prefill_effect
 
 
 def _run_correctness(ctx: vp.ProducerContext) -> dict[str, object]:
     """Run RD08's backend_reference correctness check.
-    
+
     GPT round 1 BLOCKER: placeholders must fail closed. Until sub-slice 2
     wires up the actual correctness infrastructure, this function must
     raise ValidationProducerError rather than emit fake PASS evidence.
@@ -261,7 +212,7 @@ def _run_correctness(ctx: vp.ProducerContext) -> dict[str, object]:
 
 def _run_activation(ctx: vp.ProducerContext) -> "vp.ActivationEvidence":
     """Run RD08's activation trace-marker check.
-    
+
     GPT round 1 BLOCKER: placeholders must fail closed. Until sub-slice 2
     wires up the actual activation infrastructure, this function must
     raise ValidationProducerError rather than emit fake PASS evidence.
