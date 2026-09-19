@@ -456,11 +456,46 @@ def build_parser() -> argparse.ArgumentParser:
     patch_disposition_cmd.set_defaults(func=cmd_patch_disposition)
 
     patch_validate_cmd = sub.add_parser(
-        "patch-validate", help="verify existing patch evidence"
+        "patch-validate",
+        help="PA33: execute declared validation through PA34+PA36 authorities",
     )
     patch_validate_cmd.add_argument("patch_id", nargs="?", default=None)
     patch_validate_cmd.add_argument("--json", action="store_true")
     patch_validate_cmd.add_argument("--no-legacy-grandfather", action="store_true")
+    # PA33: selector arguments (PA34 canonical selector resolver)
+    patch_validate_cmd.add_argument("--source", default=None,
+        help="PA34: canonical source selector")
+    patch_validate_cmd.add_argument("--experiment", default=None,
+        help="PA34: experiment qualifier (requires --source)")
+    patch_validate_cmd.add_argument("--focal-overlay", action="store_true",
+        help="PA34: focal overlay qualifier (requires --source)")
+    # PA33: producer arguments (PA36 patch-local producer)
+    patch_validate_cmd.add_argument("--validation-producer", default=None,
+        metavar="PATCH/PRODUCER_ID",
+        help="PA36: select one patch-local validation producer")
+    patch_validate_cmd.add_argument("--producer-input", action="append",
+        default=[], metavar="NAME=VALUE",
+        help="PA36: repeatable producer input (NAME=VALUE)")
+    patch_validate_cmd.add_argument("--producer-corpus", default=None,
+        metavar="PATH",
+        help="PA36: text corpus for ProducerContext.corpus")
+    # PA33: platform/device arguments
+    patch_validate_cmd.add_argument("--amdgpu-targets", default=None,
+        help="PA36: AMD GPU targets (e.g., gfx1100;gfx1201;gfx1030)")
+    patch_validate_cmd.add_argument("--device-map", default=None,
+        help="PA36: device map (e.g., gfx1100=0,1)")
+    patch_validate_cmd.add_argument("--hip-path", default=None,
+        help="PA36: HIP path")
+    # PA33: model/corpus arguments
+    patch_validate_cmd.add_argument("--model", default=None,
+        help="PA36: model path")
+    # PA33: workdir/worktree arguments
+    patch_validate_cmd.add_argument("--workdir", default=None,
+        help="PA36: workdir path")
+    patch_validate_cmd.add_argument("--worktree-root", default=None,
+        help="PA36: worktree root path")
+    patch_validate_cmd.add_argument("--baseline-source", default=None,
+        help="PA36: baseline source (e.g., bigcherry-tuning)")
     patch_validate_cmd.set_defaults(func=cmd_patch_validate)
 
     sources.register(sub)
