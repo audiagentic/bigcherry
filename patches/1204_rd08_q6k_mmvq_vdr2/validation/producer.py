@@ -120,8 +120,23 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
     )
     
-    # GPT round 2 BLOCKER: use the correct ProducerResult shape with all
-    # required fields
+    # GPT round 3 BLOCKER: use the correct types and shapes
+    from bigcherry.experiment.contract import TriggerEvidence, CorrectnessResult
+    
+    # Sub-slice 2 must derive real subject-hit/control-miss
+    trigger_evidence = TriggerEvidence(
+        role="positive",
+        lane_id="rd08-decode",
+        candidate_launches=1,  # subject hit
+        expected_route_selected=1,  # expected route
+    )
+    
+    correctness_result = CorrectnessResult(
+        check="backend_reference",
+        passed=False,  # Sub-slice 2 will fill in real value
+        detail="RD08 producer correctness measurement not wired (sub-slice 2)",
+    )
+    
     return vp.ProducerResult(
         validation_build_identities=ctx.validation_build_identities,
         promotion_lane_effects={
@@ -131,20 +146,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "RD08-Q6K-MMVQ-VDR2": "tg128"
         },
         promotion_trigger_evidence={
-            "RD08-Q6K-MMVQ-VDR2": vp.TriggerEvidence(
-                role="positive",
-                lane_id="rd08-decode",
-                candidate_launches=None,
-                expected_route_selected=None,
-            )
+            "RD08-Q6K-MMVQ-VDR2": (trigger_evidence,)
         },
-        contract_correctness_results={
-            "RD08-Q6K-MMVQ-VDR2": correctness
-        },
-        performance_evidence=(),
-        trace_evidence=(),
-        check_results={},
-        lane_effects=[decode_effect, prefill_effect],
+        contract_correctness_results=(correctness_result,),
+        performance_evidence=None,
+        trace_evidence=None,
+        check_results=(),
+        lane_effects=(),
         correctness=correctness,
         activation_evidence=activation,
         emitted_artifacts=frozenset([
