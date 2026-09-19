@@ -26,6 +26,7 @@ import json
 import subprocess
 import sys
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -58,10 +59,15 @@ class PinBumpStop(Exception):
     never need to re-derive context from a bare message string."""
 
     def __init__(
-        self, phase: str, code: str, summary: str, *,
-        human_required: bool = True, retryable: bool = True,
+        self,
+        phase: str,
+        code: str,
+        summary: str,
+        *,
+        human_required: bool = True,
+        retryable: bool = True,
         evidence: dict[str, Any] | None = None,
-        recommended_actions: tuple[str, ...] = (),
+        recommended_actions: Sequence[str] = (),
     ):
         super().__init__(summary)
         self.phase = phase
@@ -70,7 +76,9 @@ class PinBumpStop(Exception):
         self.human_required = human_required
         self.retryable = retryable
         self.evidence = evidence or {}
-        self.recommended_actions = recommended_actions
+        # Canonical immutable shape: callers pass lists; the envelope and
+        # any persistence see one tuple form (never a mutable list).
+        self.recommended_actions = tuple(recommended_actions)
         # Set by run() before re-raising, once a run_id has been assigned --
         # never set here, since most call sites raise before a run exists.
         self.run_id: str | None = None
@@ -112,10 +120,13 @@ class PinBumpState:
 
     def as_dict(self) -> dict:
         d = {
-            "schema_version": self.schema_version, "run_id": self.run_id,
+            "schema_version": self.schema_version,
+            "run_id": self.run_id,
             "target": {
-                "from_ref": self.from_ref, "from_sha": self.from_sha,
-                "to_ref": self.to_ref, "to_sha": self.to_sha,
+                "from_ref": self.from_ref,
+                "from_sha": self.from_sha,
+                "to_ref": self.to_ref,
+                "to_sha": self.to_sha,
             },
             "transition_commit": self.transition_commit,
             "tree": {"name": self.tree_name, "path": self.tree_path},
@@ -124,8 +135,14 @@ class PinBumpState:
                 "next_phase": self.next_phase,
             },
         }
-        if self.schema_version >= 2:
-            d["selector"] = {
+        # PA34 (dev-gpt-agent req_41a3133e657340c7 Q3): the persisted
+        # membership freeze is its OWN resume record, not a serialization of
+        # the canonical SelectorIdentity -- the identity schema is owned
+        # exclusively by campaign.resolution. Renamed "selector" ->
+        # "selection_freeze" at schema 3 so no downstream consumer owns an
+        # object named "selector" with a competing shape. Never both keys.
+        if self.schema_version >= 3:
+            d["selection_freeze"] = {
                 "kind": self.selector_kind,
                 "name": self.selector_name,
                 "patch_ids": list(self.selector_patch_ids),
@@ -136,29 +153,95 @@ class PinBumpState:
     def save(self, state_dir: Path) -> Path:
         state_dir.mkdir(parents=True, exist_ok=True)
         path = state_dir / "state.json"
-        path.write_text(json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(self.as_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         return path
 
     @classmethod
-    def load(cls, state_dir: Path) -> "PinBumpState":
+    def load(cls, state_dir: Path) -> PinBumpState:
         data = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
-        selector = data.get("selector") or {}
+        # PA34 Q3 migration: schema 3 renames "selector" -> "selection_freeze".
+        # A loaded schema-2 state migrates to schema 3 IN MEMORY (it persists
+        # under the new key at the next successful save; never both keys).
+        # Schema 1 states carry no selector binding at all and keep their
+        # version so the resume guard still rejects them.
+        raw_version = int(data["schema_version"])
+        # Fail on a structurally incomplete state (missing run_id/target/
+        # tree/resume) the same way any other schema does, BEFORE the
+        # schema-2 selector-shape check below -- a state missing its base
+        # fields is generically invalid, not specifically "legacy/unbound".
+        for _required_key in ("run_id", "target", "tree", "resume"):
+            if _required_key not in data:
+                raise KeyError(_required_key)
+        if raw_version >= 3:
+            freeze = data.get("selection_freeze") or {}
+        elif raw_version == 2:
+            # PA34 Q3 (dev-gpt-agent req_1d02cb052310446c Q3): a schema-2
+            # state's "selector" key is the ONLY thing that makes it
+            # resumable (see _validate_resume's schema<2 rejection above).
+            # Promoting raw_version to 3 before checking the legacy shape
+            # would let a missing/malformed "selector" key slip past that
+            # guard as an unbound-but-schema-3 state instead of being
+            # rejected as legacy/unbound. Validate first, fail closed.
+            freeze = data.get("selector")
+            if (
+                not isinstance(freeze, dict)
+                # Schema-2 pin-bump state only ever represented SOURCE
+                # selectors (dev-gpt-agent round-3 req_ab94edd31aa04419 Q3):
+                # accepting any other non-empty string here would let a
+                # malformed/foreign kind (e.g. "experiment") be promoted
+                # and later resumed, since _selector_patch_ids() ignores
+                # selector_kind entirely and always resolves selector_name
+                # as a source -- a malformed kind + valid source name would
+                # silently resume.
+                or freeze.get("kind") != "source"
+                or not isinstance(freeze.get("name"), str)
+                or not freeze.get("name")
+                or not isinstance(freeze.get("patch_ids"), list)
+                or not all(isinstance(pid, str) for pid in freeze.get("patch_ids", []))
+            ):
+                raise PinBumpStop(
+                    "resume",
+                    "LEGACY_STATE_SELECTOR_UNBOUND",
+                    "this schema-2 state's \"selector\" key is missing or "
+                    "malformed -- it cannot prove which selector this run "
+                    "was started with, so resuming it could silently apply "
+                    "a different composition than the original invocation "
+                    "intended",
+                    recommended_actions=[
+                        "start a fresh run instead of resuming this one",
+                        "if this state must be rescued, inspect its coverage "
+                        "report (if the coverage phase already ran) to "
+                        "recover its real selector by hand before resuming",
+                    ],
+                )
+            raw_version = 3
+        else:
+            freeze = {}
         return cls(
-            schema_version=data["schema_version"], run_id=data["run_id"],
-            from_ref=data["target"]["from_ref"], from_sha=data["target"]["from_sha"],
-            to_ref=data["target"]["to_ref"], to_sha=data["target"]["to_sha"],
+            schema_version=raw_version,
+            run_id=data["run_id"],
+            from_ref=data["target"]["from_ref"],
+            from_sha=data["target"]["from_sha"],
+            to_ref=data["target"]["to_ref"],
+            to_sha=data["target"]["to_sha"],
             transition_commit=data["transition_commit"],
-            tree_name=data["tree"]["name"], tree_path=data["tree"]["path"],
+            tree_name=data["tree"]["name"],
+            tree_path=data["tree"]["path"],
             completed_phases=list(data["resume"]["completed_phases"]),
             next_phase=data["resume"]["next_phase"],
-            selector_kind=selector.get("kind", ""),
-            selector_name=selector.get("name", ""),
-            selector_patch_ids=tuple(selector.get("patch_ids", ())),
+            selector_kind=freeze.get("kind", ""),
+            selector_name=freeze.get("name", ""),
+            selector_patch_ids=tuple(freeze.get("patch_ids", ())),
             coverage_report_sha256=data.get("coverage_report_sha256", ""),
         )
 
 
-def failure_envelope(run_id: str, target: dict, transition_commit: str, tree: dict, exc: PinBumpStop) -> dict:
+def failure_envelope(
+    run_id: str, target: dict, transition_commit: str, tree: dict, exc: PinBumpStop
+) -> dict:
     return {
         "schema_version": 1,
         "operation": "pin-bump",
@@ -181,14 +264,20 @@ def failure_envelope(run_id: str, target: dict, transition_commit: str, tree: di
 
 def _git(root: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", str(root), *args], capture_output=True, text=True,
+        ["git", "-C", str(root), *args],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise PinBumpStop(
-            "preflight", "GIT_COMMAND_FAILED",
+            "preflight",
+            "GIT_COMMAND_FAILED",
             f"git {' '.join(args)} failed in {root}: {result.stderr.strip()}",
             evidence={"args": list(args), "stderr": result.stderr.strip()},
-            recommended_actions=["inspect the repo state directly", "rerun with --resume"],
+            recommended_actions=[
+                "inspect the repo state directly",
+                "rerun with --resume",
+            ],
         )
     return result.stdout.strip()
 
@@ -197,10 +286,13 @@ def require_clean_controller_checkout(repo_root: Path) -> None:
     status = _git(repo_root, "status", "--porcelain")
     if status:
         raise PinBumpStop(
-            "preflight", "CONTROLLER_DIRTY",
+            "preflight",
+            "CONTROLLER_DIRTY",
             "the bigcherry controller checkout has uncommitted changes",
             evidence={"git_status_porcelain": status},
-            recommended_actions=["commit or revert the uncommitted changes, then retry"],
+            recommended_actions=[
+                "commit or revert the uncommitted changes, then retry"
+            ],
         )
 
 
@@ -214,13 +306,19 @@ def check_overlay_self_heal(audit_report: dict) -> tuple[bool, list[str]]:
     anything beyond the audit report already computed -- no new mechanism,
     no invented "previous materialization" history (gpt retracted that
     clause; see HI150 notes)."""
-    failed_checks = {check["id"] for check in audit_report.get("checks", ()) if not check.get("ok", True)}
+    failed_checks = {
+        check["id"]
+        for check in audit_report.get("checks", ())
+        if not check.get("ok", True)
+    }
     if failed_checks != {"overlay.vendor_sync"}:
         return False, []
     overlay_check = next(
-        check for check in audit_report["checks"] if check["id"] == "overlay.vendor_sync"
+        check
+        for check in audit_report["checks"]
+        if check["id"] == "overlay.vendor_sync"
     )
-    drifted = list(overlay_check.get("actual", ()) or ())
+    drifted: list[str] = [str(item) for item in (overlay_check.get("actual", ()) or ())]
     return True, drifted
 
 
@@ -258,18 +356,29 @@ def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None
         if not (mirror / "HEAD").is_file() and not (mirror / ".git").exists():
             return  # no mirror yet -- nothing to sync
         already = subprocess.run(
-            ["git", "-C", str(mirror), "rev-parse", "--verify", f"{target_ref}^{{commit}}"],
-            capture_output=True, text=True,
+            [
+                "git",
+                "-C",
+                str(mirror),
+                "rev-parse",
+                "--verify",
+                f"{target_ref}^{{commit}}",
+            ],
+            capture_output=True,
+            text=True,
         )
         if already.returncode == 0:
             return  # already resolvable, nothing to do
         subprocess.run(
             ["git", "-C", str(mirror), "fetch", "--depth=1", "origin", revision],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         tag_result = subprocess.run(
             ["git", "-C", str(mirror), "tag", target_ref, "FETCH_HEAD"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if tag_result.returncode != 0:
             print(
@@ -284,7 +393,6 @@ def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None
             f"{type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
-        pass
 
 
 def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
@@ -293,9 +401,13 @@ def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
     marker (RE48's invariant, reused rather than re-derived)."""
     require_clean_controller_checkout(repo_root)
     marker_path = paths.REPO_ROOT / "releases" / "pin-transition.json"
-    if marker_path.is_file() and pin_transition.committed_state(marker_path) != "committed-clean":
+    if (
+        marker_path.is_file()
+        and pin_transition.committed_state(marker_path) != "committed-clean"
+    ):
         raise PinBumpStop(
-            "preflight", "TRANSITION_MARKER_UNCOMMITTED",
+            "preflight",
+            "TRANSITION_MARKER_UNCOMMITTED",
             "an existing pin-transition marker is uncommitted -- a prior bump "
             "was declared but not committed",
             evidence={"marker_path": str(marker_path)},
@@ -310,9 +422,14 @@ def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
         to_sha = resolve_pin_sha(target_ref)
     except Exception as exc:  # upstream.UpstreamError et al.
         raise PinBumpStop(
-            "preflight", "UNRESOLVABLE_PIN", f"could not resolve {target_ref!r}: {exc}",
+            "preflight",
+            "UNRESOLVABLE_PIN",
+            f"could not resolve {target_ref!r}: {exc}",
             evidence={"target_ref": target_ref},
-            recommended_actions=["verify the ref exists upstream", "rerun with --resume"],
+            recommended_actions=[
+                "verify the ref exists upstream",
+                "rerun with --resume",
+            ],
         ) from exc
     current_pinned = recipes_module.pinned()
     return current_pinned, to_sha
@@ -331,14 +448,20 @@ def run_phase_declare(*, repo_root: Path, target_ref: str) -> str:
     pin_transition.write(from_sha, to_sha, target_ref, declaring_before)
     _git(repo_root, "add", "config/recipes.toml", "releases/pin-transition.json")
     _git(
-        repo_root, "commit", "-m",
+        repo_root,
+        "commit",
+        "-m",
         f"pin: {old} -> {target_ref} ({to_sha[:8]}) -- rebase in flight (pin-bump orchestrator)",
     )
     return _git(repo_root, "rev-parse", "HEAD")
 
 
 def stop_on_bad_rebase_status(
-    *, phase: str, report: dict, patch_id: str, entry: dict,
+    *,
+    phase: str,
+    report: dict,
+    patch_id: str,
+    entry: dict,
 ) -> None:
     status = entry["status"]
     code = {
@@ -347,9 +470,12 @@ def stop_on_bad_rebase_status(
         "QUARANTINED": "PATCH_QUARANTINED",
     }.get(status, "PATCH_REBASE_BAD_STATUS")
     raise PinBumpStop(
-        phase, code, f"{patch_id} is {status} against the new revision",
+        phase,
+        code,
+        f"{patch_id} is {status} against the new revision",
         evidence={
-            "patch_id": patch_id, "status": status,
+            "patch_id": patch_id,
+            "status": status,
             "requires": entry.get("requires", ()),
         },
         recommended_actions=[
@@ -362,21 +488,31 @@ def stop_on_bad_rebase_status(
 
 
 def enforce_all_patches_clean_or_dispositioned(
-    *, all_report: dict, recipe_report: dict, catalog_states: dict[str, str],
-    dispositions_dir: Path, target_revision: str, phase: str = "coverage",
+    *,
+    all_report: dict,
+    recipe_report: dict,
+    catalog_states: dict[str, str],
+    dispositions_dir: Path,
+    target_revision: str,
+    phase: str = "coverage",
 ) -> dict:
     """HI152's coverage gate. Raises PinBumpStop with the coverage block
     as evidence if anything is uncovered."""
     dispositions = patch_disposition.list_dispositions(dispositions_dir)
-    recipe_ids = frozenset(entry["patch_id"] for entry in recipe_report.get("patches", ()))
+    recipe_ids = frozenset(
+        entry["patch_id"] for entry in recipe_report.get("patches", ())
+    )
     result = patch_disposition.compute_coverage(
-        catalog_states=catalog_states, all_report=all_report,
-        recipe_patch_ids=recipe_ids, dispositions=dispositions,
+        catalog_states=catalog_states,
+        all_report=all_report,
+        recipe_patch_ids=recipe_ids,
+        dispositions=dispositions,
         target_revision=target_revision,
     )
     if not result.complete:
         raise PinBumpStop(
-            phase, "COVERAGE_INCOMPLETE",
+            phase,
+            "COVERAGE_INCOMPLETE",
             f"{len(result.uncovered_patch_ids)} patch(es) uncovered against {target_revision[:12]}",
             evidence=result.as_dict(),
             recommended_actions=[
@@ -397,9 +533,12 @@ class PinBumpResult:
 
 
 def run(
-    *, target_ref: str, source_name: str | None = None,
+    *,
+    target_ref: str,
+    source_name: str | None = None,
     root: Path | None = None,
-    dispositions_dir: Path | None = None, resume: bool = False,
+    dispositions_dir: Path | None = None,
+    resume: bool = False,
     report_dir: Path | None = None,
 ) -> PinBumpResult:
     """The Phase 1 single-tree orchestrator. Raises PinBumpStop (never a
@@ -408,8 +547,9 @@ def run(
     under ``report_dir``, and exit non-zero.
 
     ``source_name`` unsupplied on a fresh run defaults to ``bigcherry`` (the
-    real v2 ``patch-set.framework`` composition; see
-    ``_resolve_fresh_selector``). A ``--resume`` with no selector reuses
+    real v2 release-source composition -- serving-core + upstream-fixes +
+    validated-enhancements; see ``_resolve_fresh_selector``). A ``--resume``
+    with no selector reuses
     whatever the original invocation was started with (``_resume_selector``),
     rather than re-defaulting.
     """
@@ -422,7 +562,7 @@ def run(
     # _load_state_or_stop() can both raise before any assignment below
     # would otherwise run, and the except block needs `state` defined
     # either way (None means "fall back to a best-effort disk re-read").
-    state: "PinBumpState | None" = None
+    state: PinBumpState | None = None
     try:
         # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
         # --resume must never silently reinterpret a missing/wrong state as
@@ -435,7 +575,8 @@ def run(
         if resume:
             if not (report_dir / "state.json").is_file():
                 raise PinBumpStop(
-                    "resume", "RESUME_STATE_MISSING",
+                    "resume",
+                    "RESUME_STATE_MISSING",
                     f"--resume was given but no state.json exists under {report_dir}",
                     evidence={"report_dir": str(report_dir)},
                     recommended_actions=[
@@ -446,7 +587,8 @@ def run(
             state = _load_state_or_stop(report_dir)
             _validate_resume(state, target_ref=target_ref, vendor_root=vendor_root)
             resolved_kind, resolved_name = _resume_selector(
-                state, source_name=source_name,
+                state,
+                source_name=source_name,
             )
         else:
             state = None
@@ -455,10 +597,14 @@ def run(
             )
 
         return _run_phases(
-            state=state, target_ref=target_ref,
-            selector_kind=resolved_kind, selector_name=resolved_name,
-            repo_root=repo_root, vendor_root=vendor_root,
-            dispositions_dir=dispositions_dir, report_dir=report_dir,
+            state=state,
+            target_ref=target_ref,
+            selector_kind=resolved_kind,
+            selector_name=resolved_name,
+            repo_root=repo_root,
+            vendor_root=vendor_root,
+            dispositions_dir=dispositions_dir,
+            report_dir=report_dir,
         )
     except PinBumpStop as exc:
         # gpt-dev-agent review (session ses_5307d9c58ec645cb, second pass):
@@ -494,7 +640,7 @@ def run(
         raise
 
 
-def _load_state_or_stop(report_dir: Path) -> "PinBumpState":
+def _load_state_or_stop(report_dir: Path) -> PinBumpState:
     """Wraps PinBumpState.load() so a corrupt/unreadable state.json becomes
     a structured PinBumpStop (gpt-dev-agent review, session
     ses_5307d9c58ec645cb, second pass) -- pin_bump's own contract is "raise
@@ -504,7 +650,8 @@ def _load_state_or_stop(report_dir: Path) -> "PinBumpState":
         return PinBumpState.load(report_dir)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise PinBumpStop(
-            "resume", "RESUME_STATE_INVALID",
+            "resume",
+            "RESUME_STATE_INVALID",
             f"state.json under {report_dir} could not be loaded: "
             f"{type(exc).__name__}: {exc}",
             evidence={"report_dir": str(report_dir), "error": str(exc)},
@@ -519,7 +666,7 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
+def _require_coverage_report(state: PinBumpState, report_path: Path) -> None:
     """Unconditional pre-apply gate (gpt-dev-agent review of c236acc, P1,
     session ses_5307d9c58ec645cb): the coverage phase's rebase-recipe.json
     must exist, and its live bytes must match what coverage actually wrote,
@@ -528,14 +675,16 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
     itself a failure, not something to silently skip past."""
     if not state.coverage_report_sha256:
         raise PinBumpStop(
-            "apply", "COVERAGE_REPORT_UNBOUND",
+            "apply",
+            "COVERAGE_REPORT_UNBOUND",
             "no coverage_report_sha256 was ever recorded for this run -- "
             "refusing to apply an unproven report",
             recommended_actions=["re-run coverage from a fresh run"],
         )
     if not report_path.is_file():
         raise PinBumpStop(
-            "apply", "COVERAGE_REPORT_MISSING",
+            "apply",
+            "COVERAGE_REPORT_MISSING",
             f"{report_path} does not exist -- refusing to apply",
             evidence={"report_path": str(report_path)},
             recommended_actions=[
@@ -550,9 +699,9 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
         # between the check and the read (a concurrent process on this
         # shared, multi-agent repo, or a race with cleanup).
         raise PinBumpStop(
-            "apply", "COVERAGE_REPORT_MISSING",
-            f"{report_path} disappeared before it could be read -- "
-            "refusing to apply",
+            "apply",
+            "COVERAGE_REPORT_MISSING",
+            f"{report_path} disappeared before it could be read -- refusing to apply",
             evidence={"report_path": str(report_path), "error": str(exc)},
             recommended_actions=[
                 "restore the original rebase-recipe.json, or re-run "
@@ -561,7 +710,8 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
         ) from exc
     except OSError as exc:
         raise PinBumpStop(
-            "apply", "COVERAGE_REPORT_UNREADABLE",
+            "apply",
+            "COVERAGE_REPORT_UNREADABLE",
             f"{report_path} could not be read: {exc}",
             evidence={"report_path": str(report_path), "error": str(exc)},
             recommended_actions=[
@@ -571,7 +721,8 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
         ) from exc
     if live_digest != state.coverage_report_sha256:
         raise PinBumpStop(
-            "apply", "COVERAGE_REPORT_MODIFIED",
+            "apply",
+            "COVERAGE_REPORT_MODIFIED",
             "rebase-recipe.json's contents no longer match what the "
             "coverage phase wrote (modified or replaced on disk) -- "
             "refusing to apply an unproven report",
@@ -587,7 +738,10 @@ def _require_coverage_report(state: "PinBumpState", report_path: Path) -> None:
 
 
 def _validate_resume(
-    state: "PinBumpState", *, target_ref: str, vendor_root: Path,
+    state: PinBumpState,
+    *,
+    target_ref: str,
+    vendor_root: Path,
 ) -> None:
     """Resume identity check: state stores target/tree, but the phases
     never actually checked the RESUMING invocation's target_ref/vendor_root
@@ -595,7 +749,8 @@ def _validate_resume(
     closed, not silently continue against the wrong state."""
     if state.schema_version < 2:
         raise PinBumpStop(
-            "resume", "LEGACY_STATE_SELECTOR_UNBOUND",
+            "resume",
+            "LEGACY_STATE_SELECTOR_UNBOUND",
             "this in-flight run's state predates selector binding (schema "
             f"{state.schema_version} < 2) -- it cannot prove which selector "
             "(--source NAME) it was started with, so resuming it "
@@ -610,7 +765,8 @@ def _validate_resume(
         )
     if target_ref != state.to_ref:
         raise PinBumpStop(
-            "resume", "RESUME_TARGET_MISMATCH",
+            "resume",
+            "RESUME_TARGET_MISMATCH",
             f"--resume target {target_ref!r} does not match this run's "
             f"recorded target {state.to_ref!r}",
             evidence={"resumed_target": target_ref, "state_target": state.to_ref},
@@ -621,7 +777,8 @@ def _validate_resume(
     resolved_tree = str(vendor_root)
     if resolved_tree != state.tree_path:
         raise PinBumpStop(
-            "resume", "RESUME_TREE_MISMATCH",
+            "resume",
+            "RESUME_TREE_MISMATCH",
             f"--resume is running against {resolved_tree!r}, but this run's "
             f"recorded tree is {state.tree_path!r}",
             evidence={"resumed_tree": resolved_tree, "state_tree": state.tree_path},
@@ -632,19 +789,24 @@ def _validate_resume(
 
 
 def _resolve_fresh_selector(
-    *, source_name: str | None,
+    *,
+    source_name: str | None,
 ) -> tuple[str, str]:
     """Fresh-run selector default: no ``--source`` supplied -> "bigcherry"
-    -- the real v2 patch-set.framework composition."""
+    -- the real v2 release-source composition."""
     return "source", source_name if source_name is not None else "bigcherry"
 
 
 def _selector_patch_ids(*, selector_kind: str, selector_name: str) -> tuple[str, ...]:
-    return patch_rebase._selection_patch_ids(source_name=selector_name, all_patches=False)
+    return patch_rebase._selection_patch_ids(
+        source_name=selector_name, all_patches=False
+    )
 
 
 def _resume_selector(
-    state: "PinBumpState", *, source_name: str | None = None,
+    state: PinBumpState,
+    *,
+    source_name: str | None = None,
 ) -> tuple[str, str]:
     """Reconciles the RESUMING invocation's selector against the state's
     recorded one. Caller supplies none -> use the persisted selector;
@@ -655,7 +817,8 @@ def _resume_selector(
         return state.selector_kind, state.selector_name
     if (state.selector_kind, state.selector_name) != ("source", source_name):
         raise PinBumpStop(
-            "resume", "RESUME_SELECTOR_MISMATCH",
+            "resume",
+            "RESUME_SELECTOR_MISMATCH",
             f"--resume was given source:{source_name!r}, but "
             f"this run's recorded selector is "
             f"{state.selector_kind}:{state.selector_name!r}",
@@ -672,7 +835,10 @@ def _resume_selector(
 
 
 def _require_selector_membership_unchanged(
-    state: "PinBumpState", *, selector_kind: str, selector_name: str,
+    state: PinBumpState,
+    *,
+    selector_kind: str,
+    selector_name: str,
 ) -> None:
     """Before coverage runs (fresh or resumed), re-derive the selector's
     real patch-id membership and require it still matches what the state
@@ -680,13 +846,18 @@ def _require_selector_membership_unchanged(
     edit on this shared, multi-agent repo, whether or not this is a
     --resume. Membership drift requires a deliberate restart, not a
     silent scope change to a production release run."""
-    current_ids = tuple(sorted(
-        _selector_patch_ids(selector_kind=selector_kind, selector_name=selector_name)
-    ))
+    current_ids = tuple(
+        sorted(
+            _selector_patch_ids(
+                selector_kind=selector_kind, selector_name=selector_name
+            )
+        )
+    )
     recorded_ids = tuple(sorted(state.selector_patch_ids))
     if current_ids != recorded_ids:
         raise PinBumpStop(
-            "coverage", "RESUME_SELECTION_CHANGED",
+            "coverage",
+            "RESUME_SELECTION_CHANGED",
             f"selector {state.selector_kind}:{state.selector_name!r}'s real "
             "patch membership changed since this run's state recorded it",
             evidence={
@@ -700,25 +871,45 @@ def _require_selector_membership_unchanged(
 
 
 def _run_phases(
-    *, state: "PinBumpState | None", target_ref: str,
-    selector_kind: str, selector_name: str,
-    repo_root: Path, vendor_root: Path, dispositions_dir: Path, report_dir: Path,
-) -> "PinBumpResult":
-    from ..source import audit as source_audit
+    *,
+    state: PinBumpState | None,
+    target_ref: str,
+    selector_kind: str,
+    selector_name: str,
+    repo_root: Path,
+    vendor_root: Path,
+    dispositions_dir: Path,
+    report_dir: Path,
+) -> PinBumpResult:
     from ..patch import catalog as patch_catalog
+    from ..source import audit as source_audit
 
     with acquire_maintenance_lock(repo_root):
         if state is None:
-            from_ref, to_sha = run_phase_preflight(repo_root=repo_root, target_ref=target_ref)
-            selector_patch_ids = tuple(sorted(
-                _selector_patch_ids(selector_kind=selector_kind, selector_name=selector_name)
-            ))
+            from_ref, to_sha = run_phase_preflight(
+                repo_root=repo_root, target_ref=target_ref
+            )
+            selector_patch_ids = tuple(
+                sorted(
+                    _selector_patch_ids(
+                        selector_kind=selector_kind, selector_name=selector_name
+                    )
+                )
+            )
             state = PinBumpState(
-                schema_version=2, run_id=uuid.uuid4().hex, from_ref=from_ref, from_sha="",
-                to_ref=target_ref, to_sha=to_sha, transition_commit="",
-                tree_name="local", tree_path=str(vendor_root),
-                completed_phases=["preflight"], next_phase="declare",
-                selector_kind=selector_kind, selector_name=selector_name,
+                schema_version=3,
+                run_id=uuid.uuid4().hex,
+                from_ref=from_ref,
+                from_sha="",
+                to_ref=target_ref,
+                to_sha=to_sha,
+                transition_commit="",
+                tree_name="local",
+                tree_path=str(vendor_root),
+                completed_phases=["preflight"],
+                next_phase="declare",
+                selector_kind=selector_kind,
+                selector_name=selector_name,
                 selector_patch_ids=selector_patch_ids,
             )
             state.save(report_dir)
@@ -731,24 +922,37 @@ def _run_phases(
             state.save(report_dir)
 
         if state.next_phase == "pull":
-            from ..cli import source as cli_source
             from argparse import Namespace
+
+            from ..cli import source as cli_source
 
             # The orchestrator already owns the exact target ref -- pull
             # must not be made composition-dependent (source=None, not
             # selector_name), matching its own real ref-resolution priority
             # (--ref, when given, is used as-is; --source is only ever a
             # fallback for resolving a ref from a name).
-            rc = cli_source.cmd_pull(Namespace(
-                llama_root=None, ref=target_ref, source=None, full=False,
-            ))
+            rc = cli_source.cmd_pull(
+                Namespace(
+                    llama_root=None,
+                    ref=target_ref,
+                    source=None,
+                    full=False,
+                )
+            )
             if rc != 0:
                 raise PinBumpStop(
-                    "pull", "PULL_FAILED", "bigcherry pull did not exit cleanly",
+                    "pull",
+                    "PULL_FAILED",
+                    "bigcherry pull did not exit cleanly",
                     evidence={"exit_code": rc},
-                    recommended_actions=["inspect the vendor checkout directly", "rerun with --resume"],
+                    recommended_actions=[
+                        "inspect the vendor checkout directly",
+                        "rerun with --resume",
+                    ],
                 )
-            _sync_campaign_mirror_best_effort(target_ref=target_ref, revision=state.to_sha)
+            _sync_campaign_mirror_best_effort(
+                target_ref=target_ref, revision=state.to_sha
+            )
             state.completed_phases.append("pull")
             state.next_phase = "audit"
             state.save(report_dir)
@@ -759,18 +963,31 @@ def _run_phases(
                 safe, drifted = check_overlay_self_heal(report)
                 if not safe:
                     raise PinBumpStop(
-                        "audit", "AUDIT_FAILED", "source audit failed on more than overlay staleness",
-                        evidence={"failed_checks": [c["id"] for c in report["checks"] if not c["ok"]]},
-                        recommended_actions=["run `bigcherry audit --verbose` and reconcile", "rerun with --resume"],
+                        "audit",
+                        "AUDIT_FAILED",
+                        "source audit failed on more than overlay staleness",
+                        evidence={
+                            "failed_checks": [
+                                c["id"] for c in report["checks"] if not c["ok"]
+                            ]
+                        },
+                        recommended_actions=[
+                            "run `bigcherry audit --verbose` and reconcile",
+                            "rerun with --resume",
+                        ],
                     )
                 patch_overlay.copy_overlay(vendor_root, dry_run=False)
                 report = source_audit.audit(vendor_root)
                 if not source_audit.passed(report, strict=False):
                     raise PinBumpStop(
-                        "audit", "OVERLAY_STALENESS_UNPROVEN",
+                        "audit",
+                        "OVERLAY_STALENESS_UNPROVEN",
                         "overlay drift persisted after the narrow newline-only self-heal",
                         evidence={"drifted": drifted},
-                        recommended_actions=["inspect the drifted file(s) by hand", "rerun with --resume"],
+                        recommended_actions=[
+                            "inspect the drifted file(s) by hand",
+                            "rerun with --resume",
+                        ],
                     )
             # Persist the result into the ReleaseRecord exactly like
             # `bigcherry audit` (cli/source.py's cmd_audit) does -- otherwise
@@ -792,9 +1009,14 @@ def _run_phases(
             problems = patch_catalog.cross_check(allow_legacy_grandfather=True)
             if problems:
                 raise PinBumpStop(
-                    "patch-lint", "PATCH_LINT_FAILED", f"{len(problems)} patch-lint problem(s)",
+                    "patch-lint",
+                    "PATCH_LINT_FAILED",
+                    f"{len(problems)} patch-lint problem(s)",
                     evidence={"problems": problems},
-                    recommended_actions=["fix the catalog/package mismatch", "rerun with --resume"],
+                    recommended_actions=[
+                        "fix the catalog/package mismatch",
+                        "rerun with --resume",
+                    ],
                 )
             state.completed_phases.append("patch-lint")
             state.next_phase = "coverage"
@@ -802,24 +1024,32 @@ def _run_phases(
 
         if state.next_phase == "coverage":
             _require_selector_membership_unchanged(
-                state, selector_kind=selector_kind, selector_name=selector_name,
+                state,
+                selector_kind=selector_kind,
+                selector_name=selector_name,
             )
             all_report = patch_rebase.run_rebase_check(vendor_root, all_patches=True)
             recipe_report = patch_rebase.run_rebase_check(
-                vendor_root, source_name=selector_name,
+                vendor_root,
+                source_name=selector_name,
             )
             for entry in recipe_report.get("patches", ()):
                 if entry["status"] not in patch_disposition.CLEAN_STATUSES:
                     stop_on_bad_rebase_status(
-                        phase="coverage", report=recipe_report,
-                        patch_id=entry["patch_id"], entry=entry,
+                        phase="coverage",
+                        report=recipe_report,
+                        patch_id=entry["patch_id"],
+                        entry=entry,
                     )
             catalog_states = {
-                patch_id: entry.state for patch_id, entry in patch_catalog.load_catalog().items()
+                patch_id: entry.state
+                for patch_id, entry in patch_catalog.load_catalog().items()
             }
             coverage = enforce_all_patches_clean_or_dispositioned(
-                all_report=all_report, recipe_report=recipe_report,
-                catalog_states=catalog_states, dispositions_dir=dispositions_dir,
+                all_report=all_report,
+                recipe_report=recipe_report,
+                catalog_states=catalog_states,
+                dispositions_dir=dispositions_dir,
                 target_revision=state.to_sha,
             )
             recipe_report_path = report_dir / "rebase-recipe.json"
@@ -833,8 +1063,11 @@ def _run_phases(
             state.save(report_dir)
         else:
             recipe_report_path = report_dir / "rebase-recipe.json"
-            coverage = json.loads((report_dir / "coverage.json").read_text(encoding="utf-8")) \
-                if (report_dir / "coverage.json").is_file() else {}
+            coverage = (
+                json.loads((report_dir / "coverage.json").read_text(encoding="utf-8"))
+                if (report_dir / "coverage.json").is_file()
+                else {}
+            )
 
         # gpt-dev-agent review of c236acc (P1, session ses_5307d9c58ec645cb):
         # the digest check used to run ONLY in the resumed (`else`) branch,
@@ -843,12 +1076,19 @@ def _run_phases(
         # closed. Unconditional, immediately before apply, covers both.
         if state.next_phase == "apply":
             _require_coverage_report(state, recipe_report_path)
-            result = patch_rebase.apply_known_good(vendor_root, recipe_report_path, force=False, dry_run=False)
+            result = patch_rebase.apply_known_good(
+                vendor_root, recipe_report_path, force=False, dry_run=False
+            )
             if not result.ok:
                 raise PinBumpStop(
-                    "apply", "APPLY_FAILED", "known-good apply did not succeed",
+                    "apply",
+                    "APPLY_FAILED",
+                    "known-good apply did not succeed",
                     evidence={"known_good": list(result.known_good_patch_ids)},
-                    recommended_actions=["inspect the apply failure directly", "rerun with --resume"],
+                    recommended_actions=[
+                        "inspect the apply failure directly",
+                        "rerun with --resume",
+                    ],
                 )
             state.completed_phases.append("apply")
             state.next_phase = "reaudit"
@@ -858,10 +1098,18 @@ def _run_phases(
             report = source_audit.audit(vendor_root)
             if not source_audit.passed(report, strict=True):
                 raise PinBumpStop(
-                    "reaudit", "POST_APPLY_AUDIT_FAILED",
+                    "reaudit",
+                    "POST_APPLY_AUDIT_FAILED",
                     "source audit failed after a full known-good apply",
-                    evidence={"failed_checks": [c["id"] for c in report["checks"] if not c["ok"]]},
-                    recommended_actions=["run `bigcherry audit --verbose` and reconcile", "rerun with --resume"],
+                    evidence={
+                        "failed_checks": [
+                            c["id"] for c in report["checks"] if not c["ok"]
+                        ]
+                    },
+                    recommended_actions=[
+                        "run `bigcherry audit --verbose` and reconcile",
+                        "rerun with --resume",
+                    ],
                 )
             state.completed_phases.append("reaudit")
             state.next_phase = "complete"
@@ -869,9 +1117,12 @@ def _run_phases(
 
         if state.next_phase == "complete" and "complete" not in state.completed_phases:
             _write_release_doc_best_effort(
-                repo_root=repo_root, vendor_root=vendor_root,
-                selector_kind=selector_kind, selector_name=selector_name,
-                target_ref=target_ref, report_dir=report_dir,
+                repo_root=repo_root,
+                vendor_root=vendor_root,
+                selector_kind=selector_kind,
+                selector_name=selector_name,
+                target_ref=target_ref,
+                report_dir=report_dir,
             )
             _commit_release_records(repo_root=repo_root, target_ref=target_ref)
             state.completed_phases.append("complete")
@@ -918,41 +1169,64 @@ def _commit_release_records(*, repo_root: Path, target_ref: str) -> None:
 
     status = subprocess.run(
         ["git", "-C", str(repo_root), "status", "--porcelain", "--", *existing],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if status.returncode == 0 and not status.stdout.strip():
         return  # already committed -- idempotent, matches a --resume re-run
 
     add_result = subprocess.run(
         ["git", "-C", str(repo_root), "add", "--", *existing],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if add_result.returncode != 0:
         raise PinBumpStop(
-            "complete", "RELEASE_RECORD_COMMIT_FAILED",
+            "complete",
+            "RELEASE_RECORD_COMMIT_FAILED",
             f"git add failed for release records: {add_result.stderr.strip()}",
             evidence={"paths": existing, "stderr": add_result.stderr.strip()},
-            recommended_actions=["inspect the repo state directly", "rerun with --resume"],
+            recommended_actions=[
+                "inspect the repo state directly",
+                "rerun with --resume",
+            ],
         )
     commit_result = subprocess.run(
         [
-            "git", "-C", str(repo_root), "commit", "--only", "-m",
-            f"pin-bump: record release {target_ref}", "--", *existing,
+            "git",
+            "-C",
+            str(repo_root),
+            "commit",
+            "--only",
+            "-m",
+            f"pin-bump: record release {target_ref}",
+            "--",
+            *existing,
         ],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if commit_result.returncode != 0:
         raise PinBumpStop(
-            "complete", "RELEASE_RECORD_COMMIT_FAILED",
+            "complete",
+            "RELEASE_RECORD_COMMIT_FAILED",
             f"git commit --only failed for release records: {commit_result.stderr.strip()}",
             evidence={"paths": existing, "stderr": commit_result.stderr.strip()},
-            recommended_actions=["inspect the repo state directly", "rerun with --resume"],
+            recommended_actions=[
+                "inspect the repo state directly",
+                "rerun with --resume",
+            ],
         )
 
 
 def _write_release_doc_best_effort(
-    *, repo_root: Path, vendor_root: Path, selector_kind: str, selector_name: str,
-    target_ref: str, report_dir: Path | None = None,
+    *,
+    repo_root: Path,
+    vendor_root: Path,
+    selector_kind: str,
+    selector_name: str,
+    target_ref: str,
+    report_dir: Path | None = None,
 ) -> None:
     """Merge the applied recipe's per-patch SUMMARY.md into a release doc.
 
@@ -994,12 +1268,14 @@ def _write_release_doc_best_effort(
                 )
                 return
             patch_ids = tuple(
-                json.loads(report_path.read_text(encoding="utf-8"))
-                ["selection"]["patch_ids"]
+                json.loads(report_path.read_text(encoding="utf-8"))["selector"][
+                    "patch_ids"
+                ]  # PA34 schema-2 selector identity
             )
         else:
             patch_ids = _selector_patch_ids(
-                selector_kind=selector_kind, selector_name=selector_name,
+                selector_kind=selector_kind,
+                selector_name=selector_name,
             )
         pin_info = {
             "llama.cpp revision": patch_rebase._git(vendor_root, "rev-parse", "HEAD"),
@@ -1008,11 +1284,14 @@ def _write_release_doc_best_effort(
             "target": target_ref,
         }
         doc = patch_docs.render_patch_selection_doc(
-            patch_ids=patch_ids, pin_info=pin_info,
+            patch_ids=patch_ids,
+            pin_info=pin_info,
             selection_label=f"--source {selector_name}",
         )
         release_records.RELEASES_DIR.mkdir(parents=True, exist_ok=True)
-        (release_records.RELEASES_DIR / f"{target_ref}-patches.md").write_text(doc, encoding="utf-8")
+        (release_records.RELEASES_DIR / f"{target_ref}-patches.md").write_text(
+            doc, encoding="utf-8"
+        )
     except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
         print(
             f"pin-bump: release doc for {target_ref!r} "

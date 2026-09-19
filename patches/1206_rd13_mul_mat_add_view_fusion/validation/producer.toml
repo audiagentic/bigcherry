@@ -1,0 +1,46 @@
+schema = 1
+
+# PA36 migration #3 (dev-gpt-agent req_110d0729beb44d8b): 1206's
+# (RD13-MUL-MAT-ADD-VIEW-FUSION) patch-local producer. Mechanically
+# migrated off validation_campaign.py's
+# run_rd13_backend_reference_check() (the contract-grade
+# full-vocabulary logprob backend_reference producer) and
+# run_rd13_ppl_check() (the dead legacy PPL wrapper -- zero live call
+# sites, deleted with its module). Both functions (and the
+# --run-rd13-contract CLI path) are DELETED from shared code in the
+# same change (no compatibility layer, per the project's migrate-up
+# doctrine).
+#
+# standard_campaign = "run": the generic five-build standard scaffold
+# runs first; this producer's own llama-server pair is the isolated
+# build_pair() domain (fat multi-arch, bigcherry baseline, parity
+# asserted), mirroring RD04's pattern with primary_target=llama-server.
+#
+# trace_probe = "run": the SCAFFOLD's generic two-probe trace-marker
+# activation probe handles the declared activation check (positive
+# BIGCHERRY_PATCH_TRACE=1 + GGML_CUDA_DISABLE_FUSION=1 negative
+# control -- valid for RD13, a real graph-fusion path with a real
+# marker in the patch source). The producer returns no activation/
+# trace evidence.
+#
+# correctness_evidence_cli / performance_benchmark_cli = "forbid":
+# --correctness-evidence and --run-performance-benchmark are ambiguous
+# with this producer's own authoritative evidence. RD13's
+# performance/controls checks stay unsatisfied exactly as the
+# historical records show them (ERROR) -- this migration does not add
+# benchmark semantics (design ruling).
+#
+# One contract architecture per run (the historical RD13 rule): the
+# operator names it via --amdgpu-targets; the artifact is the exact
+# legacy basename (no architecture suffix) -- the raw artifact carries
+# the run's architecture in its provenance fields.
+[producer.rd13]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "run"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd13-backend-reference.json",
+]

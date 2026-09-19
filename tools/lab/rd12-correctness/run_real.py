@@ -1,9 +1,15 @@
-"""Ad-hoc real-hardware driver for run_rd12_correctness_check().
+"""Ad-hoc real-hardware driver for the 1205 RD12 patch-local producer
+(PA36 sub-slice 2, T10: replaces the deleted run_rd12_correctness_check()
+driver, which called the deleted CLI path directly).
 
-No --run-rd12-correctness CLI flag exists yet (separate follow-up scope).
-Mirrors tools/lab/rd30-correctness/run_real.py's pattern. RD12's contract
-(RD12-PAIRED-MMVQ-DUAL) scopes gfx1100/gfx1201/gfx1030 -- runs all three
-in sequence, one real build+run per architecture.
+Runs `--validation-producer 1205_rd12_paired_mmvq_dual_output/rd12` once
+per contract architecture through the GENERIC dispatcher, which owns the
+five-build standard-campaign scaffold, the producer's own build pair,
+evidence binding, and the tracked record. Each invocation is one contract
+architecture (the historical RD12 rule); the worktree/build roots are
+shared across iterations so the fat multi-arch binaries are built once
+and reused (build_tree's cmake-cache reuse) while each run_dir stays
+per-architecture (the producer namespaces its own artifacts by arch).
 
 Usage:
   PYTHONPATH=tools python tools/lab/rd12-correctness/run_real.py
@@ -11,8 +17,10 @@ Usage:
 
 from __future__ import annotations
 
-import os
+import argparse
+import json
 import sys
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -21,64 +29,67 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
+PATCH = "1205_rd12_paired_mmvq_dual_output"
 ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 # config/environment.toml's real Brutus device inventory: index is the
-# HIP/ROCR visible-devices ordinal. Each architecture MUST run against its
-# own matching device -- the loop below sets this per iteration since a
-# single fixed ambient HIP_VISIBLE_DEVICES would silently run gfx1201/
-# gfx1030's builds against whatever device index 0 happens to be.
+# HIP/ROCR visible-devices ordinal. Each architecture runs against its
+# own matching device via the producer's sanctioned HIP-only selector
+# env (never ambient HIP_VISIBLE_DEVICES -- the producer's runtime owns
+# that, and a fixed ambient selector would silently run the wrong device).
 DEVICE_INDEX_BY_ARCH = {"gfx1100": "0", "gfx1201": "2", "gfx1030": "3"}
 
 
 def main() -> int:
-    import tomllib
-
     recipes = tomllib.loads((REPO_ROOT / "config" / "recipes.toml").read_text())
-    base_revision = recipes["pinned"]
+    pinned = recipes["pinned"]  # noqa: F841 (informational; the dispatcher pins it itself)
 
-    # worktree_root/build_root are SHARED across every architecture in this
-    # loop -- the producer compiles one fat multi-arch binary once and
-    # reuses it for every device run (build_tree()'s cmake-cache-reuse).
-    # Per-arch subdirectories would defeat that. run_dir is shared too:
-    # the producer namespaces its own artifact filenames by architecture.
     run_root = REPO_ROOT / "artifacts" / "lab" / "rd12-correctness"
-    run_dir = run_root / "run"
+    # Shared across every architecture: the producer compiles one fat
+    # multi-arch binary once and reuses it for every device run.
     worktree_root = run_root / "worktrees"
     build_root = run_root / "build"
-    for p in (run_dir, worktree_root, build_root):
+    for p in (worktree_root, build_root):
         p.mkdir(parents=True, exist_ok=True)
 
     overall_pass = True
     for arch in ARCHITECTURES:
-        print(f"=== RD12 correctness: {arch} ===")
-        device_index = DEVICE_INDEX_BY_ARCH[arch]
-        os.environ["HIP_VISIBLE_DEVICES"] = device_index
-        # Setting BOTH HIP_VISIBLE_DEVICES and ROCR_VISIBLE_DEVICES to the
-        # same index double-filters: ROCR selects device N from the real
-        # device list first, then HIP re-applies its own index-N filter
-        # against that already-filtered (now 1-device) list, landing on
-        # nothing -- "no ROCm-capable device is detected" (a known trap in
-        # this project, e.g. RD58's PVPS02 finding). HIP_VISIBLE_DEVICES
-        # alone is sufficient.
-        os.environ.pop("ROCR_VISIBLE_DEVICES", None)
-        result = vc.run_rd12_correctness_check(
-            base_revision=base_revision,
+        print(f"=== RD12 validation producer: {arch} ===")
+        args = argparse.Namespace(
+            patch=PATCH,
             hip_path=HIP_PATH,
             amdgpu_targets=arch,
+            device_map=[f"{arch}={DEVICE_INDEX_BY_ARCH[arch]}"],
+            workdir=run_root / f"run-{arch}",
             worktree_root=worktree_root,
             build_root=build_root,
-            build_env=vc._hip_env(HIP_PATH),
-            run_dir=run_dir,
+            model=None,
+            correctness_evidence=None,
+            run_performance_benchmark=False,
+            producer_corpus=None,
+            baseline_source="bigcherry",
         )
-        bit_identical = result["results"]["bit_identical"]
-        backend_reference = result["results"]["backend_reference"]
-        activation = result["results"]["activation"]
-        print(f"[{arch}] bit_identical: {'PASS' if bit_identical.passed else 'FAIL'}")
-        print(f"[{arch}] {bit_identical.detail}")
-        print(f"[{arch}] backend_reference: {'PASS' if backend_reference.passed else 'FAIL'}")
-        print(f"[{arch}] activation: {'PASS' if activation.passed else 'FAIL'}")
-        print(f"[{arch}] artifact: {result['artifact']['path']}")
-        overall_pass = overall_pass and bit_identical.passed
+        exit_code = vc._run_validation_producer(
+            args,
+            producer_id="rd12",
+            provided_inputs={},
+        )
+        if exit_code != 0:
+            print(f"[{arch}] producer execution FAILED (exit {exit_code})")
+            overall_pass = False
+            continue
+        outcome_path = run_root / f"run-{arch}" / "campaign" / "producer-execution.json"
+        outcome = json.loads(outcome_path.read_text(encoding="utf-8"))
+        correctness = outcome["check_results"].get("correctness", {})
+        activation = outcome["check_results"].get("activation", {})
+        print(f"[{arch}] correctness: {correctness.get('status')}")
+        print(f"[{arch}] activation: {activation.get('status')}")
+        print(
+            f"[{arch}] eligible: {outcome['eligible']} "
+            f"(record: {outcome['evidence_record']})"
+        )
+        overall_pass = overall_pass and (
+            correctness.get("status") == "pass" and activation.get("status") == "pass"
+        )
 
     return 0 if overall_pass else 1
 

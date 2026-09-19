@@ -27,6 +27,7 @@ import contextlib
 import json
 import sys
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest import mock
 
@@ -40,39 +41,66 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         """main() calls parser.error() (SystemExit(2) + a usage message to
         stderr) on a contract violation -- capture that message instead of
         letting the real exit propagate."""
-        import argparse
-        import io
         import contextlib
+        import io
 
         stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            with self.assertRaises(SystemExit):
-                vc.main(argv)
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            vc.main(argv)
         return stderr.getvalue()
 
     def test_missing_model_root_is_rejected(self) -> None:
-        message = self._parse_or_error([
-            "--patch", "1202_rd04_bf16_flash_attn_tile", "--run-performance-benchmark",
-            "--hip-path", "H:/fake", "--workdir", "H:/fake-workdir",
-            "--device-map", "gfx1100=0",
-        ])
+        message = self._parse_or_error(
+            [
+                "--patch",
+                "1202_rd04_bf16_flash_attn_tile",
+                "--run-performance-benchmark",
+                "--hip-path",
+                "H:/fake",
+                "--workdir",
+                "H:/fake-workdir",
+                "--device-map",
+                "gfx1100=0",
+            ]
+        )
         self.assertIn("requires --model-root and --device-map", message)
 
     def test_missing_device_map_is_rejected(self) -> None:
-        message = self._parse_or_error([
-            "--patch", "1202_rd04_bf16_flash_attn_tile", "--run-performance-benchmark",
-            "--hip-path", "H:/fake", "--workdir", "H:/fake-workdir",
-            "--model-root", "H:/fake-models",
-        ])
+        message = self._parse_or_error(
+            [
+                "--patch",
+                "1202_rd04_bf16_flash_attn_tile",
+                "--run-performance-benchmark",
+                "--hip-path",
+                "H:/fake",
+                "--workdir",
+                "H:/fake-workdir",
+                "--model-root",
+                "H:/fake-models",
+            ]
+        )
         self.assertIn("requires --model-root and --device-map", message)
 
-    def test_mutually_exclusive_with_legacy_rd04_mode(self) -> None:
-        message = self._parse_or_error([
-            "--patch", "1202_rd04_bf16_flash_attn_tile", "--run-performance-benchmark",
-            "--run-rd04-benchmark",
-            "--hip-path", "H:/fake", "--workdir", "H:/fake-workdir",
-            "--model-root", "H:/fake-models", "--device-map", "gfx1100=0",
-        ])
+    def test_mutually_exclusive_with_legacy_rd58_mode(self) -> None:
+        # PA36 RD04/1202 producer migration: RD04's --run-rd04-benchmark
+        # flag was deleted; the exclusion is pinned through a surviving
+        # legacy RD mode instead.
+        message = self._parse_or_error(
+            [
+                "--patch",
+                "1202_rd04_bf16_flash_attn_tile",
+                "--run-performance-benchmark",
+                "--run-rd58-state-restore",
+                "--hip-path",
+                "H:/fake",
+                "--workdir",
+                "H:/fake-workdir",
+                "--model-root",
+                "H:/fake-models",
+                "--device-map",
+                "gfx1100=0",
+            ]
+        )
         self.assertIn("mutually exclusive with the legacy RD modes", message)
 
     def test_does_not_require_model_manifest_or_amdgpu_targets(self) -> None:
@@ -90,15 +118,27 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             try:
-                vc.main([
-                    "--patch", "1202_rd04_bf16_flash_attn_tile", "--run-performance-benchmark",
-                    "--hip-path", str(Path(__file__).resolve().parent),
-                    "--workdir", str(tmp_path / "workdir"),
-                    "--worktree-root", str(tmp_path / "worktrees"),
-                    "--model-root", "H:/fake-models", "--device-map", "gfx1100=0",
-                ])
+                vc.main(
+                    [
+                        "--patch",
+                        "1202_rd04_bf16_flash_attn_tile",
+                        "--run-performance-benchmark",
+                        "--hip-path",
+                        str(Path(__file__).resolve().parent),
+                        "--workdir",
+                        str(tmp_path / "workdir"),
+                        "--worktree-root",
+                        str(tmp_path / "worktrees"),
+                        "--model-root",
+                        "H:/fake-models",
+                        "--device-map",
+                        "gfx1100=0",
+                    ]
+                )
             except SystemExit:
-                self.fail("--run-performance-benchmark should not hit parser.error() here")
+                self.fail(
+                    "--run-performance-benchmark should not hit parser.error() here"
+                )
             except Exception:
                 pass  # expected: fails later for a real, unrelated (non-arg-parsing) reason
 
@@ -106,11 +146,20 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         # Regression check: removing --amdgpu-targets's required=True (so
         # --run-performance-benchmark can omit it) must not silently make
         # it optional for the LEGACY single-architecture flow too.
-        message = self._parse_or_error([
-            "--patch", "1202_rd04_bf16_flash_attn_tile",
-            "--hip-path", "H:/fake", "--workdir", "H:/fake-workdir",
-            "--model", "H:/fake.gguf", "--manifest", "H:/fake-manifest.json",
-        ])
+        message = self._parse_or_error(
+            [
+                "--patch",
+                "1202_rd04_bf16_flash_attn_tile",
+                "--hip-path",
+                "H:/fake",
+                "--workdir",
+                "H:/fake-workdir",
+                "--model",
+                "H:/fake.gguf",
+                "--manifest",
+                "H:/fake-manifest.json",
+            ]
+        )
         self.assertIn("--amdgpu-targets", message)
 
 
@@ -121,6 +170,7 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
 
     def setUp(self) -> None:
         import inspect
+
         self.run_source = inspect.getsource(vc.run)
         self.impl_source = inspect.getsource(vc._run_performance_benchmark)
 
@@ -138,7 +188,9 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
         self.assertIn("execution_identity=execution_identity", self.impl_source)
         self.assertIn("require_device_visibility(", self.impl_source)
 
-    def test_inapplicable_cells_are_recorded_skipped_with_a_reason_not_omitted(self) -> None:
+    def test_inapplicable_cells_are_recorded_skipped_with_a_reason_not_omitted(
+        self,
+    ) -> None:
         self.assertIn('cell.update(status="skipped", reason=', self.impl_source)
 
 
@@ -187,29 +239,39 @@ class OrchestrationLogicTests(unittest.TestCase):
     def _run_with_patches(self, *, device_count: int = 1, runtime_args: tuple = ()):
         wiring = mock.Mock(executor="paired-llama-bench-v1", patch_args=())
         resolved_model = mock.Mock(
-            path=self.tmp_path / "model.gguf", device_count=device_count,
+            path=self.tmp_path / "model.gguf",
+            device_count=device_count,
             runtime_args=runtime_args,
         )
         composition = mock.Mock()
         materialized = mock.Mock()
         materialized.name = "src-deadbeef"
         outcome = mock.Mock(
-            commands=[], raw_logs=[], runs={"decode": mock.Mock(stats={}, runs=[])},
+            commands=[],
+            raw_logs=[],
+            runs={"decode": mock.Mock(stats={}, runs=[])},
         )
 
         executor_func = mock.Mock(return_value=outcome)
 
         patches = [
             mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring),
-            mock.patch.object(vc, "resolve_benchmark_model", return_value=resolved_model),
+            mock.patch.object(
+                vc, "resolve_benchmark_model", return_value=resolved_model
+            ),
             mock.patch.object(vc, "generate_registry", return_value=None),
             mock.patch.object(vc, "build_tree", return_value=self.tmp_path / "bin"),
             mock.patch.object(vc, "run_paired_llama_benchmark", executor_func),
             mock.patch.dict(
-                vc.BENCHMARK_EXECUTOR_FUNCS, {"paired-llama-bench-v1": executor_func},
+                vc.BENCHMARK_EXECUTOR_FUNCS,
+                {"paired-llama-bench-v1": executor_func},
             ),
-            mock.patch.object(vc, "capture_completed_build_evidence", return_value=mock.Mock()),
-            mock.patch.object(vc, "assert_validation_subject_parity", return_value=None),
+            mock.patch.object(
+                vc, "capture_completed_build_evidence", return_value=mock.Mock()
+            ),
+            mock.patch.object(
+                vc, "assert_validation_subject_parity", return_value=None
+            ),
             mock.patch(
                 "bigcherry.patch.source.resolve_source_composition",
                 return_value=("deadbeef" * 5, composition),
@@ -220,11 +282,11 @@ class OrchestrationLogicTests(unittest.TestCase):
             ),
         ]
         with contextlib.ExitStack() as stack:
-            mocks = [stack.enter_context(p) for p in patches]
+            [stack.enter_context(p) for p in patches]
             require_visibility = stack.enter_context(
                 mock.patch(
                     "bigcherry.experiment.execution.require_device_visibility",
-                    return_value=mock.Mock(document=lambda: {}),
+                    return_value=mock.Mock(document=partial(dict)),
                 )
             )
             result = vc._run_performance_benchmark(self.args, self.descriptor, self.cfg)
@@ -256,7 +318,8 @@ class OrchestrationLogicTests(unittest.TestCase):
         # to the executor -- this is the exact gap that finding closed.
         self.args.device_map = ["gfx1100=0,1"]
         _, _, executor_func = self._run_with_patches(
-            device_count=2, runtime_args=("-sm", "tensor"),
+            device_count=2,
+            runtime_args=("-sm", "tensor"),
         )
         executor_func.assert_called_once()
         _, kwargs = executor_func.call_args
@@ -277,15 +340,21 @@ class OrchestrationLogicTests(unittest.TestCase):
             tmp_path = Path(tmp)
             args = argparse.Namespace(
                 patch="1202_rd04_bf16_flash_attn_tile",
-                hip_path=tmp_path / "hip", workdir=tmp_path / "workdir",
-                worktree_root=tmp_path / "worktrees", build_root=None,
-                model_root=tmp_path / "models", benchmark_architecture=["gfx1100"],
-                benchmark_model=["test-model"], device_map=["gfx1100=0"],
-                bench_repetitions=2, baseline_source="bigcherry",
+                hip_path=tmp_path / "hip",
+                workdir=tmp_path / "workdir",
+                worktree_root=tmp_path / "worktrees",
+                build_root=None,
+                model_root=tmp_path / "models",
+                benchmark_architecture=["gfx1100"],
+                benchmark_model=["test-model"],
+                device_map=["gfx1100=0"],
+                bench_repetitions=2,
+                baseline_source="bigcherry",
             )
             args.workdir.mkdir(parents=True, exist_ok=True)
             descriptor = mock.Mock(
-                patch_id="1202_rd04_bf16_flash_attn_tile", validation_architectures=("gfx1100",),
+                patch_id="1202_rd04_bf16_flash_attn_tile",
+                validation_architectures=("gfx1100",),
             )
             cfg = mock.Mock()
             cfg.pinned = "deadbeef"
@@ -293,41 +362,79 @@ class OrchestrationLogicTests(unittest.TestCase):
 
             wiring = mock.Mock(executor="paired-llama-bench-v1", patch_args=())
             resolved_model = mock.Mock(
-                path=tmp_path / "model.gguf", device_count=1, runtime_args=(),
+                path=tmp_path / "model.gguf",
+                device_count=1,
+                runtime_args=(),
             )
             composition = mock.Mock()
             materialized = mock.Mock()
             materialized.name = "src-deadbeef"
             dispatch_outcome = mock.Mock(
-                commands=[], raw_logs=[], runs={"decode": mock.Mock(stats={}, runs=[])},
+                commands=[],
+                raw_logs=[],
+                runs={"decode": mock.Mock(stats={}, runs=[])},
             )
             dispatch_func = mock.Mock(return_value=dispatch_outcome)
-            wrong_func = mock.Mock(side_effect=AssertionError(
-                "run_paired_llama_benchmark called directly, bypassing BENCHMARK_EXECUTOR_FUNCS"
-            ))
+            wrong_func = mock.Mock(
+                side_effect=AssertionError(
+                    "run_paired_llama_benchmark called directly, bypassing BENCHMARK_EXECUTOR_FUNCS"
+                )
+            )
 
             with contextlib.ExitStack() as stack:
-                stack.enter_context(mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring))
-                stack.enter_context(mock.patch.object(vc, "resolve_benchmark_model", return_value=resolved_model))
-                stack.enter_context(mock.patch.object(vc, "generate_registry", return_value=None))
-                stack.enter_context(mock.patch.object(vc, "build_tree", return_value=tmp_path / "bin"))
-                stack.enter_context(mock.patch.object(vc, "run_paired_llama_benchmark", wrong_func))
-                stack.enter_context(mock.patch.dict(
-                    vc.BENCHMARK_EXECUTOR_FUNCS, {"paired-llama-bench-v1": dispatch_func},
-                ))
-                stack.enter_context(mock.patch.object(vc, "capture_completed_build_evidence", return_value=mock.Mock()))
-                stack.enter_context(mock.patch.object(vc, "assert_validation_subject_parity", return_value=None))
-                stack.enter_context(mock.patch(
-                    "bigcherry.patch.source.resolve_source_composition",
-                    return_value=("deadbeef" * 5, composition),
-                ))
-                stack.enter_context(mock.patch(
-                    "bigcherry.patch.source.materialize_composition", return_value=materialized,
-                ))
-                stack.enter_context(mock.patch(
-                    "bigcherry.experiment.execution.require_device_visibility",
-                    return_value=mock.Mock(document=lambda: {}),
-                ))
+                stack.enter_context(
+                    mock.patch.object(
+                        vc, "resolve_benchmark_wiring", return_value=wiring
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        vc, "resolve_benchmark_model", return_value=resolved_model
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(vc, "generate_registry", return_value=None)
+                )
+                stack.enter_context(
+                    mock.patch.object(vc, "build_tree", return_value=tmp_path / "bin")
+                )
+                stack.enter_context(
+                    mock.patch.object(vc, "run_paired_llama_benchmark", wrong_func)
+                )
+                stack.enter_context(
+                    mock.patch.dict(
+                        vc.BENCHMARK_EXECUTOR_FUNCS,
+                        {"paired-llama-bench-v1": dispatch_func},
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        vc, "capture_completed_build_evidence", return_value=mock.Mock()
+                    )
+                )
+                stack.enter_context(
+                    mock.patch.object(
+                        vc, "assert_validation_subject_parity", return_value=None
+                    )
+                )
+                stack.enter_context(
+                    mock.patch(
+                        "bigcherry.patch.source.resolve_source_composition",
+                        return_value=("deadbeef" * 5, composition),
+                    )
+                )
+                stack.enter_context(
+                    mock.patch(
+                        "bigcherry.patch.source.materialize_composition",
+                        return_value=materialized,
+                    )
+                )
+                stack.enter_context(
+                    mock.patch(
+                        "bigcherry.experiment.execution.require_device_visibility",
+                        return_value=mock.Mock(document=partial(dict)),
+                    )
+                )
                 vc._run_performance_benchmark(args, descriptor, cfg)
 
             dispatch_func.assert_called_once()

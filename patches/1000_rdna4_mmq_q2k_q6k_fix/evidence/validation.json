@@ -1,0 +1,38 @@
+{
+  "patch_id": "1000_rdna4_mmq_q2k_q6k_fix",
+  "records": [
+    {
+      "date": "2026-09-16",
+      "source": "PA35 step 1, tools/lab/patch1000/run_pa35_step1.py",
+      "hardware": "gfx1201 (RDNA4), HIP_VISIBLE_DEVICES=2, single real device confirmed via require_device_visibility, host Brutus",
+      "base_ref": "b10901",
+      "base_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+      "arms": {
+        "control": "serving-core without 1000_rdna4_mmq_q2k_q6k_fix",
+        "subject": "serving-core + 1000_rdna4_mmq_q2k_q6k_fix"
+      },
+      "methodology": "exact-shape backend-ops paired A/B (m=4096, n=512, k=14336), 5 rounds",
+      "correctness": {
+        "control_q2k": "PASS",
+        "subject_q2k": "PASS",
+        "control_q6k": "PASS",
+        "subject_q6k": "PASS"
+      },
+      "performance": {
+        "q6k_control_to_subject_ratio": 1.365,
+        "q6k_ci95": [1.362, 1.367],
+        "q6k_result": "real, statistically significant gain; below the patch's claimed 1.90x",
+        "q2k_control_to_subject_ratio": 0.959,
+        "q2k_ci95": [0.954, 0.963],
+        "q2k_result": "real, statistically significant REGRESSION; directly contradicts the patch's claimed 28.2x gain"
+      },
+      "coverage_limitations": [
+        "Q2_K model-level llama-bench lane BLOCKED: no Q2_K fixture registered in config/models.toml",
+        "Q6_K model-level llama-bench lane not run (outside PA35 step-1 minimum scope)"
+      ],
+      "gpt_review": "dev-gpt-agent req_3483f75cd36e4d72 confirmed this as sufficient step-1 evidence closure",
+      "original_promotion_claim_preserved": "SUMMARY.md retains the PR #25940 upstream-reported figures (Q6_K 1.90x, Q2_K 28.2x at n=512) as historical claims, not erased",
+      "ledger_event": "chg_20260915_172028_ran-real-hardware-verification_5926"
+    }
+  ]
+}

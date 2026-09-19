@@ -72,7 +72,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
                  mock.patch.object(evidence, "write_record", side_effect=lambda record: records.append(record) or work / "record.json"):
                 result = vc._run_framework_configuration(args, descriptor, SimpleNamespace(pinned="pin"))
             self.assertEqual(result, 0)
-            self.assertEqual(set(records[0]["check_results"]), {"apply", "build", "coverage-source-selection"})
+            self.assertEqual(set(records[0]["check_results"]), {"apply", "build", "serving-source-selection"})
             self.assertTrue(records[0]["eligible_for_validated_state"])
             self.assertFalse(records[0]["hardware_execution_qualified"])
 

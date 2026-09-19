@@ -33,54 +33,60 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
 
     def test_campaign_run_is_guarded_by_run_rd08_contract_check(self) -> None:
         # The exact invariant: `campaign.run()` must be reachable ONLY when
-        # none of args.run_rd08_contract/run_rd04_benchmark/
-        # run_rd58_state_restore is set -- never unconditionally.
+        # none of args.run_rd08_contract/
+        # run_rd73_contract is set -- never unconditionally. (RD04's two
+        # execution flags were deleted by the PA36 RD04/1202 producer
+        # migration; RD13's/RD26's dedicated flags were deleted by the
+        # PA36 RD13/1206 + RD26/1210 producer migrations -- all four now
+        # run through --validation-producer and are absent from every
+        # generic-campaign guard.)
         match = re.search(
-            r"if not \(args\.run_rd08_contract or args\.run_rd04_benchmark or "
-            r"args\.run_rd58_state_restore or args\.run_rd73_contract or "
-            r"args\.run_rd12_contract or args\.run_rd04_contract or "
-            r"args\.run_rd13_contract or args\.run_rd26_contract\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
+            r"if not \(args\.run_rd08_contract or "
+            r"args\.run_rd73_contract\):\s*\n\s*try:\s*\n\s*campaign\.run\(\)",
             self.source,
         )
         self.assertIsNotNone(
             match,
             "campaign.run() must be guarded by "
-            "`if not (args.run_rd08_contract or args.run_rd04_benchmark or "
-            "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
-            "args.run_rd13_contract or args.run_rd26_contract):` -- the generic "
+            "`if not (args.run_rd08_contract or "
+            "args.run_rd73_contract):` -- the generic "
             "tune/promote/export pipeline must never be a hard prerequisite of "
-            "RD08's/RD04's/RD58's/RD73's/RD12's/RD13's/RD26's own contract evidence",
+            "RD08's/RD73's own contract evidence "
+            "(RD12's, RD04's, RD13's and RD26's specialized paths are "
+            "producer-dispatched and "
+            "return before this point entirely)",
         )
 
     def test_report_md_read_is_also_guarded(self) -> None:
-        # --run-rd08-contract/--run-rd04-benchmark/--run-rd58-state-restore
-        # must not require report.md to exist (it's only ever written by
-        # the generic campaign's own S7 stage).
+        # --run-rd08-contract/--run-rd73-contract
+        # must not require report.md
+        # to exist (it's only ever written by the generic campaign's own S7
+        # stage).
         guard_text = (
-            "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
-            "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
-            "args.run_rd13_contract or args.run_rd26_contract):"
+            "if not (args.run_rd08_contract or "
+            "args.run_rd73_contract):"
         )
         guarded_block = self.source[self.source.index(guard_text):]
         guarded_block = guarded_block[:guarded_block.index("\n\n", guarded_block.index("report.md"))]
         self.assertIn("report.md", guarded_block)
 
     def test_generic_trace_probe_is_skipped_for_run_rd08_contract(self) -> None:
+        # RD04's --run-rd04-benchmark flag was deleted by the PA36 RD04/1202
+        # producer migration (RD04's activation stays honestly BLOCKED via
+        # its producer's trace_probe=skip policy, not via this exclusion).
         match = re.search(
-            r"trace_result = None if \(args\.run_rd08_contract or args\.run_rd04_benchmark or "
-            r"args\.run_rd58_state_restore or args\.run_rd73_contract or "
-            r"args\.run_rd12_contract or args\.run_rd04_contract\) else "
+            r"trace_result = None if \(args\.run_rd08_contract or "
+            r"args\.run_rd73_contract\) else "
             r"run_trace_activation_probes\(",
             self.source,
         )
         self.assertIsNotNone(
             match,
             "the generic tune-binary/fusion-disabled probe must be skipped for "
-            "--run-rd08-contract/--run-rd04-benchmark/--run-rd58-state-restore/"
-            "--run-rd73-contract/--run-rd12-contract -- it is redundant with (RD08) "
-            "or invalid for (RD04/RD58/RD73/RD12) the real evidence those modes produce",
+            "--run-rd08-contract/--run-rd73-contract "
+            "-- it is redundant with (RD08) or invalid for (RD73) the real "
+            "evidence those modes produce (RD12's and RD04's producer-dispatched "
+            "paths return before this point entirely)",
         )
 
     def test_contract_correctness_gate_uses_a_real_experiment_contract_not_a_binding(self) -> None:
@@ -116,10 +122,8 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         # -- only campaign.run() (S1-S7) must be skipped, not identity binding.
         ensure_index = self.source.index("campaign.ensure_campaign_identity()")
         guard_index = self.source.index(
-            "if not (args.run_rd08_contract or args.run_rd04_benchmark or "
-            "args.run_rd58_state_restore or args.run_rd73_contract or "
-            "args.run_rd12_contract or args.run_rd04_contract or "
-            "args.run_rd13_contract or args.run_rd26_contract):"
+            "if not (args.run_rd08_contract or "
+            "args.run_rd73_contract):"
         )
         self.assertLess(
             ensure_index, guard_index,

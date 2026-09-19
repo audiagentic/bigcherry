@@ -1,0 +1,43 @@
+schema = 1
+
+# PA36 migration #4 (dev-gpt-agent req_110d0729beb44d8b): 1210's
+# (RD26-DECODE-VERIFY-BIT-IDENTITY) patch-local producer. Mechanically
+# migrated off validation_campaign.py's
+# run_rd26_decode_verify_bit_identity_check() (the real within-build
+# decode-vs-verify raw-F32-logit byte-identity oracle) and
+# run_rd26_ppl_check() (the dead legacy PPL wrapper -- zero live call
+# sites, deleted with its rd26_correctness.py module). Both functions
+# (and the --run-rd26-contract CLI path) are DELETED from shared code
+# in the same change (no compatibility layer, per the project's
+# migrate-up doctrine).
+#
+# standard_campaign = "run": the generic five-build standard scaffold
+# runs first; the isolated llama-results pair is the producer's own
+# build_pair() domain (fat multi-arch, bigcherry baseline, parity
+# asserted).
+#
+# trace_probe = "skip": RD26 declares NO activation check (expected
+# effect is determinism/correctness only) -- there is no marker to
+# probe. The producer returns no activation/trace evidence.
+#
+# correctness_evidence_cli / performance_benchmark_cli = "forbid":
+# --correctness-evidence and --run-performance-benchmark are ambiguous
+# with this producer's own authoritative evidence. The contract's
+# controls check stays unsatisfied exactly as the historical record
+# shows it (ERROR) -- this migration does not add benchmark semantics
+# (design ruling: reproduce the historical record shape, including its
+# honest correctness FAIL, rather than expand it).
+#
+# One contract architecture per run: the operator names it via
+# --amdgpu-targets; the artifact is the exact legacy basename (no
+# architecture suffix).
+[producer.rd26]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd26-decode-verify-bit-identity.json",
+]

@@ -100,22 +100,14 @@ def _init_upstream(directory: Path) -> Path:
     _git(repo, "config", "user.email", "test@example.invalid")
     _git(repo, "config", "user.name", "Test")
     (repo / "target.c").write_text(
-        "seed\n"
-        "clean_anchor\n"
-        "ONLY_OLD\n"
-        "old_failure_anchor\n"
-        "blocked_anchor\n",
+        "seed\nclean_anchor\nONLY_OLD\nold_failure_anchor\nblocked_anchor\n",
         encoding="utf-8",
     )
     _git(repo, "add", "target.c")
     _git(repo, "commit", "-m", "old")
 
     (repo / "target.c").write_text(
-        "seed\n"
-        "clean_anchor\n"
-        "ONLY_NEW\n"
-        "renamed_failure_anchor\n"
-        "blocked_anchor\n",
+        "seed\nclean_anchor\nONLY_NEW\nrenamed_failure_anchor\nblocked_anchor\n",
         encoding="utf-8",
     )
     _git(repo, "add", "target.c")
@@ -133,9 +125,15 @@ class RebaseCheckTests(unittest.TestCase):
         self.patches_root = self.base / "patches"
         self.patches_root.mkdir()
         (self.patches_root / "0100_clean.py").write_text(CLEAN_PATCH, encoding="utf-8")
-        (self.patches_root / "0200_na.py").write_text(NOT_APPLICABLE_PATCH, encoding="utf-8")
-        (self.patches_root / "0300_failed.py").write_text(FAILED_PATCH, encoding="utf-8")
-        (self.patches_root / "0400_blocked.py").write_text(BLOCKED_PATCH, encoding="utf-8")
+        (self.patches_root / "0200_na.py").write_text(
+            NOT_APPLICABLE_PATCH, encoding="utf-8"
+        )
+        (self.patches_root / "0300_failed.py").write_text(
+            FAILED_PATCH, encoding="utf-8"
+        )
+        (self.patches_root / "0400_blocked.py").write_text(
+            BLOCKED_PATCH, encoding="utf-8"
+        )
 
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
@@ -239,8 +237,12 @@ class ConflictPartitionedAllPatchesTests(unittest.TestCase):
         self.patches_root = self.base / "patches"
         self.patches_root.mkdir()
         (self.patches_root / "0100_clean.py").write_text(CLEAN_PATCH, encoding="utf-8")
-        (self.patches_root / "0500_conflict_a.py").write_text(CONFLICT_A_PATCH, encoding="utf-8")
-        (self.patches_root / "0600_conflict_b.py").write_text(CONFLICT_B_PATCH, encoding="utf-8")
+        (self.patches_root / "0500_conflict_a.py").write_text(
+            CONFLICT_A_PATCH, encoding="utf-8"
+        )
+        (self.patches_root / "0600_conflict_b.py").write_text(
+            CONFLICT_B_PATCH, encoding="utf-8"
+        )
 
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
@@ -297,8 +299,12 @@ class QuarantineFixedPointTests(unittest.TestCase):
 
         self.patches_root = self.base / "patches"
         self.patches_root.mkdir()
-        (self.patches_root / "0100_provider.py").write_text(PROVIDER_PATCH, encoding="utf-8")
-        (self.patches_root / "0200_consumer.py").write_text(CONSUMER_PATCH, encoding="utf-8")
+        (self.patches_root / "0100_provider.py").write_text(
+            PROVIDER_PATCH, encoding="utf-8"
+        )
+        (self.patches_root / "0200_consumer.py").write_text(
+            CONSUMER_PATCH, encoding="utf-8"
+        )
 
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
@@ -365,7 +371,10 @@ class StaleReportTests(unittest.TestCase):
     def test_semantics_version_mismatch_is_stale(self):
         stale = dict(
             self.report,
-            patch_application_semantics_version=self.report["patch_application_semantics_version"] + 1,
+            patch_application_semantics_version=self.report[
+                "patch_application_semantics_version"
+            ]
+            + 1,
         )
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(stale, self.upstream)
@@ -393,11 +402,11 @@ class StaleReportTests(unittest.TestCase):
             rebase._require_fresh(stale, self.upstream)
 
     def test_composition_tampered_selection_is_stale(self):
-        # patches[] shrunk while selection.patch_ids was left untouched --
+        # patches[] shrunk while the selector's patch_ids was left untouched --
         # digests for the remaining entries still match, so this must be
         # caught by the composition-consistency check, not a digest check.
         patches = [dict(p) for p in self.report["patches"]]
-        stale = dict(self.report, patches=patches[:0], selection={"patch_ids": ["0100_clean"]})
+        stale = dict(self.report, patches=patches[:0])
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(stale, self.upstream)
 
@@ -426,61 +435,169 @@ class StaleReportTests(unittest.TestCase):
         with self.assertRaises(rebase.StaleRebaseReportError):
             rebase._require_fresh(dict(self.report), self.upstream)
 
-    def test_source_report_binds_on_patch_set_id_not_just_patch_ids(self):
-        # gpt-dev-agent review (legacy recipe removal plan, session
-        # ses_5307d9c58ec645cb): two logically distinct v2 patch-set
-        # compositions can resolve to the identical module-id set --
-        # re-deriving patch_ids alone would miss that, so a --source report
-        # must also bind on patch_set_id (and source_ref). Mocks
-        # _resolve_v2_source so this exercises the binding logic in
-        # isolation, without needing the real project's recipes.toml/
-        # catalog to agree with this fixture's synthetic patches root.
-        from unittest import mock
-        from bigcherry.campaign.resolution import CanonicalSelection
+    def _source_identity(self, *, patch_set_id: str, source_ref: str) -> object:
+        from bigcherry.campaign import resolution as campaign_resolution
 
-        fresh = CanonicalSelection(
-            source_name="bigcherry", source_ref="deadbeef" * 5,
-            patch_set_id="psid-fresh", patch_ids=("0100_clean",),
+        return campaign_resolution.SelectorIdentity(
+            selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
+            selector_name="bigcherry",
+            source_name="bigcherry",
+            source_ref=source_ref,
+            patch_set_id=patch_set_id,
+            patch_ids=("0100_clean",),
+            module_hashes=(("0100_clean", "f" * 64),),
         )
+
+    def test_source_report_binds_on_patch_set_id_not_just_patch_ids(self):
+        # PA34 (supersedes the gpt-dev-agent ses_5307d9c58ec645cb finding):
+        # two logically distinct compositions can resolve to the identical
+        # module-id set -- the canonical SelectorIdentity, not a derived id
+        # set, is what a source report binds on. Mocks _live_identity_for so
+        # the binding logic is exercised in isolation, without needing the
+        # real project's recipes.toml/catalog to agree with this fixture's
+        # synthetic patches root.
+        from unittest import mock
+
         source_report = dict(
             self.report,
-            selection={
-                "patch_ids": ["0100_clean"], "recipe": None, "source": "bigcherry",
-                "source_ref": "deadbeef" * 5, "source_patch_set_id": "psid-fresh",
-                "all_patches": False,
-            },
+            selector=self._source_identity(
+                patch_set_id="psid-fresh",
+                source_ref="deadbeef" * 5,
+            ).to_payload(),
         )
-        with mock.patch.object(rebase, "_resolve_v2_source", return_value=fresh):
-            # Fresh: patch_set_id/source_ref/patch_ids all agree -- passes.
+        with mock.patch.object(
+            rebase,
+            "_live_identity_for",
+            return_value=self._source_identity(
+                patch_set_id="psid-fresh", source_ref="deadbeef" * 5
+            ),
+        ):
+            # Fresh: the full identity agrees -- passes.
             rebase._require_fresh(dict(source_report), self.upstream)
 
         # Same resulting patch_ids, but a DIFFERENT live patch_set_id (the
-        # exact case patch_set_id exists to catch) -- must be rejected even
-        # though patch_ids alone would look identical.
-        changed_composition = CanonicalSelection(
-            source_name="bigcherry", source_ref="deadbeef" * 5,
-            patch_set_id="psid-DIFFERENT", patch_ids=("0100_clean",),
-        )
-        with mock.patch.object(rebase, "_resolve_v2_source", return_value=changed_composition):
+        # exact case patch_set_id exists to catch) -- rejected even though
+        # patch_ids alone look identical.
+        with mock.patch.object(
+            rebase,
+            "_live_identity_for",
+            return_value=self._source_identity(
+                patch_set_id="psid-DIFFERENT", source_ref="deadbeef" * 5
+            ),
+        ):
             with self.assertRaises(rebase.StaleRebaseReportError):
                 rebase._require_fresh(dict(source_report), self.upstream)
 
         # Same patch_set_id, but the source's ref moved (e.g. a pin bump) --
-        # must also be rejected.
-        moved_ref = CanonicalSelection(
-            source_name="bigcherry", source_ref="cafef00d" * 5,
-            patch_set_id="psid-fresh", patch_ids=("0100_clean",),
-        )
-        with mock.patch.object(rebase, "_resolve_v2_source", return_value=moved_ref):
+        # also rejected.
+        with mock.patch.object(
+            rebase,
+            "_live_identity_for",
+            return_value=self._source_identity(
+                patch_set_id="psid-fresh", source_ref="cafef00d" * 5
+            ),
+        ):
             with self.assertRaises(rebase.StaleRebaseReportError):
                 rebase._require_fresh(dict(source_report), self.upstream)
+
+    def test_order_only_identity_drift_is_stale(self):
+        # PA34: same id SET, different ORDER is a different identity -- the
+        # pre-PA34 set-based comparison would have missed this.
+        from unittest import mock
+        from bigcherry.campaign import resolution as campaign_resolution
+
+        (self.patches_root / "0200_second.py").write_text(CLEAN_PATCH, encoding="utf-8")
+        self.report = rebase.run_rebase_check(self.upstream, all_patches=True)
+        reported = campaign_resolution.SelectorIdentity.from_payload(
+            self.report["selector"]
+        )
+        reordered = campaign_resolution.SelectorIdentity(
+            selector_kind=reported.selector_kind,
+            selector_name=reported.selector_name,
+            source_name=reported.source_name,
+            source_ref=reported.source_ref,
+            patch_set_id=reported.patch_set_id,
+            patch_ids=tuple(reversed(reported.patch_ids)),
+            module_hashes=tuple(reversed(reported.module_hashes)),
+        )
+        with mock.patch.object(rebase, "_live_identity_for", return_value=reordered):
+            with self.assertRaises(rebase.StaleRebaseReportError):
+                rebase._require_fresh(dict(self.report), self.upstream)
+
+    def test_hash_only_identity_drift_is_stale(self):
+        # PA34: same ids and order, one module's content hash moved -- also
+        # a different identity.
+        from unittest import mock
+        from bigcherry.campaign import resolution as campaign_resolution
+
+        reported = campaign_resolution.SelectorIdentity.from_payload(
+            self.report["selector"]
+        )
+        hashes = list(reported.module_hashes)
+        hashes[0] = (hashes[0][0], "0" * 64)
+        drifted = campaign_resolution.SelectorIdentity(
+            selector_kind=reported.selector_kind,
+            selector_name=reported.selector_name,
+            source_name=reported.source_name,
+            source_ref=reported.source_ref,
+            patch_set_id=reported.patch_set_id,
+            patch_ids=reported.patch_ids,
+            module_hashes=tuple(hashes),
+        )
+        with mock.patch.object(rebase, "_live_identity_for", return_value=drifted):
+            with self.assertRaises(rebase.StaleRebaseReportError):
+                rebase._require_fresh(dict(self.report), self.upstream)
+
+    def test_schema_1_selection_report_is_stale(self):
+        # Schema 1 reports carried the ad-hoc `selection` block; under
+        # schema 2 a report without the canonical selector payload is stale
+        # on its own.
+        v1 = dict(self.report, schema_version=1)
+        del v1["selector"]
+        v1["selection"] = {"patch_ids": ["0100_clean"], "all_patches": True}
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase._require_fresh(v1, self.upstream)
+
+    def test_expected_selector_mismatch_rejects_a_fresh_report(self):
+        # G2 (PA34): a FRESH report produced under a different selector is
+        # not evidence for THIS selector, even when its module-id set
+        # happens to match.
+        from bigcherry.campaign import resolution as campaign_resolution
+
+        actual = campaign_resolution.SelectorIdentity.from_payload(
+            self.report["selector"]
+        )
+        other = campaign_resolution.SelectorIdentity(
+            selector_kind=campaign_resolution.SELECTOR_KIND_SOURCE,
+            selector_name="bigcherry",
+            source_name="bigcherry",
+            source_ref="deadbeef" * 5,
+            patch_set_id="psid-other",
+            patch_ids=actual.patch_ids,
+            module_hashes=actual.module_hashes,
+        )
+        with self.assertRaises(rebase.StaleRebaseReportError):
+            rebase.require_fresh_report(
+                dict(self.report),
+                self.upstream,
+                expected_selector=other,
+            )
+        # The matching expected selector passes.
+        known_good = rebase.require_fresh_report(
+            dict(self.report),
+            self.upstream,
+            expected_selector=actual,
+        )
+        self.assertEqual(set(known_good), {"0100_clean"})
 
     def test_apply_known_good_rejects_stale_report(self):
         report_path = self.base / "report.json"
         stale = dict(self.report, upstream_revision="0" * 40)
         rebase.write_report(report_path, stale)
         with self.assertRaises(rebase.StaleRebaseReportError):
-            rebase.apply_known_good(self.upstream, report_path, force=True, dry_run=True)
+            rebase.apply_known_good(
+                self.upstream, report_path, force=True, dry_run=True
+            )
 
 
 class WriteOverlaySnapshotTests(unittest.TestCase):
@@ -497,7 +614,9 @@ class WriteOverlaySnapshotTests(unittest.TestCase):
             target.write_bytes(b"line1\r\nline2\r\n")
 
             written = rebase._write_overlay_snapshot(
-                root, {"overlay-file.cpp": "line1\nline2\n"}, dry_run=False,
+                root,
+                {"overlay-file.cpp": "line1\nline2\n"},
+                dry_run=False,
             )
 
             self.assertEqual(written, ["overlay-file.cpp"])
@@ -510,7 +629,9 @@ class WriteOverlaySnapshotTests(unittest.TestCase):
             target.write_bytes(b"line1\nline2\n")
 
             written = rebase._write_overlay_snapshot(
-                root, {"overlay-file.cpp": "line1\nline2\n"}, dry_run=False,
+                root,
+                {"overlay-file.cpp": "line1\nline2\n"},
+                dry_run=False,
             )
 
             self.assertEqual(written, [])
@@ -597,7 +718,9 @@ class ApplyKnownGoodTests(unittest.TestCase):
         self.patches_root = self.base / "patches"
         self.patches_root.mkdir()
         (self.patches_root / "0100_clean.py").write_text(CLEAN_PATCH, encoding="utf-8")
-        (self.patches_root / "0300_failed.py").write_text(FAILED_PATCH, encoding="utf-8")
+        (self.patches_root / "0300_failed.py").write_text(
+            FAILED_PATCH, encoding="utf-8"
+        )
 
         self.overlay_root = self.base / "overlay"
         self.overlay_root.mkdir()
@@ -632,8 +755,12 @@ class ApplyKnownGoodTests(unittest.TestCase):
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="audited")
-        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
-            result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
+        with mock.patch.object(
+            rebase.releases, "record_for_checkout", return_value=record
+        ):
+            result = rebase.apply_known_good(
+                self.upstream, report_path, force=False, dry_run=False
+            )
 
         self.assertTrue(result.ok)
         self.assertTrue(result.partial)
@@ -649,13 +776,17 @@ class ApplyKnownGoodTests(unittest.TestCase):
         (self.patches_root / "0300_failed.py").unlink()  # only the clean patch remains
         report = rebase.run_rebase_check(self.upstream, all_patches=True)
         self.assertEqual(set(report["known_good_patch_ids"]), {"0100_clean"})
-        self.assertEqual(set(report["selection"]["patch_ids"]), {"0100_clean"})
+        self.assertEqual(set(report["selector"]["patch_ids"]), {"0100_clean"})
         report_path = self.base / "report.json"
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="audited")
-        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
-            result = rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
+        with mock.patch.object(
+            rebase.releases, "record_for_checkout", return_value=record
+        ):
+            result = rebase.apply_known_good(
+                self.upstream, report_path, force=False, dry_run=False
+            )
 
         self.assertTrue(result.ok)
         self.assertFalse(result.partial)
@@ -665,21 +796,29 @@ class ApplyKnownGoodTests(unittest.TestCase):
         from unittest import mock
 
         report = rebase.run_rebase_check(self.upstream, all_patches=True)
-        self.assertTrue(set(report["known_good_patch_ids"]) < set(report["selection"]["patch_ids"]))
+        self.assertTrue(
+            set(report["known_good_patch_ids"]) < set(report["selector"]["patch_ids"])
+        )
         report_path = self.base / "report.json"
         rebase.write_report(report_path, report)
 
         record = self._fake_record(stage="generated")
         record.promotion = {"fake": "pointer"}
         record.manifest_hash = "fake-hash"
-        with mock.patch.object(rebase.releases, "record_for_checkout", return_value=record):
+        with mock.patch.object(
+            rebase.releases, "record_for_checkout", return_value=record
+        ):
             with self.assertRaises(rebase.RebaseCheckError):
-                rebase.apply_known_good(self.upstream, report_path, force=False, dry_run=False)
+                rebase.apply_known_good(
+                    self.upstream, report_path, force=False, dry_run=False
+                )
             # --force explicitly accepts invalidating later-stage evidence --
             # but it must actually invalidate it, not silently leave a
             # 'generated' tree's promotion/manifest pointing at a checkout
             # that was just replaced with an incomplete composition.
-            result = rebase.apply_known_good(self.upstream, report_path, force=True, dry_run=False)
+            result = rebase.apply_known_good(
+                self.upstream, report_path, force=True, dry_run=False
+            )
         self.assertTrue(result.ok)
         self.assertTrue(result.partial)
         self.assertEqual(record.stage, "broken")
@@ -708,7 +847,9 @@ class SourceSelectorTests(unittest.TestCase):
 
     def test_unknown_source_raises_rebase_check_error(self):
         with self.assertRaises(rebase.RebaseCheckError):
-            rebase._selection_patch_ids(source_name="not-a-real-source", all_patches=False)
+            rebase._selection_patch_ids(
+                source_name="not-a-real-source", all_patches=False
+            )
 
     def test_no_selector_given_raises(self):
         with self.assertRaises(rebase.RebaseCheckError):

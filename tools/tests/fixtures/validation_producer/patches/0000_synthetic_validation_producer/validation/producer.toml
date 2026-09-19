@@ -1,0 +1,14 @@
+schema = 1
+
+[producer.synthetic]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "skip"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = ["synthetic-correctness.json"]
+
+[producer.synthetic.input.token]
+type = "string"
+required = true

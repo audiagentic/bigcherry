@@ -33,7 +33,7 @@ import tomllib
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ..experiment import contract as experiment_contract
 from . import registry as patch_registry
@@ -841,8 +841,8 @@ class ValidationContext:
     device_identity: str | None = None
     model: str | None = None
     workload: str | None = None
-    contract: Any = None  # experiment_contract.ExperimentContract | None
-    contract_hash: str | None = None
+    contracts: tuple[experiment_contract.ExperimentContract, ...] = ()
+    contract_hashes: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     run_dir: Path | None = None
     run_binary: Callable[..., Any] | None = None
     register_artifact: Callable[..., ArtifactRef] | None = None
@@ -855,6 +855,54 @@ class ValidationContext:
     smoke_evidence: dict[str, Any] = field(default_factory=dict)
     architecture_evidence: dict[str, Any] = field(default_factory=dict)
     performance_evidence: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        ids = [contract.id for contract in self.contracts]
+        if len(set(ids)) != len(ids):
+            raise ConfigurationError(
+                f"ValidationContext.contracts has duplicate contract id(s): {ids!r}"
+            )
+        if set(self.contract_hashes) != set(ids):
+            raise ConfigurationError(
+                "ValidationContext.contract_hashes keys must exactly match "
+                f"contracts' ids: hashes={sorted(self.contract_hashes)!r} "
+                f"contracts={sorted(ids)!r}"
+            )
+        object.__setattr__(
+            self, "contract_hashes", MappingProxyType(dict(self.contract_hashes))
+        )
+
+    def contract_by_id(self, contract_id: str) -> experiment_contract.ExperimentContract:
+        for contract in self.contracts:
+            if contract.id == contract_id:
+                return contract
+        raise ConfigurationError(f"unknown contract id {contract_id!r}")
+
+    def contract_ids_for_check(self, spec: "CheckSpec") -> tuple[str, ...]:
+        """Mirrors :func:`_check_covers`'s scope-resolution semantics
+        (VA17 slice 1), applied here as a context-side lookup rather than
+        a plan-side coverage predicate:
+
+        - ``spec.contract_ids`` non-empty -> exactly those ids;
+        - unscoped + exactly one bound contract -> that contract's id;
+        - unscoped + zero or more-than-one bound contracts -> ``()``
+          (never silently resolved).
+        """
+        if spec.contract_ids:
+            return spec.contract_ids
+        if len(self.contracts) == 1:
+            return (self.contracts[0].id,)
+        return ()
+
+    def contracts_for_check(
+        self, spec: "CheckSpec"
+    ) -> tuple[experiment_contract.ExperimentContract, ...]:
+        return tuple(self.contract_by_id(cid) for cid in self.contract_ids_for_check(spec))
+
+    def contract_hashes_for_check(self, spec: "CheckSpec") -> Mapping[str, str]:
+        return MappingProxyType(
+            {cid: self.contract_hashes[cid] for cid in self.contract_ids_for_check(spec)}
+        )
 
 
 def _sha256_file(path: Path) -> str:

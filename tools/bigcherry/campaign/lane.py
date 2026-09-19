@@ -209,6 +209,44 @@ class CampaignLaneResult:
         value = build.get("effective_build_id")
         return value if isinstance(value, str) else None
 
+    @property
+    def effective_configure(self) -> dict[str, str]:
+        """PA26 (req_9cd5b140ca544ef8): the raw post-configure CMakeCache
+        record, read from the runtime-bundle manifest's own published JSON
+        (``workers.py``'s ``bundle_manifest["effective_configure"]``) --
+        not merely its digest (``effective_build_id`` above). Needed so a
+        caller can apply a narrow, caller-owned normalization instead of
+        trusting exact ``effective_build_id`` equality, which conflates
+        "same declared CMake surface" with "same effective behavior".
+        Empty when the runtime-bundle manifest predates this field (e.g. a
+        hand-built test fixture)."""
+        manifest = self._runtime_bundle_manifest()
+        value = manifest.get("effective_configure")
+        return dict(value) if isinstance(value, dict) else {}
+
+    @property
+    def generated_compile_inputs_hash(self) -> str | None:
+        """The runtime-bundle manifest's own
+        ``generated_compile_inputs_hash`` (the generated-catalog identity
+        the build actually compiled against), read the same way as
+        ``effective_configure`` above."""
+        manifest = self._runtime_bundle_manifest()
+        value = manifest.get("generated_compile_inputs_hash")
+        return value if isinstance(value, str) else None
+
+    def _runtime_bundle_manifest(self) -> dict[str, object]:
+        import json
+
+        try:
+            raw = self.runtime_bundle_ref.path.read_text(encoding="utf-8")
+        except OSError:
+            return {}
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
 
 @dataclass(frozen=True)
 class _MaterializedLaneSource:

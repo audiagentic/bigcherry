@@ -43,6 +43,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,46 @@ from .tuning import tune_promotion
 
 class CliError(RuntimeError):
     pass
+
+
+#: RHA15 (2026-09-15, dev-gpt-agent design review): the mandatory
+#: HI121/HI125 signature-verification preflight (``_observed_signature_hex``)
+#: needs a RECORD-capable binary (``GGML_HIP_AUTOTUNE_RECORD=ON``) to
+#: independently observe a real dispatch signature hex -- the tune/
+#: workload-max binary this module otherwise runs correctness against was
+#: never built with that capability (``build.record`` uses
+#: ``variant-set="inventory"``, which the catalog makes native-only, so it
+#: cannot itself resolve/force the tuned provisional winner and remains
+#: unsuitable for the actual correctness execution). A caller that already
+#: has a working verifier (``signature_digest_verification.
+#: make_signature_digest_verifier()``, which wraps the real record-lane
+#: binary + matching source root + first-device GPU scoping + memoization)
+#: should supply it here instead of letting this module re-derive a
+#: (binary, vendor_root) pair of its own that would silently point at the
+#: wrong binary.
+SignatureDigestVerifier = Callable[[dict[str, Any]], str]
+
+
+#: RHA15 (2026-09-15, dev-gpt-agent design review req_7e5ae686e055404e):
+#: the one canonical set of "this row genuinely failed, but the batch
+#: should keep going" exceptions. generate_for_row()'s own docstring says
+#: it "raises CliError, scm.SignatureMappingError or ce.EvidenceError on
+#: failure -- the caller decides whether that is fatal to the whole run";
+#: SignatureMappingError is its own separate, non-failure skip case (an
+#: honestly unsupported signature domain), handled distinctly by every
+#: caller. Centralized here so main() (below) and
+#: tuning/workflow.py::_stage_correctness_evidence() share one taxonomy
+#: instead of drifting independently -- exactly the drift that caused
+#: workflow.py's caller to only catch SignatureMappingError and let the
+#: first EvidenceError/CliError/CorrectnessGateError abort the entire
+#: batch before every row got an independent attempt. Never widen this to
+#: generic Exception: an unexpected SQLite/programming/infrastructure
+#: failure must still abort immediately, not be swallowed as "row failed".
+ROW_FAILURE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    gate.CorrectnessGateError,
+    ce.EvidenceError,
+    CliError,
+)
 
 
 def _read_measurements(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -103,17 +144,33 @@ def _load_signature_dict(conn: sqlite3.Connection, signature_id: int) -> dict[st
 
 
 def _observed_signature_hex(
-    binary: Path, *, moe_glu_file: Path, seed: int, runner=subprocess.run,
+    binary: Path, *,
+    test_file: Path | None = None, moe_glu_file: Path | None = None,
+    seed: int, runner=subprocess.run,
 ) -> str:
     """HI119's mandatory evidence gate (dev-gpt-agent design review,
-    2026-08-25): correctness PASS must require proof the fused dispatch
-    signature this evidence is FOR was actually executed, not just that
-    CPU-vs-GPU numerics happened to match -- a future ggml-cuda fusion-
-    detection regression could make the harness silently execute two
-    ordinary MUL_MAT_IDs plus a standalone GLU instead of a real fused
-    dispatch, and CPU comparison would still pass, wrongly certifying
-    correctness for a candidate that was never actually exercised as
-    fused.
+    2026-08-25): correctness PASS must require proof the dispatch signature
+    this evidence is FOR was actually executed, not just that CPU-vs-GPU
+    numerics happened to match -- a future ggml-cuda fusion-detection
+    regression could make the harness silently execute two ordinary
+    MUL_MAT_IDs plus a standalone GLU instead of a real fused dispatch, and
+    CPU comparison would still pass, wrongly certifying correctness for a
+    candidate that was never actually exercised as fused.
+
+    PA26 (2026-09-15, dev-gpt-agent design review, req_488640d20a7f4fa6):
+    originally GLU-only, despite the underlying primitive already being
+    signature-shape-generic (``test_file=`` xor ``moe_glu_file=``). Extended
+    to cover ordinary MUL_MAT/MUL_MAT_ID evidence too, closing the same gap
+    for the far more common non-fused case: ``signature_mapping.py``
+    reconstructs a synthetic test-backend-ops graph from canonical
+    signature JSON (assumed/reconstructed tensor strides and shapes, by its
+    own docstring), and nothing previously verified that C++ regenerating
+    the signature FROM that synthetic graph actually reproduces the
+    original requested signature bit-for-bit -- a reconstruction
+    discrepancy here would let ``can_execute()`` legitimately (and
+    correctly) refuse a candidate for the REGENERATED signature while the
+    evidence pipeline believes it is evidencing the originally requested
+    one, surfacing only as an opaque STRICT-abort failure.
 
     HI121/HI125 (2026-08-27): thin delegation to
     signature_digest_verification.observed_test_backend_ops_signature_hex(),
@@ -125,7 +182,7 @@ def _observed_signature_hex(
     half of that primitive's return is for signature_digest_verification's
     own poisoned-canonical check, not used here."""
     observed_hex, _observed_canonical = sdv.observed_test_backend_ops_signature_hex(
-        binary, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
+        binary, test_file=test_file, moe_glu_file=moe_glu_file, seed=seed, runner=runner,
     )
     return observed_hex
 
@@ -161,6 +218,7 @@ def generate_for_candidate(
     candidate_name: str, binary: Path, vendor_root: Path, seeds: tuple[int, ...],
     headroom_fraction: float, contract_version: str, tool_version: str,
     origin: "ce.EvidenceOrigin", native_seed_cache: dict[int, "ce.NativeSeedEvidence"] | None = None,
+    signature_digest_verifier: SignatureDigestVerifier | None = None,
     runner=subprocess.run,
 ) -> EvidenceGenerationResult:
     """The single authoritative evidence-generation primitive -- HI80's own
@@ -181,7 +239,16 @@ def generate_for_candidate(
     ``row["provisional_winner"]`` and ``reason="promotion_winner"`` --
     preserving this module's single-implementation property (HI80's own
     docstring concern: two copies of signature mapping/evidence generation
-    drifting apart)."""
+    drifting apart).
+
+    ``signature_digest_verifier``, when given, is used for the mandatory
+    HI121/HI125 signature-verification preflight instead of re-deriving an
+    ad hoc record-mode probe against ``binary`` (see ``SignatureDigestVerifier``
+    module docstring -- ``binary`` here is the tune/workload-max evidence
+    binary, which generally lacks record capability). When omitted, the
+    original ``_observed_signature_hex(binary, ...)`` behavior is preserved
+    for standalone/direct-call compatibility (e.g. a caller that already
+    has its own record-capable ``binary``)."""
     dispatch_hex = row.get("dispatch")
     signature_hex = row.get("signature")
     hardware_hex = row.get("hardware")
@@ -253,9 +320,12 @@ def generate_for_candidate(
             handle.write(moe_glu_line + "\n")
             moe_glu_path = Path(handle.name)
         try:
-            observed_hex = _observed_signature_hex(
-                binary, moe_glu_file=moe_glu_path, seed=seeds[0], runner=runner,
-            )
+            if signature_digest_verifier is not None:
+                observed_hex = signature_digest_verifier(signature_dict)
+            else:
+                observed_hex = _observed_signature_hex(
+                    binary, moe_glu_file=moe_glu_path, seed=seeds[0], runner=runner,
+                )
             if observed_hex != signature_hex:
                 raise CliError(
                     f"dispatch={dispatch_hex}: observed fused-dispatch signature "
@@ -285,6 +355,28 @@ def generate_for_candidate(
             handle.write(test_file_line + "\n")
             test_file_path = Path(handle.name)
         try:
+            # PA26 (2026-09-15): same mandatory evidence gate as the GLU
+            # branch above, extended to the ordinary (far more common)
+            # MUL_MAT/MUL_MAT_ID case -- verify the synthetic test-file
+            # graph's C++-regenerated signature actually equals the
+            # requested row's own signature before trusting any correctness
+            # comparison run against it.
+            if signature_digest_verifier is not None:
+                observed_hex = signature_digest_verifier(signature_dict)
+            else:
+                observed_hex = _observed_signature_hex(
+                    binary, test_file=test_file_path, seed=seeds[0], runner=runner,
+                )
+            if observed_hex != signature_hex:
+                raise CliError(
+                    f"dispatch={dispatch_hex}: observed dispatch signature "
+                    f"{observed_hex!r} does not match the requested row's own "
+                    f"signature {signature_hex!r} -- the synthetic --test-file "
+                    f"graph did not reproduce the real dispatch (possible "
+                    f"signature_mapping reconstruction mismatch); refusing to "
+                    f"certify correctness for a candidate that may not have run "
+                    f"against the requested signature"
+                )
             aggregate = ce.generate_correctness_evidence(
                 binary, test_file=test_file_path, target_tensor=target_tensor,
                 digest_tensor=digest_tensor,
@@ -294,7 +386,7 @@ def generate_for_candidate(
             )
         finally:
             test_file_path.unlink(missing_ok=True)
-        subprocess_runs = 0
+        subprocess_runs = 1  # the observed-signature-hex preflight probe
 
     # Every seed's candidate leg always ran; the native leg only ran for
     # seeds NOT already present in native_seed_cache -- count both, and
@@ -326,6 +418,7 @@ def generate_for_row(
     conn: sqlite3.Connection, row: dict[str, Any], *,
     binary: Path, vendor_root: Path, seeds: tuple[int, ...],
     headroom_fraction: float, contract_version: str, tool_version: str,
+    signature_digest_verifier: SignatureDigestVerifier | None = None,
     runner=subprocess.run,
 ) -> str:
     """Thin wrapper over generate_for_candidate() using this row's own
@@ -338,7 +431,8 @@ def generate_for_row(
         conn, row, candidate_name=row["provisional_winner"], binary=binary,
         vendor_root=vendor_root, seeds=seeds, headroom_fraction=headroom_fraction,
         contract_version=contract_version, tool_version=tool_version,
-        origin=ce.EvidenceOrigin(reason="promotion_winner"), runner=runner,
+        origin=ce.EvidenceOrigin(reason="promotion_winner"),
+        signature_digest_verifier=signature_digest_verifier, runner=runner,
     )
     if result.status == "existing":
         return f"skip (already has evidence_id={result.evidence_id})"
@@ -392,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{dispatch}: {outcome}", file=sys.stderr)
             except scm.SignatureMappingError as exc:
                 print(f"{dispatch}: SKIPPED (unsupported signature): {exc}", file=sys.stderr)
-            except (gate.CorrectnessGateError, ce.EvidenceError, CliError) as exc:
+            except ROW_FAILURE_EXCEPTIONS as exc:
                 failed += 1
                 print(f"{dispatch}: FAILED: {exc}", file=sys.stderr)
     finally:

@@ -19,9 +19,8 @@ required = true
 [[check]]
 id = "correctness"
 capability = "correctness"
-validator = "backend-ops"
+validator = "correctness-summary"
 required = true
-ops = ["STATE_RESTORE_SEQ_CP_HOST"]
 
 # Real subject-hit/control-miss activation: the "pinned state buffer
 # (... bytes) for restore" marker RD58's own registration-success

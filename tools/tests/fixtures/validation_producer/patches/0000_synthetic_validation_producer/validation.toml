@@ -1,0 +1,24 @@
+schema = 1
+
+[[check]]
+id = "syn-c1-correctness"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["SYN-C1"]
+callable = "validation/checks.py:check"
+
+[[check]]
+id = "syn-c2-correctness"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["SYN-C2"]
+callable = "validation/checks.py:check"
+
+[[check]]
+id = "syn-universal-smoke"
+capability = "smoke"
+validator = "custom"
+required = true
+callable = "validation/checks.py:universal_check"

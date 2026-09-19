@@ -82,7 +82,7 @@ A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch comp
 
 | Axis | Meaning | Scope | Examples |
 |------|---------|-------|----------|
-| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-native`, `bigcherry` |
+| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-serving-base`, `bigcherry` |
 | **Build** | A cmake variant set | Named independently, composed per-lane | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
 | **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on the build server), `windows-gfx1100` (workstation) |
 | **Patch state** | Patch acceptance status | Per-patch metadata, informational only under v2 | `validated`, `untested`, `rejected` |
@@ -111,7 +111,7 @@ Under v2, patch state is informational metadata on the patch itself, not a selec
 
 A selection's effective tree state is a 16-character hex digest of the ref, the resolved `patch_set_id`, and the overlay digest (when the source has `overlay = true`). This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
 
-**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: `llama-native` is unpatched, the other two apply the framework patch-set -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
+**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-serving-base` + `bigcherry`) resolves to 3 distinct tree states as of the PA31 cutover -- `llama-native` is unpatched, `bigcherry-serving-base` applies serving-core+upstream-fixes, and `bigcherry` additionally applies validated-enhancements -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
 
 ### The bootstrap dependency chain
 
@@ -165,7 +165,7 @@ Note `build.control` produces `llama-bench` and the shared libraries but NOT
 `llama-server`; a lane needing the server must say so via
 `--binary-relative-path bin/llama-server`.
 
-### The patch-qualification profile (4 arms)
+### The patch-qualification profile (3 arms, PA29 cutover)
 
 `[campaign.standard]` varies the BUILD variant -- it is the autotune
 record/tune/replay pipeline. `[campaign.patch-qualification]` varies the patch
@@ -174,13 +174,23 @@ COMPOSITION instead, which is the axis a patch is actually judged on:
 | arm | source | carries the patch | answers |
 |---|---|---|---|
 | 1 | `llama-native` | no | what everything is ultimately measured against |
-| 2 | `bigcherry-native` | no | control for the isolated A/B; vs arm 1, our framework's own cost |
-| 3 | `bigcherry-native` | yes | the patch's ISOLATED effect |
-| 4 | `bigcherry` | yes | the patch IN SITU, on top of everything already shipped |
+| 2 | `bigcherry-tuning` | no | control for the isolated A/B; vs arm 1, our framework's own cost |
+| 3 | `bigcherry-tuning` | yes | the patch's ISOLATED effect |
 
-Arm 4 exists because a patch worth +2% alone can be neutral or negative once
-composed with the rest of the release set. Arms 3 and 4 answer different
-questions and neither substitutes for the other.
+PA29 cutover (GPT design review req_964ec5fc21c14848): `build.control`
+requires `0110_campaign_tune_record_build`'s plumbing, which only
+`bigcherry-tuning` composes among the semantic sources -- and
+`bigcherry-tuning` deliberately excludes `validated-enhancements`. The old
+arm 4 ("the patch IN SITU, on top of everything already shipped", source
+`bigcherry`) can therefore no longer be expressed under `build.control`
+without silently dropping `validated-enhancements` from what it measures,
+so it was removed from the checked-in profile rather than left pointing at
+a composition its own name no longer implies (see `config/recipes.toml`'s
+own PA29 comment on `[campaign.patch-qualification]`). A real in-situ
+release-comparison arm needs a source that composes serving-core +
+campaign-support + upstream-fixes + validated-enhancements together, which
+does not exist yet -- tracked as follow-up work, not silently reintroduced
+here.
 
 ```bash
 python3 -m bigcherry build --profile patch-qualification --arch gfx1100
@@ -192,8 +202,8 @@ comparison its meaning -- and it is why a campaign lane may declare its own
 `experiment`:
 
 ```toml
-{ source = "bigcherry-native", build = "control", platform = "linux-multi" },
-{ source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+{ source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
+{ source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only" },
 ```
 
 A request-level `--experiment` applies to EVERY lane, so it cannot express a

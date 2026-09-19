@@ -8,21 +8,21 @@ from argparse import Namespace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..core import config as campaign_config
-from ..core.context import ProjectContext
-from ..core import paths
 from .. import patch_admission
+from ..core import config as campaign_config
+from ..core import paths
+from ..core.context import ProjectContext
 from ..patch import apply as patcher
 from ..patch import catalog as patch_catalog
 from ..patch import disposition as patch_disposition
+from ..patch import docs as patch_docs
 from ..patch import gates as patch_gates
 from ..patch import lifecycle as patch_lifecycle
 from ..patch import overlay as patch_overlay
 from ..patch import patchset
+from ..patch import rebase as patch_rebase
 from ..patch import registry as patch_registry
 from ..patch import selection as patch_selection
-from ..patch import rebase as patch_rebase
-from ..patch import docs as patch_docs
 from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
 
@@ -39,7 +39,7 @@ _record_for = releases.record_for_checkout
 
 def _apply_exact_selection(
     root: Path,
-    selection: "CliPatchSelection",
+    selection: CliPatchSelection,
     *,
     force: bool = False,
     dry_run: bool = False,
@@ -70,8 +70,17 @@ def _apply_exact_selection(
         )
         return False
 
+    if selection.source_name is None:
+        print(
+            "apply: selection has no source name -- refusing to guess",
+            file=sys.stderr,
+        )
+        return False
     fresh = patch_selection._resolve_exact_selection(selection.source_name)
-    if fresh.patch_set_id != selection.patch_set_id or fresh.patch_ids != selection.patch_ids:
+    if (
+        fresh.patch_set_id != selection.patch_set_id
+        or fresh.patch_ids != selection.patch_ids
+    ):
         print(
             f"apply: --source {selection.source_name!r}'s composition changed "
             "since it was resolved (config/recipes.toml or the patch "
@@ -199,7 +208,8 @@ def cmd_apply(args: Namespace) -> int:
             return 2
         try:
             result = patch_rebase.apply_known_good(
-                root, Path(report_path),
+                root,
+                Path(report_path),
                 force=args.force,
                 dry_run=args.dry_run,
             )
@@ -245,6 +255,8 @@ def cmd_patch_rebase_check(args: Namespace) -> int:
             root,
             source_name=getattr(args, "source", None),
             all_patches=bool(getattr(args, "all_patches", False)),
+            experiment=getattr(args, "experiment", None),
+            focal_overlay_patch_id=getattr(args, "focal_overlay", None),
             context_lines=args.context_lines,
         )
     except patch_rebase.RebaseCheckError as exc:
@@ -356,7 +368,10 @@ def cmd_patch_lint(args: Namespace) -> int:
         for problem in problems:
             print(problem, file=sys.stderr)
         for patch_id in lint_report.grandfathered:
-            print(f"{patch_id}: structurally grandfathered (non-current, not failing)", file=sys.stderr)
+            print(
+                f"{patch_id}: structurally grandfathered (non-current, not failing)",
+                file=sys.stderr,
+            )
     return 0 if not problems else 1
 
 
@@ -368,10 +383,14 @@ def cmd_patch_disposition(args: Namespace) -> int:
     action = args.disposition_action
     if action == "set":
         record = patch_disposition.Disposition(
-            patch_id=args.patch_id, target_revision=args.revision,
-            patch_digest=args.digest, disposition="known_broken",
-            failure_status=args.failure_status, reason=args.reason,
-            owner=args.owner, tracking_item=args.tracking_item,
+            patch_id=args.patch_id,
+            target_revision=args.revision,
+            patch_digest=args.digest,
+            disposition="known_broken",
+            failure_status=args.failure_status,
+            reason=args.reason,
+            owner=args.owner,
+            tracking_item=args.tracking_item,
         )
         try:
             path = patch_disposition.save_disposition(DISPOSITIONS_DIR, record)
@@ -382,22 +401,31 @@ def cmd_patch_disposition(args: Namespace) -> int:
         return 0
     if action == "clear":
         removed = patch_disposition.clear_disposition(DISPOSITIONS_DIR, args.patch_id)
-        print(f"disposition cleared: {args.patch_id}" if removed
-              else f"no disposition on file for {args.patch_id}")
+        print(
+            f"disposition cleared: {args.patch_id}"
+            if removed
+            else f"no disposition on file for {args.patch_id}"
+        )
         return 0
     # action == "list"
     records = patch_disposition.list_dispositions(DISPOSITIONS_DIR)
     if args.json:
-        print(json.dumps(
-            {pid: r.__dict__ for pid, r in sorted(records.items())}, indent=2, sort_keys=True,
-        ))
+        print(
+            json.dumps(
+                {pid: r.__dict__ for pid, r in sorted(records.items())},
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
     if not records:
         print("no dispositions on file")
         return 0
     for pid, record in sorted(records.items()):
-        print(f"{pid}: revision={record.target_revision[:12]} digest={record.patch_digest[:12]} "
-              f"owner={record.owner} tracking_item={record.tracking_item} reason={record.reason!r}")
+        print(
+            f"{pid}: revision={record.target_revision[:12]} digest={record.patch_digest[:12]} "
+            f"owner={record.owner} tracking_item={record.tracking_item} reason={record.reason!r}"
+        )
     return 0
 
 
@@ -422,11 +450,17 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
     # with a real CLI error rather than silently skipping the check.
     try:
         import os
-        mirror = ProjectContext.resolve(work_root=os.environ.get("BC_CACHE")).upstream_repo
+
+        mirror = ProjectContext.resolve(
+            work_root=os.environ.get("BC_CACHE")
+        ).upstream_repo
         upstream = mirror if mirror.exists() else paths.llama_root()
         resolved_base_revision = UpstreamRepository(upstream).resolve_ref(cfg.pinned)
     except WorkspaceError as exc:
-        print(f"patch-verify-evidence: cannot resolve pin {cfg.pinned!r} locally: {exc}", file=sys.stderr)
+        print(
+            f"patch-verify-evidence: cannot resolve pin {cfg.pinned!r} locally: {exc}",
+            file=sys.stderr,
+        )
         return 2
     statuses = patch_catalog.validation_evidence_statuses(
         [module.patch_id for module in modules],
@@ -458,8 +492,83 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
 
 
 def cmd_patch_validate(args: Namespace) -> int:
-    """Verify existing evidence; hardware campaigns remain explicit."""
-    return cmd_patch_verify_evidence(args)
+    """PA33: execute declared validation through PA34+PA36 authorities.
+
+    When --validation-producer is provided, resolves the selector, catalog
+    snapshot, validation plan, bound contracts, platform/device identity,
+    model/fixture inputs, and producer selection, then executes through
+    PA36's shared primitives and binds the evidence into the existing
+    schema. Otherwise, falls back to the read-only verify-evidence behavior.
+    """
+    validation_producer = getattr(args, "validation_producer", None)
+    if validation_producer is None:
+        # No producer selected: fall back to read-only verify-evidence
+        return cmd_patch_verify_evidence(args)
+
+    # PA33: fail-fast validation before doing expensive work
+    # 1. Selector validation
+    if args.patch_id is None:
+        print("patch-validate: patch_id is required", file=sys.stderr)
+        return 2
+    # 2. PA34 selector qualifier validation
+    source = getattr(args, "source", None)
+    experiment = getattr(args, "experiment", None)
+    focal_overlay = getattr(args, "focal_overlay", False)
+    if (experiment is not None or focal_overlay) and not source:
+        print("patch-validate: --experiment/--focal-overlay require --source", file=sys.stderr)
+        return 2
+    # 3. Producer input validation
+    producer_input = getattr(args, "producer_input", [])
+    for entry in producer_input:
+        if "=" not in entry:
+            print(f"patch-validate: --producer-input {entry!r} must be NAME=VALUE", file=sys.stderr)
+            return 2
+    # 4. Device map validation
+    device_map = getattr(args, "device_map", None)
+    if device_map is not None:
+        for entry in device_map.split(","):
+            if "=" not in entry:
+                print(f"patch-validate: --device-map entry {entry!r} must be ARCH=ID[,ID...]", file=sys.stderr)
+                return 2
+    # 5. Producer corpus validation
+    producer_corpus = getattr(args, "producer_corpus", None)
+    if producer_corpus is not None:
+        corpus_path = Path(producer_corpus)
+        if not corpus_path.is_file():
+            print(f"patch-validate: --producer-corpus {producer_corpus!r} is not a file", file=sys.stderr)
+            return 2
+
+    # PA33: execute through PA36's shared primitives
+    from ..patch import validation_campaign as validation_campaign_module
+
+    # Build a minimal args namespace for the validation campaign
+    campaign_args = Namespace(
+        patch=args.patch_id,
+        validation_producer=validation_producer,
+        producer_input=getattr(args, "producer_input", []),
+        producer_corpus=getattr(args, "producer_corpus", None),
+        amdgpu_targets=getattr(args, "amdgpu_targets", None),
+        device_map=getattr(args, "device_map", None),
+        hip_path=getattr(args, "hip_path", None),
+        model=getattr(args, "model", None),
+        workdir=getattr(args, "workdir", None),
+        worktree_root=getattr(args, "worktree_root", None),
+        baseline_source=getattr(args, "baseline_source", None),
+        # PA34 selector arguments
+        source=getattr(args, "source", None),
+        experiment=getattr(args, "experiment", None),
+        focal_overlay=getattr(args, "focal_overlay", False),
+        # Defaults for other required fields (generic, no patch-specific references)
+        run=None,
+        tune=None,
+        replay=None,
+        stock=None,
+        control=None,
+        validation_subject=None,
+    )
+
+    # Execute through the validation campaign's main()
+    return validation_campaign_module.main(campaign_args)
 
 
 def cmd_patch_gates(args: Namespace) -> int:
@@ -478,28 +587,68 @@ def cmd_patch_gates(args: Namespace) -> int:
         descriptor = registry.get(args.patch_id)
         modules = patchset.catalog(directory=paths.PATCHES)
 
+        # PA34: the exact selection is named by its canonical identity.
+        # --experiment / --focal-overlay qualify a --source selection; the
+        # no-source path evaluates the focal's own dependency closure.
+        experiment = getattr(args, "experiment", None)
+        focal_overlay = bool(getattr(args, "focal_overlay", False))
+        if (experiment is not None or focal_overlay) and not args.source:
+            raise ValueError("--experiment/--focal-overlay require --source")
+        selection = None
         if args.source:
             if args.source not in cfg.sources:
                 raise ValueError(f"unknown source {args.source!r}")
             selection = campaign_resolution.resolve_canonical_selection(
-                args.source, cfg, modules, catalog_directory=paths.PATCHES,
+                args.source,
+                cfg,
+                modules,
+                catalog_directory=paths.PATCHES,
+                experiment=experiment,
+                focal_overlay_patch_id=args.patch_id if focal_overlay else None,
             )
             selected_ids = selection.patch_ids
             if args.patch_id not in selected_ids:
-                raise ValueError(
-                    f"source {args.source!r} does not select patch {args.patch_id!r}"
-                )
+                # NOT_EVALUATED (PA34): the focal patch is not in the
+                # resolved selector -- no gate runs; this is an explicit
+                # selection-status result, not a resolution error.
+                payload = {
+                    "schema_version": 1,
+                    "patch_id": args.patch_id,
+                    "intent": intent.value,
+                    "source": args.source,
+                    "selection_status": "NOT_EVALUATED",
+                    "selector": selection.identity.to_payload(),
+                    "composition": [],
+                    "gates": [],
+                }
+                if args.json:
+                    print(json.dumps(payload, indent=2, sort_keys=True))
+                else:
+                    print(
+                        f"patch-gates: {args.patch_id} ({intent.value}) "
+                        f"NOT_EVALUATED -- not selected by "
+                        f"{selection.identity.selector_name!r}"
+                    )
+                return 1
         else:
             if intent in (patch_gates.GateIntent.BUILD, patch_gates.GateIntent.REBASE):
                 raise ValueError(f"--source is required for {intent.value}")
             selected_ids = patchset.expand_composition(
-                (args.patch_id,), directory=paths.PATCHES,
+                (args.patch_id,),
+                directory=paths.PATCHES,
             ).expanded
         composition = patchset.resolve_exact(
-            tuple(selected_ids), directory=paths.PATCHES, allow_rejected=False,
+            tuple(selected_ids),
+            directory=paths.PATCHES,
+            allow_rejected=False,
         )
-    except (campaign_config.ConfigError, campaign_resolution.ResolutionError,
-            patch_registry.PatchRegistryError, ValueError, OSError) as exc:
+    except (
+        campaign_config.ConfigError,
+        campaign_resolution.ResolutionError,
+        patch_registry.PatchRegistryError,
+        ValueError,
+        OSError,
+    ) as exc:
         print(f"patch-gates: cannot resolve composition: {exc}", file=sys.stderr)
         return 2
 
@@ -535,7 +684,8 @@ def cmd_patch_gates(args: Namespace) -> int:
 
     source_cfg = cfg.sources.get(args.source) if args.source else None
     backend = (
-        source_cfg.backend if source_cfg is not None
+        source_cfg.backend
+        if source_cfg is not None
         else descriptor.backend or "agnostic"
     )
     context = patch_gates.GateContext(
@@ -544,7 +694,8 @@ def cmd_patch_gates(args: Namespace) -> int:
         pinned_ref=cfg.pinned,
         intent=intent,
         patch_context=patch_catalog.PatchContext(
-            backend=backend, source=args.source,
+            backend=backend,
+            source=args.source,
         ),
         patches_dir=paths.PATCHES,
         resolved_base_revision=resolved_base_revision,
@@ -554,6 +705,7 @@ def cmd_patch_gates(args: Namespace) -> int:
         validation_baseline_path=paths.VALIDATION_PACKAGE_GRANDFATHER,
         dispositions_dir=paths.DISPOSITIONS,
         source_root=source_root,
+        expected_selector=selection.identity if selection is not None else None,
         rebase_report=rebase_report,
         allow_legacy_grandfather=not args.no_legacy_grandfather,
         catalog_states={module.patch_id: module.state for module in modules},
@@ -567,11 +719,22 @@ def cmd_patch_gates(args: Namespace) -> int:
     )
     results = patch_gates.evaluate_patch_gates(context)
 
+    # PA34 (dev-gpt-agent req_41a3133e657340c7 Q1/P2#5): the successful path
+    # reports its selection status and the selector it was evaluated under.
+    # A named selection carries its canonical identity; the no-source path
+    # carries the rebase report's selector (the only selector in evidence).
+    selector_payload = (
+        selection.identity.to_payload()
+        if selection is not None
+        else (rebase_report.get("selector") if rebase_report is not None else None)
+    )
     payload = {
         "schema_version": 1,
         "patch_id": args.patch_id,
         "intent": intent.value,
         "source": args.source,
+        "selection_status": "EVALUATED",
+        "selector": selector_payload,
         "composition": [module.patch_id for module in composition.modules],
         "gates": [
             {
@@ -593,17 +756,28 @@ def cmd_patch_gates(args: Namespace) -> int:
         print("composition: " + ", ".join(payload["composition"]))
         for result in payload["gates"]:
             suffix = " -- " + "; ".join(result["detail"]) if result["detail"] else ""
-            print(f"  {result['id']}: {result['status']} ({result['authority']}){suffix}")
-        overall = "PASS" if all(
-            result.status in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
-            for result in results
-        ) else "FAIL"
+            print(
+                f"  {result['id']}: {result['status']} ({result['authority']}){suffix}"
+            )
+        overall = (
+            "PASS"
+            if all(
+                result.status
+                in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
+                for result in results
+            )
+            else "FAIL"
+        )
         print("RESULT: " + overall)
 
-    return 0 if all(
-        result.status in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
-        for result in results
-    ) else 1
+    return (
+        0
+        if all(
+            result.status in (patch_gates.GateStatus.PASS, patch_gates.GateStatus.NA)
+            for result in results
+        )
+        else 1
+    )
 
 
 def cmd_patch_doc(args: Namespace) -> int:
@@ -618,7 +792,8 @@ def cmd_patch_doc(args: Namespace) -> int:
     all_patches = bool(getattr(args, "all_patches", False))
     try:
         patch_ids = patch_rebase._selection_patch_ids(
-            source_name=source_name, all_patches=all_patches,
+            source_name=source_name,
+            all_patches=all_patches,
         )
     except patch_rebase.RebaseCheckError as exc:
         print(f"patch-doc: {exc}", file=sys.stderr)
@@ -634,7 +809,9 @@ def cmd_patch_doc(args: Namespace) -> int:
 
     try:
         doc = patch_docs.render_patch_selection_doc(
-            patch_ids=patch_ids, pin_info=pin_info, selection_label=selection_label,
+            patch_ids=patch_ids,
+            pin_info=pin_info,
+            selection_label=selection_label,
         )
     except patch_docs.PatchDocError as exc:
         print(f"patch-doc: {exc}", file=sys.stderr)

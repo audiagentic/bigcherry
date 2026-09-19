@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 
@@ -20,12 +21,11 @@ def run_correctness(ctx):
     from bigcherry.patch import validation_producer as vp
     return vp.ProducerResult(
         correctness={"disposition": "passed"},
-        named_correctness_results={},
         validation_build_identities={"control": {}, "subject": {}},
         activation_evidence=None,
         performance_evidence=None,
         trace_evidence=None,
-        check_results={},
+        check_results=(),
         lane_effects=(),
         emitted_artifacts=frozenset({"correctness.json"}),
     )
@@ -215,13 +215,27 @@ class CliCompatibilityTests(unittest.TestCase):
         )  # must not raise
 
 
+def _empty_plan_and_context() -> tuple[pv.ValidationPlan, pv.ValidationContext]:
+    check = pv.CheckSpec(
+        check_id="correctness-check", capability="correctness", validator="custom",
+        required=True, config={"callable": "checks.py:check"},
+    )
+    plan = pv.ValidationPlan(
+        patch_id="p", checks=(check,), universal_capabilities=(),
+    )
+    context = pv.ValidationContext(
+        descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+    )
+    return plan, context
+
+
 class ProducerResultTests(unittest.TestCase):
     def _make_result(self, **overrides) -> vp.ProducerResult:
         defaults = dict(
-            correctness=None, named_correctness_results={},
+            correctness=None,
             validation_build_identities={"control": {}, "subject": {}},
             activation_evidence=None, performance_evidence=None, trace_evidence=None,
-            check_results={}, lane_effects=(), emitted_artifacts=frozenset(),
+            check_results=(), lane_effects=(), emitted_artifacts=frozenset(),
         )
         defaults.update(overrides)
         return vp.ProducerResult(**defaults)
@@ -246,8 +260,9 @@ class ProducerResultTests(unittest.TestCase):
             artifact_names=frozenset({"correctness.json"}), inputs={},
         )
         result = self._make_result(emitted_artifacts=frozenset({"correctness.json", "sneaky.json"}))
+        plan, context = _empty_plan_and_context()
         with self.assertRaises(vp.ValidationProducerError):
-            vp.validate_producer_result(spec, result)
+            vp.validate_producer_result(spec, result, plan=plan, context=context)
 
     def test_declared_artifact_accepted(self) -> None:
         spec = vp.ProducerSpec(
@@ -257,7 +272,47 @@ class ProducerResultTests(unittest.TestCase):
             artifact_names=frozenset({"correctness.json"}), inputs={},
         )
         result = self._make_result(emitted_artifacts=frozenset({"correctness.json"}))
-        vp.validate_producer_result(spec, result)  # must not raise
+        plan, context = _empty_plan_and_context()
+        vp.validate_producer_result(spec, result, plan=plan, context=context)  # must not raise
+
+    def test_check_result_scoped_to_wrong_contract_rejected(self) -> None:
+        spec = vp.ProducerSpec(
+            patch_id="p", producer_id="prod", entrypoint=Path("producer.py"),
+            callable_name="run", trace_probe="skip", standard_campaign="skip",
+            correctness_evidence_cli="forbid", performance_benchmark_cli="forbid",
+            artifact_names=frozenset(), inputs={},
+        )
+        plan, context = _empty_plan_and_context()
+        bad = vp.ProducerCheckResult(
+            check_id="correctness-check",
+            contract_ids=("some-other-contract",),
+            validation_result=pv.ValidationResult(
+                check_id="correctness-check", capability="correctness",
+                status=pv.PASS, summary="ok",
+            ),
+        )
+        result = self._make_result(check_results=(bad,))
+        with self.assertRaises(vp.ValidationProducerError):
+            vp.validate_producer_result(spec, result, plan=plan, context=context)
+
+    def test_valid_typed_check_result_accepted(self) -> None:
+        spec = vp.ProducerSpec(
+            patch_id="p", producer_id="prod", entrypoint=Path("producer.py"),
+            callable_name="run", trace_probe="skip", standard_campaign="skip",
+            correctness_evidence_cli="forbid", performance_benchmark_cli="forbid",
+            artifact_names=frozenset(), inputs={},
+        )
+        plan, context = _empty_plan_and_context()
+        good = vp.ProducerCheckResult(
+            check_id="correctness-check",
+            contract_ids=(),
+            validation_result=pv.ValidationResult(
+                check_id="correctness-check", capability="correctness",
+                status=pv.PASS, summary="ok",
+            ),
+        )
+        result = self._make_result(check_results=(good,))
+        vp.validate_producer_result(spec, result, plan=plan, context=context)  # must not raise
 
 
 if __name__ == "__main__":

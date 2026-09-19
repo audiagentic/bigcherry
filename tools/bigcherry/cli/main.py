@@ -88,9 +88,9 @@ def _add_selection_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         choices=_v2_source_names(),
         help="canonical v2 [source.*] name (e.g. 'bigcherry') -- the exact, "
-             "curated patch-set this source declares. Omit to browse/select "
-             "every catalog patch (patches only; apply requires --source, "
-             "or --rebase-report).",
+        "curated patch-set this source declares. Omit to browse/select "
+        "every catalog patch (patches only; apply requires --source, "
+        "or --rebase-report).",
     )
 
 
@@ -115,8 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         default=None,
         choices=_v2_source_names(),
-        help="take the ref from this canonical v2 [source.*] name (e.g. "
-             "'bigcherry')",
+        help="take the ref from this canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     pull.add_argument(
         "--full",
@@ -194,19 +193,37 @@ def build_parser() -> argparse.ArgumentParser:
             "never advances release stage"
         ),
     )
-    rebase_selection = patch_rebase_check_cmd.add_mutually_exclusive_group(required=True)
+    rebase_selection = patch_rebase_check_cmd.add_mutually_exclusive_group(
+        required=True
+    )
     rebase_selection.add_argument(
         "--source",
         default=None,
         choices=_v2_source_names(),
         help="probe the exact logical patch selection for this canonical "
-             "v2 [source.*] name (e.g. 'bigcherry')",
+        "v2 [source.*] name (e.g. 'bigcherry')",
     )
     rebase_selection.add_argument(
         "--all",
         dest="all_patches",
         action="store_true",
         help="probe every non-rejected logical patch in the registry",
+    )
+    rebase_qualifier = patch_rebase_check_cmd.add_mutually_exclusive_group()
+    rebase_qualifier.add_argument(
+        "--experiment",
+        default=None,
+        help="named [experiment.*] selection layered over --source (PA34)",
+    )
+    rebase_qualifier.add_argument(
+        "--focal-overlay",
+        dest="focal_overlay",
+        metavar="PATCH_ID",
+        default=None,
+        help=(
+            "layer exactly one focal patch's REQUIRES closure over --source "
+            "(PA34); never an arbitrary user patch list"
+        ),
     )
     patch_rebase_check_cmd.add_argument(
         "--json",
@@ -235,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         choices=_v2_source_names(),
         help="document the exact logical patch selection for this "
-             "canonical v2 [source.*] name (e.g. 'bigcherry')",
+        "canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     patch_doc_selection.add_argument(
         "--all",
@@ -349,9 +366,7 @@ def build_parser() -> argparse.ArgumentParser:
         "patch-gates",
         help="evaluate the shared PA21 patch gates for one exact composition",
     )
-    patch_gates_cmd.add_argument(
-        "patch_id", help="canonical patch ID to evaluate"
-    )
+    patch_gates_cmd.add_argument("patch_id", help="canonical patch ID to evaluate")
     patch_gates_cmd.add_argument(
         "--intent",
         required=True,
@@ -364,23 +379,44 @@ def build_parser() -> argparse.ArgumentParser:
         choices=_v2_source_names(),
         help="canonical v2 source name; required for build and rebase",
     )
+    gates_qualifier = patch_gates_cmd.add_mutually_exclusive_group()
+    gates_qualifier.add_argument(
+        "--experiment",
+        default=None,
+        help="named [experiment.*] selection layered over --source (PA34)",
+    )
+    gates_qualifier.add_argument(
+        "--focal-overlay",
+        dest="focal_overlay",
+        action="store_true",
+        help=(
+            "evaluate the --source composition with the focal patch's own "
+            "REQUIRES closure layered over it (PA34)"
+        ),
+    )
     patch_gates_cmd.add_argument(
-        "--rebase-report", metavar="PATH",
+        "--rebase-report",
+        metavar="PATH",
         help="PA16 report used by G2 when the intent includes rebase freshness",
     )
     patch_gates_cmd.add_argument(
-        "--all-report", metavar="PATH",
+        "--all-report",
+        metavar="PATH",
         help="all-patches PA16 report used by the G6 disposition-coverage gate",
     )
     patch_gates_cmd.add_argument(
-        "--no-legacy-grandfather", action="store_true",
+        "--no-legacy-grandfather",
+        action="store_true",
         help="require current evidence instead of the one-time legacy baseline",
     )
     patch_gates_cmd.add_argument(
-        "--json", action="store_true", help="emit stable machine-readable output",
+        "--json",
+        action="store_true",
+        help="emit stable machine-readable output",
     )
     patch_gates_cmd.add_argument(
-        "--llama-root", default=argparse.SUPPRESS,
+        "--llama-root",
+        default=argparse.SUPPRESS,
         help="llama.cpp checkout (also accepted as the global option)",
     )
     patch_gates_cmd.set_defaults(func=cmd_patch_gates)
@@ -396,10 +432,19 @@ def build_parser() -> argparse.ArgumentParser:
         "set", help="record a known_broken disposition for one patch"
     )
     disposition_set.add_argument("--patch-id", required=True)
-    disposition_set.add_argument("--revision", required=True, help="target upstream revision (full SHA)")
-    disposition_set.add_argument("--digest", required=True, help="patch-rebase-check's implementation_digest for this patch")
-    disposition_set.add_argument("--failure-status", required=True,
-                                  help="e.g. FAILED_NEEDS_RECONCILIATION, QUARANTINED")
+    disposition_set.add_argument(
+        "--revision", required=True, help="target upstream revision (full SHA)"
+    )
+    disposition_set.add_argument(
+        "--digest",
+        required=True,
+        help="patch-rebase-check's implementation_digest for this patch",
+    )
+    disposition_set.add_argument(
+        "--failure-status",
+        required=True,
+        help="e.g. FAILED_NEEDS_RECONCILIATION, QUARANTINED",
+    )
     disposition_set.add_argument("--reason", required=True)
     disposition_set.add_argument("--owner", required=True)
     disposition_set.add_argument("--tracking-item", required=True)
@@ -411,11 +456,46 @@ def build_parser() -> argparse.ArgumentParser:
     patch_disposition_cmd.set_defaults(func=cmd_patch_disposition)
 
     patch_validate_cmd = sub.add_parser(
-        "patch-validate", help="verify existing patch evidence"
+        "patch-validate",
+        help="PA33: execute declared validation through PA34+PA36 authorities",
     )
     patch_validate_cmd.add_argument("patch_id", nargs="?", default=None)
     patch_validate_cmd.add_argument("--json", action="store_true")
     patch_validate_cmd.add_argument("--no-legacy-grandfather", action="store_true")
+    # PA33: selector arguments (PA34 canonical selector resolver)
+    patch_validate_cmd.add_argument("--source", default=None,
+        help="PA34: canonical source selector")
+    patch_validate_cmd.add_argument("--experiment", default=None,
+        help="PA34: experiment qualifier (requires --source)")
+    patch_validate_cmd.add_argument("--focal-overlay", action="store_true",
+        help="PA34: focal overlay qualifier (requires --source)")
+    # PA33: producer arguments (PA36 patch-local producer)
+    patch_validate_cmd.add_argument("--validation-producer", default=None,
+        metavar="PATCH/PRODUCER_ID",
+        help="PA36: select one patch-local validation producer")
+    patch_validate_cmd.add_argument("--producer-input", action="append",
+        default=[], metavar="NAME=VALUE",
+        help="PA36: repeatable producer input (NAME=VALUE)")
+    patch_validate_cmd.add_argument("--producer-corpus", default=None,
+        metavar="PATH",
+        help="PA36: text corpus for ProducerContext.corpus")
+    # PA33: platform/device arguments
+    patch_validate_cmd.add_argument("--amdgpu-targets", default=None,
+        help="PA36: AMD GPU targets (e.g., gfx1100;gfx1201;gfx1030)")
+    patch_validate_cmd.add_argument("--device-map", default=None,
+        help="PA36: device map (e.g., gfx1100=0,1)")
+    patch_validate_cmd.add_argument("--hip-path", default=None,
+        help="PA36: HIP path")
+    # PA33: model/corpus arguments
+    patch_validate_cmd.add_argument("--model", default=None,
+        help="PA36: model path")
+    # PA33: workdir/worktree arguments
+    patch_validate_cmd.add_argument("--workdir", default=None,
+        help="PA36: workdir path")
+    patch_validate_cmd.add_argument("--worktree-root", default=None,
+        help="PA36: worktree root path")
+    patch_validate_cmd.add_argument("--baseline-source", default=None,
+        help="PA36: baseline source (e.g., bigcherry-tuning)")
     patch_validate_cmd.set_defaults(func=cmd_patch_validate)
 
     sources.register(sub)
@@ -473,12 +553,15 @@ def build_parser() -> argparse.ArgumentParser:
         "still manual -- run `pin-status --complete --all-remotes` "
         "afterward on each required tree.",
     )
-    pin_bump_cmd.add_argument("target", help="upstream ref/tag to bump to (e.g. b10680)")
     pin_bump_cmd.add_argument(
-        "--source", default=None,
+        "target", help="upstream ref/tag to bump to (e.g. b10680)"
+    )
+    pin_bump_cmd.add_argument(
+        "--source",
+        default=None,
         help="canonical v2 [source.*] selector for this run (default: "
-             "'bigcherry' on a fresh run). A --resume with no selector "
-             "reuses the run's original one.",
+        "'bigcherry' on a fresh run). A --resume with no selector "
+        "reuses the run's original one.",
     )
     pin_bump_cmd.add_argument("--resume", action="store_true")
     pin_bump_cmd.add_argument("--report-dir", default=None)
@@ -530,28 +613,34 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     execution_audit_cmd.add_argument(
-        "--promoted", required=True,
+        "--promoted",
+        required=True,
         help="promoted.jsonl from a tune campaign",
     )
     execution_audit_cmd.add_argument(
-        "--hit-log", default=None,
+        "--hit-log",
+        default=None,
         help="GGML_HIP_DISPATCH_HIT_LOG output from a "
         "GGML_HIP_REPLAY_DIAGNOSTICS build; omit if no diagnostic run exists "
         "yet -- every promoted key will then classify as NOT_EXECUTED, which "
         "is the honest answer, not an error",
     )
     execution_audit_cmd.add_argument(
-        "--e2e-verdicts", default=None,
+        "--e2e-verdicts",
+        default=None,
         help="optional JSON object {dispatch_digest: 'improved'|'regressed'} "
         "transcribed from a real end-to-end comparison (e.g. a HI168-style "
         "baseline); never inferred by this command",
     )
     execution_audit_cmd.add_argument(
-        "--output", required=True,
+        "--output",
+        required=True,
         help="write hip-tuning-execution-audit.jsonl here",
     )
     execution_audit_cmd.add_argument(
-        "--json", action="store_true", help="print the summary as JSON",
+        "--json",
+        action="store_true",
+        help="print the summary as JSON",
     )
     execution_audit_cmd.set_defaults(func=cmd_execution_audit)
 
@@ -566,16 +655,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     tuning_rollup_cmd.add_argument(
-        "--campaign-dir", dest="campaign_dirs", action="append", required=True,
+        "--campaign-dir",
+        dest="campaign_dirs",
+        action="append",
+        required=True,
         help="a tune-campaign directory (containing promoted.jsonl and "
         "tune-campaign-receipt.json); repeat for each campaign to roll up",
     )
     tuning_rollup_cmd.add_argument(
-        "--output", required=True,
+        "--output",
+        required=True,
         help="write the consolidated rollup JSONL here",
     )
     tuning_rollup_cmd.add_argument(
-        "--json", action="store_true", help="print the summary as JSON",
+        "--json",
+        action="store_true",
+        help="print the summary as JSON",
     )
     tuning_rollup_cmd.set_defaults(func=cmd_tuning_rollup)
 
@@ -590,29 +685,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project_replay_cmd.add_argument("measurements", help="source measurements JSONL")
     project_replay_cmd.add_argument(
-        "--dispatch-db", required=True, help="dispatch_db carrying the source build's "
-        "verified producer_capabilities attestation"
+        "--dispatch-db",
+        required=True,
+        help="dispatch_db carrying the source build's "
+        "verified producer_capabilities attestation",
     )
     project_replay_cmd.add_argument(
-        "--source-build-id", required=True, type=int,
+        "--source-build-id",
+        required=True,
+        type=int,
         help="build_id (in --dispatch-db) the measurements were produced by",
     )
     project_replay_cmd.add_argument(
-        "--source-manifest", required=True,
+        "--source-manifest",
+        required=True,
         help="hip-autotune-manifest.json the source build was produced against "
         "(used to verify candidate-implementation equivalence against the target)",
     )
     project_replay_cmd.add_argument(
-        "--target-manifest", required=True,
+        "--target-manifest",
+        required=True,
         help="hip-autotune-manifest.json for the target build",
     )
     project_replay_cmd.add_argument(
-        "--vendor-root", required=True,
+        "--vendor-root",
+        required=True,
         help="materialized llama.cpp source root for the TARGET build "
         "(its own producer_capabilities declaration is read from here)",
     )
-    project_replay_cmd.add_argument("--output", required=True, help="projected measurements JSONL to write")
-    project_replay_cmd.add_argument("--json", action="store_true", help="machine-readable summary")
+    project_replay_cmd.add_argument(
+        "--output", required=True, help="projected measurements JSONL to write"
+    )
+    project_replay_cmd.add_argument(
+        "--json", action="store_true", help="machine-readable summary"
+    )
     project_replay_cmd.set_defaults(func=cmd_project_replay)
 
     # RE21/RE23: `build` is the multi-lane planner/runner (RE18) and nothing
@@ -703,7 +809,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="name of a [experiment.<name>] entry in config/recipes.toml (an exact "
         "extra patch list) -- for benching one experimental patch in "
         "isolation against the source's normal patch-set, e.g. "
-        "'--source bigcherry-native --experiment rd19-only'",
+        "'--source bigcherry-tuning --experiment rd19-only'",
     )
     new_build_cmd.set_defaults(func=cmd_build_new)
 
@@ -721,7 +827,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--devices", required=True, help="HIP_VISIBLE_DEVICES value, e.g. '0,1'"
     )
     tune_campaign_cmd.add_argument(
-        "--runtime-profile", required=True,
+        "--runtime-profile",
+        required=True,
         help="named profile from config/recipes.toml's [runtime-profile.<name>] "
         "(e.g. 'production-dual-xtx', 'production-safe-single')",
     )
@@ -736,7 +843,9 @@ def build_parser() -> argparse.ArgumentParser:
     tune_campaign_cmd.add_argument("--threshold-pct", type=float, default=1.0)
     tune_campaign_cmd.add_argument("--resamples", type=int, default=10_000)
     tune_campaign_cmd.add_argument(
-        "--json", action="store_true", help="print the WorkflowReceipt as JSON to stdout"
+        "--json",
+        action="store_true",
+        help="print the WorkflowReceipt as JSON to stdout",
     )
     tune_campaign_cmd.set_defaults(func=cmd_tune_campaign)
 
@@ -747,24 +856,32 @@ def build_parser() -> argparse.ArgumentParser:
             "matrix through configured existing worker commands"
         ),
     )
-    runtime_matrix_cmd.add_argument("--config", required=True, help="matrix JSON document")
     runtime_matrix_cmd.add_argument(
-        "--output", required=True, help="directory for resolved cells, status and events"
+        "--config", required=True, help="matrix JSON document"
     )
     runtime_matrix_cmd.add_argument(
-        "--environment", default=None,
+        "--output",
+        required=True,
+        help="directory for resolved cells, status and events",
+    )
+    runtime_matrix_cmd.add_argument(
+        "--environment",
+        default=None,
         help="host environment TOML (default: config/environment.toml)",
     )
     runtime_matrix_cmd.add_argument(
-        "--models", default=None,
+        "--models",
+        default=None,
         help="model registry TOML (default: config/models.toml)",
     )
     runtime_matrix_cmd.add_argument(
-        "--recipes", default=None,
+        "--recipes",
+        default=None,
         help="recipe registry TOML (default: config/recipes.toml)",
     )
     runtime_matrix_cmd.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="resolve and write the immutable matrix without launching workers",
     )
     runtime_matrix_cmd.set_defaults(func=cmd_runtime_matrix)
@@ -778,39 +895,51 @@ def build_parser() -> argparse.ArgumentParser:
         "(GPU/runtime; CPU call-graph via perf is a separate future item)",
     )
     profile_campaign_cmd.add_argument("--llama-root", default=None)
-    profile_campaign_cmd.add_argument("--source", default="bigcherry-native")
+    profile_campaign_cmd.add_argument("--source", default="bigcherry-tuning")
     profile_campaign_cmd.add_argument(
-        "--build", default="control", dest="build",
+        "--build",
+        default="control",
+        dest="build",
         help="build name from the selected source (default 'control')",
     )
-    profile_campaign_cmd.add_argument("--platform", required=True, help="e.g. linux-multi")
+    profile_campaign_cmd.add_argument(
+        "--platform", required=True, help="e.g. linux-multi"
+    )
     profile_campaign_cmd.add_argument("--model", required=True, help="gguf model path")
     profile_campaign_cmd.add_argument(
         "--devices", required=True, help="HIP_VISIBLE_DEVICES value, e.g. '0,1'"
     )
     profile_campaign_cmd.add_argument(
-        "--runtime-profile", required=True,
+        "--runtime-profile",
+        required=True,
         help="named profile from config/recipes.toml's [runtime-profile.<name>]",
     )
     profile_campaign_cmd.add_argument(
         "--workload", default="default", help="free-text label for the report/receipt"
     )
     profile_campaign_cmd.add_argument(
-        "--experiment", default=None,
+        "--experiment",
+        default=None,
         help="named [experiment.<name>] patch set from config/recipes.toml "
         "(e.g. 'rd33-only') to build with, in addition to the lane's own patches",
     )
     profile_campaign_cmd.add_argument(
-        "--workdir", default=None, help="defaults to work_root/profile-campaigns/<run_id>"
+        "--workdir",
+        default=None,
+        help="defaults to work_root/profile-campaigns/<run_id>",
     )
     profile_campaign_cmd.add_argument("--run-id", default=None)
     profile_campaign_cmd.add_argument(
-        "--control-reps", type=int, default=10,
+        "--control-reps",
+        type=int,
+        default=10,
         help="unprofiled reps per control block (default 10, matching this "
         "project's own measured noise floor -- see HI132)",
     )
     profile_campaign_cmd.add_argument(
-        "--profile-passes", type=int, default=2,
+        "--profile-passes",
+        type=int,
+        default=2,
         help="number of rocprofv3 GPU passes (default 2, checks pass-to-pass "
         "reproducibility rather than statistical power)",
     )
@@ -1064,8 +1193,14 @@ def build_parser() -> argparse.ArgumentParser:
         "ab-benchmark",
         help="paired, interleaved native-versus-replay end-to-end benchmark",
     )
-    ab.add_argument("--inspect-build", help="read-only compiler/diagnostic inventory; no hardware execution")
-    ab.add_argument("--server-config", help="local JSON configuration for balanced server-bench capture; no performance admission")
+    ab.add_argument(
+        "--inspect-build",
+        help="read-only compiler/diagnostic inventory; no hardware execution",
+    )
+    ab.add_argument(
+        "--server-config",
+        help="local JSON configuration for balanced server-bench capture; no performance admission",
+    )
     ab.add_argument("--cache")
     ab.add_argument("--output")
     ab.add_argument("--pairs", type=int, default=3)
@@ -1089,6 +1224,7 @@ def build_parser() -> argparse.ArgumentParser:
     # -- reuses server_completion's own flag definitions directly, so the
     # two can never drift apart, and normal argparse validation/--help work.
     from ..bench.server_completion import _build_parser as _completion_bench_parser
+
     completion_bench = sub.add_parser(
         "completion-bench",
         parents=[_completion_bench_parser()],
@@ -1100,6 +1236,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     def _completion_bench_main(args: argparse.Namespace) -> int:
         from ..bench import server_completion
+
         return server_completion.run_from_namespace(args)
 
     completion_bench.set_defaults(func=_completion_bench_main)
@@ -1107,8 +1244,16 @@ def build_parser() -> argparse.ArgumentParser:
     ab.set_defaults(
         func=lambda args: _ab_benchmark_main(
             [
-                *(["--inspect-build", args.inspect_build] if args.inspect_build else []),
-                *(["--server-config", args.server_config] if args.server_config else []),
+                *(
+                    ["--inspect-build", args.inspect_build]
+                    if args.inspect_build
+                    else []
+                ),
+                *(
+                    ["--server-config", args.server_config]
+                    if args.server_config
+                    else []
+                ),
                 *(["--cache", args.cache] if args.cache else []),
                 *(["--output", args.output] if args.output else []),
                 "--pairs",
@@ -1152,15 +1297,20 @@ def build_parser() -> argparse.ArgumentParser:
     validate_release_cmd.add_argument("--staging-root", default=None)
     validate_release_cmd.add_argument("--ref", default="master")
     validate_release_cmd.add_argument(
-        "--source", required=True,
+        "--source",
+        required=True,
         help="canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     validate_release_cmd.add_argument(
-        "--platform", required=True,
+        "--platform",
+        required=True,
         help="canonical v2 [platform.*] name (e.g. 'linux-multi')",
     )
     validate_release_cmd.add_argument(
-        "--build", action="append", required=True, dest="builds",
+        "--build",
+        action="append",
+        required=True,
+        dest="builds",
         help="canonical v2 [build.*] name to run -- repeat for multiple",
     )
     validate_release_cmd.add_argument("--inventory", default=None)
@@ -1190,15 +1340,20 @@ def build_parser() -> argparse.ArgumentParser:
     validate_ref_cmd.add_argument("--staging-root", default=None)
     validate_ref_cmd.add_argument("--ref", default="master")
     validate_ref_cmd.add_argument(
-        "--source", required=True,
+        "--source",
+        required=True,
         help="canonical v2 [source.*] name (e.g. 'bigcherry')",
     )
     validate_ref_cmd.add_argument(
-        "--platform", required=True,
+        "--platform",
+        required=True,
         help="canonical v2 [platform.*] name (e.g. 'linux-multi')",
     )
     validate_ref_cmd.add_argument(
-        "--build", action="append", required=True, dest="builds",
+        "--build",
+        action="append",
+        required=True,
+        dest="builds",
         help="canonical v2 [build.*] name to run -- repeat for multiple",
     )
     validate_ref_cmd.add_argument("--inventory", default=None)
@@ -1421,7 +1576,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="source root the signature-verifier-binary was built from",
     )
     inv_tuning.add_argument(
-        "--signature-verifier-seed", type=int, default=1, help="test-backend-ops --seed",
+        "--signature-verifier-seed",
+        type=int,
+        default=1,
+        help="test-backend-ops --seed",
     )
     inv_tuning.set_defaults(func=lambda args: cmd_inventory(args, subcmd="tuning"))
 
@@ -1477,16 +1635,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Re-verify an existing schema-8 winner against its original "
         "measurements/manifest and attest it if it genuinely passes",
     )
-    inv_reattest.add_argument("--database", required=True, help="schema-8 dispatch SQLite database")
-    inv_reattest.add_argument("--source-build-id", type=int, required=True, help="build_id these measurements belong to")
-    inv_reattest.add_argument("--measurements", required=True, help="the ORIGINAL measurements JSONL (not a projection)")
-    inv_reattest.add_argument("--manifest", required=True, help="the ORIGINAL manifest for source-build-id")
     inv_reattest.add_argument(
-        "--signature-verifier-binary", required=True,
+        "--database", required=True, help="schema-8 dispatch SQLite database"
+    )
+    inv_reattest.add_argument(
+        "--source-build-id",
+        type=int,
+        required=True,
+        help="build_id these measurements belong to",
+    )
+    inv_reattest.add_argument(
+        "--measurements",
+        required=True,
+        help="the ORIGINAL measurements JSONL (not a projection)",
+    )
+    inv_reattest.add_argument(
+        "--manifest", required=True, help="the ORIGINAL manifest for source-build-id"
+    )
+    inv_reattest.add_argument(
+        "--signature-verifier-binary",
+        required=True,
         help="compiled test-backend-ops binary built with GGML_HIP_AUTOTUNE_RECORD=ON",
     )
     inv_reattest.add_argument(
-        "--signature-verifier-vendor-root", required=True,
+        "--signature-verifier-vendor-root",
+        required=True,
         help="source root the signature-verifier-binary was built from",
     )
     inv_reattest.add_argument(
@@ -1496,12 +1669,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSONL record/replay diagnostics file to recover canonical shapes "
         "for rows lacking inline canonical; may be repeated",
     )
-    inv_reattest.add_argument("--seed", type=int, default=1, help="test-backend-ops --seed")
     inv_reattest.add_argument(
-        "--dry-run", action="store_true",
+        "--seed", type=int, default=1, help="test-backend-ops --seed"
+    )
+    inv_reattest.add_argument(
+        "--dry-run",
+        action="store_true",
         help="run every check (including the real hardware verifier) but write nothing",
     )
-    inv_reattest.add_argument("--json", action="store_true", help="machine-readable summary")
+    inv_reattest.add_argument(
+        "--json", action="store_true", help="machine-readable summary"
+    )
     inv_reattest.set_defaults(func=cmd_reattest)
 
     return parser
@@ -1591,40 +1769,59 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
     from pathlib import Path as _Path
 
     from ..core import paths as _paths
-    from ..core import tree_activity as _tree_activity
+    from ..core.tree_activity import TreeActivityError
     from ..release import pin_bump as _pin_bump
+    from ..release.pin_bump import PinBumpStop
 
     report_dir = (
-        _Path(args.report_dir) if args.report_dir
+        _Path(args.report_dir)
+        if args.report_dir
         else _paths.ARTIFACTS / "pin-bump" / f"resume-{args.target}"
     )
     try:
         result = _pin_bump.run(
-            target_ref=args.target, source_name=args.source,
-            resume=args.resume, report_dir=report_dir,
+            target_ref=args.target,
+            source_name=args.source,
+            resume=args.resume,
+            report_dir=report_dir,
         )
-    except _pin_bump.PinBumpStop as exc:
+    # The `or` coalesces in this handler are legitimate (exc.run_id is None
+    # until run() assigns a run_id, and target/tree are None before the first
+    # phase). no-boolean-in-except's stopBy:end scans the except BODY, not
+    # just the header, so it false-positives on them -- suppress inline.
+    except PinBumpStop as exc:  # pi-lens-ignore: no-boolean-in-except
         envelope = _pin_bump.failure_envelope(
-            exc.run_id or "unresolved", exc.target or {"from_ref": "?", "to_ref": args.target},
-            exc.transition_commit, exc.tree or {"name": "local", "path": str(_paths.llama_root())},
+            exc.run_id or "unresolved",
+            exc.target or {"from_ref": "?", "to_ref": args.target},
+            exc.transition_commit,
+            exc.tree or {"name": "local", "path": str(_paths.llama_root())},
             exc,
         )
         out = report_dir / "failure.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(_json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(f"pin-bump: STOPPED at phase {exc.phase!r} ({exc.code}): {exc.summary}", file=_sys.stderr)
+        out.write_text(
+            _json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(
+            f"pin-bump: STOPPED at phase {exc.phase!r} ({exc.code}): {exc.summary}",
+            file=_sys.stderr,
+        )
         print(f"  failure envelope: {out}", file=_sys.stderr)
         for action in exc.recommended_actions:
             print(f"  - {action}", file=_sys.stderr)
         return 1
-    except _tree_activity.TreeActivityError as exc:
+    except TreeActivityError as exc:
         print(f"pin-bump: TREE_IN_USE: {exc}", file=_sys.stderr)
         return 1
 
-    print(f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
-          f"({result.state.to_sha[:12]})")
-    print("next: run `bigcherry pin-status --complete --all-remotes` once every "
-          "required tree has been bumped the same way")
+    print(
+        f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
+        f"({result.state.to_sha[:12]})"
+    )
+    print(
+        "next: run `bigcherry pin-status --complete --all-remotes` once every "
+        "required tree has been bumped the same way"
+    )
     return 0
 
 
