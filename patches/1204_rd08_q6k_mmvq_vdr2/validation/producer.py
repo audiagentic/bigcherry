@@ -68,7 +68,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     activation = _run_activation(ctx)
     
     # 5. Write the artifacts
-    decode_ref = ctx.runtime.write_json_artifact(
+    decode_ref = ctx.runtime.write_artifact(
         name="rd08-decode-lane.json",
         payload={
             "role": "positive",
@@ -79,7 +79,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "n_pairs": len(decode_effect.pair_ratios),
         },
     )
-    prefill_ref = ctx.runtime.write_json_artifact(
+    prefill_ref = ctx.runtime.write_artifact(
         name="rd08-prefill-control.json",
         payload={
             "role": "control",
@@ -90,11 +90,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "n_pairs": len(prefill_effect.pair_ratios),
         },
     )
-    correctness_ref = ctx.runtime.write_json_artifact(
+    correctness_ref = ctx.runtime.write_artifact(
         name="rd08-correctness.json",
         payload=correctness,
     )
-    activation_ref = ctx.runtime.write_json_artifact(
+    activation_ref = ctx.runtime.write_artifact(
         name="rd08-activation.json",
         payload={
             "status": activation.status,
@@ -102,7 +102,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "detail": activation.detail,
         },
     )
-    performance_ref = ctx.runtime.write_json_artifact(
+    performance_ref = ctx.runtime.write_artifact(
         name="rd08-performance.json",
         payload={
             "metrics": {
@@ -120,17 +120,31 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
     )
     
-    # GPT round 1 BLOCKER: use the correct ProducerResult shape
-    # - emitted_artifacts must be frozenset[str]
-    # - promotion fields must be keyed mappings
+    # GPT round 2 BLOCKER: use the correct ProducerResult shape with all
+    # required fields
     return vp.ProducerResult(
+        validation_build_identities=ctx.validation_build_identities,
         promotion_lane_effects={
             "RD08-Q6K-MMVQ-VDR2": (decode_effect, prefill_effect)
         },
         promotion_target_metric={
             "RD08-Q6K-MMVQ-VDR2": "tg128"
         },
-        promotion_trigger_evidence={},
+        promotion_trigger_evidence={
+            "RD08-Q6K-MMVQ-VDR2": vp.TriggerEvidence(
+                role="positive",
+                lane_id="rd08-decode",
+                candidate_launches=None,
+                expected_route_selected=None,
+            )
+        },
+        contract_correctness_results={
+            "RD08-Q6K-MMVQ-VDR2": correctness
+        },
+        performance_evidence=(),
+        trace_evidence=(),
+        check_results={},
+        lane_effects=[decode_effect, prefill_effect],
         correctness=correctness,
         activation_evidence=activation,
         emitted_artifacts=frozenset([
@@ -139,6 +153,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "rd08-correctness.json",
             "rd08-activation.json",
             "rd08-performance.json",
+            "rd08-subject-trace.log",
+            "rd08-control-trace.log",
         ]),
     )
 
