@@ -322,6 +322,10 @@ def _run_resource_burst(
     log_path = ctx.workdir / "rd73-resource-burst-subject.log"
 
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
+    # GPT round 6 MAJOR: legacy run_rd73_resource_burst_session() uses
+    # n_predict=32, not 128. Graph-cache cardinality is the measured
+    # resource and changing request length can change the quantity being
+    # gated.
     session_kwargs = dict(
         corpus_id=ctx.corpus.stem,
         corpus_sha256=corpus_sha256,
@@ -335,7 +339,7 @@ def _run_resource_burst(
         spec_draft_k="default",
         spec_draft_v="default",
         sampling=sampling,
-        n_predict=128,
+        n_predict=32,
         order_seed=12345,
     )
     config = sc.SessionConfig(session_id="rd73-resource-burst", **session_kwargs)
@@ -361,23 +365,20 @@ def _run_resource_burst(
             prompt = prompts[i % len(prompts)]
             sc.run_request(transport, prompt, config, pass_number=1, order_index=i)
 
-    # Parse the resource telemetry from the log
+    # GPT round 6 BLOCKER: use the canonical parse_rd73_resource_telemetry()
+    # for fail-closed behavior (raises on any malformed prefixed line)
+    from bigcherry.patch.validation_campaign import (
+        parse_rd73_resource_telemetry,
+    )
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
-    for line in log_text.splitlines():
-        if "BIGCHERRY_RD73_RESOURCE" in line:
-            match = re.search(r"graph_cache_entries=(\d+)", line)
-            if match:
-                entries = int(match.group(1))
-                peak_entries = max(peak_entries, entries)
-
-    # Fail closed on missing telemetry
-    if peak_entries == 0:
+    readings = parse_rd73_resource_telemetry(log_text)
+    if not readings:
         raise ValidationProducerError(
             "RD73 resource burst: no graph_cache_entries telemetry observed -- "
             "the subject server's telemetry (BIGCHERRY_RD73_RESOURCE_TRACE=1) "
             "never emitted a reading. Refusing to pass a zero measurement."
         )
-
+    peak_entries = max(readings)
     return peak_entries
 
 
