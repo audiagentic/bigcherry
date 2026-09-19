@@ -37,7 +37,13 @@ import tomllib
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import ExecutionIdentity
 
-from .validation import ArtifactRef, CheckSpec, ValidationContext, ValidationPlan, ValidationResult
+from .validation import (
+    ArtifactRef,
+    CheckSpec,
+    ValidationContext,
+    ValidationPlan,
+    ValidationResult,
+)
 
 # Reuse the project's real build-identity shape (CompletedBuildEvidence.
 # campaign_identity()'s return type) rather than inventing a parallel
@@ -82,7 +88,9 @@ class FatTargetPlan:
         if not self.targets:
             raise ValidationProducerError("FatTargetPlan requires at least one target")
         if len(set(self.targets)) != len(self.targets):
-            raise ValidationProducerError(f"FatTargetPlan has duplicate targets: {self.targets!r}")
+            raise ValidationProducerError(
+                f"FatTargetPlan has duplicate targets: {self.targets!r}"
+            )
 
     @property
     def cmake_value(self) -> str:
@@ -336,9 +344,9 @@ class ProducerResult:
     # aggregate_contract_effects() + evaluate_promotion_gate() (the
     # producer never computes a gate itself). {} for producers that do
     # not produce promotion results (the RD12/RD04/RD13/RD26 shape).
-    promotion_lane_effects: dict[
-        str, tuple[experiment_contract.LaneEffect, ...]
-    ] = field(default_factory=dict)
+    promotion_lane_effects: dict[str, tuple[experiment_contract.LaneEffect, ...]] = (
+        field(default_factory=dict)
+    )
     promotion_target_metric: dict[str, str] = field(default_factory=dict)
     # RD58 (PA36 migration #4, dev-gpt-agent req_ecb4b77a4c4e4bdd
     # BLOCKER): the typed per-contract trigger evidence. The dispatcher
@@ -348,6 +356,16 @@ class ProducerResult:
     # {} for producers that do not produce promotion results.
     promotion_trigger_evidence: dict[
         str, tuple[experiment_contract.TriggerEvidence, ...]
+    ] = field(default_factory=dict)
+    # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
+    # the typed producer->dispatcher resource evidence channel. The
+    # producer supplies per-contract ResourceResult objects (e.g. RD73's
+    # graph_cache_entries peak); the dispatcher converts these to
+    # {metric: result}, calls evaluate_resource_gate(), and passes
+    # resource_gate= into evaluate_promotion_gate(). Missing resource
+    # evidence for a resource-bound contract must fail closed.
+    promotion_resource_results: dict[
+        str, tuple[experiment_contract.ResourceResult, ...]
     ] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -379,13 +397,21 @@ def _parse_artifact_names(raw: object, *, where: str) -> frozenset[str]:
         if not name:
             raise ValidationProducerError(f"{where}: artifact name must be non-empty")
         if "/" in name or "\\" in name:
-            raise ValidationProducerError(f"{where}: artifact name {name!r} must be a basename")
+            raise ValidationProducerError(
+                f"{where}: artifact name {name!r} must be a basename"
+            )
         if ".." in name:
-            raise ValidationProducerError(f"{where}: artifact name {name!r} must not contain '..'")
+            raise ValidationProducerError(
+                f"{where}: artifact name {name!r} must not contain '..'"
+            )
         if any(ch in name for ch in "*?[]"):
-            raise ValidationProducerError(f"{where}: artifact name {name!r} must not contain a glob")
+            raise ValidationProducerError(
+                f"{where}: artifact name {name!r} must not contain a glob"
+            )
         if not _ARTIFACT_NAME_PATTERN.match(name):
-            raise ValidationProducerError(f"{where}: artifact name {name!r} is not a valid basename")
+            raise ValidationProducerError(
+                f"{where}: artifact name {name!r} is not a valid basename"
+            )
         names.append(name)
     if len(set(names)) != len(names):
         raise ValidationProducerError(f"{where}: duplicate artifact name in {names!r}")
@@ -413,7 +439,9 @@ def _parse_inputs(raw: object, *, where: str) -> dict[str, ProducerInputSpec]:
             raise ValidationProducerError(f"{input_where} must be a table")
         input_type = body.get("type")
         if not isinstance(input_type, str) or not input_type:
-            raise ValidationProducerError(f"{input_where}: type must be a non-empty string")
+            raise ValidationProducerError(
+                f"{input_where}: type must be a non-empty string"
+            )
         required = body.get("required", False)
         if not isinstance(required, bool):
             raise ValidationProducerError(f"{input_where}: required must be a boolean")
@@ -464,12 +492,17 @@ def resolve_producer(*, patch_dir: Path, producer_id: str) -> ProducerSelection:
         raise ValidationProducerError(f"{where}: entrypoint must not contain '..'")
     entrypoint = (validation_dir / entrypoint_raw).resolve()
     resolved_validation_dir = validation_dir.resolve()
-    if resolved_validation_dir not in entrypoint.parents and entrypoint != resolved_validation_dir:
+    if (
+        resolved_validation_dir not in entrypoint.parents
+        and entrypoint != resolved_validation_dir
+    ):
         raise ValidationProducerError(
             f"{where}: entrypoint {entrypoint} escapes {resolved_validation_dir}"
         )
     if not entrypoint.is_file():
-        raise ValidationProducerError(f"{where}: entrypoint {entrypoint} does not exist")
+        raise ValidationProducerError(
+            f"{where}: entrypoint {entrypoint} does not exist"
+        )
 
     callable_name = body.get("callable")
     if not isinstance(callable_name, str) or not callable_name:
@@ -480,15 +513,23 @@ def resolve_producer(*, patch_dir: Path, producer_id: str) -> ProducerSelection:
         producer_id=producer_id,
         entrypoint=entrypoint,
         callable_name=callable_name,
-        trace_probe=_parse_policy_value(body.get("trace_probe"), field_name="trace_probe", where=where),
+        trace_probe=_parse_policy_value(
+            body.get("trace_probe"), field_name="trace_probe", where=where
+        ),
         standard_campaign=_parse_policy_value(
-            body.get("standard_campaign"), field_name="standard_campaign", where=where,
+            body.get("standard_campaign"),
+            field_name="standard_campaign",
+            where=where,
         ),
         correctness_evidence_cli=_parse_policy_value(
-            body.get("correctness_evidence_cli"), field_name="correctness_evidence_cli", where=where,
+            body.get("correctness_evidence_cli"),
+            field_name="correctness_evidence_cli",
+            where=where,
         ),
         performance_benchmark_cli=_parse_policy_value(
-            body.get("performance_benchmark_cli"), field_name="performance_benchmark_cli", where=where,
+            body.get("performance_benchmark_cli"),
+            field_name="performance_benchmark_cli",
+            where=where,
         ),
         artifact_names=_parse_artifact_names(body.get("artifacts", []), where=where),
         inputs=_parse_inputs(body.get("input"), where=where),
@@ -515,7 +556,8 @@ def resolve_producer(*, patch_dir: Path, producer_id: str) -> ProducerSelection:
 
 
 def validate_producer_inputs(
-    spec: ProducerSpec, provided: Mapping[str, str],
+    spec: ProducerSpec,
+    provided: Mapping[str, str],
 ) -> Mapping[str, str]:
     """Fail closed on an undeclared ``--producer-input`` key or a missing
     required one. Returns ``provided`` unchanged (a pure gate, not a
@@ -528,7 +570,8 @@ def validate_producer_inputs(
             f"known: {sorted(spec.inputs)}"
         )
     missing = sorted(
-        name for name, input_spec in spec.inputs.items()
+        name
+        for name, input_spec in spec.inputs.items()
         if input_spec.required and name not in provided
     )
     if missing:
@@ -614,7 +657,9 @@ def validate_producer_result(
     for record in result.check_results:
         where = f"{spec.patch_id}/{spec.producer_id}: check {record.check_id!r}"
         if record.check_id in seen_check_ids:
-            raise ValidationProducerError(f"{where}: duplicate check_id in check_results")
+            raise ValidationProducerError(
+                f"{where}: duplicate check_id in check_results"
+            )
         seen_check_ids.add(record.check_id)
 
         try:

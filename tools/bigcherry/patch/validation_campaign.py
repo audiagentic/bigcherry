@@ -3888,12 +3888,34 @@ def _run_validation_producer(
             aggregated = experiment_contract.aggregate_contract_effects(
                 contract, list(lane_effects), target_metric=target_metric
             )
+            # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
+            # compute the resource gate from the producer's
+            # promotion_resource_results. A resource-bound contract
+            # without resource evidence must fail closed.
+            resource_gate = None
+            if contract.resource_limits:
+                resource_results = (
+                    execution.result.promotion_resource_results.get(
+                        contract_id
+                    )
+                )
+                if not resource_results:
+                    raise PatchCampaignError(
+                        f"promotion_lane_effects for {contract_id!r} "
+                        "requires promotion_resource_results (a "
+                        "resource-bound contract without resource "
+                        "evidence must fail closed)"
+                    )
+                resource_gate = experiment_contract.evaluate_resource_gate(
+                    contract, list(resource_results)
+                )
             producer_contract_promotions[contract_id] = (
                 experiment_contract.evaluate_promotion_gate(
                     contract,
                     correctness_gate=contract_correctness_gate,
                     aggregated_effects=aggregated,
                     trigger_proof=trigger_proof,
+                    resource_gate=resource_gate,
                 )
             )
         # RD58 (PA36 migration #4, dev-gpt-agent
