@@ -191,17 +191,11 @@ def _run_lanes(
             f"and cannot proceed with ambiguous device selection"
         )
     device = device_contexts[0]
-    # GPT round 9 BLOCKER: check against the contract's scope.architectures,
-    # not ctx.fat_targets.targets (which comes from CLI and is not
-    # contract authority). The contract scope is the authoritative source.
-    contract_architectures = (
-        "gfx1100", "gfx1201", "gfx1030"
-    )  # RD08 contract scope
-    if device.architecture not in contract_architectures:
-        raise vp.ValidationProducerError(
-            f"RD08: device architecture {device.architecture} is not in "
-            f"the contract's scope {contract_architectures}"
-        )
+    # GPT round 10: architecture validation is now done generically in the
+    # dispatcher (_run_validation_producer), not in the producer. The
+    # dispatcher validates requested/measured architectures against the
+    # union of bound contracts' scope.architectures before producer
+    # execution.
     
     # Use the canonical paired benchmark infrastructure
     # GPT round 6 BLOCKER: remove hip_path (runtime already owns it)

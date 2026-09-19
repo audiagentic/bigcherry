@@ -3471,6 +3471,25 @@ def _run_validation_producer(
         targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
     )
     device_map = _parse_producer_device_map(list(args.device_map or ()))
+    
+    # PA36 (dev-gpt-agent req_23ef78886a3140b3): validate requested/measured
+    # architectures against the union of bound contracts' scope.architectures
+    # before producer execution. This is the generic, contract-authority
+    # guard -- not a per-patch hardcoded check.
+    if fat_targets.targets:
+        contract_architectures: set[str] = set()
+        for _contract in bound_contracts:
+            if _contract.scope.architectures:
+                contract_architectures.update(_contract.scope.architectures)
+        if contract_architectures:
+            requested_archs = set(fat_targets.targets)
+            unsupported = requested_archs - contract_architectures
+            if unsupported:
+                raise PatchCampaignError(
+                    f"{args.patch}: requested architectures {sorted(unsupported)} "
+                    f"are not in the bound contract scope "
+                    f"{sorted(contract_architectures)}"
+                )
 
     scaffold: StandardCampaignScaffold | None = None
     evidence_binding: ProducerEvidenceBindingContext | None = None
