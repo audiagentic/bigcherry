@@ -41,17 +41,22 @@ class _FakeVisibility:
         return {"observed": list(self.device_ids), "exact": 2, "satisfied": True}
 
 
+class _FakeArtifactRef:
+    def __init__(self, name: str) -> None:
+        self.path = name
+        self.sha256 = "fake-sha256"
+
 class _FakeRuntime:
     def __init__(self) -> None:
-        self.artifacts: dict[str, str] = {}
+        self.artifacts: dict[str, Any] = {}
 
-    def write_artifact(self, *, name: str, payload: str) -> str:
+    def write_artifact(self, *, name: str, payload: Any) -> _FakeArtifactRef:
         self.artifacts[name] = payload
-        return f"artifact://{name}"
+        return _FakeArtifactRef(name)
 
-    def write_text_artifact(self, *, name: str, text: str) -> str:
+    def write_text_artifact(self, *, name: str, text: str) -> _FakeArtifactRef:
         self.artifacts[name] = text
-        return f"artifact://{name}"
+        return _FakeArtifactRef(name)
 
 
 class _FakeProducerContext:
@@ -131,7 +136,7 @@ class Rd73ProducerTests(unittest.TestCase):
 
         self.assertEqual(result.correctness["disposition"], "passed")
         self.assertEqual(
-            result.activation_evidence["disposition"], "activation-verified"
+            result.activation_evidence.status, "executed"
         )
         self.assertEqual(len(result.emitted_artifacts), 8)
 

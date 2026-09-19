@@ -34,6 +34,7 @@ from bigcherry.experiment.execution import (
     run_paired_lane,
 )
 from bigcherry.experiment.server_execution import AttestedServerSession
+from bigcherry.patch.activation import ActivationEvidence
 from bigcherry.patch.validation_producer import (
     ProducerContext,
     ProducerResult,
@@ -609,31 +610,31 @@ def run(ctx: ProducerContext) -> ProducerResult:
             "control": dict(ctx.validation_build_identities["control"]),
             "subject": dict(ctx.validation_build_identities["subject"]),
         },
-        activation_evidence={
-            "disposition": "activation-verified" if (subject_hit and not control_hit) else "activation-failed",
-            "mechanism": "trace-marker",
-            "detail": f"marker_regex={_MARKER_REGEX}",
-        },
+        activation_evidence=ActivationEvidence(
+            status="executed" if (subject_hit and not control_hit) else "not_executed",
+            mechanism="trace-marker",
+            detail=f"marker_regex={_MARKER_REGEX}",
+        ),
         performance_evidence={
             "disposition": "measured",
             "mechanism": "paired-server-bench",
             "detail": "RD73 MTP + decode lanes",
             "artifact": {
-                "path": "rd73-performance.json",
-                "sha256": "placeholder",  # Will be replaced by runtime
+                "path": performance_ref.path,
+                "sha256": performance_ref.sha256,
             },
         },
         trace_evidence={
             "positive": {
                 "artifact": {
-                    "path": "rd73-mtp-subject.log",
-                    "sha256": "placeholder",  # Will be replaced by runtime
+                    "path": subject_log_ref.path,
+                    "sha256": subject_log_ref.sha256,
                 },
             },
             "negative": {
                 "artifact": {
-                    "path": "rd73-mtp-control.log",
-                    "sha256": "placeholder",  # Will be replaced by runtime
+                    "path": control_log_ref.path,
+                    "sha256": control_log_ref.sha256,
                 },
             },
         },
