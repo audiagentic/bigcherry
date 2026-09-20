@@ -507,7 +507,10 @@ title = "RD26a: decode vs speculative-verify bit-identity (base-standalone hunks
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.source]
 source_id = "stew675-rdna-boosts"
-commits = ["b2655d381b9575d644ebef794869165ede14b3a3", "d152888fc34419c69fb946581f29f927a475b5fa"]
+commits = [
+  "b2655d381b9575d644ebef794869165ede14b3a3",
+  "d152888fc34419c69fb946581f29f927a475b5fa",
+]
 atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (base-standalone subset of a 5-commit determinism cluster -- fattn-tile/RDNA4-mmvq/fused-SSM pieces remain composition-gated on 1202/1203, not covered by this contract)"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.target]
@@ -636,7 +639,10 @@ title = "RD44: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5"
 source_id = "amd-ecosystem-llama-cpp"
 commits = ["6e9f948a0d8b99db2bce0a83fc021efc2064ef9b"]
 atomic_part = "1217_rd44_graph_opt_default_rdna35"
-prerequisites = ["RD39-42-STREAM-MOE-OVERLAP", "RD43-CONCURRENT-JOIN-FUSION-GUARD"]
+prerequisites = [
+  "RD39-42-STREAM-MOE-OVERLAP",
+  "RD43-CONCURRENT-JOIN-FUSION-GUARD",
+]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.target]
 kind = "orchestration"
@@ -926,6 +932,86 @@ bit_identical = "required"
 # this threshold is therefore not a preregistration of those old results.
 # Qualification must use fresh formal campaign evidence.
 target_kernel_gain_pct = 0.5
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
+
+[contract.PNRO09-META-VIEW-HEADROOM]
+title = "PNRO09: Meta compute-container view headroom"
+prerequisites = []
+
+[contract.PNRO09-META-VIEW-HEADROOM.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["91de35039a1a2a366fde0bc6c5b515bbf7e3cabb"]
+atomic_part = "Meta compute-container view headroom"
+
+[contract.PNRO09-META-VIEW-HEADROOM.target]
+kind = "orchestration"
+
+[contract.PNRO09-META-VIEW-HEADROOM.hypothesis]
+expected_effect = "correctness"
+rationale = "Headroom 16 is insufficient for supported recurrent/MTP Meta graphs."
+
+[contract.PNRO09-META-VIEW-HEADROOM.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.scope.gpu_count]
+minimum = 2
+maximum = 2
+
+[contract.PNRO09-META-VIEW-HEADROOM.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["state_restore"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.correctness]
+state_restore_integrity = "required"
+
+[contract.PNRO09-META-VIEW-HEADROOM.acceptance]
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES]
+title = "PNRO10: add ctx_other devices to speculative scheduler backends"
+prerequisites = []
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["84b31d4cdb696cd09f04219de5f9a9b8d5ec6ac7"]
+atomic_part = "ctx_other scheduler backend completion"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.target]
+kind = "orchestration"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.hypothesis]
+expected_effect = "correctness"
+rationale = "Draft contexts require backends for shared tensors owned by ctx_other devices."
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.scope.gpu_count]
+minimum = 2
+maximum = 2
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["mtp_verify"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.correctness]
+greedy_parity = "required"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.acceptance]
 max_control_regression_pct = 1
 effect_evidence_policy = "ci95_threshold_bound_v1"
 min_paired_rounds = 10

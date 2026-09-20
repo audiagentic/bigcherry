@@ -2,7 +2,7 @@
 id: PNRO09
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:52:50.276971+00:00'
 breadth: ''
 skill: intermediate
@@ -67,6 +67,8 @@ Successor key: patching-nasone-rdna-optimizations-nro10
 ## Ledger-events
 
 
+
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.090326+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -74,3 +76,9 @@ Successor key: patching-nasone-rdna-optimizations-nro10
 - 2026-09-10T02:44:03.530481+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024433_three-more-nasone-successors-n_7555
 - 2026-09-10T02:44:33.131554+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-20T02:30:44.526791+00:00 (state-transition): State: pending → in_progress
+- chg_20260920_025031_created-patch-1260-to-increase_8170
+- 2026-09-20T02:50:34.930936+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260920_062016_patch-1260-pnro09-verified-o_3271
+- 2026-09-20T06:20:21.408083+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-20T06:44:20.375111+00:00 (state-transition): State: in_progress → in_progress

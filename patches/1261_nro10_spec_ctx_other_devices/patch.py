@@ -40,7 +40,7 @@ PATCHES = [
                     "                        ggml_backend_t other_backend = ggml_backend_dev_init(dev.dev, nullptr);\n"
                     "                        if (other_backend == nullptr) {\n"
                     "                            throw std::runtime_error(\n"
-                    "                                format(\"failed to initialize %s backend from ctx_other\",\n"
+                    '                                format("failed to initialize %s backend from ctx_other",\n'
                     "                                       ggml_backend_dev_name(dev.dev)));\n"
                     "                        }\n"
                     "                        backends.emplace_back(other_backend);\n"
