@@ -250,6 +250,27 @@ class ProducerRuntime(Protocol):
         env_unset: tuple[str, ...] = (),
     ) -> ProducerPairedBenchmarkOutcome: ...
 
+    def build_materialized_pair(
+        self,
+        *,
+        control_source: Path,
+        subject_source: Path,
+        targets: tuple[str, ...],
+        primary_target: str,
+    ) -> ProducerBuildPair: ...
+
+    def run_trace_probe(
+        self,
+        *,
+        binary: Path,
+        model: Path,
+        device: ProducerDeviceContext,
+        bench_prompt: int,
+        bench_gen: int,
+        log_context: str,
+        disable_fusion: bool = False,
+    ) -> str: ...
+
 
 @dataclass(frozen=True)
 class ProducerContext:
