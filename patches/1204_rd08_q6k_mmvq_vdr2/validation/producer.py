@@ -445,10 +445,17 @@ def _run_activation(
     # GPT req_c2e69928e8b34de0: promotion_trigger_evidence truthfully
     # reports the subject observation. Do not falsify candidate_launches
     # merely because control also hit.
+    #
+    # BLOCKER FIX: The old run_rd08_contract_qualification() explicitly
+    # forced trigger_proof.passed=False when the unpatched control also
+    # emitted the marker. The generic dispatcher evaluate_trigger_proof()
+    # ignores control lanes, so we must preserve this invariant here:
+    # if control_hit is True, the trigger evidence must indicate failure.
+    effective_positive_hit = subject_hit and not control_hit
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
         lane_id="rd08-decode-subject",
         role="positive",
-        positive_hit=subject_hit,
+        positive_hit=effective_positive_hit,
     )
 
     # Activation: subject_hit AND NOT control_hit
