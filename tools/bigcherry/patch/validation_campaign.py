@@ -1563,12 +1563,9 @@ class CampaignProducerRuntime:
             requested_cmake_args=cmake_args, build_env=build_env,
         )
 
-        control_composition = tuple(
-            (p, "applied") for p in psi.git_worktree_tree(control_source)
-        )
-        subject_composition = tuple(
-            (p, "applied") for p in psi.git_worktree_tree(subject_source)
-        )
+        # GPT review: do not fabricate compositions from tree SHA
+        control_composition = ()
+        subject_composition = ()
 
         return ProducerBuildPair(
             base_revision=self.base_revision,
@@ -1578,10 +1575,10 @@ class CampaignProducerRuntime:
             subject_composition=subject_composition,
             control_bin=control_binary,
             subject_bin=subject_binary,
-            validation_build_identities=BuildIdentityMap(
-                control=control_evidence.campaign_identity(),
-                subject=subject_evidence.campaign_identity(),
-            ),
+            validation_build_identities={
+                "control": control_evidence.campaign_identity(),
+                "subject": subject_evidence.campaign_identity(),
+            },
         )
 
     def run_trace_probe(
