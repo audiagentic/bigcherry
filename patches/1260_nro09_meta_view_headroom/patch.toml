@@ -1,0 +1,17 @@
+schema = 1
+id = "1260_nro09_meta_view_headroom"
+order = 1260
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["PNRO09"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["meta"]
+tags = ["optimization", "meta", "recurrent", "mtp"]
+hardware = []
+validation-architectures = []
+backends = ["agnostic"]
