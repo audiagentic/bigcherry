@@ -22,13 +22,17 @@ PATCHES = [
         file="vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp",
         edits=(
             Edit(
+                id="pnro09_increase_headroom",
                 anchor="constexpr size_t compute_headroom = 16; // Maximum number of views per statically allocated tensor that can be created between evals.",
-                replacement=(
+                text=(
                     "constexpr size_t compute_headroom = 80; // PNRO09: increased from 16 to cover recurrent+MTP graphs.\n"
                     "    // 2*(n_rs_seq+1) views per recurrent layer; n_rs_seq=8, 4 layers = 72 views.\n"
                     "    // The 16-view bound was insufficient for recurrent+MTP configurations with\n"
                     "    // n_rs_seq >= 3 and multiple recurrent layers."
                 ),
+                mode="replace",
+                guard="constexpr size_t compute_headroom = 80;",
+                rationale="Increase compute_headroom from 16 to 80 to cover recurrent+MTP graphs with n_rs_seq up to 8 and up to 4 recurrent layers.",
             ),
         ),
     ),
