@@ -1,0 +1,10 @@
+[patch]
+id = "1260_nro09_meta_view_headroom"
+title = "Increase Meta compute-container view headroom for recurrent/MTP graphs"
+state = "untested"
+architecture = "agnostic"
+requires = ["1001_hip_internal_allreduce"]
+
+[validation]
+build = "hip"
+check = "static"
