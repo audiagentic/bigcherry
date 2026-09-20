@@ -43,7 +43,6 @@ import statistics
 import subprocess
 import sys
 import tempfile
-from array import array
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -779,6 +778,17 @@ def rd08_validation_lane_commands(
         str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
     ]
     return control_command, subject_command
+
+
+_PAIRED_BENCH_WORKLOAD_FLAGS: dict[str, tuple[str, ...]] = {
+    "decode": ("-p", "0", "-n", "128"),
+    "prefill": ("-p", "512", "-n", "0"),
+}
+_PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
+_PAIRED_BENCH_METRIC_PATTERN: dict[str, "re.Pattern[str]"] = {
+    "decode": re.compile(r"tg128\s*\|\s*([0-9.]+)"),
+    "prefill": re.compile(r"pp512\s*\|\s*([0-9.]+)"),
+}
 
 
 def _paired_llama_bench_command(
