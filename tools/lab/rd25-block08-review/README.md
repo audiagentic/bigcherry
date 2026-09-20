@@ -14,11 +14,23 @@ not a BigCherry patch.
 
 ## Inputs
 
-- `block08.diff` — the upstream `rdna-boosts` block 08 commit touching
-  `ggml/src/ggml-cuda/common.cuh` (per-graph cache of quantized Q8_1 matmul
-  inputs: the decode `mmvq` launcher quantizes `src1` to Q8_1 before every
-  matmul; matmuls sharing the same `src1` data quantize once and reuse the
-  result, keyed by view root + data pointer + quantize layout).
+- `block08.diff` — the upstream `rdna-boosts` block 08 commit touching 10
+  files under `ggml/src/ggml-cuda/`, spanning two themes:
+  - **Fused-core prefill kernels**: a new/expanded fused prefill path in
+    `mul_mat_vec_q` (`mmvq.cu`, +466 lines in a single hunk) plus
+    warp/row-per-block calc and fused-add changes; new `l2_norm`/`group_norm`
+    kernels (`norm.cu`); a new gated unary-op kernel (`unary.cu`;
+    `unary.cuh` adds `ggml_cuda_op_xielu`); RoPE/set-rows fusion and the
+    `ggml_cuda_try_fuse` expansion in `ggml-cuda.cu`; attention kernel
+    selection (`fattn.cu`) + tile switch (`fattn-tile.cuh`); declarations in
+    `mmvq.cuh`/`norm.cuh` (`ggml_cuda_op_rms_norm_fused_add`).
+  - **GPU bit-identity**: `common.cuh` adds a per-graph cache of quantized
+    Q8_1 matmul inputs — the decode `mmvq` launcher quantizes `src1` to Q8_1
+    before every matmul; matmuls sharing the same `src1` data (e.g. the
+    qkv/z/alpha/beta projections of one layer, or views of the same tensor)
+    quantize once and reuse the result, keyed by view root + data pointer +
+    quantize layout — making decode mmvq reproducible/bit-identical; plus
+    `ggml_cuda_mm_fusion_args_host`/`_device` struct changes.
 
 ## Outputs
 
