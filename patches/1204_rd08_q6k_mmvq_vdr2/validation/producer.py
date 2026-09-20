@@ -156,6 +156,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         perf_payload["commands"] = lanes_outcome.commands
     if hasattr(lanes_outcome, "raw_logs"):
         perf_payload["raw_logs"] = lanes_outcome.raw_logs
+    # Preserve per-run measurements and stats (MAJOR 4)
+    decode_run = lanes_outcome.runs["decode"]
+    prefill_run = lanes_outcome.runs["prefill"]
+    perf_payload["decode_runs"] = list(decode_run.runs)
+    perf_payload["decode_stats"] = decode_run.stats
+    perf_payload["prefill_runs"] = list(prefill_run.runs)
+    perf_payload["prefill_stats"] = prefill_run.stats
     # Preserve scaffold build identities
     perf_payload["scaffold_build_identities"] = dict(ctx.validation_build_identities)
     perf_ref = ctx.runtime.write_artifact(
@@ -191,10 +198,25 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         contract_correctness_results=(correctness_result,),
-        performance_evidence=perf_ref,
+        performance_evidence={
+            "artifact": {
+                "path": perf_ref.path,
+                "sha256": perf_ref.sha256,
+            },
+        },
         trace_evidence={
-            "positive": subject_trace_ref,
-            "negative": control_trace_ref,
+            "positive": {
+                "artifact": {
+                    "path": subject_trace_ref.path,
+                    "sha256": subject_trace_ref.sha256,
+                },
+            },
+            "negative": {
+                "artifact": {
+                    "path": control_trace_ref.path,
+                    "sha256": control_trace_ref.sha256,
+                },
+            },
         },
         check_results=(),
         lane_effects=(),
