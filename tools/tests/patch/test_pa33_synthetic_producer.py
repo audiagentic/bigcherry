@@ -11,7 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 
 
-
 class TestPA33SyntheticProducer:
     """PA33: synthetic test producer regression tests."""
 
@@ -34,22 +33,22 @@ class TestPA33SyntheticProducer:
 
         # Create patch.toml
         (patch_dir / "patch.toml").write_text(
-            f'schema = 1\n'
+            f"schema = 1\n"
             f'id = "{patch_id}"\n'
-            f'order = 9999\n'
+            f"order = 9999\n"
             f'state = "untested"\n'
             f'kind = "enhancement"\n'
             f'origin = "test"\n'
             f'backend = "hip"\n'
-            f'plan-ids = []\n'
-            f'requires = []\n'
-            f'conflicts = []\n'
-            f'requires-options = []\n'
-            f'forbids-options = []\n'
-            f'subsystems = []\n'
-            f'hardware = []\n'
+            f"plan-ids = []\n"
+            f"requires = []\n"
+            f"conflicts = []\n"
+            f"requires-options = []\n"
+            f"forbids-options = []\n"
+            f"subsystems = []\n"
+            f"hardware = []\n"
             f'validation-architectures = ["gfx1100"]\n'
-            f'backends = []\n'
+            f"backends = []\n"
         )
 
         # Create validation directory
@@ -58,7 +57,7 @@ class TestPA33SyntheticProducer:
 
         # Create producer.toml
         (val_dir / "producer.toml").write_text(
-            'schema = 1\n'
+            "schema = 1\n"
             'id = "synthetic"\n'
             'standard_campaign = "skip"\n'
             'trace_probe = "skip"\n'
@@ -68,34 +67,34 @@ class TestPA33SyntheticProducer:
         # Create producer.py (minimal synthetic producer)
         (val_dir / "producer.py").write_text(
             '"""Synthetic test producer for PA33 extension boundary test."""\n'
-            '\n'
-            'from __future__ import annotations\n'
-            '\n'
-            'from bigcherry.patch import validation_producer as vp\n'
-            '\n'
-            '\n'
-            'def run(ctx: vp.ProducerContext) -> vp.ProducerResult:\n'
+            "\n"
+            "from __future__ import annotations\n"
+            "\n"
+            "from bigcherry.patch import validation_producer as vp\n"
+            "\n"
+            "\n"
+            "def run(ctx: vp.ProducerContext) -> vp.ProducerResult:\n"
             '    """Run the synthetic test producer."""\n'
-            '    # Write a minimal artifact\n'
-            '    ctx.runtime.write_artifact(\n'
+            "    # Write a minimal artifact\n"
+            "    ctx.runtime.write_artifact(\n"
             '        name="synthetic-result.json",\n'
             '        payload={"status": "ok", "message": "synthetic producer ran"},\n'
-            '    )\n'
-            '    # Return a minimal ProducerResult\n'
-            '    return vp.ProducerResult(\n'
-            '        validation_build_identities=ctx.validation_build_identities,\n'
-            '        promotion_lane_effects={},\n'
-            '        promotion_target_metric={},\n'
-            '        promotion_trigger_evidence={},\n'
-            '        contract_correctness_results=(),\n'
-            '        performance_evidence=None,\n'
-            '        trace_evidence=None,\n'
-            '        check_results=(),\n'
-            '        lane_effects=(),\n'
-            '        correctness=None,\n'
-            '        activation_evidence=None,\n'
+            "    )\n"
+            "    # Return a minimal ProducerResult\n"
+            "    return vp.ProducerResult(\n"
+            "        validation_build_identities=ctx.validation_build_identities,\n"
+            "        promotion_lane_effects={},\n"
+            "        promotion_target_metric={},\n"
+            "        promotion_trigger_evidence={},\n"
+            "        contract_correctness_results=(),\n"
+            "        performance_evidence=None,\n"
+            "        trace_evidence=None,\n"
+            "        check_results=(),\n"
+            "        lane_effects=(),\n"
+            "        correctness=None,\n"
+            "        activation_evidence=None,\n"
             '        emitted_artifacts=frozenset({"synthetic-result.json"}),\n'
-            '    )\n'
+            "    )\n"
         )
 
         # Now execute through the patch-validate CLI
@@ -167,7 +166,10 @@ class TestPA33SyntheticProducer:
 
         # The CLI should reference the canonical selector resolver
         # (from PA34), not rebuild its own serialization
-        assert "resolve_canonical_selection" in cli_source or "SelectorIdentity" in cli_source, (
+        assert (
+            "resolve_canonical_selection" in cli_source
+            or "SelectorIdentity" in cli_source
+        ), (
             "CLI doesn't use PA34's canonical selector resolver — "
             "selector serialization has multiple owners"
         )

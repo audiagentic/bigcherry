@@ -102,7 +102,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             **result,
             "subject_source_tree": str(subject_src),
             "control_source_tree": str(control_src),
-            "comparison": rd17_correctness.comparison_to_dict(comparison) if comparison else None,
+            "comparison": rd17_correctness.comparison_to_dict(comparison)
+            if comparison
+            else None,
         },
     )
 

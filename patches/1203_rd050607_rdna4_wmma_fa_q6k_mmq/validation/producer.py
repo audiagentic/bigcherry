@@ -125,8 +125,12 @@ _RD05_MIN_PAIRED_ROUNDS = 3
 # no activation marker of its own (bind_contract() never requires
 # 'activation' for a correctness-only contract with no target_kernel_gain/
 # end_to_end_gain -- RD05 declares neither).
-_RD06_ACTIVATION_MARKER = "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06"
-_RD07_ACTIVATION_MARKER = "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07"
+_RD06_ACTIVATION_MARKER = (
+    "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=wmma_f16_dispatch contract=RD06"
+)
+_RD07_ACTIVATION_MARKER = (
+    "BIGCHERRY_PATCH_HIT patch=1203_rd050607 path=q6k_mmq_dispatch contract=RD07"
+)
 
 
 _PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
@@ -149,8 +153,13 @@ def _load_contract(contract_id: str) -> experiment_contract.ExperimentContract:
 
 
 def _run_activation_probe(
-    *, subject_binary: Path, control_binary: Path, model: Path,
-    device: vp.ProducerDeviceContext, marker: str, log_context: str,
+    *,
+    subject_binary: Path,
+    control_binary: Path,
+    model: Path,
+    device: vp.ProducerDeviceContext,
+    marker: str,
+    log_context: str,
 ) -> tuple[bool, str]:
     """PA39 activation-capability fix: proves the real BIGCHERRY_PATCH_TRACE
     marker (already implemented in patch.py) fires on the intended
@@ -192,17 +201,30 @@ def _run_activation_probe(
     design choice (no such rationale exists in the commit that introduced
     this probe), -p 512 recommended to match the already-established
     pp512 shape rather than an arbitrary smaller value."""
+
     def _argv(binary: Path) -> list[str]:
         return [
-            str(binary), "-m", str(model), "-p", "512", "-n", "16", "-r", "1",
-            "-ngl", "99", "--verbose",
+            str(binary),
+            "-m",
+            str(model),
+            "-p",
+            "512",
+            "-n",
+            "16",
+            "-r",
+            "1",
+            "-ngl",
+            "99",
+            "--verbose",
         ]
 
     def _run(binary: Path) -> str:
         env = {**os.environ, **dict(device.env_overrides), "BIGCHERRY_PATCH_TRACE": "1"}
         for key in device.env_unset:
             env.pop(key, None)
-        completed = subprocess.run(_argv(binary), env=env, capture_output=True, text=True, check=False)
+        completed = subprocess.run(
+            _argv(binary), env=env, capture_output=True, text=True, check=False
+        )
         return (completed.stdout or "") + (completed.stderr or "")
 
     subject_output = _run(subject_binary)
@@ -220,7 +242,9 @@ def _run_activation_probe(
 
 
 def _verify_control_model_identity(
-    control_model: Path, *, expected_model_id: str,
+    control_model: Path,
+    *,
+    expected_model_id: str,
 ) -> tuple[bool, str]:
     """PA39 P1 fix (GPT review req_e3d28b6b104a4a01): the supplied
     ``--producer-input control_model=<path>`` is a bare filesystem path
@@ -244,7 +268,8 @@ def _verify_control_model_identity(
     except OSError as exc:
         return False, f"control_model identity: could not read {bc_paths.MODELS}: {exc}"
     entries = {
-        entry.get("id"): entry for entry in raw.get("models", [])
+        entry.get("id"): entry
+        for entry in raw.get("models", [])
         if isinstance(entry, dict)
     }
     entry = entries.get(expected_model_id)
@@ -257,8 +282,10 @@ def _verify_control_model_identity(
     declared_size = entry.get("size-bytes")
     basename_ok = control_model.name == declared_name
     size_ok = (
-        isinstance(declared_size, int) and not isinstance(declared_size, bool)
-        and control_model.is_file() and control_model.stat().st_size == declared_size
+        isinstance(declared_size, int)
+        and not isinstance(declared_size, bool)
+        and control_model.is_file()
+        and control_model.stat().st_size == declared_size
     )
     ok = basename_ok and size_ok
     detail = (
@@ -282,7 +309,13 @@ def _perplexity_module():
 
 
 def _run_backend_reference(
-    *, control_bin, subject_bin, model, corpus, device: vp.ProducerDeviceContext, log_context: str,
+    *,
+    control_bin,
+    subject_bin,
+    model,
+    corpus,
+    device: vp.ProducerDeviceContext,
+    log_context: str,
 ) -> tuple[bool, str, object | None]:
     perplexity = _perplexity_module()
 
@@ -294,15 +327,27 @@ def _run_backend_reference(
 
     try:
         subject_run = perplexity.run_perplexity(
-            subject_bin, model=model, corpus=corpus, runner=_runner,
+            subject_bin,
+            model=model,
+            corpus=corpus,
+            runner=_runner,
         )
         control_run = perplexity.run_perplexity(
-            control_bin, model=model, corpus=corpus, runner=_runner,
+            control_bin,
+            model=model,
+            corpus=corpus,
+            runner=_runner,
         )
     except perplexity.PerplexityError as exc:
-        return False, f"{log_context}: could not produce a real perplexity run: {exc}", None
+        return (
+            False,
+            f"{log_context}: could not produce a real perplexity run: {exc}",
+            None,
+        )
 
-    comparison = perplexity.PerplexityComparison(subject=subject_run, control=control_run)
+    comparison = perplexity.PerplexityComparison(
+        subject=subject_run, control=control_run
+    )
     detail = (
         f"{log_context}: real perplexity backend-reference comparison: "
         f"sigma={comparison.sigma:.4f} vs threshold max_sigma={comparison.max_sigma} "
@@ -313,8 +358,14 @@ def _run_backend_reference(
 
 
 def _check_result(
-    *, check_id: str, contract_id: str, capability: str, passed: bool, detail: str,
-    artifact: pv.ArtifactRef | None, carries_disposition: bool,
+    *,
+    check_id: str,
+    contract_id: str,
+    capability: str,
+    passed: bool,
+    detail: str,
+    artifact: pv.ArtifactRef | None,
+    carries_disposition: bool,
     disposition_passed: bool | None = None,
 ) -> vp.ProducerCheckResult:
     # validate_producer_result() allows at most ONE non-None disposition per
@@ -338,13 +389,16 @@ def _check_result(
         check_id=check_id,
         contract_ids=(contract_id,),
         validation_result=pv.ValidationResult(
-            check_id=check_id, capability=capability,
-            status=pv.PASS if passed else pv.FAIL, summary=detail,
+            check_id=check_id,
+            capability=capability,
+            status=pv.PASS if passed else pv.FAIL,
+            summary=detail,
             artifacts=(artifact,) if artifact is not None else (),
         ),
         disposition=(
             {"passed": disposition_value, "contract_id": contract_id, "detail": detail}
-            if carries_disposition else None
+            if carries_disposition
+            else None
         ),
     )
 
@@ -356,10 +410,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # correctness comparisons use the llama-perplexity pair; every
     # run_paired_llama_benchmark() call uses the llama-bench pair.
     ppl_pair = ctx.runtime.build_pair(
-        targets=ctx.fat_targets.targets, primary_target="llama-perplexity",
+        targets=ctx.fat_targets.targets,
+        primary_target="llama-perplexity",
     )
     bench_pair = ctx.runtime.build_pair(
-        targets=ctx.fat_targets.targets, primary_target="llama-bench",
+        targets=ctx.fat_targets.targets,
+        primary_target="llama-bench",
     )
     devices = ctx.runtime.device_contexts(device_map=ctx.device_map)
     devices_by_arch: Mapping[str, vp.ProducerDeviceContext] = {
@@ -386,41 +442,67 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         payload={
             "schema_version": 1,
             "detail": "control/subject source composition applied for both binary sets",
-            "ppl_control_build_identity": ppl_pair.validation_build_identities["control"],
-            "ppl_subject_build_identity": ppl_pair.validation_build_identities["subject"],
-            "bench_control_build_identity": bench_pair.validation_build_identities["control"],
-            "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+            "ppl_control_build_identity": ppl_pair.validation_build_identities[
+                "control"
+            ],
+            "ppl_subject_build_identity": ppl_pair.validation_build_identities[
+                "subject"
+            ],
+            "bench_control_build_identity": bench_pair.validation_build_identities[
+                "control"
+            ],
+            "bench_subject_build_identity": bench_pair.validation_build_identities[
+                "subject"
+            ],
         },
     )
     emitted_artifacts.add(apply_artifact.name)
-    check_results.append(vp.ProducerCheckResult(
-        check_id="apply", contract_ids=(),
-        validation_result=pv.ValidationResult(
-            check_id="apply", capability="apply", status=pv.PASS,
-            summary="control/subject source composition applied for both binary sets",
-            artifacts=(apply_artifact,),
-        ),
-    ))
+    check_results.append(
+        vp.ProducerCheckResult(
+            check_id="apply",
+            contract_ids=(),
+            validation_result=pv.ValidationResult(
+                check_id="apply",
+                capability="apply",
+                status=pv.PASS,
+                summary="control/subject source composition applied for both binary sets",
+                artifacts=(apply_artifact,),
+            ),
+        )
+    )
     build_artifact = ctx.runtime.write_artifact(
         name="build.json",
         payload={
             "schema_version": 1,
             "detail": "control/subject trees built for both binary sets (llama-perplexity, llama-bench)",
-            "ppl_control_build_identity": ppl_pair.validation_build_identities["control"],
-            "ppl_subject_build_identity": ppl_pair.validation_build_identities["subject"],
-            "bench_control_build_identity": bench_pair.validation_build_identities["control"],
-            "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+            "ppl_control_build_identity": ppl_pair.validation_build_identities[
+                "control"
+            ],
+            "ppl_subject_build_identity": ppl_pair.validation_build_identities[
+                "subject"
+            ],
+            "bench_control_build_identity": bench_pair.validation_build_identities[
+                "control"
+            ],
+            "bench_subject_build_identity": bench_pair.validation_build_identities[
+                "subject"
+            ],
         },
     )
     emitted_artifacts.add(build_artifact.name)
-    check_results.append(vp.ProducerCheckResult(
-        check_id="build", contract_ids=(),
-        validation_result=pv.ValidationResult(
-            check_id="build", capability="build", status=pv.PASS,
-            summary="control/subject trees built for both binary sets",
-            artifacts=(build_artifact,),
-        ),
-    ))
+    check_results.append(
+        vp.ProducerCheckResult(
+            check_id="build",
+            contract_ids=(),
+            validation_result=pv.ValidationResult(
+                check_id="build",
+                capability="build",
+                status=pv.PASS,
+                summary="control/subject trees built for both binary sets",
+                artifacts=(build_artifact,),
+            ),
+        )
+    )
 
     # --- RD05/RD06 backend_reference: shared gfx1201 comparison ---------
     gfx1201 = devices_by_arch.get(_RD0506_ARCH)
@@ -433,8 +515,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     else:
         rd0506_ok, rd0506_detail, comparison = _run_backend_reference(
-            control_bin=ppl_pair.control_bin, subject_bin=ppl_pair.subject_bin,
-            model=ctx.model, corpus=ctx.corpus, device=gfx1201, log_context="rd0506",
+            control_bin=ppl_pair.control_bin,
+            subject_bin=ppl_pair.subject_bin,
+            model=ctx.model,
+            corpus=ctx.corpus,
+            device=gfx1201,
+            log_context="rd0506",
         )
         rd0506_artifact = ctx.runtime.write_artifact(
             name="rd0506-backend-reference.json",
@@ -445,24 +531,41 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "detail": rd0506_detail,
                 "comparison": (
                     _perplexity_module().comparison_to_dict(comparison)
-                    if comparison is not None else None
+                    if comparison is not None
+                    else None
                 ),
-                "control_build_identity": ppl_pair.validation_build_identities["control"],
-                "subject_build_identity": ppl_pair.validation_build_identities["subject"],
+                "control_build_identity": ppl_pair.validation_build_identities[
+                    "control"
+                ],
+                "subject_build_identity": ppl_pair.validation_build_identities[
+                    "subject"
+                ],
             },
         )
         emitted_artifacts.add(rd0506_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd05-backend-reference", contract_id=_RD05, capability="correctness",
-        passed=rd0506_ok, detail=rd0506_detail, artifact=rd0506_artifact,
-        carries_disposition=False,
-    ))
-    check_results.append(_check_result(
-        check_id="rd06-backend-reference", contract_id=_RD06, capability="correctness",
-        passed=rd0506_ok, detail=rd0506_detail, artifact=rd0506_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd05-backend-reference",
+            contract_id=_RD05,
+            capability="correctness",
+            passed=rd0506_ok,
+            detail=rd0506_detail,
+            artifact=rd0506_artifact,
+            carries_disposition=False,
+        )
+    )
+    check_results.append(
+        _check_result(
+            check_id="rd06-backend-reference",
+            contract_id=_RD06,
+            capability="correctness",
+            passed=rd0506_ok,
+            detail=rd0506_detail,
+            artifact=rd0506_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD05 controls: prefill regression guard, RD05's own contract ---
     # PA39 real-hardware-acceptance fix: RD05 is correctness-only (no
@@ -488,19 +591,29 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         rd05_positive_workloads = tuple(rd05_contract.positive.workloads)
         rd05_control_workloads = tuple(rd05_contract.controls.workloads)
         rd05_positive_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=ctx.model, workloads=rd05_positive_workloads,
-            pairs=_RD05_MIN_PAIRED_ROUNDS, log_context="rd05-controls-positive",
+            control_binary=bench_pair.control_bin,
+            subject_binary=bench_pair.subject_bin,
+            model=ctx.model,
+            workloads=rd05_positive_workloads,
+            pairs=_RD05_MIN_PAIRED_ROUNDS,
+            log_context="rd05-controls-positive",
             device=gfx1201,
         )
         rd05_control_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=ctx.model, workloads=rd05_control_workloads,
-            pairs=_RD05_MIN_PAIRED_ROUNDS, log_context="rd05-controls-control",
+            control_binary=bench_pair.control_bin,
+            subject_binary=bench_pair.subject_bin,
+            model=ctx.model,
+            workloads=rd05_control_workloads,
+            pairs=_RD05_MIN_PAIRED_ROUNDS,
+            log_context="rd05-controls-control",
             device=gfx1201,
         )
-        rd05_missing_positive = [w for w in rd05_positive_workloads if w not in rd05_positive_outcome.runs]
-        rd05_missing_control = [w for w in rd05_control_workloads if w not in rd05_control_outcome.runs]
+        rd05_missing_positive = [
+            w for w in rd05_positive_workloads if w not in rd05_positive_outcome.runs
+        ]
+        rd05_missing_control = [
+            w for w in rd05_control_workloads if w not in rd05_control_outcome.runs
+        ]
         if rd05_missing_positive or rd05_missing_control:
             rd05_controls_ok = False
             rd05_aggregated_effects = None
@@ -516,27 +629,38 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             rd05_target_metric = _PAIRED_BENCH_METRIC_NAME["decode"]
             rd05_positive_lanes = [
                 experiment_execution.lane_effect_from_run(
-                    "positive", _PAIRED_BENCH_METRIC_NAME[w], rd05_positive_outcome.runs[w],
+                    "positive",
+                    _PAIRED_BENCH_METRIC_NAME[w],
+                    rd05_positive_outcome.runs[w],
                 )
                 for w in rd05_positive_workloads
             ]
             rd05_control_lanes = [
                 experiment_execution.lane_effect_from_run(
-                    "control", _PAIRED_BENCH_METRIC_NAME[w], rd05_control_outcome.runs[w],
+                    "control",
+                    _PAIRED_BENCH_METRIC_NAME[w],
+                    rd05_control_outcome.runs[w],
                 )
                 for w in rd05_control_workloads
             ]
             rd05_aggregated_effects = experiment_contract.aggregate_contract_effects(
-                rd05_contract, rd05_positive_lanes + rd05_control_lanes, target_metric=rd05_target_metric,
+                rd05_contract,
+                rd05_positive_lanes + rd05_control_lanes,
+                target_metric=rd05_target_metric,
             )
             rd05_correctness_gate = experiment_contract.evaluate_correctness_gate(
                 rd05_contract,
-                {"backend_reference": experiment_contract.CorrectnessResult(
-                    check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
-                )},
+                {
+                    "backend_reference": experiment_contract.CorrectnessResult(
+                        check="backend_reference",
+                        passed=rd0506_ok,
+                        detail=rd0506_detail,
+                    )
+                },
             )
             rd05_gate_result = experiment_contract.evaluate_promotion_gate(
-                rd05_contract, correctness_gate=rd05_correctness_gate,
+                rd05_contract,
+                correctness_gate=rd05_correctness_gate,
                 aggregated_effects=rd05_aggregated_effects,
             )
             rd05_controls_ok = bool(rd05_gate_result["passed"])
@@ -561,18 +685,28 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "gate_result": rd05_gate_result,
                 "positive_commands": rd05_positive_outcome.commands,
                 "control_commands": rd05_control_outcome.commands,
-                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
-                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+                "bench_control_build_identity": bench_pair.validation_build_identities[
+                    "control"
+                ],
+                "bench_subject_build_identity": bench_pair.validation_build_identities[
+                    "subject"
+                ],
             },
         )
         emitted_artifacts.add(rd05_controls_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd05-controls", contract_id=_RD05, capability="controls",
-        passed=rd05_controls_ok, detail=rd05_controls_detail, artifact=rd05_controls_artifact,
-        carries_disposition=True,
-        disposition_passed=rd0506_ok and rd05_controls_ok,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd05-controls",
+            contract_id=_RD05,
+            capability="controls",
+            passed=rd05_controls_ok,
+            detail=rd05_controls_detail,
+            artifact=rd05_controls_artifact,
+            carries_disposition=True,
+            disposition_passed=rd0506_ok and rd05_controls_ok,
+        )
+    )
 
     # --- RD06 activation: real BIGCHERRY_PATCH_TRACE marker probe -------
     # PA39 real-hardware-acceptance fix: proves patch.py's real RD06
@@ -588,24 +722,36 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     else:
         rd06_activation_ok, rd06_activation_detail = _run_activation_probe(
-            subject_binary=bench_pair.subject_bin, control_binary=bench_pair.control_bin,
-            model=ctx.model, device=gfx1201,
-            marker=_RD06_ACTIVATION_MARKER, log_context="rd06-activation",
+            subject_binary=bench_pair.subject_bin,
+            control_binary=bench_pair.control_bin,
+            model=ctx.model,
+            device=gfx1201,
+            marker=_RD06_ACTIVATION_MARKER,
+            log_context="rd06-activation",
         )
         rd06_activation_artifact = ctx.runtime.write_artifact(
             name="rd06-activation.json",
             payload={
-                "schema_version": 1, "contract_id": _RD06, "marker": _RD06_ACTIVATION_MARKER,
-                "passed": rd06_activation_ok, "detail": rd06_activation_detail,
+                "schema_version": 1,
+                "contract_id": _RD06,
+                "marker": _RD06_ACTIVATION_MARKER,
+                "passed": rd06_activation_ok,
+                "detail": rd06_activation_detail,
             },
         )
         emitted_artifacts.add(rd06_activation_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd06-activation", contract_id=_RD06, capability="activation",
-        passed=rd06_activation_ok, detail=rd06_activation_detail, artifact=rd06_activation_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd06-activation",
+            contract_id=_RD06,
+            capability="activation",
+            passed=rd06_activation_ok,
+            detail=rd06_activation_detail,
+            artifact=rd06_activation_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD06 performance: RD06's own ci95/min_paired_rounds policy -----
     # PA39 defects #2 (ci95_threshold_bound_v1 never evaluated) and #3
@@ -650,7 +796,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         # cryptographic provenance.
         control_model_identity_ok, control_model_identity_detail = (
             _verify_control_model_identity(
-                control_model, expected_model_id=rd06_contract.controls.models[0],
+                control_model,
+                expected_model_id=rd06_contract.controls.models[0],
             )
         )
         # PA39 P0 defect #2 fix: run every workload the contract declares
@@ -661,19 +808,29 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         positive_workloads = tuple(rd06_contract.positive.workloads)
         control_workloads = tuple(rd06_contract.controls.workloads)
         positive_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=ctx.model, workloads=positive_workloads,
-            pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-positive",
+            control_binary=bench_pair.control_bin,
+            subject_binary=bench_pair.subject_bin,
+            model=ctx.model,
+            workloads=positive_workloads,
+            pairs=_RD06_MIN_PAIRED_ROUNDS,
+            log_context="rd06-performance-positive",
             device=gfx1201,
         )
         control_outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=control_model, workloads=control_workloads,
-            pairs=_RD06_MIN_PAIRED_ROUNDS, log_context="rd06-performance-control",
+            control_binary=bench_pair.control_bin,
+            subject_binary=bench_pair.subject_bin,
+            model=control_model,
+            workloads=control_workloads,
+            pairs=_RD06_MIN_PAIRED_ROUNDS,
+            log_context="rd06-performance-control",
             device=gfx1201,
         )
-        missing_positive = [w for w in positive_workloads if w not in positive_outcome.runs]
-        missing_control = [w for w in control_workloads if w not in control_outcome.runs]
+        missing_positive = [
+            w for w in positive_workloads if w not in positive_outcome.runs
+        ]
+        missing_control = [
+            w for w in control_workloads if w not in control_outcome.runs
+        ]
         if missing_positive or missing_control:
             rd06_perf_ok = False
             aggregated_effects = None
@@ -689,29 +846,38 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             target_metric = _PAIRED_BENCH_METRIC_NAME["decode"]
             positive_lanes = [
                 experiment_execution.lane_effect_from_run(
-                    "positive", _PAIRED_BENCH_METRIC_NAME[workload],
+                    "positive",
+                    _PAIRED_BENCH_METRIC_NAME[workload],
                     positive_outcome.runs[workload],
                 )
                 for workload in positive_workloads
             ]
             control_lanes = [
                 experiment_execution.lane_effect_from_run(
-                    "control", _PAIRED_BENCH_METRIC_NAME[workload],
+                    "control",
+                    _PAIRED_BENCH_METRIC_NAME[workload],
                     control_outcome.runs[workload],
                 )
                 for workload in control_workloads
             ]
             aggregated_effects = experiment_contract.aggregate_contract_effects(
-                rd06_contract, positive_lanes + control_lanes, target_metric=target_metric,
+                rd06_contract,
+                positive_lanes + control_lanes,
+                target_metric=target_metric,
             )
             rd06_correctness_gate = experiment_contract.evaluate_correctness_gate(
                 rd06_contract,
-                {"backend_reference": experiment_contract.CorrectnessResult(
-                    check="backend_reference", passed=rd0506_ok, detail=rd0506_detail,
-                )},
+                {
+                    "backend_reference": experiment_contract.CorrectnessResult(
+                        check="backend_reference",
+                        passed=rd0506_ok,
+                        detail=rd0506_detail,
+                    )
+                },
             )
             rd06_gate_result = experiment_contract.evaluate_promotion_gate(
-                rd06_contract, correctness_gate=rd06_correctness_gate,
+                rd06_contract,
+                correctness_gate=rd06_correctness_gate,
                 aggregated_effects=aggregated_effects,
             )
             rd06_perf_ok = bool(rd06_gate_result["passed"])
@@ -746,17 +912,27 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "gate_result": rd06_gate_result,
                 "positive_commands": positive_outcome.commands,
                 "control_commands": control_outcome.commands,
-                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
-                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+                "bench_control_build_identity": bench_pair.validation_build_identities[
+                    "control"
+                ],
+                "bench_subject_build_identity": bench_pair.validation_build_identities[
+                    "subject"
+                ],
             },
         )
         emitted_artifacts.add(rd06_perf_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd06-performance", contract_id=_RD06, capability="performance",
-        passed=rd06_perf_ok and rd0506_ok, detail=rd06_perf_detail, artifact=rd06_perf_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd06-performance",
+            contract_id=_RD06,
+            capability="performance",
+            passed=rd06_perf_ok and rd0506_ok,
+            detail=rd06_perf_detail,
+            artifact=rd06_perf_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD06 controls: reuses rd06-performance's own control lane ------
     # PA39 real-hardware-acceptance fix: RD06's controls capability is
@@ -773,21 +949,27 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         f"(control_model={control_model}, control_workloads={list(control_workloads)}, "
         f"missing_control_workloads={missing_control}); underlying gate passed={rd06_perf_ok}"
     )
-    check_results.append(_check_result(
-        check_id="rd06-controls", contract_id=_RD06, capability="controls",
-        passed=rd06_controls_ok, detail=rd06_controls_detail, artifact=rd06_perf_artifact,
-        carries_disposition=True,
-        # Deliberately excludes control_model_identity_ok: that check is a
-        # best-effort filesystem basename/size check (see
-        # _verify_control_model_identity()'s own docstring), recorded for
-        # audit but NOT gating -- same deliberate, already-documented PA37
-        # design decision (part 6 notes) kept here for the same reason
-        # (hardware-free tests use non-existent fake model paths that can
-        # never match config/models.toml's real registry entries).
-        disposition_passed=(
-            rd0506_ok and rd06_perf_ok and rd06_activation_ok and rd06_controls_ok
-        ),
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd06-controls",
+            contract_id=_RD06,
+            capability="controls",
+            passed=rd06_controls_ok,
+            detail=rd06_controls_detail,
+            artifact=rd06_perf_artifact,
+            carries_disposition=True,
+            # Deliberately excludes control_model_identity_ok: that check is a
+            # best-effort filesystem basename/size check (see
+            # _verify_control_model_identity()'s own docstring), recorded for
+            # audit but NOT gating -- same deliberate, already-documented PA37
+            # design decision (part 6 notes) kept here for the same reason
+            # (hardware-free tests use non-existent fake model paths that can
+            # never match config/models.toml's real registry entries).
+            disposition_passed=(
+                rd0506_ok and rd06_perf_ok and rd06_activation_ok and rd06_controls_ok
+            ),
+        )
+    )
 
     # --- RD07 backend_reference: requires all three architectures -------
     missing_rd07 = tuple(a for a in _RD07_ARCHS if a not in devices_by_arch)
@@ -796,20 +978,25 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         rd07_ok = False
         rd07_detail = (
             f"rd07: missing required architecture(s) {list(missing_rd07)}"
-            if missing_rd07 else "rd07: no model/corpus supplied"
+            if missing_rd07
+            else "rd07: no model/corpus supplied"
         )
     else:
         rd07_by_arch: dict[str, dict[str, object]] = {}
         for arch in _RD07_ARCHS:
             ok, detail, _comparison = _run_backend_reference(
-                control_bin=ppl_pair.control_bin, subject_bin=ppl_pair.subject_bin,
-                model=ctx.model, corpus=ctx.corpus, device=devices_by_arch[arch],
+                control_bin=ppl_pair.control_bin,
+                subject_bin=ppl_pair.subject_bin,
+                model=ctx.model,
+                corpus=ctx.corpus,
+                device=devices_by_arch[arch],
                 log_context=f"rd07-{arch}",
             )
             rd07_by_arch[arch] = {"passed": ok, "detail": detail}
         rd07_ok = all(v["passed"] for v in rd07_by_arch.values())
         rd07_detail = "; ".join(
-            f"{arch}: {'PASS' if v['passed'] else 'FAIL'}" for arch, v in rd07_by_arch.items()
+            f"{arch}: {'PASS' if v['passed'] else 'FAIL'}"
+            for arch, v in rd07_by_arch.items()
         )
         rd07_artifact = ctx.runtime.write_artifact(
             name="rd07-backend-reference.json",
@@ -817,17 +1004,27 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "schema_version": 1,
                 "contract_id": _RD07,
                 "architectures": rd07_by_arch,
-                "control_build_identity": ppl_pair.validation_build_identities["control"],
-                "subject_build_identity": ppl_pair.validation_build_identities["subject"],
+                "control_build_identity": ppl_pair.validation_build_identities[
+                    "control"
+                ],
+                "subject_build_identity": ppl_pair.validation_build_identities[
+                    "subject"
+                ],
             },
         )
         emitted_artifacts.add(rd07_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd07-backend-reference", contract_id=_RD07, capability="correctness",
-        passed=rd07_ok, detail=rd07_detail, artifact=rd07_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd07-backend-reference",
+            contract_id=_RD07,
+            capability="correctness",
+            passed=rd07_ok,
+            detail=rd07_detail,
+            artifact=rd07_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD07 activation: real BIGCHERRY_PATCH_TRACE marker probe -------
     # PA39 real-hardware-acceptance fix: proves patch.py's real RD07
@@ -867,25 +1064,37 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     else:
         rd07_activation_device = devices_by_arch[_RD0506_ARCH]
         rd07_activation_ok, rd07_activation_detail = _run_activation_probe(
-            subject_binary=bench_pair.subject_bin, control_binary=bench_pair.control_bin,
-            model=control_model, device=rd07_activation_device,
-            marker=_RD07_ACTIVATION_MARKER, log_context="rd07-activation",
+            subject_binary=bench_pair.subject_bin,
+            control_binary=bench_pair.control_bin,
+            model=control_model,
+            device=rd07_activation_device,
+            marker=_RD07_ACTIVATION_MARKER,
+            log_context="rd07-activation",
         )
         rd07_activation_artifact = ctx.runtime.write_artifact(
             name="rd07-activation.json",
             payload={
-                "schema_version": 1, "contract_id": _RD07, "marker": _RD07_ACTIVATION_MARKER,
+                "schema_version": 1,
+                "contract_id": _RD07,
+                "marker": _RD07_ACTIVATION_MARKER,
                 "architecture": rd07_activation_device.architecture,
-                "passed": rd07_activation_ok, "detail": rd07_activation_detail,
+                "passed": rd07_activation_ok,
+                "detail": rd07_activation_detail,
             },
         )
         emitted_artifacts.add(rd07_activation_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd07-activation", contract_id=_RD07, capability="activation",
-        passed=rd07_activation_ok, detail=rd07_activation_detail, artifact=rd07_activation_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd07-activation",
+            contract_id=_RD07,
+            capability="activation",
+            passed=rd07_activation_ok,
+            detail=rd07_activation_detail,
+            artifact=rd07_activation_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD07 performance: max_control_regression_pct only --------------
     # GPT review (2026-09-16): RD07's positive/controls models are both
@@ -903,9 +1112,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     else:
         # PA39 P0 defect #1 fix: bench_pair (llama-bench), never ppl_pair.
         outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin,
-            model=control_model, workloads=("decode", "prefill"),
-            pairs=3, log_context="rd07-performance", device=devices_by_arch[_RD0506_ARCH],
+            control_binary=bench_pair.control_bin,
+            subject_binary=bench_pair.subject_bin,
+            model=control_model,
+            workloads=("decode", "prefill"),
+            pairs=3,
+            log_context="rd07-performance",
+            device=devices_by_arch[_RD0506_ARCH],
         )
         rd07_perf_ok = bool(outcome.runs)
         rd07_perf_detail = (
@@ -920,17 +1133,27 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "contract_id": _RD07,
                 "max_control_regression_pct": _RD07_MAX_CONTROL_REGRESSION_PCT,
                 "commands": outcome.commands,
-                "bench_control_build_identity": bench_pair.validation_build_identities["control"],
-                "bench_subject_build_identity": bench_pair.validation_build_identities["subject"],
+                "bench_control_build_identity": bench_pair.validation_build_identities[
+                    "control"
+                ],
+                "bench_subject_build_identity": bench_pair.validation_build_identities[
+                    "subject"
+                ],
             },
         )
         emitted_artifacts.add(rd07_perf_artifact.name)
 
-    check_results.append(_check_result(
-        check_id="rd07-performance", contract_id=_RD07, capability="performance",
-        passed=rd07_perf_ok and rd07_ok, detail=rd07_perf_detail, artifact=rd07_perf_artifact,
-        carries_disposition=False,
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd07-performance",
+            contract_id=_RD07,
+            capability="performance",
+            passed=rd07_perf_ok and rd07_ok,
+            detail=rd07_perf_detail,
+            artifact=rd07_perf_artifact,
+            carries_disposition=False,
+        )
+    )
 
     # --- RD07 controls: reuses rd07-performance's decode (control) lane -
     # PA39 real-hardware-acceptance fix: RD07's contract declares
@@ -945,14 +1168,20 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         f"rd07 controls: reuses rd07-performance's decode lane "
         f"(present={rd07_decode_present}); underlying performance check passed={rd07_perf_ok}"
     )
-    check_results.append(_check_result(
-        check_id="rd07-controls", contract_id=_RD07, capability="controls",
-        passed=rd07_controls_ok, detail=rd07_controls_detail, artifact=rd07_perf_artifact,
-        carries_disposition=True,
-        disposition_passed=(
-            rd07_ok and rd07_perf_ok and rd07_activation_ok and rd07_controls_ok
-        ),
-    ))
+    check_results.append(
+        _check_result(
+            check_id="rd07-controls",
+            contract_id=_RD07,
+            capability="controls",
+            passed=rd07_controls_ok,
+            detail=rd07_controls_detail,
+            artifact=rd07_perf_artifact,
+            carries_disposition=True,
+            disposition_passed=(
+                rd07_ok and rd07_perf_ok and rd07_activation_ok and rd07_controls_ok
+            ),
+        )
+    )
 
     return vp.ProducerResult(
         correctness=None,

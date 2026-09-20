@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3] / "patches"
 
 
 @pytest.mark.parametrize("patch_id,check_id", [
-    ("0100_cmake_options", "coverage-source-selection"),
+    ("0100_cmake_options", "serving-source-selection"),
     ("0300_mmq_forced_j", "mmq-forced-j-transform"),
     ("0700_coverage_counters", "family-hook-isolation"),
 ])
