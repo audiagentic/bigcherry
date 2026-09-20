@@ -781,408 +781,6 @@ def rd08_validation_lane_commands(
     return control_command, subject_command
 
 
-def run_rd08_validation_lanes(
-    *, contract: object, control_binary: Path, subject_binary: Path, model: Path,
-    model_ref: str, hip_path: Path, run_dir: Path,
-    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
-    pairs: int = 3,
-) -> dict[str, object]:
-    """VA14-B: execute RD08's real positive (decode) and control (prefill)
-    lanes via experiment/execution.py's paired runner, persist raw
-    stdout/stderr + paired measurements + bootstrap stats alongside the
-    computed LaneEffects, and return a bound artifact reference plus the
-    LaneEffect list -- so a caller can both persist real evidence and feed
-    aggregate_contract_effects() without re-running anything.
-
-    Deliberately does NOT touch correctness/promotion/eligibility: this is
-    execution + evidence persistence only, per GPT's explicit VA14-B scope
-    (bit_identical producer integration, trigger/promotion composition,
-    evaluate_promotion_gate(), and the eligibility cutover are deferred).
-
-    PVPS02 step 2: now a compatibility wrapper over run_paired_llama_
-    benchmark() -- same argv shape (rd08_validation_lane_commands' own
-    extra_flags is always empty on this call path, so runtime_args=()
-    reproduces it exactly), same env sanitization, same raw-log capture;
-    only the LaneEffect/Contract-evidence composition below is RD08-
-    specific and stays here."""
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.experiment import execution as experiment_execution
-
-    outcome = run_paired_llama_benchmark(
-        control_binary=control_binary, subject_binary=subject_binary, model=model,
-        hip_path=hip_path, pairs=pairs, log_context="rd08",
-    )
-    decode_run, prefill_run = outcome.runs["decode"], outcome.runs["prefill"]
-    decode_control_cmd = outcome.commands["decode"]["control"]
-    decode_subject_cmd = outcome.commands["decode"]["subject"]
-    prefill_control_cmd = outcome.commands["prefill"]["control"]
-    prefill_subject_cmd = outcome.commands["prefill"]["subject"]
-    raw_logs = outcome.raw_logs
-    effects = [
-        experiment_execution.lane_effect_from_run("positive", "tg128", decode_run),
-        experiment_execution.lane_effect_from_run("control", "pp512", prefill_run),
-    ]
-    positive_ref = experiment_contract.evidence_ref_for_lane(
-        contract, role="positive", workload_tag="decode", model_ref=model_ref,
-    )
-    control_ref = experiment_contract.evidence_ref_for_lane(
-        contract, role="control", workload_tag="prefill", model_ref=model_ref,
-    )
-    lane_evidence = {
-        "contract_id": contract.id,
-        "model_ref": model_ref, "model_path": str(model),
-        "validation_build_identities": {
-            "control": control_build_identity, "subject": subject_build_identity,
-        },
-        "raw_logs": raw_logs,
-        "lanes": {
-            "positive": {
-                "metric": "tg128", "contract_evidence": positive_ref.document(),
-                "control_command": decode_control_cmd, "subject_command": decode_subject_cmd,
-                "runs": list(decode_run.runs), "stats": decode_run.stats,
-            },
-            "control": {
-                "metric": "pp512", "contract_evidence": control_ref.document(),
-                "control_command": prefill_control_cmd, "subject_command": prefill_subject_cmd,
-                "runs": list(prefill_run.runs), "stats": prefill_run.stats,
-            },
-        },
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "validation-lanes.json", lane_evidence)
-    return {"artifact": artifact_ref, "effects": effects}
-
-
-def _load_rd08_correctness_module() -> object:
-    """Dynamically load the real, already-reviewed RD08 correctness
-    producer (patches/1204_rd08_q6k_mmvq_vdr2/validation/rd08_correctness.py)
-    -- orchestrated here, never reimplemented (that module is the
-    authoritative 5-shape x 3-seed exact-digest proof; this caller's job is
-    build/execute/persist plumbing only)."""
-    module_path = (
-        REPO_ROOT / "patches" / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "rd08_correctness.py"
-    )
-    if not module_path.is_file():
-        raise PatchCampaignError(f"rd08 correctness producer not found at {module_path}")
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("_bigcherry_rd08_correctness", module_path)
-    if spec is None or spec.loader is None:
-        raise PatchCampaignError(f"cannot load rd08 correctness producer at {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    # VA15 real-hardware finding: module_from_spec() does not register the
-    # module in sys.modules -- @dataclass (Rd08Shape, ShapeSeedComparison)
-    # resolves its owning module via sys.modules[cls.__module__] during
-    # decoration, so without this the decorator crashes with
-    # AttributeError: 'NoneType' object has no attribute '__dict__'.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def run_rd08_contract_correctness(
-    *, base_revision: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
-    build_root: Path, build_env: dict[str, str], run_dir: Path, _module: object | None = None,
-) -> dict[str, object]:
-    """VA14 final slice: RD08's real bit-identical correctness producer,
-    orchestrated. materialize_rd08_variants() builds its OWN isolated
-    VDR2-subject/VDR1-control worktrees -- a source-level A/B distinct from
-    this campaign's control/validation-subject trees -- which this function
-    then builds symmetrically (extra_cmake_args=[], matching each other)
-    and hands to require_rd08_correctness_evidence(), the authoritative
-    5-shape x 3-seed exact-digest proof.
-
-    Only Rd08CorrectnessError (a real, specific correctness failure) is
-    caught and turned into passed=False; materialization/build/
-    infrastructure errors remain hard campaign errors, never silently
-    downgraded to a correctness result. ``_module`` is injectable for
-    hardware-free testing; defaults to the real dynamically-loaded
-    producer."""
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.patch import source as psi
-
-    rd08_correctness = _module or _load_rd08_correctness_module()
-    subject_src, control_src = rd08_correctness.materialize_rd08_variants(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root, base_revision=base_revision,
-    )
-    exe = ".exe" if sys.platform == "win32" else ""
-    correctness_build_root = build_root / "rd08-correctness"
-
-    subject_bin = build_tree(
-        name="rd08-correctness-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=correctness_build_root, targets=["test-backend-ops"], source=subject_src,
-        extra_cmake_args=[],
-    )
-    control_bin = build_tree(
-        name="rd08-correctness-control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=correctness_build_root, targets=["test-backend-ops"], source=control_src,
-        extra_cmake_args=[],
-    )
-    cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
-    )
-    subject_build_evidence = capture_completed_build_evidence(
-        correctness_build_root / "rd08-correctness-subject", source_root=subject_src,
-        architecture=amdgpu_targets, binary=subject_bin / f"test-backend-ops{exe}",
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-    control_build_evidence = capture_completed_build_evidence(
-        correctness_build_root / "rd08-correctness-control", source_root=control_src,
-        architecture=amdgpu_targets, binary=control_bin / f"test-backend-ops{exe}",
-        requested_cmake_args=cmake_args, build_env=build_env,
-    )
-
-    # VA15 real-hardware finding: correctness_evidence.run_test_backend_ops()
-    # calls subprocess.run(argv, env=run_env) with run_env built from
-    # scratch ({} plus its own explicit keys) -- an explicit env=
-    # REPLACES the child's environment rather than extending it, so
-    # HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES set on this process are
-    # silently dropped and the subprocess sees every GPU again, crashing
-    # against an architecture-restricted build exactly like the earlier
-    # multi-GPU segfault this campaign already worked around. Wrap the
-    # runner to restore the real ambient environment underneath whatever
-    # run_test_backend_ops() explicitly sets (which must still win).
-    def _correctness_runner(argv, **kwargs):
-        env = {**os.environ, **(kwargs.pop("env", None) or {})}
-        return subprocess.run(argv, env=env, **kwargs)
-
-    # GPT review (req_3c98f154389148bb, 2026-09-11): run every (shape,
-    # seed) pair exactly once via the non-raising collector -- not once
-    # for the gate and again for diagnostics, which would double real
-    # hardware time -- and derive the SAME pass/fail semantics
-    # require_rd08_correctness_evidence() would have raised on (first
-    # non-.ok row) from those results, while retaining every row's full
-    # numerical metrics (err/max_abs/threshold/n, not just a bool) even
-    # when the run fails early. The gate itself is unchanged: still
-    # exact per-row .ok (bit-identical digest equality); this only stops
-    # discarding the rows that already ran successfully before a later
-    # failure, or that ran cleanly alongside one.
-    all_rows = rd08_correctness.collect_all_rd08_correctness_rows(
-        subject_binary=subject_bin / f"test-backend-ops{exe}",
-        control_binary=control_bin / f"test-backend-ops{exe}",
-        runner=_correctness_runner,
-    )
-    rows_doc = [rd08_correctness.row_to_diagnostic_dict(r) for r in all_rows]
-    failing = next((r for r in all_rows if not r.ok), None)
-    if failing is None:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=True,
-            detail=f"{len(all_rows)} (shape,seed) pairs bit-identical",
-        )
-    else:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False,
-            detail=(
-                f"RD08 correctness evidence failed for shape={failing.shape_name!r} "
-                f"seed={failing.seed}: subject_status={failing.subject_status} "
-                f"control_status={failing.control_status} "
-                f"subject_input_digest={failing.subject_digest.digest if failing.subject_digest else None} "
-                f"control_input_digest={failing.control_digest.digest if failing.control_digest else None} "
-                f"subject_output_digest={failing.subject_metric.backend1_digest if failing.subject_metric else None} "
-                f"control_output_digest={failing.control_metric.backend1_digest if failing.control_metric else None}"
-            ),
-        )
-
-    # PRBE104 (2026-09-13): RD08's contract was deliberately revised from
-    # requiring bit_identical to backend_reference (GPT req_8163325eb9c545ea)
-    # -- VDR=2 intentionally changes accumulation grouping, so exact digest
-    # equality was never the scientifically appropriate bar; each row's own
-    # subject_metric.err/threshold (already computed by the NMSE comparison
-    # every row performs regardless of the exact-digest result) IS the real
-    # backend_reference evidence. Derive it from the SAME rows, never a
-    # second correctness-checking engine -- bit_identical is preserved above
-    # as the real, now-non-gating diagnostic fact PRBE103 established.
-    numeric_rows = [r for r in all_rows if r.subject_metric is not None]
-    if not numeric_rows:
-        backend_reference_result = experiment_contract.CorrectnessResult(
-            check="backend_reference", passed=False,
-            detail="no rows produced a subject_metric to evaluate",
-        )
-    else:
-        worst = max(numeric_rows, key=lambda r: r.subject_metric.err)
-        over_threshold = worst.subject_metric.err > worst.subject_metric.threshold
-        backend_reference_result = experiment_contract.CorrectnessResult(
-            check="backend_reference", passed=not over_threshold,
-            detail=(
-                f"{len(numeric_rows)} rows, worst subject err={worst.subject_metric.err} "
-                f"vs threshold={worst.subject_metric.threshold} "
-                f"(shape={worst.shape_name!r} seed={worst.seed})"
-            ),
-        )
-
-    correctness_doc = {
-        "bit_identical": {"passed": bit_identical_result.passed, "detail": bit_identical_result.detail},
-        "backend_reference": {"passed": backend_reference_result.passed, "detail": backend_reference_result.detail},
-        "subject_source_tree": psi.git_worktree_tree(subject_src),
-        "control_source_tree": psi.git_worktree_tree(control_src),
-        "subject_build_identity": subject_build_evidence.campaign_identity(),
-        "control_build_identity": control_build_evidence.campaign_identity(),
-        "rows": rows_doc,
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd08-correctness.json", correctness_doc)
-    return {
-        "results": {
-            "bit_identical": bit_identical_result,
-            "backend_reference": backend_reference_result,
-        },
-        "artifact": artifact_ref,
-        "subject_build_identity": subject_build_evidence.campaign_identity(),
-        "control_build_identity": control_build_evidence.campaign_identity(),
-    }
-
-
-
-
-
-def run_rd08_contract_trigger(
-    *, marker_regex: str, control_binary: Path, subject_binary: Path, model: Path,
-    hip_path: Path, workdir: Path, run_dir: Path, bench_prompt: int = 0, bench_gen: int = 128,
-) -> dict[str, object]:
-    """VA14 final slice: RD08's real trigger proof. Unlike the generic
-    activation probe (tune binary + GGML_CUDA_DISABLE_FUSION=1 as its
-    negative control, which proves nothing about RD08's specific MMVQ
-    marker), this runs the SAME decode command against the validation
-    control binary (which never has the RD08 patch applied at all -- a
-    genuine negative) and the validation-subject binary (the parity-built
-    patched binary), both with BIGCHERRY_PATCH_TRACE=1 via the existing
-    trace-probe machinery (_run_one_trace_probe)."""
-    from bigcherry.experiment import execution as experiment_execution
-
-    pattern = re.compile(marker_regex)
-    subject_log = _run_one_trace_probe(
-        name="rd08-trigger-subject", binary=subject_binary, model=model, hip_path=hip_path,
-        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
-    )
-    control_log = _run_one_trace_probe(
-        name="rd08-trigger-control", binary=control_binary, model=model, hip_path=hip_path,
-        workdir=workdir, bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
-    )
-    subject_hit = pattern.search(subject_log) is not None
-    control_hit = pattern.search(control_log) is not None
-    subject_te = experiment_execution.trigger_evidence_from_marker_probe(
-        lane_id="rd08-decode-subject", role="positive", positive_hit=subject_hit,
-    )
-    control_te = experiment_execution.trigger_evidence_from_marker_probe(
-        lane_id="rd08-decode-control", role="control", positive_hit=control_hit,
-    )
-    subject_log_path = "logs/activation-rd08-trigger-subject.log"
-    control_log_path = "logs/activation-rd08-trigger-control.log"
-    subject_log_ref = {
-        "path": subject_log_path,
-        "sha256": hashlib.sha256((run_dir / subject_log_path).read_bytes()).hexdigest(),
-    }
-    control_log_ref = {
-        "path": control_log_path,
-        "sha256": hashlib.sha256((run_dir / control_log_path).read_bytes()).hexdigest(),
-    }
-    trigger_doc = {
-        "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
-        "positive": {
-            "lane_id": subject_te.lane_id, "candidate_launches": subject_te.candidate_launches,
-            "artifact": subject_log_ref,
-        },
-        "control": {
-            "lane_id": control_te.lane_id, "candidate_launches": control_te.candidate_launches,
-            "artifact": control_log_ref,
-        },
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd08-trigger.json", trigger_doc)
-    return {
-        "evidence": [subject_te, control_te], "artifact": artifact_ref,
-        "subject_hit": subject_hit, "control_hit": control_hit,
-        # GPT round 4 (req_4544a9240b6d45df): the real subject/control probe
-        # logs _run_one_trace_probe() already writes to run_dir/"logs"/... --
-        # exposed here (paths relative to run_dir) so the caller can bind
-        # them as the RD08-authoritative activation evidence (adapter
-        # trace-marker check AND the record's top-level activation field),
-        # instead of the generic tune-binary/fusion-disabled probe, which is
-        # not a valid negative control for RD08's MMVQ marker.
-        "subject_log_path": subject_log_path, "control_log_path": control_log_path,
-        "subject_log_artifact": subject_log_ref, "control_log_artifact": control_log_ref,
-    }
-
-
-def run_rd08_contract_qualification(
-    *, contract: object, descriptor: object, base_revision: str,
-    control_binary: Path, subject_binary: Path, model: Path, model_ref: str,
-    marker_regex: str, hip_path: Path, amdgpu_targets: str, worktree_root: Path,
-    build_root: Path, build_env: dict[str, str], run_dir: Path,
-    control_build_identity: dict[str, object], subject_build_identity: dict[str, object],
-    pairs: int = 3,
-) -> dict[str, object]:
-    """VA14 final slice: the authoritative RD08 full-qualification path
-    (``--run-rd08-contract``). Composes real lane execution + real
-    per-named correctness + real trigger proof into
-    evaluate_promotion_gate()'s verdict -- this is the ONLY path allowed to
-    produce contract promotion/eligibility; ``run_rd08_validation_lanes()``
-    alone (``--run-rd08-lanes``) stays diagnostic-only."""
-    from bigcherry.experiment import contract as experiment_contract
-
-    lanes = run_rd08_validation_lanes(
-        contract=contract, control_binary=control_binary, subject_binary=subject_binary,
-        model=model, model_ref=model_ref, hip_path=hip_path, run_dir=run_dir,
-        control_build_identity=control_build_identity, subject_build_identity=subject_build_identity,
-        pairs=pairs,
-    )
-    correctness = run_rd08_contract_correctness(
-        base_revision=base_revision, hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        worktree_root=worktree_root, build_root=build_root, build_env=build_env, run_dir=run_dir,
-    )
-    trigger = run_rd08_contract_trigger(
-        marker_regex=marker_regex, control_binary=control_binary, subject_binary=subject_binary,
-        model=model, hip_path=hip_path, workdir=run_dir, run_dir=run_dir,
-    )
-    correctness_gate = compute_contract_correctness_gate(contract, correctness["results"])
-    aggregated_effects = experiment_contract.aggregate_contract_effects(
-        contract, lanes["effects"], target_metric="tg128",
-    )
-    trigger_proof = experiment_contract.evaluate_trigger_proof(trigger["evidence"])
-    # GPT round 4 (req_4544a9240b6d45df): evaluate_trigger_proof() only
-    # checks positive-role lanes (by design -- EC18 scopes control lanes
-    # out, since most contracts' control lanes should NOT trigger). RD08's
-    # negative control is a real, separate claim this gate must still
-    # enforce here: if the control (unpatched) binary ALSO shows the
-    # marker, the negative control itself is invalid, and no promotion
-    # verdict can be trusted regardless of what the positive lane showed.
-    if trigger["control_hit"]:
-        trigger_proof = {
-            "passed": False,
-            "reasons": list(trigger_proof.get("reasons") or []) + [
-                "control-role lane observed the target marker -- the negative "
-                "control is invalid, so trigger proof cannot be trusted"
-            ],
-            "checked_lanes": trigger_proof.get("checked_lanes", 0),
-            "untriggered_lanes": list(trigger_proof.get("untriggered_lanes") or []),
-        }
-    promotion = experiment_contract.evaluate_promotion_gate(
-        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
-        trigger_proof=trigger_proof,
-    )
-    qualification_doc = {
-        "contract_id": contract.id, "contract_hash": contract.contract_hash,
-        "lanes_artifact": lanes["artifact"], "correctness_artifact": correctness["artifact"],
-        "trigger_artifact": trigger["artifact"],
-        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
-        "trigger_proof": trigger_proof, "promotion": promotion,
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "contract-qualification.json", qualification_doc)
-    return {
-        "lanes": lanes, "correctness": correctness, "trigger": trigger,
-        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
-        "trigger_proof": trigger_proof, "promotion": promotion, "artifact": artifact_ref,
-    }
-
-
-_PAIRED_BENCH_WORKLOAD_FLAGS: dict[str, tuple[str, ...]] = {
-    "decode": ("-p", "0", "-n", "128"),
-    "prefill": ("-p", "512", "-n", "0"),
-}
-_PAIRED_BENCH_METRIC_NAME: dict[str, str] = {"decode": "tg128", "prefill": "pp512"}
-_PAIRED_BENCH_METRIC_PATTERN: dict[str, "re.Pattern[str]"] = {
-    "decode": re.compile(r"tg128\s*\|\s*([0-9.]+)"),
-    "prefill": re.compile(r"pp512\s*\|\s*([0-9.]+)"),
-}
-
-
 def _paired_llama_bench_command(
     binary: Path, model: Path, workload: str, *,
     patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
@@ -1906,6 +1504,107 @@ class CampaignProducerRuntime:
         )
         return ProducerPairedBenchmarkOutcome(
             runs=outcome.runs, commands=outcome.commands, raw_logs=tuple(outcome.raw_logs),
+        )
+
+
+    def build_materialized_pair(
+        self,
+        *,
+        control_source: Path,
+        subject_source: Path,
+        targets: tuple[str, ...],
+        primary_target: str,
+    ) -> ProducerBuildPair:
+        """Build and capture identities for already-materialized
+        control/subject sources (RD08 sub-slice 3, GPT
+        req_c2e69928e8b34de0). The sources are already materialized
+        by the producer (e.g. rd08_correctness.materialize_rd08_
+        variants()); this method only builds the binaries and
+        captures the build identities."""
+        from bigcherry.build import builds as builds_module
+        from bigcherry.patch import source as psi
+
+        target_plan = FatTargetPlan(targets=targets)
+        exe = ".exe" if sys.platform == "win32" else ""
+        build_root = self.workdir / "builds"
+
+        target_slug = "+".join(target_plan.targets)
+        control_name = f"{self.patch_id}-materialized-control-{target_slug}"
+        subject_name = f"{self.patch_id}-materialized-subject-{target_slug}"
+
+        build_env = _hip_env(self.hip_path)
+        control_bin = build_tree(
+            name=control_name, hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
+            targets=[primary_target], source=control_source,
+            extra_cmake_args=[],
+        )
+        subject_bin = build_tree(
+            name=subject_name, hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
+            targets=[primary_target], source=subject_source,
+            extra_cmake_args=[],
+        )
+        control_binary = control_bin / f"{primary_target}{exe}"
+        subject_binary = subject_bin / f"{primary_target}{exe}"
+
+        cmake_args = _full_requested_cmake_args(
+            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
+            extra_cmake_args=[],
+        )
+        control_evidence = builds_module.capture_completed_build_evidence(
+            build_root / control_name, source_root=control_source,
+            architecture=target_plan.targets, binary=control_binary,
+            requested_cmake_args=cmake_args, build_env=build_env,
+        )
+        subject_evidence = builds_module.capture_completed_build_evidence(
+            build_root / subject_name, source_root=subject_source,
+            architecture=target_plan.targets, binary=subject_binary,
+            requested_cmake_args=cmake_args, build_env=build_env,
+        )
+
+        control_composition = tuple(
+            (p, "applied") for p in psi.git_worktree_tree(control_source)
+        )
+        subject_composition = tuple(
+            (p, "applied") for p in psi.git_worktree_tree(subject_source)
+        )
+
+        return ProducerBuildPair(
+            base_revision=self.base_revision,
+            control_source=control_source,
+            subject_source=subject_source,
+            control_composition=control_composition,
+            subject_composition=subject_composition,
+            control_bin=control_binary,
+            subject_bin=subject_binary,
+            validation_build_identities=BuildIdentityMap(
+                control=control_evidence.campaign_identity(),
+                subject=subject_evidence.campaign_identity(),
+            ),
+        )
+
+    def run_trace_probe(
+        self,
+        *,
+        binary: Path,
+        model: Path,
+        device: ProducerDeviceContext,
+        bench_prompt: int,
+        bench_gen: int,
+        log_context: str,
+        disable_fusion: bool = False,
+    ) -> str:
+        """Run one trace probe (RD08 sub-slice 3, GPT
+        req_c2e69928e8b34de0). Wraps the existing _run_one_trace_probe()
+        primitive -- does not create a second implementation."""
+        return _run_one_trace_probe(
+            name=log_context, binary=binary, model=model,
+            hip_path=self.hip_path, workdir=self.workdir,
+            bench_prompt=bench_prompt, bench_gen=bench_gen,
+            disable_fusion=disable_fusion,
+            env_overrides=dict(device.env_overrides) if device.env_overrides else None,
+            env_unset=tuple(device.env_unset) if device.env_unset else (),
         )
 
 
@@ -6291,153 +5990,6 @@ def run(args: argparse.Namespace) -> int:
             f"{args.patch}: --run-rd08-contract already runs the lanes -- "
             "do not also pass --run-rd08-lanes"
         )
-    rd08_lane_evidence: dict[str, object] | None = None
-    rd08_qualification: dict[str, object] | None = None
-    contract_promotions: dict[str, dict[str, object]] = {}
-    if (args.run_rd08_lanes or args.run_rd08_contract) and descriptor.experiment_contract != "RD08-Q6K-MMVQ-VDR2":
-        raise PatchCampaignError(
-            f"{args.patch}: --run-rd08-lanes/--run-rd08-contract are RD08-only today"
-        )
-    if args.run_rd08_contract:
-        from bigcherry.patch import validation as _pv
-
-        rd08_contract = _pv.load_contract_for_descriptor(descriptor)
-        if rd08_contract is None:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd08-contract requires a resolvable RD08 contract"
-            )
-        rd08_qualification = run_rd08_contract_qualification(
-            contract=rd08_contract, descriptor=descriptor, base_revision=base_revision,
-            control_binary=control_bin / f"llama-bench{exe}",
-            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
-            model_ref=rd08_contract.positive.models[0], marker_regex=trace_marker_regex,
-            hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-            worktree_root=args.worktree_root, build_root=build_root, build_env=build_env,
-            run_dir=campaign_run_dir,
-            control_build_identity=control_build_evidence.campaign_identity(),
-            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
-        )
-        contract_promotions[rd08_contract.id] = rd08_qualification["promotion"]
-        _print(f"rd08 contract qualification: {rd08_qualification['artifact']['path']}")
-        _print(
-            f"rd08 promotion: "
-            f"{'PASS' if rd08_qualification['promotion'].get('passed') else rd08_qualification['promotion'].get('status', 'FAIL')}"
-        )
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": "passed" if rd08_qualification["correctness_gate"].get("passed") else "failed",
-            "mechanism": "rd08-bit-identical-5shape-3seed",
-            "detail": rd08_qualification["correctness"]["results"]["bit_identical"].detail,
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-        correctness_evidence = {
-            "artifact": {
-                "path": correctness_path.relative_to(campaign_run_dir).as_posix(),
-                "sha256": hashlib.sha256(correctness_path.read_bytes()).hexdigest(),
-            }
-        }
-        # GPT round 4 (req_4544a9240b6d45df): RD08's validation.toml declares
-        # its correctness/performance/controls checks with
-        # validator="autotune-campaign", which reads ctx.performance_evidence
-        # (_builtin_autotune_campaign requires a bound artifact with a
-        # truthy campaign_id) -- without this, those three checks always
-        # error/fail and validation_verdict.eligible can never become True,
-        # so the record's final eligibility can never become True either.
-        # Bind the real RD08 qualification result here -- campaign_id is the
-        # actual completed campaign's own identity digest, not fabricated.
-        performance_doc = {
-            "campaign_id": campaign.campaign_identity_digest,
-            "passed": bool(rd08_qualification["promotion"].get("passed")),
-            "target_kernel_gain_pct": rd08_qualification["aggregated_effects"].get(
-                "target_kernel_gain_pct"
-            ),
-            "max_control_regression_pct": rd08_qualification["aggregated_effects"].get(
-                "max_control_regression_pct"
-            ),
-        }
-        performance_path = campaign_run_dir / "performance.json"
-        _atomic_write_json(performance_path, performance_doc)
-        performance_evidence = {
-            "artifact": {
-                "path": performance_path.relative_to(campaign_run_dir).as_posix(),
-                "sha256": hashlib.sha256(performance_path.read_bytes()).hexdigest(),
-            }
-        }
-        # GPT round 4: the adapter's trace-marker check AND the record's
-        # top-level activation field must use RD08's OWN authoritative
-        # subject-hit/control-miss trigger evidence, not the earlier generic
-        # tune-binary/GGML_CUDA_DISABLE_FUSION=1 probe -- that probe is not a
-        # valid negative control for RD08's specific MMVQ marker.
-        def _bind_rd08_log(relative_log_path: str) -> dict[str, str]:
-            target = (campaign_run_dir / relative_log_path).resolve()
-            return {
-                "path": relative_log_path,
-                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            }
-
-        trace_evidence = {
-            "positive": {
-                "marker_regex": trace_marker_regex,
-                "artifact": _bind_rd08_log(rd08_qualification["trigger"]["subject_log_path"]),
-            },
-            "negative": {
-                "marker_regex": trace_marker_regex,
-                "artifact": _bind_rd08_log(rd08_qualification["trigger"]["control_log_path"]),
-            },
-        }
-        activation_evidence = ActivationEvidence(
-            status=(
-                "executed"
-                if rd08_qualification["trigger"]["subject_hit"]
-                and not rd08_qualification["trigger"]["control_hit"]
-                else "not_executed"
-            ),
-            mechanism="rd08-trigger-marker", detail=f"marker={trace_marker_regex!r}",
-        )
-        activation_verdict = verdict(activation_evidence, correctness_passed=None)
-        # GPT round 5 (req_12dd706a42e341bd): the RD08 override above only
-        # changed the in-memory activation_evidence/activation_verdict --
-        # campaign/activation.json on disk still held the earlier generic
-        # tune/fusion-disabled probe's result while the record qualifies
-        # using RD08-authoritative evidence. Rewrite it with the real
-        # RD08 result so the on-disk artifact and the record agree.
-        write_activation_json(
-            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
-            extra={
-                "campaign_identity_digest": campaign.campaign_identity_digest,
-                "rd08_trigger": {
-                    "subject_hit": rd08_qualification["trigger"]["subject_hit"],
-                    "control_hit": rd08_qualification["trigger"]["control_hit"],
-                    "artifact": rd08_qualification["trigger"]["artifact"],
-                },
-            },
-        )
-    elif args.run_rd08_lanes:
-        from bigcherry.patch import validation as _pv
-
-        rd08_contract = _pv.load_contract_for_descriptor(descriptor)
-        if rd08_contract is None:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd08-lanes requires a resolvable RD08 contract"
-            )
-        rd08_lane_evidence = run_rd08_validation_lanes(
-            contract=rd08_contract, control_binary=control_bin / f"llama-bench{exe}",
-            subject_binary=validation_subject_bin / f"llama-bench{exe}", model=args.model,
-            model_ref=rd08_contract.positive.models[0],
-            hip_path=args.hip_path, run_dir=campaign_run_dir,
-            control_build_identity=control_build_evidence.campaign_identity(),
-            subject_build_identity=validation_subject_build_evidence.campaign_identity(),
-        )
-        _print(f"rd08 lanes: {rd08_lane_evidence['artifact']['path']}")
-
     if args.run_rd73_contract:
         if (
             args.run_rd08_lanes
@@ -6781,22 +6333,6 @@ def main(argv: list[str] | None = None) -> int:
              "this patch/source/campaign identity; without it the campaign still "
              "runs and records evidence, but the record is not eligible for "
              "STATE='validated'",
-    )
-    parser.add_argument(
-        "--run-rd08-lanes", action="store_true", default=False,
-        help="VA14-B: execute RD08's real positive(decode)/control(prefill) lane pairs "
-             "against the parity-verified control/validation-subject builds and persist "
-             "the raw evidence. Diagnostic-only -- does not affect eligibility. RD08-only; "
-             "an error for any other patch. Mutually exclusive with --run-rd08-contract.",
-    )
-    parser.add_argument(
-        "--run-rd08-contract", action="store_true", default=False,
-        help="VA14 final slice: the authoritative RD08 full-qualification path -- real "
-             "lane execution + real bit-identical correctness "
-             "(require_rd08_correctness_evidence()) + real trigger proof, composed via "
-             "evaluate_promotion_gate(). The only path that can make an RD08-bound patch "
-             "eligible_for_validated_state. RD08-only; an error for any other patch. "
-             "Mutually exclusive with --run-rd08-lanes and --correctness-evidence.",
     )
     parser.add_argument(
         "--run-rd73-contract", action="store_true", default=False,

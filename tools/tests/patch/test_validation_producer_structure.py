@@ -37,7 +37,7 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # the same commit -- the baseline only ever shrinks.
 _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
     {
-        "_load_rd08_correctness_module",
+        
         "_load_rd17_correctness_module",
         "_load_rd19_correctness_module",
         "_load_rd43_correctness_module",
@@ -47,10 +47,10 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_rd05_contract_correctness",
         "run_rd06_contract_correctness",
         "run_rd07_contract_correctness",
-        "run_rd08_contract_correctness",
-        "run_rd08_contract_qualification",
-        "run_rd08_contract_trigger",
-        "run_rd08_validation_lanes",
+        
+        
+        
+        
         "run_rd17_ppl_check",
         "run_rd19_ppl_check",
         "run_rd30_correctness_check",
