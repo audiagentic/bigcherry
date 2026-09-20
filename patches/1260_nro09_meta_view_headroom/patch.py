@@ -17,9 +17,8 @@ size, which affects memory allocation but not numerical behavior.
 
 from bigcherry.patcher import Edit, FilePatch
 
-
-def build() -> FilePatch:
-    return FilePatch(
+PATCHES = [
+    FilePatch(
         file="vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp",
         edits=(
             Edit(
@@ -32,4 +31,5 @@ def build() -> FilePatch:
                 ),
             ),
         ),
-    )
+    ),
+]
