@@ -1056,16 +1056,16 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # 2026-09-20 three-architecture fix (GPT review 2026-09-20): RD07's
     # PERFORMANCE and CONTROLS checks now run on ALL THREE contract-scoped
     # architectures (gfx1100/gfx1201/gfx1030) individually, each gated
-    # through the real ci95-style evaluate_promotion_gate() -- closing the
-    # prior "only gfx1201" gap for those two checks. ACTIVATION remains a
-    # single representative probe on gfx1201 (_RD0506_ARCH): the RD07
-    # marker's source line is architecture-independent C++/CUDA in mmq.cu
-    # (the GGML_TYPE_Q6_K switch case), so a single representative probe
-    # proves the marker fires on the intended dispatch path; the
-    # per-architecture requirement is about the Q6_K fold's PRE-FILL
-    # PERFORMANCE effect (measured per-arch above), not the marker. This is
-    # documented honestly rather than silently implying activation is
-    # three-architecture-matrixed.
+    # through the real evaluate_promotion_gate() contract promotion gate --
+    # closing the prior "only gfx1201" gap for those two checks. ACTIVATION
+    # remains a single representative probe on gfx1201 (_RD0506_ARCH): the
+    # RD07 marker's source line is architecture-independent C++/CUDA in
+    # mmq.cu (the GGML_TYPE_Q6_K switch case), so one probe is representative
+    # evidence that the host-side Q6_K specialization dispatch marker is
+    # wired and fires -- it is NOT three-architecture activation proof. The
+    # per-architecture-matrixed obligations are correctness/performance/
+    # controls (measured per-arch above), not activation. Documented honestly
+    # rather than silently implying activation is three-arch-matrixed.
     rd07_activation_artifact = None
     if missing_rd07 or control_model is None:
         rd07_activation_ok = False
@@ -1113,15 +1113,18 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # PA39 real-hardware-acceptance fix (GPT review 2026-09-16 + 2026-09-20):
     # replaces the prior execution-only `bool(outcome.runs)` stub ("quantitative
     # evaluation deferred to PA39 real-hardware acceptance") with the same real
-    # ci95-style evaluator RD05/RD06 use -- lane_effect_from_run() /
-    # aggregate_contract_effects() / evaluate_promotion_gate() -- now run on ALL
-    # THREE of RD07's contract-scoped architectures (gfx1100/gfx1201/gfx1030),
-    # not just gfx1201. RD07's positive and control lanes are BOTH on
-    # control_model (tierM-gptoss20b-q6k; see the rd07-activation comment for
-    # why that resolved path is RD07's model). RD07's acceptance declares only
-    # max_control_regression_pct=1 (no target_kernel_gain_pct), so the gate's
-    # gain half is a no-op exactly as in RD05; only the control-regression
-    # bound is enforced. Fails closed (no gate call) if any declared workload's
+    # contract promotion-gate evaluator RD05/RD06 use --
+    # lane_effect_from_run() /
+    # aggregate_contract_effects() / evaluate_promotion_gate() -- now run on
+    # ALL THREE of RD07's contract-scoped architectures (gfx1100/gfx1201/
+    # gfx1030), not just gfx1201. RD07's positive and control lanes are BOTH
+    # on control_model (tierM-gptoss20b-q6k; see the rd07-activation comment
+    # for why that resolved path is RD07's model). RD07 declares no
+    # effect_evidence_policy and no target_kernel_gain_pct, so its evidence
+    # policy is point_estimate_v1 and the gate's gain half is a no-op (exactly
+    # as in RD05); only the max_control_regression_pct=1 control-regression
+    # bound is enforced. The 3 pairs are sampling depth, not a contract
+    # evidence floor. Fails closed (no gate call) if any declared workload's
     # evidence did not come back on any architecture.
     rd07_perf_artifact = None
     rd07_per_arch: dict[str, dict[str, object]] = {}
