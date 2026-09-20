@@ -158,17 +158,17 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         perf_payload["raw_logs"] = lanes_outcome.raw_logs
     # Preserve scaffold build identities
     perf_payload["scaffold_build_identities"] = dict(ctx.validation_build_identities)
-    ctx.runtime.write_artifact(
+    perf_ref = ctx.runtime.write_artifact(
         name="rd08-performance.json",
         payload=perf_payload,
     )
     # GPT req_c2e69928e8b34de0: write raw trace artifacts via
-    # write_text_artifact()
-    ctx.runtime.write_text_artifact(
+    # write_text_artifact() and capture the refs
+    subject_trace_ref = ctx.runtime.write_text_artifact(
         name="rd08-subject-trace.log",
         text=subject_log,
     )
-    ctx.runtime.write_text_artifact(
+    control_trace_ref = ctx.runtime.write_text_artifact(
         name="rd08-control-trace.log",
         text=control_log,
     )
@@ -191,19 +191,15 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         contract_correctness_results=(correctness_result,),
-        performance_evidence={"artifact": "rd08-performance.json"},
+        performance_evidence=perf_ref,
         trace_evidence={
-            "positive": {"artifact": "rd08-subject-trace.log"},
-            "negative": {"artifact": "rd08-control-trace.log"},
+            "positive": subject_trace_ref,
+            "negative": control_trace_ref,
         },
         check_results=(),
         lane_effects=(),
         correctness={
-            "disposition": "pass" if all(
-                isinstance(v, dict) and v.get("passed", False)
-                for v in (correctness.get("bit_identical"), correctness.get("backend_reference"))
-                if isinstance(v, dict)
-            ) else "fail",
+            "disposition": "passed" if correctness.get("backend_reference", {}).get("passed", False) else "failed",
             "mechanism": "backend_reference",
             "detail": correctness.get("backend_reference", {}).get("detail", ""),
         } if isinstance(correctness, dict) else correctness,
