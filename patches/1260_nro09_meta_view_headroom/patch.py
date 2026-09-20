@@ -19,7 +19,7 @@ from bigcherry.patcher import Edit, FilePatch
 
 PATCHES = [
     FilePatch(
-        file="vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp",
+        path="vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp",
         edits=(
             Edit(
                 id="pnro09_increase_headroom",
