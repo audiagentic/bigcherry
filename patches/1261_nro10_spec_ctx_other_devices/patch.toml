@@ -1,0 +1,17 @@
+schema = 1
+id = "1261_nro10_spec_ctx_other_devices"
+order = 1261
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["PNRO10"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["speculative"]
+tags = ["optimization", "speculative-decoding", "meta-backend"]
+hardware = []
+validation-architectures = []
+backends = ["agnostic"]
