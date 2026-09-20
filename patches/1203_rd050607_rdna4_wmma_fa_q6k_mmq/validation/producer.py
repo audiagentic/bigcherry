@@ -113,6 +113,12 @@ _RD07_MAX_CONTROL_REGRESSION_PCT = 1
 # matching RD07's own default.
 _RD05_MIN_PAIRED_ROUNDS = 3
 
+# RD07 has no min_paired_rounds/effect_evidence_policy override either (its
+# acceptance block declares only max_control_regression_pct=1) -- 3 rounds,
+# matching its own default (PA39 real-hardware-acceptance: RD07's
+# quantitative evaluation now uses this, not an execution-only stub).
+_RD07_MIN_PAIRED_ROUNDS = 3
+
 # PA39 real-hardware-acceptance fix (2026-09-16): the missing apply/build/
 # activation/controls capability producers found by PA39's real-hardware
 # acceptance attempt #1 (ConfigurationError at plan resolution, before any
@@ -974,6 +980,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # --- RD07 backend_reference: requires all three architectures -------
     missing_rd07 = tuple(a for a in _RD07_ARCHS if a not in devices_by_arch)
     rd07_artifact = None
+    arch_backend_ref_pass: dict[str, bool] = {}
     if missing_rd07 or ctx.model is None or ctx.corpus is None:
         rd07_ok = False
         rd07_detail = (
@@ -993,6 +1000,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 log_context=f"rd07-{arch}",
             )
             rd07_by_arch[arch] = {"passed": ok, "detail": detail}
+            arch_backend_ref_pass[arch] = bool(ok)
         rd07_ok = all(v["passed"] for v in rd07_by_arch.values())
         rd07_detail = "; ".join(
             f"{arch}: {'PASS' if v['passed'] else 'FAIL'}"
@@ -1043,16 +1051,21 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # only RD05/RD06's positive model). Reuses the same already
     # identity-checked control_model resolved for RD06 (the real path
     # happens to be the exact model id RD07 needs too), rather than a
-    # second --producer-input. GPT also flagged that this producer only
-    # ever exercises RD07's activation/performance/controls on gfx1201,
-    # despite RD07's contract scope being all three architectures
-    # (gfx1100/gfx1201/gfx1030) -- widening every RD07 check to all three
-    # devices is real additional per-architecture paired-benchmark work
-    # not attempted in this pass; documented honestly here (mirrors
-    # RD06's own documented gfx1100 gap above) rather than silently
-    # overclaiming three-architecture coverage. A future item should
-    # widen these three RD07 checks to run on gfx1100/gfx1201/gfx1030
-    # individually before PA39 claims full RD07 scope.
+    # second --producer-input.
+    #
+    # 2026-09-20 three-architecture fix (GPT review 2026-09-20): RD07's
+    # PERFORMANCE and CONTROLS checks now run on ALL THREE contract-scoped
+    # architectures (gfx1100/gfx1201/gfx1030) individually, each gated
+    # through the real ci95-style evaluate_promotion_gate() -- closing the
+    # prior "only gfx1201" gap for those two checks. ACTIVATION remains a
+    # single representative probe on gfx1201 (_RD0506_ARCH): the RD07
+    # marker's source line is architecture-independent C++/CUDA in mmq.cu
+    # (the GGML_TYPE_Q6_K switch case), so a single representative probe
+    # proves the marker fires on the intended dispatch path; the
+    # per-architecture requirement is about the Q6_K fold's PRE-FILL
+    # PERFORMANCE effect (measured per-arch above), not the marker. This is
+    # documented honestly rather than silently implying activation is
+    # three-architecture-matrixed.
     rd07_activation_artifact = None
     if missing_rd07 or control_model is None:
         rd07_activation_ok = False
@@ -1096,43 +1109,159 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     )
 
-    # --- RD07 performance: max_control_regression_pct only --------------
-    # GPT review (2026-09-16): RD07's positive/controls models are both
-    # tierM-gptoss20b-q6k, not ctx.model -- reuses control_model (see
-    # rd07-activation's comment above for why the same resolved path is
-    # the right model for RD07 too).
+    # --- RD07 performance: per-arch max_control_regression_pct gate ---
+    # PA39 real-hardware-acceptance fix (GPT review 2026-09-16 + 2026-09-20):
+    # replaces the prior execution-only `bool(outcome.runs)` stub ("quantitative
+    # evaluation deferred to PA39 real-hardware acceptance") with the same real
+    # ci95-style evaluator RD05/RD06 use -- lane_effect_from_run() /
+    # aggregate_contract_effects() / evaluate_promotion_gate() -- now run on ALL
+    # THREE of RD07's contract-scoped architectures (gfx1100/gfx1201/gfx1030),
+    # not just gfx1201. RD07's positive and control lanes are BOTH on
+    # control_model (tierM-gptoss20b-q6k; see the rd07-activation comment for
+    # why that resolved path is RD07's model). RD07's acceptance declares only
+    # max_control_regression_pct=1 (no target_kernel_gain_pct), so the gate's
+    # gain half is a no-op exactly as in RD05; only the control-regression
+    # bound is enforced. Fails closed (no gate call) if any declared workload's
+    # evidence did not come back on any architecture.
     rd07_perf_artifact = None
-    outcome: vp.ProducerPairedBenchmarkOutcome | None = None
-    if missing_rd07 or control_model is None:
+    rd07_per_arch: dict[str, dict[str, object]] = {}
+    rd07_positive_missing: list[str] = []
+    rd07_control_missing: list[str] = []
+    rd07_aggregated_by_arch: dict[str, object] = {}
+    rd07_gate_by_arch: dict[str, object] = {}
+    if (
+        missing_rd07
+        or control_model is None
+        or len(arch_backend_ref_pass) != len(_RD07_ARCHS)
+    ):
         rd07_perf_ok = False
         rd07_perf_detail = (
-            f"rd07 performance: missing required architecture(s) {list(missing_rd07)} "
-            "and/or --producer-input control_model=<path>"
+            f"rd07 performance: missing required architecture(s) "
+            f"{list(missing_rd07)} and/or --producer-input control_model=<path> "
+            f"and/or backend reference not executed on all architectures "
+            f"(present={sorted(arch_backend_ref_pass)})"
         )
     else:
-        # PA39 P0 defect #1 fix: bench_pair (llama-bench), never ppl_pair.
-        outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin,
-            subject_binary=bench_pair.subject_bin,
-            model=control_model,
-            workloads=("decode", "prefill"),
-            pairs=3,
-            log_context="rd07-performance",
-            device=devices_by_arch[_RD0506_ARCH],
+        rd07_contract = _load_contract(_RD07)
+        positive_workloads = tuple(rd07_contract.positive.workloads)
+        control_workloads = tuple(rd07_contract.controls.workloads)
+        target_metric = _PAIRED_BENCH_METRIC_NAME[positive_workloads[0]]
+        for arch in _RD07_ARCHS:
+            arch_device = devices_by_arch[arch]
+            positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+                control_binary=bench_pair.control_bin,
+                subject_binary=bench_pair.subject_bin,
+                model=control_model,
+                workloads=positive_workloads,
+                pairs=_RD07_MIN_PAIRED_ROUNDS,
+                log_context=f"rd07-{arch}-positive",
+                device=arch_device,
+            )
+            control_outcome = ctx.runtime.run_paired_llama_benchmark(
+                control_binary=bench_pair.control_bin,
+                subject_binary=bench_pair.subject_bin,
+                model=control_model,
+                workloads=control_workloads,
+                pairs=_RD07_MIN_PAIRED_ROUNDS,
+                log_context=f"rd07-{arch}-control",
+                device=arch_device,
+            )
+            arch_positive_missing = [
+                w for w in positive_workloads if w not in positive_outcome.runs
+            ]
+            arch_control_missing = [
+                w for w in control_workloads if w not in control_outcome.runs
+            ]
+            rd07_positive_missing.extend(arch_positive_missing)
+            rd07_control_missing.extend(arch_control_missing)
+            if arch_positive_missing or arch_control_missing:
+                rd07_per_arch[arch] = {
+                    "passed": False,
+                    "missing_positive_workloads": arch_positive_missing,
+                    "missing_control_workloads": arch_control_missing,
+                }
+                continue
+            positive_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "positive",
+                    _PAIRED_BENCH_METRIC_NAME[w],
+                    positive_outcome.runs[w],
+                )
+                for w in positive_workloads
+            ]
+            control_lanes = [
+                experiment_execution.lane_effect_from_run(
+                    "control",
+                    _PAIRED_BENCH_METRIC_NAME[w],
+                    control_outcome.runs[w],
+                )
+                for w in control_workloads
+            ]
+            aggregated = experiment_contract.aggregate_contract_effects(
+                rd07_contract,
+                positive_lanes + control_lanes,
+                target_metric=target_metric,
+            )
+            correctness_gate = experiment_contract.evaluate_correctness_gate(
+                rd07_contract,
+                {
+                    "backend_reference": experiment_contract.CorrectnessResult(
+                        check="backend_reference",
+                        passed=arch_backend_ref_pass[arch],
+                        detail=f"rd07 {arch} backend reference",
+                    )
+                },
+            )
+            gate_result = experiment_contract.evaluate_promotion_gate(
+                rd07_contract,
+                correctness_gate=correctness_gate,
+                aggregated_effects=aggregated,
+            )
+            rd07_per_arch[arch] = {
+                "passed": bool(gate_result["passed"]),
+                "status": gate_result["status"],
+                "reasons": list(gate_result["reasons"]),
+                "positive_commands": positive_outcome.commands,
+                "control_commands": control_outcome.commands,
+            }
+            rd07_aggregated_by_arch[arch] = aggregated
+            rd07_gate_by_arch[arch] = gate_result
+        per_arch_ok = {
+            arch: bool(entry.get("passed", False))
+            for arch, entry in rd07_per_arch.items()
+        }
+        rd07_perf_ok = (
+            not rd07_positive_missing
+            and not rd07_control_missing
+            and len(per_arch_ok) == len(_RD07_ARCHS)
+            and all(per_arch_ok.values())
         )
-        rd07_perf_ok = bool(outcome.runs)
         rd07_perf_detail = (
-            f"rd07 performance: paired benchmark executed for {sorted(outcome.runs)}; "
-            f"max_control_regression_pct={_RD07_MAX_CONTROL_REGRESSION_PCT} "
-            "(quantitative evaluation deferred to PA39 real-hardware acceptance)"
+            f"rd07 performance: per-arch max_control_regression_pct gate "
+            f"{ {a: ('PASS' if ok else 'FAIL') for a, ok in per_arch_ok.items()} } "
+            f"passed={rd07_perf_ok} "
+            f"(positive_model=control_model={control_model}, "
+            f"positive_workloads={list(positive_workloads)}, "
+            f"control_workloads={list(control_workloads)}, "
+            f"min_paired_rounds={_RD07_MIN_PAIRED_ROUNDS}, "
+            f"max_control_regression_pct={_RD07_MAX_CONTROL_REGRESSION_PCT})"
         )
         rd07_perf_artifact = ctx.runtime.write_artifact(
             name="rd07-performance.json",
             payload={
-                "schema_version": 2,
+                "schema_version": 3,
                 "contract_id": _RD07,
+                "min_paired_rounds": _RD07_MIN_PAIRED_ROUNDS,
                 "max_control_regression_pct": _RD07_MAX_CONTROL_REGRESSION_PCT,
-                "commands": outcome.commands,
+                "positive_model": str(control_model),
+                "control_model": str(control_model),
+                "positive_workloads": list(positive_workloads),
+                "control_workloads": list(control_workloads),
+                "missing_positive_workloads": rd07_positive_missing,
+                "missing_control_workloads": rd07_control_missing,
+                "per_arch": rd07_per_arch,
+                "aggregated_effects_by_arch": rd07_aggregated_by_arch,
+                "gate_by_arch": rd07_gate_by_arch,
                 "bench_control_build_identity": bench_pair.validation_build_identities[
                     "control"
                 ],
@@ -1155,18 +1284,29 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     )
 
-    # --- RD07 controls: reuses rd07-performance's decode (control) lane -
+    # --- RD07 controls: reuses rd07-performance's control (decode) lanes --
     # PA39 real-hardware-acceptance fix: RD07's contract declares
-    # controls.workloads=["decode"] on the same model as its positive
-    # prefill workload -- rd07-performance already benchmarks both decode
-    # and prefill in one call, so this check surfaces that same real
-    # evidence under the 'controls' capability, without a second
-    # disposition (rd07-performance already carries RD07's disposition).
-    rd07_decode_present = outcome is not None and "decode" in outcome.runs
-    rd07_controls_ok = rd07_perf_ok and rd07_ok and rd07_decode_present
+    # controls.workloads=["decode"] on the same model as its positive prefill
+    # workload -- rd07-performance now benchmarks the control (decode) lane on
+    # all three architectures, so this check surfaces that same real
+    # per-architecture evidence under the 'controls' capability, without a
+    # second disposition (rd07-performance already carries RD07's
+    # disposition). Fails closed if any architecture's control (decode) lane
+    # evidence did not come back.
+    rd07_control_lane_ok = (
+        not rd07_control_missing
+        and len(rd07_per_arch) == len(_RD07_ARCHS)
+        and all(
+            bool(entry.get("passed")) and not entry.get("missing_control_workloads")
+            for entry in rd07_per_arch.values()
+        )
+    )
+    rd07_controls_ok = rd07_perf_ok and rd07_ok and rd07_control_lane_ok
     rd07_controls_detail = (
-        f"rd07 controls: reuses rd07-performance's decode lane "
-        f"(present={rd07_decode_present}); underlying performance check passed={rd07_perf_ok}"
+        f"rd07 controls: reuses rd07-performance's per-arch control (decode) "
+        f"lanes (per_arch={ {a: e.get('passed') for a, e in rd07_per_arch.items()} }, "
+        f"control_missing={rd07_control_missing}); underlying performance "
+        f"check passed={rd07_perf_ok}"
     )
     check_results.append(
         _check_result(
