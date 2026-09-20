@@ -52,6 +52,7 @@ PATCHES = [
                 mode="insert_after",
                 guard="PNRO10: add ctx_other model devices",
                 rationale="Add ctx_other model devices to the scheduler backends so that shared tensors between the draft and target contexts can be scheduled on valid backends.",
+                expect_matches=2,
                 occurrence=0,
             ),
         ),
