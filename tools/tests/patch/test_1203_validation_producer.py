@@ -94,7 +94,9 @@ _RD05_PASSING_CONTROL_STATS = {
 
 # PA39 real-hardware-acceptance fix (2026-09-20): RD07's quantitative
 # evaluation now runs on all three contract-scoped architectures, using the
-# same real ci95-style gate as RD05/RD06. RD07's acceptance declares only
+# same real evaluate_promotion_gate() contract promotion gate as RD05/RD06
+# (point_estimate_v1 for RD07, which declares no effect_evidence_policy).
+# RD07's acceptance declares only
 # max_control_regression_pct=1 (no target_kernel_gain_pct), so the gate's
 # gain half is a no-op; only the control (decode) regression bound is
 # enforced. These defaults keep the control lane's regression upper bound
@@ -231,6 +233,7 @@ class _FakeProducerRuntime:
         rd07_positive_stats: dict | None = None,
         rd07_control_stats: dict | None = None,
         rd07_missing_prefill: bool = False,
+        rd07_missing_control_arch: str | None = None,
     ):
         self.run_dir = run_dir
         self._device_map = device_map
@@ -250,6 +253,13 @@ class _FakeProducerRuntime:
         # lane), so tests can prove the producer fails closed rather than
         # silently aggregating decode-only evidence.
         self.rd07_missing_prefill = rd07_missing_prefill
+        # GPT NIT (2026-09-20): when set to a specific arch, the control
+        # (decode) lane's paired-benchmark outcome omits "decode" on JUST that
+        # arch (all others still return decode), so a test can pin the exact
+        # rd07_controls per-architecture invariant (one arch's missing control
+        # lane -> controls FAIL) that the all-arch missing-prefill test
+        # cannot reach.
+        self.rd07_missing_control_arch = rd07_missing_control_arch
         # PA39 P0 defect #2 proof knob: when True, the positive lane's
         # paired-benchmark outcome omits "prefill" entirely (as if a real
         # llama-bench run had somehow not produced that lane), so tests can
@@ -375,9 +385,13 @@ class _FakeProducerRuntime:
                 raw_logs=(),
             )
         if log_context.startswith("rd07-") and log_context.endswith("-control"):
+            arch = log_context[len("rd07-") : -len("-control")]
+            runs: dict[str, object] = {}
+            if arch != self.rd07_missing_control_arch:
+                runs["decode"] = _paired_lane_run(**self.rd07_control_stats)
             return vp.ProducerPairedBenchmarkOutcome(
-                runs={"decode": _paired_lane_run(**self.rd07_control_stats)},
-                commands={"decode": {"control": ("x",), "subject": ("x",)}},
+                runs=runs,
+                commands={w: {"control": ("x",), "subject": ("x",)} for w in runs},
                 raw_logs=(),
             )
         # Generic fallback (should not be reached for the RD05/RD06/RD07
@@ -417,6 +431,7 @@ def _run_producer(
     rd07_positive_stats: dict | None = None,
     rd07_control_stats: dict | None = None,
     rd07_missing_prefill: bool = False,
+    rd07_missing_control_arch: str | None = None,
 ):
     checks = pv.parse_validation_toml(
         _PATCH_DIR / "validation.toml", patch_id=_PATCH_ID
@@ -451,6 +466,7 @@ def _run_producer(
         rd07_positive_stats=rd07_positive_stats,
         rd07_control_stats=rd07_control_stats,
         rd07_missing_prefill=rd07_missing_prefill,
+        rd07_missing_control_arch=rd07_missing_control_arch,
     )
     producer_context = vp.ProducerContext(
         repo_root=REPO_ROOT,
@@ -873,6 +889,34 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         self.assertFalse(execution.verdict.eligible)
         # RD05/RD06 (unaffected by RD07's missing prefill lane) still pass.
         self.assertEqual(execution.evaluated["rd05-backend-reference"].status, pv.PASS)
+
+    def test_rd07_single_arch_missing_control_lane_fails_controls(self) -> None:
+        # GPT NIT (2026-09-20) coverage: if the control (decode) lane's
+        # paired-benchmark outcome is missing on exactly ONE of the three
+        # contract-scoped architectures (the other two still produce decode),
+        # rd07-controls must fail closed -- pinning the exact per-arch
+        # invariant that the all-arch missing-prefill test cannot reach.
+        # The producer's rd07_control_lane_ok requires all three archs' control
+        # lanes present, so a single arch's missing decode lane must fail the
+        # whole check (and the performance gate, which shares the missing
+        # control-lane evidence), not just that arch.
+        device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
+        with mock.patch("subprocess.run") as run_mock:
+            run_mock.side_effect = _make_subprocess_side_effect()
+            execution, record, _runtime = _run_producer(
+                run_dir=self.run_dir,
+                device_map=device_map,
+                model=self.model,
+                corpus=self.corpus,
+                rd07_missing_control_arch="gfx1201",
+            )
+        self.assertEqual(execution.evaluated["rd07-controls"].status, pv.FAIL)
+        self.assertEqual(execution.evaluated["rd07-performance"].status, pv.FAIL)
+        self.assertIs(record["contract_verdicts"][_RD07]["passed"], False)
+        self.assertFalse(execution.verdict.eligible)
+        # RD05/RD06 (unaffected by RD07's missing control lane) still pass.
+        self.assertEqual(execution.evaluated["rd05-backend-reference"].status, pv.PASS)
+        self.assertEqual(execution.evaluated["rd06-performance"].status, pv.PASS)
 
     def test_rd07_gate_passing_bound_actually_passes(self) -> None:
         # Positive control: a real control (decode) regression bound under
