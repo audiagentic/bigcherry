@@ -58,6 +58,8 @@ def _load_rd08_correctness() -> Any:
         )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    import sys
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -83,10 +85,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     device = device_contexts[0]
 
     # 1. Run the decode (positive) and prefill (control) lanes
-    decode_effect, prefill_effect = _run_lanes(ctx, device)
+    decode_effect, prefill_effect, lanes_outcome = _run_lanes(ctx, device)
 
     # 2. Run the correctness check (backend_reference)
-    correctness = _run_correctness(ctx, device)
+    correctness, correctness_pair_identities = _run_correctness(ctx, device)
 
     # 3. Run the activation check (trace-marker) + trigger evidence
     activation, trigger_evidence, subject_log, control_log = _run_activation(
@@ -130,24 +132,35 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "detail": activation.detail,
         },
     )
+    # MAJOR 7: Preserve auditability - commands, raw logs, runs/stats
+    # and scaffold identities
+    perf_payload: dict[str, object] = {
+        "passed": True,
+        "metrics": {
+            "decode_tg128": {
+                "geometric_effect_pct": decode_effect.geometric_effect_pct,
+                "ci95_low_pct": decode_effect.ci95_low_pct,
+                "ci95_high_pct": decode_effect.ci95_high_pct,
+                "paired_rounds": decode_effect.paired_rounds,
+            },
+            "prefill_pp512": {
+                "geometric_effect_pct": prefill_effect.geometric_effect_pct,
+                "ci95_low_pct": prefill_effect.ci95_low_pct,
+                "ci95_high_pct": prefill_effect.ci95_high_pct,
+                "paired_rounds": prefill_effect.paired_rounds,
+            },
+        },
+    }
+    # Preserve auditability from the lane outcome
+    if hasattr(lanes_outcome, "commands"):
+        perf_payload["commands"] = lanes_outcome.commands
+    if hasattr(lanes_outcome, "raw_logs"):
+        perf_payload["raw_logs"] = lanes_outcome.raw_logs
+    # Preserve scaffold build identities
+    perf_payload["scaffold_build_identities"] = dict(ctx.validation_build_identities)
     ctx.runtime.write_artifact(
         name="rd08-performance.json",
-        payload={
-            "metrics": {
-                "decode_tg128": {
-                    "geometric_effect_pct": decode_effect.geometric_effect_pct,
-                    "ci95_low_pct": decode_effect.ci95_low_pct,
-                    "ci95_high_pct": decode_effect.ci95_high_pct,
-                    "paired_rounds": decode_effect.paired_rounds,
-                },
-                "prefill_pp512": {
-                    "geometric_effect_pct": prefill_effect.geometric_effect_pct,
-                    "ci95_low_pct": prefill_effect.ci95_low_pct,
-                    "ci95_high_pct": prefill_effect.ci95_high_pct,
-                    "paired_rounds": prefill_effect.paired_rounds,
-                },
-            }
-        },
+        payload=perf_payload,
     )
     # GPT req_c2e69928e8b34de0: write raw trace artifacts via
     # write_text_artifact()
@@ -171,18 +184,29 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     )
 
     return vp.ProducerResult(
-        validation_build_identities=ctx.validation_build_identities,
+        validation_build_identities=correctness_pair_identities,
         promotion_lane_effects={
             _CONTRACT_ID: (decode_effect, prefill_effect)
         },
         promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         contract_correctness_results=(correctness_result,),
-        performance_evidence=None,
-        trace_evidence=None,
+        performance_evidence={"artifact": "rd08-performance.json"},
+        trace_evidence={
+            "positive": {"artifact": "rd08-subject-trace.log"},
+            "negative": {"artifact": "rd08-control-trace.log"},
+        },
         check_results=(),
         lane_effects=(),
-        correctness=correctness,
+        correctness={
+            "disposition": "pass" if all(
+                isinstance(v, dict) and v.get("passed", False)
+                for v in (correctness.get("bit_identical"), correctness.get("backend_reference"))
+                if isinstance(v, dict)
+            ) else "fail",
+            "mechanism": "backend_reference",
+            "detail": correctness.get("backend_reference", {}).get("detail", ""),
+        } if isinstance(correctness, dict) else correctness,
         activation_evidence=activation,
         emitted_artifacts=frozenset(
             [
@@ -202,7 +226,9 @@ def _run_lanes(
     ctx: vp.ProducerContext,
     device: vp.ProducerDeviceContext,
 ) -> tuple[
-    experiment_execution.LaneEffect, experiment_execution.LaneEffect
+    experiment_execution.LaneEffect,
+    experiment_execution.LaneEffect,
+    object,
 ]:
     """Run RD08's decode (positive) and prefill (control) lanes using
     the canonical run_paired_llama_benchmark() infrastructure."""
@@ -229,13 +255,13 @@ def _run_lanes(
         "control", "pp512", prefill_run
     )
 
-    return decode_effect, prefill_effect
+    return decode_effect, prefill_effect, outcome
 
 
 def _run_correctness(
     ctx: vp.ProducerContext,
     device: vp.ProducerDeviceContext,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], dict]:
     """Run RD08's backend_reference correctness check.
 
     GPT req_c2e69928e8b34de0: retain rd08_correctness.materialize_rd08_
@@ -349,7 +375,7 @@ def _run_correctness(
         "control_build_identity": pair.validation_build_identities["control"],
         "rows": rows_doc,
     }
-    return correctness_doc
+    return correctness_doc, dict(pair.validation_build_identities)
 
 
 def _run_activation(

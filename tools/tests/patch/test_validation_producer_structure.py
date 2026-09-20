@@ -67,8 +67,6 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
 # Same shrink-only rule.
 _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
     {
-        "--run-rd08-contract",
-        "--run-rd08-lanes",
         "--run-rd73-contract",
     }
 )
