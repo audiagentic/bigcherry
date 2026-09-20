@@ -50,25 +50,36 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     from bigcherry.patch import source as psi
 
     control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", focal=None, base_ref=ctx.base_revision, base_repo=ctx.base_repo,
+        "bigcherry",
+        focal=None,
+        base_ref=ctx.base_revision,
+        base_repo=ctx.base_repo,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry", focal="1200_rd19_single_gpu_meta_bypass",
-        base_ref=ctx.base_revision, base_repo=ctx.base_repo,
+        "bigcherry",
+        focal="1200_rd19_single_gpu_meta_bypass",
+        base_ref=ctx.base_revision,
+        base_repo=ctx.base_repo,
     )
     if control_revision != subject_revision:
         raise vp.ValidationProducerError(
             "RD19: control and subject resolved different base revisions"
         )
     control_src = psi.materialize_composition(
-        base_repo=ctx.base_repo, worktree_root=ctx.worktree_root / "control",
-        resolved_revision=control_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=ctx.base_revision,
+        base_repo=ctx.base_repo,
+        worktree_root=ctx.worktree_root / "control",
+        resolved_revision=control_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=ctx.base_revision,
     )
     subject_src = psi.materialize_composition(
-        base_repo=ctx.base_repo, worktree_root=ctx.worktree_root / "subject",
-        resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=ctx.base_revision,
+        base_repo=ctx.base_repo,
+        worktree_root=ctx.worktree_root / "subject",
+        resolved_revision=subject_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=ctx.base_revision,
     )
 
     # Build llama-perplexity for both
@@ -119,7 +130,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             **result,
             "subject_source_tree": str(subject_src),
             "control_source_tree": str(control_src),
-            "comparison": rd19_correctness.comparison_to_dict(comparison) if comparison else None,
+            "comparison": rd19_correctness.comparison_to_dict(comparison)
+            if comparison
+            else None,
         },
     )
 

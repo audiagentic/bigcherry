@@ -37,12 +37,8 @@ class TestPA33RealValidationMigrations:
         If all 3 pass, the extension boundary is intact for real producers.
         """
         # Verify the producer.toml exists
-        producer_toml = (
-            Path("patches") / patch_id / "validation" / "producer.toml"
-        )
-        assert producer_toml.is_file(), (
-            f"producer.toml not found for {patch_id}"
-        )
+        producer_toml = Path("patches") / patch_id / "validation" / "producer.toml"
+        assert producer_toml.is_file(), f"producer.toml not found for {patch_id}"
 
         # Verify the producer_id is in the producer.toml
         toml_content = producer_toml.read_text()
@@ -51,12 +47,8 @@ class TestPA33RealValidationMigrations:
         )
 
         # Verify the producer.py exists
-        producer_py = (
-            Path("patches") / patch_id / "validation" / "producer.py"
-        )
-        assert producer_py.is_file(), (
-            f"producer.py not found for {patch_id}"
-        )
+        producer_py = Path("patches") / patch_id / "validation" / "producer.py"
+        assert producer_py.is_file(), f"producer.py not found for {patch_id}"
 
         # Verify the CLI source contains no patch-specific reference
         from bigcherry.cli import patch as patch_cli
@@ -78,12 +70,8 @@ class TestPA33RealValidationMigrations:
             "1202_rd04_bf16_flash_attn_tile",
             "1206_rd13_mul_mat_add_view_fusion",
         ]:
-            producer_toml = (
-                Path("patches") / patch_id / "validation" / "producer.toml"
-            )
-            assert producer_toml.is_file(), (
-                f"producer.toml not found for {patch_id}"
-            )
+            producer_toml = Path("patches") / patch_id / "validation" / "producer.toml"
+            assert producer_toml.is_file(), f"producer.toml not found for {patch_id}"
             # Verify it has the required schema field
             content = producer_toml.read_text()
             assert "schema" in content, (
@@ -97,12 +85,8 @@ class TestPA33RealValidationMigrations:
             "1202_rd04_bf16_flash_attn_tile",
             "1206_rd13_mul_mat_add_view_fusion",
         ]:
-            producer_py = (
-                Path("patches") / patch_id / "validation" / "producer.py"
-            )
-            assert producer_py.is_file(), (
-                f"producer.py not found for {patch_id}"
-            )
+            producer_py = Path("patches") / patch_id / "validation" / "producer.py"
+            assert producer_py.is_file(), f"producer.py not found for {patch_id}"
             # Verify it has a run() function
             content = producer_py.read_text()
             assert "def run(" in content, (

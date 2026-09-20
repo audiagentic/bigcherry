@@ -53,27 +53,39 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     from bigcherry.patch import source as psi
 
     control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry", extra_patches=("1215_rd394041_amd_stream_moe_overlap",),
-        base_ref=ctx.base_revision, base_repo=ctx.base_repo,
+        "bigcherry",
+        extra_patches=("1215_rd394041_amd_stream_moe_overlap",),
+        base_ref=ctx.base_revision,
+        base_repo=ctx.base_repo,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         "bigcherry",
-        extra_patches=("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"),
-        base_ref=ctx.base_revision, base_repo=ctx.base_repo,
+        extra_patches=(
+            "1215_rd394041_amd_stream_moe_overlap",
+            "1216_rd43_concurrent_join_fusion_guard",
+        ),
+        base_ref=ctx.base_revision,
+        base_repo=ctx.base_repo,
     )
     if control_revision != subject_revision:
         raise vp.ValidationProducerError(
             "RD43: control and subject resolved different base revisions"
         )
     control_src = psi.materialize_composition(
-        base_repo=ctx.base_repo, worktree_root=ctx.worktree_root / "control",
-        resolved_revision=control_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=ctx.base_revision,
+        base_repo=ctx.base_repo,
+        worktree_root=ctx.worktree_root / "control",
+        resolved_revision=control_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=ctx.base_revision,
     )
     subject_src = psi.materialize_composition(
-        base_repo=ctx.base_repo, worktree_root=ctx.worktree_root / "subject",
-        resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=ctx.base_revision,
+        base_repo=ctx.base_repo,
+        worktree_root=ctx.worktree_root / "subject",
+        resolved_revision=subject_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=ctx.base_revision,
     )
 
     # Build llama-perplexity for both
@@ -101,7 +113,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     import subprocess
 
     def _ppl_runner(argv, **kwargs):
-        env = {**os.environ, **rd43_correctness.GRAPH_OPT_ENV, **(kwargs.pop("env", None) or {})}
+        env = {
+            **os.environ,
+            **rd43_correctness.GRAPH_OPT_ENV,
+            **(kwargs.pop("env", None) or {}),
+        }
         return subprocess.run(argv, env=env, **kwargs)
 
     try:
@@ -112,7 +128,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             corpus=ctx.corpus,
             runner=_ppl_runner,
         )
-        result = {"check": "ppl_equality", "passed": True, "detail": "within tolerance (graph capture completed)"}
+        result = {
+            "check": "ppl_equality",
+            "passed": True,
+            "detail": "within tolerance (graph capture completed)",
+        }
     except rd43_correctness.PerplexityError as exc:
         comparison = None
         result = {"check": "ppl_equality", "passed": False, "detail": str(exc)}
@@ -125,7 +145,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "graph_opt_env": rd43_correctness.GRAPH_OPT_ENV,
             "subject_source_tree": str(subject_src),
             "control_source_tree": str(control_src),
-            "comparison": rd43_correctness.comparison_to_dict(comparison) if comparison else None,
+            "comparison": rd43_correctness.comparison_to_dict(comparison)
+            if comparison
+            else None,
         },
     )
 

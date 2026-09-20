@@ -240,8 +240,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 and subject.native_execution_status == "ok"
                 and control.reference_digest == subject.reference_digest
                 and control.reference_output_digest is not None
-                and control.reference_output_digest
-                == subject.reference_output_digest
+                and control.reference_output_digest == subject.reference_output_digest
                 and control.native_output_digest is not None
                 and control.native_output_digest == subject.native_output_digest
                 and control.output_nels is not None
@@ -259,24 +258,17 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                     "subject_ids_digest": subject.reference_digest,
                     "control_output_digest": control.native_output_digest,
                     "subject_output_digest": subject.native_output_digest,
-                    "control_reference_output_digest":
-                        control.reference_output_digest,
-                    "subject_reference_output_digest":
-                        subject.reference_output_digest,
+                    "control_reference_output_digest": control.reference_output_digest,
+                    "subject_reference_output_digest": subject.reference_output_digest,
                     "control_output_nels": control.output_nels,
                     "subject_output_nels": subject.output_nels,
                     "control_nmse": _finite_or_none(control.e_n_nmse),
                     "subject_nmse": _finite_or_none(subject.e_n_nmse),
-                    "control_threshold":
-                        _finite_or_none(control.threshold_t),
-                    "subject_threshold":
-                        _finite_or_none(subject.threshold_t),
-                    "control_max_abs":
-                        _finite_or_none(control.max_abs_native),
-                    "subject_max_abs":
-                        _finite_or_none(subject.max_abs_native),
-                    "backend_reference_ok":
-                        control_backend_ok and subject_backend_ok,
+                    "control_threshold": _finite_or_none(control.threshold_t),
+                    "subject_threshold": _finite_or_none(subject.threshold_t),
+                    "control_max_abs": _finite_or_none(control.max_abs_native),
+                    "subject_max_abs": _finite_or_none(subject.max_abs_native),
+                    "backend_reference_ok": control_backend_ok and subject_backend_ok,
                     "bit_identical": bit_identical,
                 }
             )

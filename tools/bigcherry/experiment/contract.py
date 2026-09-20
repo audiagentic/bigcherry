@@ -47,8 +47,15 @@ EXPECTED_EFFECTS: tuple[str, ...] = ("performance", "correctness", "both")
 # axis, and a contract silently doing nothing under a misspelled tag is a
 # worse failure mode than a loud rejection.
 WORKLOAD_TAGS: tuple[str, ...] = (
-    "decode", "prefill", "mtp_verify", "moe_prefill", "moe_decode",
-    "long_context", "gdn_prefill", "multi_gpu_copy", "small_m",
+    "decode",
+    "prefill",
+    "mtp_verify",
+    "moe_prefill",
+    "moe_decode",
+    "long_context",
+    "gdn_prefill",
+    "multi_gpu_copy",
+    "small_m",
     # VA10: RD58's real claim (repeated multi-GPU state-restore integrity)
     # is not multi_gpu_copy -- that tag is a generic transfer workload, not
     # a save/restore cycle. Do not misuse multi_gpu_copy for this claim
@@ -61,7 +68,10 @@ WORKLOAD_TAGS: tuple[str, ...] = (
 # (temp-0 determinism, the 1002 MTP case), bit_identical (1204/1205's VDR/dual-
 # output gates), ppl_equality (1207's MoE fusion gate).
 CORRECTNESS_CHECKS: tuple[str, ...] = (
-    "backend_reference", "greedy_parity", "bit_identical", "ppl_equality",
+    "backend_reference",
+    "greedy_parity",
+    "bit_identical",
+    "ppl_equality",
     # VA10: RD58's claim needs an affirmative "state correctly restored"
     # check, not an absence-of-fault claim -- "zero observed faults" is not
     # proof (Brutus's own 530+ cycles never reproduced the originating SDMA
@@ -72,9 +82,15 @@ CORRECTNESS_CHECKS: tuple[str, ...] = (
 )
 
 ACCEPTANCE_FIELDS: tuple[str, ...] = (
-    "target_kernel_gain_pct", "end_to_end_gain_pct", "max_control_regression_pct",
-    "resource_limits", "effect_evidence_policy", "min_paired_rounds",
-    "min_sessions", "max_sessions", "max_ci95_width_pct",
+    "target_kernel_gain_pct",
+    "end_to_end_gain_pct",
+    "max_control_regression_pct",
+    "resource_limits",
+    "effect_evidence_policy",
+    "min_paired_rounds",
+    "min_sessions",
+    "max_sessions",
+    "max_ci95_width_pct",
     "min_evidence_effect_pct",
 )
 
@@ -173,7 +189,12 @@ DEFAULT_EFFECT_EVIDENCE_POLICY = "point_estimate_v1"
 # mapping. `unit` IS closed -- a dimensional mismatch (bytes read as a
 # count or vice versa) is a real, dangerous class of error.
 RESOURCE_UNITS: tuple[str, ...] = ("bytes", "count")
-RESOURCE_LIMIT_FIELDS: tuple[str, ...] = ("metric", "unit", "max_value", "max_increase_pct")
+RESOURCE_LIMIT_FIELDS: tuple[str, ...] = (
+    "metric",
+    "unit",
+    "max_value",
+    "max_increase_pct",
+)
 
 # EC16: orthogonal experiment-target classification, separate from
 # hypothesis.family. FAMILIES stays exactly the 5 runtime kernel-dispatch
@@ -192,8 +213,14 @@ RESOURCE_LIMIT_FIELDS: tuple[str, ...] = ("metric", "unit", "max_value", "max_in
 # addition for the GatedDeltaNet cluster (RD50+), not in the guide's
 # original 1200-1210 table but following the same pattern.
 TARGET_KINDS: tuple[str, ...] = (
-    "kernel_family", "attention", "graph_fusion", "tp_topology",
-    "orchestration", "hardware_correctness", "determinism", "ssm_gdn",
+    "kernel_family",
+    "attention",
+    "graph_fusion",
+    "tp_topology",
+    "orchestration",
+    "hardware_correctness",
+    "determinism",
+    "ssm_gdn",
 )
 
 
@@ -212,8 +239,13 @@ def _table(raw: object, where: str) -> dict[str, object]:
     return raw
 
 
-def _strings(raw: object, where: str, *, choices: tuple[str, ...] | None = None,
-             required: bool = False) -> tuple[str, ...]:
+def _strings(
+    raw: object,
+    where: str,
+    *,
+    choices: tuple[str, ...] | None = None,
+    required: bool = False,
+) -> tuple[str, ...]:
     if raw is None:
         if required:
             raise ExperimentContractError(f"{where} is required")
@@ -232,7 +264,9 @@ def _strings(raw: object, where: str, *, choices: tuple[str, ...] | None = None,
     return tuple(raw)
 
 
-def _required_string(raw: object, where: str, *, choices: tuple[str, ...] | None = None) -> str:
+def _required_string(
+    raw: object, where: str, *, choices: tuple[str, ...] | None = None
+) -> str:
     if not isinstance(raw, str) or not raw:
         raise ExperimentContractError(f"{where} must be a non-empty string")
     if choices is not None and raw not in choices:
@@ -266,8 +300,7 @@ def _effect_evidence_policy(raw: object, where: str) -> str:
         return DEFAULT_EFFECT_EVIDENCE_POLICY
     if not isinstance(raw, str) or raw not in EFFECT_EVIDENCE_POLICIES:
         raise ExperimentContractError(
-            f"{where} must be one of {list(EFFECT_EVIDENCE_POLICIES)} "
-            f"({raw!r} given)"
+            f"{where} must be one of {list(EFFECT_EVIDENCE_POLICIES)} ({raw!r} given)"
         )
     return raw
 
@@ -278,9 +311,7 @@ def _min_paired_rounds(raw: object, where: str) -> int | None:
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ExperimentContractError(f"{where} must be an integer")
     if raw < 1:
-        raise ExperimentContractError(
-            f"{where} must be >= 1 ({raw!r} given)"
-        )
+        raise ExperimentContractError(f"{where} must be >= 1 ({raw!r} given)")
     return raw
 
 
@@ -333,8 +364,11 @@ class DriverVersion:
     patch: int = 0
 
     def __post_init__(self) -> None:
-        for name, value in (("major", self.major), ("minor", self.minor),
-                            ("patch", self.patch)):
+        for name, value in (
+            ("major", self.major),
+            ("minor", self.minor),
+            ("patch", self.patch),
+        ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ExperimentContractError(
                     f"driver version {name} must be a non-negative integer, got {value!r}"
@@ -351,8 +385,9 @@ def _driver_version(raw: object, where: str) -> DriverVersion:
         raise ExperimentContractError(
             f"{where} must be a [major, minor] or [major, minor, patch] integer list"
         )
-    values = [_non_negative_int(value, f"{where}[{index}]")
-              for index, value in enumerate(raw)]
+    values = [
+        _non_negative_int(value, f"{where}[{index}]") for index, value in enumerate(raw)
+    ]
     return DriverVersion(*values)
 
 
@@ -375,14 +410,19 @@ class GpuCountConstraint:
                 raise ExperimentContractError(
                     f"gpu_count.{name} must be a positive integer, got {value!r}"
                 )
-        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
             raise ExperimentContractError(
                 "gpu_count.minimum must not exceed gpu_count.maximum"
             )
 
     def matches(self, actual: int) -> bool:
-        return ((self.minimum is None or actual >= self.minimum)
-                and (self.maximum is None or actual <= self.maximum))
+        return (self.minimum is None or actual >= self.minimum) and (
+            self.maximum is None or actual <= self.maximum
+        )
 
 
 def _gpu_count_constraint(raw: object, where: str) -> GpuCountConstraint | None:
@@ -416,22 +456,25 @@ class DriverVersionConstraint:
 
     def __post_init__(self) -> None:
         if self.minimum is None and self.maximum is None:
-            raise ExperimentContractError(
-                "driver must declare minimum and/or maximum"
-            )
+            raise ExperimentContractError("driver must declare minimum and/or maximum")
         for name, value in (("minimum", self.minimum), ("maximum", self.maximum)):
             if value is not None and not isinstance(value, DriverVersion):
                 raise ExperimentContractError(
                     f"driver.{name} must be a DriverVersion or absent"
                 )
-        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
             raise ExperimentContractError(
                 "driver.minimum must not exceed driver.maximum"
             )
 
     def matches(self, actual: DriverVersion) -> bool:
-        return ((self.minimum is None or actual >= self.minimum)
-                and (self.maximum is None or actual <= self.maximum))
+        return (self.minimum is None or actual >= self.minimum) and (
+            self.maximum is None or actual <= self.maximum
+        )
 
 
 def _driver_constraint(raw: object, where: str) -> DriverVersionConstraint | None:
@@ -444,10 +487,16 @@ def _driver_constraint(raw: object, where: str) -> DriverVersionConstraint | Non
             f"{where} names unknown field(s): {', '.join(unknown)}"
         )
     return DriverVersionConstraint(
-        minimum=(_driver_version(data["minimum"], f"{where}.minimum")
-                 if data.get("minimum") is not None else None),
-        maximum=(_driver_version(data["maximum"], f"{where}.maximum")
-                 if data.get("maximum") is not None else None),
+        minimum=(
+            _driver_version(data["minimum"], f"{where}.minimum")
+            if data.get("minimum") is not None
+            else None
+        ),
+        maximum=(
+            _driver_version(data["maximum"], f"{where}.maximum")
+            if data.get("maximum") is not None
+            else None
+        ),
     )
 
 
@@ -467,15 +516,24 @@ class DeviceTraits:
     driver_version: DriverVersion | None = None
 
     def __post_init__(self) -> None:
-        for name, value in (("integrated", self.integrated), ("uma", self.uma),
-                            ("peer_access", self.peer_access)):
+        for name, value in (
+            ("integrated", self.integrated),
+            ("uma", self.uma),
+            ("peer_access", self.peer_access),
+        ):
             if not isinstance(value, bool):
                 raise ExperimentContractError(f"hardware.{name} must be a boolean")
-        if isinstance(self.gpu_count, bool) or not isinstance(self.gpu_count, int) or self.gpu_count < 1:
+        if (
+            isinstance(self.gpu_count, bool)
+            or not isinstance(self.gpu_count, int)
+            or self.gpu_count < 1
+        ):
             raise ExperimentContractError(
                 f"hardware.gpu_count must be a positive integer, got {self.gpu_count!r}"
             )
-        if self.driver_version is not None and not isinstance(self.driver_version, DriverVersion):
+        if self.driver_version is not None and not isinstance(
+            self.driver_version, DriverVersion
+        ):
             raise ExperimentContractError(
                 "hardware.driver_version must be a DriverVersion or absent"
             )
@@ -509,6 +567,7 @@ class Target:
     contract has exactly one Target, either read from an explicit [target]
     section or derived from a legacy hypothesis.family for backward
     compatibility (see parse_contract)."""
+
     kind: str
     family: str | None  # populated only when kind == "kernel_family"
 
@@ -547,9 +606,15 @@ def evaluate_scope_eligibility(scope: Scope, hardware: DeviceTraits | None) -> b
     ``ExperimentContractError`` rather than passing silently. A legacy scope
     with no trait requirements remains eligible without hardware facts.
     """
-    requirements_declared = any((scope.integrated is not None, scope.uma is not None,
-                                scope.peer_access is not None, scope.gpu_count is not None,
-                                scope.driver is not None))
+    requirements_declared = any(
+        (
+            scope.integrated is not None,
+            scope.uma is not None,
+            scope.peer_access is not None,
+            scope.gpu_count is not None,
+            scope.driver is not None,
+        )
+    )
     if not requirements_declared:
         return True
     if hardware is None:
@@ -584,6 +649,7 @@ def _version_payload(version: DriverVersion | None) -> list[int] | None:
 @dataclass(frozen=True)
 class EvaluationSet:
     """One role's (positive/controls) models and workload tags."""
+
     models: tuple[str, ...]
     workloads: tuple[str, ...]
 
@@ -617,6 +683,7 @@ class SourceEvidence:
     a reason to investigate, not a requirement that BigCherry's own kernel
     acceptance threshold be numerically identical -- they are different
     measurements, on different hardware, with different methodology."""
+
     metric: str
     value_pct: float
     hardware: str
@@ -632,6 +699,7 @@ class ResourceLimit:
     neither is not a limit -- but both MAY be declared together (an
     absolute ceiling and a relative-growth bound are independent checks,
     not alternatives)."""
+
     metric: str
     unit: str
     max_value: float | None = None
@@ -646,6 +714,7 @@ class Acceptance:
     (see SourceEvidence's docstring); source_evidence_mismatch_warning
     flags a large or backwards divergence for a human to look at, but a
     mismatch is never by itself a parse error or a promotion blocker."""
+
     target_kernel_gain_pct: float | None
     end_to_end_gain_pct: float | None
     max_control_regression_pct: float | None
@@ -738,21 +807,29 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
                     "minimum": contract.scope.gpu_count.minimum,
                     "maximum": contract.scope.gpu_count.maximum,
                 }
-                if contract.scope.gpu_count is not None else None
+                if contract.scope.gpu_count is not None
+                else None
             ),
             "driver": (
                 {
                     "minimum": _version_payload(contract.scope.driver.minimum),
                     "maximum": _version_payload(contract.scope.driver.maximum),
                 }
-                if contract.scope.driver is not None else None
+                if contract.scope.driver is not None
+                else None
             ),
         },
-        "positive": {"models": list(contract.positive.models),
-                     "workloads": list(contract.positive.workloads)},
-        "controls": {"models": list(contract.controls.models),
-                     "workloads": list(contract.controls.workloads)},
-        "boundary": {name: list(values) for name, values in contract.boundary.dimensions},
+        "positive": {
+            "models": list(contract.positive.models),
+            "workloads": list(contract.positive.workloads),
+        },
+        "controls": {
+            "models": list(contract.controls.models),
+            "workloads": list(contract.controls.workloads),
+        },
+        "boundary": {
+            name: list(values) for name, values in contract.boundary.dimensions
+        },
         "correctness": {"required_checks": list(contract.correctness.required_checks)},
         "acceptance": {
             "target_kernel_gain_pct": contract.acceptance.target_kernel_gain_pct,
@@ -768,14 +845,16 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
                 {
                     "resource_limits": [
                         {
-                            "metric": limit.metric, "unit": limit.unit,
+                            "metric": limit.metric,
+                            "unit": limit.unit,
                             "max_value": limit.max_value,
                             "max_increase_pct": limit.max_increase_pct,
                         }
                         for limit in contract.acceptance.resource_limits
                     ]
                 }
-                if contract.acceptance.resource_limits else {}
+                if contract.acceptance.resource_limits
+                else {}
             ),
             # VA24: same treatment as resource_limits above -- omitted while
             # left at the default, so every contract predating VA24 keeps its
@@ -786,12 +865,14 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             # continue to satisfy it.
             **(
                 {"effect_evidence_policy": contract.acceptance.effect_evidence_policy}
-                if contract.acceptance.effect_evidence_policy != DEFAULT_EFFECT_EVIDENCE_POLICY
+                if contract.acceptance.effect_evidence_policy
+                != DEFAULT_EFFECT_EVIDENCE_POLICY
                 else {}
             ),
             **(
                 {"min_paired_rounds": contract.acceptance.min_paired_rounds}
-                if contract.acceptance.min_paired_rounds is not None else {}
+                if contract.acceptance.min_paired_rounds is not None
+                else {}
             ),
             # Same conditional treatment: a contract that does not declare a
             # session stopping rule keeps its exact existing hash. One that
@@ -800,19 +881,23 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             # a different rule must not silently continue to satisfy it.
             **(
                 {"min_sessions": contract.acceptance.min_sessions}
-                if contract.acceptance.min_sessions is not None else {}
+                if contract.acceptance.min_sessions is not None
+                else {}
             ),
             **(
                 {"max_sessions": contract.acceptance.max_sessions}
-                if contract.acceptance.max_sessions is not None else {}
+                if contract.acceptance.max_sessions is not None
+                else {}
             ),
             **(
                 {"max_ci95_width_pct": contract.acceptance.max_ci95_width_pct}
-                if contract.acceptance.max_ci95_width_pct is not None else {}
+                if contract.acceptance.max_ci95_width_pct is not None
+                else {}
             ),
             **(
                 {"min_evidence_effect_pct": contract.acceptance.min_evidence_effect_pct}
-                if contract.acceptance.min_evidence_effect_pct is not None else {}
+                if contract.acceptance.min_evidence_effect_pct is not None
+                else {}
             ),
         },
         "source_evidence": (
@@ -822,7 +907,8 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
                 "hardware": contract.source_evidence.hardware,
                 "workload": contract.source_evidence.workload,
             }
-            if contract.source_evidence is not None else None
+            if contract.source_evidence is not None
+            else None
         ),
     }
 
@@ -848,9 +934,15 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
 
     source_data = _table(data.get("source"), f"{where}.source")
     source = SourceRef(
-        source_id=_required_string(source_data.get("source_id"), f"{where}.source.source_id"),
-        commits=_strings(source_data.get("commits"), f"{where}.source.commits", required=True),
-        atomic_part=_required_string(source_data.get("atomic_part"), f"{where}.source.atomic_part"),
+        source_id=_required_string(
+            source_data.get("source_id"), f"{where}.source.source_id"
+        ),
+        commits=_strings(
+            source_data.get("commits"), f"{where}.source.commits", required=True
+        ),
+        atomic_part=_required_string(
+            source_data.get("atomic_part"), f"{where}.source.atomic_part"
+        ),
     )
 
     hyp_data = _table(data.get("hypothesis"), f"{where}.hypothesis")
@@ -868,19 +960,23 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     # of truth).
     if target_raw is None:
         family = _required_string(
-            hyp_data.get("family"), f"{where}.hypothesis.family", choices=FAMILIES)
+            hyp_data.get("family"), f"{where}.hypothesis.family", choices=FAMILIES
+        )
         target = Target(kind="kernel_family", family=family)
     else:
         target_data = _table(target_raw, f"{where}.target")
-        kind = _required_string(target_data.get("kind"), f"{where}.target.kind", choices=TARGET_KINDS)
+        kind = _required_string(
+            target_data.get("kind"), f"{where}.target.kind", choices=TARGET_KINDS
+        )
         if kind == "kernel_family":
             target_family = _required_string(
-                target_data.get("family"), f"{where}.target.family", choices=FAMILIES)
+                target_data.get("family"), f"{where}.target.family", choices=FAMILIES
+            )
         else:
             if target_data.get("family") is not None:
                 raise ExperimentContractError(
                     f"{where}.target.family must be absent when target.kind "
-                    f"!= \"kernel_family\" (got kind={kind!r}) -- family is "
+                    f'!= "kernel_family" (got kind={kind!r}) -- family is '
                     f"only meaningful for matmul-dispatch-family targets"
                 )
             target_family = None
@@ -900,50 +996,77 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             if raw_hyp_family is not None:
                 raise ExperimentContractError(
                     f"{where}.hypothesis.family must be absent when "
-                    f"target.kind != \"kernel_family\" (got kind={kind!r})"
+                    f'target.kind != "kernel_family" (got kind={kind!r})'
                 )
             family = None
 
     hypothesis = Hypothesis(
         family=family,
         expected_effect=_required_string(
-            hyp_data.get("expected_effect"), f"{where}.hypothesis.expected_effect",
+            hyp_data.get("expected_effect"),
+            f"{where}.hypothesis.expected_effect",
             choices=EXPECTED_EFFECTS,
         ),
-        rationale=_required_string(hyp_data.get("rationale"), f"{where}.hypothesis.rationale"),
+        rationale=_required_string(
+            hyp_data.get("rationale"), f"{where}.hypothesis.rationale"
+        ),
     )
 
     prerequisites = _strings(data.get("prerequisites"), f"{where}.prerequisites")
 
     scope_data = _table(data.get("scope"), f"{where}.scope")
-    unknown_scope = sorted(set(scope_data) - {
-        "backend", "architectures", "weight_types", "integrated", "uma",
-        "peer_access", "gpu_count", "driver",
-    })
+    unknown_scope = sorted(
+        set(scope_data)
+        - {
+            "backend",
+            "architectures",
+            "weight_types",
+            "integrated",
+            "uma",
+            "peer_access",
+            "gpu_count",
+            "driver",
+        }
+    )
     if unknown_scope:
         raise ExperimentContractError(
             f"{where}.scope names unknown field(s): {', '.join(unknown_scope)}"
         )
     scope = Scope(
         backend=_required_string(scope_data.get("backend"), f"{where}.scope.backend"),
-        architectures=_strings(scope_data.get("architectures"), f"{where}.scope.architectures",
-                                required=True),
-        weight_types=_strings(scope_data.get("weight_types"), f"{where}.scope.weight_types"),
-        integrated=_optional_bool(scope_data.get("integrated"), f"{where}.scope.integrated"),
+        architectures=_strings(
+            scope_data.get("architectures"),
+            f"{where}.scope.architectures",
+            required=True,
+        ),
+        weight_types=_strings(
+            scope_data.get("weight_types"), f"{where}.scope.weight_types"
+        ),
+        integrated=_optional_bool(
+            scope_data.get("integrated"), f"{where}.scope.integrated"
+        ),
         uma=_optional_bool(scope_data.get("uma"), f"{where}.scope.uma"),
         peer_access=_optional_bool(
-            scope_data.get("peer_access"), f"{where}.scope.peer_access"),
+            scope_data.get("peer_access"), f"{where}.scope.peer_access"
+        ),
         gpu_count=_gpu_count_constraint(
-            scope_data.get("gpu_count"), f"{where}.scope.gpu_count"),
+            scope_data.get("gpu_count"), f"{where}.scope.gpu_count"
+        ),
         driver=_driver_constraint(scope_data.get("driver"), f"{where}.scope.driver"),
     )
 
     def _evaluation_set(key: str) -> EvaluationSet:
         section = _table(data.get(key), f"{where}.{key}")
         return EvaluationSet(
-            models=_strings(section.get("models"), f"{where}.{key}.models", required=True),
-            workloads=_strings(section.get("workloads"), f"{where}.{key}.workloads",
-                                choices=WORKLOAD_TAGS, required=True),
+            models=_strings(
+                section.get("models"), f"{where}.{key}.models", required=True
+            ),
+            workloads=_strings(
+                section.get("workloads"),
+                f"{where}.{key}.workloads",
+                choices=WORKLOAD_TAGS,
+                required=True,
+            ),
         )
 
     positive = _evaluation_set("positive")
@@ -993,10 +1116,13 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     boundary = Boundary(dimensions=tuple(sorted(dimensions, key=lambda item: item[0])))
 
     correctness_data = _table(data.get("correctness"), f"{where}.correctness")
-    required_checks = tuple(sorted(
-        name for name, requirement in correctness_data.items()
-        if requirement == "required"
-    ))
+    required_checks = tuple(
+        sorted(
+            name
+            for name, requirement in correctness_data.items()
+            if requirement == "required"
+        )
+    )
     unknown_checks = sorted(set(correctness_data) - set(CORRECTNESS_CHECKS))
     if unknown_checks:
         raise ExperimentContractError(
@@ -1006,7 +1132,7 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     for name, requirement in correctness_data.items():
         if requirement not in ("required", "optional"):
             raise ExperimentContractError(
-                f"{where}.correctness.{name} must be \"required\" or \"optional\", "
+                f'{where}.correctness.{name} must be "required" or "optional", '
                 f"not {requirement!r}"
             )
 
@@ -1033,12 +1159,16 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
                 )
             metric = _required_string(entry_data.get("metric"), f"{entry_where}.metric")
             if metric in seen_metrics:
-                raise ExperimentContractError(f"{rl_where} declares duplicate metric {metric!r}")
+                raise ExperimentContractError(
+                    f"{rl_where} declares duplicate metric {metric!r}"
+                )
             seen_metrics.add(metric)
             unit = _required_string(
                 entry_data.get("unit"), f"{entry_where}.unit", choices=RESOURCE_UNITS
             )
-            max_value = _percent(entry_data.get("max_value"), f"{entry_where}.max_value")
+            max_value = _percent(
+                entry_data.get("max_value"), f"{entry_where}.max_value"
+            )
             max_increase_pct = _percent(
                 entry_data.get("max_increase_pct"), f"{entry_where}.max_increase_pct"
             )
@@ -1047,36 +1177,52 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
                     f"{entry_where} must declare max_value or max_increase_pct "
                     "(a limit that checks neither is not a limit)"
                 )
-            resource_limits.append(ResourceLimit(
-                metric=metric, unit=unit, max_value=max_value, max_increase_pct=max_increase_pct,
-            ))
+            resource_limits.append(
+                ResourceLimit(
+                    metric=metric,
+                    unit=unit,
+                    max_value=max_value,
+                    max_increase_pct=max_increase_pct,
+                )
+            )
     resource_limits.sort(key=lambda limit: limit.metric)
 
     acceptance = Acceptance(
         target_kernel_gain_pct=_percent(
-            acceptance_data.get("target_kernel_gain_pct"), f"{where}.acceptance.target_kernel_gain_pct"),
+            acceptance_data.get("target_kernel_gain_pct"),
+            f"{where}.acceptance.target_kernel_gain_pct",
+        ),
         end_to_end_gain_pct=_percent(
-            acceptance_data.get("end_to_end_gain_pct"), f"{where}.acceptance.end_to_end_gain_pct"),
+            acceptance_data.get("end_to_end_gain_pct"),
+            f"{where}.acceptance.end_to_end_gain_pct",
+        ),
         max_control_regression_pct=_percent(
             acceptance_data.get("max_control_regression_pct"),
-            f"{where}.acceptance.max_control_regression_pct"),
+            f"{where}.acceptance.max_control_regression_pct",
+        ),
         resource_limits=tuple(resource_limits),
         effect_evidence_policy=_effect_evidence_policy(
             acceptance_data.get("effect_evidence_policy"),
-            f"{where}.acceptance.effect_evidence_policy"),
+            f"{where}.acceptance.effect_evidence_policy",
+        ),
         min_paired_rounds=_min_paired_rounds(
             acceptance_data.get("min_paired_rounds"),
-            f"{where}.acceptance.min_paired_rounds"),
+            f"{where}.acceptance.min_paired_rounds",
+        ),
         min_sessions=_session_count(
-            acceptance_data.get("min_sessions"), f"{where}.acceptance.min_sessions"),
+            acceptance_data.get("min_sessions"), f"{where}.acceptance.min_sessions"
+        ),
         max_sessions=_session_count(
-            acceptance_data.get("max_sessions"), f"{where}.acceptance.max_sessions"),
+            acceptance_data.get("max_sessions"), f"{where}.acceptance.max_sessions"
+        ),
         max_ci95_width_pct=_max_ci95_width(
             acceptance_data.get("max_ci95_width_pct"),
-            f"{where}.acceptance.max_ci95_width_pct"),
+            f"{where}.acceptance.max_ci95_width_pct",
+        ),
         min_evidence_effect_pct=_percent(
             acceptance_data.get("min_evidence_effect_pct"),
-            f"{where}.acceptance.min_evidence_effect_pct"),
+            f"{where}.acceptance.min_evidence_effect_pct",
+        ),
     )
     asymmetric_policy = (
         acceptance.effect_evidence_policy == "improvement_no_regression_v1"
@@ -1122,8 +1268,10 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         # which measured field the improvement check reads. Leaving both unset
         # would make this policy silently check nothing at all -- a contract
         # that looks governed and gates on no gain evidence whatsoever.
-        if (acceptance.target_kernel_gain_pct is None
-                and acceptance.end_to_end_gain_pct is None):
+        if (
+            acceptance.target_kernel_gain_pct is None
+            and acceptance.end_to_end_gain_pct is None
+        ):
             raise ExperimentContractError(
                 f"{where}.acceptance: 'improvement_no_regression_v1' requires "
                 f"target_kernel_gain_pct or end_to_end_gain_pct to be declared as 0.0 "
@@ -1142,7 +1290,9 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     if asymmetric_policy:
         pass
     elif session_policy:
-        missing = sorted(name for name, value in session_fields.items() if value is None)
+        missing = sorted(
+            name for name, value in session_fields.items() if value is None
+        )
         if missing:
             raise ExperimentContractError(
                 f"{where}.acceptance: effect_evidence_policy="
@@ -1163,7 +1313,9 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
                 f">= min_sessions ({acceptance.min_sessions})"
             )
     else:
-        declared = sorted(name for name, value in session_fields.items() if value is not None)
+        declared = sorted(
+            name for name, value in session_fields.items() if value is not None
+        )
         if declared:
             raise ExperimentContractError(
                 f"{where}.acceptance: {', '.join(declared)} is meaningless without "
@@ -1178,8 +1330,10 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
     # the floor makes "this contract uses intervals" mean "this contract
     # guarantees a minimum evidence depth", rather than leaving that to be
     # discovered per-contract.
-    if (acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
-            and acceptance.min_paired_rounds is None):
+    if (
+        acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
+        and acceptance.min_paired_rounds is None
+    ):
         raise ExperimentContractError(
             f"{where}.acceptance: effect_evidence_policy="
             f"'ci95_threshold_bound_v1' requires an explicit min_paired_rounds "
@@ -1212,28 +1366,56 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             )
         se_hardware = _required_string(se_data.get("hardware"), f"{se_where}.hardware")
         se_workload = _required_string(se_data.get("workload"), f"{se_where}.workload")
-        unknown_se = sorted(set(se_data) - {"metric", "value_pct", "hardware", "workload"})
+        unknown_se = sorted(
+            set(se_data) - {"metric", "value_pct", "hardware", "workload"}
+        )
         if unknown_se:
             raise ExperimentContractError(
                 f"{se_where} names unknown field(s): {', '.join(unknown_se)}"
             )
         source_evidence = SourceEvidence(
-            metric=se_metric, value_pct=se_value, hardware=se_hardware, workload=se_workload,
+            metric=se_metric,
+            value_pct=se_value,
+            hardware=se_hardware,
+            workload=se_workload,
         )
 
-    unknown_top = sorted(set(data) - {
-        "title", "source", "hypothesis", "target", "prerequisites", "scope",
-        "positive", "controls", "boundary", "correctness", "acceptance",
-        "source-evidence",
-    })
+    unknown_top = sorted(
+        set(data)
+        - {
+            "title",
+            "source",
+            "hypothesis",
+            "target",
+            "prerequisites",
+            "scope",
+            "positive",
+            "controls",
+            "boundary",
+            "correctness",
+            "acceptance",
+            "source-evidence",
+        }
+    )
     if unknown_top:
-        raise ExperimentContractError(f"{where}: unknown field(s): {', '.join(unknown_top)}")
+        raise ExperimentContractError(
+            f"{where}: unknown field(s): {', '.join(unknown_top)}"
+        )
 
     return ExperimentContract(
-        id=contract_id, title=title, source=source, hypothesis=hypothesis, target=target,
-        prerequisites=prerequisites, scope=scope, positive=positive, controls=controls,
-        boundary=boundary, correctness=CorrectnessRequirements(required_checks),
-        acceptance=acceptance, source_evidence=source_evidence,
+        id=contract_id,
+        title=title,
+        source=source,
+        hypothesis=hypothesis,
+        target=target,
+        prerequisites=prerequisites,
+        scope=scope,
+        positive=positive,
+        controls=controls,
+        boundary=boundary,
+        correctness=CorrectnessRequirements(required_checks),
+        acceptance=acceptance,
+        source_evidence=source_evidence,
     )
 
 
@@ -1338,15 +1520,20 @@ def known_source_ids_from_external_sources(
     resolved = Path(path) if path is not None else None
     if resolved is None:
         from ..core import paths
+
         resolved = paths.EXTERNAL_SOURCES
     try:
         raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ExperimentContractError(f"no external-sources registry at {resolved}") from None
+        raise ExperimentContractError(
+            f"no external-sources registry at {resolved}"
+        ) from None
     except _tomllib.TOMLDecodeError as exc:
         raise ExperimentContractError(f"{resolved}: {exc}") from None
     return frozenset(
-        entry["id"] for entry in raw.get("sources", []) if isinstance(entry, dict) and entry.get("id")
+        entry["id"]
+        for entry in raw.get("sources", [])
+        if isinstance(entry, dict) and entry.get("id")
     )
 
 
@@ -1374,6 +1561,7 @@ def known_model_ids_from_models_registry(
     resolved = Path(path) if path is not None else None
     if resolved is None:
         from ..core import paths
+
         resolved = paths.MODELS
     try:
         raw = _tomllib.loads(resolved.read_text(encoding="utf-8"))
@@ -1382,13 +1570,18 @@ def known_model_ids_from_models_registry(
     except _tomllib.TOMLDecodeError as exc:
         raise ExperimentContractError(f"{resolved}: {exc}") from None
     return frozenset(
-        entry["id"] for entry in raw.get("models", []) if isinstance(entry, dict) and entry.get("id")
+        entry["id"]
+        for entry in raw.get("models", [])
+        if isinstance(entry, dict) and entry.get("id")
     )
 
 
-def load_contracts(path: str | Path, *,
-                    known_source_ids: frozenset[str] | None = None,
-                    known_model_ids: frozenset[str] | None = None) -> ContractRegistry:
+def load_contracts(
+    path: str | Path,
+    *,
+    known_source_ids: frozenset[str] | None = None,
+    known_model_ids: frozenset[str] | None = None,
+) -> ContractRegistry:
     """Load every ``[contract.<id>]`` table in ``path`` (default
     ``experiment-contracts.toml`` at the repo root -- see
     ``paths.EXPERIMENT_CONTRACTS``) deterministically. Rejects duplicate IDs
@@ -1429,7 +1622,8 @@ def load_contracts(path: str | Path, *,
     if known_model_ids is not None:
         for contract in contracts.values():
             for role, evaluation_set in (
-                ("positive", contract.positive), ("controls", contract.controls),
+                ("positive", contract.positive),
+                ("controls", contract.controls),
             ):
                 for model in evaluation_set.models:
                     if model not in known_model_ids:
@@ -1480,6 +1674,7 @@ class ContractEvidenceRef:
     is contract-driven, absent (not null-filled) otherwise, and never read
     by anything that computes signature/dispatch/build identity.
     """
+
     contract_id: str
     contract_hash: str
     optimization_id: str
@@ -1504,18 +1699,30 @@ class ContractEvidenceRef:
     @classmethod
     def from_document(cls, document: object) -> ContractEvidenceRef:
         data = _table(document, "contract_evidence")
-        role = _required_string(data.get("role"), "contract_evidence.role", choices=ROLES)
-        for optional_field in ("workload_tag", "model_ref", "boundary_dimension", "boundary_value"):
+        role = _required_string(
+            data.get("role"), "contract_evidence.role", choices=ROLES
+        )
+        for optional_field in (
+            "workload_tag",
+            "model_ref",
+            "boundary_dimension",
+            "boundary_value",
+        ):
             value = data.get(optional_field)
             if value is not None and not isinstance(value, str):
                 raise ExperimentContractError(
                     f"contract_evidence.{optional_field} must be a string or absent"
                 )
         return cls(
-            contract_id=_required_string(data.get("contract_id"), "contract_evidence.contract_id"),
-            contract_hash=_required_string(data.get("contract_hash"), "contract_evidence.contract_hash"),
+            contract_id=_required_string(
+                data.get("contract_id"), "contract_evidence.contract_id"
+            ),
+            contract_hash=_required_string(
+                data.get("contract_hash"), "contract_evidence.contract_hash"
+            ),
             optimization_id=_required_string(
-                data.get("optimization_id"), "contract_evidence.optimization_id"),
+                data.get("optimization_id"), "contract_evidence.optimization_id"
+            ),
             role=role,
             workload_tag=data.get("workload_tag"),
             model_ref=data.get("model_ref"),
@@ -1524,10 +1731,15 @@ class ContractEvidenceRef:
         )
 
 
-def evidence_ref_for_lane(contract: ExperimentContract, *, role: str,
-                          workload_tag: str | None = None, model_ref: str | None = None,
-                          boundary_dimension: str | None = None,
-                          boundary_value: str | None = None) -> ContractEvidenceRef:
+def evidence_ref_for_lane(
+    contract: ExperimentContract,
+    *,
+    role: str,
+    workload_tag: str | None = None,
+    model_ref: str | None = None,
+    boundary_dimension: str | None = None,
+    boundary_value: str | None = None,
+) -> ContractEvidenceRef:
     """Build the evidence sidecar for one contract-expanded lane (matches
     campaign_planner.expand_contract()'s own per-lane fields exactly --
     call this with the same arguments a CampaignLaneExecutionSpec's
@@ -1535,14 +1747,20 @@ def evidence_ref_for_lane(contract: ExperimentContract, *, role: str,
     if role not in ROLES:
         raise ExperimentContractError(f"role={role!r} is not one of {', '.join(ROLES)}")
     return ContractEvidenceRef(
-        contract_id=contract.id, contract_hash=contract.contract_hash,
-        optimization_id=contract.source.atomic_part, role=role,
-        workload_tag=workload_tag, model_ref=model_ref,
-        boundary_dimension=boundary_dimension, boundary_value=boundary_value,
+        contract_id=contract.id,
+        contract_hash=contract.contract_hash,
+        optimization_id=contract.source.atomic_part,
+        role=role,
+        workload_tag=workload_tag,
+        model_ref=model_ref,
+        boundary_dimension=boundary_dimension,
+        boundary_value=boundary_value,
     )
 
 
-def attach_to_document(document: dict[str, object], evidence: ContractEvidenceRef) -> dict[str, object]:
+def attach_to_document(
+    document: dict[str, object], evidence: ContractEvidenceRef
+) -> dict[str, object]:
     """Return a NEW dict with ``document`` (typically a ProvenanceV2.document()
     or an experiment_bundle report body) plus a sibling ``contract_evidence``
     key -- never merged into or overwriting any of the caller's own keys.
@@ -1580,6 +1798,7 @@ class LaneEffect:
     redefined here as a new statistics format -- this is purely a labeled
     wrapper so aggregate_contract_effects() knows which contract ROLE
     (positive/control/boundary) produced a given effect."""
+
     role: str
     metric: str
     geometric_effect_pct: float
@@ -1598,7 +1817,10 @@ class LaneEffect:
 
 
 def bootstrap_fixed_composite_mean(
-    lanes: list[LaneEffect], *, seed: int = 0, resamples: int = 10_000,
+    lanes: list[LaneEffect],
+    *,
+    seed: int = 0,
+    resamples: int = 10_000,
 ) -> tuple[float, float] | None:
     """VA24: CI for the mean effect across a FIXED set of positive lanes.
 
@@ -1644,7 +1866,8 @@ def bootstrap_fixed_composite_mean(
         for logs in lane_logs:
             resampled = [rng.choice(logs) for _ in logs]
             lane_effects_pct.append(
-                100.0 * (math.exp(statistics.mean(resampled)) - 1.0))
+                100.0 * (math.exp(statistics.mean(resampled)) - 1.0)
+            )
         replicates.append(statistics.mean(lane_effects_pct))
     replicates.sort()
     return (
@@ -1665,7 +1888,10 @@ MIN_BOOTSTRAP_SESSIONS = 4
 
 
 def bootstrap_session_effect(
-    sessions: list[tuple[float, ...]], *, seed: int = 0, resamples: int = 10_000,
+    sessions: list[tuple[float, ...]],
+    *,
+    seed: int = 0,
+    resamples: int = 10_000,
 ) -> dict[str, object] | None:
     """Effect and interval across repeated measurement SESSIONS of one lane.
 
@@ -1721,9 +1947,11 @@ def bootstrap_session_effect(
     replicates: list[float] = []
     for _ in range(resamples):
         drawn = [rng.choice(session_logs) for _ in session_logs]
-        replicates.append(statistics.mean(
-            _effect_pct([rng.choice(logs) for _ in logs]) for logs in drawn
-        ))
+        replicates.append(
+            statistics.mean(
+                _effect_pct([rng.choice(logs) for _ in logs]) for logs in drawn
+            )
+        )
     replicates.sort()
     per_session = [_effect_pct(logs) for logs in session_logs]
     return {
@@ -1738,13 +1966,17 @@ def bootstrap_session_effect(
         "between_session_sd_pct": (
             statistics.stdev(per_session) if len(per_session) > 1 else 0.0
         ),
-        "resamples": resamples, "seed": seed,
+        "resamples": resamples,
+        "seed": seed,
     }
 
 
 def aggregate_contract_effects(
-    contract: ExperimentContract, lane_effects: list[LaneEffect], *,
-    target_metric: str, end_to_end_metric: str | None = None,
+    contract: ExperimentContract,
+    lane_effects: list[LaneEffect],
+    *,
+    target_metric: str,
+    end_to_end_metric: str | None = None,
 ) -> dict[str, object]:
     """EC06: roll up per-lane balanced-comparison effects (from
     comparisons.run_comparison()/ab_benchmark.paired_summary(), one call per
@@ -1781,7 +2013,8 @@ def aggregate_contract_effects(
     ``contract.acceptance`` by EC09's promotion gate.
     """
     positive_target = [
-        effect.geometric_effect_pct for effect in lane_effects
+        effect.geometric_effect_pct
+        for effect in lane_effects
         if effect.role == "positive" and effect.metric == target_metric
     ]
     # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
@@ -1803,7 +2036,8 @@ def aggregate_contract_effects(
         )
 
     control_effects = [
-        effect.geometric_effect_pct for effect in lane_effects
+        effect.geometric_effect_pct
+        for effect in lane_effects
         if effect.role == "control"
     ]
     if not control_effects:
@@ -1819,7 +2053,8 @@ def aggregate_contract_effects(
 
     e2e_metric = end_to_end_metric or target_metric
     e2e_effects = [
-        effect.geometric_effect_pct for effect in lane_effects
+        effect.geometric_effect_pct
+        for effect in lane_effects
         if effect.role == "positive" and effect.metric == e2e_metric
     ]
 
@@ -1867,12 +2102,15 @@ def aggregate_contract_effects(
             _finite_number(effect.geometric_effect_pct)
             and _finite_number(effect.ci95_low_pct)
             and _finite_number(effect.ci95_high_pct)
-            and effect.ci95_low_pct <= effect.geometric_effect_pct <= effect.ci95_high_pct
+            and effect.ci95_low_pct
+            <= effect.geometric_effect_pct
+            <= effect.ci95_high_pct
         )
 
     def _sole(role: str, metric: str) -> LaneEffect | None:
         matching = [
-            effect for effect in lane_effects
+            effect
+            for effect in lane_effects
             if effect.role == role and effect.metric == metric
         ]
         return matching[0] if len(matching) == 1 else None
@@ -1889,7 +2127,8 @@ def aggregate_contract_effects(
         carrying an under-sampled one.
         """
         lanes = [
-            effect for effect in lane_effects
+            effect
+            for effect in lane_effects
             if effect.role == "positive" and effect.metric == metric
         ]
         if not lanes:
@@ -1907,7 +2146,8 @@ def aggregate_contract_effects(
         rounds = [lane.paired_rounds for lane in lanes]
         aggregated[f"{field}_ci95_low"] = interval[0]
         aggregated[f"{field}_paired_rounds"] = (
-            min(rounds) if all(isinstance(r, int) and not isinstance(r, bool) for r in rounds)
+            min(rounds)
+            if all(isinstance(r, int) and not isinstance(r, bool) for r in rounds)
             else None
         )
 
@@ -1926,8 +2166,11 @@ def aggregate_contract_effects(
         # Flagged HIGH risk in review (dev-gpt-agent, req_a667633429fa4c9e)
         # and pinned by test_regression_interval_endpoints_reverse.
         aggregated["max_control_regression_pct_ci95_high"] = max(
-            0.0, -control_lanes[0].ci95_low_pct)
-        aggregated["max_control_regression_pct_paired_rounds"] = control_lanes[0].paired_rounds
+            0.0, -control_lanes[0].ci95_low_pct
+        )
+        aggregated["max_control_regression_pct_paired_rounds"] = control_lanes[
+            0
+        ].paired_rounds
     # len(control_lanes) > 1 deliberately attaches NO interval. Independent
     # per-lane 95% bounds are not a 95% FAMILY guarantee, and the right
     # simultaneous procedure (Bonferroni vs a direct bootstrap of the fixed
@@ -1954,13 +2197,15 @@ class CorrectnessResult:
     contract declares required must have a passing result attached), not
     a new correctness-checking engine (guide section 2: do not build a
     second benchmark framework)."""
+
     check: str
     passed: bool
     detail: str = ""
 
 
 def evaluate_correctness_gate(
-    contract: ExperimentContract, results: dict[str, CorrectnessResult],
+    contract: ExperimentContract,
+    results: dict[str, CorrectnessResult],
 ) -> dict[str, object]:
     """EC07: every check in contract.correctness.required_checks must have
     a CorrectnessResult in ``results`` with passed=True. Missing or failed
@@ -1988,7 +2233,10 @@ def evaluate_correctness_gate(
         "required_checks": list(contract.correctness.required_checks),
         "missing_checks": missing,
         "failed_checks": failed,
-        "results": {name: {"passed": r.passed, "detail": r.detail} for name, r in results.items()},
+        "results": {
+            name: {"passed": r.passed, "detail": r.detail}
+            for name, r in results.items()
+        },
     }
 
 
@@ -2001,6 +2249,7 @@ class ResourceResult:
     graph-cache entry count after a validation run. control_value is only
     required when the limit checks max_increase_pct; a pure max_value
     limit needs only the subject's own measurement."""
+
     metric: str
     unit: str
     subject_value: float
@@ -2008,16 +2257,23 @@ class ResourceResult:
 
     def __post_init__(self) -> None:
         if not self.metric:
-            raise ExperimentContractError("ResourceResult.metric must be a non-empty string")
+            raise ExperimentContractError(
+                "ResourceResult.metric must be a non-empty string"
+            )
         if self.unit not in RESOURCE_UNITS:
             raise ExperimentContractError(
                 f"ResourceResult.unit={self.unit!r} is not one of {', '.join(RESOURCE_UNITS)}"
             )
-        for field_name, value in (("subject_value", self.subject_value), ("control_value", self.control_value)):
+        for field_name, value in (
+            ("subject_value", self.subject_value),
+            ("control_value", self.control_value),
+        ):
             if value is None:
                 continue
             if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ExperimentContractError(f"ResourceResult.{field_name} must be a number")
+                raise ExperimentContractError(
+                    f"ResourceResult.{field_name} must be a number"
+                )
             if not math.isfinite(value) or value < 0:
                 raise ExperimentContractError(
                     f"ResourceResult.{field_name} must be finite and non-negative, got {value!r}"
@@ -2025,7 +2281,8 @@ class ResourceResult:
 
 
 def evaluate_resource_gate(
-    contract: ExperimentContract, results: dict[str, ResourceResult],
+    contract: ExperimentContract,
+    results: dict[str, ResourceResult],
 ) -> dict[str, object]:
     """VA12: every limit in contract.acceptance.resource_limits must have a
     ResourceResult in ``results`` with matching metric AND unit, and must
@@ -2053,14 +2310,20 @@ def evaluate_resource_gate(
             continue
         if result.unit != limit.unit:
             failed.append(limit.metric)
-            detail[limit.metric] = f"unit mismatch: limit={limit.unit!r} result={result.unit!r}"
+            detail[limit.metric] = (
+                f"unit mismatch: limit={limit.unit!r} result={result.unit!r}"
+            )
             continue
         reasons: list[str] = []
         if limit.max_value is not None and result.subject_value > limit.max_value:
-            reasons.append(f"subject_value {result.subject_value} exceeds max_value {limit.max_value}")
+            reasons.append(
+                f"subject_value {result.subject_value} exceeds max_value {limit.max_value}"
+            )
         if limit.max_increase_pct is not None:
             if result.control_value is None:
-                reasons.append("max_increase_pct declared but no control_value evidence supplied")
+                reasons.append(
+                    "max_increase_pct declared but no control_value evidence supplied"
+                )
             elif result.control_value == 0:
                 if result.subject_value > 0:
                     reasons.append(
@@ -2082,7 +2345,9 @@ def evaluate_resource_gate(
     passed = not missing and not failed
     return {
         "passed": passed,
-        "required_limits": [limit.metric for limit in contract.acceptance.resource_limits],
+        "required_limits": [
+            limit.metric for limit in contract.acceptance.resource_limits
+        ],
         "missing_metrics": missing,
         "failed_metrics": failed,
         "detail": detail,
@@ -2101,6 +2366,7 @@ def generalisation_floor() -> dict[str, float]:
     may only tighten these values, never loosen them -- see
     require_generalisation_policy()."""
     from .. import generalise
+
     return dict(generalise.REQUIRED_THRESHOLDS)
 
 
@@ -2119,8 +2385,10 @@ def require_generalisation_policy(
     if policy_thresholds is None:
         return floor
     violations = [
-        name for name, floor_value in floor.items()
-        if name in policy_thresholds and (
+        name
+        for name, floor_value in floor.items()
+        if name in policy_thresholds
+        and (
             # min_* thresholds must not go DOWN; max_* thresholds must not
             # go UP -- both directions of "loosening" for this threshold set.
             (name.startswith("min_") and policy_thresholds[name] < floor_value)
@@ -2158,6 +2426,7 @@ class TriggerEvidence:
     and a routing/split contract may have no per-launch counter) -- a lane
     supplying neither is a caller error (raised, not silently ignored),
     since that would make trigger-proof unfalsifiable."""
+
     role: str
     lane_id: str
     candidate_launches: int | None = None
@@ -2181,7 +2450,9 @@ class TriggerEvidence:
                 )
 
 
-def evaluate_trigger_proof(trigger_evidence: list[TriggerEvidence]) -> dict[str, object]:
+def evaluate_trigger_proof(
+    trigger_evidence: list[TriggerEvidence],
+) -> dict[str, object]:
     """EC18: fail closed unless every POSITIVE-role lane proves its target
     code path actually ran at least once. Scoped to positive-role lanes
     only, mirroring aggregate_contract_effects()'s own precedent (EC06):
@@ -2203,16 +2474,21 @@ def evaluate_trigger_proof(trigger_evidence: list[TriggerEvidence]) -> dict[str,
     if not positive:
         return {
             "passed": False,
-            "reasons": ["no positive-role trigger evidence supplied -- cannot "
-                        "prove the target code path was ever exercised"],
+            "reasons": [
+                "no positive-role trigger evidence supplied -- cannot "
+                "prove the target code path was ever exercised"
+            ],
             "checked_lanes": 0,
             "untriggered_lanes": [],
         }
 
     untriggered: list[str] = []
     for evidence in positive:
-        counts = [c for c in (evidence.candidate_launches, evidence.expected_route_selected)
-                  if c is not None]
+        counts = [
+            c
+            for c in (evidence.candidate_launches, evidence.expected_route_selected)
+            if c is not None
+        ]
         if not any(c > 0 for c in counts):
             untriggered.append(evidence.lane_id)
 
@@ -2265,8 +2541,14 @@ def _finite_number(value: object) -> bool:
 
 
 def aggregate_session_effects(
-    records: Iterable[Mapping[str, object]], *, field: str, role: str, metric: str,
-    architectures: Iterable[str], seed: int = 0, resamples: int = 10_000,
+    records: Iterable[Mapping[str, object]],
+    *,
+    field: str,
+    role: str,
+    metric: str,
+    architectures: Iterable[str],
+    seed: int = 0,
+    resamples: int = 10_000,
 ) -> dict[str, object]:
     """RV99: build the ``aggregated_effects`` a session policy needs from
     several validation records -- one per measurement SESSION.
@@ -2329,7 +2611,9 @@ def aggregate_session_effects(
 
 
 def _session_stopping_rule_met(
-    field: str, acceptance: Acceptance, aggregated_effects: Mapping[str, object],
+    field: str,
+    acceptance: Acceptance,
+    aggregated_effects: Mapping[str, object],
     invalid_reasons: list[str],
 ) -> bool:
     """session_ci95_threshold_bound_v1's pre-declared stopping rule.
@@ -2380,8 +2664,11 @@ def _session_stopping_rule_met(
 
 
 def evaluate_promotion_gate(
-    contract: ExperimentContract, *, correctness_gate: dict[str, object],
-    aggregated_effects: dict[str, object], generalisation_result: dict[str, object] | None = None,
+    contract: ExperimentContract,
+    *,
+    correctness_gate: dict[str, object],
+    aggregated_effects: dict[str, object],
+    generalisation_result: dict[str, object] | None = None,
     trigger_proof: dict[str, object] | None = None,
     resource_gate: dict[str, object] | None = None,
 ) -> dict[str, object]:
@@ -2442,7 +2729,8 @@ def evaluate_promotion_gate(
     )
     interval_policy = (
         acceptance.effect_evidence_policy == "ci95_threshold_bound_v1"
-        or session_policy or asymmetric_policy
+        or session_policy
+        or asymmetric_policy
     )
     # VA24: evidence that is missing or malformed under an interval policy is
     # neither a pass nor a measured negative -- it is unevaluable, and must
@@ -2473,14 +2761,21 @@ def evaluate_promotion_gate(
             return
         required_rounds = acceptance.min_paired_rounds
         if required_rounds is not None:
-            if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < required_rounds:
+            if (
+                not isinstance(rounds, int)
+                or isinstance(rounds, bool)
+                or rounds < required_rounds
+            ):
                 invalid_reasons.append(
                     f"{field}: {rounds!r} paired rounds is below the required "
                     f"minimum {required_rounds} -- the interval is not trustworthy"
                 )
                 return
         if session_policy and not _session_stopping_rule_met(
-            field, acceptance, aggregated_effects, invalid_reasons,
+            field,
+            acceptance,
+            aggregated_effects,
+            invalid_reasons,
         ):
             return
         if asymmetric_policy:
@@ -2527,8 +2822,10 @@ def evaluate_promotion_gate(
 
     measured_regression = aggregated_effects.get("max_control_regression_pct")
     if not interval_policy:
-        if (not _finite_number(measured_regression)
-                or measured_regression > acceptance.max_control_regression_pct):
+        if (
+            not _finite_number(measured_regression)
+            or measured_regression > acceptance.max_control_regression_pct
+        ):
             reasons.append(
                 f"max_control_regression_pct {measured_regression} exceeds budget "
                 f"{acceptance.max_control_regression_pct}"
@@ -2548,7 +2845,9 @@ def evaluate_promotion_gate(
         # This matters most for correctness-first contracts, where the
         # regression budget is the ONLY performance gate they have.
         ci_high = aggregated_effects.get("max_control_regression_pct_ci95_high")
-        control_rounds = aggregated_effects.get("max_control_regression_pct_paired_rounds")
+        control_rounds = aggregated_effects.get(
+            "max_control_regression_pct_paired_rounds"
+        )
         required_rounds = acceptance.min_paired_rounds
         if not _finite_number(measured_regression) or not _finite_number(ci_high):
             invalid_reasons.append(
@@ -2561,10 +2860,11 @@ def evaluate_promotion_gate(
         # as untrustworthy as a gain established from one, and leaving the
         # floor off here meant a contract could demand N rounds of evidence
         # for its claim while accepting n=1 evidence that it broke nothing.
-        elif (required_rounds is not None
-              and (not isinstance(control_rounds, int)
-                   or isinstance(control_rounds, bool)
-                   or control_rounds < required_rounds)):
+        elif required_rounds is not None and (
+            not isinstance(control_rounds, int)
+            or isinstance(control_rounds, bool)
+            or control_rounds < required_rounds
+        ):
             invalid_reasons.append(
                 f"max_control_regression_pct: {control_rounds!r} paired rounds is "
                 f"below the required minimum {required_rounds} -- the control "
@@ -2629,8 +2929,11 @@ def evaluate_promotion_gate(
 
 
 def render_report(
-    contract: ExperimentContract, *, correctness_gate: dict[str, object],
-    aggregated_effects: dict[str, object], promotion_gate: dict[str, object],
+    contract: ExperimentContract,
+    *,
+    correctness_gate: dict[str, object],
+    aggregated_effects: dict[str, object],
+    promotion_gate: dict[str, object],
     generalisation_result: dict[str, object] | None = None,
     resource_gate: dict[str, object] | None = None,
 ) -> str:
@@ -2759,7 +3062,12 @@ def render_report(
         lines.append("- (no generalisation attempted for this contract)")
     else:
         lines.append(f"- passed: {generalisation_result.get('passed')}")
-        for key in ("proven_groups", "added_coverage_pct", "median_regret_pct", "upper95_regret_pct"):
+        for key in (
+            "proven_groups",
+            "added_coverage_pct",
+            "median_regret_pct",
+            "upper95_regret_pct",
+        ):
             if key in generalisation_result:
                 lines.append(f"- {key}: {generalisation_result[key]}")
     lines.append("")
@@ -2769,9 +3077,11 @@ def render_report(
     if status is not None:
         lines.append(f"- status: {status}")
         if status == "invalid":
-            lines.append("- INVALID: the target code path was not proven to have been "
-                         "exercised (EC18 trigger proof) -- this is not a pass or a fail, "
-                         "the measurement itself cannot be trusted as evidence")
+            lines.append(
+                "- INVALID: the target code path was not proven to have been "
+                "exercised (EC18 trigger proof) -- this is not a pass or a fail, "
+                "the measurement itself cannot be trusted as evidence"
+            )
     lines.append(f"- passed: {promotion_gate.get('passed')}")
     reasons = promotion_gate.get("reasons") or []
     if reasons:
@@ -2794,6 +3104,7 @@ LEGACY_MANIFEST_PATH = "config/experiment-contract-legacy.toml"
 @dataclass(frozen=True)
 class LegacyWaiver:
     """One frozen pre-VA24 entry from config/experiment-contract-legacy.toml."""
+
     contract_id: str
     waiver_class: str
     baseline_contract_hash: str
@@ -2812,13 +3123,16 @@ def load_legacy_waivers(path: Path) -> dict[str, LegacyWaiver]:
     for contract_id, entry in (raw.get("legacy") or {}).items():
         if not isinstance(entry, dict):
             raise ExperimentContractError(
-                f"{path}: legacy.{contract_id} must be a table")
+                f"{path}: legacy.{contract_id} must be a table"
+            )
         for field in ("waiver_class", "baseline_contract_hash", "migration"):
             if not isinstance(entry.get(field), str) or not entry[field]:
                 raise ExperimentContractError(
-                    f"{path}: legacy.{contract_id}.{field} is required")
+                    f"{path}: legacy.{contract_id}.{field} is required"
+                )
         waivers[contract_id] = LegacyWaiver(
-            contract_id=contract_id, waiver_class=entry["waiver_class"],
+            contract_id=contract_id,
+            waiver_class=entry["waiver_class"],
             baseline_contract_hash=entry["baseline_contract_hash"],
             migration=entry["migration"],
         )
@@ -2826,12 +3140,15 @@ def load_legacy_waivers(path: Path) -> dict[str, LegacyWaiver]:
 
 
 def declares_gain_threshold(contract: ExperimentContract) -> bool:
-    return (contract.acceptance.target_kernel_gain_pct is not None
-            or contract.acceptance.end_to_end_gain_pct is not None)
+    return (
+        contract.acceptance.target_kernel_gain_pct is not None
+        or contract.acceptance.end_to_end_gain_pct is not None
+    )
 
 
 def lint_effect_evidence_policy(
-    registry: ContractRegistry, waivers: dict[str, LegacyWaiver],
+    registry: ContractRegistry,
+    waivers: dict[str, LegacyWaiver],
 ) -> list[str]:
     """VA24 REGISTRY LINT, keyed by contract ID (edit time).
 
@@ -2870,7 +3187,8 @@ def lint_effect_evidence_policy(
 
 
 def legacy_evidence_is_honoured(
-    contract: ExperimentContract, waivers: dict[str, LegacyWaiver],
+    contract: ExperimentContract,
+    waivers: dict[str, LegacyWaiver],
 ) -> bool:
     """VA24 QUALIFICATION RULE, keyed by exact baseline_contract_hash.
 
@@ -2884,4 +3202,6 @@ def legacy_evidence_is_honoured(
     invariant, not a restriction on editing the registry.
     """
     waiver = waivers.get(contract.id)
-    return waiver is not None and waiver.baseline_contract_hash == contract.contract_hash
+    return (
+        waiver is not None and waiver.baseline_contract_hash == contract.contract_hash
+    )
