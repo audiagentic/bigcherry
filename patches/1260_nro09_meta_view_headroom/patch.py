@@ -23,7 +23,7 @@ PATCHES = [
         edits=(
             Edit(
                 id="pnro09_increase_headroom",
-                anchor="constexpr size_t compute_headroom = 16; // Maximum number of views per statically allocated tensor that can be created between evals.",
+                anchor="constexpr size_t compute_headroom = 16;",
                 text=(
                     "constexpr size_t compute_headroom = 80; // PNRO09: increased from 16 to cover recurrent+MTP graphs.\n"
                     "    // 2*(n_rs_seq+1) views per recurrent layer; n_rs_seq=8, 4 layers = 72 views.\n"
