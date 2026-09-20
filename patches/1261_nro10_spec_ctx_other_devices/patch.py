@@ -18,7 +18,7 @@ PATCHES = [
         edits=(
             Edit(
                 id="pnro10_add_ctx_other_devices",
-                anchor="backends.emplace_back(backend);",
+                anchor=r"backends\.emplace_back\(backend\);",
                 text=(
                     "\n        // PNRO10: add ctx_other model devices to the scheduler backends\n"
                     "        // so that shared tensors between the draft and target contexts\n"
