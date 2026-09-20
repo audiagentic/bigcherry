@@ -22,43 +22,23 @@ tracked TR00 evidence bundle at
 That bundle is historical evidence and is not edited to change current
 ownership.
 
-
-
 ## Steps
-
-
 
 ## Detailed Solution & Technical Design
 
-
-
 ## Code Samples & Guidance
-
-
 
 ## Files
 
-
-
 ## Validation
-
-
 
 ## Effort & Risk
 
-
-
 ## Standards
-
-
 
 ## Acceptance Criteria
 
-
-
 ## Notes
-
-
 
 ## Rules
 
@@ -477,7 +457,7 @@ ownership.
 ## Planning capability rebaseline v3 temporary tooling
 
 | Path | Disposition | Owner and rationale |
-|---|---|---|
+| --- | --- | --- |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **TRANSITIONAL** | Planning capability rebaseline v3: read-only frozen-plan inventory/reference generator; migration-local and not planning/evidence authority. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **TRANSITIONAL** | Migration-local draft manifest seeder; outputs explicitly unapproved review data and never mutates canonical planning state. |
 | `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **TRANSITIONAL** | Migration-local lifecycle review hint generator; cues require human adjudication and never allocate IDs. |
@@ -524,7 +504,7 @@ ownership.
 ## HI172 kernel-trace investigation tooling
 
 | Path | Disposition | Owner and rationale |
-|---|---|---|
+| --- | --- | --- |
 | `tools/lab/hi172-kernel-trace/config-27b-dual-xtx.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
 | `tools/lab/hi172-kernel-trace/config-gpu0-longgen.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
 | `tools/lab/hi172-kernel-trace/config-gpu0-realprompt.json` | **TRANSITIONAL** | THA16/HI172: retained diagnostic campaign configuration for the completed dispatch-overhead investigation. |
@@ -535,7 +515,7 @@ ownership.
 ## RD87 hipBLASLt oracle tooling
 
 | Path | Disposition | Owner and rationale |
-|---|---|---|
+| --- | --- | --- |
 | `tools/lab/rd87-hipblaslt-oracle/analyze_results.py` | **TRANSITIONAL** | PRBE26/RD87: retained negative-finding analysis for captured decode GEMM shapes; not a production dispatch path. |
 | `tools/lab/rd87-hipblaslt-oracle/rd87_comparison.csv` | **TRANSITIONAL** | PRBE26/RD87: retained immutable comparison output and investigation provenance. |
 | `tools/lab/rd87-hipblaslt-oracle/rd87_shapes.sample.json` | **TRANSITIONAL** | PRBE26/RD87: retained sample input for the completed oracle analysis; not a canonical tuning catalog. |
@@ -543,7 +523,7 @@ ownership.
 ## HI168 retained investigation tools
 
 | Path | Disposition | Owner and rationale |
-|---|---|---|
+| --- | --- | --- |
 | `tools/lab/gp11-replay-bench/ab-balanced.sh` | **TRANSITIONAL** | HI168: preserve the executing historical server comparison; future runs belong in the maintained campaign path. |
 | `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
 | `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
@@ -551,6 +531,23 @@ ownership.
 | `tools/lab/va26-rd08-parity/run.py` | **TRANSITIONAL** | VA26: diagnostic driver proving the new qualification_execution orchestrator + qualification_rd08 adapter reproduce RD08's existing real-hardware verdict; answered, retained as a worked example pending a maintained CLI entry point (deliberately not added yet, per VA26's own design review). |
 | `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **TRANSITIONAL** | RD87: extracts deduped real GEMM/MMVQ dispatch shapes + native timing from a tune-campaign measurements.jsonl; answered/negative-finding, retained as investigation provenance. |
 | `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **TRANSITIONAL** | RD87: drives `hipblaslt-bench` (heuristic vs all-solutions) over the extracted real shapes on Brutus; answered/negative-finding, retained as investigation provenance. |
+| `tools/lab/pa25/audit_receipt_20260919.json` | **TRANSITIONAL** | PA25: read-only focal-evidence/G4/G7 consistency audit receipt for the seven promoted/touched patches at the recorded BigCherry + llama.cpp revisions; diagnostic snapshot, not a maintained tool or evidence authority. |
+| `tools/lab/pa25/run_audit.py` | **TRANSITIONAL** | PA25: read-only audit driver resolving catalog/registry/campaign identities for the seven focal patches; never writes campaign records; not production tooling or evidence authority. |
+| `tools/lab/pa30/pa30-g1-ab-advisories.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B advisories (bigcherry-native vs bigcherry-serving-base); gate receipt, not a maintained tool. |
+| `tools/lab/pa30/pa30-g1-ab-run.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B run record; gate receipt, not a maintained tool. |
+| `tools/lab/pa30/pa30-g1-ab-server-config.json` | **TRANSITIONAL** | PA30: G1 ab-benchmark `--server-config` input for the representative-performance A/B; gate input, not a maintained tool. |
+| `tools/lab/pa30/pa30-g1-ab-summary.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B summary (6 rotated pairs, clean shutdowns, dual-gfx1100 attestations verified); gate receipt, not a maintained tool. |
+| `tools/lab/pa30/pa30-g4-tuning-smoke-receipt.json` | **TRANSITIONAL** | PA30: G4 tuning-smoke gate receipt; diagnostic, not a maintained tool. |
+| `tools/lab/pa30/pa30-g5-0830-reduce-telemetry-sample.jsonl` | **TRANSITIONAL** | PA30: G5 0830 reduce/telemetry measurement sample; gate receipt, not a maintained tool. |
+| `tools/lab/pa30/pa30-g5-1100-corpus-measurements.jsonl` | **TRANSITIONAL** | PA30: G5 1100 corpus measurements; gate receipt, not a maintained tool. |
+| `tools/lab/pa30/pa30-hardware-receipt.json` | **TRANSITIONAL** | PA30: overall hardware gate receipt for the semantic-equivalence gates before deleting framework/native names; diagnostic, not a maintained tool. |
+| `tools/lab/patch1000/run_pa35_step1.py` | **TRANSITIONAL** | PA35 step 1: one-off gfx1201 hardware-evidence driver for patch 1000 (control vs subject backend-ops Q2_K/Q6_K correctness + perf); per GPT `req_71c1aaa166f446a1`, deliberately not shared production code. |
+| `tools/lab/rd04-correctness/run_real.py` | **TRANSITIONAL** | RD04/PA36: real-hardware driver for `run_rd04_contract_correctness()` across gfx1100/gfx1201/gfx1030 (no CLI flag yet); diagnostic, not a maintained tool. |
+| `tools/lab/rd12-correctness/run_real.py` | **TRANSITIONAL** | RD12/PA36: real-hardware driver for the 1205 RD12 patch-local producer through the generic dispatcher (replaces the deleted CLI driver); diagnostic, not a maintained tool. |
+| `tools/lab/rd13-backend-reference/run_real.py` | **TRANSITIONAL** | RD13/PA36: real-hardware driver for `run_rd13_backend_reference_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
+| `tools/lab/rd25-block08-review/block08.diff` | **TRANSITIONAL** | RD25: upstream rdna-boosts block 08 review artifact (commit `5efcd85f`); read-only review input, not a BigCherry patch or evidence authority. |
+| `tools/lab/rd26-bit-identity/run_real.py` | **TRANSITIONAL** | RD26/PA36: real-hardware driver for `run_rd26_decode_verify_bit_identity_check()` on gfx1100 (no CLI flag yet; a FAIL is real evidence of the documented 2-of-5 determinism-cluster gap); diagnostic, not a maintained tool. |
+| `tools/lab/rd30-correctness/run_real.py` | **TRANSITIONAL** | RD30/PA36: real-hardware driver for `run_rd30_correctness_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
 
 Inventory count: 403 script/tool files (vendor, build/cache, and artifacts excluded).
 
@@ -564,7 +561,7 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 ## RHA12 pin-bump validation
 
 | Path | Disposition | Owner and rationale |
-|---|---|---|
+| --- | --- | --- |
 | `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
 | `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
 
@@ -577,7 +574,6 @@ TR00 inventory is captured and both pre-existing test/check issues from the orig
 - 2026-08-28T01:48:44.131940+00:00 (updated-by): Updated (no visible changes)
 
 ## Ledger-events
-
 
 - chg_20260828_015352_published-the-active-docs-refe_7868
 - 2026-08-28T01:53:52.318064+00:00 (updated-by): Updated: section:ledger-events
