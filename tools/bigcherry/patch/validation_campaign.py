@@ -1522,7 +1522,6 @@ class CampaignProducerRuntime:
         variants()); this method only builds the binaries and
         captures the build identities."""
         from bigcherry.build import builds as builds_module
-        from bigcherry.patch import source as psi
 
         target_plan = FatTargetPlan(targets=targets)
         exe = ".exe" if sys.platform == "win32" else ""
