@@ -296,15 +296,24 @@ def _run_producer(
     runtime = _FakeRuntime(run_dir=run_dir, pair=pair, device=device)
     control_model = temp / control_model_name
     control_model.write_bytes(b"control-model")
+    positive_model = model if model is not None else temp / "Qwen3.5-4B-UD-Q6_K_XL.gguf"
+    positive_model.parent.mkdir(parents=True, exist_ok=True)
+    positive_model.write_bytes(b"positive-model")
     model_registry = temp / "models.toml"
     model_registry.write_text(
         """version = 1
 
 [[models]]
+ id = 'tierA-qwen4b-q6k'
+ path = 'Qwen3.5-4B-UD-Q6_K_XL.gguf'
+ size-bytes = {positive_size}
+
+[[models]]
  id = 'tierM-gptoss20b-q6k'
  path = 'gpt-oss-20b-UD-Q6_K_XL.gguf'
- size-bytes = {size}
-""".replace("{size}", str(control_model.stat().st_size)),
+ size-bytes = {control_size}
+""".replace("{positive_size}", str(positive_model.stat().st_size))
+        .replace("{control_size}", str(control_model.stat().st_size)),
         encoding="utf-8",
     )
     bench_control = temp / "scaffold" / "CONTROL" / "llama-bench"
@@ -324,7 +333,7 @@ def _run_producer(
         base_revision="a" * 40,
         hip_path=Path("/opt/rocm"),
         fat_targets=vp.FatTargetPlan(targets=targets),
-        model=model if model is not None else Path("/models/m.gguf"),
+        model=positive_model,
         corpus=None,
         build_env=build_env if build_env is not None else {"HIP_PATH": "/opt/rocm"},
         inputs={"control_model": str(control_model)} if include_control_model else {},
@@ -422,7 +431,15 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
         )
         self.assertEqual(result.check_results, ())
         self.assertIsNotNone(result.activation_evidence)
-        self.assertIsNotNone(result.performance_evidence)
+        performance_evidence = result.performance_evidence
+        self.assertIsNotNone(performance_evidence)
+        assert isinstance(performance_evidence, dict)
+        artifact = performance_evidence["artifact"]
+        assert isinstance(artifact, dict)
+        performance_path = runtime.run_dir / str(artifact["path"])
+        performance = json.loads(performance_path.read_text(encoding="utf-8"))
+        self.assertTrue(performance["passed"])
+        self.assertEqual(performance["positive_model_identity"]["model_id"], "tierA-qwen4b-q6k")
         self.assertIsNotNone(result.trace_evidence)
         self.assertEqual(
             result.validation_build_identities,
@@ -434,7 +451,7 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
         self.assertEqual(len(runtime.benchmark_calls), 2)
         self.assertEqual(
             [Path(str(call["model"])).name for call in runtime.benchmark_calls],
-            ["m.gguf", "gpt-oss-20b-UD-Q6_K_XL.gguf"],
+            ["Qwen3.5-4B-UD-Q6_K_XL.gguf", "gpt-oss-20b-UD-Q6_K_XL.gguf"],
         )
         self.assertEqual([call["pairs"] for call in runtime.benchmark_calls], [10, 10])
         self.assertEqual(
@@ -559,6 +576,24 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
                     _row(2, [-1.0, -2.0, -3.0]),
                 ],
                 control_model_name="wrong-control-model.gguf",
+            )
+
+    def test_positive_model_registry_basename_is_enforced(self) -> None:
+        with self.assertRaisesRegex(
+            vp.ValidationProducerError,
+            "positive model.*does not match registry basename",
+        ):
+            _run_producer(
+                self.module,
+                control_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                subject_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                model=Path(tempfile.mkdtemp()) / "wrong-positive-model.gguf",
             )
 
     def test_single_contract_architecture_guard(self) -> None:
