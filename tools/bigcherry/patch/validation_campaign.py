@@ -3501,6 +3501,15 @@ def run_patch1000_verification(
     }
 
 
+_LANE_EFFECT_FIELDS = (
+    "geometric_effect_pct",
+    "decision",
+    "ci95_low_pct",
+    "ci95_high_pct",
+    "paired_rounds",
+)
+
+
 def collect_lane_effect_records(
     *, rd08_qualification: "dict[str, object] | None",
     rd73_qualification: "dict[str, object] | None",
