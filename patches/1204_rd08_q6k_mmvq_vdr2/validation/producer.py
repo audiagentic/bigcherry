@@ -50,9 +50,7 @@ def _load_rd08_correctness() -> Any:
     """Load the patch-local rd08_correctness module (same pattern as
     the legacy _load_rd08_correctness_module())."""
     module_path = Path(__file__).parent / "rd08_correctness.py"
-    spec = importlib.util.spec_from_file_location(
-        "rd08_correctness", module_path
-    )
+    spec = importlib.util.spec_from_file_location("rd08_correctness", module_path)
     if spec is None:
         raise vp.ValidationProducerError(
             f"RD08: could not load rd08_correctness from {module_path}"
@@ -60,6 +58,7 @@ def _load_rd08_correctness() -> Any:
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     import sys
+
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
@@ -193,9 +192,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     return vp.ProducerResult(
         validation_build_identities=correctness_pair_identities,
-        promotion_lane_effects={
-            _CONTRACT_ID: (decode_effect, prefill_effect)
-        },
+        promotion_lane_effects={_CONTRACT_ID: (decode_effect, prefill_effect)},
         promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         contract_correctness_results=(correctness_result,),
@@ -222,10 +219,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         check_results=(),
         lane_effects=(),
         correctness={
-            "disposition": "passed" if correctness.get("backend_reference", {}).get("passed", False) else "failed",
+            "disposition": "passed"
+            if correctness.get("backend_reference", {}).get("passed", False)
+            else "failed",
             "mechanism": "backend_reference",
             "detail": correctness.get("backend_reference", {}).get("detail", ""),
-        } if isinstance(correctness, dict) else correctness,
+        }
+        if isinstance(correctness, dict)
+        else correctness,
         activation_evidence=activation,
         emitted_artifacts=frozenset(
             [
@@ -332,12 +333,14 @@ def _run_correctness(
 
     if failing is None:
         bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=True,
+            check="bit_identical",
+            passed=True,
             detail=f"{len(all_rows)} (shape,seed) pairs bit-identical",
         )
     else:
         bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False,
+            check="bit_identical",
+            passed=False,
             detail=(
                 f"RD08 correctness evidence failed for shape="
                 f"{failing.shape_name!r} seed={failing.seed}: "
@@ -361,14 +364,16 @@ def _run_correctness(
     numeric_rows = [r for r in all_rows if r.subject_metric is not None]
     if not numeric_rows:
         backend_reference_result = experiment_contract.CorrectnessResult(
-            check="backend_reference", passed=False,
+            check="backend_reference",
+            passed=False,
             detail="no rows produced a subject_metric to evaluate",
         )
     else:
         worst = max(numeric_rows, key=lambda r: r.subject_metric.err)
         over_threshold = worst.subject_metric.err > worst.subject_metric.threshold
         backend_reference_result = experiment_contract.CorrectnessResult(
-            check="backend_reference", passed=not over_threshold,
+            check="backend_reference",
+            passed=not over_threshold,
             detail=(
                 f"{len(numeric_rows)} rows, worst subject err="
                 f"{worst.subject_metric.err} vs threshold="

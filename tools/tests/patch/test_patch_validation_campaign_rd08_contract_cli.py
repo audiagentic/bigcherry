@@ -114,9 +114,6 @@ class TestRD08ProducerStructure(unittest.TestCase):
         self.assertIn("run", function_names)
 
 
-
-
-
 class RD08ProducerStructureTests(unittest.TestCase):
     """Structural test: verify the RD08 producer module loads and has
     the expected functions and structure."""
@@ -126,16 +123,19 @@ class RD08ProducerStructureTests(unittest.TestCase):
         from pathlib import Path
 
         producer_path = (
-            Path(__file__).resolve().parents[2] / ".." / "patches"
-            / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "producer.py"
+            Path(__file__).resolve().parents[2]
+            / ".."
+            / "patches"
+            / "1204_rd08_q6k_mmvq_vdr2"
+            / "validation"
+            / "producer.py"
         )
-        spec = importlib.util.spec_from_file_location(
-            "rd08_producer", producer_path
-        )
+        spec = importlib.util.spec_from_file_location("rd08_producer", producer_path)
         assert spec is not None
         mod = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         import sys
+
         sys.modules["rd08_producer"] = mod
         spec.loader.exec_module(mod)
 
@@ -151,16 +151,19 @@ class RD08ProducerStructureTests(unittest.TestCase):
         from pathlib import Path
 
         producer_path = (
-            Path(__file__).resolve().parents[2] / ".." / "patches"
-            / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "producer.py"
+            Path(__file__).resolve().parents[2]
+            / ".."
+            / "patches"
+            / "1204_rd08_q6k_mmvq_vdr2"
+            / "validation"
+            / "producer.py"
         )
-        spec = importlib.util.spec_from_file_location(
-            "rd08_producer", producer_path
-        )
+        spec = importlib.util.spec_from_file_location("rd08_producer", producer_path)
         assert spec is not None
         mod = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         import sys
+
         sys.modules["rd08_producer"] = mod
         spec.loader.exec_module(mod)
 
@@ -184,6 +187,7 @@ class _FakeRd08Runtime:
 
     def device_contexts(self, *, device_map):
         from bigcherry.experiment.attestation import ExecutionIdentity
+
         return (
             vp.ProducerDeviceContext(
                 architecture="gfx1100",
@@ -196,8 +200,11 @@ class _FakeRd08Runtime:
             ),
         )
 
-    def build_materialized_pair(self, *, control_source, subject_source, targets, primary_target):
+    def build_materialized_pair(
+        self, *, control_source, subject_source, targets, primary_target
+    ):
         from bigcherry.patch import validation_producer as vp
+
         return vp.ProducerBuildPair(
             base_revision="fake-rev",
             control_source=control_source,
@@ -212,7 +219,17 @@ class _FakeRd08Runtime:
             },
         )
 
-    def run_trace_probe(self, *, binary, model, device, bench_prompt, bench_gen, log_context, disable_fusion=False):
+    def run_trace_probe(
+        self,
+        *,
+        binary,
+        model,
+        device,
+        bench_prompt,
+        bench_gen,
+        log_context,
+        disable_fusion=False,
+    ):
         # Return a log that contains the marker for subject, not for control
         if "subject" in log_context:
             return "BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2"
@@ -239,6 +256,7 @@ class _FakeRd08Runtime:
     def write_artifact(self, *, name, payload):
         import hashlib
         import json
+
         path = self.run_dir / "artifacts" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps(payload, indent=2)
@@ -251,6 +269,7 @@ class _FakeRd08Runtime:
 
     def write_text_artifact(self, *, name, text):
         import hashlib
+
         path = self.run_dir / "artifacts" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
@@ -290,8 +309,12 @@ class RD08ActivationEvidenceTests(unittest.TestCase):
         import sys
 
         producer_path = (
-            Path(__file__).resolve().parents[2] / ".." / "patches"
-            / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "producer.py"
+            Path(__file__).resolve().parents[2]
+            / ".."
+            / "patches"
+            / "1204_rd08_q6k_mmvq_vdr2"
+            / "validation"
+            / "producer.py"
         )
         spec = importlib.util.spec_from_file_location(
             "rd08_activation_producer", producer_path
@@ -314,7 +337,9 @@ class RD08ActivationEvidenceTests(unittest.TestCase):
                 self.control_log = control_log
 
             def run_trace_probe(self, *, log_context, **kwargs):
-                return self.subject_log if "subject" in log_context else self.control_log
+                return (
+                    self.subject_log if "subject" in log_context else self.control_log
+                )
 
         with TemporaryDirectory() as tmp:
             ctx = SimpleNamespace(
