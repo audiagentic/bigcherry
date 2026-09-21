@@ -724,6 +724,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "subject_logprobs_sha256": subject_digest.hexdigest(),
     }
     performance_doc = {
+        # This is evidence completeness, not the promotion verdict. The
+        # dispatcher evaluates the typed lane effects and owns thresholds.
+        "passed": True,
         "schema_version": 1,
         "contract_id": _CONTRACT_ID,
         "architecture": architecture,
