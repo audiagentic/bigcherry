@@ -40,6 +40,7 @@ from typing import Any
 
 from bigcherry.experiment import execution as experiment_execution
 from bigcherry.patch import validation_producer as vp
+from bigcherry.patch.activation import ActivationEvidence
 
 _MARKER_REGEX = "BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2"
 _CONTRACT_ID = "RD08-Q6K-MMVQ-VDR2"
@@ -400,7 +401,7 @@ def _run_activation(
     ctx: vp.ProducerContext,
     device: vp.ProducerDeviceContext,
 ) -> tuple[
-    vp.ActivationEvidence,
+    ActivationEvidence,
     object,
     str,
     str,
@@ -461,7 +462,7 @@ def _run_activation(
     # Activation: subject_hit AND NOT control_hit
     activation_ok = subject_hit and not control_hit
     if activation_ok:
-        activation = vp.ActivationEvidence(
+        activation = ActivationEvidence(
             status="executed",
             mechanism="trace_marker",
             detail=(
@@ -470,7 +471,7 @@ def _run_activation(
             ),
         )
     elif subject_hit:
-        activation = vp.ActivationEvidence(
+        activation = ActivationEvidence(
             status="unobservable",
             mechanism="trace_marker",
             detail=(
@@ -480,7 +481,7 @@ def _run_activation(
             ),
         )
     else:
-        activation = vp.ActivationEvidence(
+        activation = ActivationEvidence(
             status="not_executed",
             mechanism="trace_marker",
             detail=(
