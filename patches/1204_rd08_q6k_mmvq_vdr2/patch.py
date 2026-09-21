@@ -250,12 +250,15 @@ _CAPTURE_GATE_NEW = """    if (!op_timing && graph->is_enabled()) {"""
 
 # POSITION ADAPTATION (deviation, recorded): the fork hunk anchors on the
 # qwen35 27B ffn perf lines that RD05/06/07 (1d525bd45) added earlier in
-# the branch -- our base does not have them (pin drift + the fork hunk's
-# context depends on that experimental commit). The decode cases are
-# inserted after BigCherry's own HI70 direct-op corpus instead; same test
-# function, same cases, different position.
-_PERF_ANCHOR = re.escape(
-    "    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));\n"
+# the branch -- our base does not have them. The former BigCherry HI70
+# Q8_0 anchor is composition-dependent: qualification-support patch 1100
+# owns it, while this patch declares no dependency on 1100. Anchor instead
+# on the current pin's active make_test_cases_eval() Hadamard seam, which
+# is present exactly once in both plain and qualification compositions.
+_PERF_ANCHOR = (
+    r"^    test_cases\.emplace_back\(new "
+    r"test_mul_mat_hadamard\(GGML_TYPE_F32, GGML_TYPE_F32, 1024, 1, 1024\)\);"
+    r"[^\n]*$"
 )
 
 _PERF_NEW = """    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 127, 128, 256, {1, 1}, {1, 1}));
@@ -392,11 +395,10 @@ PATCHES = [
             Edit(
                 id="rd08-perf-cases",
                 anchor=_PERF_ANCHOR,
-                rationale="make_test_cases_perf: qwen35-27B decode shapes "
-                "after the HI70 direct-op corpus (position "
-                "adaptation -- the fork's anchor context depends "
-                "on RD05/06/07, which our base lacks)",
-                mode="replace",
+                rationale="make_test_cases_eval: insert the RD08 decode "
+                "shapes after the composition-independent Hadamard seam; "
+                "the former HI70 anchor depended on patch 1100",
+                mode="insert_after",
                 text=_PERF_NEW,
                 guard=r"rdna-boosts \(RD08\): Qwen3\.6-27B decode shapes ",
             ),
