@@ -58,7 +58,15 @@ CAMPAIGN_SRC = (
 PRODUCER_SRC = (
     TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
 ).read_text(encoding="utf-8")
-EXPECTED_ARTIFACT_NAMES = frozenset({"rd13-backend-reference.json"})
+EXPECTED_ARTIFACT_NAMES = frozenset(
+    {
+        "rd13-backend-reference.json",
+        "rd13-performance.json",
+        "rd13-subject-trace.log",
+        "rd13-control-trace.log",
+    }
+)
+_FAKE_ARTIFACT_NAMES = frozenset({"rd13-backend-reference.json"})
 
 
 def cfg_pinned() -> str:
@@ -102,20 +110,18 @@ class Rd13DedicatedPathDeletionTests(unittest.TestCase):
         )
         self.assertEqual(selection.spec.patch_id, PATCH_ID)
         self.assertEqual(selection.spec.standard_campaign, "run")
-        # The NEW behavior this migration adds: the dispatcher runs the
-        # scaffold's generic two-probe activation probe.
-        self.assertEqual(selection.spec.trace_probe, "run")
+        # The producer owns the real scaffold-pair trigger probes so the
+        # promotion channel can bind truthful TriggerEvidence.
+        self.assertEqual(selection.spec.trace_probe, "skip")
         self.assertEqual(selection.spec.correctness_evidence_cli, "forbid")
         self.assertEqual(selection.spec.performance_benchmark_cli, "forbid")
         self.assertEqual(selection.spec.artifact_names, EXPECTED_ARTIFACT_NAMES)
 
-    def test_producer_returns_no_activation_or_trace_evidence(self) -> None:
-        # The load-bearing honesty line: in trace_probe="run" mode the
-        # producer owns ONLY the measurement; activation is the
-        # scaffold probe's.
-        self.assertIn("activation_evidence=None", PRODUCER_SRC)
-        self.assertIn("trace_evidence=None", PRODUCER_SRC)
-        self.assertIn("performance_evidence=None", PRODUCER_SRC)
+    def test_producer_owns_scaffold_trigger_and_performance_evidence(self) -> None:
+        self.assertIn("run_trace_probe(", PRODUCER_SRC)
+        self.assertIn('"rd13-performance.json"', PRODUCER_SRC)
+        self.assertIn("promotion_lane_effects", PRODUCER_SRC)
+        self.assertIn("promotion_trigger_evidence", PRODUCER_SRC)
 
     def test_dispatcher_trace_probe_block_runs_the_scaffold_probe(self) -> None:
         # The dispatcher (not the producer) runs the probe, against the
@@ -397,7 +403,7 @@ def _fake_selection(
             standard_campaign="run",
             correctness_evidence_cli="forbid",
             performance_benchmark_cli="forbid",
-            artifact_names=EXPECTED_ARTIFACT_NAMES,
+            artifact_names=_FAKE_ARTIFACT_NAMES,
         ),
         producer=producer,
     )

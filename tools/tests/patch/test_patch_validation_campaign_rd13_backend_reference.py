@@ -21,6 +21,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -121,6 +122,7 @@ class _FakeRuntime:
         self.pair = pair
         self.device = device
         self.build_pair_calls: list[dict[str, object]] = []
+        self.benchmark_calls: list[dict[str, object]] = []
 
     def build_pair(
         self,
@@ -163,7 +165,54 @@ class _FakeRuntime:
         log_context: str,
         device: vp.ProducerDeviceContext | None = None,
     ) -> vp.ProducerPairedBenchmarkOutcome:
-        raise AssertionError("the RD13 producer must never benchmark")
+        self.benchmark_calls.append(
+            {
+                "control_binary": control_binary,
+                "subject_binary": subject_binary,
+                "model": model,
+                "workloads": workloads,
+                "pairs": pairs,
+                "log_context": log_context,
+                "device": device,
+            }
+        )
+        lane = types.SimpleNamespace(
+            stats={
+                "geometric_effect_pct": 0.8,
+                "ci95_low_pct": 0.6,
+                "ci95_high_pct": 1.0,
+                "paired_rounds": 10,
+                "pair_ratios": [1.01] * 10,
+            },
+            runs=[{"pair": i, "control": 10.0, "subject": 10.1} for i in range(10)],
+        )
+        return vp.ProducerPairedBenchmarkOutcome(
+            runs={"decode": lane},
+            commands={
+                "decode": {
+                    "control": (str(control_binary),),
+                    "subject": (str(subject_binary),),
+                }
+            },
+            raw_logs=(),
+        )
+
+    def run_trace_probe(
+        self,
+        *,
+        binary: Path,
+        model: Path,
+        device: vp.ProducerDeviceContext,
+        bench_prompt: int,
+        bench_gen: int,
+        log_context: str,
+        disable_fusion: bool = False,
+    ) -> str:
+        return (
+            "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_f\n"
+            if "SUBJECT" in str(binary)
+            else ""
+        )
 
     def write_artifact(
         self,
@@ -236,6 +285,8 @@ def _run_producer(
     with_device: bool = True,
     build_env: dict[str, str] | None = None,
     targets: tuple[str, ...] | None = None,
+    include_control_model: bool = True,
+    control_model_name: str = "gpt-oss-20b-UD-Q6_K_XL.gguf",
 ) -> tuple[vp.ProducerResult, _FakeRuntime, list[_FakeSession]]:
     temp = Path(tempfile.mkdtemp())
     run_dir = temp / "run"
@@ -243,6 +294,25 @@ def _run_producer(
     pair = _make_pair(temp)
     device = _make_device("gfx1100") if with_device else None
     runtime = _FakeRuntime(run_dir=run_dir, pair=pair, device=device)
+    control_model = temp / control_model_name
+    control_model.write_bytes(b"control-model")
+    model_registry = temp / "models.toml"
+    model_registry.write_text(
+        """version = 1
+
+[[models]]
+ id = 'tierM-gptoss20b-q6k'
+ path = 'gpt-oss-20b-UD-Q6_K_XL.gguf'
+ size-bytes = {size}
+""".replace("{size}", str(control_model.stat().st_size)),
+        encoding="utf-8",
+    )
+    bench_control = temp / "scaffold" / "CONTROL" / "llama-bench"
+    bench_subject = temp / "scaffold" / "SUBJECT" / "llama-bench"
+    bench_control.parent.mkdir(parents=True)
+    bench_subject.parent.mkdir(parents=True)
+    bench_control.write_bytes(b"control-bench")
+    bench_subject.write_bytes(b"subject-bench")
     architecture = "gfx1100"
     if targets is None:
         targets = (architecture,)
@@ -257,7 +327,7 @@ def _run_producer(
         model=model if model is not None else Path("/models/m.gguf"),
         corpus=None,
         build_env=build_env if build_env is not None else {"HIP_PATH": "/opt/rocm"},
-        inputs={},
+        inputs={"control_model": str(control_model)} if include_control_model else {},
         validation_build_identities={
             "control": {"build_id": "scaffold-control-build"},
             "subject": {"build_id": "scaffold-subject-build"},
@@ -265,7 +335,10 @@ def _run_producer(
         patch_id=SUBJECT_PATCH,
         device_map={architecture: (0,)},
         runtime=runtime,  # type: ignore[arg-type]
-        validation_binaries={},
+        validation_binaries={
+            "control": {"llama-bench": bench_control},
+            "subject": {"llama-bench": bench_subject},
+        },
     )
     # The small fake vocabulary (the legacy test's vocab_size=3 /
     # n_predict=2 parameters, now module constants).
@@ -304,6 +377,7 @@ def _run_producer(
             side_effect=session_factory,
         ),
         mock.patch("bigcherry.patch.source.git_worktree_tree", _fake_tree),
+        mock.patch("bigcherry.core.paths.MODELS", model_registry),
     ):
         result = module.run(ctx)  # type: ignore[union-attr]
     assert isinstance(result, vp.ProducerResult)
@@ -336,12 +410,37 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
             result.correctness["mechanism"], "rd13-full-vocab-backend-reference"
         )
         self.assertEqual(
-            result.emitted_artifacts, frozenset({"rd13-backend-reference.json"})
+            result.emitted_artifacts,
+            frozenset(
+                {
+                    "rd13-backend-reference.json",
+                    "rd13-performance.json",
+                    "rd13-subject-trace.log",
+                    "rd13-control-trace.log",
+                }
+            ),
         )
         self.assertEqual(result.check_results, ())
-        self.assertIsNone(result.activation_evidence)
-        self.assertIsNone(result.performance_evidence)
-        self.assertIsNone(result.trace_evidence)
+        self.assertIsNotNone(result.activation_evidence)
+        self.assertIsNotNone(result.performance_evidence)
+        self.assertIsNotNone(result.trace_evidence)
+        self.assertEqual(
+            result.validation_build_identities,
+            {
+                "control": {"build_id": "scaffold-control-build"},
+                "subject": {"build_id": "scaffold-subject-build"},
+            },
+        )
+        self.assertEqual(len(runtime.benchmark_calls), 2)
+        self.assertEqual(
+            [Path(str(call["model"])).name for call in runtime.benchmark_calls],
+            ["m.gguf", "gpt-oss-20b-UD-Q6_K_XL.gguf"],
+        )
+        self.assertEqual([call["pairs"] for call in runtime.benchmark_calls], [10, 10])
+        self.assertEqual(
+            result.promotion_target_metric,
+            {"RD13-MUL-MAT-ADD-VIEW-FUSION": "tg128"},
+        )
         # The pair is built once, fat multi-arch, parity asserted.
         self.assertEqual(len(runtime.build_pair_calls), 1)
         self.assertEqual(runtime.build_pair_calls[0]["targets"], CONTRACT_ARCHITECTURES)
@@ -432,6 +531,36 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
             self.module.run(ctx)  # type: ignore[union-attr]
         self.assertEqual(runtime.build_pair_calls, [])
 
+    def test_control_model_input_is_required_before_build(self) -> None:
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                self.module,
+                control_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                subject_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                include_control_model=False,
+            )
+
+    def test_control_model_registry_basename_is_enforced(self) -> None:
+        with self.assertRaises(vp.ValidationProducerError):
+            _run_producer(
+                self.module,
+                control_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                subject_rows=[
+                    _row(1, [-1.0, -2.0, -3.0]),
+                    _row(2, [-1.0, -2.0, -3.0]),
+                ],
+                control_model_name="wrong-control-model.gguf",
+            )
+
     def test_single_contract_architecture_guard(self) -> None:
         with self.assertRaises(vp.ValidationProducerError):
             _run_producer(
@@ -465,11 +594,13 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
         self.assertEqual(len(sessions), 2)
         for session in sessions:
             expected = session.expected
-            self.assertIsNotNone(expected)
+            self.assertIsInstance(expected, ExecutionIdentity)
+            assert isinstance(expected, ExecutionIdentity)
             self.assertEqual(expected.locators, ("0000:03:00.0",))
             self.assertEqual(expected.architectures, ("gfx1100",))
             self.assertEqual(
-                session.architecture_by_locator, {"0000:03:00.0": "gfx1100"},
+                session.architecture_by_locator,
+                {"0000:03:00.0": "gfx1100"},
             )
 
     def test_stale_ambient_fusion_disable_is_sanitized(self) -> None:
