@@ -5391,6 +5391,51 @@ def _lane_effect_from_pct_deltas(
 
 
 
+@dataclass(frozen=True)
+class StandardCampaignScaffold:
+    """The five standard campaign builds and their provenance evidence.
+
+    The campaign domain deliberately keeps tune/replay/stock separate from
+    the validation-domain control/subject pair: persistence requires both
+    provenance domains, and a producer's own correctness pair is neither.
+    """
+
+    base_revision: str
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    control_source: Path
+    subject_source: Path
+    stock_source: Path
+    control_idempotent: bool
+    subject_idempotent: bool
+    build_root: Path
+    build_env: dict[str, str]
+    tune_bin: Path
+    replay_bin: Path
+    stock_bin: Path
+    control_bin: Path
+    validation_subject_bin: Path
+    tune_build_evidence: CompletedBuildEvidence
+    replay_build_evidence: CompletedBuildEvidence
+    stock_build_evidence: CompletedBuildEvidence
+    control_build_evidence: CompletedBuildEvidence
+    validation_subject_build_evidence: CompletedBuildEvidence
+
+    @property
+    def campaign_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "tune": self.tune_build_evidence.campaign_identity(),
+            "replay": self.replay_build_evidence.campaign_identity(),
+            "stock": self.stock_build_evidence.campaign_identity(),
+        }
+
+    @property
+    def scaffold_validation_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "control": self.control_build_evidence.campaign_identity(),
+            "subject": self.validation_subject_build_evidence.campaign_identity(),
+        }
+
 
 def _build_standard_campaign_scaffold(
     *,
