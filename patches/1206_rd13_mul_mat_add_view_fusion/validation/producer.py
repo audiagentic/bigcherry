@@ -93,15 +93,17 @@ _CONTROL_MODEL_REF = "tierM-gptoss20b-q6k"
 _MIN_PAIRED_ROUNDS = 10
 
 
-def _content_identity(path: Path, *, model_id: str) -> dict[str, object]:
-    """Verify and content-bind the fixed contract model registry entry."""
+def _content_identity(
+    path: Path, *, model_id: str, label: str = "control model"
+) -> dict[str, object]:
+    """Verify and content-bind a fixed contract model registry entry."""
     from bigcherry.core import paths as bc_paths  # type: ignore[import-not-found]
 
     try:
         registry = tomllib.loads(bc_paths.MODELS.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise vp.ValidationProducerError(
-            f"rd13 control model: cannot read {bc_paths.MODELS}: {exc}"
+            f"rd13 {label}: cannot read {bc_paths.MODELS}: {exc}"
         ) from exc
     entry = next(
         (
@@ -113,17 +115,17 @@ def _content_identity(path: Path, *, model_id: str) -> dict[str, object]:
     )
     if not isinstance(entry, dict):
         raise vp.ValidationProducerError(
-            f"rd13 control model: registry has no {model_id!r} entry"
+            f"rd13 {label}: registry has no {model_id!r} entry"
         )
     expected_name = Path(str(entry.get("path", ""))).name
     expected_size = entry.get("size-bytes")
     if not path.is_file():
         raise vp.ValidationProducerError(
-            f"rd13 control model: file does not exist: {path}"
+            f"rd13 {label}: file does not exist: {path}"
         )
     if path.name != expected_name:
         raise vp.ValidationProducerError(
-            f"rd13 control model: {path.name!r} does not match registry basename "
+            f"rd13 {label}: {path.name!r} does not match registry basename "
             f"{expected_name!r} for {model_id}"
         )
     if (
@@ -132,7 +134,7 @@ def _content_identity(path: Path, *, model_id: str) -> dict[str, object]:
         or path.stat().st_size != expected_size
     ):
         raise vp.ValidationProducerError(
-            f"rd13 control model: {path} size {path.stat().st_size} does not match "
+            f"rd13 {label}: {path} size {path.stat().st_size} does not match "
             f"registry size {expected_size!r} for {model_id}"
         )
     digest = hashlib.sha256()
@@ -404,6 +406,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "refusing to run without one"
         )
     model = ctx.model
+    positive_model_identity = _content_identity(
+        model, model_id=_MODEL_REF, label="positive model"
+    )
     control_model_raw = ctx.inputs.get("control_model")
     if not isinstance(control_model_raw, str) or not control_model_raw:
         raise vp.ValidationProducerError(
@@ -731,6 +736,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "contract_id": _CONTRACT_ID,
         "architecture": architecture,
         "positive_model": str(model),
+        "positive_model_identity": positive_model_identity,
         "control_model": str(control_model),
         "control_model_identity": control_model_identity,
         "benchmark_build_identities": {
