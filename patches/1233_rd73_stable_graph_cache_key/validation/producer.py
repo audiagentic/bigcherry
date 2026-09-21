@@ -13,14 +13,12 @@ Design ruling (dev-gpt-agent req_a232ff7fb1f045db):
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from bigcherry.bench import server_completion as sc
-from bigcherry.campaign.benchmark import sanitize_environment
 from bigcherry.experiment.attestation import ExecutionIdentity
 from bigcherry.experiment.contract import (
     CorrectnessResult,
@@ -54,6 +52,25 @@ _MTP_SERVER_ARGS = (
 
 # ROCR_VISIBLE_DEVICES must be unset for all server launches
 _ROCR_UNSET = ("ROCR_VISIBLE_DEVICES",)
+
+_RESOURCE_PREFIX = "BIGCHERRY_RD73_RESOURCE"
+_RESOURCE_PATTERN = re.compile(r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)\s*$")
+
+
+def _parse_resource_telemetry(text: str) -> tuple[int, ...]:
+    """Parse RD73 graph-cache telemetry and fail closed on malformed lines."""
+    readings: list[int] = []
+    for line in text.splitlines():
+        if _RESOURCE_PREFIX not in line:
+            continue
+        match = _RESOURCE_PATTERN.search(line)
+        if match is None:
+            raise ValidationProducerError(
+                "RD73 resource telemetry: malformed BIGCHERRY_RD73_RESOURCE line: "
+                f"{line!r}"
+            )
+        readings.append(int(match.group(1)))
+    return tuple(readings)
 
 
 def _atomic_write_json(path: Path, data: Any) -> None:
@@ -370,13 +387,10 @@ def _run_resource_burst(
         for i in range(requests):
             sc.run_request(transport, burst_prompt, config, pass_number=1, order_index=i)
 
-    # GPT round 6 BLOCKER: use the canonical parse_rd73_resource_telemetry()
-    # for fail-closed behavior (raises on any malformed prefixed line)
-    from bigcherry.patch.validation_campaign import (
-        parse_rd73_resource_telemetry,
-    )
+    # Fail closed on any malformed prefixed line; a missing telemetry reading
+    # is handled below as inconclusive evidence.
     log_text = log_path.read_text(encoding="utf-8", errors="replace")
-    readings = parse_rd73_resource_telemetry(log_text)
+    readings = _parse_resource_telemetry(log_text)
     if not readings:
         raise ValidationProducerError(
             "RD73 resource burst: no graph_cache_entries telemetry observed -- "
