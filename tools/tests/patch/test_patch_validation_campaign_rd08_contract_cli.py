@@ -8,6 +8,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 from bigcherry.patch import validation_producer as vp
+from bigcherry.patch.validation import ArtifactRef
 from pathlib import Path
 
 
@@ -236,7 +237,8 @@ class _FakeRd08Runtime:
         )
 
     def write_artifact(self, *, name, payload):
-        import hashlib, json
+        import hashlib
+        import json
         path = self.run_dir / "artifacts" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         data = json.dumps(payload, indent=2)
@@ -278,6 +280,63 @@ class _FakeRd08Context:
             "control": {"build_id": "scaffold-ctrl"},
             "subject": {"build_id": "scaffold-subj"},
         }
+
+
+class RD08ActivationEvidenceTests(unittest.TestCase):
+    """Exercise the producer's runtime activation evidence branches."""
+
+    def _load_producer(self):
+        import importlib.util
+        import sys
+
+        producer_path = (
+            Path(__file__).resolve().parents[2] / ".." / "patches"
+            / "1204_rd08_q6k_mmvq_vdr2" / "validation" / "producer.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "rd08_activation_producer", producer_path
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def test_activation_evidence_is_typed_for_all_marker_outcomes(self):
+        from tempfile import TemporaryDirectory
+
+        producer = self._load_producer()
+        marker = "BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2"
+
+        class Runtime:
+            def __init__(self, subject_log, control_log):
+                self.subject_log = subject_log
+                self.control_log = control_log
+
+            def run_trace_probe(self, *, log_context, **kwargs):
+                return self.subject_log if "subject" in log_context else self.control_log
+
+        with TemporaryDirectory() as tmp:
+            ctx = SimpleNamespace(
+                runtime=Runtime(marker, "no marker"),
+                validation_binaries={
+                    "subject": {"llama-bench": Path(tmp) / "subject"},
+                    "control": {"llama-bench": Path(tmp) / "control"},
+                },
+                model=Path(tmp) / "model.gguf",
+            )
+            activation, _, _, _ = producer._run_activation(ctx, object())
+            self.assertIsInstance(activation, producer.ActivationEvidence)
+            self.assertEqual(activation.status, "executed")
+
+            for subject_log, control_log, expected in (
+                (marker, marker, "unobservable"),
+                ("no marker", "no marker", "not_executed"),
+            ):
+                ctx.runtime = Runtime(subject_log, control_log)
+                activation, _, _, _ = producer._run_activation(ctx, object())
+                self.assertIsInstance(activation, producer.ActivationEvidence)
+                self.assertEqual(activation.status, expected)
 
 
 if __name__ == "__main__":
