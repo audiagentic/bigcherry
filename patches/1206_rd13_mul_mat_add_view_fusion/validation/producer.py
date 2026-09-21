@@ -27,34 +27,38 @@ Design rulings applied (req_110d0729beb44d8b):
   legitimately differ from the legacy per-arch builds -- the
   historical records are the semantic equivalence target, not the
   build-identity bytes.
-- The producer owns ONLY the measurement. Activation is the
-  SCAFFOLD's generic two-probe trace-marker probe (trace_probe='run'
-  in producer.toml): RD13's marker (validation.toml's marker-regex)
-  is a real graph-fusion marker and its GGML_CUDA_DISABLE_FUSION
-  negative control is valid -- the producer returns no activation or
-  trace evidence. The producer's own server env sanitizes
-  GGML_CUDA_DISABLE_FUSION out so a stale ambient fusion-disable
-  cannot make the subject inert (legacy behavior, preserved).
-- performance_evidence stays None: RD13's historical performance/
-  controls dispositions are ERROR and remain so (this migration does
-  not add benchmark semantics). Every canonical identity field is
-  owned by the shared binder, never here.
+- The producer owns the backend-reference correctness measurement and
+  the contract performance/controls lanes. Correctness uses its isolated
+  llama-server pair; performance and trigger evidence use the standard
+  scaffold llama-bench pair. The producer returns real activation and
+  trace evidence from its own marker probes, with the server environment
+  still sanitizing GGML_CUDA_DISABLE_FUSION.
+- Scaffold control/subject build identities are canonical because they
+  produce the promotion measurements. Server-pair identities remain local
+  to the backend-reference artifact. The required tierM control model is
+  content-bound to the registry before any benchmark subprocess starts;
+  threshold aggregation remains dispatcher-owned.
 """
 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import hashlib
+import importlib
 import json
 import math
+import re
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from array import array
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Protocol
 
-from bigcherry.patch import validation_producer as vp
+from bigcherry.patch import validation_producer as vp  # type: ignore[import-not-found]
 
 # One contract architecture per run (the historical RD13 rule): the
 # operator names it via --amdgpu-targets; the binary itself is built
@@ -79,6 +83,81 @@ _PROMPT = (
 _TIMEOUT_S = 900
 
 _ARTIFACT_NAME = "rd13-backend-reference.json"
+_PERFORMANCE_ARTIFACT_NAME = "rd13-performance.json"
+_SUBJECT_TRACE_ARTIFACT_NAME = "rd13-subject-trace.log"
+_CONTROL_TRACE_ARTIFACT_NAME = "rd13-control-trace.log"
+_MARKER_REGEX = (
+    "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)"
+)
+_CONTROL_MODEL_REF = "tierM-gptoss20b-q6k"
+_MIN_PAIRED_ROUNDS = 10
+
+
+def _content_identity(path: Path, *, model_id: str) -> dict[str, object]:
+    """Verify and content-bind the fixed contract model registry entry."""
+    from bigcherry.core import paths as bc_paths  # type: ignore[import-not-found]
+
+    try:
+        registry = tomllib.loads(bc_paths.MODELS.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise vp.ValidationProducerError(
+            f"rd13 control model: cannot read {bc_paths.MODELS}: {exc}"
+        ) from exc
+    entry = next(
+        (
+            item
+            for item in registry.get("models", [])
+            if isinstance(item, dict) and item.get("id") == model_id
+        ),
+        None,
+    )
+    if not isinstance(entry, dict):
+        raise vp.ValidationProducerError(
+            f"rd13 control model: registry has no {model_id!r} entry"
+        )
+    expected_name = Path(str(entry.get("path", ""))).name
+    expected_size = entry.get("size-bytes")
+    if not path.is_file():
+        raise vp.ValidationProducerError(
+            f"rd13 control model: file does not exist: {path}"
+        )
+    if path.name != expected_name:
+        raise vp.ValidationProducerError(
+            f"rd13 control model: {path.name!r} does not match registry basename "
+            f"{expected_name!r} for {model_id}"
+        )
+    if (
+        not isinstance(expected_size, int)
+        or isinstance(expected_size, bool)
+        or path.stat().st_size != expected_size
+    ):
+        raise vp.ValidationProducerError(
+            f"rd13 control model: {path} size {path.stat().st_size} does not match "
+            f"registry size {expected_size!r} for {model_id}"
+        )
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "model_id": model_id,
+        "path": str(path),
+        "size_bytes": path.stat().st_size,
+        "sha256": digest.hexdigest(),
+        "registry_path": str(entry.get("path", "")),
+    }
+
+
+def _scaffold_binary(
+    ctx: vp.ProducerContext, *, role: str, target: str = "llama-bench"
+) -> Path:
+    binaries = ctx.validation_binaries.get(role)
+    binary = binaries.get(target) if isinstance(binaries, Mapping) else None
+    if not isinstance(binary, Path) or not binary.is_file():
+        raise vp.ValidationProducerError(
+            f"rd13 performance: standard scaffold {role} {target} binary is missing"
+        )
+    return binary
 
 
 def _request_payload() -> dict[str, object]:
@@ -161,7 +240,11 @@ def _stream_completion_rows(
                     saw_stop = True
                     continue
                 rows = event.get("completion_probabilities")
-                if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], Mapping):
+                if (
+                    not isinstance(rows, list)
+                    or len(rows) != 1
+                    or not isinstance(rows[0], Mapping)
+                ):
                     raise vp.ValidationProducerError(
                         "rd13 backend_reference: expected exactly one completion_probabilities row per stream event"
                     )
@@ -177,7 +260,11 @@ def _stream_completion_rows(
 
 
 def _dense_logprobs(
-    row: Mapping[str, object], *, vocab_size: int, arm: str, step: int,
+    row: Mapping[str, object],
+    *,
+    vocab_size: int,
+    arm: str,
+    step: int,
 ) -> tuple[int, array]:
     """Validate one full-vocabulary row and return token-id-indexed logprobs."""
     generated_id = row.get("id")
@@ -250,11 +337,52 @@ def _canonical_bytes(values: array) -> bytes:
     return copied.tobytes()
 
 
+def _lane_effect(
+    outcome: vp.ProducerPairedBenchmarkOutcome,
+    *,
+    role: str,
+    label: str,
+):
+    experiment_execution = importlib.import_module("bigcherry.experiment.execution")
+
+    if set(outcome.runs) != {"decode"}:
+        raise vp.ValidationProducerError(
+            f"rd13 performance: {label} must produce exactly one decode lane; "
+            f"got {sorted(outcome.runs)!r}"
+        )
+    run = outcome.runs["decode"]
+    stats = getattr(run, "stats", None)
+    if not isinstance(stats, Mapping):
+        raise vp.ValidationProducerError(
+            f"rd13 performance: {label} decode lane has no statistics"
+        )
+    if stats.get("paired_rounds") != _MIN_PAIRED_ROUNDS:
+        raise vp.ValidationProducerError(
+            f"rd13 performance: {label} decode lane has "
+            f"{stats.get('paired_rounds')!r} usable paired rounds; "
+            f"expected {_MIN_PAIRED_ROUNDS}"
+        )
+    try:
+        return experiment_execution.lane_effect_from_run(role, "tg128", run)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise vp.ValidationProducerError(
+            f"rd13 performance: {label} decode lane statistics are incomplete"
+        ) from exc
+
+
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.experiment.attestation import ExecutionIdentity
-    from bigcherry.experiment.server_execution import AttestedServerSession
-    from bigcherry.patch import source as psi
+    experiment_contract = importlib.import_module("bigcherry.experiment.contract")
+    experiment_execution = importlib.import_module("bigcherry.experiment.execution")
+    ExecutionIdentity = importlib.import_module(
+        "bigcherry.experiment.attestation"
+    ).ExecutionIdentity
+    AttestedServerSession = importlib.import_module(
+        "bigcherry.experiment.server_execution"
+    ).AttestedServerSession
+    psi = importlib.import_module("bigcherry.patch.source")
+    ActivationEvidence = importlib.import_module(
+        "bigcherry.patch.activation"
+    ).ActivationEvidence
 
     if (
         len(ctx.fat_targets.targets) != 1
@@ -276,6 +404,25 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "refusing to run without one"
         )
     model = ctx.model
+    control_model_raw = ctx.inputs.get("control_model")
+    if not isinstance(control_model_raw, str) or not control_model_raw:
+        raise vp.ValidationProducerError(
+            "rd13 performance requires --producer-input control_model=<path>"
+        )
+    control_model = Path(control_model_raw)
+    control_model_identity = _content_identity(
+        control_model, model_id=_CONTROL_MODEL_REF
+    )
+
+    # The performance and controls lanes are deliberately run with the
+    # standard scaffold pair. The server pair below remains correctness-only.
+    bench_control = _scaffold_binary(ctx, role="control")
+    bench_subject = _scaffold_binary(ctx, role="subject")
+    scaffold_identities = ctx.validation_build_identities
+    if set(scaffold_identities) != {"control", "subject"}:
+        raise vp.ValidationProducerError(
+            "rd13 performance requires scaffold control/subject build identities"
+        )
 
     # The one sanctioned pair authority: control = baseline composition;
     # subject = baseline + focal (1206). Built ONCE as the fat multi-arch
@@ -300,6 +447,66 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     device = matches[0]
 
+    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control,
+        subject_binary=bench_subject,
+        model=model,
+        workloads=("decode",),
+        pairs=_MIN_PAIRED_ROUNDS,
+        log_context="rd13-performance-positive",
+        device=device,
+    )
+    control_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control,
+        subject_binary=bench_subject,
+        model=control_model,
+        workloads=("decode",),
+        pairs=_MIN_PAIRED_ROUNDS,
+        log_context="rd13-performance-control",
+        device=device,
+    )
+    positive_effect = _lane_effect(positive_outcome, role="positive", label="positive")
+    control_effect = _lane_effect(control_outcome, role="control", label="control")
+
+    subject_trace = ctx.runtime.run_trace_probe(
+        binary=bench_subject,
+        model=model,
+        device=device,
+        bench_prompt=512,
+        bench_gen=128,
+        log_context="rd13-trigger-subject",
+        disable_fusion=False,
+    )
+    control_trace = ctx.runtime.run_trace_probe(
+        binary=bench_control,
+        model=model,
+        device=device,
+        bench_prompt=512,
+        bench_gen=128,
+        log_context="rd13-trigger-control",
+        disable_fusion=False,
+    )
+    marker = re.compile(_MARKER_REGEX)
+    subject_hit = marker.search(subject_trace) is not None
+    control_hit = marker.search(control_trace) is not None
+    trigger_hit = subject_hit and not control_hit
+    activation = ActivationEvidence(
+        status="executed"
+        if trigger_hit
+        else ("unobservable" if subject_hit else "not_executed"),
+        mechanism="trace_marker",
+        detail=(
+            f"marker {_MARKER_REGEX!r} subject_hit={subject_hit} "
+            f"control_hit={control_hit}"
+        ),
+    )
+    subject_trace_ref = ctx.runtime.write_text_artifact(
+        name=_SUBJECT_TRACE_ARTIFACT_NAME, text=subject_trace
+    )
+    control_trace_ref = ctx.runtime.write_text_artifact(
+        name=_CONTROL_TRACE_ARTIFACT_NAME, text=control_trace
+    )
+
     # PRBE111 (preserved) + PA36 RD13/1206 migration (GPT req_760c0fe82d7b4609
     # BLOCKER): the llama-server attestation channel derives the server
     # architecture ONLY via a verified locator->arch mapping (the
@@ -312,7 +519,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     # before (never guess a mapping).
     if device.locator is not None:
         expected = ExecutionIdentity(
-            backend="ROCm", architectures=(architecture,),
+            backend="ROCm",
+            architectures=(architecture,),
             locators=(device.locator,),
         )
         architecture_by_locator = {device.locator: architecture}
@@ -352,16 +560,19 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     comparable_steps = 0
 
     try:
-        with AttestedServerSession(
-            binary=control_binary,
-            model=model,
-            expected=expected,
-            extra_args=server_args,
-            log_path=logs_dir / "rd13-backend-reference-control-server.log",
-            env_overrides=server_env,
-            env_unset=env_unset,
-            architecture_by_locator=architecture_by_locator,
-        ) as control_session, spool_path.open("wb") as spool:
+        with (
+            AttestedServerSession(
+                binary=control_binary,
+                model=model,
+                expected=expected,
+                extra_args=server_args,
+                log_path=logs_dir / "rd13-backend-reference-control-server.log",
+                env_overrides=server_env,
+                env_unset=env_unset,
+                architecture_by_locator=architecture_by_locator,
+            ) as control_session,
+            spool_path.open("wb") as spool,
+        ):
             if control_session.attestation is None:
                 raise vp.ValidationProducerError(
                     "rd13 backend_reference: control server has no attestation"
@@ -375,7 +586,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                         "rd13 backend_reference: control emitted more decode steps than requested"
                     )
                 generated_id, values = _dense_logprobs(
-                    row, vocab_size=_VOCAB_SIZE, arm="control", step=step,
+                    row,
+                    vocab_size=_VOCAB_SIZE,
+                    arm="control",
+                    step=step,
                 )
                 encoded = _canonical_bytes(values)
                 spool.write(encoded)
@@ -387,16 +601,19 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                     f"expected {_N_PREDICT}"
                 )
 
-        with AttestedServerSession(
-            binary=subject_binary,
-            model=model,
-            expected=expected,
-            extra_args=server_args,
-            log_path=logs_dir / "rd13-backend-reference-subject-server.log",
-            env_overrides=server_env,
-            env_unset=env_unset,
-            architecture_by_locator=architecture_by_locator,
-        ) as subject_session, spool_path.open("rb") as spool:
+        with (
+            AttestedServerSession(
+                binary=subject_binary,
+                model=model,
+                expected=expected,
+                extra_args=server_args,
+                log_path=logs_dir / "rd13-backend-reference-subject-server.log",
+                env_overrides=server_env,
+                env_unset=env_unset,
+                architecture_by_locator=architecture_by_locator,
+            ) as subject_session,
+            spool_path.open("rb") as spool,
+        ):
             if subject_session.attestation is None:
                 raise vp.ValidationProducerError(
                     "rd13 backend_reference: subject server has no attestation"
@@ -410,7 +627,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                         "rd13 backend_reference: subject emitted more decode steps than requested"
                     )
                 generated_id, subject_values = _dense_logprobs(
-                    row, vocab_size=_VOCAB_SIZE, arm="subject", step=step,
+                    row,
+                    vocab_size=_VOCAB_SIZE,
+                    arm="subject",
+                    step=step,
                 )
                 encoded = _canonical_bytes(subject_values)
                 subject_digest.update(encoded)
@@ -483,7 +703,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             f"max_abs_logprob_diff={max_abs_diff:.9g} {relation} tolerance={_TOLERANCE:.9g}"
         )
     backend_reference_result = experiment_contract.CorrectnessResult(
-        check="backend_reference", passed=passed, detail=detail,
+        check="backend_reference",
+        passed=passed,
+        detail=detail,
     )
 
     comparison = {
@@ -501,6 +723,46 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "control_logprobs_sha256": control_digest.hexdigest(),
         "subject_logprobs_sha256": subject_digest.hexdigest(),
     }
+    performance_doc = {
+        "schema_version": 1,
+        "contract_id": _CONTRACT_ID,
+        "architecture": architecture,
+        "positive_model": str(model),
+        "control_model": str(control_model),
+        "control_model_identity": control_model_identity,
+        "benchmark_build_identities": {
+            role: dict(identity) for role, identity in scaffold_identities.items()
+        },
+        "positive": {
+            "metric": "tg128",
+            "effect": dataclasses.asdict(positive_effect),
+            "commands": {
+                key: {inner: list(argv) for inner, argv in values.items()}
+                for key, values in positive_outcome.commands.items()
+            },
+            "runs": list(positive_outcome.runs["decode"].runs),
+            "stats": dict(positive_outcome.runs["decode"].stats),
+        },
+        "control": {
+            "metric": "tg128",
+            "effect": dataclasses.asdict(control_effect),
+            "commands": {
+                key: {inner: list(argv) for inner, argv in values.items()}
+                for key, values in control_outcome.commands.items()
+            },
+            "runs": list(control_outcome.runs["decode"].runs),
+            "stats": dict(control_outcome.runs["decode"].stats),
+        },
+        "metrics": {
+            "positive_decode": dataclasses.asdict(positive_effect),
+            "control_decode": dataclasses.asdict(control_effect),
+        },
+        "trigger": {"subject_hit": subject_hit, "control_hit": control_hit},
+    }
+    performance_ref = ctx.runtime.write_artifact(
+        name=_PERFORMANCE_ARTIFACT_NAME, payload=performance_doc
+    )
+
     doc = {
         "schema_version": 1,
         "check": backend_reference_result.check,
@@ -516,25 +778,57 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         "control_build_identity": pair.validation_build_identities["control"],
     }
     ctx.runtime.write_artifact(name=_ARTIFACT_NAME, payload=doc)
+    trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="rd13-decode-subject",
+        role="positive",
+        positive_hit=trigger_hit,
+    )
 
     # Semantic correctness for the shared binder: exactly the legacy
     # correctness.json mechanism (the historical records' mechanism
-    # string is preserved verbatim). Activation/performance stay
-    # untouched: the scaffold probe owns activation; performance/
-    # controls remain unsatisfied exactly as the historical records
-    # show them.
+    # string is preserved verbatim). The server pair identities remain
+    # local to that artifact; the canonical ProducerResult identity is
+    # the standard scaffold llama-bench pair used for promotion lanes.
     return vp.ProducerResult(
         correctness={
             "disposition": "passed" if passed else "failed",
             "mechanism": "rd13-full-vocab-backend-reference",
             "detail": detail,
         },
-        validation_build_identities=pair.validation_build_identities,
-        activation_evidence=None,
-        performance_evidence=None,
-        trace_evidence=None,
+        validation_build_identities=ctx.validation_build_identities,
+        activation_evidence=activation,
+        performance_evidence={
+            "artifact": {
+                "path": performance_ref.path,
+                "sha256": performance_ref.sha256,
+            }
+        },
+        trace_evidence={
+            "positive": {
+                "artifact": {
+                    "path": subject_trace_ref.path,
+                    "sha256": subject_trace_ref.sha256,
+                }
+            },
+            "negative": {
+                "artifact": {
+                    "path": control_trace_ref.path,
+                    "sha256": control_trace_ref.sha256,
+                }
+            },
+        },
         check_results=(),
         lane_effects=(),
         contract_correctness_results=(backend_reference_result,),
-        emitted_artifacts=frozenset({_ARTIFACT_NAME}),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
+        promotion_target_metric={_CONTRACT_ID: "tg128"},
+        promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
+        emitted_artifacts=frozenset(
+            {
+                _ARTIFACT_NAME,
+                _PERFORMANCE_ARTIFACT_NAME,
+                _SUBJECT_TRACE_ARTIFACT_NAME,
+                _CONTROL_TRACE_ARTIFACT_NAME,
+            }
+        ),
     )
