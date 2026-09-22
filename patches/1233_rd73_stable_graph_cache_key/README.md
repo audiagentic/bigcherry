@@ -64,11 +64,22 @@ entrypoint `producer.py:run`) via `--validation-producer`:
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1233_rd73_stable_graph_cache_key \
   --validation-producer 1233_rd73_stable_graph_cache_key/rd73 \
-  --device-map gfx1100=0,gfx1100=1 \
+  --model <tierL-qwen27b-q8.gguf> \
   --producer-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl \
+  --device-map gfx1100=0,gfx1100=1 \
   --hip-path <production-rocm> --amdgpu-targets gfx1100 \
   --workdir <fresh-workdir>
 ```
+
+Two preflight prerequisites (both fail closed before any hardware use):
+the producer's `require_device_visibility(exact_count=2, env=ctx.build_env)`
+reads the **ambient** `HIP_VISIBLE_DEVICES` (from `ctx.build_env`, which
+copies `os.environ`), so the invoking shell must expose **exactly two**
+distinct devices (e.g. `export HIP_VISIBLE_DEVICES=0,1`); `--device-map
+gfx1100=0,gfx1100=1` is the per-architecture device-index mapping and does
+not itself satisfy that check. RD73 also passes `ctx.model` into every
+`AttestedServerSession`, so `--model` is mandatory (the `--validation-producer`
+path does not re-impose the legacy parser's model-required check).
 
 `producer.py:run()` executes RD73's real paired MTP-verify performance
 lane over a real llama-server HTTP harness (`_run_mtp_server_lane`),
@@ -106,12 +117,13 @@ it, matching this contract's own documented characterization
 methodology.
 
 **Known gap (VA06):** the producer's own contract-level
-PASS/FAIL/INVALID verdict is real and auditable
-(`artifacts/.../rd73-contract-qualification.json`), but the generic
-adapter's own `validation.toml` correctness/performance/trace evidence
-rebinding (so `eligible_for_validated_state` can become `True`) remains
-separate, deferred work -- a full producer PASS alone does not update
-tracked status.
+PASS/FAIL/INVALID verdict is real and auditable -- it is written into the
+run's `producer-execution.json` / persisted validation evidence (the
+producer emits exactly the eight `producer.toml`-declared artifacts; there
+is no separate `rd73-contract-qualification.json`). The generic adapter's
+own `validation.toml` correctness/performance/trace evidence rebinding (so
+`eligible_for_validated_state` can become `True`) remains separate,
+deferred work -- a full producer PASS alone does not update tracked status.
 
 ## Known limitations
 
@@ -131,7 +143,7 @@ tracked status.
   comparison of the MTP lane's paired control/subject generated content,
   failing closed on mismatch/missing/non-string/unpaired records.
   `validation.toml`'s generic `correctness` check (validator=
-  "backend-ops") is unaffected and still reports `BLOCKED`.
+  "correctness-summary") is unaffected and still reports `BLOCKED`.
 - **Activation has a real marker probe (VA06).** RD73's patch source
   now carries a `BIGCHERRY_PATCH_TRACE`-gated marker at the stable-key
   execution site (`BIGCHERRY_PATCH_HIT patch=1233_rd73
@@ -153,9 +165,11 @@ tracked status.
   the patch's `BIGCHERRY_RD73_RESOURCE_TRACE`-gated telemetry.
 - The remaining gap is the generic adapter's `validation.toml`
   rebinding (see "Known gap" above) -- this patch's tracked-status
-  stays `untested` until that lands and a real hardware
-  `--validation-producer 1233_rd73_stable_graph_cache_key/rd73` qualification
-  passes; the producer's own real
+  stays `rejected` (its `patch.toml` `state = "rejected"`, a deliberate
+  governance decision after HI162's better-controlled A/B measured
+  regression) until that governance decision is reversed and a real
+  hardware `--validation-producer 1233_rd73_stable_graph_cache_key/rd73`
+  qualification passes; the producer's own real
   contract PASS/FAIL/INVALID verdict alone does not update tracked
   status.
 
