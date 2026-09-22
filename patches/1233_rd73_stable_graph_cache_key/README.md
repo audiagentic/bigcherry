@@ -66,7 +66,7 @@ PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --validation-producer 1233_rd73_stable_graph_cache_key/rd73 \
   --model <tierL-qwen27b-q8.gguf> \
   --producer-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl \
-  --device-map gfx1100=0,gfx1100=1 \
+  --device-map gfx1100=0,1 \
   --hip-path <production-rocm> --amdgpu-targets gfx1100 \
   --workdir <fresh-workdir>
 ```
@@ -76,10 +76,11 @@ the producer's `require_device_visibility(exact_count=2, env=ctx.build_env)`
 reads the **ambient** `HIP_VISIBLE_DEVICES` (from `ctx.build_env`, which
 copies `os.environ`), so the invoking shell must expose **exactly two**
 distinct devices (e.g. `export HIP_VISIBLE_DEVICES=0,1`); `--device-map
-gfx1100=0,gfx1100=1` is the per-architecture device-index mapping and does
-not itself satisfy that check. RD73 also passes `ctx.model` into every
-`AttestedServerSession`, so `--model` is mandatory (the `--validation-producer`
-path does not re-impose the legacy parser's model-required check).
+gfx1100=0,1` is the per-architecture device-index mapping (`ARCH=ID[,ID...]`)
+and does not itself satisfy that check. RD73 also passes `ctx.model` into
+every `AttestedServerSession`, so `--model` is mandatory (the
+`--validation-producer` path does not re-impose the legacy parser's
+model-required check). The producer now fails fast on a missing model
 
 `producer.py:run()` executes RD73's real paired MTP-verify performance
 lane over a real llama-server HTTP harness (`_run_mtp_server_lane`),
@@ -116,14 +117,19 @@ no VRAM conflict) and drives a real repeated-shape request burst against
 it, matching this contract's own documented characterization
 methodology.
 
-**Known gap (VA06):** the producer's own contract-level
+**Evidence binding (VA06):** the producer's own contract-level
 PASS/FAIL/INVALID verdict is real and auditable -- it is written into the
 run's `producer-execution.json` / persisted validation evidence (the
 producer emits exactly the eight `producer.toml`-declared artifacts; there
-is no separate `rd73-contract-qualification.json`). The generic adapter's
-own `validation.toml` correctness/performance/trace evidence rebinding (so
-`eligible_for_validated_state` can become `True`) remains separate,
-deferred work -- a full producer PASS alone does not update tracked status.
+is no separate `rd73-contract-qualification.json`). With
+`standard_campaign = "run"`, `_bind_producer_result_evidence()` binds the
+producer's performance, correctness, trace, and activation evidence into
+the validation context **before** `evaluate_check()`, so the generic
+`validation.toml` checks (benchmark, correctness-summary, trace-marker)
+consume real bound values -- they are **not** BLOCKED.
+`eligible_for_validated_state` additionally requires both the adapter
+verdict and the bound contract promotion to pass; the tracked status stays
+`rejected` regardless (see "Known limitations").
 
 ## Known limitations
 
@@ -135,21 +141,27 @@ deferred work -- a full producer PASS alone does not update tracked status.
   never llama-bench, which is unworkable for this real 27B/dual-GPU
   config) produce real evidence, composed via `aggregate_contract_effects()`
   against the contract's own `end_to_end_gain_pct`/
-  `max_control_regression_pct` thresholds. `validation.toml`'s generic
-  `performance`/`controls` checks (validator="benchmark") are unaffected
-  by this and still report `BLOCKED` -- see "Known gap" above.
+  `max_control_regression_pct` thresholds. With `standard_campaign =
+  "run"`, the generic `performance`/`controls` checks (validator="benchmark")
+  consume that bound producer performance evidence via
+  `_bind_producer_result_evidence()` (not BLOCKED).
 - **Correctness (`bit_identical`) has a real producer (VA06).**
   `_check_bit_identical()` performs exact string-equality
   comparison of the MTP lane's paired control/subject generated content,
   failing closed on mismatch/missing/non-string/unpaired records.
-  `validation.toml`'s generic `correctness` check (validator=
-  "correctness-summary") is unaffected and still reports `BLOCKED`.
+  With `standard_campaign = "run"`, the generic `correctness` check
+  (validator="correctness-summary") consumes that bound producer
+  correctness evidence via `_bind_producer_result_evidence()` (not
+  BLOCKED).
 - **Activation has a real marker probe (VA06).** RD73's patch source
   now carries a `BIGCHERRY_PATCH_TRACE`-gated marker at the stable-key
   execution site (`BIGCHERRY_PATCH_HIT patch=1233_rd73
   path=stable_graph_cache_key`), and the producer produces a real
   subject-hit/control-miss result by reading that marker from the MTP
-  lane's own control/subject server log files.
+  lane's own control/subject server log files; with `standard_campaign =
+  "run"`, the generic `activation` check (validator="trace-marker")
+  consumes that bound producer trace evidence via
+  `_bind_producer_result_evidence()` (not BLOCKED).
   The generic tune-binary/`GGML_CUDA_DISABLE_FUSION`-based negative
   control is still **not** valid for this patch (RD73 is graph-cache
   keying, not a fusion path `GGML_CUDA_DISABLE_FUSION` controls) and
@@ -163,15 +175,15 @@ deferred work -- a full producer PASS alone does not update tracked status.
   reduction (-> `ResourceResult`, no paired control required) inlined into
   `run()`, driven by
   the patch's `BIGCHERRY_RD73_RESOURCE_TRACE`-gated telemetry.
-- The remaining gap is the generic adapter's `validation.toml`
-  rebinding (see "Known gap" above) -- this patch's tracked-status
-  stays `rejected` (its `patch.toml` `state = "rejected"`, a deliberate
-  governance decision after HI162's better-controlled A/B measured
-  regression) until that governance decision is reversed and a real
-  hardware `--validation-producer 1233_rd73_stable_graph_cache_key/rd73`
-  qualification passes; the producer's own real
-  contract PASS/FAIL/INVALID verdict alone does not update tracked
-  status.
+- **Tracked status is governance-gated, not evidence-gated.** The
+  adapter checks and the bound contract promotion are real, but this
+  patch's tracked-status stays `rejected` (its `patch.toml`
+  `state = "rejected"`, a deliberate governance decision after HI162's
+  better-controlled A/B measured regression). A real hardware
+  `--validation-producer 1233_rd73_stable_graph_cache_key/rd73`
+  qualification alone does not update tracked status; the governance
+  decision must be reversed first, and any revision requires fresh
+  accepted evidence.
 
 ## Control vs. subject
 

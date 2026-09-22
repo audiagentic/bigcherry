@@ -82,6 +82,17 @@ class Rd73ProducerTests(unittest.TestCase):
         self.module = _load_producer()
         self.ctx = _FakeProducerContext()
 
+    def test_missing_model_fails_closed(self) -> None:
+        # GPT round-2 MAJOR: the --validation-producer path does not
+        # re-impose the legacy parser's model-required check, so the
+        # producer must fail fast on a missing model before any hardware
+        # use (otherwise ServerRunner would build `-m None`). The model
+        # guard is the very first check in run(), so no server mocking is
+        # needed.
+        self.ctx.model = None
+        with self.assertRaises(self.module.ValidationProducerError):
+            self.module.run(self.ctx)
+
     @patch(f"{PRODUCER_MODULE}.require_device_visibility")
     @patch(f"{PRODUCER_MODULE}.AttestedServerSession")
     @patch(f"{PRODUCER_MODULE}.sc")
