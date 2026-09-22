@@ -51,16 +51,12 @@ from bigcherry.build.builds import (
     CompletedBuildEvidence,
     capture_completed_build_evidence,
 )
-from bigcherry.campaign.bench_runner import (  # noqa: F401
-    BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
-)
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import (
     ExecutionAttestation,
     ExecutionIdentity,
     compare_execution_identity,
 )
-from bigcherry.experiment.server_execution import AttestedServerSession
 from bigcherry.patch.validation import (
     ArtifactRef,
     ValidationContext,
@@ -83,12 +79,14 @@ from bigcherry.patch.validation_producer import (
     validate_producer_result,
 )
 
-# GPT review (req_8429aa8e0d35496e, 2026-09-11): every RD73 server session
-# governed by this module's HIP-only selector contract (require_device_
-# visibility()/DeviceVisibility, see PNRO17) must explicitly unset an
-# inherited ROCR_VISIBLE_DEVICES, not merely avoid setting one -- ambient
-# env still reaches ServerRunner.launch() (dict(os.environ) + env_unset,
-# then env_overrides) otherwise, reproducing the double-filtering bug.
+# GPT review (req_8429aa8e0d35496e, 2026-09-11): every server session on the
+# shared/legacy path that uses this module's HIP-only selector contract
+# (require_device_visibility()/DeviceVisibility, see PNRO17) must explicitly
+# unset an inherited ROCR_VISIBLE_DEVICES, not merely avoid setting one --
+# ambient env still reaches ServerRunner.launch() (dict(os.environ) +
+# env_unset, then env_overrides) otherwise, reproducing the double-filtering
+# bug. (RD73's own server sessions live in its patch-local producer and apply
+# the same contract there.)
 _ROCR_VISIBLE_DEVICES_UNSET: tuple[str, ...] = ("ROCR_VISIBLE_DEVICES",)
 
 
@@ -3473,15 +3471,6 @@ def run_patch1000_verification(
         },
         "cells": cells,
     }
-
-
-_LANE_EFFECT_FIELDS = (
-    "geometric_effect_pct",
-    "decision",
-    "ci95_low_pct",
-    "ci95_high_pct",
-    "paired_rounds",
-)
 
 
 def collect_lane_effect_records() -> list[dict[str, object]]:

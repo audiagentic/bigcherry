@@ -124,7 +124,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        metrics = vc.run_bench_runner_server_bench(
+        metrics = bench_runner.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18080", bench_configs="tg128",
             runner_root=self.runner_root,
         )
@@ -148,7 +148,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        metrics = vc.run_bench_runner_server_bench(
+        metrics = bench_runner.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18082", bench_configs="tg128",
             runner_root=self.runner_root,
         )
@@ -157,7 +157,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
     def test_missing_runner_script_fails_closed(self) -> None:
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=Path("/nonexistent"),
             )
@@ -172,7 +172,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
         vc.subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,
             )
@@ -187,7 +187,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
         vc.subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,
             )
@@ -275,6 +275,153 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
             self.assertEqual(extra_args[extra_args.index("-sm") + 1], "tensor")
             self.assertIn("--fit", extra_args)
             self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
+
+
+class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
+    """PA36 RD73 retirement (GPT round-1 MAJOR): the producer's
+    `_run_resource_burst()` still owns two fail-closed invariants that the
+    e2e test only covers through a single 651-reading happy path --
+    no-reading rejection and peak-of-readings. Restore direct unit
+    coverage for both, plus the corpus-required guard."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _make_ctx(self, corpus) -> Any:
+        class _Ctx:
+            pass
+        ctx = _Ctx()
+        ctx.model = Path("m.gguf")
+        ctx.workdir = Path(self._tmp.name)
+        ctx.corpus = corpus
+        return ctx
+
+    def test_corpus_none_fails_closed(self) -> None:
+        # The corpus guard is the very first check, so no server/telemetry
+        # mocking is needed -- a None corpus must raise before any hardware.
+        with self.assertRaises(self.producer.ValidationProducerError):
+            self.producer._run_resource_burst(
+                ctx=self._make_ctx(None),
+                subject_binary=Path("subject-server"),
+                expected_execution=att.ExecutionIdentity(
+                    backend="ROCm", architectures=("gfx1100", "gfx1100"),
+                ),
+                selector_env={},
+            )
+
+    def _run_with_telemetry(self, telemetry: str) -> Any:
+        # Mirror the e2e pattern: fake the whole server/transport surface
+        # and feed the burst log via a mocked Path.read_text.
+        from unittest import mock as _mock
+
+        with _mock.patch.object(self.producer, "sc") as mock_sc:
+            mock_sc.load_corpus.return_value = (["prompt"], "sha")
+            mock_sc.SamplingConfig.return_value = _mock.MagicMock()
+            mock_sc.SessionConfig.return_value = _mock.MagicMock()
+            mock_sc.HttpTransport.return_value = _mock.MagicMock()
+            mock_sc.validate_server.return_value = None
+            mock_sc.run_request.return_value = {}
+            with _mock.patch.object(self.producer, "AttestedServerSession") as mock_session:
+                mock_session.return_value.__enter__ = _mock.MagicMock()
+                mock_session.return_value.__exit__ = _mock.MagicMock()
+                with _mock.patch.object(
+                    Path, "read_text", return_value=telemetry,
+                ):
+                    return self.producer._run_resource_burst(
+                        ctx=self._make_ctx(Path("corpus.jsonl")),
+                        subject_binary=Path("subject-server"),
+                        expected_execution=att.ExecutionIdentity(
+                            backend="ROCm",
+                            architectures=("gfx1100", "gfx1100"),
+                        ),
+                        selector_env={},
+                    )
+
+    def test_no_reading_fails_closed(self) -> None:
+        # A server that emitted no graph_cache_entries telemetry must refuse
+        # to pass a zero measurement -- never silently return 0.
+        with self.assertRaises(self.producer.ValidationProducerError):
+            self._run_with_telemetry("no telemetry here\n")
+
+    def test_returns_peak_of_readings(self) -> None:
+        # Multiple readings: the result is max(readings), not the last
+        # reading, so a late low reading cannot mask a higher peak.
+        telemetry = (
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=386\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=512\n"
+        )
+        self.assertEqual(self._run_with_telemetry(telemetry), 651)
+
+
+class CheckBitIdenticalFailClosedTests(unittest.TestCase):
+    """PA36 RD73 retirement (GPT round-1 MAJOR): the producer's
+    `_check_bit_identical()` still owns count/order/type/missing-content
+    fail-closed invariants that the e2e test only demonstrates through
+    equal-content success and a single mismatch. Restore direct unit
+    coverage for each surviving invariant."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
+    def _check(self, subject: list[dict[str, Any]], control: list[dict[str, Any]]) -> bool:
+        return self.producer._check_bit_identical(subject, control)
+
+    def test_count_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
+        ))
+
+    def test_order_index_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 1, "content": "a"}],
+        ))
+
+    def test_both_missing_content_fails(self) -> None:
+        # GPT round-3 BLOCKER: two missing contents (None == None) must
+        # NOT pass -- a string is required on both sides.
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": None}],
+            [{"order_index": 0, "content": None}],
+        ))
+
+    def test_one_missing_content_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": None}],
+        ))
+
+    def test_missing_content_key_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0}],
+            [{"order_index": 0, "content": "a"}],
+        ))
+
+    def test_content_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": "b"}],
+        ))
+
+    def test_all_equal_passes(self) -> None:
+        self.assertTrue(self._check(
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
+        ))
+
+    def test_empty_pairs_pass(self) -> None:
+        # Zero pairs is vacuously identical (no content to compare).
+        self.assertTrue(self._check([], []))
 
 
 if __name__ == "__main__":

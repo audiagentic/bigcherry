@@ -24,14 +24,14 @@ capability = "controls"
 validator = "benchmark"
 required = true
 
-# RD73's real bit_identical evidence is produced by
-# validation_campaign.evaluate_rd73_mtp_correctness() (VA06), driven by
-# --run-rd73-contract -- but that producer is not wired into this
-# generic backend-ops check (ctx.correctness_evidence stays unbound for
-# it). Declared honestly against a real validator shape, never faked via
-# autotune-campaign as a placeholder. Stays BLOCKED here until the
-# generic adapter is rebound; see README.md's "Known gap"/"Known
-# limitations".
+# RD73's real bit_identical evidence is produced by the patch-local
+# producer's _check_bit_identical() (invoked via --validation-producer
+# 1233_rd73_stable_graph_cache_key/rd73) -- but that producer is not wired
+# into this generic correctness-summary check (ctx.correctness_evidence
+# stays unbound for it). Declared honestly against a real validator shape,
+# never faked via autotune-campaign as a placeholder. Stays BLOCKED here
+# until the generic adapter is rebound; see README.md's "Known gap"/
+# "Known limitations".
 [[check]]
 id = "correctness"
 capability = "correctness"
