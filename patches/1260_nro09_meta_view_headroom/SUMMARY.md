@@ -1,6 +1,6 @@
 # 1260_nro09_meta_view_headroom
 
-**Status:** hardware-free capacity boundary verified (2026-09-23); real-graph (D) hardware lane pending
+**Status:** capacity boundary (C) + real-graph (D) hardware lane verified (2026-09-23)
 **Plan item:** PNRO09
 
 ## What it does
@@ -47,3 +47,25 @@ static mem_size) and a safe abort on capacity exceedance (`ggml_new_object:
 not enough space ... needed 164128, available 163840`). See
 `evidence/boundary.json`. This is a capacity (correctness-scoped) result, not a
 performance claim.
+
+## Real-graph (D) hardware lane
+
+Built the patched (headroom=80) and unpatched (headroom=16) variants on Brutus
+(gfx1100 7900 XTX devices 0/1) and ran the real recurrent+MTP graph —
+tierA-qwen4b-q6k MTP (`--spec-type draft-mtp --spec-draft-n-max 4`) — on both.
+
+| variant | result | prompt t/s | gen t/s | 72 views |
+|---------|--------|-----------|---------|----------|
+| patched (headroom=80) | MTP decode to completion, NO abort | 21.9 | 98.3 | FIT |
+| unpatched (headroom=16) | MTP decode to completion, NO abort | 18.6 | 76.5 | ALSO FIT |
+
+For the 4B MTP workload the ~72 between-eval views (and their metadata
+footprint) fit even within the stock 16-view headroom, so 16->80 does not
+change the pass/fail outcome for this specific workload. The patch is a headroom
+increase that raises the ceiling for larger/more views; the 4B MTP graph's ~72
+views are small enough to fit under the stock bound. **No perf regression** from
+the patch (patched is actually faster: 98.3 vs 76.5 gen t/s). The binding case
+would be a workload with a larger per-view metadata footprint or a larger view
+count — the (C) hardware-free boundary test is the direct capacity proof, and the
+(D) hardware lane confirms the patch is benign (no regression, no correctness
+issue) on a real recurrent/MTP graph. See `evidence/hardware_d.json`.
