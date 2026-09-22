@@ -54,38 +54,51 @@ methodology is recorded in `docs/planning/active/validation-package-standard/VA0
 
 ## How to invoke validation
 
-Real, authoritative full-qualification path (VA06):
+Real, authoritative full-qualification path (VA06). PA36 RD73 legacy
+compatibility retirement: RD73 no longer has a dedicated
+`--run-rd73-contract` CLI flag. It runs exclusively through the generic
+patch-local producer (`validation/producer.toml`'s `[producer.rd73]`,
+entrypoint `producer.py:run`) via `--validation-producer`:
 
 ```
 PYTHONPATH=tools python -m bigcherry.patch.validation_campaign \
   --patch 1233_rd73_stable_graph_cache_key \
+  --validation-producer 1233_rd73_stable_graph_cache_key/rd73 \
   --model <tierL-qwen27b-q8.gguf> \
+  --producer-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl \
+  --device-map gfx1100=0,1 \
   --hip-path <production-rocm> --amdgpu-targets gfx1100 \
-  --manifest <hip-autotune-manifest.json> \
-  --workdir <fresh-workdir> --build-root <build-root> \
-  --worktree-root <worktree-root> \
-  --rd73-corpus tools/bigcherry/bench/corpora/mtp-27b-v1.jsonl \
-  --run-rd73-contract
+  --workdir <fresh-workdir>
 ```
 
-`--run-rd73-contract` executes RD73's real paired MTP-verify performance
-lane over a real llama-server HTTP harness (`run_rd73_mtp_server_lane()`),
+Two preflight prerequisites (both fail closed before any hardware use):
+the producer's `require_device_visibility(exact_count=2, env=ctx.build_env)`
+reads the **ambient** `HIP_VISIBLE_DEVICES` (from `ctx.build_env`, which
+copies `os.environ`), so the invoking shell must expose **exactly two**
+distinct devices (e.g. `export HIP_VISIBLE_DEVICES=0,1`); `--device-map
+gfx1100=0,1` is the per-architecture device-index mapping (`ARCH=ID[,ID...]`)
+and does not itself satisfy that check. RD73 also passes `ctx.model` into
+every `AttestedServerSession`, so `--model` is mandatory (the
+`--validation-producer` path does not re-impose the legacy parser's
+model-required check). The producer now fails fast on a missing model
+
+`producer.py:run()` executes RD73's real paired MTP-verify performance
+lane over a real llama-server HTTP harness (`_run_mtp_server_lane`),
 activation evidence read from that SAME lane's own control/subject
-server log files (`evaluate_rd73_activation_evidence()` -- no second
-server/model load), a dedicated subject-only graph-cache resource burst
-session (`run_rd73_resource_burst_session()`), decode control lane over
-a second real llama-server pair driven via the documented Brutus bench
-runner (`run_rd73_decode_control_lane()` + `run_bench_runner_server_bench()`,
+server log files (no second server/model load), a dedicated subject-only
+graph-cache resource burst session (`_run_resource_burst`), decode control
+lane over a second real llama-server pair driven via the documented Brutus
+bench runner (`_run_decode_control_lane` + `run_bench_runner_server_bench()`,
 `docs/reference/testing/TEST.md`'s "Server benchmark (Brutus bench
 runner)" section), and bit-identical correctness
-(`evaluate_rd73_mtp_correctness()`, reusing the MTP lane's own retained
-request/response pairs), then composes them via
-`run_rd73_contract_qualification()` into a real `evaluate_promotion_gate()`
-verdict (PASS/FAIL/INVALID). Real llama-bench is never used anywhere in
-this path -- it proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor
-config on real Brutus hardware (repeated crashes: OOM under resource
-contention with production traffic, and a hard argument-parse error for
-`--fit`, which llama-bench does not even register).
+(`_check_bit_identical`, reusing the MTP lane's own retained
+request/response pairs), then composes them into a real
+`evaluate_promotion_gate()` verdict (PASS/FAIL/INVALID). Real
+llama-bench is never used anywhere in this path -- it proved unworkable
+for RD73's real 27B/dual-GPU/-sm-tensor config on real Brutus hardware
+(repeated crashes: OOM under resource contention with production traffic,
+and a hard argument-parse error for `--fit`, which llama-bench does not
+even register).
 
 **Real hardware constraint (VA06):** control and subject llama-server
 processes can never run concurrently for this 27B model -- each needs
@@ -98,46 +111,57 @@ discipline this project's own prior production benchmarking found
 necessary (see "Historical evidence is not current" above), at the cost
 of a full server/model reload per request. Because a fresh process
 resets the in-memory graph cache every restart, the resource lane
-cannot reuse these same servers -- `run_rd73_resource_burst_session()`
+cannot reuse these same servers -- `_run_resource_burst()`
 launches one long-lived subject-only server (no concurrent control, so
 no VRAM conflict) and drives a real repeated-shape request burst against
 it, matching this contract's own documented characterization
 methodology.
 
-**Known gap (VA06):** unlike `--run-rd08-contract`, this does not yet
-rebind the generic adapter's own `validation.toml` correctness/
-performance/trace evidence -- `eligible_for_validated_state` cannot
-become `True` from `--run-rd73-contract` alone yet, even on a full
-contract PASS. The contract-level PASS/FAIL/INVALID verdict itself is
-real and auditable (`artifacts/.../rd73-contract-qualification.json`);
-only its integration into the generic adapter's own eligibility
-computation remains separate, deferred work.
+**Evidence binding (VA06):** the producer's own contract-level
+PASS/FAIL/INVALID verdict is real and auditable -- it is written into the
+run's `producer-execution.json` / persisted validation evidence (the
+producer emits exactly the eight `producer.toml`-declared artifacts; there
+is no separate `rd73-contract-qualification.json`). With
+`standard_campaign = "run"`, `_bind_producer_result_evidence()` binds the
+producer's performance, correctness, trace, and activation evidence into
+the validation context **before** `evaluate_check()`, so the generic
+`validation.toml` checks (benchmark, correctness-summary, trace-marker)
+consume real bound values -- they are **not** BLOCKED.
+`eligible_for_validated_state` additionally requires both the adapter
+verdict and the bound contract promotion to pass; the tracked status stays
+`rejected` regardless (see "Known limitations").
 
 ## Known limitations
 
 - **Performance/controls have a real producer (VA06).** RD73's own
-  `run_rd73_mtp_server_lane()` (paired control/subject llama-server
+  `_run_mtp_server_lane()` (paired control/subject llama-server
   processes, real MTP-verify HTTP requests, client-measured `wall_tps`)
-  and `run_rd73_decode_control_lane()` (a second paired real
+  and `_run_decode_control_lane()` (a second paired real
   llama-server pair, driven via the documented Brutus bench runner --
   never llama-bench, which is unworkable for this real 27B/dual-GPU
   config) produce real evidence, composed via `aggregate_contract_effects()`
   against the contract's own `end_to_end_gain_pct`/
-  `max_control_regression_pct` thresholds. `validation.toml`'s generic
-  `performance`/`controls` checks (validator="benchmark") are unaffected
-  by this and still report `BLOCKED` -- see "Known gap" above.
+  `max_control_regression_pct` thresholds. With `standard_campaign =
+  "run"`, the generic `performance`/`controls` checks (validator="benchmark")
+  consume that bound producer performance evidence via
+  `_bind_producer_result_evidence()` (not BLOCKED).
 - **Correctness (`bit_identical`) has a real producer (VA06).**
-  `evaluate_rd73_mtp_correctness()` performs exact string-equality
+  `_check_bit_identical()` performs exact string-equality
   comparison of the MTP lane's paired control/subject generated content,
   failing closed on mismatch/missing/non-string/unpaired records.
-  `validation.toml`'s generic `correctness` check (validator=
-  "backend-ops") is unaffected and still reports `BLOCKED`.
+  With `standard_campaign = "run"`, the generic `correctness` check
+  (validator="correctness-summary") consumes that bound producer
+  correctness evidence via `_bind_producer_result_evidence()` (not
+  BLOCKED).
 - **Activation has a real marker probe (VA06).** RD73's patch source
   now carries a `BIGCHERRY_PATCH_TRACE`-gated marker at the stable-key
   execution site (`BIGCHERRY_PATCH_HIT patch=1233_rd73
-  path=stable_graph_cache_key`), and
-  `validation_campaign.run_rd73_activation_evidence()` produces a real
-  subject-hit/control-miss result reusing the fixed generic trace probe.
+  path=stable_graph_cache_key`), and the producer produces a real
+  subject-hit/control-miss result by reading that marker from the MTP
+  lane's own control/subject server log files; with `standard_campaign =
+  "run"`, the generic `activation` check (validator="trace-marker")
+  consumes that bound producer trace evidence via
+  `_bind_producer_result_evidence()` (not BLOCKED).
   The generic tune-binary/`GGML_CUDA_DISABLE_FUSION`-based negative
   control is still **not** valid for this patch (RD73 is graph-cache
   keying, not a fusion path `GGML_CUDA_DISABLE_FUSION` controls) and
@@ -145,18 +169,21 @@ computation remains separate, deferred work.
   correct control instead.
 - **`resource_limits` has a real producer (VA06).** The contract's
   `graph_cache_entries` bound is real (derived from VA06's actual
-  measurement). `validation_campaign.py` now has real, tested
-  `parse_rd73_resource_telemetry()` (fails closed on any malformed
-  `BIGCHERRY_RD73_RESOURCE`-prefixed line) and
-  `peak_rd73_resource_result()` (peak-of-subject-readings ->
-  `ResourceResult`, no paired control required) producers, driven by
+  measurement). The producer now has real, tested
+  `_parse_resource_telemetry()` (fails closed on any malformed
+  `BIGCHERRY_RD73_RESOURCE`-prefixed line) and a peak-of-subject-readings
+  reduction (-> `ResourceResult`, no paired control required) inlined into
+  `run()`, driven by
   the patch's `BIGCHERRY_RD73_RESOURCE_TRACE`-gated telemetry.
-- The remaining gap is the generic adapter's `validation.toml`
-  rebinding (see "Known gap" above) -- this patch's tracked-status
-  stays `untested` until that lands and a real hardware
-  `--run-rd73-contract` qualification passes; the executor's own real
-  contract PASS/FAIL/INVALID verdict alone does not update tracked
-  status.
+- **Tracked status is governance-gated, not evidence-gated.** The
+  adapter checks and the bound contract promotion are real, but this
+  patch's tracked-status stays `rejected` (its `patch.toml`
+  `state = "rejected"`, a deliberate governance decision after HI162's
+  better-controlled A/B measured regression). A real hardware
+  `--validation-producer 1233_rd73_stable_graph_cache_key/rd73`
+  qualification alone does not update tracked status; the governance
+  decision must be reversed first, and any revision requires fresh
+  accepted evidence.
 
 ## Control vs. subject
 
