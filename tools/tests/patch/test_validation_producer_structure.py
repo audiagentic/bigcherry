@@ -37,38 +37,19 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # the same commit -- the baseline only ever shrinks.
 _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
     {
-        
-        "_load_rd17_correctness_module",
-        "_load_rd19_correctness_module",
-        "_load_rd43_correctness_module",
         "run_patch1000_backend_ops_correctness",
         "run_patch1000_backend_ops_perf",
         "run_patch1000_verification",
-        "run_rd05_contract_correctness",
-        "run_rd06_contract_correctness",
-        "run_rd07_contract_correctness",
-        
-        
-        
-        
-        "run_rd17_ppl_check",
-        "run_rd19_ppl_check",
-        "run_rd30_correctness_check",
-        "run_rd43_ppl_check",
-        "run_rd73_contract_qualification",
-        "run_rd73_decode_control_lane",
-        "run_rd73_mtp_server_lane",
-        "run_rd73_resource_burst_session",
     }
 )
 
 # --run-rdNN-*/--run-patchNNNN-* string literals already passed to
 # add_argument() in validation_campaign.py as of the PA36-F step-6 pass.
-# Same shrink-only rule.
+# Same shrink-only rule. (Shrunk to empty with the RD73 legacy
+# compatibility retirement -- no dedicated --run-rdNN-*/--run-patchNNNN-*
+# flag remains in the shared campaign code.)
 _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
-    {
-        "--run-rd73-contract",
-    }
+    set()
 )
 
 

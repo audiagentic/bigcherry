@@ -1,20 +1,33 @@
-"""VA06 next slice: RD73's decode control lane, resource-evidence
-producer, bit-identical correctness evaluator, and the full
-run_rd73_contract_qualification() orchestrator + WORKLOAD_METRIC
-registration. GPT scoping (session ses_1e0bd1ea53db4311): mirror RD08's
-result/schema/promotion semantics; load every threshold from the real
-contract, never hardcode. Hardware-free throughout -- subprocess.run and
-run_rd73_mtp_server_lane are faked.
+"""VA06 next slice: RD73's decode control lane + the shared workload-metric
+registration and bench-runner parsing.
+
+PA36 RD73 legacy compatibility retirement: the decode control lane moved
+from shared validation_campaign.py (run_rd73_decode_control_lane) into
+RD73's producer (patches/1233_rd73_stable_graph_cache_key/
+validation/producer.py, _run_decode_control_lane). This test now exercises
+the producer-side lane directly.
+
+The resource-evidence (evaluate_rd73_resource_evidence), bit-identical
+correctness (evaluate_rd73_mtp_correctness), and full-qualification
+orchestrator (run_rd73_contract_qualification) shared functions were
+eliminated/inlined into the producer's run() during the same retirement;
+their unit tests were retired with them. The producer's run() end-to-end
+coverage lives in test_patch_validation_campaign_rd73_contract_cli.py.
+
+GPT scoping (session ses_1e0bd1ea53db4311): mirror RD08's result/schema/
+promotion semantics; load every threshold from the real contract, never
+hardcode. Hardware-free throughout -- subprocess.run and the bench runner
+are faked.
 """
 
 from __future__ import annotations
 
-import json
-import os
+import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -24,6 +37,25 @@ from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+
+PRODUCER_DIR = Path(
+    "patches/1233_rd73_stable_graph_cache_key/validation"
+)
+PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06c"
+
+
+def _load_producer() -> Any:
+    """Load the producer module with the required sys.modules registration."""
+    spec = importlib.util.spec_from_file_location(
+        PRODUCER_MODULE,
+        PRODUCER_DIR / "producer.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[PRODUCER_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class WorkloadMetricRegistrationTests(unittest.TestCase):
@@ -39,8 +71,8 @@ class _FakeServerRunner:
 
     VA25: exposes launch()/wait_healthy()/shutdown() rather than just the
     context-manager protocol, matching what AttestedServerSession actually
-    calls -- run_rd73_decode_control_lane() no longer uses ``with runner:``
-    on a raw ServerRunner directly."""
+    calls -- the lane no longer uses ``with runner:`` on a raw ServerRunner
+    directly."""
 
     instances: list["_FakeServerRunner"] = []
 
@@ -92,7 +124,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        metrics = vc.run_bench_runner_server_bench(
+        metrics = bench_runner.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18080", bench_configs="tg128",
             runner_root=self.runner_root,
         )
@@ -116,7 +148,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
             return _Result()
 
         vc.subprocess.run = fake_run
-        metrics = vc.run_bench_runner_server_bench(
+        metrics = bench_runner.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18082", bench_configs="tg128",
             runner_root=self.runner_root,
         )
@@ -125,7 +157,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
     def test_missing_runner_script_fails_closed(self) -> None:
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=Path("/nonexistent"),
             )
@@ -140,7 +172,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
         vc.subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,
             )
@@ -155,13 +187,17 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
         vc.subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
-            vc.run_bench_runner_server_bench(
+            bench_runner.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080", bench_configs="tg128",
                 runner_root=self.runner_root,
             )
 
 
 class RunRd73DecodeControlLaneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
     def setUp(self) -> None:
         _FakeServerRunner.instances = []
         self._tmp = tempfile.TemporaryDirectory()
@@ -170,23 +206,33 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _run(self, *, control_tps, subject_tps, pairs=2):
+    def _make_ctx(self) -> Any:
+        class _Ctx:
+            pass
+
+        ctx = _Ctx()
+        ctx.model = Path("m.gguf")
+        ctx.workdir = self.run_dir
+        return ctx
+
+    def _run(self, *, control_tps, subject_tps):
         counters = {"control": 0, "subject": 0}
 
-        def fake_bench_runner(*, server_url, bench_configs, repetitions=1, timeout_s=300, runner_root=None):
+        def fake_bench_runner(*, server_url, bench_configs, repetitions=1, env_overrides=None):
             arm = "control" if "18082" in server_url else "subject"
             values = control_tps if arm == "control" else subject_tps
             index = counters[arm]
             counters[arm] += 1
             return {"tg128_tps": values[index]}
 
-        # VA25: patched on server_execution's namespace (where
-        # AttestedServerSession's own `from ..tuning.server_runner import
-        # ServerRunner` already bound the name), not tuning.server_runner
-        # itself -- patching the source module after that import happened
-        # would not reach it. Attestation content parsing is fixed to
-        # always match; it is tested in test_attested_server_session.py.
-        with mock.patch.object(vc, "run_bench_runner_server_bench", side_effect=fake_bench_runner):
+        # The producer imports run_bench_runner_server_bench from
+        # bigcherry.campaign.bench_runner at call time, so the fake must be
+        # installed on the source module attribute. AttestedServerSession's
+        # ServerRunner is patched on server_execution's namespace (where its
+        # own `from ..tuning.server_runner import ServerRunner` already bound
+        # the name). Attestation content parsing is fixed to always match;
+        # it is tested in test_attested_server_session.py.
+        with mock.patch.object(bench_runner, "run_bench_runner_server_bench", side_effect=fake_bench_runner):
             with mock.patch("bigcherry.experiment.server_execution.ServerRunner", _FakeServerRunner):
                 with mock.patch(
                     "bigcherry.experiment.server_execution.parse_llama_server_attestation",
@@ -198,21 +244,23 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
                         ),
                     ),
                 ):
-                    return vc.run_rd73_decode_control_lane(
-                        control_binary=Path("control-server"), subject_binary=Path("subject-server"),
-                        model=Path("m.gguf"), run_dir=self.run_dir,
+                    return self.producer._run_decode_control_lane(
+                        ctx=self._make_ctx(),
+                        control_binary=Path("control-server"),
+                        subject_binary=Path("subject-server"),
                         expected_execution=att.ExecutionIdentity(
                             backend="ROCm", architectures=("gfx1100", "gfx1100"),
                         ),
-                        pairs=pairs,
+                        selector_env={},
                     )
 
     def test_returns_control_role_effect(self) -> None:
-        result = self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
-        self.assertEqual(result["effect"].role, "control")
-        self.assertEqual(result["effect"].metric, "tg128")
-        artifact_path = self.run_dir / result["artifact"]["path"]
-        self.assertTrue(artifact_path.is_file())
+        # The producer's decode lane runs a fixed 10 measured pairs.
+        result = self._run(
+            control_tps=[90.0] * 10, subject_tps=[100.0] * 10,
+        )
+        self.assertEqual(result.role, "control")
+        self.assertEqual(result.metric, "tg128")
 
     def test_default_extra_flags_include_sm_tensor_and_fit_off(self) -> None:
         # This lane launches real llama-SERVER processes (unlike RD73's
@@ -220,7 +268,7 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
         # servers) -- --fit off is required here, unlike llama-bench-based
         # lanes, which must never receive it (real hardware finding: a
         # hard argument-parse error).
-        self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
+        self._run(control_tps=[90.0] * 10, subject_tps=[100.0] * 10)
         for instance in _FakeServerRunner.instances:
             extra_args = instance.kwargs["extra_args"]
             self.assertIn("-sm", extra_args)
@@ -229,318 +277,151 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
             self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
 
 
-class EvaluateRd73ResourceEvidenceTests(unittest.TestCase):
-    """User redirect (2026-09-01): resource evidence is now read from the
-    MTP lane's own subject server log file (always
-    BIGCHERRY_RD73_RESOURCE_TRACE=1) rather than a separate llama-bench
-    probe."""
+class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
+    """PA36 RD73 retirement (GPT round-1 MAJOR): the producer's
+    `_run_resource_burst()` still owns two fail-closed invariants that the
+    e2e test only covers through a single 651-reading happy path --
+    no-reading rejection and peak-of-readings. Restore direct unit
+    coverage for both, plus the corpus-required guard."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.run_dir = Path(self._tmp.name)
-        (self.run_dir / "logs").mkdir()
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _write_log(self, readings) -> Path:
-        path = self.run_dir / "logs" / "subject.log"
-        lines = "".join(f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in readings)
-        path.write_text(lines, encoding="utf-8")
-        return path
+    def _make_ctx(self, corpus) -> Any:
+        class _Ctx:
+            pass
+        ctx = _Ctx()
+        ctx.model = Path("m.gguf")
+        ctx.workdir = Path(self._tmp.name)
+        ctx.corpus = corpus
+        return ctx
 
-    def test_real_contract_800_limit_passes_at_651(self) -> None:
-        subject_log = self._write_log([300, 651, 400])
-        result = vc.evaluate_rd73_resource_evidence(subject_log_path=subject_log, run_dir=self.run_dir)
-        self.assertEqual(result["result"].subject_value, 651.0)
-
-    def test_no_readings_fails_closed(self) -> None:
-        subject_log = self._write_log([])
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.evaluate_rd73_resource_evidence(subject_log_path=subject_log, run_dir=self.run_dir)
-
-
-class EvaluateRd73MtpCorrectnessTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.run_dir = Path(self._tmp.name)
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def _records(self, contents):
-        return [{"order_index": i, "content": c} for i, c in enumerate(contents)]
-
-    def test_exact_match_passes(self) -> None:
-        result = vc.evaluate_rd73_mtp_correctness(
-            control_requests=self._records(["a", "b"]), subject_requests=self._records(["a", "b"]),
-            run_dir=self.run_dir,
-        )
-        self.assertTrue(all(r["ok"] for r in result["rows"]))
-
-    def test_mismatch_raises(self) -> None:
-        with self.assertRaises(vc.Rd73CorrectnessError):
-            vc.evaluate_rd73_mtp_correctness(
-                control_requests=self._records(["a", "b"]), subject_requests=self._records(["a", "X"]),
-                run_dir=self.run_dir,
-            )
-
-    def test_missing_content_raises(self) -> None:
-        control = [{"order_index": 0, "content": None}]
-        subject = [{"order_index": 0, "content": "a"}]
-        with self.assertRaises(vc.Rd73CorrectnessError):
-            vc.evaluate_rd73_mtp_correctness(control_requests=control, subject_requests=subject, run_dir=self.run_dir)
-
-    def test_unpaired_record_counts_raise(self) -> None:
-        with self.assertRaises(vc.Rd73CorrectnessError):
-            vc.evaluate_rd73_mtp_correctness(
-                control_requests=self._records(["a", "b"]), subject_requests=self._records(["a"]),
-                run_dir=self.run_dir,
-            )
-
-
-class RunRd73ContractQualificationTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
-        self._tmp = tempfile.TemporaryDirectory()
-        self.run_dir = Path(self._tmp.name)
-        self.control_binary = self.run_dir / "control-bin"
-        self.control_binary.write_text("", encoding="utf-8")
-        self.subject_binary = self.run_dir / "subject-bin"
-        self.subject_binary.write_text("", encoding="utf-8")
-        self.model = self.run_dir / "model.gguf"
-        self.model.write_text("", encoding="utf-8")
-        self.corpus_path = self.run_dir / "corpus.jsonl"
-        self.corpus_path.write_text("", encoding="utf-8")
-        self.contract = ec.load_contracts(
-            Path(__file__).resolve().parents[3] / "config" / "experiment-contracts.toml"
-        ).contracts["RD73-STABLE-GRAPH-CACHE-KEY"]
-
-    def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
-        self._tmp.cleanup()
-
-    def _mtp_records(self, contents_control, contents_subject, wall_tps_control, wall_tps_subject):
-        control_requests = [
-            {"order_index": i, "content": c, "wall_tps": wt}
-            for i, (c, wt) in enumerate(zip(contents_control, wall_tps_control))
-        ]
-        subject_requests = [
-            {"order_index": i, "content": c, "wall_tps": wt}
-            for i, (c, wt) in enumerate(zip(contents_subject, wall_tps_subject))
-        ]
-        return control_requests, subject_requests
-
-    def _fake_mtp_lane(
-        self, *, control_content, subject_content, control_tps, subject_tps,
-        resource_readings=(651,), activation_marker="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-    ):
-        # User redirect (2026-09-01): activation/resource evidence is now
-        # read from the MTP lane's own server log files, so this fake
-        # writes real log files with real content for
-        # evaluate_rd73_activation_evidence()/evaluate_rd73_resource_evidence()
-        # to read, rather than faking a separate subprocess probe.
-        control_requests, subject_requests = self._mtp_records(
-            control_content, subject_content, control_tps, subject_tps,
-        )
-        # RD73 migrated to effect_evidence_policy = "ci95_threshold_bound_v1"
-        # with min_paired_rounds = 10, so a fake lane must now carry a
-        # coherent interval and a sufficient round count or the gate correctly
-        # reports "invalid" (unevaluable) rather than pass/fail. The interval
-        # is deliberately degenerate (low == point == high) so these tests keep
-        # exercising THRESHOLD logic rather than interval width; dedicated
-        # interval tests live in tools/tests/campaign/test_experiment_contract.py.
-        _pct = (100.0 * (sum(subject_tps) / len(subject_tps) - sum(control_tps) / len(control_tps))
-                / (sum(control_tps) / len(control_tps)))
-        effect = ec.LaneEffect(
-            role="positive", metric="mtp_wall_tps", geometric_effect_pct=_pct,
-            ci95_low_pct=_pct, ci95_high_pct=_pct, paired_rounds=10,
-            # RV99: the ratio vector is now persisted and is what the session
-            # aggregator consumes. A LaneEffect without it contributes NO
-            # session (an empty vector is not a zero-effect measurement), so a
-            # fake lacking it would silently under-count sessions rather than
-            # exercise the gate.
-            pair_ratios=tuple(
-                subject / control for subject, control in zip(subject_tps, control_tps)
-            ),
-        )
-        logs_dir = self.run_dir / "logs"
-        logs_dir.mkdir(exist_ok=True)
-        control_log_path = logs_dir / "rd73-mtp-control-server.log"
-        subject_log_path = logs_dir / "rd73-mtp-subject-server.log"
-        control_log_path.write_text("nothing\n", encoding="utf-8")
-        resource_lines = "".join(f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in resource_readings)
-        subject_marker_line = f"{activation_marker}\n" if activation_marker else ""
-        subject_log_path.write_text(subject_marker_line + resource_lines, encoding="utf-8")
-        return {
-            "effect": effect, "artifact": {"path": "artifacts/fake-mtp.json", "sha256": "x"},
-            "stats": {}, "control_requests": control_requests, "subject_requests": subject_requests,
-            "control_log_path": control_log_path, "subject_log_path": subject_log_path,
-        }
-
-    def _fake_decode_control(self, *, control_tps, subject_tps):
-        _pct = 100.0 * (subject_tps - control_tps) / control_tps
-        effect = ec.LaneEffect(
-            role="control", metric="tg128", geometric_effect_pct=_pct,
-            ci95_low_pct=_pct, ci95_high_pct=_pct, paired_rounds=10,
-        )
-        return {"effect": effect, "artifact": {"path": "artifacts/fake-decode.json", "sha256": "x"}, "stats": {}}
-
-    def _fake_resource_result(self, readings):
-        result = ec.ResourceResult(
-            metric="graph_cache_entries", unit="count", subject_value=float(max(readings)),
-        )
-        return {"result": result, "artifact": {"path": "artifacts/fake-resource.json", "sha256": "x"}, "readings": readings}
-
-    def _prior_sessions(self, effect_pct, count=3, pairs=10):
-        """RD73 now uses session_ci95_threshold_bound_v1, so a bound is
-        established across sessions rather than from one run's pairs. A single
-        session is legitimately INCONCLUSIVE (min_sessions=4), so these tests
-        supply prior sessions to reach a decision at all -- the behaviour
-        under test is still "does this gain pass or fail the contract".
-
-        Each prior session carries the same effect as the run under test, so
-        it moves the estimate toward that effect rather than fighting it; the
-        tiny alternating jitter keeps between-session sd non-zero, since a
-        perfectly degenerate set is not a realistic interval.
-        """
-        ratio = 1.0 + effect_pct / 100.0
-        return [
-            {"gpu_architectures": ["gfx1100"], "lane_effects": [{
-                "role": "positive", "metric": "mtp_wall_tps",
-                "pair_ratios": [
-                    ratio * (1.0 + (0.0002 if index % 2 else -0.0002))
-                    for index in range(pairs)
-                ],
-            }]}
-            for _ in range(count)
-        ]
-
-    def _run_qualification(self, mtp_result, decode_control_tps=(90.0, 100.0), resource_readings=(651,),
-                            prior_session_effect_pct=None):
-        # PVPS02 step 7: run_rd73_contract_qualification() now validates
-        # HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES once via
-        # require_device_visibility(exact_count=2) before running any
-        # lane -- fake but consistent selector values so this hardware-
-        # free test (all three lane functions mocked below) reaches that
-        # call successfully, matching PVPS02's own design note that this
-        # rewiring was deliberately deferred past step 1 specifically so
-        # these existing tests would not break until this dedicated step.
-        env_patch = mock.patch.dict(
-            os.environ, {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1"},
-        )
-        with env_patch, mock.patch.object(vc, "run_rd73_mtp_server_lane", return_value=mtp_result):
-            with mock.patch.object(
-                vc, "run_rd73_decode_control_lane",
-                return_value=self._fake_decode_control(
-                    control_tps=decode_control_tps[0], subject_tps=decode_control_tps[1],
+    def test_corpus_none_fails_closed(self) -> None:
+        # The corpus guard is the very first check, so no server/telemetry
+        # mocking is needed -- a None corpus must raise before any hardware.
+        with self.assertRaises(self.producer.ValidationProducerError):
+            self.producer._run_resource_burst(
+                ctx=self._make_ctx(None),
+                subject_binary=Path("subject-server"),
+                expected_execution=att.ExecutionIdentity(
+                    backend="ROCm", architectures=("gfx1100", "gfx1100"),
                 ),
-            ):
-                with mock.patch.object(
-                    vc, "run_rd73_resource_burst_session",
-                    return_value=self._fake_resource_result(resource_readings),
+                selector_env={},
+            )
+
+    def _run_with_telemetry(self, telemetry: str) -> Any:
+        # Mirror the e2e pattern: fake the whole server/transport surface
+        # and feed the burst log via a mocked Path.read_text.
+        from unittest import mock as _mock
+
+        with _mock.patch.object(self.producer, "sc") as mock_sc:
+            mock_sc.load_corpus.return_value = (["prompt"], "sha")
+            mock_sc.SamplingConfig.return_value = _mock.MagicMock()
+            mock_sc.SessionConfig.return_value = _mock.MagicMock()
+            mock_sc.HttpTransport.return_value = _mock.MagicMock()
+            mock_sc.validate_server.return_value = None
+            mock_sc.run_request.return_value = {}
+            with _mock.patch.object(self.producer, "AttestedServerSession") as mock_session:
+                mock_session.return_value.__enter__ = _mock.MagicMock()
+                mock_session.return_value.__exit__ = _mock.MagicMock()
+                with _mock.patch.object(
+                    Path, "read_text", return_value=telemetry,
                 ):
-                    return vc.run_rd73_contract_qualification(
-                        contract=self.contract,
-                        control_server_binary=self.control_binary, subject_server_binary=self.subject_binary,
-                        model=self.model, marker_regex="BIGCHERRY_PATCH_HIT patch=1233_rd73",
-                        corpus_path=self.corpus_path, run_dir=self.run_dir, decode_pairs=2,
-                        prior_session_records=(
-                            () if prior_session_effect_pct is None
-                            else self._prior_sessions(prior_session_effect_pct)
+                    return self.producer._run_resource_burst(
+                        ctx=self._make_ctx(Path("corpus.jsonl")),
+                        subject_binary=Path("subject-server"),
+                        expected_execution=att.ExecutionIdentity(
+                            backend="ROCm",
+                            architectures=("gfx1100", "gfx1100"),
                         ),
-                        amdgpu_targets="gfx1100",
+                        selector_env={},
                     )
 
-    def test_a_single_session_is_inconclusive_not_a_verdict(self):
-        # The defining property of the session policy: one run cannot
-        # establish the bound, however good it looks, because a within-run
-        # interval cannot see between-session drift.
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello", "world"], subject_content=["hello", "world"],
-            control_tps=[100.0, 100.0], subject_tps=[103.1, 103.1],
+    def test_no_reading_fails_closed(self) -> None:
+        # A server that emitted no graph_cache_entries telemetry must refuse
+        # to pass a zero measurement -- never silently return 0.
+        with self.assertRaises(self.producer.ValidationProducerError):
+            self._run_with_telemetry("no telemetry here\n")
+
+    def test_returns_peak_of_readings(self) -> None:
+        # Multiple readings: the result is max(readings), not the last
+        # reading, so a late low reading cannot mask a higher peak.
+        telemetry = (
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=386\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=651\n"
+            "BIGCHERRY_RD73_RESOURCE graph_cache_entries=512\n"
         )
-        result = self._run_qualification(mtp_result)
-        self.assertEqual(result["promotion"]["status"], "invalid", result["promotion"])
-        self.assertTrue(any(
-            "below the pre-declared minimum" in str(reason)
-            for reason in result["promotion"].get("reasons") or []
+        self.assertEqual(self._run_with_telemetry(telemetry), 651)
+
+
+class CheckBitIdenticalFailClosedTests(unittest.TestCase):
+    """PA36 RD73 retirement (GPT round-1 MAJOR): the producer's
+    `_check_bit_identical()` still owns count/order/type/missing-content
+    fail-closed invariants that the e2e test only demonstrates through
+    equal-content success and a single mismatch. Restore direct unit
+    coverage for each surviving invariant."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
+    def _check(self, subject: list[dict[str, Any]], control: list[dict[str, Any]]) -> bool:
+        return self.producer._check_bit_identical(subject, control)
+
+    def test_count_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
         ))
 
-    def test_all_green_qualifies(self) -> None:
-        # +3.1% gain (>= 3.0 required), decode control regression handled
-        # by the fake decode lane (subject 100 vs control 90 -> positive,
-        # i.e. no regression), resource 651 (<= 800), exact correctness.
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello", "world"], subject_content=["hello", "world"],
-            control_tps=[100.0, 100.0], subject_tps=[103.1, 103.1],
-        )
-        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
-        self.assertEqual(result["promotion"]["status"], "pass", result["promotion"])
+    def test_order_index_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 1, "content": "a"}],
+        ))
 
-    def test_gain_below_threshold_fails(self) -> None:
-        # 2026-09-04: RD73's acceptance was realigned (end_to_end_gain_pct
-        # 3.0 -> 1.0, max_control_regression_pct 2.3 -> 1.0) because 3.0 was
-        # the registry's only end-to-end bar and an unexplained outlier
-        # against 18 contracts gating kernel gain at 0.3-1.4. This case
-        # previously used +1.9% "below 3.0"; that now legitimately PASSES, so
-        # the probe moves below the new bar rather than the assertion being
-        # relaxed -- the behaviour under test ("a gain beneath the contract's
-        # own threshold must fail") is unchanged.
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[100.5],  # +0.5%, below 1.0
-        )
-        result = self._run_qualification(mtp_result, prior_session_effect_pct=0.5)
-        self.assertEqual(result["promotion"]["status"], "fail")
+    def test_both_missing_content_fails(self) -> None:
+        # GPT round-3 BLOCKER: two missing contents (None == None) must
+        # NOT pass -- a string is required on both sides.
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": None}],
+            [{"order_index": 0, "content": None}],
+        ))
 
-    def test_resource_over_limit_fails(self) -> None:
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1],
-        )
-        result = self._run_qualification(
-            mtp_result, resource_readings=(801,), prior_session_effect_pct=3.1)
-        self.assertEqual(result["promotion"]["status"], "fail")
-        self.assertFalse(result["resource_gate"]["passed"])
+    def test_one_missing_content_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": None}],
+        ))
 
-    def test_correctness_mismatch_fails(self) -> None:
-        # Prior sessions supplied so the GAIN is evaluable and the correctness
-        # failure is what decides the verdict. Noted rather than hidden: with
-        # too few sessions this reports "invalid" instead of "fail", because
-        # evaluate_promotion_gate() ranks unevaluable-evidence reasons ahead
-        # of measured ones. A definite correctness failure arguably deserves
-        # "fail" whatever the gain evidence looks like -- it still blocks
-        # promotion either way, so this is a reporting-precision question, not
-        # a safety one, and changing that precedence would affect every
-        # contract rather than just RD73.
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello"], subject_content=["goodbye"],
-            control_tps=[100.0], subject_tps=[103.1],
-        )
-        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
-        self.assertEqual(result["promotion"]["status"], "fail")
-        self.assertFalse(result["correctness_gate"]["passed"])
+    def test_missing_content_key_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0}],
+            [{"order_index": 0, "content": "a"}],
+        ))
 
-    def test_missing_activation_evidence_invalidates(self) -> None:
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1], activation_marker=None,
-        )
-        result = self._run_qualification(mtp_result)
-        self.assertEqual(result["promotion"]["status"], "invalid")
+    def test_content_mismatch_fails(self) -> None:
+        self.assertFalse(self._check(
+            [{"order_index": 0, "content": "a"}],
+            [{"order_index": 0, "content": "b"}],
+        ))
 
-    def test_no_cv_gate_required(self) -> None:
-        # Passing case above has no CV concept anywhere in its inputs or
-        # in the real contract -- promotion succeeding without one
-        # confirms no hidden CV requirement crept in.
-        mtp_result = self._fake_mtp_lane(
-            control_content=["hello"], subject_content=["hello"],
-            control_tps=[100.0], subject_tps=[103.1],
-        )
-        result = self._run_qualification(mtp_result, prior_session_effect_pct=3.1)
-        self.assertNotIn("cv", json.dumps(result["promotion"]).lower())
-        self.assertEqual(result["promotion"]["status"], "pass")
+    def test_all_equal_passes(self) -> None:
+        self.assertTrue(self._check(
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
+            [{"order_index": 0, "content": "a"}, {"order_index": 1, "content": "b"}],
+        ))
+
+    def test_empty_pairs_pass(self) -> None:
+        # Zero pairs is vacuously identical (no content to compare).
+        self.assertTrue(self._check([], []))
 
 
 if __name__ == "__main__":
