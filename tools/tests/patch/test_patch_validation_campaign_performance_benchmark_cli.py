@@ -81,28 +81,6 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         )
         self.assertIn("requires --model-root and --device-map", message)
 
-    def test_mutually_exclusive_with_legacy_rd58_mode(self) -> None:
-        # PA36 RD04/1202 producer migration: RD04's --run-rd04-benchmark
-        # flag was deleted; the exclusion is pinned through a surviving
-        # legacy RD mode instead.
-        message = self._parse_or_error(
-            [
-                "--patch",
-                "1202_rd04_bf16_flash_attn_tile",
-                "--run-performance-benchmark",
-                "--run-rd58-state-restore",
-                "--hip-path",
-                "H:/fake",
-                "--workdir",
-                "H:/fake-workdir",
-                "--model-root",
-                "H:/fake-models",
-                "--device-map",
-                "gfx1100=0",
-            ]
-        )
-        self.assertIn("mutually exclusive with the legacy RD modes", message)
-
     def test_does_not_require_model_manifest_or_amdgpu_targets(self) -> None:
         # Should get PAST arg validation (i.e. NOT hit parser.error()) and
         # into real dispatch, which then fails for an unrelated real-

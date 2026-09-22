@@ -407,20 +407,10 @@ _LEGACY_ARTIFACT_PATHS: tuple[str, ...] = (
     "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
     "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
     "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
-    # VA23: RD73's contract artifacts. This list is the record's own
-    # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
-    # a passing performance/controls check whose artifact appears here,
-    # so a contract whose artifacts are absent reports "no recorded
-    # benchmark execution" no matter how real the run was. The
-    # enumeration is deliberate (only known artifact names count, so an
-    # arbitrary file dropped in the workdir cannot become evidence), so
-    # each new contract's artifacts must be added explicitly, exactly as
-    # RD08's are above.
-    "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
-    "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
-    "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
-    "artifacts/rd73-resource.json",
-    "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
+    # (RD73's VA23 contract artifacts were retired with the RD73 legacy
+    # compatibility retirement -- RD73 now runs through its producer via
+    # the generic path, whose artifacts are declared by its producer.toml
+    # allowlist rather than this legacy enumeration.)
     # PA39: RD04's real backend_reference+ppl_equality correctness
     # producer (run_rd04_contract_correctness()) namespaces its
     # artifact by the architecture the run actually executed against.
