@@ -1,10 +1,9 @@
 """PVPS02 step 2: direct tests for run_paired_llama_benchmark() and
 _paired_llama_bench_command() -- the shared execution shape extracted
-from run_rd04_benchmark_evidence()/run_rd08_validation_lanes(). RD04's
-and RD08's own existing test files already exercise this primitive
-indirectly through those wrappers; this file targets the primitive's
-own behavior directly, per the extraction's design (docs/planning/
-active/patching-validation-package-standard/PVPS02.md).
+from run_rd04_benchmark_evidence() / the 1204/RD08 patch-local producer.
+The RD04/RD08 compatibility wrappers were retired by the PA36 producer
+migrations; the primitive's own behavior is targeted here directly (docs/
+planning/active/patching-validation-package-standard/PVPS02.md).
 """
 
 from __future__ import annotations
@@ -52,18 +51,15 @@ class PairedLlamaBenchCommandTests(unittest.TestCase):
         )
 
     def test_reproduces_rd08_exact_historical_argv_shape(self) -> None:
+        # The RD08 producer's exact historical command shape, asserted
+        # directly (the dedicated rd08_validation_lane_commands helper
+        # was retired with the 1204/RD08 producer migration; this
+        # assertion pins the shape it used to build, byte-for-byte).
         command = vc._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
         )
         self.assertEqual(
             command, ["control_bin", "-m", "m.gguf", "-p", "0", "-n", "128", "-ngl", "99"],
-        )
-        self.assertEqual(
-            command,
-            vc.rd08_validation_lane_commands(
-                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-                model=Path("m.gguf"), workload="decode",
-            )[0],
         )
 
     def test_unmapped_workload_raises(self) -> None:

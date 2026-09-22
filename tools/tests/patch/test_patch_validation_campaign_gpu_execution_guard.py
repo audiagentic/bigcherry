@@ -14,9 +14,10 @@ Fix: _require_real_gpu_execution() demands a positive "ggml_cuda_init:
 found N ROCm devices" signature (not merely the absence of an error) and
 explicitly rejects known ROCm-init-failure signatures. Wired into
 _run_one_trace_probe() (the shared generic activation-probe primitive
-RD08's trigger check and RD12/RD13/etc's generic probes all go through),
-rd08_validation_lane_commands()'s runner, and run_rd04_benchmark_evidence()'s
-runner -- all three also gained an explicit -ngl 99 flag.
+RD08's trigger check and RD12/RD13/etc's generic probes all go through)
+and run_paired_llama_benchmark()'s runner (the shared paired-benchmark
+execution shape the 1202/RD04 and 1204/RD08 producers go through) --
+which also gained an explicit -ngl 99 flag.
 """
 
 from __future__ import annotations
@@ -154,11 +155,15 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
 
 class Rd08LaneCommandsGpuFlagTests(unittest.TestCase):
     def test_rd08_lane_commands_include_ngl_99(self) -> None:
-        control_cmd, subject_cmd = vc.rd08_validation_lane_commands(
-            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-            model=Path("m.gguf"), workload="decode",
+        # The 1204/RD08 producer's exact historical argv shape, now built
+        # by the shared _paired_llama_bench_command primitive (the
+        # dedicated rd08_validation_lane_commands helper was retired with
+        # the producer migration; this pins the -ngl 99 guard it used to
+        # carry on both the control and subject commands).
+        control_cmd = vc._paired_llama_bench_command(
+            Path("control_bin"), Path("m.gguf"), "decode",
         )
-        for command in (control_cmd, subject_cmd):
+        for command in (control_cmd,):
             self.assertIn("-ngl", command)
             self.assertEqual(command[command.index("-ngl") + 1], "99")
 

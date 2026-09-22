@@ -197,15 +197,15 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
 
 class CollectLaneEffectRecordsTests(unittest.TestCase):
     """RV99: the campaign must hand make_record() the MEASUREMENTS, not only
-    the verdict. Both producing shapes carry the ratio vector already --
-    RD73 returns LaneEffect dataclasses, RD08's lanes carry
-    block_bootstrap_effect()'s own stats dict -- so this only normalises and
-    keeps them."""
+    the verdict. RD73 returns LaneEffect dataclasses, which already carry
+    the ratio vector -- so this only normalises and keeps them. (RD08's
+    historical stats-dict shape was retired with the 1204/RD08 producer
+    migration; its lane effects flow through the generic producer path.)"""
 
     def test_no_qualification_yields_no_lane_effects(self):
         self.assertEqual(
             vc.collect_lane_effect_records(
-                rd08_qualification=None, rd73_qualification=None),
+                rd73_qualification=None),
             [],
         )
 
@@ -224,7 +224,7 @@ class CollectLaneEffectRecordsTests(unittest.TestCase):
             )},
         }
         records = vc.collect_lane_effect_records(
-            rd08_qualification=None, rd73_qualification=qualification)
+            rd73_qualification=qualification)
         self.assertEqual(len(records), 2)
         positive = records[0]
         self.assertEqual(positive["role"], "positive")
@@ -233,25 +233,12 @@ class CollectLaneEffectRecordsTests(unittest.TestCase):
         self.assertEqual(positive["paired_rounds"], 2)
         self.assertEqual(positive["ci95_low_pct"], 1.3)
 
-    def test_rd08_stats_dict_shape_is_accepted_too(self):
-        qualification = {"lanes": {
-            "positive": {"metric": "tg128", "stats": {
-                "geometric_effect_pct": 0.4, "pair_ratios": (1.004, 1.005),
-                "paired_rounds": 2,
-            }},
-        }}
-        records = vc.collect_lane_effect_records(
-            rd08_qualification=qualification, rd73_qualification=None)
-        self.assertEqual(records[0]["metric"], "tg128")
-        self.assertEqual(records[0]["pair_ratios"], [1.004, 1.005])
-
     def test_ratios_are_lists_so_a_reread_record_digests_identically(self):
         # JSON has no tuple: a stored record reads back with lists, so writing
         # tuples would make record_digest depend on load/store round trips.
         from bigcherry.experiment.contract import LaneEffect
 
         records = vc.collect_lane_effect_records(
-            rd08_qualification=None,
             rd73_qualification={
                 "mtp": {"effect": LaneEffect(
                     role="positive", metric="m", geometric_effect_pct=1.0,
