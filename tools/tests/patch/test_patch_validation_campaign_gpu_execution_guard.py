@@ -159,13 +159,18 @@ class Rd08LaneCommandsGpuFlagTests(unittest.TestCase):
         # by the shared _paired_llama_bench_command primitive (the
         # dedicated rd08_validation_lane_commands helper was retired with
         # the producer migration; this pins the -ngl 99 guard it used to
-        # carry on both the control and subject commands).
+        # carry on BOTH the control and subject commands).
         control_cmd = vc._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
         )
-        for command in (control_cmd,):
+        subject_cmd = vc._paired_llama_bench_command(
+            Path("subject_bin"), Path("m.gguf"), "decode",
+        )
+        for command in (control_cmd, subject_cmd):
             self.assertIn("-ngl", command)
             self.assertEqual(command[command.index("-ngl") + 1], "99")
+        self.assertEqual(control_cmd[0], "control_bin")
+        self.assertEqual(subject_cmd[0], "subject_bin")
 
 
 class Rd04CommandGpuFlagTests(unittest.TestCase):

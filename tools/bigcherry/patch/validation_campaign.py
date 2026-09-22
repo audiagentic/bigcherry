@@ -1035,12 +1035,15 @@ def run_paired_llama_benchmark(
 ) -> PairedBenchmarkOutcome:
     """PVPS02 step 2/4: the shared execution shape behind the patch-local
     producers' paired benchmarks (1202/RD04 and 1204/RD08, via
-    ProducerRuntime.run_paired_llama_benchmark()) -- a pure,
+    ProducerRuntime.run_paired_llama_benchmark()) and behind the generic
+    --run-performance-benchmark path (registered as
+    BENCHMARK_EXECUTOR_FUNCS["paired-llama-bench-v1"]) -- a pure,
     semantics-preserving extraction of the duplicated
     clean-env/runner/command/raw-log/paired-run logic
     (docs/planning/active/patching-validation-package-standard/PVPS02.md).
     The dedicated RD04/RD08 compatibility wrappers were retired by the
-    PA36 producer migrations; producers are the only callers.
+    PA36 producer migrations; the producers and the generic benchmark
+    executor are the callers.
 
     ``env_overrides`` (step 4): applied on top of the sanitized/stripped
     environment for THIS call's own subprocesses only -- never mutates
@@ -3582,8 +3585,9 @@ def build_contract_evidence_for_persistence(
     ``validation_plan.contracts`` (never the singular
     ``descriptor.experiment_contract`` compatibility property, which fails
     closed for a real multi-contract patch) and the existing
-    ``contract_promotions`` dict (populated only by --run-rd08-contract
-    today). A bound contract with no produced promotion result gets an
+    ``contract_promotions`` dict (populated by the generic
+    --validation-producer path and the legacy --run-rd73-contract path).
+    A bound contract with no produced promotion result gets an
     explicit BLOCKED verdict ({"passed": False, "status": "blocked", ...})
     -- never an inferred PASS."""
     promotions = contract_promotions or {}
@@ -6343,13 +6347,13 @@ def main(argv: list[str] | None = None) -> int:
         "--run-performance-benchmark", action="store_true", default=False,
         help="PVPS02: the generic paired-benchmark entry point for ANY patch whose "
              "validation.toml wires a recognized benchmark-executor on its required "
-             "performance check -- not RD04/RD08/etc-specific. Builds one control/subject "
+             "performance check -- not patch-specific. Builds one control/subject "
              "llama-bench per applicable architecture and runs the standard (or "
              "--benchmark-model-selected) model matrix across them. Diagnostic-only for "
-             "eligibility, same as the legacy per-patch modes -- never populates "
-             "contract_promotions. Mutually exclusive with the RD04/RD08/RD58/RD73 modes; "
-             "does NOT require --model/--manifest/--amdgpu-targets (those are for the "
-             "legacy single-architecture flow).",
+             "eligibility -- never populates contract_promotions. Mutually exclusive "
+             "with the remaining legacy --run-rd73-contract mode; does NOT require "
+             "--model/--manifest/--amdgpu-targets (those are for the legacy "
+             "single-architecture flow).",
     )
     parser.add_argument(
         "--model-root", type=Path, default=None,
