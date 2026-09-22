@@ -442,6 +442,17 @@ def _paired_run_to_lane_effect(
 
 def run(ctx: ProducerContext) -> ProducerResult:
     """RD73 producer entrypoint."""
+    # Fail fast before any hardware use: RD73 passes ctx.model into every
+    # AttestedServerSession (ServerRunner ultimately constructs `-m <model>`),
+    # and the --validation-producer path does not re-impose the legacy
+    # parser's model-required check. A missing model must be rejected here
+    # rather than reaching a `ServerRunner` that would build `-m None`.
+    if ctx.model is None:
+        raise ValidationProducerError(
+            f"{ctx.patch_id}: RD73 requires a model (--model); the producer "
+            "passes ctx.model into every AttestedServerSession and "
+            "ServerRunner would otherwise construct `-m None`"
+        )
     # --- Preflight: device visibility (validate ONCE) ---
     visibility = require_device_visibility(
         context=f"{ctx.patch_id}: RD73 preflight",

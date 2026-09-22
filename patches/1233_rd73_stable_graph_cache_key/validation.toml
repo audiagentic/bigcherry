@@ -26,12 +26,13 @@ required = true
 
 # RD73's real bit_identical evidence is produced by the patch-local
 # producer's _check_bit_identical() (invoked via --validation-producer
-# 1233_rd73_stable_graph_cache_key/rd73) -- but that producer is not wired
-# into this generic correctness-summary check (ctx.correctness_evidence
-# stays unbound for it). Declared honestly against a real validator shape,
-# never faked via autotune-campaign as a placeholder. Stays BLOCKED here
-# until the generic adapter is rebound; see README.md's "Known gap"/
-# "Known limitations".
+# 1233_rd73_stable_graph_cache_key/rd73). With standard_campaign = "run",
+# the producer's correctness evidence is bound into this check by
+# _bind_producer_result_evidence() before evaluate_check(), so
+# correctness-summary consumes the real bound result (disposition
+# passed/failed, mechanism bit_identical) -- it is not BLOCKED.
+# Declared honestly against a real validator shape, never faked via
+# autotune-campaign as a placeholder.
 [[check]]
 id = "correctness"
 capability = "correctness"
@@ -39,14 +40,14 @@ validator = "correctness-summary"
 required = true
 
 # RD73's patch source now carries a real BIGCHERRY_PATCH_TRACE-gated
-# marker, and validation_campaign.run_rd73_activation_evidence() (VA06)
-# produces a real subject-hit/control-miss result -- but that producer
-# is not wired into this generic trace-marker check
-# (ctx.trace_evidence stays unbound for it). The generic tune-binary/
-# GGML_CUDA_DISABLE_FUSION negative control is still NOT valid for this
-# patch (RD73 is graph-cache keying, not a fusion path) and must never
-# be substituted here. Stays BLOCKED here until the generic adapter is
-# rebound; see README.md's "Known gap"/"Known limitations".
+# marker at the stable-key execution site, and the producer reads a real
+# subject-hit/control-miss result from the MTP lane's own server logs.
+# With standard_campaign = "run", the producer's trace/activation evidence
+# is bound into this check by _bind_producer_result_evidence() before
+# evaluate_check(), so trace-marker consumes the real bound result -- it is
+# not BLOCKED. The generic tune-binary/GGML_CUDA_DISABLE_FUSION negative
+# control is NOT valid for this patch (RD73 is graph-cache keying, not a
+# fusion path) and must never be substituted here.
 [[check]]
 id = "activation"
 capability = "activation"
