@@ -684,9 +684,9 @@ def compute_contract_correctness_gate(
     """VA14 final slice (GPT session ses_5bbee8ce5c9a4265, req_75c09f14757640af):
     delegates to the real, native `experiment_contract.evaluate_correctness_gate()`
     instead of always reporting BLOCKED -- a real per-named-check evidence
-    producer now exists for at least one contract (RD08's
-    require_rd08_correctness_evidence(), orchestrated by
-    run_rd08_contract_correctness() below). Returns None when there is no
+    producer now exists for at least one contract (RD08's patch-local
+    producer, orchestrated by the generic --validation-producer path).
+    Returns None when there is no
     bound contract at all, or the contract declares no required correctness
     checks (a pure-performance contract passes trivially).
 
@@ -754,32 +754,6 @@ def assert_validation_subject_parity(
         )
 
 
-def rd08_validation_lane_commands(
-    *, control_binary: Path, subject_binary: Path, model: Path, workload: str,
-    extra_flags: tuple[str, ...] = (),
-) -> tuple[list[str], list[str]]:
-    """VA14-B: the real, minimal llama-bench command pair for one RD08 lane
-    -- control_command, subject_command -- differing only by binary path,
-    consistent with metric_for_workload()'s decode->tg128/prefill->pp512
-    mapping (decode: -p 0 -n 128; prefill: -p 512 -n 0). ``extra_flags``
-    (VA06: e.g. ("-sm", "tensor") for a multi-GPU model) is appended
-    after the workload shape/-ngl flags -- empty by default, so RD08's
-    own existing behavior is unchanged."""
-    if workload == "decode":
-        workload_flags = ["-p", "0", "-n", "128"]
-    elif workload == "prefill":
-        workload_flags = ["-p", "512", "-n", "0"]
-    else:
-        raise PatchCampaignError(f"rd08 lane: no llama-bench flag mapping for workload {workload!r}")
-    control_command = [
-        str(control_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
-    ]
-    subject_command = [
-        str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
-    ]
-    return control_command, subject_command
-
-
 _PAIRED_BENCH_WORKLOAD_FLAGS: dict[str, tuple[str, ...]] = {
     "decode": ("-p", "0", "-n", "128"),
     "prefill": ("-p", "512", "-n", "0"),
@@ -799,10 +773,9 @@ def _paired_llama_bench_command(
     RD08's producers build. ``patch_args`` land BEFORE -ngl (RD04's
     historical position for its -fa/-ctk/-ctv flags); ``runtime_args``
     land AFTER -ngl (RD08's historical position for e.g. -sm tensor
-    topology flags via rd08_validation_lane_commands' extra_flags) --
-    kept as two distinct insertion points, not one undifferentiated list,
-    specifically so each caller's exact historical argv order is
-    reproducible byte-for-byte."""
+    topology flags) -- kept as two distinct insertion points, not one
+    undifferentiated list, specifically so each caller's exact historical
+    argv order is reproducible byte-for-byte."""
     if workload not in _PAIRED_BENCH_WORKLOAD_FLAGS:
         raise PatchCampaignError(
             f"paired llama-bench: no flag mapping for workload {workload!r}"
@@ -1060,16 +1033,14 @@ def run_paired_llama_benchmark(
     env_unset: tuple[str, ...] = (),
     execution_identity: "object | None" = None,
 ) -> PairedBenchmarkOutcome:
-    """PVPS02 step 2/4: the shared execution shape behind
-    run_rd08_validation_lanes() (and the 1202/RD04 patch-local producer's
-    paired benchmark, via ProducerRuntime.run_paired_llama_benchmark()) --
-    a pure, semantics-preserving extraction of the duplicated
+    """PVPS02 step 2/4: the shared execution shape behind the patch-local
+    producers' paired benchmarks (1202/RD04 and 1204/RD08, via
+    ProducerRuntime.run_paired_llama_benchmark()) -- a pure,
+    semantics-preserving extraction of the duplicated
     clean-env/runner/command/raw-log/paired-run logic
     (docs/planning/active/patching-validation-package-standard/PVPS02.md).
-    The remaining public caller (run_rd08_validation_lanes) is kept as a
-    compatibility wrapper that does its own result-shaping
-    (validation-lanes.json + LaneEffects) -- its callers/tests see no
-    behavior change.
+    The dedicated RD04/RD08 compatibility wrappers were retired by the
+    PA36 producer migrations; producers are the only callers.
 
     ``env_overrides`` (step 4): applied on top of the sanitized/stripped
     environment for THIS call's own subprocesses only -- never mutates
@@ -3511,8 +3482,7 @@ _LANE_EFFECT_FIELDS = (
 
 
 def collect_lane_effect_records(
-    *, rd08_qualification: "dict[str, object] | None",
-    rd73_qualification: "dict[str, object] | None",
+    *, rd73_qualification: "dict[str, object] | None",
 ) -> list[dict[str, object]]:
     """RV99: the per-lane measurements to persist in the validation record.
 
@@ -3522,17 +3492,15 @@ def collect_lane_effect_records(
     interval therefore could not be re-derived, re-aggregated across sessions,
     re-analysed under a new estimator, or audited from committed evidence.
 
-    Normalises the two shapes that actually carry a paired-lane measurement
-    into one:
+    Normalises RD73's contract qualification ``LaneEffect`` dataclasses into
+    one record shape. (RD08's historical stats-dict shape was retired with
+    the RD08 producer migration -- 1204's lane effects flow through the
+    generic producer path instead.)
 
-      * RD73's contract qualification returns ``LaneEffect`` dataclasses;
-      * RD08's lanes carry ``block_bootstrap_effect()``'s own stats dict
-        (``PairedLaneRun.stats``).
-
-    Both already contain the ratio vector -- this only decides to KEEP it.
-    ``pair_ratios`` is normalised to a list so a re-read record serialises
-    identically to the one that was written (JSON has no tuple), keeping
-    ``record_digest`` stable across a load/store round trip.
+    The effects already contain the ratio vector -- this only decides to
+    KEEP it. ``pair_ratios`` is normalised to a list so a re-read record
+    serialises identically to the one that was written (JSON has no tuple),
+    keeping ``record_digest`` stable across a load/store round trip.
     """
     records: list[dict[str, object]] = []
 
@@ -3554,10 +3522,6 @@ def collect_lane_effect_records(
     if rd73_qualification is not None:
         _add("positive", "mtp_wall_tps", rd73_qualification["mtp"].get("effect"))
         _add("control", "decode_tps", rd73_qualification["decode_control"].get("effect"))
-    if rd08_qualification is not None:
-        for role, lane in (rd08_qualification.get("lanes") or {}).items():
-            if isinstance(lane, Mapping):
-                _add(role, str(lane.get("metric") or ""), lane.get("stats"))
     return records
 
 
@@ -4204,10 +4168,11 @@ def run_rd73_contract_qualification(
     amdgpu_targets: str,
 ) -> dict[str, object]:
     """VA06 next slice: the authoritative RD73 full-qualification path
-    (``--run-rd73-contract``), mirroring RD08's own
-    run_rd08_contract_qualification() result/schema/promotion semantics
+    (``--run-rd73-contract``) -- the last specialized execution mode
+    retained in the legacy run() path. Its result/schema/promotion
+    semantics mirror the historical RD08 contract-qualification shape
     (real lane execution + real correctness + real trigger proof, composed
-    via evaluate_promotion_gate()) -- no RD73-specific parallel gate model.
+    via evaluate_promotion_gate()); no RD73-specific parallel gate model.
     Every threshold comes from ``contract`` itself
     (aggregate_contract_effects() / evaluate_resource_gate() /
     evaluate_promotion_gate()); nothing here hardcodes a number.
@@ -4292,8 +4257,8 @@ def run_rd73_contract_qualification(
     # A real content mismatch (or a missing/non-string/unpaired record) is a
     # genuine correctness RESULT, not an infrastructure failure -- it must
     # flow into correctness_gate/promotion as passed=False, never abort the
-    # whole qualification run (mirrors RD08's Rd08CorrectnessError handling
-    # in run_rd08_contract_correctness()).
+    # whole qualification run (mirrors the historical RD08 contract
+    # correctness error-handling semantics).
     try:
         correctness = evaluate_rd73_mtp_correctness(
             control_requests=mtp["control_requests"], subject_requests=mtp["subject_requests"],
@@ -4330,7 +4295,6 @@ def run_rd73_contract_qualification(
         this_session = {
             "gpu_architectures": [amdgpu_targets],
             "lane_effects": collect_lane_effect_records(
-                rd08_qualification=None,
                 rd73_qualification={"mtp": mtp, "decode_control": decode_control},
             ),
         }
@@ -4450,7 +4414,6 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     if not validation_policy.is_framework_configuration_patch(descriptor):
         raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
     if any(getattr(args, name, False) for name in (
-        "run_rd08_lanes", "run_rd08_contract",
         "run_rd73_contract",
         "correctness_evidence",
     )):
@@ -5844,15 +5807,7 @@ def run(args: argparse.Namespace) -> int:
             raise PatchCampaignError(
                 f"{args.patch}: trace CLI options require a trace-marker validation check"
             )
-    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
-    # generic tune-binary/fusion-disabled probe is redundant for
-    # --run-rd08-contract -- it is replaced by RD08's own authoritative
-    # validation-subject/control trigger probe below, which is a valid
-    # negative control for RD08's specific marker (the generic probe's
-    # negative control, GGML_CUDA_DISABLE_FUSION=1, is not). Skipping it
-    # here also avoids wasted GPU time on a probe whose result gets
-    # overwritten anyway.
-    # VA06: --run-rd73-contract also skips the generic probe -- the
+    # VA06: --run-rd73-contract skips the generic probe -- the
     # generic tune-binary/GGML_CUDA_DISABLE_FUSION negative control is
     # not valid for RD73 (graph-cache keying, not a fusion path), and
     # the generic probe's plain llama-bench invocation (no -sm tensor)
@@ -5860,7 +5815,9 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd73_contract) else run_trace_activation_probes(
+    # (RD08's historical --run-rd08-contract probe-skip was retired with
+    # the dedicated flag; 1204's activation now comes from its producer.)
+    trace_result = None if args.run_rd73_contract else run_trace_activation_probes(
         marker_regex=trace_marker_regex, description=trace_description,
         binary=tune_bin / f"llama-bench{exe}", model=args.model,
         hip_path=args.hip_path, workdir=workdir / "campaign",
@@ -5910,17 +5867,17 @@ def run(args: argparse.Namespace) -> int:
 
     # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
     # generic S1-S7 record/tune/promote/replay/bench/report campaign is
-    # unrelated to RD08's own contract evidence -- lanes/correctness/
+    # unrelated to a contract's own evidence -- lanes/correctness/
     # trigger/promotion never consume promoted.jsonl, dispatch.cache,
     # replay coverage, or S6/S7 results. Making that unrelated pipeline's
     # own promotion decision (which can legitimately promote zero
     # candidates on a real, honest run -- that is not a bug) a hard
-    # prerequisite of --run-rd08-contract was itself the real bug,
+    # prerequisite of a contract run was itself the real bug,
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
-    # for RD08's evidence below.
+    # for the contract evidence below.
     # VA06: --run-rd73-contract also skips the generic S1-S7 campaign
-    # pipeline, for the same reason RD08/RD04/RD58 do -- RD73's real
+    # pipeline, for the same reason -- RD73's real
     # evidence comes entirely from run_rd73_contract_qualification(),
     # which never reads promoted.jsonl/dispatch.cache/replay coverage/S6
     # or S7 results. This was actually the real, first root cause hit
@@ -5928,7 +5885,7 @@ def run(args: argparse.Namespace) -> int:
     # inside this unrelated pipeline) -- discovered before this
     # exclusion was added; kept for defense-in-depth even though a
     # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd73_contract):
+    if not args.run_rd73_contract:
         try:
             campaign.run()
         except CampaignError as exc:
@@ -5967,12 +5924,6 @@ def run(args: argparse.Namespace) -> int:
     # before this fix -- GPT round-7 review, req_3d12aa6668b14bb1).
     correctness_evidence: dict[str, object] = {}
     performance_evidence: dict[str, object] = {}
-    if args.correctness_evidence is not None and args.run_rd08_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
-            "together -- --run-rd08-contract already produces its own authoritative "
-            "correctness.json"
-        )
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
             args.correctness_evidence, patch_id=args.patch,
@@ -6038,28 +5989,13 @@ def run(args: argparse.Namespace) -> int:
         },
     }
 
-    # VA14-B/VA14-final: RD08 execution, opt-in and scoped to RD08 only.
-    # --run-rd08-lanes stays diagnostic-only (execution + evidence, never
-    # feeds eligibility). --run-rd08-contract is the authoritative full-
-    # qualification path (lanes + real named correctness + real trigger
-    # proof, composed via evaluate_promotion_gate()) and is the ONLY thing
-    # allowed to populate contract_promotions below. The two are mutually
-    # exclusive to avoid a redundant duplicate lane run.
-    if args.run_rd08_lanes and args.run_rd08_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --run-rd08-contract already runs the lanes -- "
-            "do not also pass --run-rd08-lanes"
-        )
+    # VA14-B/VA14-final: RD73 contract qualification (the last specialized
+    # execution mode retained in the legacy run() path; the RD08 modes
+    # were retired by the 1204/RD08 producer migration, and RD73's
+    # generic-producer path is the policy-blocked owner kept for the
+    # rejected-patch governance decision). It is the ONLY thing allowed
+    # to populate contract_promotions in this path.
     if args.run_rd73_contract:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-            
-        ):
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
         if descriptor.experiment_contract != "RD73-STABLE-GRAPH-CACHE-KEY":
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd73-contract is RD73-only today"
@@ -6193,16 +6129,12 @@ def run(args: argparse.Namespace) -> int:
         # patch_validation.ContractBinding -- a lightweight PROJECTION
         # (contract_id/hash/expected_effect/etc) that deliberately does NOT
         # carry .correctness/.acceptance/etc. compute_contract_correctness_gate()
-        # needs the real experiment_contract.ExperimentContract, which
-        # run_rd08_contract already loaded as rd08_contract for the
-        # --run-rd08-contract path; other contract-bound patches load it
-        # fresh here the same way that block does. PA36-F step 2: also the
-        # source of ValidationContext's plural contracts/contract_hashes
-        # below -- loaded once, before the context is constructed.
-        full_contract = (
-            rd08_contract if rd08_qualification is not None
-            else patch_validation.load_contract_for_descriptor(descriptor)
-        )
+        # needs the real experiment_contract.ExperimentContract, which is
+        # loaded fresh here for contract-bound patches. PA36-F step 2:
+        # also the source of ValidationContext's plural contracts/
+        # contract_hashes below -- loaded once, before the context is
+        # constructed.
+        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
         validation_ctx = patch_validation.ValidationContext(
             descriptor=descriptor, base_revision=base_revision,
             control_source=control_src, subject_source=patched_src, stock_source=stock_src,
@@ -6237,33 +6169,22 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
         # test-save-load-state evidence produces a named
         # state_restore_integrity CorrectnessResult -- thread it through
-        # the same way rd08_qualification's named results are threaded,
-        # so the contract's own correctness gate actually reflects the
-        # real evidence instead of reporting missing_checks.
+        # here so the contract's own correctness gate actually reflects
+        # the real evidence instead of reporting missing_checks.
         contract_correctness_gate = compute_contract_correctness_gate(
             full_contract,
             (
-                rd08_qualification["correctness"]["results"] if rd08_qualification is not None
-                else (
-                    # VA23: RD73's bit_identical result is real and already
-                    # evaluated inside run_rd73_contract_qualification(); thread
-                    # it here exactly as RD08's, so the gate
-                    # reflects the evidence instead of reporting missing_checks.
-                    rd73_qualification["correctness_named_results"]
-                    if rd73_qualification is not None else {}
-                )
+                # VA23: RD73's bit_identical result is real and already
+                # evaluated inside run_rd73_contract_qualification(); thread
+                # it here so the gate reflects the evidence instead of
+                # reporting missing_checks.
+                rd73_qualification["correctness_named_results"]
+                if rd73_qualification is not None else {}
             ),
         )
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
         }
-        if rd08_qualification is not None:
-            validation_check_results["_contract_qualification"] = {
-                "promotion": rd08_qualification["promotion"],
-                "trigger_proof": rd08_qualification["trigger_proof"],
-                "aggregated_effects": rd08_qualification["aggregated_effects"],
-                "artifact": rd08_qualification["artifact"],
-            }
         if contract_correctness_gate is not None:
             validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
             _print(
@@ -6318,7 +6239,7 @@ def run(args: argparse.Namespace) -> int:
         # them, so an interval can be re-derived and sessions aggregated from
         # committed evidence alone.
         lane_effects=collect_lane_effect_records(
-            rd08_qualification=rd08_qualification, rd73_qualification=rd73_qualification,
+            rd73_qualification=rd73_qualification,
         ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
@@ -6403,8 +6324,7 @@ def main(argv: list[str] | None = None) -> int:
              "printed) and rebinds the generic adapter's performance/correctness/trace "
              "evidence plus the record's own activation/correctness dispositions, so a "
              "passing run satisfies verify_validated_patch() as well as the eligibility "
-             "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
-             "RD08/RD58 execution modes. Requires --rd73-corpus.",
+             "flag. RD73-only; an error for any other patch. Requires --rd73-corpus.",
     )
     parser.add_argument(
         "--producer-corpus", type=Path, default=None,
@@ -6521,7 +6441,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.model_root is None or not args.device_map:
             parser.error("--run-performance-benchmark requires --model-root and --device-map")
         if any(getattr(args, name, False) for name in (
-            "run_rd08_lanes", "run_rd08_contract",
             "run_rd73_contract",
         )):
             parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
