@@ -1,6 +1,6 @@
 # 1252_nro03_allreduce_p2p_provider
 
-Plan `NRO03`; state `untested`; requires validated `1001_hip_internal_allreduce`.
+Plan `NRO03`; state `untested`; no required patches (the HIP internal AllReduce formerly from `1001_hip_internal_allreduce` is native upstream since pin b11126).
 
 The source fork adds optional two-GPU P2P copies. BigCherry has real gfx1100 evidence that destination-current/pull peer copies can return success with wrong data. Therefore this package is not a verbatim port. Its first draft encodes only two invariants: P2P is opt-in (`GGML_CUDA_AR_P2P`, default off), and every peer copy helper sets the **source** device current before issuing source->destination transfer.
 
