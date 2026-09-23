@@ -149,7 +149,6 @@ _LANE_EFFECT_FIELDS = (
 
 def collect_lane_effect_records(
     *,
-    rd08_qualification: "dict[str, object] | None",
     rd73_qualification: "dict[str, object] | None",
 ) -> list[dict[str, object]]:
     """RV99: the per-lane measurements to persist in the validation record.
@@ -193,10 +192,6 @@ def collect_lane_effect_records(
         _add(
             "control", "decode_tps", rd73_qualification["decode_control"].get("effect")
         )
-    if rd08_qualification is not None:
-        for role, lane in (rd08_qualification.get("lanes") or {}).items():
-            if isinstance(lane, Mapping):
-                _add(role, str(lane.get("metric") or ""), lane.get("stats"))
     return records
 
 

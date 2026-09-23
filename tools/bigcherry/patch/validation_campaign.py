@@ -950,7 +950,6 @@ def run_rd73_contract_qualification(
         this_session = {
             "gpu_architectures": [amdgpu_targets],
             "lane_effects": collect_lane_effect_records(
-                rd08_qualification=None,
                 rd73_qualification={"mtp": mtp, "decode_control": decode_control},
             ),
         }
@@ -1810,6 +1809,9 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
     trace_marker_regex = st.trace_marker_regex
     validation_subject_bin = st.validation_subject_bin
     rd73_qualification = None
+    # Every bound contract's evaluate_promotion_gate() result, keyed by
+    # contract id; persistence requires a PASS for each bound contract.
+    contract_promotions: dict[str, dict[str, object]] = {}
     # VA14-B/VA14-final: RD08 execution, opt-in and scoped to RD08 only.
     # --run-rd08-lanes stays diagnostic-only (execution + evidence, never
     # feeds eligibility). --run-rd08-contract is the authoritative full-
@@ -1961,6 +1963,7 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
     st.correctness_summary = correctness_summary
     st.performance_evidence = performance_evidence
     st.rd73_qualification = rd73_qualification
+    st.contract_promotions = contract_promotions
     st.trace_evidence = trace_evidence
 
 
@@ -2006,11 +2009,7 @@ def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> 
         # fresh here the same way that block does. PA36-F step 2: also the
         # source of ValidationContext's plural contracts/contract_hashes
         # below -- loaded once, before the context is constructed.
-        full_contract = (
-            rd08_contract
-            if rd08_qualification is not None
-            else patch_validation.load_contract_for_descriptor(descriptor)
-        )
+        full_contract = patch_validation.load_contract_for_descriptor(descriptor)
         validation_ctx = patch_validation.ValidationContext(
             descriptor=descriptor,
             base_revision=base_revision,
@@ -2067,13 +2066,11 @@ def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> 
         contract_correctness_gate = compute_contract_correctness_gate(
             full_contract,
             (
-                rd08_qualification["correctness"]["results"]
-                if rd08_qualification is not None
                 # VA23: RD73's bit_identical result is real and already
                 # evaluated inside run_rd73_contract_qualification(); thread
-                # it here exactly as RD08's, so the gate
-                # reflects the evidence instead of reporting missing_checks.
-                else (
+                # it here so the gate reflects the evidence instead of
+                # reporting missing_checks.
+                (
                     rd73_qualification["correctness_named_results"]
                     if rd73_qualification is not None
                     else {}
@@ -2119,6 +2116,7 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
     patched_source_tree = st.patched_source_tree
     psi = st.psi
     rd73_qualification = st.rd73_qualification
+    contract_promotions = st.contract_promotions
     stock_src = st.stock_src
     subject_composition = st.subject_composition
     validation_check_results = st.validation_check_results
@@ -2181,7 +2179,6 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
         # them, so an interval can be re-derived and sessions aggregated from
         # committed evidence alone.
         lane_effects=collect_lane_effect_records(
-            rd08_qualification=rd08_qualification,
             rd73_qualification=rd73_qualification,
         ),
         representation=_descriptor.representation,
