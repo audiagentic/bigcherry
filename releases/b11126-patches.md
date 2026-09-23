@@ -2,7 +2,7 @@
 
 Selection: --source bigcherry
 
-- **bigcherry revision:** 47b4795ca6086c9a5885ea55fa2f5d3f9598e13b
+- **bigcherry revision:** 3e364b2dc5727847442e3f0f26455f4a457eae9e
 - **llama.cpp revision:** b1ff4ca23630ac7c5a275405353ddb5c486332c9
 - **source:** bigcherry
 - **target:** b11126
