@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import contract as campaign_contract  # noqa: E402
 
 _CONTRACTS = ec.load_contracts(
     Path(__file__).resolve().parents[3] / "config" / "experiment-contracts.toml"
@@ -27,18 +28,18 @@ RD04 = _CONTRACTS.contracts["RD04-BF16-FLASH-ATTN-TILE"]
 
 class ComputeContractCorrectnessGateTests(unittest.TestCase):
     def test_no_bound_contract_returns_none(self) -> None:
-        self.assertIsNone(vc.compute_contract_correctness_gate(None, None))
+        self.assertIsNone(campaign_contract.compute_contract_correctness_gate(None, None))
 
     def test_single_required_check_no_results_is_blocked(self) -> None:
         # RD08-Q6K-MMVQ-VDR2 requires exactly one check (backend_reference).
-        gate = vc.compute_contract_correctness_gate(RD08, None)
+        gate = campaign_contract.compute_contract_correctness_gate(RD08, None)
         self.assertIsNotNone(gate)
         self.assertFalse(gate["passed"])
         self.assertIn("backend_reference", gate["missing_checks"])
 
     def test_single_required_check_passes_with_a_real_named_result(self) -> None:
         result = ec.CorrectnessResult(check="backend_reference", passed=True, detail="15/15 rows ok")
-        gate = vc.compute_contract_correctness_gate(RD08, {"backend_reference": result})
+        gate = campaign_contract.compute_contract_correctness_gate(RD08, {"backend_reference": result})
         self.assertIsNotNone(gate)
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["missing_checks"], [])
@@ -46,7 +47,7 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
 
     def test_single_required_check_fails_with_a_failing_named_result(self) -> None:
         result = ec.CorrectnessResult(check="backend_reference", passed=False, detail="mismatch")
-        gate = vc.compute_contract_correctness_gate(RD08, {"backend_reference": result})
+        gate = campaign_contract.compute_contract_correctness_gate(RD08, {"backend_reference": result})
         self.assertIsNotNone(gate)
         self.assertFalse(gate["passed"])
         self.assertIn("backend_reference", gate["failed_checks"])
@@ -57,7 +58,7 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
         # accepted as satisfying a named check -- only real CorrectnessResult
         # objects with .passed are read.
         with self.assertRaises(AttributeError):
-            vc.compute_contract_correctness_gate(
+            campaign_contract.compute_contract_correctness_gate(
                 RD08, {"backend_reference": {"disposition": "passed"}}
             )
 
@@ -65,7 +66,7 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
         # RD04's contract requires BOTH backend_reference AND ppl_equality
         # independently -- one named result must never silently cover both.
         result = ec.CorrectnessResult(check="backend_reference", passed=True)
-        gate = vc.compute_contract_correctness_gate(RD04, {"backend_reference": result})
+        gate = campaign_contract.compute_contract_correctness_gate(RD04, {"backend_reference": result})
         self.assertIsNotNone(gate)
         self.assertFalse(gate["passed"])
         self.assertIn("ppl_equality", gate["missing_checks"])
@@ -76,7 +77,7 @@ class ComputeContractCorrectnessGateTests(unittest.TestCase):
             "backend_reference": ec.CorrectnessResult(check="backend_reference", passed=True),
             "ppl_equality": ec.CorrectnessResult(check="ppl_equality", passed=True),
         }
-        gate = vc.compute_contract_correctness_gate(RD04, results)
+        gate = campaign_contract.compute_contract_correctness_gate(RD04, results)
         self.assertTrue(gate["passed"])
 
 
@@ -113,7 +114,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
 
     def test_bound_contract_with_no_promotion_at_all_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=True), None,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -121,14 +122,14 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
 
     def test_bound_contract_with_no_verdict_at_all_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
-        self.assertFalse(vc.compute_persisted_validation_eligible(
+        self.assertFalse(campaign_contract.compute_persisted_validation_eligible(
             descriptor, None, {}, activation_disposition=_ACT_OK, correctness=_CORR_OK,
         ))
 
     def test_bound_contract_adapter_pass_and_promotion_pass_is_true(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=True), promotions,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -137,7 +138,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
     def test_bound_contract_adapter_pass_but_promotion_fail_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": False}}
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=True), promotions,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -146,7 +147,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
     def test_bound_contract_promotion_pass_but_adapter_fail_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2",))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=False), promotions,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -155,7 +156,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
     def test_multi_contract_incomplete_promotion_set_is_false(self) -> None:
         descriptor = _FakeDescriptor(("RD08-Q6K-MMVQ-VDR2", "RD04-BF16-FLASH-ATTN-TILE"))
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True}}
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=True), promotions,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -167,7 +168,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
             "RD08-Q6K-MMVQ-VDR2": {"passed": True},
             "RD04-BF16-FLASH-ATTN-TILE": {"passed": True},
         }
-        result = vc.compute_persisted_validation_eligible(
+        result = campaign_contract.compute_persisted_validation_eligible(
             descriptor, _FakeVerdict(eligible=True), promotions,
             activation_disposition=_ACT_OK, correctness=_CORR_OK,
         )
@@ -176,13 +177,13 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
     def test_no_contract_passes_through_the_real_adapter_verdict_unaffected(self) -> None:
         descriptor = _FakeDescriptor(())
         self.assertTrue(
-            vc.compute_persisted_validation_eligible(
+            campaign_contract.compute_persisted_validation_eligible(
                 descriptor, _FakeVerdict(eligible=True), {},
                 activation_disposition=_ACT_OK, correctness=_CORR_OK,
             )
         )
         self.assertFalse(
-            vc.compute_persisted_validation_eligible(
+            campaign_contract.compute_persisted_validation_eligible(
                 descriptor, _FakeVerdict(eligible=False), {},
                 activation_disposition=_ACT_OK, correctness=_CORR_OK,
             )
@@ -190,7 +191,7 @@ class ComputePersistedValidationEligibleTests(unittest.TestCase):
 
     def test_no_contract_no_verdict_returns_none(self) -> None:
         descriptor = _FakeDescriptor(())
-        self.assertIsNone(vc.compute_persisted_validation_eligible(
+        self.assertIsNone(campaign_contract.compute_persisted_validation_eligible(
             descriptor, None, {}, activation_disposition=_ACT_OK, correctness=_CORR_OK,
         ))
 
@@ -216,7 +217,7 @@ class EligibilityAgreesWithTheEvidenceVerifierTests(unittest.TestCase):
             "correctness": _CORR_OK,
         }
         kwargs.update(overrides)
-        return vc.compute_persisted_validation_eligible(
+        return campaign_contract.compute_persisted_validation_eligible(
             _FakeDescriptor(("RD73-STABLE-GRAPH-CACHE-KEY",)),
             _FakeVerdict(eligible=True),
             {"RD73-STABLE-GRAPH-CACHE-KEY": {"passed": True}},
