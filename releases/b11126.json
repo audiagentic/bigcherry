@@ -1,0 +1,84 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 34,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "47b4795ca6086c9a5885ea55fa2f5d3f9598e13b",
+  "first_seen": "2026-09-23T13:53:28.104708+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "applied",
+        "hip-autotune-validation": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "blas-coverage-count": "applied",
+        "blas-coverage-include": "applied",
+        "ggml_hip_family_blas-diagnostics-only-count": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-case-forward": "applied",
+        "mmq-case-signature": "applied",
+        "mmq-helpers-and-switch": "applied",
+        "mmq-instantiation-macro": "applied",
+        "mmq-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "ggml_hip_family_mmvq-diagnostics-only-count": "applied",
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "b11126",
+  "revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-09-23T14:13:05.259832+00:00"
+}
