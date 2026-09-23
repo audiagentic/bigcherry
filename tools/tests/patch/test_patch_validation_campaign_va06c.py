@@ -23,6 +23,8 @@ are faked.
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import sys
 import tempfile
 import unittest
@@ -38,9 +40,7 @@ from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
-PRODUCER_DIR = Path(
-    "patches/1233_rd73_stable_graph_cache_key/validation"
-)
+PRODUCER_DIR = Path("patches/1233_rd73_stable_graph_cache_key/validation")
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06c"
 
 
@@ -273,10 +273,11 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
     def test_returns_control_role_effect(self) -> None:
         # The producer's decode lane runs a fixed 10 measured pairs.
         result = self._run(
-            control_tps=[90.0] * 10, subject_tps=[100.0] * 10,
+            control_tps=[90.0] * 10,
+            subject_tps=[100.0] * 10,
         )
-        self.assertEqual(result.role, "control")
-        self.assertEqual(result.metric, "tg128")
+        self.assertEqual(result["effect"].role, "control")
+        self.assertEqual(result["effect"].metric, "tg128")
 
     def test_default_extra_flags_include_sm_tensor_and_fit_off(self) -> None:
         # This lane launches real llama-SERVER processes (unlike RD73's
@@ -306,12 +307,15 @@ class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._tmp.name)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
     def _write_log(self, readings) -> Path:
-        path = self.run_dir / "logs" / "subject.log"
+        logs_dir = self.run_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        path = logs_dir / "subject.log"
         lines = "".join(
             f"BIGCHERRY_RD73_RESOURCE graph_cache_entries={v}\n" for v in readings
         )
@@ -594,7 +598,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
                             if prior_session_effect_pct is None
                             else self._prior_sessions(prior_session_effect_pct)
                         ),
-                        selector_env={},
+                        amdgpu_targets="gfx1100",
                     )
 
     def test_a_single_session_is_inconclusive_not_a_verdict(self):
