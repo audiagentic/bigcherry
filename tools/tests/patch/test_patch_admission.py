@@ -111,7 +111,7 @@ class CarryForwardAuthorityTests(unittest.TestCase):
             return patch_evidence.EvidenceCheck("validated-evidence" if ref == "old" else "missing-or-stale")
 
         with mock.patch.object(patch_evidence, "load_records", return_value=self._records(("old", "a" * 40))):
-            check = catalog._carried_forward("p", failing, "new", None, evaluate)
+            check = catalog._carried_forward("p", failing, "new", None, None, evaluate)
         self.assertEqual(check.status, "carried-forward")
         self.assertIn("old", check.problems[0])
         self.assertEqual(seen, ["old"])
@@ -121,10 +121,33 @@ class CarryForwardAuthorityTests(unittest.TestCase):
         failing = patch_evidence.EvidenceCheck("missing-or-stale", ("implementation digest mismatch",))
         with mock.patch.object(patch_evidence, "load_records", return_value=self._records(("old", "a" * 40))):
             check = catalog._carried_forward(
-                "p", failing, "new", None,
+                "p", failing, "new", None, None,
                 lambda pid, ref, rev: patch_evidence.EvidenceCheck("missing-or-stale"),
             )
         self.assertIs(check, failing)
+
+    def test_same_ref_at_a_different_revision_is_an_earlier_pin(self):
+        from bigcherry.patch import catalog, evidence as patch_evidence
+        failing = patch_evidence.EvidenceCheck("missing-or-stale", ("stale base_revision",))
+        records = self._records(("moving", "a" * 40))
+        with mock.patch.object(patch_evidence, "load_records", return_value=records):
+            check = catalog._carried_forward(
+                "p", failing, "moving", "b" * 40, None,
+                lambda pid, ref, rev: patch_evidence.EvidenceCheck(
+                    "validated-evidence" if rev == "a" * 40 else "missing-or-stale"),
+            )
+        self.assertEqual(check.status, "carried-forward")
+
+    def test_build_g4_passes_carried_forward(self):
+        from bigcherry.patch import evidence as patch_evidence, gates
+        carried = patch_evidence.EvidenceCheck("carried-forward", ("qualified at old; revalidate on request",))
+        context = mock.Mock(intent=gates.GateIntent.BUILD)
+        context.descriptor.patch_id = "p"
+        with mock.patch.object(gates.patch_catalog, "validation_evidence_statuses",
+                               return_value={"p": carried}) as statuses:
+            result = gates.evaluate_evidence_gate(context)
+        self.assertTrue(statuses.call_args.kwargs["carry_forward"])
+        self.assertEqual(result.status, gates.GateStatus.PASS)
 
     def test_live_revision_uses_shared_identity_primitive(self):
         with mock.patch.object(patch_admission.source_identity, "git_revision", return_value="abc"):
