@@ -5,9 +5,9 @@ evidence/gate layer -- it does not reimplement any of it.
 
 Design consulted with dev-gpt-agent (req_a635f1ef50a548db, 2026-09-08),
 grounded in RD73/RD08's real qualification paths
-(patch/validation_campaign.py's run_rd73_contract_qualification, and RD08's
-now-retired run_rd08_contract_qualification -- 1204's path is now its
-patch-local producer): both hand-roll their own patch-specific
+(the now-retired run_rd73_contract_qualification and
+run_rd08_contract_qualification -- both patches' paths are now their
+patch-local producers): both hand-roll their own patch-specific
 "lane" logic (server flags, workload, binaries) but already feed results
 through the SAME generic helpers this module calls --
 experiment.contract.evaluate_correctness_gate / evaluate_trigger_proof /

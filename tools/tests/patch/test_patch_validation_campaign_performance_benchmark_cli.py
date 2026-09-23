@@ -82,32 +82,6 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         )
         self.assertIn("requires --model-root and --device-map", message)
 
-    def test_mutually_exclusive_with_legacy_rd_modes(self) -> None:
-        # PA36 RD04/1202 producer migration: RD04's --run-rd04-benchmark flag
-        # was deleted, and RD58's --run-rd58-state-restore plus the RD08
-        # --run-rd08-lanes/--run-rd08-contract flags were removed by the
-        # validation_campaign refactor. The exclusion is now pinned through
-        # the sole surviving legacy RD mode (--run-rd73-contract); the
-        # mutual-exclusion check fires in main() before run()'s rd73-corpus
-        # requirement, so no corpus is needed here.
-        message = self._parse_or_error(
-            [
-                "--patch",
-                "1202_rd04_bf16_flash_attn_tile",
-                "--run-performance-benchmark",
-                "--run-rd73-contract",
-                "--hip-path",
-                "fake",
-                "--workdir",
-                "fake-workdir",
-                "--model-root",
-                "fake-models",
-                "--device-map",
-                "gfx1100=0",
-            ]
-        )
-        self.assertIn("mutually exclusive with the legacy RD modes", message)
-
     def test_does_not_require_model_manifest_or_amdgpu_targets(self) -> None:
         # Should get PAST arg validation (i.e. NOT hit parser.error()) and
         # into real dispatch, which then fails for an unrelated real-
@@ -184,7 +158,6 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
                 vc._prepare_standard_campaign,
                 vc._run_activation_probe_stage,
                 vc._collect_build_and_correctness_evidence,
-                vc._run_contract_evidence_modes,
                 vc._evaluate_validation_plan,
                 vc._persist_validation_record,
             )
