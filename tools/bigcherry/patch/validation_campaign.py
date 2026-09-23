@@ -1086,14 +1086,20 @@ def run_rd73_contract_qualification(
     }
 
 
-def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> int:
-    """Build the canonical native framework composition and persist schema-5 proof."""
-    from bigcherry.build import generated_tree
-    from bigcherry.patch import evidence as patch_validation_evidence
-    from bigcherry.patch import source as psi
+@dataclasses.dataclass(frozen=True)
+class _FrameworkSource:
+    baseline_source: str
+    base_revision: str
+    composition: tuple
+    source: Path
+    idempotent: bool
+    source_tree: str
+    source_manifest: dict
+    source_identity: dict
+
+
+def _require_framework_configuration_inputs(args: argparse.Namespace, descriptor) -> None:
     from bigcherry.patch import validation_policy
-    from bigcherry.patch import validation
-    from bigcherry.core import paths as bc_paths
 
     if not validation_policy.is_framework_configuration_patch(descriptor):
         raise PatchCampaignError(
@@ -1127,6 +1133,11 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
             "framework configuration requires explicit AMDGPU compile targets"
         )
     args.amdgpu_targets = ";".join(targets)
+
+
+def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> _FrameworkSource:
+    from bigcherry.patch import source as psi
+
     from bigcherry.core.context import ProjectContext
 
     base_repo = ProjectContext.resolve(
@@ -1174,6 +1185,22 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     source_identity["materialization_plan_id"] = source_identity["source_key"]
     if any(source_manifest.get(key) != value for key, value in source_identity.items()):
         raise PatchCampaignError("framework materialization identity is stale")
+    return _FrameworkSource(
+        baseline_source=baseline_source,
+        base_revision=base_revision,
+        composition=composition,
+        source=source,
+        idempotent=idempotent,
+        source_tree=source_tree,
+        source_manifest=source_manifest,
+        source_identity=source_identity,
+    )
+
+
+def _generate_framework_inputs(args: argparse.Namespace, source: Path):
+    """Generate the registry into a fresh build-root; return (build_root, generated_dir, manifest)."""
+    from bigcherry.build import generated_tree
+
     build_root = (args.build_root or args.workdir) / source.name
     # Qualification owns fresh directories, never retroactively attests a
     # historical build whose inputs were not observed during compilation.
@@ -1203,6 +1230,22 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     generated_manifest = generated_tree.build_manifest(
         generated_dir, compile_inputs=compile_inputs
     )
+    return build_root, generated_dir, generated_manifest
+
+
+def _compile_framework_builds(
+    args: argparse.Namespace,
+    *,
+    source: Path,
+    source_tree: str,
+    build_root: Path,
+    generated_dir: Path,
+    generated_manifest: dict,
+):
+    """Build production/diagnostic trees; return (proof, production, diagnostic, compiler_observations)."""
+    from bigcherry.build import generated_tree
+    from bigcherry.patch import source as psi
+
     proof = {}
 
     def generated_proof(phase, build_dir):
@@ -1315,6 +1358,35 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
                 "issues",
             )
         }
+    return proof, production, diagnostic, compiler_observations
+
+
+def _record_framework_configuration(
+    args: argparse.Namespace,
+    descriptor,
+    cfg,
+    framework: _FrameworkSource,
+    *,
+    build_root: Path,
+    generated_manifest: dict,
+    proof: dict,
+    production,
+    diagnostic,
+    compiler_observations: dict,
+) -> int:
+    """Evaluate the framework checks and persist the schema-5 evidence record."""
+    from bigcherry.patch import evidence as patch_validation_evidence
+    from bigcherry.patch import validation_policy
+    from bigcherry.patch import validation
+    from bigcherry.core import paths as bc_paths
+
+    base_revision = framework.base_revision
+    composition = framework.composition
+    idempotent = framework.idempotent
+    source_tree = framework.source_tree
+    source_manifest = framework.source_manifest
+    source_identity = framework.source_identity
+    baseline_source = framework.baseline_source
     run_dir = args.workdir / "framework" / descriptor.patch_id
     run_dir.mkdir(parents=True, exist_ok=False)
     generated_artifact = _write_bound_artifact(
@@ -1416,6 +1488,35 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     path = patch_validation_evidence.write_record(record)
     _print(f"framework configuration evidence: {path}")
     return 0 if record["eligible_for_validated_state"] else 1
+
+
+def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> int:
+    """Build the canonical native framework composition and persist schema-5 proof."""
+    _require_framework_configuration_inputs(args, descriptor)
+    framework = _materialize_framework_source(args, descriptor, cfg)
+    build_root, generated_dir, generated_manifest = _generate_framework_inputs(
+        args, framework.source
+    )
+    proof, production, diagnostic, compiler_observations = _compile_framework_builds(
+        args,
+        source=framework.source,
+        source_tree=framework.source_tree,
+        build_root=build_root,
+        generated_dir=generated_dir,
+        generated_manifest=generated_manifest,
+    )
+    return _record_framework_configuration(
+        args,
+        descriptor,
+        cfg,
+        framework,
+        build_root=build_root,
+        generated_manifest=generated_manifest,
+        proof=proof,
+        production=production,
+        diagnostic=diagnostic,
+        compiler_observations=compiler_observations,
+    )
 
 
 def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) -> None:
