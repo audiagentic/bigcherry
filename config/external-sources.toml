@@ -134,7 +134,7 @@ commit = "e06dcf6300718227cb8cfda9e61fb12ccb693418"
 title = "ggml: add Q8 wire, residual fusion, and AllReduce tracing"
 plan-item = "NRO01"
 status = "planned"
-note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce."
+note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce. 2026-09-23: 1001 superseded at pin b11126 (upstream now contains its edits verbatim); 1250 no longer requires it."
 
 [[sources.tracked]]
 commit = "10579a7365a3bc86c4f8e41aaab20e73e1571e5e"

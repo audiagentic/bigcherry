@@ -223,28 +223,16 @@ patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
-[experiment.hip-internal-allreduce-only]
-patches = ["1001_hip_internal_allreduce"]
-
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
-[experiment.hip-internal-allreduce-correctness-gate]
-# Combines 1001 (the AllReduce implementation under test) with 1224 (the
-# SPLIT_REDUCE correctness probe) in one build so test-hip-reduce can
-# actually exercise 1001's HIP-enabled code path -- neither patch alone
-# is enough: 1001 without 1224 has no probe binary to run it through,
-# 1224 without 1001 can only reach RCCL/meta (the internal path stays
-# compiled out). One-off validation build, not a permanent recipe.
-patches = ["1001_hip_internal_allreduce", "1224_hi18_reduce_correctness_probe"]
-
 [experiment.hi155-hybrid-allreduce-gate]
-# 0840 (the hybrid dispatcher) depends on 1001 (the internal pipeline it
-# dispatches into); 1224 (the SPLIT_REDUCE correctness probe) is included
+# 0840 (the hybrid dispatcher) dispatches into the HIP internal AllReduce
+# pipeline, which upstream provides natively since b11126 (formerly the
+# now-superseded patch 1001); 1224 (the SPLIT_REDUCE correctness probe) is included
 # so test-hip-reduce can exercise both sides of the dispatch threshold.
 # One-off validation build, not a permanent recipe.
 patches = [
-    "1001_hip_internal_allreduce",
     "0840_hybrid_allreduce_dispatch",
     "1224_hi18_reduce_correctness_probe",
 ]

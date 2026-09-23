@@ -1,6 +1,6 @@
 # Testing — NRO03 P2P AllReduce provider
 
-Static gates must assert: default-off flag, helper calls `ggml_cuda_set_device(src_device)` immediately before `cudaMemcpyPeerAsync`, no fixed `p2p_issuer`, and required dependency on `1001`.
+Static gates must assert: default-off flag, helper calls `ggml_cuda_set_device(src_device)` immediately before `cudaMemcpyPeerAsync`, no fixed `p2p_issuer`, and no dependency on the superseded `1001` (its capability is upstream since pin b11126).
 
 Hardware gate before live dispatch: both directions copy asymmetric nonzero patterns for repeated sizes and compare every byte/element. A single mismatch disables P2P and records fallback. Test peer-access-already-enabled and unavailable cases.
 

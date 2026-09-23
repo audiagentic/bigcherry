@@ -3,7 +3,7 @@
 ## Static gates
 
 1. `patch-lint --json` and package discovery.
-2. Dependency closure must include `1001_hip_internal_allreduce`.
+2. Base source must contain the HIP-enabled internal AllReduce (native upstream since pin b11126; `1001_hip_internal_allreduce` is superseded).
 3. Apply on pin `b10705`; second apply must be `already-applied`.
 4. HIP build with threshold unset/0 must behave exactly as pre-NRO01.
 5. Non-HIP compile must remain valid because the internal code remains behind existing backend guards.

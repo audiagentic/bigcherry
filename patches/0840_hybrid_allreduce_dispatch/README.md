@@ -3,8 +3,8 @@
 ## Scope
 
 Adds `GGML_CUDA_ALLREDUCE=hybrid`: a 4th AllReduce provider that brings up
-both RCCL and BigCherry's own internal AllReduce pipeline (patch 1001,
-already validated) simultaneously, then dispatches per call based on
+both RCCL and BigCherry's own internal AllReduce pipeline (formerly patch 1001;
+native upstream since pin b11126) simultaneously, then dispatches per call based on
 `ggml_nbytes(tensors[0])` against the internal pipeline's own real
 copy-engine threshold -- below it, tries internal first (falling through to
 RCCL on failure); at or above it, goes straight to RCCL.
