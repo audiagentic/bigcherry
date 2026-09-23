@@ -46,8 +46,17 @@ _MARKER_REGEX = "BIGCHERRY_PATCH_HIT patch=1233_rd73 path=stable_graph_cache_key
 
 # MTP server runtime args (real llama-server flags only)
 _MTP_SERVER_ARGS = (
-    "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
-    "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+    "--parallel",
+    "1",
+    "--metrics",
+    "-sm",
+    "tensor",
+    "--fit",
+    "off",
+    "--spec-type",
+    "draft-mtp",
+    "--spec-draft-n-max",
+    "4",
 )
 
 # ROCR_VISIBLE_DEVICES must be unset for all server launches
@@ -216,7 +225,9 @@ def _run_mtp_server_lane(
         log_file.write_text("\n".join(combined), encoding="utf-8")
 
     # Convert to LaneEffect
-    lane_effect = _paired_run_to_lane_effect(paired_run, role="positive", metric="mtp_wall_tps")
+    lane_effect = _paired_run_to_lane_effect(
+        paired_run, role="positive", metric="mtp_wall_tps"
+    )
 
     return (
         lane_effect,
@@ -239,7 +250,7 @@ def _run_decode_control_lane(
     subject_port: int = 18083,
 ) -> LaneEffect:
     """Run RD73's decode control lane using run_bench_runner_server_bench.
-    
+
     GPT round 5 MAJOR: the decode control lane must use
     run_bench_runner_server_bench(..., bench_configs="tg128") -- NOT
     server_completion.run_request() with a wall_tps fallback. The
@@ -385,7 +396,9 @@ def _run_resource_burst(
         transport = sc.HttpTransport(f"http://{host}:{port}")
         sc.validate_server(transport)
         for i in range(requests):
-            sc.run_request(transport, burst_prompt, config, pass_number=1, order_index=i)
+            sc.run_request(
+                transport, burst_prompt, config, pass_number=1, order_index=i
+            )
 
     # Fail closed on any malformed prefixed line; a missing telemetry reading
     # is handled below as inconclusive evidence.
@@ -406,7 +419,7 @@ def _check_bit_identical(
     control_records: list[dict[str, Any]],
 ) -> bool:
     """Check if the control and subject MTP content fields are bit-identical.
-    
+
     GPT round 3 BLOCKER: must check same count, matching order_index,
     both contents must be strings, exact equality. Two missing contents
     (None == None) must NOT pass.
@@ -429,14 +442,13 @@ def _check_bit_identical(
     return True
 
 
-def _paired_run_to_lane_effect(
-    paired_run: Any, role: str, metric: str
-) -> LaneEffect:
+def _paired_run_to_lane_effect(paired_run: Any, role: str, metric: str) -> LaneEffect:
     """Convert a PairedLaneRun to a LaneEffect using the canonical
     lane_effect_from_run() (GPT round 3 MAJOR: do not fabricate
     defaults -- missing CI/round data must remain missing/fail-closed).
     """
     from bigcherry.experiment.execution import lane_effect_from_run
+
     return lane_effect_from_run(role=role, metric=metric, run=paired_run)
 
 
@@ -468,9 +480,7 @@ def run(ctx: ProducerContext) -> ProducerResult:
 
     # --- Selector env (from the validated visibility) ---
     selector_env = {
-        "HIP_VISIBLE_DEVICES": ",".join(
-            str(d) for d in visibility.device_ids
-        ),
+        "HIP_VISIBLE_DEVICES": ",".join(str(d) for d in visibility.device_ids),
     }
 
     # --- MTP server lane (positive) ---
@@ -550,9 +560,9 @@ def run(ctx: ProducerContext) -> ProducerResult:
 
     # 4. rd73-resource-burst-subject.log (GPT round 5 MAJOR: persist
     # the actual raw burst log, not just peak summary)
-    burst_log_text = (
-        ctx.workdir / "rd73-resource-burst-subject.log"
-    ).read_text(encoding="utf-8", errors="replace")
+    burst_log_text = (ctx.workdir / "rd73-resource-burst-subject.log").read_text(
+        encoding="utf-8", errors="replace"
+    )
     burst_log_ref = ctx.runtime.write_text_artifact(
         name="rd73-resource-burst-subject.log",
         text=burst_log_text,

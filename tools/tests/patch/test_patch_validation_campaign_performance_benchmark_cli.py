@@ -81,16 +81,20 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         )
         self.assertIn("requires --model-root and --device-map", message)
 
-    def test_mutually_exclusive_with_legacy_rd58_mode(self) -> None:
-        # PA36 RD04/1202 producer migration: RD04's --run-rd04-benchmark
-        # flag was deleted; the exclusion is pinned through a surviving
-        # legacy RD mode instead.
+    def test_mutually_exclusive_with_legacy_rd_modes(self) -> None:
+        # PA36 RD04/1202 producer migration: RD04's --run-rd04-benchmark flag
+        # was deleted, and RD58's --run-rd58-state-restore plus the RD08
+        # --run-rd08-lanes/--run-rd08-contract flags were removed by the
+        # validation_campaign refactor. The exclusion is now pinned through
+        # the sole surviving legacy RD mode (--run-rd73-contract); the
+        # mutual-exclusion check fires in main() before run()'s rd73-corpus
+        # requirement, so no corpus is needed here.
         message = self._parse_or_error(
             [
                 "--patch",
                 "1202_rd04_bf16_flash_attn_tile",
                 "--run-performance-benchmark",
-                "--run-rd58-state-restore",
+                "--run-rd73-contract",
                 "--hip-path",
                 "H:/fake",
                 "--workdir",

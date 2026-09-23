@@ -75,9 +75,8 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         # producer migration (RD04's activation stays honestly BLOCKED via
         # its producer's trace_probe=skip policy, not via this exclusion).
         match = re.search(
-            r"trace_result = None if \(args\.run_rd08_contract or "
-            r"args\.run_rd73_contract\) else "
-            r"run_trace_activation_probes\(",
+            r"trace_result = \(\s*\n\s*None\s*\n\s*if \(args\.run_rd08_contract or "
+            r"args\.run_rd73_contract\)\s*\n\s*else run_trace_activation_probes\(",
             self.source,
         )
         self.assertIsNotNone(
@@ -97,23 +96,26 @@ class Rd08ContractSkipsGenericCampaignTests(unittest.TestCase):
         # compute_contract_correctness_gate() crashed on real hardware
         # with AttributeError: 'ContractBinding' object has no attribute
         # 'correctness'. The real committed code must resolve a real
-        # ExperimentContract (rd08_contract for --run-rd08-contract, or
-        # patch_validation.load_contract_for_descriptor() otherwise)
-        # before calling compute_contract_correctness_gate().
+        # ExperimentContract before calling compute_contract_correctness_gate():
+        # the refactor does this via bound_contracts[0] (guarded by
+        # len(bound_contracts) == 1) -- never validation_plan.contract.
         self.assertNotIn(
             "compute_contract_correctness_gate(\n            validation_plan.contract,",
             self.source,
         )
+        # The refactor moved the gate resolution out of run() into the
+        # producer-dispatch path, so check the full module source (not just
+        # run()'s body) for the bound_contracts[0] resolution.
+        full_source = inspect.getsource(vc)
         match = re.search(
-            r"full_contract = \(\s*\n\s*rd08_contract if rd08_qualification is not None\s*\n"
-            r"\s*else patch_validation\.load_contract_for_descriptor\(descriptor\)",
-            self.source,
+            r"compute_contract_correctness_gate\(\s*\n\s*bound_contracts\[0\],",
+            full_source,
         )
         self.assertIsNotNone(
             match,
             "compute_contract_correctness_gate() must be called with a real "
-            "ExperimentContract, resolved via rd08_contract or "
-            "load_contract_for_descriptor() -- never validation_plan.contract "
+            "ExperimentContract (bound_contracts[0], guarded by "
+            "len(bound_contracts) == 1) -- never validation_plan.contract "
             "(a ContractBinding projection with no .correctness field)",
         )
 

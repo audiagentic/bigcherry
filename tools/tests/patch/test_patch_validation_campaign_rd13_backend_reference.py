@@ -312,8 +312,9 @@ def _run_producer(
  id = 'tierM-gptoss20b-q6k'
  path = 'gpt-oss-20b-UD-Q6_K_XL.gguf'
  size-bytes = {control_size}
-""".replace("{positive_size}", str(positive_model.stat().st_size))
-        .replace("{control_size}", str(control_model.stat().st_size)),
+""".replace("{positive_size}", str(positive_model.stat().st_size)).replace(
+            "{control_size}", str(control_model.stat().st_size)
+        ),
         encoding="utf-8",
     )
     bench_control = temp / "scaffold" / "CONTROL" / "llama-bench"
@@ -439,7 +440,9 @@ class Rd13BackendReferenceProducerTests(unittest.TestCase):
         performance_path = runtime.run_dir / str(artifact["path"])
         performance = json.loads(performance_path.read_text(encoding="utf-8"))
         self.assertTrue(performance["passed"])
-        self.assertEqual(performance["positive_model_identity"]["model_id"], "tierA-qwen4b-q6k")
+        self.assertEqual(
+            performance["positive_model_identity"]["model_id"], "tierA-qwen4b-q6k"
+        )
         self.assertIsNotNone(result.trace_evidence)
         self.assertEqual(
             result.validation_build_identities,

@@ -52,7 +52,9 @@ from bigcherry.build.builds import (
     capture_completed_build_evidence,
 )
 from bigcherry.campaign.bench_runner import (  # noqa: F401
-    BENCH_RUNNER_ROOT, BenchRunnerError, run_bench_runner_server_bench,
+    BENCH_RUNNER_ROOT,
+    BenchRunnerError,
+    run_bench_runner_server_bench,
 )
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import (
@@ -101,7 +103,13 @@ def _hip_only(env_overrides: "dict[str, str] | None") -> "dict[str, str] | None"
     if not env_overrides:
         return None
     return {k: v for k, v in env_overrides.items() if k != "ROCR_VISIBLE_DEVICES"}
-from bigcherry.patch.activation import ActivationEvidence, verdict, write_activation_json
+
+
+from bigcherry.patch.activation import (
+    ActivationEvidence,
+    verdict,
+    write_activation_json,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 LLAMA_CPP_SRC = REPO_ROOT / "vendor" / "llama.cpp"
@@ -146,7 +154,9 @@ def _hip_env(hip_path: Path) -> dict[str, str]:
 
 
 def resolve_selected_device_execution_identity(
-    *, expected_arch: str, host_devices=None,
+    *,
+    expected_arch: str,
+    host_devices=None,
 ) -> tuple[ExecutionIdentity, dict[str, str]]:
     """PRBE111 shared helper: resolve the real, host-configured
     ExecutionIdentity (architecture + verified PCI locator) and env-override
@@ -218,25 +228,34 @@ def resolve_selected_device_execution_identity(
         )
 
     identity = ExecutionIdentity(
-        backend="ROCm", architectures=(device.arch,), locators=(device.locator,),
+        backend="ROCm",
+        architectures=(device.arch,),
+        locators=(device.locator,),
     )
     selector_env = {"HIP_VISIBLE_DEVICES": str(index)}
     return identity, selector_env
 
 
-def _requested_cmake_args(amdgpu_targets: str, extra_cmake_args: list[str]) -> list[str]:
+def _requested_cmake_args(
+    amdgpu_targets: str, extra_cmake_args: list[str]
+) -> list[str]:
     """Identity-relevant CMake intent shared by configure and post-build
     verification -- ONE definition so the two can never silently drift
     apart (capture_completed_build_evidence() checks these same values
     against the resolved CMakeCache.txt)."""
     return [
-        "-DCMAKE_BUILD_TYPE=Release", "-DGGML_HIP=ON",
-        f"-DAMDGPU_TARGETS={amdgpu_targets}", *extra_cmake_args,
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DGGML_HIP=ON",
+        f"-DAMDGPU_TARGETS={amdgpu_targets}",
+        *extra_cmake_args,
     ]
 
 
 def _full_requested_cmake_args(
-    *, hip_path: Path, amdgpu_targets: str, extra_cmake_args: list[str],
+    *,
+    hip_path: Path,
+    amdgpu_targets: str,
+    extra_cmake_args: list[str],
 ) -> list[str]:
     """Every -D value actually supplied to `cmake` configure, AND what
     capture_completed_build_evidence() is told was requested -- the two
@@ -248,8 +267,10 @@ def _full_requested_cmake_args(
 
     args = [
         *_requested_cmake_args(amdgpu_targets, extra_cmake_args),
-        f"-DCMAKE_C_COMPILER={clang}", f"-DCMAKE_CXX_COMPILER={clangxx}",
-        f"-DCMAKE_PREFIX_PATH={hip_path}", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        f"-DCMAKE_C_COMPILER={clang}",
+        f"-DCMAKE_CXX_COMPILER={clangxx}",
+        f"-DCMAKE_PREFIX_PATH={hip_path}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
     ]
 
     if is_windows:
@@ -276,7 +297,10 @@ _CONFIGURE_REQUEST_SCHEMA_VERSION = 1
 def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+        text=True,
     )
     temporary_path = Path(temporary_name)
     try:
@@ -291,10 +315,13 @@ def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
         raise
 
 
-def _configure_request_document(*, source: Path, cmake_args: list[str]) -> dict[str, object]:
+def _configure_request_document(
+    *, source: Path, cmake_args: list[str]
+) -> dict[str, object]:
     return {
         "schema_version": _CONFIGURE_REQUEST_SCHEMA_VERSION,
-        "source": str(source.resolve()), "generator": CMAKE_GENERATOR,
+        "source": str(source.resolve()),
+        "generator": CMAKE_GENERATOR,
         "cmake_args": list(cmake_args),
     }
 
@@ -317,7 +344,9 @@ def _configure_request_matches(*, build_dir: Path, expected: dict[str, object]) 
     return recorded == expected
 
 
-def generate_registry(*, source: Path, amdgpu_targets: str, generated_dir: Path) -> None:
+def generate_registry(
+    *, source: Path, amdgpu_targets: str, generated_dir: Path
+) -> None:
     """Run `bigcherry generate` against an isolated worktree so ggml-hip's
     CMakeLists finds hip-autotune-registry.inc + template-instances/ there.
 
@@ -342,21 +371,38 @@ def generate_registry(*, source: Path, amdgpu_targets: str, generated_dir: Path)
     generated_dir.mkdir(parents=True, exist_ok=True)
     _print(f"generating autotune registry into {generated_dir} ...")
     args = [
-        sys.executable, "-m", "bigcherry", "--llama-root", str(source),
-        "generate", "--arch", amdgpu_targets, "--generated-root", str(generated_dir),
+        sys.executable,
+        "-m",
+        "bigcherry",
+        "--llama-root",
+        str(source),
+        "generate",
+        "--arch",
+        amdgpu_targets,
+        "--generated-root",
+        str(generated_dir),
         "--force",
     ]
     result = subprocess.run(
-        args, cwd=str(REPO_ROOT / "tools"), stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, text=True,
+        args,
+        cwd=str(REPO_ROOT / "tools"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     if result.returncode != 0:
         raise PatchCampaignError(f"bigcherry generate failed:\n{result.stdout}")
 
 
 def build_tree(
-    *, name: str, extra_cmake_args: list[str], hip_path: Path,
-    amdgpu_targets: str, workdir: Path, targets: list[str], source: Path,
+    *,
+    name: str,
+    extra_cmake_args: list[str],
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    targets: list[str],
+    source: Path,
     generated_proof_callback=None,
 ) -> Path:
     """cmake configure (if not already configured) + build the given
@@ -374,9 +420,13 @@ def build_tree(
 
     env = _hip_env(hip_path)
     cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=extra_cmake_args,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=extra_cmake_args,
     )
-    configure_request = _configure_request_document(source=source, cmake_args=cmake_args)
+    configure_request = _configure_request_document(
+        source=source, cmake_args=cmake_args
+    )
     configure_request_path = build_dir / "bigcherry-configure-request.json"
 
     if generated_proof_callback is not None:
@@ -393,10 +443,21 @@ def build_tree(
         _print(f"{name}: configure request unchanged; reusing CMake cache")
     else:
         _print(f"configuring {name} ...")
-        args = ["cmake", "-S", str(source), "-B", str(build_dir), "-G", CMAKE_GENERATOR, *cmake_args]
+        args = [
+            "cmake",
+            "-S",
+            str(source),
+            "-B",
+            str(build_dir),
+            "-G",
+            CMAKE_GENERATOR,
+            *cmake_args,
+        ]
         log_path = log_dir / f"{name}-configure.log"
         with log_path.open("w", encoding="utf-8") as log_file:
-            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+            result = subprocess.run(
+                args, stdout=log_file, stderr=subprocess.STDOUT, env=env
+            )
         if result.returncode != 0:
             raise PatchCampaignError(f"{name} configure failed (see {log_path})")
         _atomic_write_json(configure_request_path, configure_request)
@@ -410,11 +471,15 @@ def build_tree(
         with log_path.open("w", encoding="utf-8") as log_file:
             result = subprocess.run(
                 ["cmake", "--build", str(build_dir), "--target", target, "-j"],
-                stdout=log_file, stderr=subprocess.STDOUT, env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                env=env,
             )
         if result.returncode != 0:
             tail = "\n".join(
-                log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+                log_path.read_text(encoding="utf-8", errors="replace").splitlines()[
+                    -40:
+                ]
             )
             raise PatchCampaignError(f"{name} build ({target}) failed:\n{tail}")
     if generated_proof_callback is not None:
@@ -424,7 +489,11 @@ def build_tree(
 
 
 def ensure_stock_baseline(
-    *, hip_path: Path, amdgpu_targets: str, workdir: Path, stock_src: Path,
+    *,
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    stock_src: Path,
 ) -> Path:
     """Build a genuinely unpatched llama.cpp worktree at stock_src (from
     patch_source_isolation.materialize_stock_source(), a real git worktree
@@ -437,9 +506,13 @@ def ensure_stock_baseline(
     log_dir.mkdir(parents=True, exist_ok=True)
     env = _hip_env(hip_path)
     cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=[],
     )
-    configure_request = _configure_request_document(source=stock_src, cmake_args=cmake_args)
+    configure_request = _configure_request_document(
+        source=stock_src, cmake_args=cmake_args
+    )
     configure_request_path = build_dir / "bigcherry-configure-request.json"
 
     if _configure_request_matches(build_dir=build_dir, expected=configure_request):
@@ -447,12 +520,20 @@ def ensure_stock_baseline(
     else:
         _print("configuring stock baseline ...")
         args = [
-            "cmake", "-S", str(stock_src), "-B", str(build_dir), "-G", CMAKE_GENERATOR,
+            "cmake",
+            "-S",
+            str(stock_src),
+            "-B",
+            str(build_dir),
+            "-G",
+            CMAKE_GENERATOR,
             *cmake_args,
         ]
         log_path = log_dir / "stock-configure.log"
         with log_path.open("w", encoding="utf-8") as log_file:
-            result = subprocess.run(args, stdout=log_file, stderr=subprocess.STDOUT, env=env)
+            result = subprocess.run(
+                args, stdout=log_file, stderr=subprocess.STDOUT, env=env
+            )
         if result.returncode != 0:
             raise PatchCampaignError(f"stock configure failed (see {log_path})")
         _atomic_write_json(configure_request_path, configure_request)
@@ -460,8 +541,10 @@ def ensure_stock_baseline(
         log_path = log_dir / f"stock-build-{target}.log"
         with log_path.open("w", encoding="utf-8") as log_file:
             result = subprocess.run(
-                ["cmake", "--build", str(build_dir), "--target", target, "-j"], env=env,
-                stdout=log_file, stderr=subprocess.STDOUT,
+                ["cmake", "--build", str(build_dir), "--target", target, "-j"],
+                env=env,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
             )
         if result.returncode != 0:
             raise PatchCampaignError(f"stock build ({target}) failed (see {log_path})")
@@ -503,7 +586,9 @@ _ROCM_INIT_FAILURE_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r"no ROCm-capable device is detected"),
     re.compile(r"hipErrorNoDevice"),
 )
-_ROCM_INIT_SUCCESS_PATTERN = re.compile(r"ggml_cuda_init:\s*found\s+(\d+)\s+ROCm device")
+_ROCM_INIT_SUCCESS_PATTERN = re.compile(
+    r"ggml_cuda_init:\s*found\s+(\d+)\s+ROCm device"
+)
 
 
 def _require_real_gpu_execution(stdout: str, stderr: str, *, context: str) -> None:
@@ -528,8 +613,15 @@ def _require_real_gpu_execution(stdout: str, stderr: str, *, context: str) -> No
 
 
 def _run_one_trace_probe(
-    *, name: str, binary: Path, model: Path, hip_path: Path, workdir: Path,
-    bench_prompt: int, bench_gen: int, disable_fusion: bool,
+    *,
+    name: str,
+    binary: Path,
+    model: Path,
+    hip_path: Path,
+    workdir: Path,
+    bench_prompt: int,
+    bench_gen: int,
+    disable_fusion: bool,
     extra_flags: tuple[str, ...] = (),
     env_overrides: Mapping[str, str] | None = None,
     env_unset: tuple[str, ...] = (),
@@ -552,8 +644,18 @@ def _run_one_trace_probe(
     # BIGCHERRY_PATCH_HIT with --verbose present. This function's entire
     # purpose is reading ggml log output, so it must always request it.
     command = [
-        str(binary.resolve()), "-m", str(model.resolve()),
-        "-p", str(bench_prompt), "-n", str(bench_gen), "-r", "1", "-ngl", "99", "--verbose",
+        str(binary.resolve()),
+        "-m",
+        str(model.resolve()),
+        "-p",
+        str(bench_prompt),
+        "-n",
+        str(bench_gen),
+        "-r",
+        "1",
+        "-ngl",
+        "99",
+        "--verbose",
         *extra_flags,
     ]
     env = _trace_probe_env(hip_path=hip_path, disable_fusion=disable_fusion)
@@ -572,9 +674,15 @@ def _run_one_trace_probe(
     log_path = log_dir / f"activation-{name}.log"
 
     completed = subprocess.run(
-        command, cwd=workdir, env=env, stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        encoding="utf-8", errors="replace",
+        command,
+        cwd=workdir,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     combined = completed.stdout + "\n" + completed.stderr
     log_path.write_text(
@@ -589,15 +697,23 @@ def _run_one_trace_probe(
             f"see {log_path}"
         )
     _require_real_gpu_execution(
-        completed.stdout, completed.stderr, context=f"activation probe {name!r}",
+        completed.stdout,
+        completed.stderr,
+        context=f"activation probe {name!r}",
     )
     return combined
 
 
 def run_trace_activation_probes(
-    *, marker_regex: str | None, description: str | None,
-    binary: Path, model: Path, hip_path: Path, workdir: Path,
-    bench_prompt: int, bench_gen: int,
+    *,
+    marker_regex: str | None,
+    description: str | None,
+    binary: Path,
+    model: Path,
+    hip_path: Path,
+    workdir: Path,
+    bench_prompt: int,
+    bench_gen: int,
     env_overrides: Mapping[str, str] | None = None,
     env_unset: tuple[str, ...] = (),
 ) -> tuple[ActivationEvidence, dict[str, object]] | None:
@@ -622,23 +738,38 @@ def run_trace_activation_probes(
 
     _print(f"activation probe: {description} (positive)")
     positive_output = _run_one_trace_probe(
-        name="positive", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
-        bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=False,
-        env_overrides=env_overrides, env_unset=env_unset,
+        name="positive",
+        binary=binary,
+        model=model,
+        hip_path=hip_path,
+        workdir=workdir,
+        bench_prompt=bench_prompt,
+        bench_gen=bench_gen,
+        disable_fusion=False,
+        env_overrides=env_overrides,
+        env_unset=env_unset,
     )
     positive_hit = pattern.search(positive_output) is not None
 
     _print(f"activation probe: {description} (fusion-disabled control)")
     negative_output = _run_one_trace_probe(
-        name="fusion-disabled", binary=binary, model=model, hip_path=hip_path, workdir=workdir,
-        bench_prompt=bench_prompt, bench_gen=bench_gen, disable_fusion=True,
-        env_overrides=env_overrides, env_unset=env_unset,
+        name="fusion-disabled",
+        binary=binary,
+        model=model,
+        hip_path=hip_path,
+        workdir=workdir,
+        bench_prompt=bench_prompt,
+        bench_gen=bench_gen,
+        disable_fusion=True,
+        env_overrides=env_overrides,
+        env_unset=env_unset,
     )
     negative_hit = pattern.search(negative_output) is not None
 
     if negative_hit:
         evidence = ActivationEvidence(
-            status="unobservable", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            status="unobservable",
+            mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
                 f"{description}: marker was present even with GGML_CUDA_DISABLE_FUSION=1. "
                 "The marker therefore does not uniquely prove execution of the intended "
@@ -647,7 +778,8 @@ def run_trace_activation_probes(
         )
     elif positive_hit:
         evidence = ActivationEvidence(
-            status="executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            status="executed",
+            mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
                 f"{description}: expected marker was observed with fusion enabled and "
                 "was absent with GGML_CUDA_DISABLE_FUSION=1."
@@ -655,7 +787,8 @@ def run_trace_activation_probes(
         )
     else:
         evidence = ActivationEvidence(
-            status="not_executed", mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
+            status="not_executed",
+            mechanism="BIGCHERRY_PATCH_TRACE two-probe control",
             detail=(
                 f"{description}: expected marker was absent from the positive probe and "
                 "remained absent in the fusion-disabled control. This model/workload did not "
@@ -664,14 +797,19 @@ def run_trace_activation_probes(
         )
 
     detail: dict[str, object] = {
-        "description": description, "marker_regex": marker_regex,
+        "description": description,
+        "marker_regex": marker_regex,
         "positive": {
-            "BIGCHERRY_PATCH_TRACE": "1", "GGML_CUDA_DISABLE_FUSION": None,
-            "marker_observed": positive_hit, "log": "logs/activation-positive.log",
+            "BIGCHERRY_PATCH_TRACE": "1",
+            "GGML_CUDA_DISABLE_FUSION": None,
+            "marker_observed": positive_hit,
+            "log": "logs/activation-positive.log",
         },
         "negative_control": {
-            "BIGCHERRY_PATCH_TRACE": "1", "GGML_CUDA_DISABLE_FUSION": "1",
-            "marker_observed": negative_hit, "log": "logs/activation-fusion-disabled.log",
+            "BIGCHERRY_PATCH_TRACE": "1",
+            "GGML_CUDA_DISABLE_FUSION": "1",
+            "marker_observed": negative_hit,
+            "log": "logs/activation-fusion-disabled.log",
         },
     }
     return evidence, detail
@@ -706,8 +844,12 @@ def compute_contract_correctness_gate(
     from bigcherry.experiment import contract as experiment_contract
 
     try:
-        return experiment_contract.evaluate_correctness_gate(contract, dict(named_results or {}))
-    except experiment_contract.ExperimentContractError:  # pi-lens-ignore: no-bare-except
+        return experiment_contract.evaluate_correctness_gate(
+            contract, dict(named_results or {})
+        )
+    except (
+        experiment_contract.ExperimentContractError
+    ):  # pi-lens-ignore: no-bare-except
         required_checks = contract.correctness.required_checks
         return {
             "passed": False,
@@ -726,7 +868,8 @@ def compute_contract_correctness_gate(
 def assert_validation_subject_parity(
     control_build_evidence: CompletedBuildEvidence,
     validation_subject_build_evidence: CompletedBuildEvidence,
-    *, patch_id: str,
+    *,
+    patch_id: str,
 ) -> None:
     """VA14-B (GPT session ses_5bbee8ce5c9a4265, req_cb50258c7f4c40f1): the
     validation-subject build must be a real build-parity match to control --
@@ -755,7 +898,11 @@ def assert_validation_subject_parity(
 
 
 def rd08_validation_lane_commands(
-    *, control_binary: Path, subject_binary: Path, model: Path, workload: str,
+    *,
+    control_binary: Path,
+    subject_binary: Path,
+    model: Path,
+    workload: str,
     extra_flags: tuple[str, ...] = (),
 ) -> tuple[list[str], list[str]]:
     """VA14-B: the real, minimal llama-bench command pair for one RD08 lane
@@ -770,12 +917,26 @@ def rd08_validation_lane_commands(
     elif workload == "prefill":
         workload_flags = ["-p", "512", "-n", "0"]
     else:
-        raise PatchCampaignError(f"rd08 lane: no llama-bench flag mapping for workload {workload!r}")
+        raise PatchCampaignError(
+            f"rd08 lane: no llama-bench flag mapping for workload {workload!r}"
+        )
     control_command = [
-        str(control_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
+        str(control_binary),
+        "-m",
+        str(model),
+        *workload_flags,
+        "-ngl",
+        "99",
+        *extra_flags,
     ]
     subject_command = [
-        str(subject_binary), "-m", str(model), *workload_flags, "-ngl", "99", *extra_flags,
+        str(subject_binary),
+        "-m",
+        str(model),
+        *workload_flags,
+        "-ngl",
+        "99",
+        *extra_flags,
     ]
     return control_command, subject_command
 
@@ -792,8 +953,12 @@ _PAIRED_BENCH_METRIC_PATTERN: dict[str, "re.Pattern[str]"] = {
 
 
 def _paired_llama_bench_command(
-    binary: Path, model: Path, workload: str, *,
-    patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
+    binary: Path,
+    model: Path,
+    workload: str,
+    *,
+    patch_args: tuple[str, ...] = (),
+    runtime_args: tuple[str, ...] = (),
 ) -> list[str]:
     """PVPS02 step 2: the one llama-bench command shape both RD04 and
     RD08's producers build. ``patch_args`` land BEFORE -ngl (RD04's
@@ -808,8 +973,14 @@ def _paired_llama_bench_command(
             f"paired llama-bench: no flag mapping for workload {workload!r}"
         )
     return [
-        str(binary), "-m", str(model), *_PAIRED_BENCH_WORKLOAD_FLAGS[workload],
-        *patch_args, "-ngl", "99", *runtime_args,
+        str(binary),
+        "-m",
+        str(model),
+        *_PAIRED_BENCH_WORKLOAD_FLAGS[workload],
+        *patch_args,
+        "-ngl",
+        "99",
+        *runtime_args,
     ]
 
 
@@ -848,7 +1019,9 @@ class BenchmarkWiring:
 
 
 def resolve_benchmark_wiring(
-    descriptor: "patch_registry.PatchDescriptor", *, root: "str | Path | None" = None,
+    descriptor: "patch_registry.PatchDescriptor",
+    *,
+    root: "str | Path | None" = None,
 ) -> BenchmarkWiring:
     """A patch is generically benchmarkable iff exactly one of its
     REQUIRED capability="performance" checks declares a recognized
@@ -868,7 +1041,8 @@ def resolve_benchmark_wiring(
             "validation.toml adapter) -- cannot resolve benchmark wiring"
         )
     wired = [
-        check for check in plan.checks_for("performance")
+        check
+        for check in plan.checks_for("performance")
         if check.required and check.config.get("benchmark-executor") is not None
     ]
     if not wired:
@@ -889,7 +1063,9 @@ def resolve_benchmark_wiring(
             f"(known: {sorted(BENCHMARK_EXECUTORS)})"
         )
     extra_args = check.config.get("benchmark-extra-args", [])
-    if not isinstance(extra_args, list) or not all(isinstance(a, str) for a in extra_args):
+    if not isinstance(extra_args, list) or not all(
+        isinstance(a, str) for a in extra_args
+    ):
         raise PatchCampaignError(
             f"{descriptor.patch_id}: benchmark-extra-args must be a list of strings"
         )
@@ -914,7 +1090,9 @@ class BenchmarkTopology:
 
 
 BENCHMARK_TOPOLOGIES["single"] = BenchmarkTopology(device_count=1, runtime_args=())
-BENCHMARK_TOPOLOGIES["tensor-2"] = BenchmarkTopology(device_count=2, runtime_args=("-sm", "tensor"))
+BENCHMARK_TOPOLOGIES["tensor-2"] = BenchmarkTopology(
+    device_count=2, runtime_args=("-sm", "tensor")
+)
 
 # Preserved for any external/test code still keying off device count alone.
 BENCHMARK_TOPOLOGY_DEVICE_COUNT: dict[str, int] = {
@@ -943,7 +1121,10 @@ class ResolvedBenchmarkModel:
 
 
 def resolve_benchmark_model(
-    model_id: str, *, model_root: Path, registry_path: "Path | None" = None,
+    model_id: str,
+    *,
+    model_root: Path,
+    registry_path: "Path | None" = None,
 ) -> ResolvedBenchmarkModel:
     """Resolve a model id from config/models.toml into a real, verified
     file path + benchmark topology (docs/planning/active/
@@ -960,7 +1141,8 @@ def resolve_benchmark_model(
     resolved_registry = registry_path if registry_path is not None else bc_paths.MODELS
     raw = tomllib.loads(resolved_registry.read_text(encoding="utf-8"))
     entries = {
-        entry["id"]: entry for entry in raw.get("models", [])
+        entry["id"]: entry
+        for entry in raw.get("models", [])
         if isinstance(entry, dict) and entry.get("id")
     }
     entry = entries.get(model_id)
@@ -988,7 +1170,11 @@ def resolve_benchmark_model(
     # check this exists for, contradicting PVPS02's explicit requirement of
     # real file-size verification.
     declared_size = entry.get("size-bytes")
-    if not isinstance(declared_size, int) or isinstance(declared_size, bool) or declared_size <= 0:
+    if (
+        not isinstance(declared_size, int)
+        or isinstance(declared_size, bool)
+        or declared_size <= 0
+    ):
         raise PatchCampaignError(
             f"{model_id}: models.toml entry must declare a positive integer size-bytes "
             f"(got {declared_size!r})"
@@ -999,11 +1185,15 @@ def resolve_benchmark_model(
             f"{model_id}: real file size {real_size} does not match models.toml's declared "
             f"size-bytes={declared_size} at {model_path} -- wrong file or quantisation?"
         )
-    return ResolvedBenchmarkModel(id=model_id, path=model_path, size_bytes=real_size, topology=topology)
+    return ResolvedBenchmarkModel(
+        id=model_id, path=model_path, size_bytes=real_size, topology=topology
+    )
 
 
 def resolve_device_pool(
-    device_map: dict[str, tuple[str, ...]], architecture: str, device_count: int,
+    device_map: dict[str, tuple[str, ...]],
+    architecture: str,
+    device_count: int,
 ) -> tuple[str, ...]:
     """PVPS02 step 5: --device-map defines an ORDERED device pool per
     architecture; an N-device cell consumes the first N ids from that
@@ -1038,9 +1228,13 @@ def parse_device_map(entries: list[str]) -> dict[str, tuple[str, ...]]:
         arch, _, ids_raw = entry.partition("=")
         arch = arch.strip()
         if not arch:
-            raise PatchCampaignError(f"--device-map {entry!r}: architecture must not be blank")
+            raise PatchCampaignError(
+                f"--device-map {entry!r}: architecture must not be blank"
+            )
         if arch in device_map:
-            raise PatchCampaignError(f"--device-map: architecture {arch!r} given more than once")
+            raise PatchCampaignError(
+                f"--device-map: architecture {arch!r} given more than once"
+            )
         ids = tuple(i.strip() for i in ids_raw.split(","))
         if not ids_raw or any(not i for i in ids):
             raise PatchCampaignError(
@@ -1052,10 +1246,16 @@ def parse_device_map(entries: list[str]) -> dict[str, tuple[str, ...]]:
 
 
 def run_paired_llama_benchmark(
-    *, control_binary: Path, subject_binary: Path, model: Path, hip_path: Path,
+    *,
+    control_binary: Path,
+    subject_binary: Path,
+    model: Path,
+    hip_path: Path,
     workloads: tuple[str, ...] = ("decode", "prefill"),
-    patch_args: tuple[str, ...] = (), runtime_args: tuple[str, ...] = (),
-    pairs: int = 3, log_context: str,
+    patch_args: tuple[str, ...] = (),
+    runtime_args: tuple[str, ...] = (),
+    pairs: int = 3,
+    log_context: str,
     env_overrides: dict[str, str] | None = None,
     env_unset: tuple[str, ...] = (),
     execution_identity: "object | None" = None,
@@ -1118,37 +1318,60 @@ def run_paired_llama_benchmark(
     def _make_runner(workload: str):
         def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
             completed = subprocess.run(
-                command, capture_output=True, text=True, check=False, env=clean_env,
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=clean_env,
             )
-            raw_logs.append({
-                "workload": workload, "command": command,
-                "returncode": completed.returncode,
-                "stdout": completed.stdout, "stderr": completed.stderr,
-            })
+            raw_logs.append(
+                {
+                    "workload": workload,
+                    "command": command,
+                    "returncode": completed.returncode,
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                }
+            )
             if completed.returncode == 0:
                 _require_real_gpu_execution(
-                    completed.stdout, completed.stderr,
+                    completed.stdout,
+                    completed.stderr,
                     context=f"{log_context} {workload} lane ({Path(command[0]).name})",
                 )
             return experiment_execution.RunnerOutput(
-                returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+                returncode=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
             )
+
         return _runner
 
     runs: dict[str, "experiment_execution.PairedLaneRun"] = {}
     commands: dict[str, dict[str, list[str]]] = {}
     for workload in workloads:
         control_cmd = _paired_llama_bench_command(
-            control_binary, model, workload, patch_args=patch_args, runtime_args=runtime_args,
+            control_binary,
+            model,
+            workload,
+            patch_args=patch_args,
+            runtime_args=runtime_args,
         )
         subject_cmd = _paired_llama_bench_command(
-            subject_binary, model, workload, patch_args=patch_args, runtime_args=runtime_args,
+            subject_binary,
+            model,
+            workload,
+            patch_args=patch_args,
+            runtime_args=runtime_args,
         )
         runs[workload] = experiment_execution.run_paired_lane(
             metric=_PAIRED_BENCH_METRIC_NAME[workload],
-            control_command=control_cmd, subject_command=subject_cmd,
-            pattern=_PAIRED_BENCH_METRIC_PATTERN[workload], pairs=pairs,
-            runner=_make_runner(workload), execution_identity=execution_identity,
+            control_command=control_cmd,
+            subject_command=subject_cmd,
+            pattern=_PAIRED_BENCH_METRIC_PATTERN[workload],
+            pairs=pairs,
+            runner=_make_runner(workload),
+            execution_identity=execution_identity,
         )
         commands[workload] = {"control": control_cmd, "subject": subject_cmd}
 
@@ -1226,12 +1449,18 @@ class CampaignProducerRuntime:
         from bigcherry.patch import source as psi
 
         control_revision, control_composition = psi.resolve_source_composition(
-            baseline_source, focal=None, extra_patches=common_extra_patches,
-            base_ref=self.base_revision, base_repo=LLAMA_CPP_SRC,
+            baseline_source,
+            focal=None,
+            extra_patches=common_extra_patches,
+            base_ref=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
         )
         subject_revision, subject_composition = psi.resolve_source_composition(
-            baseline_source, focal=self.patch_id, extra_patches=common_extra_patches,
-            base_ref=self.base_revision, base_repo=LLAMA_CPP_SRC,
+            baseline_source,
+            focal=self.patch_id,
+            extra_patches=common_extra_patches,
+            base_ref=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
         )
         if control_revision != subject_revision:
             raise PatchCampaignError(
@@ -1240,14 +1469,20 @@ class CampaignProducerRuntime:
             )
 
         control_src = psi.materialize_composition(
-            base_repo=LLAMA_CPP_SRC, worktree_root=self.workdir / "control",
-            resolved_revision=control_revision, composition=control_composition,
-            overlay_root=psi.REPO_ROOT / "src", requested_revision=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
+            worktree_root=self.workdir / "control",
+            resolved_revision=control_revision,
+            composition=control_composition,
+            overlay_root=psi.REPO_ROOT / "src",
+            requested_revision=self.base_revision,
         )
         subject_src = psi.materialize_composition(
-            base_repo=LLAMA_CPP_SRC, worktree_root=self.workdir / "subject",
-            resolved_revision=subject_revision, composition=subject_composition,
-            overlay_root=psi.REPO_ROOT / "src", requested_revision=self.base_revision,
+            base_repo=LLAMA_CPP_SRC,
+            worktree_root=self.workdir / "subject",
+            resolved_revision=subject_revision,
+            composition=subject_composition,
+            overlay_root=psi.REPO_ROOT / "src",
+            requested_revision=self.base_revision,
         )
 
         exe = ".exe" if sys.platform == "win32" else ""
@@ -1267,15 +1502,21 @@ class CampaignProducerRuntime:
         subject_name = f"{self.patch_id}-subject-{target_slug}"
 
         control_bin = build_tree(
-            name=control_name, hip_path=self.hip_path,
-            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
-            targets=[primary_target], source=control_src,
+            name=control_name,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
+            workdir=build_root,
+            targets=[primary_target],
+            source=control_src,
             extra_cmake_args=list(control_extra_cmake_args),
         )
         subject_bin = build_tree(
-            name=subject_name, hip_path=self.hip_path,
-            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
-            targets=[primary_target], source=subject_src,
+            name=subject_name,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
+            workdir=build_root,
+            targets=[primary_target],
+            source=subject_src,
             extra_cmake_args=list(subject_extra_cmake_args),
         )
 
@@ -1283,22 +1524,30 @@ class CampaignProducerRuntime:
         control_binary = control_bin / f"{primary_target}{exe}"
         subject_binary = subject_bin / f"{primary_target}{exe}"
         control_cmake_args = _full_requested_cmake_args(
-            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
             extra_cmake_args=list(control_extra_cmake_args),
         )
         subject_cmake_args = _full_requested_cmake_args(
-            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
             extra_cmake_args=list(subject_extra_cmake_args),
         )
         control_build_evidence = capture_completed_build_evidence(
-            build_root / control_name, source_root=control_src,
-            architecture=target_plan.targets, binary=control_binary,
-            requested_cmake_args=control_cmake_args, build_env=build_env,
+            build_root / control_name,
+            source_root=control_src,
+            architecture=target_plan.targets,
+            binary=control_binary,
+            requested_cmake_args=control_cmake_args,
+            build_env=build_env,
         )
         subject_build_evidence = capture_completed_build_evidence(
-            build_root / subject_name, source_root=subject_src,
-            architecture=target_plan.targets, binary=subject_binary,
-            requested_cmake_args=subject_cmake_args, build_env=build_env,
+            build_root / subject_name,
+            source_root=subject_src,
+            architecture=target_plan.targets,
+            binary=subject_binary,
+            requested_cmake_args=subject_cmake_args,
+            build_env=build_env,
         )
 
         if require_parity:
@@ -1309,10 +1558,12 @@ class CampaignProducerRuntime:
             )
         return ProducerBuildPair(
             base_revision=control_revision,
-            control_source=control_src, subject_source=subject_src,
+            control_source=control_src,
+            subject_source=subject_src,
             control_composition=tuple(control_composition),
             subject_composition=tuple(subject_composition),
-            control_bin=control_binary, subject_bin=subject_binary,
+            control_bin=control_binary,
+            subject_bin=subject_binary,
             validation_build_identities={
                 "control": control_build_evidence.campaign_identity(),
                 "subject": subject_build_evidence.campaign_identity(),
@@ -1320,7 +1571,9 @@ class CampaignProducerRuntime:
         )
 
     def device_contexts(
-        self, *, device_map: Mapping[str, tuple[int, ...]],
+        self,
+        *,
+        device_map: Mapping[str, tuple[int, ...]],
     ) -> tuple[ProducerDeviceContext, ...]:
         """The only producer-facing device selector (PA36-F step 1):
         reuses ``resolve_selected_device_execution_identity()``'s real
@@ -1333,11 +1586,13 @@ class CampaignProducerRuntime:
         for architecture, indices in device_map.items():
             for index in indices:
                 identity, _selector_env, locator = self._resolve_one_device(
-                    architecture, index,
+                    architecture,
+                    index,
                 )
                 contexts.append(
                     ProducerDeviceContext(
-                        architecture=architecture, device_index=index,
+                        architecture=architecture,
+                        device_index=index,
                         execution_identity=identity,
                         env_overrides={"HIP_VISIBLE_DEVICES": str(index)},
                         env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
@@ -1347,7 +1602,9 @@ class CampaignProducerRuntime:
         return tuple(contexts)
 
     def _resolve_one_device(
-        self, architecture: str, index: int,
+        self,
+        architecture: str,
+        index: int,
     ) -> tuple[ExecutionIdentity, dict[str, str], str]:
         """Resolve exactly ONE device index against the real host
         inventory -- the same fail-closed checks
@@ -1406,7 +1663,8 @@ class CampaignProducerRuntime:
         # gfx1201 only, the sole device of that architecture on this
         # host, so the gap does not apply to them.
         identity = ExecutionIdentity(
-            backend="ROCm", architectures=(device.arch,),
+            backend="ROCm",
+            architectures=(device.arch,),
         )
         return identity, {"HIP_VISIBLE_DEVICES": str(index)}, device.locator
 
@@ -1445,11 +1703,9 @@ class CampaignProducerRuntime:
         # it is not replaced); the caller may set non-selector
         # overrides (e.g. GGML_CUDA_REGISTER_HOST=1) and unset
         # ROCR_VISIBLE_DEVICES.
-        _SELECTOR_KEYS = frozenset(
-            {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"}
-        )
+        _SELECTOR_KEYS = frozenset({"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"})
         if device is not None:
-            for _key in (env_overrides or {}):
+            for _key in env_overrides or {}:
                 if _key in _SELECTOR_KEYS:
                     raise PatchCampaignError(
                         f"run_paired_llama_benchmark: caller "
@@ -1476,7 +1732,7 @@ class CampaignProducerRuntime:
             # ambient HIP_VISIBLE_DEVICES (reject it in caller
             # env_overrides so it is not replaced); the caller may
             # set non-selector overrides + unset ROCR_VISIBLE_DEVICES.
-            for _key in (env_overrides or {}):
+            for _key in env_overrides or {}:
                 if _key == "HIP_VISIBLE_DEVICES":
                     raise PatchCampaignError(
                         "run_paired_llama_benchmark: caller "
@@ -1500,22 +1756,27 @@ class CampaignProducerRuntime:
                         "HIP_VISIBLE_DEVICES when device is None "
                         "(the explicit ambient selector is preserved)"
                     )
-            merged_overrides = (
-                dict(env_overrides) if env_overrides else {}
-            )
+            merged_overrides = dict(env_overrides) if env_overrides else {}
         execution_identity = device.execution_identity if device is not None else None
         outcome = run_paired_llama_benchmark(
-            control_binary=control_binary, subject_binary=subject_binary, model=model,
-            hip_path=self.hip_path, workloads=workloads, patch_args=patch_args,
-            runtime_args=runtime_args, pairs=pairs, log_context=log_context,
+            control_binary=control_binary,
+            subject_binary=subject_binary,
+            model=model,
+            hip_path=self.hip_path,
+            workloads=workloads,
+            patch_args=patch_args,
+            runtime_args=runtime_args,
+            pairs=pairs,
+            log_context=log_context,
             env_overrides=merged_overrides or None,
             env_unset=env_unset,
             execution_identity=execution_identity,
         )
         return ProducerPairedBenchmarkOutcome(
-            runs=outcome.runs, commands=outcome.commands, raw_logs=tuple(outcome.raw_logs),
+            runs=outcome.runs,
+            commands=outcome.commands,
+            raw_logs=tuple(outcome.raw_logs),
         )
-
 
     def build_materialized_pair(
         self,
@@ -1543,33 +1804,46 @@ class CampaignProducerRuntime:
 
         build_env = _hip_env(self.hip_path)
         control_bin = build_tree(
-            name=control_name, hip_path=self.hip_path,
-            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
-            targets=[primary_target], source=control_source,
+            name=control_name,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
+            workdir=build_root,
+            targets=[primary_target],
+            source=control_source,
             extra_cmake_args=[],
         )
         subject_bin = build_tree(
-            name=subject_name, hip_path=self.hip_path,
-            amdgpu_targets=target_plan.cmake_value, workdir=build_root,
-            targets=[primary_target], source=subject_source,
+            name=subject_name,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
+            workdir=build_root,
+            targets=[primary_target],
+            source=subject_source,
             extra_cmake_args=[],
         )
         control_binary = control_bin / f"{primary_target}{exe}"
         subject_binary = subject_bin / f"{primary_target}{exe}"
 
         cmake_args = _full_requested_cmake_args(
-            hip_path=self.hip_path, amdgpu_targets=target_plan.cmake_value,
+            hip_path=self.hip_path,
+            amdgpu_targets=target_plan.cmake_value,
             extra_cmake_args=[],
         )
         control_evidence = builds_module.capture_completed_build_evidence(
-            build_root / control_name, source_root=control_source,
-            architecture=target_plan.targets, binary=control_binary,
-            requested_cmake_args=cmake_args, build_env=build_env,
+            build_root / control_name,
+            source_root=control_source,
+            architecture=target_plan.targets,
+            binary=control_binary,
+            requested_cmake_args=cmake_args,
+            build_env=build_env,
         )
         subject_evidence = builds_module.capture_completed_build_evidence(
-            build_root / subject_name, source_root=subject_source,
-            architecture=target_plan.targets, binary=subject_binary,
-            requested_cmake_args=cmake_args, build_env=build_env,
+            build_root / subject_name,
+            source_root=subject_source,
+            architecture=target_plan.targets,
+            binary=subject_binary,
+            requested_cmake_args=cmake_args,
+            build_env=build_env,
         )
 
         # GPT review: do not fabricate compositions from tree SHA
@@ -1605,9 +1879,13 @@ class CampaignProducerRuntime:
         req_c2e69928e8b34de0). Wraps the existing _run_one_trace_probe()
         primitive -- does not create a second implementation."""
         return _run_one_trace_probe(
-            name=log_context, binary=binary, model=model,
-            hip_path=self.hip_path, workdir=self.workdir,
-            bench_prompt=bench_prompt, bench_gen=bench_gen,
+            name=log_context,
+            binary=binary,
+            model=model,
+            hip_path=self.hip_path,
+            workdir=self.workdir,
+            bench_prompt=bench_prompt,
+            bench_gen=bench_gen,
             disable_fusion=disable_fusion,
             env_overrides=dict(device.env_overrides) if device.env_overrides else None,
             env_unset=tuple(device.env_unset) if device.env_unset else (),
@@ -1714,10 +1992,9 @@ def _bind_producer_correctness(
     document = {
         "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
         "patch_id": binding.patch_id,
-        "patch_validation_subject_digest":
-            patch_validation_evidence.patch_validation_subject_digest(
-                binding.patch_path
-            ),
+        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+            binding.patch_path
+        ),
         "base_revision": binding.base_revision,
         "patched_source_tree": binding.patched_source_tree,
         "campaign_identity_digest": binding.campaign_identity_digest,
@@ -2000,8 +2277,7 @@ def _run_producer_trace_probes(
         )
     if producer_context.model is None:
         raise PatchCampaignError(
-            "trace_probe='run' requires a model (the probe is a real "
-            "llama-bench run)"
+            "trace_probe='run' requires a model (the probe is a real llama-bench run)"
         )
     subject_binaries = producer_context.validation_binaries.get("subject")
     if (
@@ -2032,9 +2308,12 @@ def _run_producer_trace_probes(
     probe = run_trace_activation_probes(
         marker_regex=marker,
         description=f"{producer_context.patch_id} activation",
-        binary=subject_binaries["llama-bench"], model=producer_context.model,
-        hip_path=producer_context.hip_path, workdir=run_dir,
-        bench_prompt=bench_prompt, bench_gen=bench_gen,
+        binary=subject_binaries["llama-bench"],
+        model=producer_context.model,
+        hip_path=producer_context.hip_path,
+        workdir=run_dir,
+        bench_prompt=bench_prompt,
+        bench_gen=bench_gen,
         env_overrides=dict(probe_device.env_overrides),
         env_unset=probe_device.env_unset,
     )
@@ -2120,7 +2399,10 @@ def execute_validation_producer(
         )
 
     validate_producer_result(
-        selection.spec, result, plan=validation_plan, context=validation_context,
+        selection.spec,
+        result,
+        plan=validation_plan,
+        context=validation_context,
     )
 
     # trace_probe="run" (dev-gpt-agent req_110d0729beb44d8b Q3): the
@@ -2148,22 +2430,23 @@ def execute_validation_producer(
         from bigcherry.patch.activation import (
             verdict as _activation_verdict,
         )
-        probe_disposition = _activation_verdict(
-            probe_evidence, correctness_passed=None
-        )
+
+        probe_disposition = _activation_verdict(probe_evidence, correctness_passed=None)
         write_activation_json(
             evidence_binding_context.run_dir / "activation.json",
-            probe_evidence, probe_disposition,
+            probe_evidence,
+            probe_disposition,
             extra={
-                "campaign_identity_digest":
-                    evidence_binding_context.campaign_identity_digest,
+                "campaign_identity_digest": evidence_binding_context.campaign_identity_digest,
                 "trace_probe": probe_detail,
             },
         )
         _print(f"activation: {probe_evidence.status} ({probe_evidence.mechanism})")
 
         def _probe_log(
-            detail: dict[str, object], role: str, key: str,
+            detail: dict[str, object],
+            role: str,
+            key: str,
         ) -> str:
             observation = detail[role]
             if not isinstance(observation, Mapping):
@@ -2222,7 +2505,8 @@ def execute_validation_producer(
             evaluated[spec.check_id] = producer_results[spec.check_id]
         else:
             evaluated[spec.check_id] = patch_validation.evaluate_check(
-                spec, bound.validation_context,
+                spec,
+                bound.validation_context,
             )
 
     verdict = patch_validation.compute_verdict(validation_plan, evaluated)
@@ -2234,7 +2518,10 @@ def execute_validation_producer(
             contract_verdicts[contract_id] = record.disposition
 
     return ProducerExecution(
-        selection=selection, result=result, evaluated=evaluated, verdict=verdict,
+        selection=selection,
+        result=result,
+        evaluated=evaluated,
+        verdict=verdict,
         contract_verdicts=contract_verdicts,
         bound_correctness=bound.correctness,
         activation_disposition=(
@@ -2274,12 +2561,12 @@ def _parse_producer_inputs(values: Iterable[str]) -> dict[str, str]:
     inputs: dict[str, str] = {}
     for raw in values:
         if "=" not in raw:
-            raise PatchCampaignError(
-                f"--producer-input {raw!r} must be NAME=VALUE"
-            )
+            raise PatchCampaignError(f"--producer-input {raw!r} must be NAME=VALUE")
         name, _, value = raw.partition("=")
         if not name:
-            raise PatchCampaignError(f"--producer-input {raw!r}: name must not be empty")
+            raise PatchCampaignError(
+                f"--producer-input {raw!r}: name must not be empty"
+            )
         if name in inputs:
             raise PatchCampaignError(f"--producer-input: duplicate name {name!r}")
         inputs[name] = value
@@ -2327,7 +2614,10 @@ def _producer_file_identity(path: Path) -> dict[str, object]:
 
 
 def _run_validation_producer(
-    args: argparse.Namespace, *, producer_id: str, provided_inputs: Mapping[str, str],
+    args: argparse.Namespace,
+    *,
+    producer_id: str,
+    provided_inputs: Mapping[str, str],
 ) -> int:
     """PA36-F step 5 entry point: resolve+execute one patch-local producer
     through the generic dispatcher end to end, entirely outside the legacy
@@ -2371,7 +2661,8 @@ def _run_validation_producer(
     cfg = campaign_config.load(bc_paths.RECIPES)
 
     validation_plan = patch_validation_policy.require_execution_package(
-        descriptor, root=bc_paths.PATCHES,
+        descriptor,
+        root=bc_paths.PATCHES,
     )
     if validation_plan is None:
         raise PatchCampaignError(
@@ -2415,7 +2706,7 @@ def _run_validation_producer(
         targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
     )
     device_map = _parse_producer_device_map(list(args.device_map or ()))
-    
+
     # PA36 (dev-gpt-agent req_19c0ea3d2d3f40db): validate requested AND
     # measured architectures against the union of bound contracts'
     # scope.architectures before producer execution. This is the generic,
@@ -2476,7 +2767,8 @@ def _run_validation_producer(
                 _minimum = _contract.scope.gpu_count.minimum
                 if _minimum is not None:
                     required_gpu_count = (
-                        _minimum if required_gpu_count is None
+                        _minimum
+                        if required_gpu_count is None
                         else max(required_gpu_count, _minimum)
                     )
         if required_gpu_count is not None:
@@ -2552,12 +2844,10 @@ def _run_validation_producer(
 
         build_evidence = {
             "control": {
-                "build_id":
-                    scaffold.control_build_evidence.effective_build_id,
+                "build_id": scaffold.control_build_evidence.effective_build_id,
                 "source_tree": control_tree,
                 "architecture": args.amdgpu_targets,
-                "options":
-                    scaffold.control_build_evidence.effective_configure,
+                "options": scaffold.control_build_evidence.effective_configure,
                 "compile_commands": _write_bound_artifact(
                     run_dir,
                     "build/control-compile-commands.json",
@@ -2570,12 +2860,10 @@ def _run_validation_producer(
                 ),
             },
             "subject": {
-                "build_id":
-                    scaffold.validation_subject_build_evidence.effective_build_id,
+                "build_id": scaffold.validation_subject_build_evidence.effective_build_id,
                 "source_tree": subject_tree,
                 "architecture": args.amdgpu_targets,
-                "options":
-                    scaffold.validation_subject_build_evidence.effective_configure,
+                "options": scaffold.validation_subject_build_evidence.effective_configure,
                 "compile_commands": _write_bound_artifact(
                     run_dir,
                     "build/subject-compile-commands.json",
@@ -2631,22 +2919,17 @@ def _run_validation_producer(
             control_tree=control_tree,
             subject_tree=subject_tree,
             build_identities={
-                "control":
-                    scaffold.control_build_evidence.effective_build_id,
-                "subject":
-                    scaffold.validation_subject_build_evidence.effective_build_id,
+                "control": scaffold.control_build_evidence.effective_build_id,
+                "subject": scaffold.validation_subject_build_evidence.effective_build_id,
             },
             build_evidence=build_evidence,
             apply_evidence=apply_evidence,
             architecture=args.amdgpu_targets,
             model=str(args.model) if args.model is not None else None,
             contracts=bound_contracts,
-            contract_hashes={
-                c.id: c.contract_hash for c in bound_contracts
-            },
+            contract_hashes={c.id: c.contract_hash for c in bound_contracts},
             run_dir=run_dir,
-            register_artifact=
-                patch_validation.make_default_register_artifact(run_dir),
+            register_artifact=patch_validation.make_default_register_artifact(run_dir),
             trace_evidence={},
             correctness_evidence={},
             performance_evidence={},
@@ -2661,9 +2944,7 @@ def _run_validation_producer(
             campaign_identity_digest=campaign_identity_digest,
             gpu_architectures=fat_targets.targets,
         )
-        scaffold_validation_ids = (
-            scaffold.scaffold_validation_build_identities
-        )
+        scaffold_validation_ids = scaffold.scaffold_validation_build_identities
         _scaffold_exe = ".exe" if sys.platform == "win32" else ""
         scaffold_validation_binaries = {
             "control": {
@@ -2671,10 +2952,10 @@ def _run_validation_producer(
                 "llama-server": scaffold.control_bin / f"llama-server{_scaffold_exe}",
             },
             "subject": {
-                "llama-bench":
-                    scaffold.validation_subject_bin / f"llama-bench{_scaffold_exe}",
-                "llama-server":
-                    scaffold.validation_subject_bin / f"llama-server{_scaffold_exe}",
+                "llama-bench": scaffold.validation_subject_bin
+                / f"llama-bench{_scaffold_exe}",
+                "llama-server": scaffold.validation_subject_bin
+                / f"llama-server{_scaffold_exe}",
             },
         }
     else:
@@ -2688,9 +2969,7 @@ def _run_validation_producer(
             control_source=None,
             subject_source=None,
             contracts=bound_contracts,
-            contract_hashes={
-                c.id: c.contract_hash for c in bound_contracts
-            },
+            contract_hashes={c.id: c.contract_hash for c in bound_contracts},
         )
         scaffold_validation_ids = {}
         scaffold_validation_binaries = {}
@@ -2760,16 +3039,14 @@ def _run_validation_producer(
             )
         if len({result.check for result in named}) != len(named):
             raise PatchCampaignError(
-                "contract_correctness_results contains duplicate check "
-                "names"
+                "contract_correctness_results contains duplicate check names"
             )
         contract_correctness_gate = compute_contract_correctness_gate(
             bound_contracts[0],
             {result.check: result for result in named},
         )
     producer_check_results = {
-        check_id: asdict(result)
-        for check_id, result in execution.evaluated.items()
+        check_id: asdict(result) for check_id, result in execution.evaluated.items()
     }
     if contract_correctness_gate is not None:
         producer_check_results = {
@@ -2800,9 +3077,7 @@ def _run_validation_producer(
         # another is a producer bug, not a silent omission).
         _lane_keys = set(execution.result.promotion_lane_effects)
         _metric_keys = set(execution.result.promotion_target_metric)
-        _trigger_keys = set(
-            execution.result.promotion_trigger_evidence
-        )
+        _trigger_keys = set(execution.result.promotion_trigger_evidence)
         if _lane_keys != _metric_keys or _lane_keys != _trigger_keys:
             raise PatchCampaignError(
                 "promotion channel keysets must be identical: "
@@ -2811,18 +3086,16 @@ def _run_validation_producer(
                 f"trigger_evidence={sorted(_trigger_keys)}"
             )
         producer_contract_promotions: dict[str, dict[str, object]] = {}
-        for contract_id, lane_effects in (
-            execution.result.promotion_lane_effects.items()
-        ):
+        for (
+            contract_id,
+            lane_effects,
+        ) in execution.result.promotion_lane_effects.items():
             contract = bound_by_id.get(contract_id)
             if contract is None:
                 raise PatchCampaignError(
-                    f"promotion_lane_effects for unknown contract "
-                    f"{contract_id!r}"
+                    f"promotion_lane_effects for unknown contract {contract_id!r}"
                 )
-            target_metric = execution.result.promotion_target_metric.get(
-                contract_id
-            )
+            target_metric = execution.result.promotion_target_metric.get(contract_id)
             if target_metric is None:
                 raise PatchCampaignError(
                     f"promotion_lane_effects for {contract_id!r} requires "
@@ -2846,10 +3119,8 @@ def _run_validation_producer(
             # supplies promotion lanes MUST supply trigger evidence --
             # a contract PASS without trigger proof would be a
             # fail-OPEN (the target code path may never have run).
-            trigger_evidence = (
-                execution.result.promotion_trigger_evidence.get(
-                    contract_id
-                )
+            trigger_evidence = execution.result.promotion_trigger_evidence.get(
+                contract_id
             )
             if not trigger_evidence:
                 raise PatchCampaignError(
@@ -2885,13 +3156,13 @@ def _run_validation_producer(
                 == "session_ci95_threshold_bound_v1"
             ):
                 from bigcherry.patch import evidence as patch_validation_evidence
-                prior_records = patch_validation_evidence.load_records(
-                    args.patch
-                )
+
+                prior_records = patch_validation_evidence.load_records(args.patch)
                 # GPT round 6 BLOCKER: schema-v4 persists contracts as a
                 # list of {"id": ..., "hash": ...}, not a mapping.
                 matching_records = [
-                    r for r in prior_records
+                    r
+                    for r in prior_records
                     if any(
                         entry.get("id") == contract_id
                         and entry.get("hash") == contract.contract_hash
@@ -2935,10 +3206,8 @@ def _run_validation_producer(
             # without resource evidence must fail closed.
             resource_gate = None
             if contract.acceptance.resource_limits:
-                resource_results = (
-                    execution.result.promotion_resource_results.get(
-                        contract_id
-                    )
+                resource_results = execution.result.promotion_resource_results.get(
+                    contract_id
                 )
                 if not resource_results:
                     raise PatchCampaignError(
@@ -2981,9 +3250,7 @@ def _run_validation_producer(
             for effects in execution.result.promotion_lane_effects.values()
             for effect in effects
         )
-        combined_lane_effects = (
-            execution.result.lane_effects + promotion_lane_json
-        )
+        combined_lane_effects = execution.result.lane_effects + promotion_lane_json
 
         # Contract promotions (evaluate_promotion_gate() results) are a
         # different semantic type from the producer's check dispositions
@@ -2999,14 +3266,13 @@ def _run_validation_producer(
         validation_record = patch_validation_evidence.make_record(
             patch_id=args.patch,
             patch_path=registry.root / descriptor.implementation_path,
-            patch_implementation_digest=
-                psi.patch_implementation_digest(args.patch),
+            patch_implementation_digest=psi.patch_implementation_digest(args.patch),
             base_ref=cfg.pinned,
             base_revision=scaffold.base_revision,
-            framework_baseline_digest=
-                psi.composition_digest(scaffold.subject_composition),
-            patched_source_tree=
-                psi.git_worktree_tree(scaffold.subject_source),
+            framework_baseline_digest=psi.composition_digest(
+                scaffold.subject_composition
+            ),
+            patched_source_tree=psi.git_worktree_tree(scaffold.subject_source),
             gpu_architectures=args.amdgpu_targets,
             activation_evidence=(
                 execution.activation_evidence
@@ -3018,18 +3284,15 @@ def _run_validation_producer(
             campaign_identity_digest=campaign_identity_digest,
             build_identities=scaffold.campaign_build_identities,
             # Deliberately producer-owned isolated pair, NOT scaffold pair.
-            validation_build_identities=
-                execution.result.validation_build_identities,
+            validation_build_identities=execution.result.validation_build_identities,
             campaign_workdir=run_dir,
-            producer_artifact_names=
-                execution.selection.spec.artifact_names,
+            producer_artifact_names=execution.selection.spec.artifact_names,
             check_results=producer_check_results,
             validation_eligible=compute_persisted_validation_eligible(
                 descriptor,
                 execution.verdict,
                 producer_contract_promotions,
-                activation_disposition=
-                    execution.activation_disposition,
+                activation_disposition=execution.activation_disposition,
                 correctness=(
                     dict(execution.bound_correctness)
                     if execution.bound_correctness is not None
@@ -3042,9 +3305,7 @@ def _run_validation_producer(
             contracts=validation_contracts,
             contract_verdicts=validation_contract_verdicts,
             baseline_composition={
-                "source": getattr(
-                    args, "baseline_source", "bigcherry"
-                ),
+                "source": getattr(args, "baseline_source", "bigcherry"),
                 "base_revision": scaffold.base_revision,
                 "patches": list(scaffold.control_composition),
             },
@@ -3056,16 +3317,11 @@ def _run_validation_producer(
                 "base_revision": scaffold.base_revision,
                 "patches": list(scaffold.subject_composition),
             },
-            control_tree=
-                psi.git_worktree_tree(scaffold.control_source),
-            subject_tree=
-                psi.git_worktree_tree(scaffold.subject_source),
-            stock_tree=
-                psi.git_worktree_tree(scaffold.stock_source),
+            control_tree=psi.git_worktree_tree(scaffold.control_source),
+            subject_tree=psi.git_worktree_tree(scaffold.subject_source),
+            stock_tree=psi.git_worktree_tree(scaffold.stock_source),
         )
-        record_path = patch_validation_evidence.write_record(
-            validation_record
-        )
+        record_path = patch_validation_evidence.write_record(validation_record)
 
     outcome_doc = {
         "patch_id": args.patch,
@@ -3080,10 +3336,10 @@ def _run_validation_producer(
             if scaffold is not None
             else dict(execution.contract_verdicts)
         ),
-        "validation_build_identities":
-            dict(execution.result.validation_build_identities),
-        "evidence_record":
-            str(record_path) if record_path is not None else None,
+        "validation_build_identities": dict(
+            execution.result.validation_build_identities
+        ),
+        "evidence_record": str(record_path) if record_path is not None else None,
     }
     outcome_path = run_dir / "producer-execution.json"
     _atomic_write_json(outcome_path, outcome_doc)
@@ -3197,27 +3453,41 @@ def run_patch1000_backend_ops_perf(
 
     def runner(command: list[str]) -> "experiment_execution.RunnerOutput":
         completed = subprocess.run(
-            command, capture_output=True, text=True, check=False, env=env,
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
         )
-        raw_logs.append({
-            "command": command,
-            "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-        })
+        raw_logs.append(
+            {
+                "command": command,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+            }
+        )
         if completed.returncode == 0:
             _require_real_gpu_execution(
-                completed.stdout, completed.stderr,
+                completed.stdout,
+                completed.stderr,
                 context=f"patch1000 {quant} backend-ops perf ({Path(command[0]).name})",
             )
         return experiment_execution.RunnerOutput(
-            returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
         )
 
     paired = experiment_execution.run_paired_lane(
-        metric="time_us", control_command=control_command, subject_command=subject_command,
-        pattern=_PATCH1000_PERF_TIME_PATTERN, pairs=pairs, runner=runner,
-        lower_is_better=True, execution_identity=execution_identity,
+        metric="time_us",
+        control_command=control_command,
+        subject_command=subject_command,
+        pattern=_PATCH1000_PERF_TIME_PATTERN,
+        pairs=pairs,
+        runner=runner,
+        lower_is_better=True,
+        execution_identity=execution_identity,
     )
 
     stats = dict(paired.stats)
@@ -3256,11 +3526,15 @@ def run_patch1000_backend_ops_correctness(
 
     env = _patch1000_run_env(hip_path, env_overrides)
     experiment_execution.require_device_visibility(
-        context=log_context, env=env, exact_count=1,
+        context=log_context,
+        env=env,
+        exact_count=1,
     )
     command = _patch1000_backend_ops_command(binary, quant, mode="test")
 
-    completed = subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+    completed = subprocess.run(
+        command, capture_output=True, text=True, check=False, env=env
+    )
     if completed.returncode != 0:
         raise PatchCampaignError(
             f"{log_context}: test-backend-ops exited "
@@ -3272,7 +3546,9 @@ def run_patch1000_backend_ops_correctness(
     if execution_identity is not None:
         attestation.require_execution_identity(
             execution_identity,
-            attestation.parse_rocm_attestation(completed.stdout + "\n" + completed.stderr),
+            attestation.parse_rocm_attestation(
+                completed.stdout + "\n" + completed.stderr
+            ),
             context=log_context,
         )
 
@@ -3331,7 +3607,9 @@ def run_patch1000_verification(
     if pairs < 3:
         raise PatchCampaignError("patch1000: pairs must be >= 3")
     if not architectures or len(set(architectures)) != len(architectures):
-        raise PatchCampaignError("patch1000: architectures must be non-empty and unique")
+        raise PatchCampaignError(
+            "patch1000: architectures must be non-empty and unique"
+        )
 
     missing_devices = [a for a in architectures if a not in devices]
     if missing_devices:
@@ -3359,25 +3637,43 @@ def run_patch1000_verification(
         ) from None
 
     if _PATCH1000_ID in serving_core_ids:
-        raise PatchCampaignError("patch1000: focal patch unexpectedly appears in serving-core")
+        raise PatchCampaignError(
+            "patch1000: focal patch unexpectedly appears in serving-core"
+        )
 
     stock_revision, stock_composition = psi.resolve_source_composition(
-        "llama-native", base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "llama-native",
+        base_ref=base_revision,
+        base_repo=LLAMA_CPP_SRC,
     )
     control_revision, control_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=serving_core_ids, base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "llama-native",
+        extra_patches=serving_core_ids,
+        base_ref=base_revision,
+        base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=(*serving_core_ids, _PATCH1000_ID),
-        base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "llama-native",
+        extra_patches=(*serving_core_ids, _PATCH1000_ID),
+        base_ref=base_revision,
+        base_repo=LLAMA_CPP_SRC,
     )
     production_revision, production_composition = psi.resolve_source_composition(
-        "bigcherry-serving-base", base_ref=base_revision, base_repo=LLAMA_CPP_SRC,
+        "bigcherry-serving-base",
+        base_ref=base_revision,
+        base_repo=LLAMA_CPP_SRC,
     )
 
-    revisions = {stock_revision, control_revision, subject_revision, production_revision}
+    revisions = {
+        stock_revision,
+        control_revision,
+        subject_revision,
+        production_revision,
+    }
     if len(revisions) != 1:
-        raise PatchCampaignError("patch1000: validation arms resolved different base revisions")
+        raise PatchCampaignError(
+            "patch1000: validation arms resolved different base revisions"
+        )
 
     if subject_composition != production_composition:
         raise PatchCampaignError(
@@ -3388,19 +3684,28 @@ def run_patch1000_verification(
 
     source_root = build_root / "patch1000-sources"
     stock_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=source_root / "stock",
-        resolved_revision=stock_revision, composition=stock_composition,
-        overlay_root=None, requested_revision=base_revision,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=source_root / "stock",
+        resolved_revision=stock_revision,
+        composition=stock_composition,
+        overlay_root=None,
+        requested_revision=base_revision,
     )
     control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=source_root / "control",
-        resolved_revision=control_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=source_root / "control",
+        resolved_revision=control_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
     )
     subject_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=source_root / "subject",
-        resolved_revision=subject_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_revision,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=source_root / "subject",
+        resolved_revision=subject_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_revision,
     )
 
     # Load-bearing PA35 rule: these builds are outside the per-device loop.
@@ -3420,8 +3725,12 @@ def run_patch1000_verification(
         arm_bins[arm] = build_func(name=f"patch1000-{arm}", source=source, **build_args)
 
     exe = ".exe" if sys.platform == "win32" else ""
-    backend_ops = {arm: bin_dir / f"test-backend-ops{exe}" for arm, bin_dir in arm_bins.items()}
-    llama_bench = {arm: bin_dir / f"llama-bench{exe}" for arm, bin_dir in arm_bins.items()}
+    backend_ops = {
+        arm: bin_dir / f"test-backend-ops{exe}" for arm, bin_dir in arm_bins.items()
+    }
+    llama_bench = {
+        arm: bin_dir / f"llama-bench{exe}" for arm, bin_dir in arm_bins.items()
+    }
 
     comparisons = {
         "stock_vs_control": ("stock", "control"),
@@ -3435,9 +3744,13 @@ def run_patch1000_verification(
         selector = devices[architecture]
         selector_env = {"HIP_VISIBLE_DEVICES": selector}
         visibility = experiment_execution.require_device_visibility(
-            context=f"patch1000 {architecture}", env=selector_env, exact_count=1,
+            context=f"patch1000 {architecture}",
+            env=selector_env,
+            exact_count=1,
         )
-        expected_execution = ExecutionIdentity(backend="ROCm", architectures=(architecture,))
+        expected_execution = ExecutionIdentity(
+            backend="ROCm", architectures=(architecture,)
+        )
 
         arch_doc: dict[str, object] = {
             "architecture": architecture,
@@ -3451,7 +3764,9 @@ def run_patch1000_verification(
             correctness_doc: dict[str, object] = {}
             for arm in ("control", "subject"):
                 correctness_doc[arm] = correctness_func(
-                    binary=backend_ops[arm], quant=quant, hip_path=hip_path,
+                    binary=backend_ops[arm],
+                    quant=quant,
+                    hip_path=hip_path,
                     env_overrides=selector_env,
                     log_context=f"patch1000 {architecture} {quant} {arm} correctness",
                     execution_identity=expected_execution,
@@ -3461,8 +3776,12 @@ def run_patch1000_verification(
             perf_doc: dict[str, object] = {}
             for comparison, (left, right) in comparisons.items():
                 perf_doc[comparison] = perf_func(
-                    control_binary=backend_ops[left], subject_binary=backend_ops[right],
-                    quant=quant, hip_path=hip_path, env_overrides=selector_env, pairs=pairs,
+                    control_binary=backend_ops[left],
+                    subject_binary=backend_ops[right],
+                    quant=quant,
+                    hip_path=hip_path,
+                    env_overrides=selector_env,
+                    pairs=pairs,
                     execution_identity=expected_execution,
                 )
             arch_doc["microbenchmark"][quant] = perf_doc
@@ -3470,10 +3789,15 @@ def run_patch1000_verification(
             bench_doc: dict[str, object] = {}
             for comparison, (left, right) in comparisons.items():
                 outcome = bench_func(
-                    control_binary=llama_bench[left], subject_binary=llama_bench[right],
-                    model=models[quant], hip_path=hip_path, workloads=("prefill", "decode"),
-                    pairs=pairs, log_context=f"patch1000 {architecture} {quant} {comparison}",
-                    env_overrides=selector_env, execution_identity=expected_execution,
+                    control_binary=llama_bench[left],
+                    subject_binary=llama_bench[right],
+                    model=models[quant],
+                    hip_path=hip_path,
+                    workloads=("prefill", "decode"),
+                    pairs=pairs,
+                    log_context=f"patch1000 {architecture} {quant} {comparison}",
+                    env_overrides=selector_env,
+                    execution_identity=expected_execution,
                 )
                 bench_doc[comparison] = asdict(outcome)
             arch_doc["llama_bench"][quant] = bench_doc
@@ -3511,7 +3835,8 @@ _LANE_EFFECT_FIELDS = (
 
 
 def collect_lane_effect_records(
-    *, rd08_qualification: "dict[str, object] | None",
+    *,
+    rd08_qualification: "dict[str, object] | None",
     rd73_qualification: "dict[str, object] | None",
 ) -> list[dict[str, object]]:
     """RV99: the per-lane measurements to persist in the validation record.
@@ -3539,7 +3864,11 @@ def collect_lane_effect_records(
     def _add(role: str, metric: str, source: object) -> None:
         if source is None:
             return
-        raw = dataclasses.asdict(source) if dataclasses.is_dataclass(source) else dict(source)
+        raw = (
+            dataclasses.asdict(source)
+            if dataclasses.is_dataclass(source)
+            else dict(source)
+        )
         ratios = raw.get("pair_ratios") or ()
         entry: dict[str, object] = {
             "role": raw.get("role") or role,
@@ -3553,7 +3882,9 @@ def collect_lane_effect_records(
 
     if rd73_qualification is not None:
         _add("positive", "mtp_wall_tps", rd73_qualification["mtp"].get("effect"))
-        _add("control", "decode_tps", rd73_qualification["decode_control"].get("effect"))
+        _add(
+            "control", "decode_tps", rd73_qualification["decode_control"].get("effect")
+        )
     if rd08_qualification is not None:
         for role, lane in (rd08_qualification.get("lanes") or {}).items():
             if isinstance(lane, Mapping):
@@ -3562,9 +3893,12 @@ def collect_lane_effect_records(
 
 
 def compute_persisted_validation_eligible(
-    descriptor: object, validation_verdict: object | None,
+    descriptor: object,
+    validation_verdict: object | None,
     contract_promotions: "dict[str, dict[str, object]] | None",
-    *, activation_disposition: str | None, correctness: "dict[str, object] | None",
+    *,
+    activation_disposition: str | None,
+    correctness: "dict[str, object] | None",
 ) -> bool | None:
     """VA14 final slice (GPT req_75c09f14757640af): a bound-contract patch
     is eligible_for_validated_state only when BOTH the adapter verdict
@@ -3601,17 +3935,22 @@ def compute_persisted_validation_eligible(
         return False
     if activation_disposition != "activation-verified":
         return False
-    if not isinstance(correctness, Mapping) or correctness.get("disposition") != "passed":
+    if (
+        not isinstance(correctness, Mapping)
+        or correctness.get("disposition") != "passed"
+    ):
         return False
     promotions = contract_promotions or {}
     return all(
-        promotions.get(contract_id, {}).get("passed") is True  # pi-lens-ignore: no-identity-operator-on-literals
+        promotions.get(contract_id, {}).get("passed")
+        is True  # pi-lens-ignore: no-identity-operator-on-literals
         for contract_id in descriptor.experiment_contracts
     )
 
 
 def build_contract_evidence_for_persistence(
-    plan_contracts: "tuple[object, ...]", contract_promotions: "dict[str, dict[str, object]] | None",
+    plan_contracts: "tuple[object, ...]",
+    contract_promotions: "dict[str, dict[str, object]] | None",
 ) -> "tuple[list[dict[str, str]], dict[str, dict[str, object]]]":
     """VA18 persistence plumbing: derive make_record()'s plural
     ``contracts``/``contract_verdicts`` arguments from
@@ -3624,13 +3963,22 @@ def build_contract_evidence_for_persistence(
     -- never an inferred PASS."""
     promotions = contract_promotions or {}
     contracts = [
-        {"id": binding.contract_id, "hash": binding.contract_hash} for binding in plan_contracts
+        {"id": binding.contract_id, "hash": binding.contract_hash}
+        for binding in plan_contracts
     ]
     verdicts = {
         binding.contract_id: (
-            {"passed": bool(promotion.get("passed")), "status": promotion.get("status"), "detail": promotion}
+            {
+                "passed": bool(promotion.get("passed")),
+                "status": promotion.get("status"),
+                "detail": promotion,
+            }
             if (promotion := promotions.get(binding.contract_id)) is not None
-            else {"passed": False, "status": "blocked", "detail": {"reasons": ["no promotion result produced"]}}
+            else {
+                "passed": False,
+                "status": "blocked",
+                "detail": {"reasons": ["no promotion result produced"]},
+            }
         )
         for binding in plan_contracts
     }
@@ -3638,7 +3986,9 @@ def build_contract_evidence_for_persistence(
 
 
 _RD73_RESOURCE_PREFIX = "BIGCHERRY_RD73_RESOURCE"
-_RD73_RESOURCE_PATTERN = re.compile(r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)\s*$")
+_RD73_RESOURCE_PATTERN = re.compile(
+    r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)\s*$"
+)
 
 
 def parse_rd73_resource_telemetry(text: str) -> tuple[int, ...]:
@@ -3681,25 +4031,36 @@ def peak_rd73_resource_result(
             "rd73 resource evidence: no graph_cache_entries readings observed -- the "
             "subject binary's telemetry (BIGCHERRY_RD73_RESOURCE_TRACE=1) never emitted"
         )
-    if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in subject_readings):
+    if any(
+        not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in subject_readings
+    ):
         raise PatchCampaignError(
             f"rd73 resource evidence: malformed subject reading(s) in {subject_readings!r}"
         )
     control_value = None
     if control_readings:
-        if any(not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in control_readings):
+        if any(
+            not isinstance(v, int) or isinstance(v, bool) or v < 0
+            for v in control_readings
+        ):
             raise PatchCampaignError(
                 f"rd73 resource evidence: malformed control reading(s) in {control_readings!r}"
             )
         control_value = float(max(control_readings))
     return experiment_contract.ResourceResult(
-        metric="graph_cache_entries", unit="count",
-        subject_value=float(max(subject_readings)), control_value=control_value,
+        metric="graph_cache_entries",
+        unit="count",
+        subject_value=float(max(subject_readings)),
+        control_value=control_value,
     )
 
 
 def evaluate_rd73_activation_evidence(
-    *, marker_regex: str, control_log_path: Path, subject_log_path: Path, run_dir: Path,
+    *,
+    marker_regex: str,
+    control_log_path: Path,
+    subject_log_path: Path,
+    run_dir: Path,
 ) -> dict[str, object]:
     """VA06 (user redirect, 2026-09-01): RD73's real subject-hit/control-miss
     activation evidence, read from the control/subject llama-server LOG
@@ -3722,41 +4083,65 @@ def evaluate_rd73_activation_evidence(
     subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
     control_rel = Path(control_log_path).relative_to(run_dir).as_posix()
     doc = {
-        "marker_regex": marker_regex, "subject_hit": subject_hit, "control_hit": control_hit,
+        "marker_regex": marker_regex,
+        "subject_hit": subject_hit,
+        "control_hit": control_hit,
         "positive": {
             "artifact": {
                 "path": subject_rel,
-                "sha256": hashlib.sha256(Path(subject_log_path).read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(
+                    Path(subject_log_path).read_bytes()
+                ).hexdigest(),
             },
         },
         "control": {
             "artifact": {
                 "path": control_rel,
-                "sha256": hashlib.sha256(Path(control_log_path).read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(
+                    Path(control_log_path).read_bytes()
+                ).hexdigest(),
             },
         },
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-activation.json", doc)
     return {
-        "subject_hit": subject_hit, "control_hit": control_hit, "artifact": artifact_ref,
-        "subject_log_path": subject_rel, "control_log_path": control_rel,
+        "subject_hit": subject_hit,
+        "control_hit": control_hit,
+        "artifact": artifact_ref,
+        "subject_log_path": subject_rel,
+        "control_log_path": control_rel,
         # VA23: the per-log bound refs, so the campaign can build the
         # positive/negative trace_evidence that _builtin_trace_marker()
         # requires. It re-reads both logs and re-verifies the marker itself,
         # so this exposes evidence for independent checking rather than
         # asserting a result -- subject_hit/control_hit above are NOT what
         # the validator trusts.
-        "positive": {"artifact": doc["positive"]["artifact"], "marker_regex": marker_regex},
-        "negative": {"artifact": doc["control"]["artifact"], "marker_regex": marker_regex},
+        "positive": {
+            "artifact": doc["positive"]["artifact"],
+            "marker_regex": marker_regex,
+        },
+        "negative": {
+            "artifact": doc["control"]["artifact"],
+            "marker_regex": marker_regex,
+        },
     }
 
 
 def run_rd73_mtp_server_lane(
-    *, control_binary: Path, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    *,
+    control_binary: Path,
+    subject_binary: Path,
+    model: Path,
+    corpus_path: Path,
+    run_dir: Path,
     expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1", control_port: int = 18080, subject_port: int = 18081,
+    host: str = "127.0.0.1",
+    control_port: int = 18080,
+    subject_port: int = 18081,
     spec_draft_n_max: int = 4,
-    n_predict: int = 128, warmup_pairs: int = 2, measured_pairs: int = 10,
+    n_predict: int = 128,
+    warmup_pairs: int = 2,
+    measured_pairs: int = 10,
     selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 next slice: RD73's paired control/subject mtp_verify
@@ -3816,8 +4201,17 @@ def run_rd73_mtp_server_lane(
     # argument: --fit"), also found on real hardware -- so it must never
     # be added to those lanes' extra_flags.
     server_args = (
-        "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
-        "--spec-type", "draft-mtp", "--spec-draft-n-max", str(spec_draft_n_max),
+        "--parallel",
+        "1",
+        "--metrics",
+        "-sm",
+        "tensor",
+        "--fit",
+        "off",
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        str(spec_draft_n_max),
     )
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -3858,16 +4252,25 @@ def run_rd73_mtp_server_lane(
 
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
     session_kwargs = dict(
-        corpus_id=corpus_path.stem, corpus_sha256=corpus_sha256, bigcherry_revision="rd73-va06",
-        llama_pin="", llama_revision="", model_id=str(model), server_argv=server_args,
-        spec_type="draft-mtp", spec_n_max=spec_draft_n_max,
+        corpus_id=corpus_path.stem,
+        corpus_sha256=corpus_sha256,
+        bigcherry_revision="rd73-va06",
+        llama_pin="",
+        llama_revision="",
+        model_id=str(model),
+        server_argv=server_args,
+        spec_type="draft-mtp",
+        spec_n_max=spec_draft_n_max,
         # SessionConfig's spec_draft_k/spec_draft_v fields are provenance
         # labels only (there is no real --spec-draft-k/--spec-draft-v
         # llama-server flag); "default" records that this lane leaves the
         # draft cache type at its build default, matching the production
         # dual-XTX/27B baseline profile, which does not override it either.
-        spec_draft_k="default", spec_draft_v="default",
-        sampling=sampling, n_predict=n_predict, order_seed=12345,
+        spec_draft_k="default",
+        spec_draft_v="default",
+        sampling=sampling,
+        n_predict=n_predict,
+        order_seed=12345,
     )
     configs = {
         "control": sc.SessionConfig(session_id="rd73-mtp-control", **session_kwargs),
@@ -3884,16 +4287,23 @@ def run_rd73_mtp_server_lane(
         log_path = logs_dir / f"rd73-mtp-{arm}-server-{index}.log"
         per_request_logs[arm].append(log_path)
         session = AttestedServerSession(
-            binary=binaries[arm], model=model, expected=expected_execution,
-            host=host, port=ports[arm],
-            extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
+            binary=binaries[arm],
+            model=model,
+            expected=expected_execution,
+            host=host,
+            port=ports[arm],
+            extra_args=server_args,
+            log_path=log_path,
+            env_overrides=rd73_env,
             env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
         )
         with session:
             transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
             sc.validate_server(transport)
             prompt = prompts[index % len(prompts)]
-            record = sc.run_request(transport, prompt, configs[arm], pass_number=1, order_index=index)
+            record = sc.run_request(
+                transport, prompt, configs[arm], pass_number=1, order_index=index
+            )
         request_records[arm].append(record)
         if not isinstance(record.get("wall_tps"), (int, float)):
             raise PatchCampaignError(
@@ -3902,7 +4312,9 @@ def run_rd73_mtp_server_lane(
                 f"the paired statistics"
             )
         return experiment_execution.RunnerOutput(
-            returncode=0, stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n", stderr="",
+            returncode=0,
+            stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n",
+            stderr="",
         )
 
     for _ in range(warmup_pairs):
@@ -3910,9 +4322,12 @@ def run_rd73_mtp_server_lane(
         _runner(["rd73-mtp-lane", "subject"])
 
     paired_run = experiment_execution.run_paired_lane(
-        metric="mtp_wall_tps", control_command=["rd73-mtp-lane", "control"],
-        subject_command=["rd73-mtp-lane", "subject"], pattern=metric_pattern,
-        pairs=measured_pairs, runner=_runner,
+        metric="mtp_wall_tps",
+        control_command=["rd73-mtp-lane", "control"],
+        subject_command=["rd73-mtp-lane", "subject"],
+        pattern=metric_pattern,
+        pairs=measured_pairs,
+        runner=_runner,
     )
 
     # Concatenate each arm's per-request server logs into one combined
@@ -3923,22 +4338,34 @@ def run_rd73_mtp_server_lane(
     for arm in ("control", "subject"):
         combined_path = logs_dir / f"rd73-mtp-{arm}-server.log"
         combined_path.write_text(
-            "".join(p.read_text(encoding="utf-8", errors="replace") for p in per_request_logs[arm]),
+            "".join(
+                p.read_text(encoding="utf-8", errors="replace")
+                for p in per_request_logs[arm]
+            ),
             encoding="utf-8",
         )
         combined_log_paths[arm] = combined_path
 
-    effect = experiment_execution.lane_effect_from_run("positive", "mtp_wall_tps", paired_run)
+    effect = experiment_execution.lane_effect_from_run(
+        "positive", "mtp_wall_tps", paired_run
+    )
     doc = {
-        "metric": "mtp_wall_tps", "stats": paired_run.stats,
-        "warmup_pairs": warmup_pairs, "measured_pairs": measured_pairs,
-        "control_requests": request_records["control"], "subject_requests": request_records["subject"],
+        "metric": "mtp_wall_tps",
+        "stats": paired_run.stats,
+        "warmup_pairs": warmup_pairs,
+        "measured_pairs": measured_pairs,
+        "control_requests": request_records["control"],
+        "subject_requests": request_records["subject"],
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-mtp-lane.json", doc)
     return {
-        "effect": effect, "artifact": artifact_ref, "stats": paired_run.stats,
-        "control_requests": request_records["control"], "subject_requests": request_records["subject"],
-        "control_log_path": combined_log_paths["control"], "subject_log_path": combined_log_paths["subject"],
+        "effect": effect,
+        "artifact": artifact_ref,
+        "stats": paired_run.stats,
+        "control_requests": request_records["control"],
+        "subject_requests": request_records["subject"],
+        "control_log_path": combined_log_paths["control"],
+        "subject_log_path": combined_log_paths["subject"],
     }
 
 
@@ -3947,10 +4374,17 @@ def run_rd73_mtp_server_lane(
 # patch-specific, and the qualification matrix needs it without importing
 # patch internals. Imported below; no alias is kept here.
 def run_rd73_decode_control_lane(
-    *, control_binary: Path, subject_binary: Path, model: Path, run_dir: Path,
+    *,
+    control_binary: Path,
+    subject_binary: Path,
+    model: Path,
+    run_dir: Path,
     expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1", control_port: int = 18082, subject_port: int = 18083,
-    pairs: int = 3, extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
+    host: str = "127.0.0.1",
+    control_port: int = 18082,
+    subject_port: int = 18083,
+    pairs: int = 3,
+    extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
     selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 (user redirect, 2026-09-01): RD73's decode control lane --
@@ -3986,15 +4420,21 @@ def run_rd73_decode_control_lane(
         index = request_counters[arm]
         request_counters[arm] += 1
         session = AttestedServerSession(
-            binary=binaries[arm], model=model, expected=expected_execution,
-            host=host, port=ports[arm],
-            extra_args=server_args, log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
+            binary=binaries[arm],
+            model=model,
+            expected=expected_execution,
+            host=host,
+            port=ports[arm],
+            extra_args=server_args,
+            log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
             env_overrides=_hip_only(selector_env),
             env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
         )
         with session:
             metrics = run_bench_runner_server_bench(
-                server_url=f"http://{host}:{ports[arm]}", bench_configs="tg128", repetitions=1,
+                server_url=f"http://{host}:{ports[arm]}",
+                bench_configs="tg128",
+                repetitions=1,
             )
         raw_metrics[arm].append(metrics)
         if "tg128_tps" not in metrics:
@@ -4003,19 +4443,26 @@ def run_rd73_decode_control_lane(
                 f"metric (got {sorted(metrics)})"
             )
         return experiment_execution.RunnerOutput(
-            returncode=0, stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n", stderr="",
+            returncode=0,
+            stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n",
+            stderr="",
         )
 
     decode_run = experiment_execution.run_paired_lane(
-        metric="tg128", control_command=["rd73-decode-lane", "control"],
-        subject_command=["rd73-decode-lane", "subject"], pattern=metric_pattern,
-        pairs=pairs, runner=_runner,
+        metric="tg128",
+        control_command=["rd73-decode-lane", "control"],
+        subject_command=["rd73-decode-lane", "subject"],
+        pattern=metric_pattern,
+        pairs=pairs,
+        runner=_runner,
     )
 
     effect = experiment_execution.lane_effect_from_run("control", "tg128", decode_run)
     doc = {
-        "metric": "tg128", "stats": decode_run.stats,
-        "control_raw_metrics": raw_metrics["control"], "subject_raw_metrics": raw_metrics["subject"],
+        "metric": "tg128",
+        "stats": decode_run.stats,
+        "control_raw_metrics": raw_metrics["control"],
+        "subject_raw_metrics": raw_metrics["subject"],
         "runs": list(decode_run.runs),
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-decode-control.json", doc)
@@ -4023,7 +4470,9 @@ def run_rd73_decode_control_lane(
 
 
 def evaluate_rd73_resource_evidence(
-    *, subject_log_path: Path, run_dir: Path,
+    *,
+    subject_log_path: Path,
+    run_dir: Path,
 ) -> dict[str, object]:
     """VA06 (user redirect, 2026-09-01): RD73's real graph-cache-entries
     resource evidence, read from the subject llama-server LOG FILE
@@ -4040,7 +4489,8 @@ def evaluate_rd73_resource_evidence(
     result = peak_rd73_resource_result(readings)
     subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
     doc = {
-        "readings": list(readings), "peak": result.subject_value,
+        "readings": list(readings),
+        "peak": result.subject_value,
         "artifact": {
             "path": subject_rel,
             "sha256": hashlib.sha256(Path(subject_log_path).read_bytes()).hexdigest(),
@@ -4051,9 +4501,16 @@ def evaluate_rd73_resource_evidence(
 
 
 def run_rd73_resource_burst_session(
-    *, subject_binary: Path, model: Path, corpus_path: Path, run_dir: Path,
+    *,
+    subject_binary: Path,
+    model: Path,
+    corpus_path: Path,
+    run_dir: Path,
     expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1", port: int = 18084, burst_requests: int = 20, n_predict: int = 32,
+    host: str = "127.0.0.1",
+    port: int = 18084,
+    burst_requests: int = 20,
+    n_predict: int = 32,
     selector_env: "dict[str, str] | None" = None,
 ) -> dict[str, object]:
     """VA06 (real hardware finding, 2026-09-01): RD73's graph-cache-entries
@@ -4076,8 +4533,17 @@ def run_rd73_resource_burst_session(
     prompts, _ = sc.load_corpus(corpus_path)
     burst_prompt = prompts[0]
     server_args = (
-        "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
-        "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+        "--parallel",
+        "1",
+        "--metrics",
+        "-sm",
+        "tensor",
+        "--fit",
+        "off",
+        "--spec-type",
+        "draft-mtp",
+        "--spec-draft-n-max",
+        "4",
     )
     logs_dir = run_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -4092,24 +4558,41 @@ def run_rd73_resource_burst_session(
     # (ServerRunner.launch() applies env_unset BEFORE env_overrides).
     rd73_env.pop("ROCR_VISIBLE_DEVICES", None)
     session = AttestedServerSession(
-        binary=subject_binary, model=model, expected=expected_execution,
-        host=host, port=port,
-        extra_args=server_args, log_path=log_path, env_overrides=rd73_env,
+        binary=subject_binary,
+        model=model,
+        expected=expected_execution,
+        host=host,
+        port=port,
+        extra_args=server_args,
+        log_path=log_path,
+        env_overrides=rd73_env,
         env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
     )
     sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
     config = sc.SessionConfig(
-        session_id="rd73-resource-burst", corpus_id=corpus_path.stem, corpus_sha256="",
-        bigcherry_revision="rd73-va06", llama_pin="", llama_revision="", model_id=str(model),
-        server_argv=server_args, spec_type="draft-mtp", spec_n_max=4,
-        spec_draft_k="default", spec_draft_v="default", sampling=sampling,
-        n_predict=n_predict, order_seed=12345,
+        session_id="rd73-resource-burst",
+        corpus_id=corpus_path.stem,
+        corpus_sha256="",
+        bigcherry_revision="rd73-va06",
+        llama_pin="",
+        llama_revision="",
+        model_id=str(model),
+        server_argv=server_args,
+        spec_type="draft-mtp",
+        spec_n_max=4,
+        spec_draft_k="default",
+        spec_draft_v="default",
+        sampling=sampling,
+        n_predict=n_predict,
+        order_seed=12345,
     )
     with session:
         transport = sc.HttpTransport(f"http://{host}:{port}")
         sc.validate_server(transport)
         for index in range(burst_requests):
-            sc.run_request(transport, burst_prompt, config, pass_number=1, order_index=index)
+            sc.run_request(
+                transport, burst_prompt, config, pass_number=1, order_index=index
+            )
 
     return evaluate_rd73_resource_evidence(subject_log_path=log_path, run_dir=run_dir)
 
@@ -4121,7 +4604,9 @@ class Rd73CorrectnessError(PatchCampaignError):
 
 
 def evaluate_rd73_mtp_correctness(
-    *, control_requests: list[dict[str, object]], subject_requests: list[dict[str, object]],
+    *,
+    control_requests: list[dict[str, object]],
+    subject_requests: list[dict[str, object]],
     run_dir: Path,
 ) -> dict[str, object]:
     """VA06 next slice: RD73's bit-identical correctness check, evaluated
@@ -4172,7 +4657,9 @@ def evaluate_rd73_mtp_correctness(
     # this artifact apart from any other correctness evidence. "passed" stays
     # the real comparison outcome; only the identifier is added.
     doc = {
-        "check": "bit_identical", "passed": True, "rows": rows,
+        "check": "bit_identical",
+        "passed": True,
+        "rows": rows,
         "ops": ["RD73_MTP_BIT_IDENTICAL"],
     }
     artifact_ref = _write_bound_artifact(run_dir, "rd73-correctness.json", doc)
@@ -4180,8 +4667,14 @@ def evaluate_rd73_mtp_correctness(
 
 
 def run_rd73_contract_qualification(
-    *, contract: object, control_server_binary: Path, subject_server_binary: Path, model: Path,
-    marker_regex: str, corpus_path: Path, run_dir: Path,
+    *,
+    contract: object,
+    control_server_binary: Path,
+    subject_server_binary: Path,
+    model: Path,
+    marker_regex: str,
+    corpus_path: Path,
+    run_dir: Path,
     # VA24: decode_pairs raised 3 -> 10 to match measured_pairs. min_paired_rounds
     # is a minimum VALIDITY requirement for every interval used to establish an
     # acceptance bound, so a control decision taken on 3 rounds violates exactly
@@ -4192,7 +4685,9 @@ def run_rd73_contract_qualification(
     # acceptance boundary, and the estimator -- not on lane role (dev-gpt-agent,
     # req_875d13b29a204075). Costs ~5 extra minutes on a ~15-minute
     # qualification, measured.
-    decode_pairs: int = 10, warmup_pairs: int = 2, measured_pairs: int = 10,
+    decode_pairs: int = 10,
+    warmup_pairs: int = 2,
+    measured_pairs: int = 10,
     # RV99: the patch's already-committed validation records, each a prior
     # measurement SESSION. Required, not defaulted: under a session policy a
     # caller that forgets them silently under-counts sessions and the gate
@@ -4243,7 +4738,8 @@ def run_rd73_contract_qualification(
     # etc.). Constructed once here, not per-lane, so all three lanes
     # attest against the identical expectation.
     expected_execution = ExecutionIdentity(
-        backend="ROCm", architectures=(amdgpu_targets, amdgpu_targets),
+        backend="ROCm",
+        architectures=(amdgpu_targets, amdgpu_targets),
     )
 
     # PVPS02 step 7 (2026-09-11): validate the real HIP_VISIBLE_DEVICES
@@ -4264,29 +4760,45 @@ def run_rd73_contract_qualification(
     # and DeviceVisibility's own docstrings for the full mechanism).
     try:
         rd73_visibility = _require_device_visibility(
-            context=f"--run-rd73-contract ({amdgpu_targets})", exact_count=2,
+            context=f"--run-rd73-contract ({amdgpu_targets})",
+            exact_count=2,
         )
     except _DeviceVisibilityError as exc:
         raise PatchCampaignError(str(exc)) from exc
     rd73_selector_env = {"HIP_VISIBLE_DEVICES": rd73_visibility.hip_visible_devices}
 
     mtp = run_rd73_mtp_server_lane(
-        control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
-        corpus_path=corpus_path, run_dir=run_dir, expected_execution=expected_execution,
-        warmup_pairs=warmup_pairs, measured_pairs=measured_pairs,
+        control_binary=control_server_binary,
+        subject_binary=subject_server_binary,
+        model=model,
+        corpus_path=corpus_path,
+        run_dir=run_dir,
+        expected_execution=expected_execution,
+        warmup_pairs=warmup_pairs,
+        measured_pairs=measured_pairs,
         selector_env=rd73_selector_env,
     )
     activation = evaluate_rd73_activation_evidence(
-        marker_regex=marker_regex, control_log_path=mtp["control_log_path"],
-        subject_log_path=mtp["subject_log_path"], run_dir=run_dir,
+        marker_regex=marker_regex,
+        control_log_path=mtp["control_log_path"],
+        subject_log_path=mtp["subject_log_path"],
+        run_dir=run_dir,
     )
     resource = run_rd73_resource_burst_session(
-        subject_binary=subject_server_binary, model=model, corpus_path=corpus_path, run_dir=run_dir,
-        expected_execution=expected_execution, selector_env=rd73_selector_env,
+        subject_binary=subject_server_binary,
+        model=model,
+        corpus_path=corpus_path,
+        run_dir=run_dir,
+        expected_execution=expected_execution,
+        selector_env=rd73_selector_env,
     )
     decode_control = run_rd73_decode_control_lane(
-        control_binary=control_server_binary, subject_binary=subject_server_binary, model=model,
-        run_dir=run_dir, expected_execution=expected_execution, pairs=decode_pairs,
+        control_binary=control_server_binary,
+        subject_binary=subject_server_binary,
+        model=model,
+        run_dir=run_dir,
+        expected_execution=expected_execution,
+        pairs=decode_pairs,
         selector_env=rd73_selector_env,
     )
     # A real content mismatch (or a missing/non-string/unpaired record) is a
@@ -4296,18 +4808,27 @@ def run_rd73_contract_qualification(
     # in run_rd08_contract_correctness()).
     try:
         correctness = evaluate_rd73_mtp_correctness(
-            control_requests=mtp["control_requests"], subject_requests=mtp["subject_requests"],
+            control_requests=mtp["control_requests"],
+            subject_requests=mtp["subject_requests"],
             run_dir=run_dir,
         )
-        correctness_result = experiment_contract.CorrectnessResult(check="bit_identical", passed=True)
+        correctness_result = experiment_contract.CorrectnessResult(
+            check="bit_identical", passed=True
+        )
     except Rd73CorrectnessError as exc:
         correctness = {"artifact": None, "rows": [], "error": str(exc)}
         correctness_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=False, detail=str(exc),
+            check="bit_identical",
+            passed=False,
+            detail=str(exc),
         )
-    correctness_gate = compute_contract_correctness_gate(contract, {"bit_identical": correctness_result})
+    correctness_gate = compute_contract_correctness_gate(
+        contract, {"bit_identical": correctness_result}
+    )
     aggregated_effects = experiment_contract.aggregate_contract_effects(
-        contract, [mtp["effect"], decode_control["effect"]], target_metric="mtp_wall_tps",
+        contract,
+        [mtp["effect"], decode_control["effect"]],
+        target_metric="mtp_wall_tps",
     )
     # RV99: under a session policy the gain bound is established across
     # repeated SESSIONS, not from the pairs inside this one run. Fold the
@@ -4335,29 +4856,39 @@ def run_rd73_contract_qualification(
             ),
         }
         gain_field = (
-            "end_to_end_gain_pct" if contract.acceptance.end_to_end_gain_pct is not None
+            "end_to_end_gain_pct"
+            if contract.acceptance.end_to_end_gain_pct is not None
             else "target_kernel_gain_pct"
         )
         aggregated_effects = dict(aggregated_effects)
-        aggregated_effects.update(experiment_contract.aggregate_session_effects(
-            [*prior_session_records, this_session],
-            field=gain_field, role="positive", metric="mtp_wall_tps",
-            # Only sessions measured on THIS hardware may be pooled.
-            architectures=[amdgpu_targets],
-        ))
+        aggregated_effects.update(
+            experiment_contract.aggregate_session_effects(
+                [*prior_session_records, this_session],
+                field=gain_field,
+                role="positive",
+                metric="mtp_wall_tps",
+                # Only sessions measured on THIS hardware may be pooled.
+                architectures=[amdgpu_targets],
+            )
+        )
     resource_gate = experiment_contract.evaluate_resource_gate(
-        contract, {"graph_cache_entries": resource["result"]},
+        contract,
+        {"graph_cache_entries": resource["result"]},
     )
-    trigger_proof = experiment_contract.evaluate_trigger_proof([
-        experiment_contract.TriggerEvidence(
-            role="positive", lane_id="rd73-mtp-subject",
-            candidate_launches=1 if activation["subject_hit"] else 0,
-        ),
-    ])
+    trigger_proof = experiment_contract.evaluate_trigger_proof(
+        [
+            experiment_contract.TriggerEvidence(
+                role="positive",
+                lane_id="rd73-mtp-subject",
+                candidate_launches=1 if activation["subject_hit"] else 0,
+            ),
+        ]
+    )
     if activation["control_hit"]:
         trigger_proof = {
             "passed": False,
-            "reasons": list(trigger_proof.get("reasons") or []) + [
+            "reasons": list(trigger_proof.get("reasons") or [])
+            + [
                 "control-role lane observed the target marker -- the negative "
                 "control is invalid, so trigger proof cannot be trusted"
             ],
@@ -4365,18 +4896,29 @@ def run_rd73_contract_qualification(
             "untriggered_lanes": list(trigger_proof.get("untriggered_lanes") or []),
         }
     promotion = experiment_contract.evaluate_promotion_gate(
-        contract, correctness_gate=correctness_gate, aggregated_effects=aggregated_effects,
-        trigger_proof=trigger_proof, resource_gate=resource_gate,
+        contract,
+        correctness_gate=correctness_gate,
+        aggregated_effects=aggregated_effects,
+        trigger_proof=trigger_proof,
+        resource_gate=resource_gate,
     )
     qualification_doc = {
-        "contract_id": contract.id, "contract_hash": contract.contract_hash,
-        "activation_artifact": activation["artifact"], "mtp_lane_artifact": mtp["artifact"],
-        "decode_control_artifact": decode_control["artifact"], "resource_artifact": resource["artifact"],
+        "contract_id": contract.id,
+        "contract_hash": contract.contract_hash,
+        "activation_artifact": activation["artifact"],
+        "mtp_lane_artifact": mtp["artifact"],
+        "decode_control_artifact": decode_control["artifact"],
+        "resource_artifact": resource["artifact"],
         "correctness_artifact": correctness["artifact"],
-        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
-        "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
+        "correctness_gate": correctness_gate,
+        "aggregated_effects": aggregated_effects,
+        "resource_gate": resource_gate,
+        "trigger_proof": trigger_proof,
+        "promotion": promotion,
     }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-contract-qualification.json", qualification_doc)
+    artifact_ref = _write_bound_artifact(
+        run_dir, "rd73-contract-qualification.json", qualification_doc
+    )
 
     # VA23: emit the generic-adapter performance artifact.
     #
@@ -4418,13 +4960,19 @@ def run_rd73_contract_qualification(
         "promotion": promotion,
     }
     performance_artifact = _write_bound_artifact(
-        run_dir, "rd73-performance.json", performance_doc,
+        run_dir,
+        "rd73-performance.json",
+        performance_doc,
     )
     return {
         "performance_artifact": performance_artifact,
-        "activation": activation, "mtp": mtp, "decode_control": decode_control,
-        "resource": resource, "correctness": correctness,
-        "correctness_gate": correctness_gate, "aggregated_effects": aggregated_effects,
+        "activation": activation,
+        "mtp": mtp,
+        "decode_control": decode_control,
+        "resource": resource,
+        "correctness": correctness,
+        "correctness_gate": correctness_gate,
+        "aggregated_effects": aggregated_effects,
         # VA23: the NAMED correctness result, so the adapter's own
         # _contract_correctness_gate can be fed the same way RD08's and
         # RD58's are (see the compute_contract_correctness_gate() call in
@@ -4433,7 +4981,9 @@ def run_rd73_contract_qualification(
         # evaluated here. Returned as the CorrectnessResult itself, not a
         # bool, so a failure carries its detail through unchanged.
         "correctness_named_results": {"bit_identical": correctness_result},
-        "resource_gate": resource_gate, "trigger_proof": trigger_proof, "promotion": promotion,
+        "resource_gate": resource_gate,
+        "trigger_proof": trigger_proof,
+        "promotion": promotion,
         "artifact": artifact_ref,
     }
 
@@ -4448,38 +4998,69 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     from bigcherry.core import paths as bc_paths
 
     if not validation_policy.is_framework_configuration_patch(descriptor):
-        raise PatchCampaignError("--framework-configuration requires a local packaged framework patch without an RD/contract binding")
-    if any(getattr(args, name, False) for name in (
-        "run_rd08_lanes", "run_rd08_contract",
-        "run_rd73_contract",
-        "correctness_evidence",
-    )):
-        raise PatchCampaignError("framework configuration cannot be combined with runtime qualification modes")
+        raise PatchCampaignError(
+            "--framework-configuration requires a local packaged framework patch without an RD/contract binding"
+        )
+    if any(
+        getattr(args, name, False)
+        for name in (
+            "run_rd08_lanes",
+            "run_rd08_contract",
+            "run_rd73_contract",
+            "correctness_evidence",
+        )
+    ):
+        raise PatchCampaignError(
+            "framework configuration cannot be combined with runtime qualification modes"
+        )
     if args.amdgpu_targets is None:
-        raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
-    targets = tuple(target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip())
-    if not targets or any(not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets):
-        raise PatchCampaignError("framework configuration requires explicit AMDGPU compile targets")
+        raise PatchCampaignError(
+            "framework configuration requires explicit AMDGPU compile targets"
+        )
+    targets = tuple(
+        target.strip()
+        for target in re.split(r"[,;]", args.amdgpu_targets)
+        if target.strip()
+    )
+    if not targets or any(
+        not re.fullmatch(r"gfx[0-9a-f]+", target) for target in targets
+    ):
+        raise PatchCampaignError(
+            "framework configuration requires explicit AMDGPU compile targets"
+        )
     args.amdgpu_targets = ";".join(targets)
     from bigcherry.core.context import ProjectContext
-    base_repo = ProjectContext.resolve(work_root=os.environ.get("BC_CACHE")).upstream_repo
+
+    base_repo = ProjectContext.resolve(
+        work_root=os.environ.get("BC_CACHE")
+    ).upstream_repo
     baseline_source = "bigcherry-qualification-tuning"
     base_revision, composition = psi.resolve_source_composition(
-        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=base_repo,
+        baseline_source,
+        focal=None,
+        base_ref=cfg.pinned,
+        base_repo=base_repo,
     )
     if (descriptor.patch_id, descriptor.implementation_digest) not in composition:
         raise PatchCampaignError(
             f"framework source {baseline_source!r} does not contain focal patch {descriptor.patch_id!r}"
         )
     source = psi.materialize_composition(
-        base_repo=base_repo, worktree_root=args.worktree_root / "framework",
-        resolved_revision=base_revision, composition=composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+        base_repo=base_repo,
+        worktree_root=args.worktree_root / "framework",
+        resolved_revision=base_revision,
+        composition=composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=cfg.pinned,
     )
     idempotent = psi.verify_composition_idempotent(
-        base_repo=base_repo, source=source, worktree_root=args.worktree_root / "framework",
-        resolved_revision=base_revision, composition=composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+        base_repo=base_repo,
+        source=source,
+        worktree_root=args.worktree_root / "framework",
+        resolved_revision=base_revision,
+        composition=composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=cfg.pinned,
     )
     if not idempotent:
         raise PatchCampaignError("framework composition did not reapply idempotently")
@@ -4488,7 +5069,9 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     if not source_manifest or source_manifest.get("source_tree_oid") != source_tree:
         raise PatchCampaignError("framework source attestation is missing or stale")
     source_identity = psi._make_source_identity_v2(
-        resolved_revision=base_revision, composition=composition, overlay_root=psi.REPO_ROOT / "src",
+        resolved_revision=base_revision,
+        composition=composition,
+        overlay_root=psi.REPO_ROOT / "src",
     )
     source_identity["materialization_plan_id"] = source_identity["source_key"]
     if any(source_manifest.get(key) != value for key, value in source_identity.items()):
@@ -4498,19 +5081,30 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     # historical build whose inputs were not observed during compilation.
     for role in ("production", "diagnostic"):
         if (build_root / f"framework-{role}").exists():
-            raise PatchCampaignError("framework qualification requires a fresh build-root; preserve the previous run")
+            raise PatchCampaignError(
+                "framework qualification requires a fresh build-root; preserve the previous run"
+            )
     generated_dir = build_root / "generated"
-    generate_registry(source=source, amdgpu_targets=args.amdgpu_targets, generated_dir=generated_dir)
+    generate_registry(
+        source=source, amdgpu_targets=args.amdgpu_targets, generated_dir=generated_dir
+    )
     # Same four compile inputs returned by catalog.emit().compile_input_paths;
     # JSON manifests contain timestamps and are not compiler inputs.
-    compile_inputs = tuple(generated_dir / name for name in (
-        "hip-autotune-registry.inc", "hip-autotune-build-hash.h",
-        "hip-autotune-arch.h", "hip-autotune-mmvq-instances.inc",
-    ))
+    compile_inputs = tuple(
+        generated_dir / name
+        for name in (
+            "hip-autotune-registry.inc",
+            "hip-autotune-build-hash.h",
+            "hip-autotune-arch.h",
+            "hip-autotune-mmvq-instances.inc",
+        )
+    )
     missing = [str(path) for path in compile_inputs if not path.is_file()]
     if missing:
         raise PatchCampaignError(f"generated compiler inputs missing: {missing}")
-    generated_manifest = generated_tree.build_manifest(generated_dir, compile_inputs=compile_inputs)
+    generated_manifest = generated_tree.build_manifest(
+        generated_dir, compile_inputs=compile_inputs
+    )
     proof = {}
 
     def generated_proof(phase, build_dir):
@@ -4521,103 +5115,205 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
         generated_tree.verify_tree(compiled_copy, generated_manifest)
         copied_manifest = generated_tree.build_manifest(
             compiled_copy,
-            compile_inputs=tuple(compiled_copy / name for name in generated_manifest["compile_inputs"]),
+            compile_inputs=tuple(
+                compiled_copy / name for name in generated_manifest["compile_inputs"]
+            ),
         )
-        if copied_manifest["compile_inputs_hash"] != generated_manifest["compile_inputs_hash"]:
-            raise PatchCampaignError(f"{build_dir.name}: compiled-copy input hash disagrees with generated manifest")
+        if (
+            copied_manifest["compile_inputs_hash"]
+            != generated_manifest["compile_inputs_hash"]
+        ):
+            raise PatchCampaignError(
+                f"{build_dir.name}: compiled-copy input hash disagrees with generated manifest"
+            )
         proof[build_dir.name] = copied_manifest
 
     import shutil
+
     for role in ("production", "diagnostic"):
-        shutil.copytree(generated_dir, build_root / f"framework-{role}" / "generated-inputs")
-    common = ["-DGGML_HIP_RCCL=ON", "-DGGML_HIP_DISPATCH_REPLAY=ON",
-              "-DGGML_HIP_AUTOTUNE=OFF", "-DGGML_HIP_AUTOTUNE_RECORD=OFF",
-              "-DGGML_HIP_REPLAY_DIAGNOSTICS=OFF"]
-    production_args = common + ["-DGGML_HIP_DISPATCH_DIAGNOSTICS=OFF",
-        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-production' / 'generated-inputs'}"]
-    diagnostic_args = common + ["-DGGML_HIP_DISPATCH_DIAGNOSTICS=ON",
-        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-diagnostic' / 'generated-inputs'}"]
+        shutil.copytree(
+            generated_dir, build_root / f"framework-{role}" / "generated-inputs"
+        )
+    common = [
+        "-DGGML_HIP_RCCL=ON",
+        "-DGGML_HIP_DISPATCH_REPLAY=ON",
+        "-DGGML_HIP_AUTOTUNE=OFF",
+        "-DGGML_HIP_AUTOTUNE_RECORD=OFF",
+        "-DGGML_HIP_REPLAY_DIAGNOSTICS=OFF",
+    ]
+    production_args = common + [
+        "-DGGML_HIP_DISPATCH_DIAGNOSTICS=OFF",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-production' / 'generated-inputs'}",
+    ]
+    diagnostic_args = common + [
+        "-DGGML_HIP_DISPATCH_DIAGNOSTICS=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={build_root / 'framework-diagnostic' / 'generated-inputs'}",
+    ]
     production_bin = build_tree(
-        name="framework-production", hip_path=args.hip_path,
-        amdgpu_targets=args.amdgpu_targets, workdir=build_root,
-        targets=["llama-server"], source=source,
-        extra_cmake_args=production_args, generated_proof_callback=generated_proof,
+        name="framework-production",
+        hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets,
+        workdir=build_root,
+        targets=["llama-server"],
+        source=source,
+        extra_cmake_args=production_args,
+        generated_proof_callback=generated_proof,
     )
     diagnostic_bin = build_tree(
-        name="framework-diagnostic", hip_path=args.hip_path,
-        amdgpu_targets=args.amdgpu_targets, workdir=build_root,
-        targets=["llama-server"], source=source,
-        extra_cmake_args=diagnostic_args, generated_proof_callback=generated_proof,
+        name="framework-diagnostic",
+        hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets,
+        workdir=build_root,
+        targets=["llama-server"],
+        source=source,
+        extra_cmake_args=diagnostic_args,
+        generated_proof_callback=generated_proof,
     )
     env = _hip_env(args.hip_path)
     exe = ".exe" if sys.platform == "win32" else ""
     production = capture_completed_build_evidence(
-        build_root / "framework-production", source_root=source,
-        architecture=args.amdgpu_targets, binary=production_bin / f"llama-server{exe}",
-        requested_cmake_args=_full_requested_cmake_args(hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=production_args), build_env=env,
+        build_root / "framework-production",
+        source_root=source,
+        architecture=args.amdgpu_targets,
+        binary=production_bin / f"llama-server{exe}",
+        requested_cmake_args=_full_requested_cmake_args(
+            hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            extra_cmake_args=production_args,
+        ),
+        build_env=env,
     )
     diagnostic = capture_completed_build_evidence(
-        build_root / "framework-diagnostic", source_root=source,
-        architecture=args.amdgpu_targets, binary=diagnostic_bin / f"llama-server{exe}",
-        requested_cmake_args=_full_requested_cmake_args(hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets, extra_cmake_args=diagnostic_args), build_env=env,
+        build_root / "framework-diagnostic",
+        source_root=source,
+        architecture=args.amdgpu_targets,
+        binary=diagnostic_bin / f"llama-server{exe}",
+        requested_cmake_args=_full_requested_cmake_args(
+            hip_path=args.hip_path,
+            amdgpu_targets=args.amdgpu_targets,
+            extra_cmake_args=diagnostic_args,
+        ),
+        build_env=env,
     )
     from bigcherry.build.builds import inspect_dispatch_build
+
     compiler_observations = {}
     for role, diagnostic_on in (("production", False), ("diagnostic", True)):
         observed = inspect_dispatch_build(build_root / f"framework-{role}")
         counts = observed["compiled_definition_counts"]
-        if observed["issues"] or bool(counts["GGML_HIP_DISPATCH_DIAGNOSTICS"]) != diagnostic_on:
-            raise PatchCampaignError(f"{role} diagnostic compiler state disagrees with qualification role")
-        compiler_observations[role] = {key: observed[key] for key in (
-            "hip_compile_command_count", "compiled_definition_counts", "coverage_translation_unit", "issues",
-        )}
+        if (
+            observed["issues"]
+            or bool(counts["GGML_HIP_DISPATCH_DIAGNOSTICS"]) != diagnostic_on
+        ):
+            raise PatchCampaignError(
+                f"{role} diagnostic compiler state disagrees with qualification role"
+            )
+        compiler_observations[role] = {
+            key: observed[key]
+            for key in (
+                "hip_compile_command_count",
+                "compiled_definition_counts",
+                "coverage_translation_unit",
+                "issues",
+            )
+        }
     run_dir = args.workdir / "framework" / descriptor.patch_id
     run_dir.mkdir(parents=True, exist_ok=False)
-    generated_artifact = _write_bound_artifact(run_dir, "generated-tree.json", generated_manifest)
-    source_artifact = _write_bound_artifact(run_dir, "source-tree.json", source_manifest)
-    builds = {"production": production.campaign_identity(), "diagnostic": diagnostic.campaign_identity()}
+    generated_artifact = _write_bound_artifact(
+        run_dir, "generated-tree.json", generated_manifest
+    )
+    source_artifact = _write_bound_artifact(
+        run_dir, "source-tree.json", source_manifest
+    )
+    builds = {
+        "production": production.campaign_identity(),
+        "diagnostic": diagnostic.campaign_identity(),
+    }
     for role in builds:
         compiler_observations[role]["build_identity"] = builds[role]
-    build_artifacts = {role: _write_bound_artifact(run_dir, f"{role}-build.json", {
-        **completed.to_dict(), "generated_inputs_verification": "compiled-copy-v1",
-        "generated_inputs": proof[f"framework-{role}"],
-        "source_slice_id": source_manifest["source_slice_id"], "source_tree": source_tree,
-    }) for role, completed in (("production", production), ("diagnostic", diagnostic))}
-    plan = validation_policy.require_execution_package(descriptor, root=bc_paths.PATCHES)
+    build_artifacts = {
+        role: _write_bound_artifact(
+            run_dir,
+            f"{role}-build.json",
+            {
+                **completed.to_dict(),
+                "generated_inputs_verification": "compiled-copy-v1",
+                "generated_inputs": proof[f"framework-{role}"],
+                "source_slice_id": source_manifest["source_slice_id"],
+                "source_tree": source_tree,
+            },
+        )
+        for role, completed in (("production", production), ("diagnostic", diagnostic))
+    }
+    plan = validation_policy.require_execution_package(
+        descriptor, root=bc_paths.PATCHES
+    )
     ctx = validation.ValidationContext(
-        descriptor=descriptor, base_revision=base_revision,
-        control_source=None, subject_source=None,
-        package_root=bc_paths.PATCHES / descriptor.package_root, run_dir=run_dir,
+        descriptor=descriptor,
+        base_revision=base_revision,
+        control_source=None,
+        subject_source=None,
+        package_root=bc_paths.PATCHES / descriptor.package_root,
+        run_dir=run_dir,
         register_artifact=validation.make_default_register_artifact(run_dir),
         configuration_evidence={
-            "apply": {"single_composition": True, "verified": True, "idempotent": idempotent,
-                      "artifact": source_artifact},
-            "builds": {role: {"completed": True, "artifact": artifact}
-                       for role, artifact in build_artifacts.items()},
+            "apply": {
+                "single_composition": True,
+                "verified": True,
+                "idempotent": idempotent,
+                "artifact": source_artifact,
+            },
+            "builds": {
+                role: {"completed": True, "artifact": artifact}
+                for role, artifact in build_artifacts.items()
+            },
         },
     )
-    results = {spec.check_id: validation.evaluate_check(spec, ctx) for spec in plan.checks}
+    results = {
+        spec.check_id: validation.evaluate_check(spec, ctx) for spec in plan.checks
+    }
     verdict = validation.compute_verdict(plan, results)
     _print(f"adapter eligible: {verdict.eligible}")
     for check_id, result in results.items():
         _print(f"{check_id}: {result.status}: {result.summary}")
     checks = {name: asdict(result) for name, result in results.items()}
-    artifacts = {artifact.path: artifact.sha256 for result in results.values() for artifact in result.artifacts}
+    artifacts = {
+        artifact.path: artifact.sha256
+        for result in results.values()
+        for artifact in result.artifacts
+    }
     artifacts[generated_artifact["path"]] = generated_artifact["sha256"]
     record = patch_validation_evidence.make_framework_configuration_record(
-        descriptor=descriptor, patch_path=bc_paths.PATCHES / descriptor.implementation_path,
-        base_ref=cfg.pinned, base_revision=base_revision, source_name=baseline_source,
-        source_composition=composition, source_tree=source_tree,
-        source_slice_id=source_manifest["source_slice_id"], compiled_targets=tuple(
-            target.strip() for target in re.split(r"[,;]", args.amdgpu_targets) if target.strip()
+        descriptor=descriptor,
+        patch_path=bc_paths.PATCHES / descriptor.implementation_path,
+        base_ref=cfg.pinned,
+        base_revision=base_revision,
+        source_name=baseline_source,
+        source_composition=composition,
+        source_tree=source_tree,
+        source_slice_id=source_manifest["source_slice_id"],
+        compiled_targets=tuple(
+            target.strip()
+            for target in re.split(r"[,;]", args.amdgpu_targets)
+            if target.strip()
         ),
         builds=builds,
-        source_identity=source_identity, compiler_observations=compiler_observations,
-        generated_inputs={role: {"proof": "compiled-copy-v1",
-            "compile_inputs_hash": proof[f"framework-{role}"]["compile_inputs_hash"],
-            "tree_manifest": proof[f"framework-{role}"], "build_identity": builds[role],
-        } for role in builds},
-        check_results=checks, artifact_hashes=artifacts, campaign_workdir=run_dir,
+        source_identity=source_identity,
+        compiler_observations=compiler_observations,
+        generated_inputs={
+            role: {
+                "proof": "compiled-copy-v1",
+                "compile_inputs_hash": proof[f"framework-{role}"][
+                    "compile_inputs_hash"
+                ],
+                "tree_manifest": proof[f"framework-{role}"],
+                "build_identity": builds[role],
+            }
+            for role in builds
+        },
+        check_results=checks,
+        artifact_hashes=artifacts,
+        campaign_workdir=run_dir,
     )
     path = patch_validation_evidence.write_record(record)
     _print(f"framework configuration evidence: {path}")
@@ -4625,7 +5321,9 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
 
 
 _STANDARD_BENCHMARK_MODEL_IDS: tuple[str, ...] = (
-    "tierM-ministral14b-q4km", "tierB-qwen9b-q6k", "tierL-qwen27b-q8",
+    "tierM-ministral14b-q4km",
+    "tierB-qwen9b-q6k",
+    "tierL-qwen27b-q8",
 )
 
 
@@ -4667,7 +5365,9 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     else:
         platform_targets = tuple(cfg.platforms["linux-multi"].targets)
         architectures = tuple(
-            arch for arch in platform_targets if arch in descriptor.validation_architectures
+            arch
+            for arch in platform_targets
+            if arch in descriptor.validation_architectures
         )
     if not architectures:
         raise PatchCampaignError(
@@ -4682,24 +5382,40 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
 
     baseline_source = getattr(args, "baseline_source", "bigcherry")
     control_revision, control_composition = psi.resolve_source_composition(
-        baseline_source, focal=None, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+        baseline_source,
+        focal=None,
+        base_ref=cfg.pinned,
+        base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        baseline_source, focal=args.patch, base_ref=cfg.pinned, base_repo=LLAMA_CPP_SRC,
+        baseline_source,
+        focal=args.patch,
+        base_ref=cfg.pinned,
+        base_repo=LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
-        raise RuntimeError("control and subject source plans resolved different base revisions")
+        raise RuntimeError(
+            "control and subject source plans resolved different base revisions"
+        )
     base_revision = subject_revision
-    _print(f"performance benchmark: materializing control/subject source @ {base_revision[:12]} ...")
+    _print(
+        f"performance benchmark: materializing control/subject source @ {base_revision[:12]} ..."
+    )
     control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "control",
-        resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=args.worktree_root / "control",
+        resolved_revision=base_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=cfg.pinned,
     )
     subject_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=args.worktree_root / "subject",
-        resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=cfg.pinned,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=args.worktree_root / "subject",
+        resolved_revision=base_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=cfg.pinned,
     )
 
     cells: list[dict[str, object]] = []
@@ -4720,32 +5436,50 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
     # for the joined target list instead of once per architecture.
     joined_targets = ";".join(architectures)
     control_bin = build_tree(
-        name="perf-control", hip_path=args.hip_path,
-        amdgpu_targets=joined_targets, workdir=build_root, targets=["llama-bench"],
-        source=control_src, extra_cmake_args=[],
+        name="perf-control",
+        hip_path=args.hip_path,
+        amdgpu_targets=joined_targets,
+        workdir=build_root,
+        targets=["llama-bench"],
+        source=control_src,
+        extra_cmake_args=[],
     )
     subject_bin = build_tree(
-        name="perf-subject", hip_path=args.hip_path,
-        amdgpu_targets=joined_targets, workdir=build_root, targets=["llama-bench"],
-        source=subject_src, extra_cmake_args=[],
+        name="perf-subject",
+        hip_path=args.hip_path,
+        amdgpu_targets=joined_targets,
+        workdir=build_root,
+        targets=["llama-bench"],
+        source=subject_src,
+        extra_cmake_args=[],
     )
     control_binary = control_bin / f"llama-bench{exe}"
     subject_binary = subject_bin / f"llama-bench{exe}"
     control_cmake_args = _full_requested_cmake_args(
-        hip_path=args.hip_path, amdgpu_targets=joined_targets, extra_cmake_args=[],
+        hip_path=args.hip_path,
+        amdgpu_targets=joined_targets,
+        extra_cmake_args=[],
     )
     control_build_evidence = capture_completed_build_evidence(
-        build_root / "perf-control", source_root=control_src,
-        architecture=joined_targets, binary=control_binary,
-        requested_cmake_args=control_cmake_args, build_env=build_env,
+        build_root / "perf-control",
+        source_root=control_src,
+        architecture=joined_targets,
+        binary=control_binary,
+        requested_cmake_args=control_cmake_args,
+        build_env=build_env,
     )
     subject_build_evidence = capture_completed_build_evidence(
-        build_root / "perf-subject", source_root=subject_src,
-        architecture=joined_targets, binary=subject_binary,
-        requested_cmake_args=control_cmake_args, build_env=build_env,
+        build_root / "perf-subject",
+        source_root=subject_src,
+        architecture=joined_targets,
+        binary=subject_binary,
+        requested_cmake_args=control_cmake_args,
+        build_env=build_env,
     )
     assert_validation_subject_parity(
-        control_build_evidence, subject_build_evidence, patch_id=args.patch,
+        control_build_evidence,
+        subject_build_evidence,
+        patch_id=args.patch,
     )
 
     for architecture in architectures:
@@ -4753,7 +5487,8 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
             cell: dict[str, object] = {"architecture": architecture, "model": model_id}
             try:
                 resolved_model = resolve_benchmark_model(
-                    model_id, model_root=model_root,
+                    model_id,
+                    model_root=model_root,
                 )
             except PatchCampaignError as exc:
                 cell.update(status="skipped", reason=f"model resolution failed: {exc}")
@@ -4761,7 +5496,9 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
                 continue
             try:
                 device_ids = resolve_device_pool(
-                    device_map, architecture, resolved_model.device_count,
+                    device_map,
+                    architecture,
+                    resolved_model.device_count,
                 )
             except PatchCampaignError as exc:
                 cell.update(status="skipped", reason=str(exc))
@@ -4778,23 +5515,31 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
             env_overrides = {"HIP_VISIBLE_DEVICES": ",".join(device_ids)}
             visibility = require_device_visibility(
                 context=f"performance-benchmark {architecture}/{model_id}",
-                env=env_overrides, exact_count=resolved_model.device_count,
+                env=env_overrides,
+                exact_count=resolved_model.device_count,
             )
             execution_identity = attestation.ExecutionIdentity(
-                backend="ROCm", architectures=(architecture,) * resolved_model.device_count,
+                backend="ROCm",
+                architectures=(architecture,) * resolved_model.device_count,
             )
             executor_func = BENCHMARK_EXECUTOR_FUNCS[wiring.executor]
             outcome = executor_func(
-                control_binary=control_binary, subject_binary=subject_binary,
-                model=resolved_model.path, hip_path=args.hip_path,
-                patch_args=wiring.patch_args, runtime_args=resolved_model.runtime_args,
+                control_binary=control_binary,
+                subject_binary=subject_binary,
+                model=resolved_model.path,
+                hip_path=args.hip_path,
+                patch_args=wiring.patch_args,
+                runtime_args=resolved_model.runtime_args,
                 pairs=args.bench_repetitions,
                 log_context=f"performance-benchmark {architecture}/{model_id}",
-                env_overrides=env_overrides, execution_identity=execution_identity,
+                env_overrides=env_overrides,
+                execution_identity=execution_identity,
             )
             cell.update(
-                status="executed", device_visibility=visibility.document(),
-                commands=outcome.commands, raw_logs=outcome.raw_logs,
+                status="executed",
+                device_visibility=visibility.document(),
+                commands=outcome.commands,
+                raw_logs=outcome.raw_logs,
                 metrics={
                     workload: {"stats": run.stats, "runs": list(run.runs)}
                     for workload, run in outcome.runs.items()
@@ -4803,8 +5548,10 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
             cells.append(cell)
 
     performance_doc = {
-        "patch_id": descriptor.patch_id, "executor": wiring.executor,
-        "architectures": list(architectures), "models": list(model_ids),
+        "patch_id": descriptor.patch_id,
+        "executor": wiring.executor,
+        "architectures": list(architectures),
+        "models": list(model_ids),
         "cells": cells,
     }
     performance_path = args.workdir / "performance-matrix.json"
@@ -4834,27 +5581,33 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
 _QUALIFICATION_EVIDENCE_SCHEMA_VERSION = 1
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-_REQUIRED_BUILD_IDENTITY_KEYS = frozenset({
-    "effective_build_id",
-    "compile_verification_id",
-    "compile_commands_digest",
-    "hip_compile_commands_digest",
-    "runtime_bundle_hash",
-    "runtime_artifacts",
-})
+_REQUIRED_BUILD_IDENTITY_KEYS = frozenset(
+    {
+        "effective_build_id",
+        "compile_verification_id",
+        "compile_commands_digest",
+        "hip_compile_commands_digest",
+        "runtime_bundle_hash",
+        "runtime_artifacts",
+    }
+)
 
-_REQUIRED_SOURCE_IDENTITY_KEYS = frozenset({
-    "resolved_revision",
-    "source_tree",
-    "composition",
-})
+_REQUIRED_SOURCE_IDENTITY_KEYS = frozenset(
+    {
+        "resolved_revision",
+        "source_tree",
+        "composition",
+    }
+)
 
-_RAW_EVIDENCE_KINDS = frozenset({
-    "benchmark_raw",
-    "correctness_raw",
-    "logits_raw",
-    "trigger_raw",
-})
+_RAW_EVIDENCE_KINDS = frozenset(
+    {
+        "benchmark_raw",
+        "correctness_raw",
+        "logits_raw",
+        "trigger_raw",
+    }
+)
 
 
 def _canonical_json(value: object, *, label: str) -> str:
@@ -4935,7 +5688,9 @@ def make_qualification_execution(
     if not name:
         raise PatchCampaignError("qualification execution name must be non-empty")
     if not role:
-        raise PatchCampaignError(f"qualification execution {name!r}: role must be non-empty")
+        raise PatchCampaignError(
+            f"qualification execution {name!r}: role must be non-empty"
+        )
 
     argv = tuple(str(arg) for arg in command)
     if not argv:
@@ -4944,9 +5699,9 @@ def make_qualification_execution(
     # HIP/ROCR selector state is identity-relevant even when one is explicitly
     # absent.  Recording only HIP_VISIBLE_DEVICES would lose the double-filter
     # condition that has caused real invalid runs in this project.
-    missing_selector_keys = {
-        "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"
-    } - set(selector_env)
+    missing_selector_keys = {"HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES"} - set(
+        selector_env
+    )
     if missing_selector_keys:
         raise PatchCampaignError(
             f"qualification execution {name!r}: selector_env missing "
@@ -5015,10 +5770,7 @@ def bind_qualification_raw_artifact(
 
     digest = _sha256_file(source)
     safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", source.name)
-    target = (
-        run_dir / "artifacts" / "raw" /
-        f"{kind}-{digest[:16]}-{safe_name}"
-    )
+    target = run_dir / "artifacts" / "raw" / f"{kind}-{digest[:16]}-{safe_name}"
     target.parent.mkdir(parents=True, exist_ok=True)
 
     if target.exists():
@@ -5130,7 +5882,9 @@ def _qualification_manifest_digest(
 ) -> str:
     payload = manifest.document(include_manifest_sha256=False)
     return hashlib.sha256(
-        _canonical_json(payload, label="qualification evidence manifest").encode("utf-8")
+        _canonical_json(payload, label="qualification evidence manifest").encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -5217,17 +5971,13 @@ def build_qualification_evidence_manifest(
     # the parsed checker output; require at least one of those two.
     artifact_kinds = {a.kind for a in artifacts_t}
     if "benchmark_raw" not in artifact_kinds:
-        raise PatchCampaignError(
-            "qualification manifest has no benchmark_raw artifact"
-        )
+        raise PatchCampaignError("qualification manifest has no benchmark_raw artifact")
     if not ({"correctness_raw", "logits_raw"} & artifact_kinds):
         raise PatchCampaignError(
             "qualification manifest has no correctness_raw/logits_raw artifact"
         )
     if "trigger_raw" not in artifact_kinds:
-        raise PatchCampaignError(
-            "qualification manifest has no trigger_raw artifact"
-        )
+        raise PatchCampaignError("qualification manifest has no trigger_raw artifact")
 
     known_executions = set(execution_names)
     for artifact in artifacts_t:
@@ -5311,8 +6061,7 @@ def validate_qualification_evidence_manifest(
 
     if manifest.schema_version != _QUALIFICATION_EVIDENCE_SCHEMA_VERSION:
         raise PatchCampaignError(
-            f"unsupported qualification evidence schema "
-            f"{manifest.schema_version!r}"
+            f"unsupported qualification evidence schema {manifest.schema_version!r}"
         )
     if manifest.contract_id != contract.id:
         raise PatchCampaignError(
@@ -5350,9 +6099,7 @@ def validate_qualification_evidence_manifest(
     for artifact in manifest.artifacts:
         path = run_dir / artifact.path
         if not path.is_file():
-            raise PatchCampaignError(
-                f"bound qualification artifact is missing: {path}"
-            )
+            raise PatchCampaignError(f"bound qualification artifact is missing: {path}")
         if path.stat().st_size != artifact.size_bytes:
             raise PatchCampaignError(
                 f"bound qualification artifact size changed: {path}"
@@ -5365,7 +6112,10 @@ def validate_qualification_evidence_manifest(
 
 
 def _lane_effect_from_pct_deltas(
-    *, role: str, metric: str, pct_deltas: list[float],
+    *,
+    role: str,
+    metric: str,
+    pct_deltas: list[float],
 ) -> "experiment_contract.LaneEffect":
     """Binds real, already-measured per-round percentage deltas (the shape
     manually-run paired llama-bench campaigns report, e.g. patches
@@ -5381,7 +6131,9 @@ def _lane_effect_from_pct_deltas(
     from bigcherry.experiment import contract as experiment_contract
 
     if not pct_deltas:
-        raise PatchCampaignError("_lane_effect_from_pct_deltas: pct_deltas must be non-empty")
+        raise PatchCampaignError(
+            "_lane_effect_from_pct_deltas: pct_deltas must be non-empty"
+        )
     ratios = tuple(1.0 + (delta / 100.0) for delta in pct_deltas)
     if any(ratio <= 0 for ratio in ratios):
         raise PatchCampaignError(
@@ -5390,14 +6142,16 @@ def _lane_effect_from_pct_deltas(
     log_ratios = [math.log(ratio) for ratio in ratios]
     point_pct = 100.0 * (math.exp(statistics.mean(log_ratios)) - 1.0)
     lane = experiment_contract.LaneEffect(
-        role=role, metric=metric, geometric_effect_pct=point_pct,
-        paired_rounds=len(ratios), pair_ratios=ratios,
+        role=role,
+        metric=metric,
+        geometric_effect_pct=point_pct,
+        paired_rounds=len(ratios),
+        pair_ratios=ratios,
     )
     ci = experiment_contract.bootstrap_fixed_composite_mean([lane])
     if ci is not None:
         lane = dataclasses.replace(lane, ci95_low_pct=ci[0], ci95_high_pct=ci[1])
     return lane
-
 
 
 @dataclass(frozen=True)
@@ -5463,42 +6217,66 @@ def _build_standard_campaign_scaffold(
     verbatim from run() (PA36 sub-slice 2, dev-gpt-agent
     req_2ecda033763949a9 T2) so the generic producer path and run() share
     one owner of the five-build contract."""
-    from bigcherry.patch import source as psi # noqa: E402
+    from bigcherry.patch import source as psi  # noqa: E402
 
     control_revision, control_composition = psi.resolve_source_composition(
-        baseline_source, focal=None, base_ref=base_ref, base_repo=LLAMA_CPP_SRC,
+        baseline_source,
+        focal=None,
+        base_ref=base_ref,
+        base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        baseline_source, focal=patch_id, base_ref=base_ref, base_repo=LLAMA_CPP_SRC,
+        baseline_source,
+        focal=patch_id,
+        base_ref=base_ref,
+        base_repo=LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
-        raise RuntimeError("control and subject source plans resolved different base revisions")
+        raise RuntimeError(
+            "control and subject source plans resolved different base revisions"
+        )
     base_revision = subject_revision
     _print(f"materializing control and subject source plans @ {base_revision[:12]} ...")
     control_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "control",
-        resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "control",
+        resolved_revision=base_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
     )
     patched_src = psi.materialize_composition(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "subject",
-        resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
     )
     _print(f"control source: {control_src}")
     _print(f"subject source: {patched_src}")
     control_idempotent = psi.verify_composition_idempotent(
-        base_repo=LLAMA_CPP_SRC, source=control_src, worktree_root=worktree_root / "control",
-        resolved_revision=base_revision, composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+        source=control_src,
+        worktree_root=worktree_root / "control",
+        resolved_revision=base_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
     )
     subject_idempotent = psi.verify_composition_idempotent(
-        base_repo=LLAMA_CPP_SRC, source=patched_src, worktree_root=worktree_root / "subject",
-        resolved_revision=base_revision, composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src", requested_revision=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+        source=patched_src,
+        worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
     )
     stock_src = psi.materialize_stock_source(
-        base_repo=LLAMA_CPP_SRC, worktree_root=worktree_root / "stock", base_revision=base_revision,
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "stock",
+        base_revision=base_revision,
     )
     _print(f"stock source: {stock_src}")
 
@@ -5518,24 +6296,32 @@ def _build_standard_campaign_scaffold(
     # pure generated-from-source content, not build-mode-specific.
     generated_dir = actual_build_root / "generated"
     generate_registry(
-        source=patched_src, amdgpu_targets=amdgpu_targets, generated_dir=generated_dir,
+        source=patched_src,
+        amdgpu_targets=amdgpu_targets,
+        generated_dir=generated_dir,
     )
 
     exe = ".exe" if sys.platform == "win32" else ""
     build_env = _hip_env(hip_path)
 
     tune_extra_cmake_args = [
-        "-DGGML_HIP_AUTOTUNE=ON", "-DGGML_HIP_AUTOTUNE_RECORD=ON",
+        "-DGGML_HIP_AUTOTUNE=ON",
+        "-DGGML_HIP_AUTOTUNE_RECORD=ON",
         "-DGGML_HIP_ROUTING_TRANSFORM=ON",
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
     tune_cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
         extra_cmake_args=tune_extra_cmake_args,
     )
     tune_bin = build_tree(
-        name="tune", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        name="tune",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
         extra_cmake_args=tune_extra_cmake_args,
     )
     # HI82 item 7: refuse to hand a build to Campaign() until its actual
@@ -5547,9 +6333,13 @@ def _build_standard_campaign_scaffold(
     # reuse contract (effective_build_id/runtime_bundle_hash) rather than
     # a second, parallel identity authority -- see HI82 review history.
     tune_build_evidence = capture_completed_build_evidence(
-        actual_build_root / "tune", source_root=patched_src, architecture=amdgpu_targets,
-        binary=tune_bin / f"llama-server{exe}", extra_binaries=(tune_bin / f"llama-bench{exe}",),
-        requested_cmake_args=tune_cmake_args, build_env=build_env,
+        actual_build_root / "tune",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
+        binary=tune_bin / f"llama-server{exe}",
+        extra_binaries=(tune_bin / f"llama-bench{exe}",),
+        requested_cmake_args=tune_cmake_args,
+        build_env=build_env,
     )
     _print(
         f"tune build: {tune_build_evidence.effective_build_id[:12]} / "
@@ -5562,19 +6352,27 @@ def _build_standard_campaign_scaffold(
         f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
     ]
     replay_cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
         extra_cmake_args=replay_extra_cmake_args,
     )
     replay_bin = build_tree(
-        name="replay", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        name="replay",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
         extra_cmake_args=replay_extra_cmake_args,
     )
     replay_build_evidence = capture_completed_build_evidence(
-        actual_build_root / "replay", source_root=patched_src, architecture=amdgpu_targets,
+        actual_build_root / "replay",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
         binary=replay_bin / f"llama-server{exe}",
         extra_binaries=(replay_bin / f"llama-bench{exe}",),
-        requested_cmake_args=replay_cmake_args, build_env=build_env,
+        requested_cmake_args=replay_cmake_args,
+        build_env=build_env,
     )
     _print(
         f"replay build: {replay_build_evidence.effective_build_id[:12]} / "
@@ -5584,15 +6382,22 @@ def _build_standard_campaign_scaffold(
 
     stock_build_root = (build_root or workdir) / stock_src.name
     stock_bin = ensure_stock_baseline(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=stock_build_root, stock_src=stock_src,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=stock_build_root,
+        stock_src=stock_src,
     )
     stock_cmake_args = _full_requested_cmake_args(
-        hip_path=hip_path, amdgpu_targets=amdgpu_targets, extra_cmake_args=[],
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=[],
     )
     stock_build_evidence = capture_completed_build_evidence(
-        stock_build_root / "stock", source_root=stock_src, architecture=amdgpu_targets,
-        binary=stock_bin / f"llama-bench{exe}", requested_cmake_args=stock_cmake_args,
+        stock_build_root / "stock",
+        source_root=stock_src,
+        architecture=amdgpu_targets,
+        binary=stock_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
         build_env=build_env,
     )
     _print(
@@ -5605,14 +6410,21 @@ def _build_standard_campaign_scaffold(
     # it is not merely a recorded tree next to a subject-only campaign.
     control_build_root = (build_root or workdir) / control_src.name
     control_bin = build_tree(
-        name="control", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=control_build_root, targets=["llama-server", "llama-bench"],
-        source=control_src, extra_cmake_args=[],
+        name="control",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=control_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=control_src,
+        extra_cmake_args=[],
     )
     control_build_evidence = capture_completed_build_evidence(
-        control_build_root / "control", source_root=control_src,
-        architecture=amdgpu_targets, binary=control_bin / f"llama-bench{exe}",
-        requested_cmake_args=stock_cmake_args, build_env=build_env,
+        control_build_root / "control",
+        source_root=control_src,
+        architecture=amdgpu_targets,
+        binary=control_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
     )
     _print(
         f"control build: {control_build_evidence.effective_build_id[:12]} / "
@@ -5627,8 +6439,12 @@ def _build_standard_campaign_scaffold(
     # measured RD08 lane effect with instrumentation overhead, not just the
     # patch). Built with exactly control's extra_cmake_args=[].
     validation_subject_bin = build_tree(
-        name="validation-subject", hip_path=hip_path, amdgpu_targets=amdgpu_targets,
-        workdir=actual_build_root, targets=["llama-server", "llama-bench"], source=patched_src,
+        name="validation-subject",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
         extra_cmake_args=[],
     )
     # GPT round 3 (req_e75c4936e2354351): capture symmetrically with
@@ -5636,12 +6452,17 @@ def _build_standard_campaign_scaffold(
     # extra_binaries) -- an asymmetric capture is not a like-for-like
     # comparison even when the underlying build tree is parity.
     validation_subject_build_evidence = capture_completed_build_evidence(
-        actual_build_root / "validation-subject", source_root=patched_src,
-        architecture=amdgpu_targets, binary=validation_subject_bin / f"llama-bench{exe}",
-        requested_cmake_args=stock_cmake_args, build_env=build_env,
+        actual_build_root / "validation-subject",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
+        binary=validation_subject_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
     )
     assert_validation_subject_parity(
-        control_build_evidence, validation_subject_build_evidence, patch_id=patch_id,
+        control_build_evidence,
+        validation_subject_build_evidence,
+        patch_id=patch_id,
     )
     _print(
         f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
@@ -5672,7 +6493,6 @@ def _build_standard_campaign_scaffold(
     )
 
 
-
 def run(args: argparse.Namespace) -> int:
     import os
 
@@ -5693,11 +6513,14 @@ def run(args: argparse.Namespace) -> int:
     )
 
     sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry.patch import source as psi # noqa: E402
-    from bigcherry.patch import registry as patch_registry, validation as patch_validation
-    from bigcherry.patch import validation_policy as patch_validation_policy # noqa: E402
-    from bigcherry.core import paths as bc_paths # noqa: E402
-    from bigcherry.core import config as campaign_config # noqa: E402
+    from bigcherry.patch import source as psi  # noqa: E402
+    from bigcherry.patch import (
+        registry as patch_registry,
+        validation as patch_validation,
+    )
+    from bigcherry.patch import validation_policy as patch_validation_policy  # noqa: E402
+    from bigcherry.core import paths as bc_paths  # noqa: E402
+    from bigcherry.core import config as campaign_config  # noqa: E402
 
     registry = patch_registry.load_registry(bc_paths.PATCHES)
     descriptor = registry.get(args.patch)
@@ -5723,10 +6546,13 @@ def run(args: argparse.Namespace) -> int:
     # ever producing real evidence tied to a check, regardless of any
     # lint-side structural-grandfather exemption).
     validation_plan = patch_validation_policy.require_execution_package(
-        descriptor, root=bc_paths.PATCHES,
+        descriptor,
+        root=bc_paths.PATCHES,
     )
     if validation_plan is not None:
-        _print(f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}")
+        _print(
+            f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}"
+        )
 
     if getattr(args, "framework_configuration", False):
         return _run_framework_configuration(args, descriptor, cfg)
@@ -5746,9 +6572,14 @@ def run(args: argparse.Namespace) -> int:
     # shared with the generic standard_campaign="run" producer path. Local
     # aliases below keep the rest of run() structurally unchanged.
     scaffold = _build_standard_campaign_scaffold(
-        patch_id=args.patch, base_ref=cfg.pinned, baseline_source=baseline_source,
-        hip_path=args.hip_path, amdgpu_targets=args.amdgpu_targets,
-        workdir=workdir, worktree_root=worktree_root, build_root=args.build_root,
+        patch_id=args.patch,
+        base_ref=cfg.pinned,
+        baseline_source=baseline_source,
+        hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets,
+        workdir=workdir,
+        worktree_root=worktree_root,
+        build_root=args.build_root,
     )
     base_revision = scaffold.base_revision
     control_composition = scaffold.control_composition
@@ -5772,10 +6603,10 @@ def run(args: argparse.Namespace) -> int:
     validation_subject_build_evidence = scaffold.validation_subject_build_evidence
     exe = ".exe" if sys.platform == "win32" else ""
 
-
-
     from bigcherry.e2e_smoke_campaign import (  # noqa: E402
-        Campaign, CampaignError, CampaignIdentityContext,
+        Campaign,
+        CampaignError,
+        CampaignIdentityContext,
     )
 
     # Hoisted: HI83's evidence record (below) needs the same values.
@@ -5804,7 +6635,8 @@ def run(args: argparse.Namespace) -> int:
         stock_bench=stock_bin / f"llama-bench{exe}",
         tune_bench=tune_bin / f"llama-bench{exe}",
         replay_bench=replay_bin / f"llama-bench{exe}",
-        bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
+        bench_prompt=args.bench_prompt,
+        bench_gen=args.bench_gen,
         bench_repetitions=args.bench_repetitions,
         identity_context=identity_context,
     )
@@ -5821,7 +6653,8 @@ def run(args: argparse.Namespace) -> int:
     trace_description = args.trace_description
     if validation_plan is not None:
         trace_specs = tuple(
-            spec for spec in validation_plan.checks
+            spec
+            for spec in validation_plan.checks
             if spec.capability == "activation" and spec.validator == "trace-marker"
         )
         if len(trace_specs) > 1:
@@ -5834,7 +6667,10 @@ def run(args: argparse.Namespace) -> int:
                 raise PatchCampaignError(
                     f"{args.patch}: trace-marker activation check has no marker-regex"
                 )
-            if trace_marker_regex is not None and trace_marker_regex != configured_marker:
+            if (
+                trace_marker_regex is not None
+                and trace_marker_regex != configured_marker
+            ):
                 raise PatchCampaignError(
                     f"{args.patch}: CLI trace marker conflicts with validation.toml"
                 )
@@ -5860,11 +6696,19 @@ def run(args: argparse.Namespace) -> int:
     # gfx1100 GPUs. RD73's own authoritative activation evidence comes
     # from evaluate_rd73_activation_evidence() inside
     # run_rd73_contract_qualification().
-    trace_result = None if (args.run_rd08_contract or args.run_rd73_contract) else run_trace_activation_probes(
-        marker_regex=trace_marker_regex, description=trace_description,
-        binary=tune_bin / f"llama-bench{exe}", model=args.model,
-        hip_path=args.hip_path, workdir=workdir / "campaign",
-        bench_prompt=args.bench_prompt, bench_gen=args.bench_gen,
+    trace_result = (
+        None
+        if (args.run_rd08_contract or args.run_rd73_contract)
+        else run_trace_activation_probes(
+            marker_regex=trace_marker_regex,
+            description=trace_description,
+            binary=tune_bin / f"llama-bench{exe}",
+            model=args.model,
+            hip_path=args.hip_path,
+            workdir=workdir / "campaign",
+            bench_prompt=args.bench_prompt,
+            bench_gen=args.bench_gen,
+        )
     )
     # VA11A: real bound trace_evidence for ValidationContext (was {}
     # unconditionally, which made _builtin_trace_marker always BLOCKED --
@@ -5882,13 +6726,17 @@ def run(args: argparse.Namespace) -> int:
         # this without changing the trace-probe mechanism.
         activation_verdict = verdict(activation_evidence, correctness_passed=None)
         write_activation_json(
-            workdir / "campaign" / "activation.json", activation_evidence, activation_verdict,
+            workdir / "campaign" / "activation.json",
+            activation_evidence,
+            activation_verdict,
             extra={
                 "campaign_identity_digest": campaign.campaign_identity_digest,
                 "trace_probe": trace_detail,
             },
         )
-        _print(f"activation: {activation_evidence.status} ({activation_evidence.mechanism})")
+        _print(
+            f"activation: {activation_evidence.status} ({activation_evidence.mechanism})"
+        )
 
         def _bind_existing(relative_log_path: str) -> dict[str, str]:
             target = (workdir / "campaign" / relative_log_path).resolve()
@@ -5947,7 +6795,7 @@ def run(args: argparse.Namespace) -> int:
     # deferred). A campaign with no correctness evidence and/or no
     # activation probe for this patch still writes a real record; it is
     # simply not eligible_for_validated_state.
-    from bigcherry.patch import evidence as patch_validation_evidence # noqa: E402
+    from bigcherry.patch import evidence as patch_validation_evidence  # noqa: E402
 
     # cfg is loaded once, above, before source resolution -- reused here
     # (was previously loaded a second time in this exact spot, after
@@ -5975,11 +6823,13 @@ def run(args: argparse.Namespace) -> int:
         )
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
-            args.correctness_evidence, patch_id=args.patch,
+            args.correctness_evidence,
+            patch_id=args.patch,
             subject_digest=patch_validation_evidence.patch_validation_subject_digest(
                 _patch_file
             ),
-            base_revision=base_revision, patched_source_tree=patched_source_tree,
+            base_revision=base_revision,
+            patched_source_tree=patched_source_tree,
             campaign_identity_digest=campaign.campaign_identity_digest,
             gpu_architectures=(args.amdgpu_targets,),
         )
@@ -5998,11 +6848,13 @@ def run(args: argparse.Namespace) -> int:
             "architecture": args.amdgpu_targets,
             "options": control_build_evidence.effective_configure,
             "compile_commands": _write_bound_artifact(
-                campaign_run_dir, "build/control-compile-commands.json",
+                campaign_run_dir,
+                "build/control-compile-commands.json",
                 control_build_evidence.verification.to_dict(),
             ),
             "runtime_bundle": _write_bound_artifact(
-                campaign_run_dir, "build/control-runtime-bundle.json",
+                campaign_run_dir,
+                "build/control-runtime-bundle.json",
                 control_build_evidence.runtime_artifacts,
             ),
         },
@@ -6012,28 +6864,40 @@ def run(args: argparse.Namespace) -> int:
             "architecture": args.amdgpu_targets,
             "options": validation_subject_build_evidence.effective_configure,
             "compile_commands": _write_bound_artifact(
-                campaign_run_dir, "build/subject-compile-commands.json",
+                campaign_run_dir,
+                "build/subject-compile-commands.json",
                 validation_subject_build_evidence.verification.to_dict(),
             ),
             "runtime_bundle": _write_bound_artifact(
-                campaign_run_dir, "build/subject-runtime-bundle.json",
+                campaign_run_dir,
+                "build/subject-runtime-bundle.json",
                 validation_subject_build_evidence.runtime_artifacts,
             ),
         },
     }
     apply_evidence = {
         "control": {
-            "verified": True, "idempotent": control_idempotent,
+            "verified": True,
+            "idempotent": control_idempotent,
             "artifact": _write_bound_artifact(
-                campaign_run_dir, "apply/control.json",
-                {"source_tree": control_source_tree, "composition": list(control_composition)},
+                campaign_run_dir,
+                "apply/control.json",
+                {
+                    "source_tree": control_source_tree,
+                    "composition": list(control_composition),
+                },
             ),
         },
         "subject": {
-            "verified": True, "idempotent": subject_idempotent,
+            "verified": True,
+            "idempotent": subject_idempotent,
             "artifact": _write_bound_artifact(
-                campaign_run_dir, "apply/subject.json",
-                {"source_tree": patched_source_tree, "composition": list(subject_composition)},
+                campaign_run_dir,
+                "apply/subject.json",
+                {
+                    "source_tree": patched_source_tree,
+                    "composition": list(subject_composition),
+                },
             ),
         },
     }
@@ -6051,11 +6915,7 @@ def run(args: argparse.Namespace) -> int:
             "do not also pass --run-rd08-lanes"
         )
     if args.run_rd73_contract:
-        if (
-            args.run_rd08_lanes
-            or args.run_rd08_contract
-            
-        ):
+        if args.run_rd08_lanes or args.run_rd08_contract:
             raise PatchCampaignError(
                 f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
                 "other specialized evidence-producer modes"
@@ -6079,7 +6939,9 @@ def run(args: argparse.Namespace) -> int:
             contract=rd73_contract,
             control_server_binary=control_bin / f"llama-server{exe}",
             subject_server_binary=validation_subject_bin / f"llama-server{exe}",
-            model=args.model, marker_regex=trace_marker_regex, corpus_path=args.rd73_corpus,
+            model=args.model,
+            marker_regex=trace_marker_regex,
+            corpus_path=args.rd73_corpus,
             run_dir=campaign_run_dir,
             # RV99: every measurement session already committed for this
             # patch. Under a session policy the gate aggregates these together
@@ -6107,7 +6969,9 @@ def run(args: argparse.Namespace) -> int:
         # check that succeeded.
         performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
         if rd73_qualification["correctness"].get("artifact") is not None:
-            correctness_evidence = {"artifact": rd73_qualification["correctness"]["artifact"]}
+            correctness_evidence = {
+                "artifact": rd73_qualification["correctness"]["artifact"]
+            }
         # VA23: the activation lane already ran a real positive/negative
         # marker probe; bind its bound log refs so _builtin_trace_marker()
         # can re-read and re-verify them. The validator does its own regex
@@ -6133,11 +6997,14 @@ def run(args: argparse.Namespace) -> int:
                 and not rd73_qualification["activation"]["control_hit"]
                 else "not_executed"
             ),
-            mechanism="rd73-trigger-marker", detail=f"marker={trace_marker_regex!r}",
+            mechanism="rd73-trigger-marker",
+            detail=f"marker={trace_marker_regex!r}",
         )
         activation_verdict = verdict(activation_evidence, correctness_passed=None)
         write_activation_json(
-            campaign_run_dir / "activation.json", activation_evidence, activation_verdict,
+            campaign_run_dir / "activation.json",
+            activation_evidence,
+            activation_verdict,
             extra={
                 "campaign_identity_digest": campaign.campaign_identity_digest,
                 "rd73_trigger": {
@@ -6157,11 +7024,14 @@ def run(args: argparse.Namespace) -> int:
             "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
                 _patch_file
             ),
-            "base_revision": base_revision, "patched_source_tree": patched_source_tree,
+            "base_revision": base_revision,
+            "patched_source_tree": patched_source_tree,
             "campaign_identity_digest": campaign.campaign_identity_digest,
             "gpu_architectures": [args.amdgpu_targets],
             "disposition": (
-                "passed" if rd73_qualification["correctness_gate"].get("passed") else "failed"
+                "passed"
+                if rd73_qualification["correctness_gate"].get("passed")
+                else "failed"
             ),
             "mechanism": "rd73-mtp-bit-identical",
             "detail": (
@@ -6178,7 +7048,6 @@ def run(args: argparse.Namespace) -> int:
             f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
         )
 
-
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -6187,7 +7056,8 @@ def run(args: argparse.Namespace) -> int:
         # custom check would fail closed for every packaged RD patch).
         package_root = (
             (registry.root / descriptor.package_root)
-            if descriptor.package_root is not None else {}
+            if descriptor.package_root is not None
+            else {}
         )
         # VA15 real-hardware finding: validation_plan.contract is a
         # patch_validation.ContractBinding -- a lightweight PROJECTION
@@ -6200,14 +7070,19 @@ def run(args: argparse.Namespace) -> int:
         # source of ValidationContext's plural contracts/contract_hashes
         # below -- loaded once, before the context is constructed.
         full_contract = (
-            rd08_contract if rd08_qualification is not None
+            rd08_contract
+            if rd08_qualification is not None
             else patch_validation.load_contract_for_descriptor(descriptor)
         )
         validation_ctx = patch_validation.ValidationContext(
-            descriptor=descriptor, base_revision=base_revision,
-            control_source=control_src, subject_source=patched_src, stock_source=stock_src,
+            descriptor=descriptor,
+            base_revision=base_revision,
+            control_source=control_src,
+            subject_source=patched_src,
+            stock_source=stock_src,
             package_root=package_root,
-            control_tree=control_source_tree, subject_tree=patched_source_tree,
+            control_tree=control_source_tree,
+            subject_tree=patched_source_tree,
             # GPT round 3: RD58's real build check must be evaluated
             # against ITS test-save-load-state builds, not the generic
             # llama-bench builds the final record no longer identifies it
@@ -6218,22 +7093,29 @@ def run(args: argparse.Namespace) -> int:
             },
             build_evidence=build_evidence,
             apply_evidence=apply_evidence,
-            architecture=args.amdgpu_targets, model=str(args.model),
+            architecture=args.amdgpu_targets,
+            model=str(args.model),
             contracts=(full_contract,) if full_contract is not None else (),
             contract_hashes=(
                 {full_contract.id: full_contract.contract_hash}
-                if full_contract is not None else {}
+                if full_contract is not None
+                else {}
             ),
             run_dir=campaign_run_dir,
-            register_artifact=patch_validation.make_default_register_artifact(campaign_run_dir),
-            trace_evidence=trace_evidence, correctness_evidence=correctness_evidence,
+            register_artifact=patch_validation.make_default_register_artifact(
+                campaign_run_dir
+            ),
+            trace_evidence=trace_evidence,
+            correctness_evidence=correctness_evidence,
             performance_evidence=performance_evidence,
         )
         evaluated = {
             spec.check_id: patch_validation.evaluate_check(spec, validation_ctx)
             for spec in validation_plan.checks
         }
-        validation_verdict = patch_validation.compute_verdict(validation_plan, evaluated)
+        validation_verdict = patch_validation.compute_verdict(
+            validation_plan, evaluated
+        )
         # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
         # test-save-load-state evidence produces a named
         # state_restore_integrity CorrectnessResult -- thread it through
@@ -6243,14 +7125,16 @@ def run(args: argparse.Namespace) -> int:
         contract_correctness_gate = compute_contract_correctness_gate(
             full_contract,
             (
-                rd08_qualification["correctness"]["results"] if rd08_qualification is not None
+                rd08_qualification["correctness"]["results"]
+                if rd08_qualification is not None
+                # VA23: RD73's bit_identical result is real and already
+                # evaluated inside run_rd73_contract_qualification(); thread
+                # it here exactly as RD08's, so the gate
+                # reflects the evidence instead of reporting missing_checks.
                 else (
-                    # VA23: RD73's bit_identical result is real and already
-                    # evaluated inside run_rd73_contract_qualification(); thread
-                    # it here exactly as RD08's, so the gate
-                    # reflects the evidence instead of reporting missing_checks.
                     rd73_qualification["correctness_named_results"]
-                    if rd73_qualification is not None else {}
+                    if rd73_qualification is not None
+                    else {}
                 )
             ),
         )
@@ -6265,7 +7149,9 @@ def run(args: argparse.Namespace) -> int:
                 "artifact": rd08_qualification["artifact"],
             }
         if contract_correctness_gate is not None:
-            validation_check_results["_contract_correctness_gate"] = contract_correctness_gate
+            validation_check_results["_contract_correctness_gate"] = (
+                contract_correctness_gate
+            )
             _print(
                 f"contract correctness gate: "
                 f"{'passed' if contract_correctness_gate.get('passed') else contract_correctness_gate.get('status', 'not passed')}"
@@ -6275,17 +7161,26 @@ def run(args: argparse.Namespace) -> int:
             f"({len(validation_verdict.reasons)} blocking reasons)"
         )
 
-    validation_contracts, validation_contract_verdicts = build_contract_evidence_for_persistence(
-        validation_plan.contracts if validation_plan is not None else (), contract_promotions,
+    validation_contracts, validation_contract_verdicts = (
+        build_contract_evidence_for_persistence(
+            validation_plan.contracts if validation_plan is not None else (),
+            contract_promotions,
+        )
     )
 
     validation_record = patch_validation_evidence.make_record(
-        patch_id=args.patch, patch_path=_patch_file,
-        patch_implementation_digest=patch_digest, base_ref=cfg.pinned,
-        base_revision=base_revision, framework_baseline_digest=psi.composition_digest(subject_composition),
-        patched_source_tree=patched_source_tree, gpu_architectures=args.amdgpu_targets,
-        activation_evidence=activation_evidence, activation_disposition=activation_verdict,
-        correctness=correctness_summary, campaign_identity_digest=campaign.campaign_identity_digest,
+        patch_id=args.patch,
+        patch_path=_patch_file,
+        patch_implementation_digest=patch_digest,
+        base_ref=cfg.pinned,
+        base_revision=base_revision,
+        framework_baseline_digest=psi.composition_digest(subject_composition),
+        patched_source_tree=patched_source_tree,
+        gpu_architectures=args.amdgpu_targets,
+        activation_evidence=activation_evidence,
+        activation_disposition=activation_verdict,
+        correctness=correctness_summary,
+        campaign_identity_digest=campaign.campaign_identity_digest,
         build_identities=identity_context.build_identities,
         # VA07: real validation-build domain, distinct from the campaign
         # {tune,replay,stock} domain above. subject is intentionally the
@@ -6296,9 +7191,9 @@ def run(args: argparse.Namespace) -> int:
         # test-save-load-state, not the generic llama-bench control/
         # validation-subject builds -- record ITS identities when RD58 ran.
         validation_build_identities={
-                "control": control_build_evidence.campaign_identity(),
-                "subject": validation_subject_build_evidence.campaign_identity(),
-            },
+            "control": control_build_evidence.campaign_identity(),
+            "subject": validation_subject_build_evidence.campaign_identity(),
+        },
         campaign_workdir=workdir / "campaign",
         check_results=validation_check_results,
         # VA14 final slice: eligible_for_validated_state for a bound-contract
@@ -6311,23 +7206,36 @@ def run(args: argparse.Namespace) -> int:
         # can no longer report eligible for a record the evidence verifier
         # rejects. See compute_persisted_validation_eligible()'s docstring.
         validation_eligible=compute_persisted_validation_eligible(
-            _descriptor, validation_verdict, contract_promotions,
-            activation_disposition=activation_verdict, correctness=correctness_summary,
+            _descriptor,
+            validation_verdict,
+            contract_promotions,
+            activation_disposition=activation_verdict,
+            correctness=correctness_summary,
         ),
         # RV99: persist the measurements, not only the verdict derived from
         # them, so an interval can be re-derived and sessions aggregated from
         # committed evidence alone.
         lane_effects=collect_lane_effect_records(
-            rd08_qualification=rd08_qualification, rd73_qualification=rd73_qualification,
+            rd08_qualification=rd08_qualification,
+            rd73_qualification=rd73_qualification,
         ),
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contracts=validation_contracts,
         contract_verdicts=validation_contract_verdicts,
-        baseline_composition={"source": baseline_source, "base_revision": base_revision,
-                              "patches": list(control_composition)},
-        control_composition={"base_revision": base_revision, "patches": list(control_composition)},
-        subject_composition={"base_revision": base_revision, "patches": list(subject_composition)},
+        baseline_composition={
+            "source": baseline_source,
+            "base_revision": base_revision,
+            "patches": list(control_composition),
+        },
+        control_composition={
+            "base_revision": base_revision,
+            "patches": list(control_composition),
+        },
+        subject_composition={
+            "base_revision": base_revision,
+            "patches": list(subject_composition),
+        },
         control_tree=control_source_tree,
         subject_tree=patched_source_tree,
         stock_tree=psi.git_worktree_tree(stock_src),
@@ -6344,115 +7252,155 @@ def run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
-    parser.add_argument("--patch", required=True,
-                         help="patch module name under patches/")
     parser.add_argument(
-        "--framework-configuration", action="store_true", default=False,
+        "--patch", required=True, help="patch module name under patches/"
+    )
+    parser.add_argument(
+        "--framework-configuration",
+        action="store_true",
+        default=False,
         help="run the explicit schema-5 local framework-configuration build path",
     )
-    parser.add_argument("--baseline-source", default="bigcherry",
-                         help="explicit named source composition for CONTROL; SUBJECT adds "
-                              "only the focal patch. The focal must be absent from this "
-                              "baseline; dependencies/conflicts remain enforced.")
+    parser.add_argument(
+        "--baseline-source",
+        default="bigcherry",
+        help="explicit named source composition for CONTROL; SUBJECT adds "
+        "only the focal patch. The focal must be absent from this "
+        "baseline; dependencies/conflicts remain enforced.",
+    )
     parser.add_argument("--model", type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
     parser.add_argument(
-        "--amdgpu-targets", default=None,
+        "--amdgpu-targets",
+        default=None,
         help="e.g. gfx1100 or gfx1201 -- required for every mode EXCEPT "
-             "--run-performance-benchmark, which resolves its own architecture list "
-             "(--benchmark-architecture or the recipes/validation-architectures "
-             "intersection) per cell.",
+        "--run-performance-benchmark, which resolves its own architecture list "
+        "(--benchmark-architecture or the recipes/validation-architectures "
+        "intersection) per cell.",
     )
     parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--workdir", required=True, type=Path,
-                         help="per-run campaign output (record/tune/promote/replay/bench/report)")
-    parser.add_argument("--build-root", type=Path, default=None,
-                         help="shared build-tree location (tune/replay/stock), reused across "
-                              "multiple patch+model runs on this machine+arch; defaults to "
-                              "--workdir (no reuse) if omitted")
-    parser.add_argument("--worktree-root", type=Path, default=Path(r"C:\bc-worktrees")
-                         if sys.platform == "win32" else Path.home() / "bc-worktrees",
-                         help="content-addressed isolated source worktrees "
-                              "(patch_source_isolation.py, HI82) live here, one per "
-                              "(base_revision, patch, framework-baseline) identity")
+    parser.add_argument(
+        "--workdir",
+        required=True,
+        type=Path,
+        help="per-run campaign output (record/tune/promote/replay/bench/report)",
+    )
+    parser.add_argument(
+        "--build-root",
+        type=Path,
+        default=None,
+        help="shared build-tree location (tune/replay/stock), reused across "
+        "multiple patch+model runs on this machine+arch; defaults to "
+        "--workdir (no reuse) if omitted",
+    )
+    parser.add_argument(
+        "--worktree-root",
+        type=Path,
+        default=Path(r"C:\bc-worktrees")
+        if sys.platform == "win32"
+        else Path.home() / "bc-worktrees",
+        help="content-addressed isolated source worktrees "
+        "(patch_source_isolation.py, HI82) live here, one per "
+        "(base_revision, patch, framework-baseline) identity",
+    )
     parser.add_argument("--bench-prompt", type=int, default=512)
     parser.add_argument("--bench-gen", type=int, default=128)
     parser.add_argument("--bench-repetitions", type=int, default=5)
     parser.add_argument(
-        "--trace-marker-regex", default=None,
+        "--trace-marker-regex",
+        default=None,
         help="optional generic activation marker regex; patch-specific probe configuration "
-             "stays outside the campaign orchestrator",
+        "stays outside the campaign orchestrator",
     )
     parser.add_argument(
-        "--trace-description", default=None,
+        "--trace-description",
+        default=None,
         help="human-readable description paired with --trace-marker-regex",
     )
     parser.add_argument(
-        "--correctness-evidence", type=Path, default=None,
+        "--correctness-evidence",
+        type=Path,
+        default=None,
         help="HI83: machine-readable patch-level correctness evidence bound to "
-             "this patch/source/campaign identity; without it the campaign still "
-             "runs and records evidence, but the record is not eligible for "
-             "STATE='validated'",
+        "this patch/source/campaign identity; without it the campaign still "
+        "runs and records evidence, but the record is not eligible for "
+        "STATE='validated'",
     )
     parser.add_argument(
-        "--run-rd73-contract", action="store_true", default=False,
+        "--run-rd73-contract",
+        action="store_true",
+        default=False,
         help="VA06: the RD73 full-qualification path -- activation + graph-cache resource "
-             "evidence + real paired MTP-verify performance (server harness) + decode "
-             "control + bit-identical correctness, composed via evaluate_promotion_gate(). "
-             "Populates contract_promotions for RD73 (a real PASS/FAIL/INVALID verdict is "
-             "printed) and rebinds the generic adapter's performance/correctness/trace "
-             "evidence plus the record's own activation/correctness dispositions, so a "
-             "passing run satisfies verify_validated_patch() as well as the eligibility "
-             "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
-             "RD08/RD58 execution modes. Requires --rd73-corpus.",
+        "evidence + real paired MTP-verify performance (server harness) + decode "
+        "control + bit-identical correctness, composed via evaluate_promotion_gate(). "
+        "Populates contract_promotions for RD73 (a real PASS/FAIL/INVALID verdict is "
+        "printed) and rebinds the generic adapter's performance/correctness/trace "
+        "evidence plus the record's own activation/correctness dispositions, so a "
+        "passing run satisfies verify_validated_patch() as well as the eligibility "
+        "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
+        "RD08/RD58 execution modes. Requires --rd73-corpus.",
     )
     parser.add_argument(
-        "--producer-corpus", type=Path, default=None,
+        "--producer-corpus",
+        type=Path,
+        default=None,
         help="text corpus for --validation-producer's ProducerContext.corpus "
-             "-- the generic (non-RD73-specific) analog of --rd73-corpus, "
-             "threaded into any patch-local producer that "
-             "declares a correctness check requiring a real backend-reference "
-             "corpus (e.g. 1203's RD05/RD07 backend_reference checks).",
+        "-- the generic (non-RD73-specific) analog of --rd73-corpus, "
+        "threaded into any patch-local producer that "
+        "declares a correctness check requiring a real backend-reference "
+        "corpus (e.g. 1203's RD05/RD07 backend_reference checks).",
     )
     parser.add_argument(
-        "--rd73-corpus", type=Path, default=None,
+        "--rd73-corpus",
+        type=Path,
+        default=None,
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
-             "(bench/server_completion.py's load_corpus() format).",
+        "(bench/server_completion.py's load_corpus() format).",
     )
     parser.add_argument(
-        "--run-performance-benchmark", action="store_true", default=False,
+        "--run-performance-benchmark",
+        action="store_true",
+        default=False,
         help="PVPS02: the generic paired-benchmark entry point for ANY patch whose "
-             "validation.toml wires a recognized benchmark-executor on its required "
-             "performance check -- not RD04/RD08/etc-specific. Builds one control/subject "
-             "llama-bench per applicable architecture and runs the standard (or "
-             "--benchmark-model-selected) model matrix across them. Diagnostic-only for "
-             "eligibility, same as the legacy per-patch modes -- never populates "
-             "contract_promotions. Mutually exclusive with the RD04/RD08/RD58/RD73 modes; "
-             "does NOT require --model/--manifest/--amdgpu-targets (those are for the "
-             "legacy single-architecture flow).",
+        "validation.toml wires a recognized benchmark-executor on its required "
+        "performance check -- not RD04/RD08/etc-specific. Builds one control/subject "
+        "llama-bench per applicable architecture and runs the standard (or "
+        "--benchmark-model-selected) model matrix across them. Diagnostic-only for "
+        "eligibility, same as the legacy per-patch modes -- never populates "
+        "contract_promotions. Mutually exclusive with the RD04/RD08/RD58/RD73 modes; "
+        "does NOT require --model/--manifest/--amdgpu-targets (those are for the "
+        "legacy single-architecture flow).",
     )
     parser.add_argument(
-        "--model-root", type=Path, default=None,
+        "--model-root",
+        type=Path,
+        default=None,
         help="PVPS02: host model root config/models.toml paths are relative to (e.g. "
-             "/mnt/vault/llm-models on Brutus). Required with --run-performance-benchmark.",
+        "/mnt/vault/llm-models on Brutus). Required with --run-performance-benchmark.",
     )
     parser.add_argument(
-        "--benchmark-model", action="append", default=None,
+        "--benchmark-model",
+        action="append",
+        default=None,
         help="PVPS02: a config/models.toml id to benchmark (repeatable). Omit for the "
-             "standard model set (tierM-ministral14b-q4km, tierB-qwen9b-q6k, "
-             "tierL-qwen27b-q8).",
+        "standard model set (tierM-ministral14b-q4km, tierB-qwen9b-q6k, "
+        "tierL-qwen27b-q8).",
     )
     parser.add_argument(
-        "--benchmark-architecture", action="append", default=None,
+        "--benchmark-architecture",
+        action="append",
+        default=None,
         help="PVPS02: an amdgpu target to benchmark (repeatable). Omit to default to the "
-             "intersection of config/recipes.toml's platform.linux-multi targets and the "
-             "patch's own validation-architectures.",
+        "intersection of config/recipes.toml's platform.linux-multi targets and the "
+        "patch's own validation-architectures.",
     )
     parser.add_argument(
-        "--device-map", action="append", default=None,
+        "--device-map",
+        action="append",
+        default=None,
         help="PVPS02: ARCH=ID[,ID...] (repeatable) -- the real, ordered device pool for "
-             "one architecture. Required with --run-performance-benchmark; never inferred. "
-             "Also consumed by --validation-producer (device indices there must be integers).",
+        "one architecture. Required with --run-performance-benchmark; never inferred. "
+        "Also consumed by --validation-producer (device indices there must be integers).",
     )
     parser.add_argument(
         "--validation-producer",
@@ -6460,13 +7408,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATCH/PRODUCER_ID",
         default=None,
         help="PA36-F step 5: select one patch-local validation producer "
-             "(patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
-             "and execute it through the generic execute_validation_producer() "
-             "dispatcher. Mutually exclusive with every --run-rdXX-*/--run-patchXXXX-* "
-             "legacy execution mode -- this is the non-legacy replacement path "
-             "(PA36's atomic migration sequence retires the legacy flags one at a "
-             "time). Repeatable --producer-input NAME=VALUE supplies its declared "
-             "inputs.",
+        "(patches/<patch>/validation/producer.toml's [producer.<PRODUCER_ID>]) "
+        "and execute it through the generic execute_validation_producer() "
+        "dispatcher. Mutually exclusive with every --run-rdXX-*/--run-patchXXXX-* "
+        "legacy execution mode -- this is the non-legacy replacement path "
+        "(PA36's atomic migration sequence retires the legacy flags one at a "
+        "time). Repeatable --producer-input NAME=VALUE supplies its declared "
+        "inputs.",
     )
     parser.add_argument(
         "--producer-input",
@@ -6475,8 +7423,8 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         metavar="NAME=VALUE",
         help="PA36-F step 5: one producer-declared input (repeatable). Fails closed "
-             "if the producer does not declare NAME, a required NAME is missing, or "
-             "the same NAME is given twice.",
+        "if the producer does not declare NAME, a required NAME is missing, or "
+        "the same NAME is given twice.",
     )
     args = parser.parse_args(argv)
     if args.validation_producer is not None:
@@ -6487,7 +7435,8 @@ def main(argv: list[str] | None = None) -> int:
         # of known RD flags -- a new --run-rdNN-* flag added later is caught
         # automatically, with no edit required here.
         legacy_modes = tuple(
-            name for name, value in vars(args).items()
+            name
+            for name, value in vars(args).items()
             if value
             and (
                 re.fullmatch(r"run_rd\d+.*", name)
@@ -6499,7 +7448,9 @@ def main(argv: list[str] | None = None) -> int:
                 "--validation-producer is mutually exclusive with legacy execution "
                 f"mode(s): {', '.join(sorted(legacy_modes))}"
             )
-        selector_patch, producer_id = _parse_validation_producer_selector(args.validation_producer)
+        selector_patch, producer_id = _parse_validation_producer_selector(
+            args.validation_producer
+        )
         # --patch stays required at the parser level (retiring that
         # requirement is the atomic migration sequence's job, not step 5's);
         # while it is, this just enforces it can never silently diverge from
@@ -6510,21 +7461,33 @@ def main(argv: list[str] | None = None) -> int:
                 f"component {selector_patch!r} -- do not specify a different patch twice"
             )
         provided_inputs = _parse_producer_inputs(args.producer_inputs)
-        return _run_validation_producer(args, producer_id=producer_id, provided_inputs=provided_inputs)
+        return _run_validation_producer(
+            args, producer_id=producer_id, provided_inputs=provided_inputs
+        )
     if (
         not args.framework_configuration
         and not args.run_performance_benchmark
         and (args.model is None or args.manifest is None or args.amdgpu_targets is None)
     ):
-        parser.error("runtime qualification requires --model, --manifest, and --amdgpu-targets")
+        parser.error(
+            "runtime qualification requires --model, --manifest, and --amdgpu-targets"
+        )
     if args.run_performance_benchmark:
         if args.model_root is None or not args.device_map:
-            parser.error("--run-performance-benchmark requires --model-root and --device-map")
-        if any(getattr(args, name, False) for name in (
-            "run_rd08_lanes", "run_rd08_contract",
-            "run_rd73_contract",
-        )):
-            parser.error("--run-performance-benchmark is mutually exclusive with the legacy RD modes")
+            parser.error(
+                "--run-performance-benchmark requires --model-root and --device-map"
+            )
+        if any(
+            getattr(args, name, False)
+            for name in (
+                "run_rd08_lanes",
+                "run_rd08_contract",
+                "run_rd73_contract",
+            )
+        ):
+            parser.error(
+                "--run-performance-benchmark is mutually exclusive with the legacy RD modes"
+            )
     return run(args)
 
 
