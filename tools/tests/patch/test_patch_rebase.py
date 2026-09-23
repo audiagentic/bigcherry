@@ -11,6 +11,7 @@ is never touched by these tests.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -862,3 +863,45 @@ class SourceSelectorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpstreamAbsorptionTests(unittest.TestCase):
+    """A guard already matching the pristine upstream file is absorption."""
+
+    def _probe(self, disk_text: str, texts: dict, edits) -> str:
+        from bigcherry.patch import rebase
+        from bigcherry.patcher import FilePatch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "f.cpp").write_text(disk_text, encoding="utf-8")
+            probe = rebase._probe_file_patch(
+                FilePatch(path="f.cpp", edits=tuple(edits)), root, texts,
+                context_lines=0, previous_revision=None, revision="r",
+            )
+            return rebase._classify_files([probe])
+
+    def _edit(self, eid: str, old: str, new: str):
+        from bigcherry.patcher import Edit
+        return Edit(id=eid, anchor=re.escape(old), rationale="t", mode="replace",
+                    text=new, guard=re.escape(new))
+
+    def test_all_edits_already_upstream_is_absorbed(self):
+        from bigcherry.patch import rebase
+        status = self._probe("int b = 2;\n", {}, [self._edit("e", "int a = 1;", "int b = 2;")])
+        self.assertEqual(status, rebase.STATUS_UPSTREAM_ABSORBED)
+
+    def test_partial_upstream_absorption_needs_reconciliation(self):
+        from bigcherry.patch import rebase
+        status = self._probe(
+            "int b = 2;\nint c = 3;\n", {},
+            [self._edit("e1", "int a = 1;", "int b = 2;"), self._edit("e2", "int c = 3;", "int d = 4;")],
+        )
+        self.assertEqual(status, rebase.STATUS_FAILED)
+
+    def test_guard_present_only_from_an_earlier_patch_is_not_absorbed(self):
+        from bigcherry.patch import rebase
+        status = self._probe(
+            "int a = 1;\n", {"f.cpp": "int b = 2;\n"},
+            [self._edit("e", "int a = 1;", "int b = 2;")],
+        )
+        self.assertEqual(status, rebase.STATUS_CLEAN_NOOP)

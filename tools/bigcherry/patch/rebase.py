@@ -66,8 +66,14 @@ STATUS_NOT_APPLICABLE = "NOT_APPLICABLE_BY_DESIGN"
 STATUS_FAILED = "FAILED_NEEDS_RECONCILIATION"
 STATUS_BLOCKED = "BLOCKED_BY_DEPENDENCY"
 STATUS_QUARANTINED = "QUARANTINED"
+# The pristine upstream source already contains this patch's output: upstream
+# absorbed it (merged PR or equivalent change). A hard stop -- the patch must
+# be retired/superseded through a lifecycle decision, never silently skipped.
+STATUS_UPSTREAM_ABSORBED = "UPSTREAM_ABSORBED"
 
-_FAILURE_STATUSES = (STATUS_FAILED, STATUS_BLOCKED, STATUS_QUARANTINED)
+_FAILURE_STATUSES = (
+    STATUS_FAILED, STATUS_BLOCKED, STATUS_QUARANTINED, STATUS_UPSTREAM_ABSORBED,
+)
 
 # --- edit-level status ----------------------------------------------------
 EDIT_APPLIED = "applied-clean"
@@ -83,6 +89,7 @@ REASON_ANCHOR_SPAN_TOO_WIDE = "anchor-span-too-wide"
 REASON_INVALID_ANCHOR_REGEX = "invalid-anchor-regex"
 REASON_UNSAFE_TARGET = "unsafe-target"
 REASON_OTHER = "other-patch-error"
+REASON_UPSTREAM_PRESENT = "upstream-already-contains-output"
 
 _MATCH_COUNT_RE = re.compile(r"matched (\d+) time\(s\), expected(?: exactly)? (\d+)")
 _SPAN_RE = re.compile(r"matched (\d+) lines, more than the (\d+)-line limit")
@@ -533,6 +540,12 @@ class FileProbe:
         statuses = {e.status for e in self.edits}
         if EDIT_FAILED in statuses:
             return STATUS_FAILED
+        upstream = [e.reason_code == REASON_UPSTREAM_PRESENT for e in self.edits]
+        if upstream and all(upstream):
+            return STATUS_UPSTREAM_ABSORBED
+        if any(upstream):
+            # Upstream took part of this change: drop those edits (hard).
+            return STATUS_FAILED
         if statuses <= {EDIT_NOT_APPLICABLE}:
             return STATUS_NOT_APPLICABLE
         if statuses <= {EDIT_ALREADY_APPLIED}:
@@ -609,11 +622,21 @@ def _probe_file_patch(
             )
             continue
         if guard_hit:
+            # The probe worktree on disk is the pristine pin (overlay and
+            # earlier patches live only in ``texts``), so a guard hit there
+            # means upstream itself already carries this edit's output.
+            upstream_hit = target.is_file() and bool(
+                re.search(
+                    edit.guard_pattern(),
+                    target.read_text(encoding="utf-8"),
+                    re.MULTILINE,
+                )
+            )
             probe.edits.append(
                 EditProbe(
                     edit_id=edit.id,
                     status=EDIT_ALREADY_APPLIED,
-                    reason_code=None,
+                    reason_code=REASON_UPSTREAM_PRESENT if upstream_hit else None,
                     anchor=edit.anchor,
                     expect_matches=edit.expect_matches,
                     actual_matches=None,
@@ -751,6 +774,11 @@ def _classify_files(files: list[FileProbe]) -> str:
     statuses = {f.status() for f in files}
     if STATUS_FAILED in statuses:
         return STATUS_FAILED
+    if statuses == {STATUS_UPSTREAM_ABSORBED}:
+        return STATUS_UPSTREAM_ABSORBED
+    if STATUS_UPSTREAM_ABSORBED in statuses:
+        # Some files fully upstream, others still ours: partial absorption.
+        return STATUS_FAILED
     if statuses <= {STATUS_NOT_APPLICABLE}:
         return STATUS_NOT_APPLICABLE
     if statuses <= {STATUS_CLEAN_NOOP}:
@@ -836,7 +864,7 @@ def quarantine_fixed_point(
                 revision=revision,
             )
             round_probes[patch_id] = probe
-            if probe.status == STATUS_FAILED:
+            if probe.status in (STATUS_FAILED, STATUS_UPSTREAM_ABSORBED):
                 round_failed.add(patch_id)
 
         if direct_failures is None:
@@ -1056,9 +1084,13 @@ def run_rebase_check(
         "failed": sum(1 for p in ordered if p.status == STATUS_FAILED),
         "blocked_by_dependency": sum(1 for p in ordered if p.status == STATUS_BLOCKED),
         "quarantined": sum(1 for p in ordered if p.status == STATUS_QUARANTINED),
+        "upstream_absorbed": sum(
+            1 for p in ordered if p.status == STATUS_UPSTREAM_ABSORBED
+        ),
     }
     summary["reconciliation_required"] = bool(
         summary["failed"] or summary["blocked_by_dependency"] or summary["quarantined"]
+        or summary["upstream_absorbed"]
     )
 
     return {
