@@ -69,23 +69,28 @@ class StandardCampaignScaffold:
         }
 
 
-def _build_standard_campaign_scaffold(
+@dataclass(frozen=True)
+class _ScaffoldSources:
+    """Materialized control/subject/stock sources for one standard campaign."""
+
+    base_revision: str
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    control_src: Path
+    patched_src: Path
+    stock_src: Path
+    control_idempotent: bool
+    subject_idempotent: bool
+
+
+def _materialize_scaffold_sources(
     *,
     patch_id: str,
     base_ref: str,
     baseline_source: str,
-    hip_path: Path,
-    amdgpu_targets: str,
-    workdir: Path,
     worktree_root: Path,
-    build_root: Path | None,
-) -> StandardCampaignScaffold:
-    """Materialize control/subject/stock sources and build the five
-    standard campaign trees in the historical order, capturing per-build
-    evidence and asserting validation-subject/control parity. Moved
-    verbatim from run() (PA36 sub-slice 2, dev-gpt-agent
-    req_2ecda033763949a9 T2) so the generic producer path and run() share
-    one owner of the five-build contract."""
+) -> _ScaffoldSources:
+    """Resolve, materialize and idempotence-check the control/subject/stock sources."""
     from bigcherry.patch import source as psi  # noqa: E402
 
     control_revision, control_composition = psi.resolve_source_composition(
@@ -148,31 +153,32 @@ def _build_standard_campaign_scaffold(
         base_revision=base_revision,
     )
     _print(f"stock source: {stock_src}")
-
-    # Build trees are keyed by --build-root, not --workdir: build_tree()/
-    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
-    # `cmake --build` itself only recompiles what actually changed, so a
-    # build tree is still effectively reusable across runs on this
-    # machine+arch as long as its SOURCE (an isolated, content-addressed
-    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
-    # identity. --workdir (record/tune/promote/replay/bench/report output)
-    # is what needs to be fresh per patch+model.
-    actual_build_root: Path = (build_root or workdir) / patched_src.name
-
-    # One shared out-of-tree registry serves both the tune and replay builds
-    # of this same patched source -- both need it (ggml-hip/CMakeLists.txt
-    # gates on GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY), and it is
-    # pure generated-from-source content, not build-mode-specific.
-    generated_dir = actual_build_root / "generated"
-    generate_registry(
-        source=patched_src,
-        amdgpu_targets=amdgpu_targets,
-        generated_dir=generated_dir,
+    return _ScaffoldSources(
+        base_revision=base_revision,
+        control_composition=control_composition,
+        subject_composition=subject_composition,
+        control_src=control_src,
+        patched_src=patched_src,
+        stock_src=stock_src,
+        control_idempotent=control_idempotent,
+        subject_idempotent=subject_idempotent,
     )
 
-    exe = ".exe" if sys.platform == "win32" else ""
-    build_env = _hip_env(hip_path)
 
+def _build_tune_and_replay_trees(
+    *,
+    hip_path: Path,
+    amdgpu_targets: str,
+    actual_build_root: Path,
+    patched_src: Path,
+    generated_dir: Path,
+    exe: str,
+    build_env: dict[str, str],
+):
+    """Build the instrumented tune and replay trees from the patched source.
+
+    Returns (tune_bin, tune_build_evidence, replay_bin, replay_build_evidence).
+    """
     tune_extra_cmake_args = [
         "-DGGML_HIP_AUTOTUNE=ON",
         "-DGGML_HIP_AUTOTUNE_RECORD=ON",
@@ -248,7 +254,30 @@ def _build_standard_campaign_scaffold(
         f"{replay_build_evidence.runtime_bundle_hash[:12]} / "
         f"{replay_build_evidence.compile_verification_id[:12]}"
     )
+    return tune_bin, tune_build_evidence, replay_bin, replay_build_evidence
 
+
+def _build_parity_trees(
+    *,
+    patch_id: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    build_root: Path | None,
+    actual_build_root: Path,
+    sources: _ScaffoldSources,
+    exe: str,
+    build_env: dict[str, str],
+):
+    """Build the stock, control and validation-subject parity trees.
+
+    Returns (stock_bin, stock_build_evidence, control_bin,
+    control_build_evidence, validation_subject_bin,
+    validation_subject_build_evidence).
+    """
+    stock_src = sources.stock_src
+    control_src = sources.control_src
+    patched_src = sources.patched_src
     stock_build_root = (build_root or workdir) / stock_src.name
     stock_bin = ensure_stock_baseline(
         hip_path=hip_path,
@@ -337,6 +366,101 @@ def _build_standard_campaign_scaffold(
         f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
         f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
         f"{validation_subject_build_evidence.compile_verification_id[:12]}"
+    )
+    return (
+        stock_bin,
+        stock_build_evidence,
+        control_bin,
+        control_build_evidence,
+        validation_subject_bin,
+        validation_subject_build_evidence,
+    )
+
+
+def _build_standard_campaign_scaffold(
+    *,
+    patch_id: str,
+    base_ref: str,
+    baseline_source: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    worktree_root: Path,
+    build_root: Path | None,
+) -> StandardCampaignScaffold:
+    """Materialize control/subject/stock sources and build the five
+    standard campaign trees in the historical order, capturing per-build
+    evidence and asserting validation-subject/control parity. Moved
+    verbatim from run() (PA36 sub-slice 2, dev-gpt-agent
+    req_2ecda033763949a9 T2) so the generic producer path and run() share
+    one owner of the five-build contract."""
+    sources = _materialize_scaffold_sources(
+        patch_id=patch_id,
+        base_ref=base_ref,
+        baseline_source=baseline_source,
+        worktree_root=worktree_root,
+    )
+    base_revision = sources.base_revision
+    control_composition = sources.control_composition
+    subject_composition = sources.subject_composition
+    control_src = sources.control_src
+    patched_src = sources.patched_src
+    stock_src = sources.stock_src
+    control_idempotent = sources.control_idempotent
+    subject_idempotent = sources.subject_idempotent
+
+    # Build trees are keyed by --build-root, not --workdir: build_tree()/
+    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
+    # `cmake --build` itself only recompiles what actually changed, so a
+    # build tree is still effectively reusable across runs on this
+    # machine+arch as long as its SOURCE (an isolated, content-addressed
+    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
+    # identity. --workdir (record/tune/promote/replay/bench/report output)
+    # is what needs to be fresh per patch+model.
+    actual_build_root: Path = (build_root or workdir) / patched_src.name
+
+    # One shared out-of-tree registry serves both the tune and replay builds
+    # of this same patched source -- both need it (ggml-hip/CMakeLists.txt
+    # gates on GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY), and it is
+    # pure generated-from-source content, not build-mode-specific.
+    generated_dir = actual_build_root / "generated"
+    generate_registry(
+        source=patched_src,
+        amdgpu_targets=amdgpu_targets,
+        generated_dir=generated_dir,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    build_env = _hip_env(hip_path)
+
+    tune_bin, tune_build_evidence, replay_bin, replay_build_evidence = (
+        _build_tune_and_replay_trees(
+            hip_path=hip_path,
+            amdgpu_targets=amdgpu_targets,
+            actual_build_root=actual_build_root,
+            patched_src=patched_src,
+            generated_dir=generated_dir,
+            exe=exe,
+            build_env=build_env,
+        )
+    )
+    (
+        stock_bin,
+        stock_build_evidence,
+        control_bin,
+        control_build_evidence,
+        validation_subject_bin,
+        validation_subject_build_evidence,
+    ) = _build_parity_trees(
+        patch_id=patch_id,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=workdir,
+        build_root=build_root,
+        actual_build_root=actual_build_root,
+        sources=sources,
+        exe=exe,
+        build_env=build_env,
     )
     return StandardCampaignScaffold(
         base_revision=base_revision,
