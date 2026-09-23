@@ -177,7 +177,19 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
     def setUp(self) -> None:
         import inspect
 
-        self.run_source = inspect.getsource(vc.run)
+        self.run_source = "".join(
+            inspect.getsource(fn)
+            for fn in (
+                vc.run,
+                # PA43: run() delegates to these stage functions in order.
+                vc._prepare_standard_campaign,
+                vc._run_activation_probe_stage,
+                vc._collect_build_and_correctness_evidence,
+                vc._run_contract_evidence_modes,
+                vc._evaluate_validation_plan,
+                vc._persist_validation_record,
+            )
+        )
         self.impl_source = inspect.getsource(campaign_benchmark._run_performance_benchmark)
 
     def test_dispatches_before_the_legacy_single_architecture_flow(self) -> None:

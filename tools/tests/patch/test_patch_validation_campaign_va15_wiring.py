@@ -41,7 +41,19 @@ class LegacyRunPathCorrectnessGateTests(unittest.TestCase):
     the legacy run() path.)"""
 
     def setUp(self) -> None:
-        self.source = inspect.getsource(vc.run)
+        # PA43: run() delegates to stage functions; inspect the whole path.
+        self.source = "".join(
+            inspect.getsource(fn)
+            for fn in (
+                vc.run,
+                vc._prepare_standard_campaign,
+                vc._run_activation_probe_stage,
+                vc._collect_build_and_correctness_evidence,
+                vc._run_contract_evidence_modes,
+                vc._evaluate_validation_plan,
+                vc._persist_validation_record,
+            )
+        )
 
     def test_contract_correctness_gate_uses_a_real_experiment_contract_not_a_binding(self) -> None:
         # VA15 real-hardware finding (req_bc329f6ae30c4e4c follow-up):

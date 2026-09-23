@@ -40,6 +40,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 
 from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
@@ -1417,73 +1418,12 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     return 0 if record["eligible_for_validated_state"] else 1
 
 
-def run(args: argparse.Namespace) -> int:
-    import os
-
-    workdir: Path = args.workdir
-    workdir.mkdir(parents=True, exist_ok=True)
-
-    # e2e_smoke_campaign.Campaign launches llama-server via `dict(os.environ)`
-    # (this process's own environment), not through _hip_env() -- that helper
-    # only covers the cmake configure/build subprocesses above. Without the
-    # ROCm bin dir on PATH here, the HIP runtime DLLs are unresolved at
-    # process launch (Windows exit code 0xC0000135 / STATUS_DLL_NOT_FOUND --
-    # hit for real running this tool headless/backgrounded, where no
-    # interactive shell had already sourced tools/rocm-env.ps1|.sh).
-    os.environ["ROCM_PATH"] = str(args.hip_path)
-    os.environ["HIP_PATH"] = str(args.hip_path)
-    os.environ["PATH"] = os.pathsep.join(
-        [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
-    )
-
-    sys.path.insert(0, str(REPO_ROOT / "tools"))
-    from bigcherry.patch import source as psi  # noqa: E402
-    from bigcherry.patch import (
-        registry as patch_registry,
-        validation as patch_validation,
-    )
-    from bigcherry.patch import validation_policy as patch_validation_policy  # noqa: E402
-    from bigcherry.core import paths as bc_paths  # noqa: E402
-    from bigcherry.core import config as campaign_config  # noqa: E402
-
-    registry = patch_registry.load_registry(bc_paths.PATCHES)
-    descriptor = registry.get(args.patch)
-
-    # GPT round 2 (req_71217bba406f4941, VA04 real-hardware finding): the
-    # pinned ref MUST be resolved before any source materialization --
-    # the hardcoded literal "HEAD" below used to silently build against whatever
-    # the shared vendor/llama.cpp checkout's HEAD happened to be at run
-    # time, while the evidence record was later labeled base_ref=cfg.pinned
-    # regardless of whether HEAD actually matched the pin. A real RD04
-    # hardware run on Brutus resolved and built against vendor HEAD while
-    # its own evidence claimed pin b10705 -- VA08's stale-detection
-    # correctly caught the mismatch and rejected the record. cfg is loaded
-    # ONCE here and reused for evidence writing below (no duplicate load).
-    cfg = campaign_config.load(bc_paths.RECIPES)
-
-    # VA02 execution-side anti-grandfather guard (unconditional, per GPT
-    # round-5 code review req_86cfd3a0bff04716: this command IS "start a
-    # real validation run" -- there is no tracked-status branch here,
-    # because otherwise build_plan_for_patch() legitimately returning None
-    # for a patch with neither a contract nor an adapter would let this
-    # command continue straight into source materialization/build without
-    # ever producing real evidence tied to a check, regardless of any
-    # lint-side structural-grandfather exemption).
-    validation_plan = patch_validation_policy.require_execution_package(
-        descriptor,
-        root=bc_paths.PATCHES,
-    )
-    if validation_plan is not None:
-        _print(
-            f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}"
-        )
-
-    if getattr(args, "framework_configuration", False):
-        return _run_framework_configuration(args, descriptor, cfg)
-
-    if getattr(args, "run_performance_benchmark", False):
-        return _run_performance_benchmark(args, descriptor, cfg)
-
+def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. standard-campaign stage: materialize the five standard builds (via the shared
+    scaffold), bind the campaign identity and construct the S1-S7 Campaign."""
+    cfg = st.cfg
+    psi = st.psi
+    workdir = st.workdir
     worktree_root: Path = args.worktree_root
     # RV80/B6: the baseline is the source's EXPLICIT named composition from
     # config/recipes.toml (never the retired implicit state=='validated'
@@ -1570,7 +1510,37 @@ def run(args: argparse.Namespace) -> int:
     # prevents a trace probe from writing evidence into a stale/mismatched
     # campaign directory.
     campaign.ensure_campaign_identity()
+    st.CampaignError = CampaignError
+    st.base_revision = base_revision
+    st.baseline_source = baseline_source
+    st.campaign = campaign
+    st.control_bin = control_bin
+    st.control_build_evidence = control_build_evidence
+    st.control_composition = control_composition
+    st.control_idempotent = control_idempotent
+    st.control_source_tree = control_source_tree
+    st.control_src = control_src
+    st.exe = exe
+    st.identity_context = identity_context
+    st.patch_digest = patch_digest
+    st.patched_source_tree = patched_source_tree
+    st.patched_src = patched_src
+    st.stock_src = stock_src
+    st.subject_composition = subject_composition
+    st.subject_idempotent = subject_idempotent
+    st.tune_bin = tune_bin
+    st.validation_subject_bin = validation_subject_bin
+    st.validation_subject_build_evidence = validation_subject_build_evidence
 
+
+def _run_activation_probe_stage(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Activation stage: resolve the trace-marker check and run the generic
+    positive/negative trace probe, binding its logs as trace evidence."""
+    campaign = st.campaign
+    exe = st.exe
+    tune_bin = st.tune_bin
+    validation_plan = st.validation_plan
+    workdir = st.workdir
     activation_evidence = None
     activation_verdict = None
     trace_marker_regex = args.trace_marker_regex
@@ -1679,32 +1649,27 @@ def run(args: argparse.Namespace) -> int:
                 "artifact": _bind_existing(trace_detail["negative_control"]["log"]),
             },
         }
+    st.activation_evidence = activation_evidence
+    st.activation_verdict = activation_verdict
+    st.trace_evidence = trace_evidence
+    st.trace_marker_regex = trace_marker_regex
 
-    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
-    # generic S1-S7 record/tune/promote/replay/bench/report campaign is
-    # unrelated to a contract's own evidence -- lanes/correctness/
-    # trigger/promotion never consume promoted.jsonl, dispatch.cache,
-    # replay coverage, or S6/S7 results. Making that unrelated pipeline's
-    # own promotion decision (which can legitimately promote zero
-    # candidates on a real, honest run -- that is not a bug) a hard
-    # prerequisite of a contract run was itself the real bug,
-    # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
-    # above still ran, so campaign.campaign_identity_digest remains valid
-    # for the contract evidence below.
-    # (The historical --run-rd73-contract S1-S7 pipeline skip was retired
-    # with the RD73 legacy compatibility retirement; RD73's real evidence
-    # now comes from its producer via the generic path. The generic
-    # S1-S7 pipeline therefore always runs on the legacy run() path.)
-    try:
-        campaign.run()
-    except CampaignError as exc:
-        _print(f"CAMPAIGN FAILED: {exc}")
-        return 1
 
-    report_path = workdir / "campaign" / "report.md"
-    _print(f"done -- report: {report_path}")
-    print(report_path.read_text(encoding="utf-8"))
-
+def _collect_build_and_correctness_evidence(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Bind correctness, build and apply evidence for the validation record."""
+    base_revision = st.base_revision
+    campaign = st.campaign
+    control_build_evidence = st.control_build_evidence
+    control_composition = st.control_composition
+    control_idempotent = st.control_idempotent
+    control_source_tree = st.control_source_tree
+    descriptor = st.descriptor
+    patched_source_tree = st.patched_source_tree
+    registry = st.registry
+    subject_composition = st.subject_composition
+    subject_idempotent = st.subject_idempotent
+    validation_subject_build_evidence = st.validation_subject_build_evidence
+    workdir = st.workdir
     # HI83: record what this campaign proved (or didn't), tracked so
     # STATE="validated" can eventually be checked against it. This is
     # purely additive evidence production -- it does not gate anything in
@@ -1813,7 +1778,37 @@ def run(args: argparse.Namespace) -> int:
             ),
         },
     }
+    st._descriptor = _descriptor
+    st._patch_file = _patch_file
+    st.apply_evidence = apply_evidence
+    st.build_evidence = build_evidence
+    st.campaign_run_dir = campaign_run_dir
+    st.correctness_evidence = correctness_evidence
+    st.correctness_summary = correctness_summary
+    st.patch_validation_evidence = patch_validation_evidence
+    st.performance_evidence = performance_evidence
 
+
+def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
+    _patch_file = st._patch_file
+    activation_evidence = st.activation_evidence
+    activation_verdict = st.activation_verdict
+    base_revision = st.base_revision
+    campaign = st.campaign
+    campaign_run_dir = st.campaign_run_dir
+    control_bin = st.control_bin
+    correctness_evidence = st.correctness_evidence
+    correctness_summary = st.correctness_summary
+    descriptor = st.descriptor
+    exe = st.exe
+    patch_validation_evidence = st.patch_validation_evidence
+    patched_source_tree = st.patched_source_tree
+    performance_evidence = st.performance_evidence
+    trace_evidence = st.trace_evidence
+    trace_marker_regex = st.trace_marker_regex
+    validation_subject_bin = st.validation_subject_bin
+    rd73_qualification = None
     # VA14-B/VA14-final: RD08 execution, opt-in and scoped to RD08 only.
     # --run-rd08-lanes stays diagnostic-only (execution + evidence, never
     # feeds eligibility). --run-rd08-contract is the authoritative full-
@@ -1959,7 +1954,36 @@ def run(args: argparse.Namespace) -> int:
             f"rd73 promotion: "
             f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
         )
+    st.activation_evidence = activation_evidence
+    st.activation_verdict = activation_verdict
+    st.correctness_evidence = correctness_evidence
+    st.correctness_summary = correctness_summary
+    st.performance_evidence = performance_evidence
+    st.rd73_qualification = rd73_qualification
+    st.trace_evidence = trace_evidence
 
+
+def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Evaluate the declared validation plan and the contract correctness gate."""
+    apply_evidence = st.apply_evidence
+    base_revision = st.base_revision
+    build_evidence = st.build_evidence
+    campaign_run_dir = st.campaign_run_dir
+    control_build_evidence = st.control_build_evidence
+    control_source_tree = st.control_source_tree
+    control_src = st.control_src
+    correctness_evidence = st.correctness_evidence
+    descriptor = st.descriptor
+    patch_validation = st.patch_validation
+    patched_source_tree = st.patched_source_tree
+    patched_src = st.patched_src
+    performance_evidence = st.performance_evidence
+    rd73_qualification = st.rd73_qualification
+    registry = st.registry
+    stock_src = st.stock_src
+    trace_evidence = st.trace_evidence
+    validation_plan = st.validation_plan
+    validation_subject_build_evidence = st.validation_subject_build_evidence
     validation_check_results: dict[str, object] = {}
     validation_verdict = None
     if validation_plan is not None:
@@ -2070,7 +2094,37 @@ def run(args: argparse.Namespace) -> int:
             f"validation verdict: {'eligible' if validation_verdict.eligible else 'ineligible'} "
             f"({len(validation_verdict.reasons)} blocking reasons)"
         )
+    st.validation_check_results = validation_check_results
+    st.validation_verdict = validation_verdict
 
+
+def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) -> int:
+    """PA43 run() stage. Record-persistence stage: write the HI83 validation evidence record."""
+    _descriptor = st._descriptor
+    _patch_file = st._patch_file
+    activation_evidence = st.activation_evidence
+    activation_verdict = st.activation_verdict
+    base_revision = st.base_revision
+    baseline_source = st.baseline_source
+    campaign = st.campaign
+    cfg = st.cfg
+    control_build_evidence = st.control_build_evidence
+    control_composition = st.control_composition
+    control_source_tree = st.control_source_tree
+    correctness_summary = st.correctness_summary
+    identity_context = st.identity_context
+    patch_digest = st.patch_digest
+    patch_validation_evidence = st.patch_validation_evidence
+    patched_source_tree = st.patched_source_tree
+    psi = st.psi
+    rd73_qualification = st.rd73_qualification
+    stock_src = st.stock_src
+    subject_composition = st.subject_composition
+    validation_check_results = st.validation_check_results
+    validation_plan = st.validation_plan
+    validation_subject_build_evidence = st.validation_subject_build_evidence
+    validation_verdict = st.validation_verdict
+    workdir = st.workdir
     validation_contracts, validation_contract_verdicts = (
         build_contract_evidence_for_persistence(
             validation_plan.contracts if validation_plan is not None else (),
@@ -2158,6 +2212,118 @@ def run(args: argparse.Namespace) -> int:
     )
 
     return 0
+
+
+def run(args: argparse.Namespace) -> int:
+    import os
+
+    workdir: Path = args.workdir
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # e2e_smoke_campaign.Campaign launches llama-server via `dict(os.environ)`
+    # (this process's own environment), not through _hip_env() -- that helper
+    # only covers the cmake configure/build subprocesses above. Without the
+    # ROCm bin dir on PATH here, the HIP runtime DLLs are unresolved at
+    # process launch (Windows exit code 0xC0000135 / STATUS_DLL_NOT_FOUND --
+    # hit for real running this tool headless/backgrounded, where no
+    # interactive shell had already sourced tools/rocm-env.ps1|.sh).
+    os.environ["ROCM_PATH"] = str(args.hip_path)
+    os.environ["HIP_PATH"] = str(args.hip_path)
+    os.environ["PATH"] = os.pathsep.join(
+        [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
+    )
+
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from bigcherry.patch import source as psi  # noqa: E402
+    from bigcherry.patch import (
+        registry as patch_registry,
+        validation as patch_validation,
+    )
+    from bigcherry.patch import validation_policy as patch_validation_policy  # noqa: E402
+    from bigcherry.core import paths as bc_paths  # noqa: E402
+    from bigcherry.core import config as campaign_config  # noqa: E402
+
+    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    descriptor = registry.get(args.patch)
+
+    # GPT round 2 (req_71217bba406f4941, VA04 real-hardware finding): the
+    # pinned ref MUST be resolved before any source materialization --
+    # the hardcoded literal "HEAD" below used to silently build against whatever
+    # the shared vendor/llama.cpp checkout's HEAD happened to be at run
+    # time, while the evidence record was later labeled base_ref=cfg.pinned
+    # regardless of whether HEAD actually matched the pin. A real RD04
+    # hardware run on Brutus resolved and built against vendor HEAD while
+    # its own evidence claimed pin b10705 -- VA08's stale-detection
+    # correctly caught the mismatch and rejected the record. cfg is loaded
+    # ONCE here and reused for evidence writing below (no duplicate load).
+    cfg = campaign_config.load(bc_paths.RECIPES)
+
+    # VA02 execution-side anti-grandfather guard (unconditional, per GPT
+    # round-5 code review req_86cfd3a0bff04716: this command IS "start a
+    # real validation run" -- there is no tracked-status branch here,
+    # because otherwise build_plan_for_patch() legitimately returning None
+    # for a patch with neither a contract nor an adapter would let this
+    # command continue straight into source materialization/build without
+    # ever producing real evidence tied to a check, regardless of any
+    # lint-side structural-grandfather exemption).
+    validation_plan = patch_validation_policy.require_execution_package(
+        descriptor,
+        root=bc_paths.PATCHES,
+    )
+    if validation_plan is not None:
+        _print(
+            f"validation plan: {len(validation_plan.checks)} checks; required={validation_plan.required_capabilities}"
+        )
+
+    if getattr(args, "framework_configuration", False):
+        return _run_framework_configuration(args, descriptor, cfg)
+
+    if getattr(args, "run_performance_benchmark", False):
+        return _run_performance_benchmark(args, descriptor, cfg)
+
+    st = SimpleNamespace(
+        cfg=cfg,
+        descriptor=descriptor,
+        patch_validation=patch_validation,
+        psi=psi,
+        registry=registry,
+        validation_plan=validation_plan,
+        workdir=workdir,
+    )
+    _prepare_standard_campaign(args, st)
+    _run_activation_probe_stage(args, st)
+    CampaignError = st.CampaignError
+    campaign = st.campaign
+
+    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
+    # generic S1-S7 record/tune/promote/replay/bench/report campaign is
+    # unrelated to a contract's own evidence -- lanes/correctness/
+    # trigger/promotion never consume promoted.jsonl, dispatch.cache,
+    # replay coverage, or S6/S7 results. Making that unrelated pipeline's
+    # own promotion decision (which can legitimately promote zero
+    # candidates on a real, honest run -- that is not a bug) a hard
+    # prerequisite of a contract run was itself the real bug,
+    # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
+    # above still ran, so campaign.campaign_identity_digest remains valid
+    # for the contract evidence below.
+    # (The historical --run-rd73-contract S1-S7 pipeline skip was retired
+    # with the RD73 legacy compatibility retirement; RD73's real evidence
+    # now comes from its producer via the generic path. The generic
+    # S1-S7 pipeline therefore always runs on the legacy run() path.)
+    try:
+        campaign.run()
+    except CampaignError as exc:
+        _print(f"CAMPAIGN FAILED: {exc}")
+        return 1
+
+    report_path = workdir / "campaign" / "report.md"
+    _print(f"done -- report: {report_path}")
+    print(report_path.read_text(encoding="utf-8"))
+
+    _collect_build_and_correctness_evidence(args, st)
+    _run_contract_evidence_modes(args, st)
+    _evaluate_validation_plan(args, st)
+    return _persist_validation_record(args, st)
 
 
 def main(argv: list[str] | None = None) -> int:
