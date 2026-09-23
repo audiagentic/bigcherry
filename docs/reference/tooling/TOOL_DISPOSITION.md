@@ -172,6 +172,12 @@ ownership.
 | `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
+| `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **ARCHIVE** | PA36 RD04/1202 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **ARCHIVE** | PA36 RD13/1206 hardware-acceptance receipt script (gfx1030); campaign complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **ARCHIVE** | PA36 RD26/1210 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/analyze_decode_trace.py` | **TRANSITIONAL** | GP10 plan-owned analysis helper for P2P diagnostics; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/asyncprobe.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/dispatch_overhead.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
