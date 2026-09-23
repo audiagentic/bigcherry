@@ -4,7 +4,6 @@ subject parity, lane-effect records and persisted validation eligibility."""
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 
 from bigcherry.build.builds import CompletedBuildEvidence
 from bigcherry.experiment import contract as experiment_contract

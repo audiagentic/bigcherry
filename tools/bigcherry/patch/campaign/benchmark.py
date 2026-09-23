@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.patch.campaign.build import (
@@ -22,6 +23,10 @@ from bigcherry.patch.campaign.build import (
 )
 from bigcherry.patch.campaign.contract import assert_validation_subject_parity
 from bigcherry.patch.campaign.trace import _require_real_gpu_execution
+
+if TYPE_CHECKING:
+    from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.patch import registry as patch_registry
 
 
 _PAIRED_BENCH_WORKLOAD_FLAGS: dict[str, tuple[str, ...]] = {

@@ -60,6 +60,7 @@ from bigcherry.patch.validation import (
 )
 from bigcherry.patch.validation_producer import (
     FatTargetPlan,
+    JsonObject,
     ProducerBuildPair,
     ProducerContext,
     ProducerDeviceContext,
