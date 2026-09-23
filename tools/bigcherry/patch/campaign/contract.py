@@ -93,48 +93,6 @@ def assert_validation_subject_parity(
         )
 
 
-def rd08_validation_lane_commands(
-    *,
-    control_binary: Path,
-    subject_binary: Path,
-    model: Path,
-    workload: str,
-    extra_flags: tuple[str, ...] = (),
-) -> tuple[list[str], list[str]]:
-    """VA14-B: the real, minimal llama-bench command pair for one RD08 lane
-    -- control_command, subject_command -- differing only by binary path,
-    consistent with metric_for_workload()'s decode->tg128/prefill->pp512
-    mapping (decode: -p 0 -n 128; prefill: -p 512 -n 0). ``extra_flags``
-    (VA06: e.g. ("-sm", "tensor") for a multi-GPU model) is appended
-    after the workload shape/-ngl flags -- empty by default, so RD08's
-    own existing behavior is unchanged."""
-    if workload == "decode":
-        workload_flags = ["-p", "0", "-n", "128"]
-    elif workload == "prefill":
-        workload_flags = ["-p", "512", "-n", "0"]
-    else:
-        raise PatchCampaignError(
-            f"rd08 lane: no llama-bench flag mapping for workload {workload!r}"
-        )
-    control_command = [
-        str(control_binary),
-        "-m",
-        str(model),
-        *workload_flags,
-        "-ngl",
-        "99",
-        *extra_flags,
-    ]
-    subject_command = [
-        str(subject_binary),
-        "-m",
-        str(model),
-        *workload_flags,
-        "-ngl",
-        "99",
-        *extra_flags,
-    ]
-    return control_command, subject_command
 
 
 def compute_persisted_validation_eligible(
