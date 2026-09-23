@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import contract as campaign_contract  # noqa: E402
 
 
 class _FakeBinding:
@@ -28,7 +29,7 @@ class BuildContractEvidenceForPersistenceTests(unittest.TestCase):
     def test_rd08_genuine_pass_survives_persistence_unchanged(self) -> None:
         binding = _FakeBinding("RD08-Q6K-MMVQ-VDR2", "hash08")
         promotions = {"RD08-Q6K-MMVQ-VDR2": {"passed": True, "status": "pass", "reasons": []}}
-        contracts, verdicts = vc.build_contract_evidence_for_persistence((binding,), promotions)
+        contracts, verdicts = campaign_contract.build_contract_evidence_for_persistence((binding,), promotions)
         self.assertEqual(contracts, [{"id": "RD08-Q6K-MMVQ-VDR2", "hash": "hash08"}])
         self.assertEqual(verdicts["RD08-Q6K-MMVQ-VDR2"]["passed"], True)
         self.assertEqual(verdicts["RD08-Q6K-MMVQ-VDR2"]["status"], "pass")
@@ -36,7 +37,7 @@ class BuildContractEvidenceForPersistenceTests(unittest.TestCase):
 
     def test_bound_contract_with_no_promotion_gets_explicit_blocked_never_inferred_pass(self) -> None:
         binding = _FakeBinding("RD73-STABLE-GRAPH-CACHE-KEY", "hash73")
-        contracts, verdicts = vc.build_contract_evidence_for_persistence((binding,), {})
+        contracts, verdicts = campaign_contract.build_contract_evidence_for_persistence((binding,), {})
         self.assertEqual(contracts, [{"id": "RD73-STABLE-GRAPH-CACHE-KEY", "hash": "hash73"}])
         self.assertEqual(verdicts["RD73-STABLE-GRAPH-CACHE-KEY"]["passed"], False)
         self.assertEqual(verdicts["RD73-STABLE-GRAPH-CACHE-KEY"]["status"], "blocked")
@@ -46,7 +47,7 @@ class BuildContractEvidenceForPersistenceTests(unittest.TestCase):
         rd06 = _FakeBinding("RD06", "h6")
         rd07 = _FakeBinding("RD07", "h7")
         promotions = {"RD05": {"passed": True, "status": "pass"}, "RD06": {"passed": False, "status": "fail"}}
-        contracts, verdicts = vc.build_contract_evidence_for_persistence((rd05, rd06, rd07), promotions)
+        contracts, verdicts = campaign_contract.build_contract_evidence_for_persistence((rd05, rd06, rd07), promotions)
         self.assertEqual(
             contracts,
             [{"id": "RD05", "hash": "h5"}, {"id": "RD06", "hash": "h6"}, {"id": "RD07", "hash": "h7"}],
@@ -59,13 +60,13 @@ class BuildContractEvidenceForPersistenceTests(unittest.TestCase):
         self.assertEqual(verdicts["RD07"]["status"], "blocked")
 
     def test_no_bound_contracts_produces_empty_evidence(self) -> None:
-        contracts, verdicts = vc.build_contract_evidence_for_persistence((), {})
+        contracts, verdicts = campaign_contract.build_contract_evidence_for_persistence((), {})
         self.assertEqual(contracts, [])
         self.assertEqual(verdicts, {})
 
     def test_none_contract_promotions_treated_as_empty(self) -> None:
         binding = _FakeBinding("RD04-BF16-FLASH-ATTN-TILE", "h04")
-        contracts, verdicts = vc.build_contract_evidence_for_persistence((binding,), None)
+        contracts, verdicts = campaign_contract.build_contract_evidence_for_persistence((binding,), None)
         self.assertEqual(verdicts["RD04-BF16-FLASH-ATTN-TILE"]["passed"], False)
         self.assertEqual(verdicts["RD04-BF16-FLASH-ATTN-TILE"]["status"], "blocked")
 
