@@ -54,12 +54,23 @@ class PinResolutionTests(unittest.TestCase):
                 vc._persist_validation_record,
             )
         )
+        # PA43: source resolution/materialization lives in
+        # _materialize_scaffold_sources(); the scaffold orchestrator and its
+        # build-stage helpers are included in the "no HEAD anywhere" view.
         self.scaffold_source = inspect.getsource(
-            campaign_scaffold._build_standard_campaign_scaffold)
+            campaign_scaffold._materialize_scaffold_sources)
+        scaffold_all_source = self.scaffold_source + "".join(
+            inspect.getsource(fn)
+            for fn in (
+                campaign_scaffold._build_standard_campaign_scaffold,
+                campaign_scaffold._build_tune_and_replay_trees,
+                campaign_scaffold._build_parity_trees,
+            )
+        )
         # The original pre-T2 tests inspected vc.run only; the combined
         # view keeps those assertions working AND extends "no HEAD
         # anywhere" to the scaffold where the resolution now lives.
-        self.source = self.run_source + self.scaffold_source
+        self.source = self.run_source + scaffold_all_source
 
     def test_no_hardcoded_head_is_used_for_source_resolution_or_materialization(self) -> None:
         # The real bug: base_ref="HEAD"/requested_revision="HEAD" silently

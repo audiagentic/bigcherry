@@ -102,43 +102,17 @@ class CampaignProducerRuntime:
     fat_targets: FatTargetPlan
     run_dir: Path
 
-    def build_pair(
+    def _materialize_pair_sources(
         self,
         *,
-        targets: tuple[str, ...],
-        primary_target: str,
-        common_extra_patches: tuple[str, ...] = (),
-        baseline_source: str = "bigcherry",
-        control_extra_cmake_args: tuple[str, ...] = (),
-        subject_extra_cmake_args: tuple[str, ...] = (),
-        require_parity: bool = False,
-    ) -> ProducerBuildPair:
-        """The one authority for the PA36 build-once-fat-multiarch rule:
-        exactly one control build and one subject build, both at the same
-        target set, regardless of how many devices or architectures the
-        producer will later run against.
+        baseline_source: str,
+        common_extra_patches: tuple[str, ...],
+    ):
+        """Resolve and materialize the control/subject source pair.
 
-        ``targets`` is the authoritative, REQUIRED target set (validated
-        through FatTargetPlan, so its non-empty/no-duplicate invariants hold;
-        a producer may request a fat gfx1100;gfx1201;gfx1030 set while the
-        outer run names one execution arch). ``common_extra_patches``
-        resolves into BOTH arms (control = baseline + common; subject =
-        baseline + common + focal) so a producer whose correctness pair
-        needs supplementary evidence patches in both arms passes them here
-        instead of materializing its own pair below the build authority
-        (dev-gpt-agent req_98777b7a51f84820 + review req_052817cb66d14bc1)."""
-        # targets and primary_target are REQUIRED (GPT review
-        # req_052817cb66d14bc1): the pre-existing API already required both,
-        # so silent defaults would only add a path where a future producer
-        # accidentally builds the wrong fat plan or the wrong binary. The
-        # producer names the explicit target set (typically
-        # ctx.fat_targets.targets); FatTargetPlan validates it, and its
-        # cmake_value is the exact AMDGPU_TARGETS string. The binary build
-        # list still comes from primary_target -- build_tree() itself only
-        # ever builds the single requested target for a producer build pair
-        # (a producer wanting multiple binaries calls build_pair() once per
-        # binary set, never widens this one call).
-        target_plan = FatTargetPlan(targets=targets)
+        Returns (base_revision, control_composition, subject_composition,
+        control_src, subject_src).
+        """
         from bigcherry.patch import source as psi
 
         control_revision, control_composition = psi.resolve_source_composition(
@@ -176,6 +150,61 @@ class CampaignProducerRuntime:
             composition=subject_composition,
             overlay_root=psi.REPO_ROOT / "src",
             requested_revision=self.base_revision,
+        )
+        return (
+            control_revision,
+            control_composition,
+            subject_composition,
+            control_src,
+            subject_src,
+        )
+
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
+    ) -> ProducerBuildPair:
+        """The one authority for the PA36 build-once-fat-multiarch rule:
+        exactly one control build and one subject build, both at the same
+        target set, regardless of how many devices or architectures the
+        producer will later run against.
+
+        ``targets`` is the authoritative, REQUIRED target set (validated
+        through FatTargetPlan, so its non-empty/no-duplicate invariants hold;
+        a producer may request a fat gfx1100;gfx1201;gfx1030 set while the
+        outer run names one execution arch). ``common_extra_patches``
+        resolves into BOTH arms (control = baseline + common; subject =
+        baseline + common + focal) so a producer whose correctness pair
+        needs supplementary evidence patches in both arms passes them here
+        instead of materializing its own pair below the build authority
+        (dev-gpt-agent req_98777b7a51f84820 + review req_052817cb66d14bc1)."""
+        # targets and primary_target are REQUIRED (GPT review
+        # req_052817cb66d14bc1): the pre-existing API already required both,
+        # so silent defaults would only add a path where a future producer
+        # accidentally builds the wrong fat plan or the wrong binary. The
+        # producer names the explicit target set (typically
+        # ctx.fat_targets.targets); FatTargetPlan validates it, and its
+        # cmake_value is the exact AMDGPU_TARGETS string. The binary build
+        # list still comes from primary_target -- build_tree() itself only
+        # ever builds the single requested target for a producer build pair
+        # (a producer wanting multiple binaries calls build_pair() once per
+        # binary set, never widens this one call).
+        target_plan = FatTargetPlan(targets=targets)
+        (
+            control_revision,
+            control_composition,
+            subject_composition,
+            control_src,
+            subject_src,
+        ) = self._materialize_pair_sources(
+            baseline_source=baseline_source,
+            common_extra_patches=common_extra_patches,
         )
 
         exe = ".exe" if sys.platform == "win32" else ""
@@ -1018,6 +1047,94 @@ def _run_producer_trace_probes(
     return probe
 
 
+def _run_dispatcher_trace_probe(
+    *,
+    result: ProducerResult,
+    context: ProducerContext,
+    validation_plan: ValidationPlan,
+    validation_context: ValidationContext,
+    evidence_binding_context: ProducerEvidenceBindingContext | None,
+    bench_prompt: int,
+    bench_gen: int,
+):
+    """Run the scaffold's generic two-probe activation probe (trace_probe="run").
+
+    Returns (probe_evidence, probe_disposition, validation_context) with the
+    probe's bound log refs replacing the context's trace_evidence.
+    """
+    if evidence_binding_context is None:
+        raise PatchCampaignError(
+            "trace_probe='run' requires a standard campaign (the "
+            "scaffold subject llama-bench + a bound run_dir)"
+        )
+    probe_evidence, probe_detail = _run_producer_trace_probes(
+        result=result,
+        producer_context=context,
+        validation_plan=validation_plan,
+        run_dir=evidence_binding_context.run_dir,
+        bench_prompt=bench_prompt,
+        bench_gen=bench_gen,
+    )
+    from bigcherry.patch.activation import (
+        verdict as _activation_verdict,
+    )
+
+    probe_disposition = _activation_verdict(probe_evidence, correctness_passed=None)
+    write_activation_json(
+        evidence_binding_context.run_dir / "activation.json",
+        probe_evidence,
+        probe_disposition,
+        extra={
+            "campaign_identity_digest": evidence_binding_context.campaign_identity_digest,
+            "trace_probe": probe_detail,
+        },
+    )
+    _print(f"activation: {probe_evidence.status} ({probe_evidence.mechanism})")
+
+    def _probe_log(
+        detail: dict[str, object],
+        role: str,
+        key: str,
+    ) -> str:
+        observation = detail[role]
+        if not isinstance(observation, Mapping):
+            raise PatchCampaignError(
+                f"trace probe detail {role!r} must be an object"
+            )
+        value = observation[key]
+        if not isinstance(value, str):
+            raise PatchCampaignError(
+                f"trace probe detail {role}.{key} must be a string"
+            )
+        return value
+
+    def _bind_producer_log(relative_log_path: str) -> dict[str, str]:
+        target = (evidence_binding_context.run_dir / relative_log_path).resolve()
+        return {
+            "path": relative_log_path,
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        }
+
+    validation_context = dataclasses.replace(
+        validation_context,
+        trace_evidence={
+            "positive": {
+                "marker_regex": probe_detail["marker_regex"],
+                "artifact": _bind_producer_log(
+                    _probe_log(probe_detail, "positive", "log")
+                ),
+            },
+            "negative": {
+                "marker_regex": probe_detail["marker_regex"],
+                "artifact": _bind_producer_log(
+                    _probe_log(probe_detail, "negative_control", "log")
+                ),
+            },
+        },
+    )
+    return probe_evidence, probe_disposition, validation_context
+
+
 def execute_validation_producer(
     *,
     patch_dir: Path,
@@ -1107,75 +1224,16 @@ def execute_validation_producer(
     probe_evidence: ActivationEvidence | None = None
     probe_disposition: str | None = None
     if selection.spec.trace_probe == "run":
-        if evidence_binding_context is None:
-            raise PatchCampaignError(
-                "trace_probe='run' requires a standard campaign (the "
-                "scaffold subject llama-bench + a bound run_dir)"
+        probe_evidence, probe_disposition, validation_context = (
+            _run_dispatcher_trace_probe(
+                result=result,
+                context=context,
+                validation_plan=validation_plan,
+                validation_context=validation_context,
+                evidence_binding_context=evidence_binding_context,
+                bench_prompt=bench_prompt,
+                bench_gen=bench_gen,
             )
-        probe_evidence, probe_detail = _run_producer_trace_probes(
-            result=result,
-            producer_context=context,
-            validation_plan=validation_plan,
-            run_dir=evidence_binding_context.run_dir,
-            bench_prompt=bench_prompt,
-            bench_gen=bench_gen,
-        )
-        from bigcherry.patch.activation import (
-            verdict as _activation_verdict,
-        )
-
-        probe_disposition = _activation_verdict(probe_evidence, correctness_passed=None)
-        write_activation_json(
-            evidence_binding_context.run_dir / "activation.json",
-            probe_evidence,
-            probe_disposition,
-            extra={
-                "campaign_identity_digest": evidence_binding_context.campaign_identity_digest,
-                "trace_probe": probe_detail,
-            },
-        )
-        _print(f"activation: {probe_evidence.status} ({probe_evidence.mechanism})")
-
-        def _probe_log(
-            detail: dict[str, object],
-            role: str,
-            key: str,
-        ) -> str:
-            observation = detail[role]
-            if not isinstance(observation, Mapping):
-                raise PatchCampaignError(
-                    f"trace probe detail {role!r} must be an object"
-                )
-            value = observation[key]
-            if not isinstance(value, str):
-                raise PatchCampaignError(
-                    f"trace probe detail {role}.{key} must be a string"
-                )
-            return value
-
-        def _bind_producer_log(relative_log_path: str) -> dict[str, str]:
-            target = (evidence_binding_context.run_dir / relative_log_path).resolve()
-            return {
-                "path": relative_log_path,
-                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            }
-
-        validation_context = dataclasses.replace(
-            validation_context,
-            trace_evidence={
-                "positive": {
-                    "marker_regex": probe_detail["marker_regex"],
-                    "artifact": _bind_producer_log(
-                        _probe_log(probe_detail, "positive", "log")
-                    ),
-                },
-                "negative": {
-                    "marker_regex": probe_detail["marker_regex"],
-                    "artifact": _bind_producer_log(
-                        _probe_log(probe_detail, "negative_control", "log")
-                    ),
-                },
-            },
         )
 
     # T3/T4 (dev-gpt-agent req_2ecda033763949a9): generic post-producer
@@ -1306,100 +1364,26 @@ def _producer_file_identity(path: Path) -> dict[str, object]:
     }
 
 
-def _run_validation_producer(
+@dataclass(frozen=True)
+class _ProducerCampaignSetup:
+    """Run-directory, validation context and scaffold bindings for one producer run."""
+
+    scaffold: StandardCampaignScaffold | None
+    evidence_binding: ProducerEvidenceBindingContext | None
+    campaign_identity_digest: str | None
+    base_revision: str
+    run_dir: Path
+    validation_context: object
+    scaffold_validation_ids: Mapping
+    scaffold_validation_binaries: Mapping
+
+
+def _validate_producer_architectures(
     args: argparse.Namespace,
-    *,
-    producer_id: str,
-    provided_inputs: Mapping[str, str],
-) -> int:
-    """PA36-F step 5 entry point: resolve+execute one patch-local producer
-    through the generic dispatcher end to end, entirely outside the legacy
-    tune/replay/stock campaign-build flow ``run()`` otherwise always runs --
-    every build this path performs goes through
-    ``CampaignProducerRuntime.build_pair()`` instead (the PA36 build-once-
-    fat-multiarch authority), mirroring how ``_run_performance_benchmark()``
-    is already its own self-contained path rather than a branch bolted onto
-    the legacy one.
-
-    Binding this producer's typed result into a persisted, tracked
-    ``patch_validation_evidence`` record (the shape GPT's design section 3
-    sketches for a caller) is real per-patch MIGRATION work -- it requires
-    that migration's own campaign-build identity domain decisions (what
-    ``build_identities`` even means for a patch with no tune/replay/stock
-    build) and is explicitly out of PA36-F's scope (see the atomic
-    migration sequence). This prints the verdict and writes the generic,
-    typed execution outcome as a workdir-local JSON artifact -- the same
-    diagnostic-artifact pattern ``--run-performance-benchmark`` already
-    uses for ``performance-matrix.json`` -- and exits 0 iff the plan is
-    eligible.
-    """
-    import os
-
-    from bigcherry.core import paths as bc_paths
-    from bigcherry.core import config as campaign_config
-    from bigcherry.patch import evidence as patch_validation_evidence
-    from bigcherry.patch import registry as patch_registry
-    from bigcherry.patch import source as psi
-    from bigcherry.patch import validation as patch_validation
-    from bigcherry.patch import validation_policy as patch_validation_policy
-
-    os.environ["ROCM_PATH"] = str(args.hip_path)
-    os.environ["HIP_PATH"] = str(args.hip_path)
-    os.environ["PATH"] = os.pathsep.join(
-        [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
-    )
-
-    registry = patch_registry.load_registry(bc_paths.PATCHES)
-    descriptor = registry.get(args.patch)
-    cfg = campaign_config.load(bc_paths.RECIPES)
-
-    validation_plan = patch_validation_policy.require_execution_package(
-        descriptor,
-        root=bc_paths.PATCHES,
-    )
-    if validation_plan is None:
-        raise PatchCampaignError(
-            f"{args.patch}: --validation-producer requires a resolvable validation plan"
-        )
-
-    # Plural-aware (VA17): a --validation-producer patch may bind more than
-    # one Experiment Contract (e.g. 1203's RD05/RD06/RD07) -- the singular
-    # load_contract_for_descriptor()/.experiment_contract compatibility path
-    # fails closed (PatchRegistryError) for exactly that case, so this
-    # generic dispatcher must use the plural loader, never the singular one.
-    bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
-
-    workdir: Path = args.workdir
-    workdir.mkdir(parents=True, exist_ok=True)
-    patch_dir = bc_paths.PATCHES / args.patch
-
-    # Resolve before expensive scaffold work because manifest policy owns
-    # whether a standard campaign is required.
-    selection = resolve_producer(
-        patch_dir=patch_dir,
-        producer_id=producer_id,
-    )
-    if selection.spec.patch_id != args.patch:
-        raise ValidationProducerError(
-            f"producer patch_id {selection.spec.patch_id!r} does not match "
-            f"requested patch {args.patch!r}"
-        )
-
-    # Fail fast before builds. execute_validation_producer() deliberately
-    # repeats these authoritative gates for direct callers.
-    validate_producer_inputs(selection.spec, provided_inputs)
-    validate_producer_cli_compatibility(
-        selection.spec,
-        correctness_evidence_requested=args.correctness_evidence is not None,
-        performance_benchmark_requested=bool(args.run_performance_benchmark),
-    )
-
-    amdgpu_targets = args.amdgpu_targets
-    fat_targets = FatTargetPlan(
-        targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
-    )
-    device_map = _parse_producer_device_map(list(args.device_map or ()))
-
+    bound_contracts,
+    fat_targets: FatTargetPlan,
+    device_map,
+) -> None:
     # PA36 (dev-gpt-agent req_19c0ea3d2d3f40db): validate requested AND
     # measured architectures against the union of bound contracts'
     # scope.architectures before producer execution. This is the generic,
@@ -1442,231 +1426,333 @@ def _run_validation_producer(
                             f"fat targets {sorted(fat_targets.targets)}"
                         )
 
-    scaffold: StandardCampaignScaffold | None = None
-    evidence_binding: ProducerEvidenceBindingContext | None = None
-    campaign_identity_digest: str | None = None
 
-    if selection.spec.standard_campaign == "run":
-        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
-        # Q4): generic pre-scaffold GPU-count preflight. A bound
-        # contract that declares scope.gpu_count.minimum (RD58 is
-        # currently the only one) is enforced BEFORE the expensive
-        # 5-build scaffold: fail closed if HIP_VISIBLE_DEVICES does
-        # not declare enough distinct selector tokens. Generic, not an
-        # RD58-specific branch.
-        required_gpu_count: int | None = None
-        for _contract in bound_contracts:
-            if _contract.scope.gpu_count is not None:
-                _minimum = _contract.scope.gpu_count.minimum
-                if _minimum is not None:
-                    required_gpu_count = (
-                        _minimum
-                        if required_gpu_count is None
-                        else max(required_gpu_count, _minimum)
-                    )
-        if required_gpu_count is not None:
-            from bigcherry.experiment.execution import (
-                require_device_visibility,
-            )
-
-            require_device_visibility(
-                context=f"{args.patch} pre-scaffold GPU-count preflight",
-                minimum_count=required_gpu_count,
-            )
-        baseline_source = getattr(args, "baseline_source", "bigcherry")
-        scaffold = _build_standard_campaign_scaffold(
-            patch_id=args.patch,
-            base_ref=cfg.pinned,
-            baseline_source=baseline_source,
-            hip_path=args.hip_path,
-            amdgpu_targets=args.amdgpu_targets,
-            workdir=workdir,
-            worktree_root=args.worktree_root,
-            build_root=args.build_root,
-        )
-
-        base_revision = scaffold.base_revision
-        run_dir = workdir / "campaign"
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        control_tree = psi.git_worktree_tree(scaffold.control_source)
-        subject_tree = psi.git_worktree_tree(scaffold.subject_source)
-        patch_file = registry.root / descriptor.implementation_path
-        patch_digest = psi.patch_implementation_digest(args.patch)
-
-        model_identity = (
-            _producer_file_identity(Path(args.model))
-            if args.model is not None
-            else None
-        )
-        corpus_identity = (
-            _producer_file_identity(Path(args.producer_corpus))
-            if args.producer_corpus is not None
-            else None
-        )
-        if model_identity is None and corpus_identity is None:
-            # RD12 pilot path: no model/corpus inputs -- the model-free
-            # digest stays bit-identical to the approved pilot records.
-            campaign_identity_digest = (
-                patch_validation_evidence.model_free_campaign_identity_digest(
-                    patch_name=args.patch,
-                    patch_digest=patch_digest,
-                    patched_source_tree=subject_tree,
-                    gpu_architecture=args.amdgpu_targets,
-                    campaign_build_identities=scaffold.campaign_build_identities,
-                    base_revision=base_revision,
+def _producer_gpu_count_preflight(args: argparse.Namespace, bound_contracts) -> None:
+    # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
+    # Q4): generic pre-scaffold GPU-count preflight. A bound
+    # contract that declares scope.gpu_count.minimum (RD58 is
+    # currently the only one) is enforced BEFORE the expensive
+    # 5-build scaffold: fail closed if HIP_VISIBLE_DEVICES does
+    # not declare enough distinct selector tokens. Generic, not an
+    # RD58-specific branch.
+    required_gpu_count: int | None = None
+    for _contract in bound_contracts:
+        if _contract.scope.gpu_count is not None:
+            _minimum = _contract.scope.gpu_count.minimum
+            if _minimum is not None:
+                required_gpu_count = (
+                    _minimum
+                    if required_gpu_count is None
+                    else max(required_gpu_count, _minimum)
                 )
+    if required_gpu_count is not None:
+        from bigcherry.experiment.execution import (
+            require_device_visibility,
+        )
+
+        require_device_visibility(
+            context=f"{args.patch} pre-scaffold GPU-count preflight",
+            minimum_count=required_gpu_count,
+        )
+
+
+def _producer_campaign_identity_digest(
+    args: argparse.Namespace,
+    *,
+    scaffold: StandardCampaignScaffold,
+    patch_digest: str,
+    subject_tree: str,
+    base_revision: str,
+) -> str:
+    from bigcherry.patch import evidence as patch_validation_evidence
+
+    model_identity = (
+        _producer_file_identity(Path(args.model))
+        if args.model is not None
+        else None
+    )
+    corpus_identity = (
+        _producer_file_identity(Path(args.producer_corpus))
+        if args.producer_corpus is not None
+        else None
+    )
+    if model_identity is None and corpus_identity is None:
+        # RD12 pilot path: no model/corpus inputs -- the model-free
+        # digest stays bit-identical to the approved pilot records.
+        campaign_identity_digest = (
+            patch_validation_evidence.model_free_campaign_identity_digest(
+                patch_name=args.patch,
+                patch_digest=patch_digest,
+                patched_source_tree=subject_tree,
+                gpu_architecture=args.amdgpu_targets,
+                campaign_build_identities=scaffold.campaign_build_identities,
+                base_revision=base_revision,
             )
-        else:
-            # Input-bound identity (GPT review req_7a72896b609a48b5
-            # BLOCKER #1): the producer's real model/corpus file facts are
-            # hashed in, so two runs that differ in model or corpus bytes
-            # never share a campaign identity.
-            campaign_identity_digest = (
-                patch_validation_evidence.producer_campaign_identity_digest(
-                    patch_name=args.patch,
-                    patch_digest=patch_digest,
-                    patched_source_tree=subject_tree,
-                    gpu_architecture=args.amdgpu_targets,
-                    campaign_build_identities=scaffold.campaign_build_identities,
-                    base_revision=base_revision,
-                    model=model_identity,
-                    corpus=corpus_identity,
-                )
-            )
-
-        build_evidence = {
-            "control": {
-                "build_id": scaffold.control_build_evidence.effective_build_id,
-                "source_tree": control_tree,
-                "architecture": args.amdgpu_targets,
-                "options": scaffold.control_build_evidence.effective_configure,
-                "compile_commands": _write_bound_artifact(
-                    run_dir,
-                    "build/control-compile-commands.json",
-                    scaffold.control_build_evidence.verification.to_dict(),
-                ),
-                "runtime_bundle": _write_bound_artifact(
-                    run_dir,
-                    "build/control-runtime-bundle.json",
-                    scaffold.control_build_evidence.runtime_artifacts,
-                ),
-            },
-            "subject": {
-                "build_id": scaffold.validation_subject_build_evidence.effective_build_id,
-                "source_tree": subject_tree,
-                "architecture": args.amdgpu_targets,
-                "options": scaffold.validation_subject_build_evidence.effective_configure,
-                "compile_commands": _write_bound_artifact(
-                    run_dir,
-                    "build/subject-compile-commands.json",
-                    scaffold.validation_subject_build_evidence.verification.to_dict(),
-                ),
-                "runtime_bundle": _write_bound_artifact(
-                    run_dir,
-                    "build/subject-runtime-bundle.json",
-                    scaffold.validation_subject_build_evidence.runtime_artifacts,
-                ),
-            },
-        }
-
-        apply_evidence = {
-            "control": {
-                "verified": True,
-                "idempotent": scaffold.control_idempotent,
-                "artifact": _write_bound_artifact(
-                    run_dir,
-                    "apply/control.json",
-                    {
-                        "source_tree": control_tree,
-                        "composition": list(scaffold.control_composition),
-                    },
-                ),
-            },
-            "subject": {
-                "verified": True,
-                "idempotent": scaffold.subject_idempotent,
-                "artifact": _write_bound_artifact(
-                    run_dir,
-                    "apply/subject.json",
-                    {
-                        "source_tree": subject_tree,
-                        "composition": list(scaffold.subject_composition),
-                    },
-                ),
-            },
-        }
-
-        package_root = (
-            registry.root / descriptor.package_root
-            if descriptor.package_root is not None
-            else {}
         )
-        validation_context = patch_validation.ValidationContext(
-            descriptor=descriptor,
-            base_revision=base_revision,
-            control_source=scaffold.control_source,
-            subject_source=scaffold.subject_source,
-            stock_source=scaffold.stock_source,
-            package_root=package_root,
-            control_tree=control_tree,
-            subject_tree=subject_tree,
-            build_identities={
-                "control": scaffold.control_build_evidence.effective_build_id,
-                "subject": scaffold.validation_subject_build_evidence.effective_build_id,
-            },
-            build_evidence=build_evidence,
-            apply_evidence=apply_evidence,
-            architecture=args.amdgpu_targets,
-            model=str(args.model) if args.model is not None else None,
-            contracts=bound_contracts,
-            contract_hashes={c.id: c.contract_hash for c in bound_contracts},
-            run_dir=run_dir,
-            register_artifact=patch_validation.make_default_register_artifact(run_dir),
-            trace_evidence={},
-            correctness_evidence={},
-            performance_evidence={},
-        )
-
-        evidence_binding = ProducerEvidenceBindingContext(
-            run_dir=run_dir,
-            patch_id=args.patch,
-            patch_path=patch_file,
-            base_revision=base_revision,
-            patched_source_tree=subject_tree,
-            campaign_identity_digest=campaign_identity_digest,
-            gpu_architectures=fat_targets.targets,
-        )
-        scaffold_validation_ids = scaffold.scaffold_validation_build_identities
-        _scaffold_exe = ".exe" if sys.platform == "win32" else ""
-        scaffold_validation_binaries = {
-            "control": {
-                "llama-bench": scaffold.control_bin / f"llama-bench{_scaffold_exe}",
-                "llama-server": scaffold.control_bin / f"llama-server{_scaffold_exe}",
-            },
-            "subject": {
-                "llama-bench": scaffold.validation_subject_bin
-                / f"llama-bench{_scaffold_exe}",
-                "llama-server": scaffold.validation_subject_bin
-                / f"llama-server{_scaffold_exe}",
-            },
-        }
     else:
-        # Preserve current self-contained producer semantics.
-        base_revision = cfg.pinned
-        run_dir = workdir / "producer" / producer_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        validation_context = patch_validation.ValidationContext(
-            descriptor=descriptor,
-            base_revision=base_revision,
-            control_source=None,
-            subject_source=None,
-            contracts=bound_contracts,
-            contract_hashes={c.id: c.contract_hash for c in bound_contracts},
+        # Input-bound identity (GPT review req_7a72896b609a48b5
+        # BLOCKER #1): the producer's real model/corpus file facts are
+        # hashed in, so two runs that differ in model or corpus bytes
+        # never share a campaign identity.
+        campaign_identity_digest = (
+            patch_validation_evidence.producer_campaign_identity_digest(
+                patch_name=args.patch,
+                patch_digest=patch_digest,
+                patched_source_tree=subject_tree,
+                gpu_architecture=args.amdgpu_targets,
+                campaign_build_identities=scaffold.campaign_build_identities,
+                base_revision=base_revision,
+                model=model_identity,
+                corpus=corpus_identity,
+            )
         )
-        scaffold_validation_ids = {}
-        scaffold_validation_binaries = {}
+    return campaign_identity_digest
 
+
+def _producer_scaffold_build_apply_evidence(
+    args: argparse.Namespace,
+    *,
+    scaffold: StandardCampaignScaffold,
+    run_dir: Path,
+    control_tree: str,
+    subject_tree: str,
+):
+    """Write the scaffold build/apply artifacts; return (build_evidence, apply_evidence)."""
+    build_evidence = {
+        "control": {
+            "build_id": scaffold.control_build_evidence.effective_build_id,
+            "source_tree": control_tree,
+            "architecture": args.amdgpu_targets,
+            "options": scaffold.control_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                run_dir,
+                "build/control-compile-commands.json",
+                scaffold.control_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                run_dir,
+                "build/control-runtime-bundle.json",
+                scaffold.control_build_evidence.runtime_artifacts,
+            ),
+        },
+        "subject": {
+            "build_id": scaffold.validation_subject_build_evidence.effective_build_id,
+            "source_tree": subject_tree,
+            "architecture": args.amdgpu_targets,
+            "options": scaffold.validation_subject_build_evidence.effective_configure,
+            "compile_commands": _write_bound_artifact(
+                run_dir,
+                "build/subject-compile-commands.json",
+                scaffold.validation_subject_build_evidence.verification.to_dict(),
+            ),
+            "runtime_bundle": _write_bound_artifact(
+                run_dir,
+                "build/subject-runtime-bundle.json",
+                scaffold.validation_subject_build_evidence.runtime_artifacts,
+            ),
+        },
+    }
+
+    apply_evidence = {
+        "control": {
+            "verified": True,
+            "idempotent": scaffold.control_idempotent,
+            "artifact": _write_bound_artifact(
+                run_dir,
+                "apply/control.json",
+                {
+                    "source_tree": control_tree,
+                    "composition": list(scaffold.control_composition),
+                },
+            ),
+        },
+        "subject": {
+            "verified": True,
+            "idempotent": scaffold.subject_idempotent,
+            "artifact": _write_bound_artifact(
+                run_dir,
+                "apply/subject.json",
+                {
+                    "source_tree": subject_tree,
+                    "composition": list(scaffold.subject_composition),
+                },
+            ),
+        },
+    }
+    return build_evidence, apply_evidence
+
+
+def _prepare_standard_producer_campaign(
+    args: argparse.Namespace,
+    *,
+    cfg,
+    registry,
+    descriptor,
+    bound_contracts,
+    fat_targets: FatTargetPlan,
+    workdir: Path,
+) -> _ProducerCampaignSetup:
+    from bigcherry.patch import source as psi
+    from bigcherry.patch import validation as patch_validation
+
+    _producer_gpu_count_preflight(args, bound_contracts)
+    baseline_source = getattr(args, "baseline_source", "bigcherry")
+    scaffold = _build_standard_campaign_scaffold(
+        patch_id=args.patch,
+        base_ref=cfg.pinned,
+        baseline_source=baseline_source,
+        hip_path=args.hip_path,
+        amdgpu_targets=args.amdgpu_targets,
+        workdir=workdir,
+        worktree_root=args.worktree_root,
+        build_root=args.build_root,
+    )
+
+    base_revision = scaffold.base_revision
+    run_dir = workdir / "campaign"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    control_tree = psi.git_worktree_tree(scaffold.control_source)
+    subject_tree = psi.git_worktree_tree(scaffold.subject_source)
+    patch_file = registry.root / descriptor.implementation_path
+    patch_digest = psi.patch_implementation_digest(args.patch)
+
+    campaign_identity_digest = _producer_campaign_identity_digest(
+        args,
+        scaffold=scaffold,
+        patch_digest=patch_digest,
+        subject_tree=subject_tree,
+        base_revision=base_revision,
+    )
+    build_evidence, apply_evidence = _producer_scaffold_build_apply_evidence(
+        args,
+        scaffold=scaffold,
+        run_dir=run_dir,
+        control_tree=control_tree,
+        subject_tree=subject_tree,
+    )
+
+    package_root = (
+        registry.root / descriptor.package_root
+        if descriptor.package_root is not None
+        else {}
+    )
+    validation_context = patch_validation.ValidationContext(
+        descriptor=descriptor,
+        base_revision=base_revision,
+        control_source=scaffold.control_source,
+        subject_source=scaffold.subject_source,
+        stock_source=scaffold.stock_source,
+        package_root=package_root,
+        control_tree=control_tree,
+        subject_tree=subject_tree,
+        build_identities={
+            "control": scaffold.control_build_evidence.effective_build_id,
+            "subject": scaffold.validation_subject_build_evidence.effective_build_id,
+        },
+        build_evidence=build_evidence,
+        apply_evidence=apply_evidence,
+        architecture=args.amdgpu_targets,
+        model=str(args.model) if args.model is not None else None,
+        contracts=bound_contracts,
+        contract_hashes={c.id: c.contract_hash for c in bound_contracts},
+        run_dir=run_dir,
+        register_artifact=patch_validation.make_default_register_artifact(run_dir),
+        trace_evidence={},
+        correctness_evidence={},
+        performance_evidence={},
+    )
+
+    evidence_binding = ProducerEvidenceBindingContext(
+        run_dir=run_dir,
+        patch_id=args.patch,
+        patch_path=patch_file,
+        base_revision=base_revision,
+        patched_source_tree=subject_tree,
+        campaign_identity_digest=campaign_identity_digest,
+        gpu_architectures=fat_targets.targets,
+    )
+    scaffold_validation_ids = scaffold.scaffold_validation_build_identities
+    _scaffold_exe = ".exe" if sys.platform == "win32" else ""
+    scaffold_validation_binaries = {
+        "control": {
+            "llama-bench": scaffold.control_bin / f"llama-bench{_scaffold_exe}",
+            "llama-server": scaffold.control_bin / f"llama-server{_scaffold_exe}",
+        },
+        "subject": {
+            "llama-bench": scaffold.validation_subject_bin
+            / f"llama-bench{_scaffold_exe}",
+            "llama-server": scaffold.validation_subject_bin
+            / f"llama-server{_scaffold_exe}",
+        },
+    }
+    return _ProducerCampaignSetup(
+        scaffold=scaffold,
+        evidence_binding=evidence_binding,
+        campaign_identity_digest=campaign_identity_digest,
+        base_revision=base_revision,
+        run_dir=run_dir,
+        validation_context=validation_context,
+        scaffold_validation_ids=scaffold_validation_ids,
+        scaffold_validation_binaries=scaffold_validation_binaries,
+    )
+
+
+def _prepare_self_contained_producer(
+    *,
+    cfg,
+    descriptor,
+    bound_contracts,
+    workdir: Path,
+    producer_id: str,
+) -> _ProducerCampaignSetup:
+    from bigcherry.patch import validation as patch_validation
+
+    # Preserve current self-contained producer semantics.
+    base_revision = cfg.pinned
+    run_dir = workdir / "producer" / producer_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    validation_context = patch_validation.ValidationContext(
+        descriptor=descriptor,
+        base_revision=base_revision,
+        control_source=None,
+        subject_source=None,
+        contracts=bound_contracts,
+        contract_hashes={c.id: c.contract_hash for c in bound_contracts},
+    )
+    scaffold_validation_ids = {}
+    scaffold_validation_binaries = {}
+    return _ProducerCampaignSetup(
+        scaffold=None,
+        evidence_binding=None,
+        campaign_identity_digest=None,
+        base_revision=base_revision,
+        run_dir=run_dir,
+        validation_context=validation_context,
+        scaffold_validation_ids=scaffold_validation_ids,
+        scaffold_validation_binaries=scaffold_validation_binaries,
+    )
+
+
+def _execute_selected_producer(
+    args: argparse.Namespace,
+    *,
+    producer_id: str,
+    provided_inputs: Mapping[str, str],
+    patch_dir: Path,
+    workdir: Path,
+    fat_targets: FatTargetPlan,
+    device_map,
+    selection,
+    validation_plan,
+    setup: _ProducerCampaignSetup,
+):
+    base_revision = setup.base_revision
+    run_dir = setup.run_dir
+    scaffold_validation_ids = setup.scaffold_validation_ids
+    scaffold_validation_binaries = setup.scaffold_validation_binaries
+    validation_context = setup.validation_context
+    evidence_binding = setup.evidence_binding
     runtime = CampaignProducerRuntime(
         repo_root=REPO_ROOT,
         patch_id=args.patch,
@@ -1694,8 +1780,7 @@ def _run_validation_producer(
         runtime=runtime,
         validation_binaries=scaffold_validation_binaries,
     )
-
-    execution = execute_validation_producer(
+    return execute_validation_producer(
         patch_dir=patch_dir,
         producer_id=producer_id,
         provided_inputs=provided_inputs,
@@ -1710,6 +1795,9 @@ def _run_validation_producer(
         bench_gen=args.bench_gen,
     )
 
+
+def _producer_check_results(bound_contracts, execution):
+    """Return (contract_correctness_gate, producer_check_results) for one execution."""
     # GPT review req_7a72896b609a48b5 BLOCKER #2: the real contract-
     # correctness gate over the producer's typed named results. The bound
     # contract is the authority on which named checks are required; the
@@ -1746,276 +1834,362 @@ def _run_validation_producer(
             **producer_check_results,
             "_contract_correctness_gate": contract_correctness_gate,
         }
+    return contract_correctness_gate, producer_check_results
 
-    record_path: Path | None = None
-    validation_contract_verdicts = None
-    if scaffold is not None:
-        assert campaign_identity_digest is not None
 
-        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
-        # Q6): the typed producer->dispatcher promotion channel. The
-        # producer supplies per-contract lane_effects (real LaneEffect
-        # objects) + target_metric; the dispatcher owns
-        # aggregate_contract_effects() + evaluate_promotion_gate() (the
-        # producer never computes a gate itself). No
-        # promotion_lane_effects -> {} (every bound contract persists
-        # its explicit BLOCKED "no promotion result produced" verdict,
-        # exactly as before for non-promoting producers).
-        bound_by_id = {c.id: c for c in bound_contracts}
-        # RD58 (PA36 migration #4, dev-gpt-agent
-        # req_918c7e1be6614f84 invariant): the contract-ID keysets
-        # of promotion_lane_effects, promotion_target_metric, and
-        # promotion_trigger_evidence must be identical (a
-        # per-contract entry in one without a matching entry in
-        # another is a producer bug, not a silent omission).
-        _lane_keys = set(execution.result.promotion_lane_effects)
-        _metric_keys = set(execution.result.promotion_target_metric)
-        _trigger_keys = set(execution.result.promotion_trigger_evidence)
-        if _lane_keys != _metric_keys or _lane_keys != _trigger_keys:
-            raise PatchCampaignError(
-                "promotion channel keysets must be identical: "
-                f"lane_effects={sorted(_lane_keys)}, "
-                f"target_metric={sorted(_metric_keys)}, "
-                f"trigger_evidence={sorted(_trigger_keys)}"
-            )
-        producer_contract_promotions: dict[str, dict[str, object]] = {}
-        for (
-            contract_id,
-            lane_effects,
-        ) in execution.result.promotion_lane_effects.items():
-            contract = bound_by_id.get(contract_id)
-            if contract is None:
-                raise PatchCampaignError(
-                    f"promotion_lane_effects for unknown contract {contract_id!r}"
-                )
-            target_metric = execution.result.promotion_target_metric.get(contract_id)
-            if target_metric is None:
-                raise PatchCampaignError(
-                    f"promotion_lane_effects for {contract_id!r} requires "
-                    "promotion_target_metric"
-                )
-            # RD58 (PA36 migration #4, dev-gpt-agent
-            # req_ecb4b77a4c4e4bdd MAJOR #3): a producer that
-            # supplies promotion lanes MUST have a matching
-            # evaluated contract correctness gate -- missing
-            # correctness evidence is BLOCKED/absent evidence, not a
-            # measured promotion FAIL.
-            if contract_correctness_gate is None:
-                raise PatchCampaignError(
-                    f"promotion_lane_effects for {contract_id!r} "
-                    "requires an evaluated contract correctness gate "
-                    "(the producer supplied promotion lanes but no "
-                    "contract_correctness_results)"
-                )
-            # RD58 (PA36 migration #4, dev-gpt-agent
-            # req_ecb4b77a4c4e4bdd BLOCKER): a producer that
-            # supplies promotion lanes MUST supply trigger evidence --
-            # a contract PASS without trigger proof would be a
-            # fail-OPEN (the target code path may never have run).
-            trigger_evidence = execution.result.promotion_trigger_evidence.get(
-                contract_id
-            )
-            if not trigger_evidence:
-                raise PatchCampaignError(
-                    f"promotion_lane_effects for {contract_id!r} "
-                    "requires promotion_trigger_evidence (a contract "
-                    "PASS without trigger proof is fail-OPEN)"
-                )
-            trigger_proof = experiment_contract.evaluate_trigger_proof(
-                list(trigger_evidence)
-            )
-            # RD58 (PA36 migration #4, dev-gpt-agent
-            # req_ecb4b77a4c4e4bdd MAJOR #3): require the
-            # lane/metric keysets to match -- a mismatch would
-            # silently aggregate the wrong lanes.
-            lane_metrics = {e.metric for e in lane_effects}
-            if target_metric not in lane_metrics:
-                raise PatchCampaignError(
-                    f"promotion_lane_effects for {contract_id!r}: "
-                    f"target_metric {target_metric!r} not in lane "
-                    f"metrics {sorted(lane_metrics)}"
-                )
-            aggregated = experiment_contract.aggregate_contract_effects(
-                contract, list(lane_effects), target_metric=target_metric
-            )
-            # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
-            # session aggregation (dispatcher-owned). Under a session
-            # policy, the gain bound is established across repeated
-            # SESSIONS, not from the pairs inside this one run. Fold the
-            # prior sessions' persisted lane effects together with the one
-            # just measured and re-aggregate over all of them.
-            if (
-                contract.acceptance.effect_evidence_policy
-                == "session_ci95_threshold_bound_v1"
-            ):
-                from bigcherry.patch import evidence as patch_validation_evidence
+def _aggregate_producer_session_effects(
+    args: argparse.Namespace,
+    *,
+    contract,
+    contract_id: str,
+    lane_effects,
+    target_metric: str,
+    aggregated,
+    fat_targets: FatTargetPlan,
+):
+    # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
+    # session aggregation (dispatcher-owned). Under a session
+    # policy, the gain bound is established across repeated
+    # SESSIONS, not from the pairs inside this one run. Fold the
+    # prior sessions' persisted lane effects together with the one
+    # just measured and re-aggregate over all of them.
+    if (
+        contract.acceptance.effect_evidence_policy
+        == "session_ci95_threshold_bound_v1"
+    ):
+        from bigcherry.patch import evidence as patch_validation_evidence
 
-                prior_records = patch_validation_evidence.load_records(args.patch)
-                # GPT round 6 BLOCKER: schema-v4 persists contracts as a
-                # list of {"id": ..., "hash": ...}, not a mapping.
-                matching_records = [
-                    r
-                    for r in prior_records
-                    if any(
-                        entry.get("id") == contract_id
-                        and entry.get("hash") == contract.contract_hash
-                        for entry in r.get("contracts", [])
-                        if isinstance(entry, dict)
-                    )
-                ]
-                # GPT round 6 BLOCKER: use fat_targets.targets (not
-                # ctx.amdgpu_targets which doesn't exist in this scope)
-                session_archs = list(fat_targets.targets)
-                # Build the current-session stub
-                this_session = {
-                    "gpu_architectures": session_archs,
-                    "lane_effects": [
-                        {
-                            "role": e.role,
-                            "metric": e.metric,
-                            "pair_ratios": list(e.pair_ratios),
-                        }
-                        for e in lane_effects
-                    ],
+        prior_records = patch_validation_evidence.load_records(args.patch)
+        # GPT round 6 BLOCKER: schema-v4 persists contracts as a
+        # list of {"id": ..., "hash": ...}, not a mapping.
+        matching_records = [
+            r
+            for r in prior_records
+            if any(
+                entry.get("id") == contract_id
+                and entry.get("hash") == contract.contract_hash
+                for entry in r.get("contracts", [])
+                if isinstance(entry, dict)
+            )
+        ]
+        # GPT round 6 BLOCKER: use fat_targets.targets (not
+        # ctx.amdgpu_targets which doesn't exist in this scope)
+        session_archs = list(fat_targets.targets)
+        # Build the current-session stub
+        this_session = {
+            "gpu_architectures": session_archs,
+            "lane_effects": [
+                {
+                    "role": e.role,
+                    "metric": e.metric,
+                    "pair_ratios": list(e.pair_ratios),
                 }
-                gain_field = (
-                    "end_to_end_gain_pct"
-                    if contract.acceptance.end_to_end_gain_pct is not None
-                    else "target_kernel_gain_pct"
-                )
-                aggregated = dict(aggregated)
-                aggregated.update(
-                    experiment_contract.aggregate_session_effects(
-                        [*matching_records, this_session],
-                        field=gain_field,
-                        role="positive",
-                        metric=target_metric,
-                        architectures=session_archs,
-                    )
-                )
-            # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
-            # compute the resource gate from the producer's
-            # promotion_resource_results. A resource-bound contract
-            # without resource evidence must fail closed.
-            resource_gate = None
-            if contract.acceptance.resource_limits:
-                resource_results = execution.result.promotion_resource_results.get(
-                    contract_id
-                )
-                if not resource_results:
-                    raise PatchCampaignError(
-                        f"promotion_lane_effects for {contract_id!r} "
-                        "requires promotion_resource_results (a "
-                        "resource-bound contract without resource "
-                        "evidence must fail closed)"
-                    )
-                # Build a {metric: result} mapping (evaluate_resource_gate
-                # expects a dict, not a list). Reject duplicate metrics.
-                resource_map: dict[str, experiment_contract.ResourceResult] = {}
-                for rr in resource_results:
-                    if rr.metric in resource_map:
-                        raise PatchCampaignError(
-                            f"promotion_resource_results for "
-                            f"{contract_id!r}: duplicate metric "
-                            f"{rr.metric!r}"
-                        )
-                    resource_map[rr.metric] = rr
-                resource_gate = experiment_contract.evaluate_resource_gate(
-                    contract, resource_map
-                )
-            producer_contract_promotions[contract_id] = (
-                experiment_contract.evaluate_promotion_gate(
-                    contract,
-                    correctness_gate=contract_correctness_gate,
-                    aggregated_effects=aggregated,
-                    trigger_proof=trigger_proof,
-                    resource_gate=resource_gate,
-                )
-            )
-        # RD58 (PA36 migration #4, dev-gpt-agent
-        # req_ecb4b77a4c4e4bdd additional invariant): persist the
-        # exact promotion_lane_effects used for the verdict in the
-        # record's lane_effects -- otherwise the contract promotion
-        # is derived from ephemeral measurements that cannot be
-        # audited from committed evidence.
-        promotion_lane_json = tuple(
-            asdict(effect)
-            for effects in execution.result.promotion_lane_effects.values()
-            for effect in effects
+                for e in lane_effects
+            ],
+        }
+        gain_field = (
+            "end_to_end_gain_pct"
+            if contract.acceptance.end_to_end_gain_pct is not None
+            else "target_kernel_gain_pct"
         )
-        combined_lane_effects = execution.result.lane_effects + promotion_lane_json
-
-        # Contract promotions (evaluate_promotion_gate() results) are a
-        # different semantic type from the producer's check dispositions
-        # (execution.contract_verdicts); the promotion APIs must never be
-        # fed dispositions (req_f5ba56f4088e4742 finding #2).
-        validation_contracts, validation_contract_verdicts = (
-            build_contract_evidence_for_persistence(
-                validation_plan.contracts,
-                producer_contract_promotions,
+        aggregated = dict(aggregated)
+        aggregated.update(
+            experiment_contract.aggregate_session_effects(
+                [*matching_records, this_session],
+                field=gain_field,
+                role="positive",
+                metric=target_metric,
+                architectures=session_archs,
             )
         )
+    return aggregated
 
-        validation_record = patch_validation_evidence.make_record(
-            patch_id=args.patch,
-            patch_path=registry.root / descriptor.implementation_path,
-            patch_implementation_digest=psi.patch_implementation_digest(args.patch),
-            base_ref=cfg.pinned,
-            base_revision=scaffold.base_revision,
-            framework_baseline_digest=psi.composition_digest(
-                scaffold.subject_composition
-            ),
-            patched_source_tree=psi.git_worktree_tree(scaffold.subject_source),
-            gpu_architectures=args.amdgpu_targets,
-            activation_evidence=(
-                execution.activation_evidence
-                if execution.activation_evidence is not None
-                else execution.result.activation_evidence
-            ),
+
+def _producer_resource_gate(contract, contract_id: str, execution):
+    # RD73 (PA36 migration #5, dev-gpt-agent req_a232ff7fb1f045db):
+    # compute the resource gate from the producer's
+    # promotion_resource_results. A resource-bound contract
+    # without resource evidence must fail closed.
+    resource_gate = None
+    if contract.acceptance.resource_limits:
+        resource_results = execution.result.promotion_resource_results.get(
+            contract_id
+        )
+        if not resource_results:
+            raise PatchCampaignError(
+                f"promotion_lane_effects for {contract_id!r} "
+                "requires promotion_resource_results (a "
+                "resource-bound contract without resource "
+                "evidence must fail closed)"
+            )
+        # Build a {metric: result} mapping (evaluate_resource_gate
+        # expects a dict, not a list). Reject duplicate metrics.
+        resource_map: dict[str, experiment_contract.ResourceResult] = {}
+        for rr in resource_results:
+            if rr.metric in resource_map:
+                raise PatchCampaignError(
+                    f"promotion_resource_results for "
+                    f"{contract_id!r}: duplicate metric "
+                    f"{rr.metric!r}"
+                )
+            resource_map[rr.metric] = rr
+        resource_gate = experiment_contract.evaluate_resource_gate(
+            contract, resource_map
+        )
+    return resource_gate
+
+
+def _evaluate_producer_contract_promotion(
+    args: argparse.Namespace,
+    *,
+    contract,
+    contract_id: str,
+    lane_effects,
+    execution,
+    contract_correctness_gate,
+    fat_targets: FatTargetPlan,
+):
+    target_metric = execution.result.promotion_target_metric.get(contract_id)
+    if target_metric is None:
+        raise PatchCampaignError(
+            f"promotion_lane_effects for {contract_id!r} requires "
+            "promotion_target_metric"
+        )
+    # RD58 (PA36 migration #4, dev-gpt-agent
+    # req_ecb4b77a4c4e4bdd MAJOR #3): a producer that
+    # supplies promotion lanes MUST have a matching
+    # evaluated contract correctness gate -- missing
+    # correctness evidence is BLOCKED/absent evidence, not a
+    # measured promotion FAIL.
+    if contract_correctness_gate is None:
+        raise PatchCampaignError(
+            f"promotion_lane_effects for {contract_id!r} "
+            "requires an evaluated contract correctness gate "
+            "(the producer supplied promotion lanes but no "
+            "contract_correctness_results)"
+        )
+    # RD58 (PA36 migration #4, dev-gpt-agent
+    # req_ecb4b77a4c4e4bdd BLOCKER): a producer that
+    # supplies promotion lanes MUST supply trigger evidence --
+    # a contract PASS without trigger proof would be a
+    # fail-OPEN (the target code path may never have run).
+    trigger_evidence = execution.result.promotion_trigger_evidence.get(
+        contract_id
+    )
+    if not trigger_evidence:
+        raise PatchCampaignError(
+            f"promotion_lane_effects for {contract_id!r} "
+            "requires promotion_trigger_evidence (a contract "
+            "PASS without trigger proof is fail-OPEN)"
+        )
+    trigger_proof = experiment_contract.evaluate_trigger_proof(
+        list(trigger_evidence)
+    )
+    # RD58 (PA36 migration #4, dev-gpt-agent
+    # req_ecb4b77a4c4e4bdd MAJOR #3): require the
+    # lane/metric keysets to match -- a mismatch would
+    # silently aggregate the wrong lanes.
+    lane_metrics = {e.metric for e in lane_effects}
+    if target_metric not in lane_metrics:
+        raise PatchCampaignError(
+            f"promotion_lane_effects for {contract_id!r}: "
+            f"target_metric {target_metric!r} not in lane "
+            f"metrics {sorted(lane_metrics)}"
+        )
+    aggregated = experiment_contract.aggregate_contract_effects(
+        contract, list(lane_effects), target_metric=target_metric
+    )
+    aggregated = _aggregate_producer_session_effects(
+        args,
+        contract=contract,
+        contract_id=contract_id,
+        lane_effects=lane_effects,
+        target_metric=target_metric,
+        aggregated=aggregated,
+        fat_targets=fat_targets,
+    )
+    resource_gate = _producer_resource_gate(contract, contract_id, execution)
+    return experiment_contract.evaluate_promotion_gate(
+        contract,
+        correctness_gate=contract_correctness_gate,
+        aggregated_effects=aggregated,
+        trigger_proof=trigger_proof,
+        resource_gate=resource_gate,
+    )
+
+
+def _evaluate_producer_contract_promotions(
+    args: argparse.Namespace,
+    *,
+    bound_contracts,
+    execution,
+    contract_correctness_gate,
+    fat_targets: FatTargetPlan,
+) -> dict[str, dict[str, object]]:
+    # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d
+    # Q6): the typed producer->dispatcher promotion channel. The
+    # producer supplies per-contract lane_effects (real LaneEffect
+    # objects) + target_metric; the dispatcher owns
+    # aggregate_contract_effects() + evaluate_promotion_gate() (the
+    # producer never computes a gate itself). No
+    # promotion_lane_effects -> {} (every bound contract persists
+    # its explicit BLOCKED "no promotion result produced" verdict,
+    # exactly as before for non-promoting producers).
+    bound_by_id = {c.id: c for c in bound_contracts}
+    # RD58 (PA36 migration #4, dev-gpt-agent
+    # req_918c7e1be6614f84 invariant): the contract-ID keysets
+    # of promotion_lane_effects, promotion_target_metric, and
+    # promotion_trigger_evidence must be identical (a
+    # per-contract entry in one without a matching entry in
+    # another is a producer bug, not a silent omission).
+    _lane_keys = set(execution.result.promotion_lane_effects)
+    _metric_keys = set(execution.result.promotion_target_metric)
+    _trigger_keys = set(execution.result.promotion_trigger_evidence)
+    if _lane_keys != _metric_keys or _lane_keys != _trigger_keys:
+        raise PatchCampaignError(
+            "promotion channel keysets must be identical: "
+            f"lane_effects={sorted(_lane_keys)}, "
+            f"target_metric={sorted(_metric_keys)}, "
+            f"trigger_evidence={sorted(_trigger_keys)}"
+        )
+    producer_contract_promotions: dict[str, dict[str, object]] = {}
+    for (
+        contract_id,
+        lane_effects,
+    ) in execution.result.promotion_lane_effects.items():
+        contract = bound_by_id.get(contract_id)
+        if contract is None:
+            raise PatchCampaignError(
+                f"promotion_lane_effects for unknown contract {contract_id!r}"
+            )
+        producer_contract_promotions[contract_id] = _evaluate_producer_contract_promotion(
+            args,
+            contract=contract,
+            contract_id=contract_id,
+            lane_effects=lane_effects,
+            execution=execution,
+            contract_correctness_gate=contract_correctness_gate,
+            fat_targets=fat_targets,
+        )
+    return producer_contract_promotions
+
+
+def _persist_producer_validation_record(
+    args: argparse.Namespace,
+    *,
+    cfg,
+    registry,
+    descriptor,
+    validation_plan,
+    scaffold: StandardCampaignScaffold,
+    execution,
+    producer_check_results,
+    producer_contract_promotions,
+    campaign_identity_digest: str,
+    run_dir: Path,
+):
+    """Persist the tracked evidence record; return (record_path, validation_contract_verdicts)."""
+    from bigcherry.patch import evidence as patch_validation_evidence
+    from bigcherry.patch import source as psi
+
+    # RD58 (PA36 migration #4, dev-gpt-agent
+    # req_ecb4b77a4c4e4bdd additional invariant): persist the
+    # exact promotion_lane_effects used for the verdict in the
+    # record's lane_effects -- otherwise the contract promotion
+    # is derived from ephemeral measurements that cannot be
+    # audited from committed evidence.
+    promotion_lane_json = tuple(
+        asdict(effect)
+        for effects in execution.result.promotion_lane_effects.values()
+        for effect in effects
+    )
+    combined_lane_effects = execution.result.lane_effects + promotion_lane_json
+
+    # Contract promotions (evaluate_promotion_gate() results) are a
+    # different semantic type from the producer's check dispositions
+    # (execution.contract_verdicts); the promotion APIs must never be
+    # fed dispositions (req_f5ba56f4088e4742 finding #2).
+    validation_contracts, validation_contract_verdicts = (
+        build_contract_evidence_for_persistence(
+            validation_plan.contracts,
+            producer_contract_promotions,
+        )
+    )
+
+    validation_record = patch_validation_evidence.make_record(
+        patch_id=args.patch,
+        patch_path=registry.root / descriptor.implementation_path,
+        patch_implementation_digest=psi.patch_implementation_digest(args.patch),
+        base_ref=cfg.pinned,
+        base_revision=scaffold.base_revision,
+        framework_baseline_digest=psi.composition_digest(
+            scaffold.subject_composition
+        ),
+        patched_source_tree=psi.git_worktree_tree(scaffold.subject_source),
+        gpu_architectures=args.amdgpu_targets,
+        activation_evidence=(
+            execution.activation_evidence
+            if execution.activation_evidence is not None
+            else execution.result.activation_evidence
+        ),
+        activation_disposition=execution.activation_disposition,
+        correctness=execution.bound_correctness,
+        campaign_identity_digest=campaign_identity_digest,
+        build_identities=scaffold.campaign_build_identities,
+        # Deliberately producer-owned isolated pair, NOT scaffold pair.
+        validation_build_identities=execution.result.validation_build_identities,
+        campaign_workdir=run_dir,
+        producer_artifact_names=execution.selection.spec.artifact_names,
+        check_results=producer_check_results,
+        validation_eligible=compute_persisted_validation_eligible(
+            descriptor,
+            execution.verdict,
+            producer_contract_promotions,
             activation_disposition=execution.activation_disposition,
-            correctness=execution.bound_correctness,
-            campaign_identity_digest=campaign_identity_digest,
-            build_identities=scaffold.campaign_build_identities,
-            # Deliberately producer-owned isolated pair, NOT scaffold pair.
-            validation_build_identities=execution.result.validation_build_identities,
-            campaign_workdir=run_dir,
-            producer_artifact_names=execution.selection.spec.artifact_names,
-            check_results=producer_check_results,
-            validation_eligible=compute_persisted_validation_eligible(
-                descriptor,
-                execution.verdict,
-                producer_contract_promotions,
-                activation_disposition=execution.activation_disposition,
-                correctness=(
-                    dict(execution.bound_correctness)
-                    if execution.bound_correctness is not None
-                    else {}
-                ),
+            correctness=(
+                dict(execution.bound_correctness)
+                if execution.bound_correctness is not None
+                else {}
             ),
-            lane_effects=combined_lane_effects,
-            representation=descriptor.representation,
-            validation_implementation_digest=descriptor.validation_digest,
-            contracts=validation_contracts,
-            contract_verdicts=validation_contract_verdicts,
-            baseline_composition={
-                "source": getattr(args, "baseline_source", "bigcherry"),
-                "base_revision": scaffold.base_revision,
-                "patches": list(scaffold.control_composition),
-            },
-            control_composition={
-                "base_revision": scaffold.base_revision,
-                "patches": list(scaffold.control_composition),
-            },
-            subject_composition={
-                "base_revision": scaffold.base_revision,
-                "patches": list(scaffold.subject_composition),
-            },
-            control_tree=psi.git_worktree_tree(scaffold.control_source),
-            subject_tree=psi.git_worktree_tree(scaffold.subject_source),
-            stock_tree=psi.git_worktree_tree(scaffold.stock_source),
-        )
-        record_path = patch_validation_evidence.write_record(validation_record)
+        ),
+        lane_effects=combined_lane_effects,
+        representation=descriptor.representation,
+        validation_implementation_digest=descriptor.validation_digest,
+        contracts=validation_contracts,
+        contract_verdicts=validation_contract_verdicts,
+        baseline_composition={
+            "source": getattr(args, "baseline_source", "bigcherry"),
+            "base_revision": scaffold.base_revision,
+            "patches": list(scaffold.control_composition),
+        },
+        control_composition={
+            "base_revision": scaffold.base_revision,
+            "patches": list(scaffold.control_composition),
+        },
+        subject_composition={
+            "base_revision": scaffold.base_revision,
+            "patches": list(scaffold.subject_composition),
+        },
+        control_tree=psi.git_worktree_tree(scaffold.control_source),
+        subject_tree=psi.git_worktree_tree(scaffold.subject_source),
+        stock_tree=psi.git_worktree_tree(scaffold.stock_source),
+    )
+    record_path = patch_validation_evidence.write_record(validation_record)
+    return record_path, validation_contract_verdicts
 
+
+def _write_producer_outcome(
+    args: argparse.Namespace,
+    *,
+    producer_id: str,
+    execution,
+    producer_check_results,
+    scaffold: StandardCampaignScaffold | None,
+    validation_contract_verdicts,
+    record_path: Path | None,
+    run_dir: Path,
+) -> None:
+    """Write the workdir-local producer-execution.json outcome and print the verdict."""
     outcome_doc = {
         "patch_id": args.patch,
         "producer_id": producer_id,
@@ -2042,6 +2216,192 @@ def _run_validation_producer(
         f"{'eligible' if execution.verdict.eligible else 'ineligible'} "
         f"({len(execution.verdict.reasons)} blocking reasons) -- "
         f"{outcome_path}"
+    )
+
+
+def _resolve_producer_targets(args: argparse.Namespace, bound_contracts):
+    """Return (fat_targets, device_map), validated against the bound contracts' scope."""
+    amdgpu_targets = args.amdgpu_targets
+    fat_targets = FatTargetPlan(
+        targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
+    )
+    device_map = _parse_producer_device_map(list(args.device_map or ()))
+
+    _validate_producer_architectures(args, bound_contracts, fat_targets, device_map)
+    return fat_targets, device_map
+
+
+def _load_producer_plan(args: argparse.Namespace):
+    """Return (registry, descriptor, cfg, validation_plan, bound_contracts)."""
+    from bigcherry.core import paths as bc_paths
+    from bigcherry.core import config as campaign_config
+    from bigcherry.patch import registry as patch_registry
+    from bigcherry.patch import validation as patch_validation
+    from bigcherry.patch import validation_policy as patch_validation_policy
+
+    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    descriptor = registry.get(args.patch)
+    cfg = campaign_config.load(bc_paths.RECIPES)
+
+    validation_plan = patch_validation_policy.require_execution_package(
+        descriptor,
+        root=bc_paths.PATCHES,
+    )
+    if validation_plan is None:
+        raise PatchCampaignError(
+            f"{args.patch}: --validation-producer requires a resolvable validation plan"
+        )
+
+    # Plural-aware (VA17): a --validation-producer patch may bind more than
+    # one Experiment Contract (e.g. 1203's RD05/RD06/RD07) -- the singular
+    # load_contract_for_descriptor()/.experiment_contract compatibility path
+    # fails closed (PatchRegistryError) for exactly that case, so this
+    # generic dispatcher must use the plural loader, never the singular one.
+    bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
+    return registry, descriptor, cfg, validation_plan, bound_contracts
+
+
+def _run_validation_producer(
+    args: argparse.Namespace,
+    *,
+    producer_id: str,
+    provided_inputs: Mapping[str, str],
+) -> int:
+    """PA36-F step 5 entry point: resolve+execute one patch-local producer
+    through the generic dispatcher end to end, entirely outside the legacy
+    tune/replay/stock campaign-build flow ``run()`` otherwise always runs --
+    every build this path performs goes through
+    ``CampaignProducerRuntime.build_pair()`` instead (the PA36 build-once-
+    fat-multiarch authority), mirroring how ``_run_performance_benchmark()``
+    is already its own self-contained path rather than a branch bolted onto
+    the legacy one.
+
+    Binding this producer's typed result into a persisted, tracked
+    ``patch_validation_evidence`` record (the shape GPT's design section 3
+    sketches for a caller) is real per-patch MIGRATION work -- it requires
+    that migration's own campaign-build identity domain decisions (what
+    ``build_identities`` even means for a patch with no tune/replay/stock
+    build) and is explicitly out of PA36-F's scope (see the atomic
+    migration sequence). This prints the verdict and writes the generic,
+    typed execution outcome as a workdir-local JSON artifact -- the same
+    diagnostic-artifact pattern ``--run-performance-benchmark`` already
+    uses for ``performance-matrix.json`` -- and exits 0 iff the plan is
+    eligible.
+    """
+    import os
+
+    from bigcherry.core import paths as bc_paths
+
+    os.environ["ROCM_PATH"] = str(args.hip_path)
+    os.environ["HIP_PATH"] = str(args.hip_path)
+    os.environ["PATH"] = os.pathsep.join(
+        [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
+    )
+
+    registry, descriptor, cfg, validation_plan, bound_contracts = (
+        _load_producer_plan(args)
+    )
+
+    workdir: Path = args.workdir
+    workdir.mkdir(parents=True, exist_ok=True)
+    patch_dir = bc_paths.PATCHES / args.patch
+
+    # Resolve before expensive scaffold work because manifest policy owns
+    # whether a standard campaign is required.
+    selection = resolve_producer(
+        patch_dir=patch_dir,
+        producer_id=producer_id,
+    )
+    if selection.spec.patch_id != args.patch:
+        raise ValidationProducerError(
+            f"producer patch_id {selection.spec.patch_id!r} does not match "
+            f"requested patch {args.patch!r}"
+        )
+
+    # Fail fast before builds. execute_validation_producer() deliberately
+    # repeats these authoritative gates for direct callers.
+    validate_producer_inputs(selection.spec, provided_inputs)
+    validate_producer_cli_compatibility(
+        selection.spec,
+        correctness_evidence_requested=args.correctness_evidence is not None,
+        performance_benchmark_requested=bool(args.run_performance_benchmark),
+    )
+
+    fat_targets, device_map = _resolve_producer_targets(args, bound_contracts)
+
+    if selection.spec.standard_campaign == "run":
+        setup = _prepare_standard_producer_campaign(
+            args,
+            cfg=cfg,
+            registry=registry,
+            descriptor=descriptor,
+            bound_contracts=bound_contracts,
+            fat_targets=fat_targets,
+            workdir=workdir,
+        )
+    else:
+        # Preserve current self-contained producer semantics.
+        setup = _prepare_self_contained_producer(
+            cfg=cfg,
+            descriptor=descriptor,
+            bound_contracts=bound_contracts,
+            workdir=workdir,
+            producer_id=producer_id,
+        )
+    scaffold = setup.scaffold
+    run_dir = setup.run_dir
+
+    execution = _execute_selected_producer(
+        args,
+        producer_id=producer_id,
+        provided_inputs=provided_inputs,
+        patch_dir=patch_dir,
+        workdir=workdir,
+        fat_targets=fat_targets,
+        device_map=device_map,
+        selection=selection,
+        validation_plan=validation_plan,
+        setup=setup,
+    )
+
+    contract_correctness_gate, producer_check_results = _producer_check_results(
+        bound_contracts, execution
+    )
+
+    record_path: Path | None = None
+    validation_contract_verdicts = None
+    if scaffold is not None:
+        assert setup.campaign_identity_digest is not None
+        producer_contract_promotions = _evaluate_producer_contract_promotions(
+            args,
+            bound_contracts=bound_contracts,
+            execution=execution,
+            contract_correctness_gate=contract_correctness_gate,
+            fat_targets=fat_targets,
+        )
+        record_path, validation_contract_verdicts = _persist_producer_validation_record(
+            args,
+            cfg=cfg,
+            registry=registry,
+            descriptor=descriptor,
+            validation_plan=validation_plan,
+            scaffold=scaffold,
+            execution=execution,
+            producer_check_results=producer_check_results,
+            producer_contract_promotions=producer_contract_promotions,
+            campaign_identity_digest=setup.campaign_identity_digest,
+            run_dir=run_dir,
+        )
+
+    _write_producer_outcome(
+        args,
+        producer_id=producer_id,
+        execution=execution,
+        producer_check_results=producer_check_results,
+        scaffold=scaffold,
+        validation_contract_verdicts=validation_contract_verdicts,
+        record_path=record_path,
+        run_dir=run_dir,
     )
 
     # Success means the requested producer execution and, when required,
