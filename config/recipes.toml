@@ -1,7 +1,7 @@
 # BigCherry campaign configuration v2.
 # All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
-pinned = "b10901"
+pinned = "b11126"
 
 # serving-core is PA26's real-hardware-proven serving boundary, confirmed
 # behaviorally equivalent for production replay by PA26's real two-arm
