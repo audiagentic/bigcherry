@@ -24,6 +24,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 
 from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _CAMPAIGN_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_campaign.py"
@@ -803,7 +804,7 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
             ):
                 if parity_mismatch:
                     with self.assertRaisesRegex(
-                        vc.PatchCampaignError,
+                        campaign_build.PatchCampaignError,
                         "parity",
                     ):
                         runtime.build_pair(

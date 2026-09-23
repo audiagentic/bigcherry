@@ -40,6 +40,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 def main() -> int:
@@ -65,22 +66,22 @@ def main() -> int:
         raise SystemExit("patch1000 unexpectedly already in serving-core")
 
     control_revision, control_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=serving_core_ids, base_repo=vc.LLAMA_CPP_SRC,
+        "llama-native", extra_patches=serving_core_ids, base_repo=campaign_build.LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=(*serving_core_ids, patch_id), base_repo=vc.LLAMA_CPP_SRC,
+        "llama-native", extra_patches=(*serving_core_ids, patch_id), base_repo=campaign_build.LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
         raise SystemExit("control/subject resolved different base revisions")
 
     source_root = args.build_root / "sources"
     control_src = psi.materialize_composition(
-        base_repo=vc.LLAMA_CPP_SRC, worktree_root=source_root / "control",
+        base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "control",
         resolved_revision=control_revision, composition=control_composition,
         overlay_root=REPO_ROOT / "src", requested_revision=control_revision,
     )
     subject_src = psi.materialize_composition(
-        base_repo=vc.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
+        base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
         resolved_revision=subject_revision, composition=subject_composition,
         overlay_root=REPO_ROOT / "src", requested_revision=subject_revision,
     )
@@ -101,8 +102,8 @@ def main() -> int:
         # a change to shared production cmake args.
         "extra_cmake_args": ["-DCMAKE_SKIP_INSTALL_RPATH=ON"],
     }
-    control_bin = vc.build_tree(name="patch1000-pa35-control", source=control_src, **build_args)
-    subject_bin = vc.build_tree(name="patch1000-pa35-subject", source=subject_src, **build_args)
+    control_bin = campaign_build.build_tree(name="patch1000-pa35-control", source=control_src, **build_args)
+    subject_bin = campaign_build.build_tree(name="patch1000-pa35-subject", source=subject_src, **build_args)
 
     exe = ".exe" if sys.platform == "win32" else ""
     control_ops = control_bin / f"test-backend-ops{exe}"

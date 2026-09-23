@@ -37,6 +37,7 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bigcherry.patch import registry as patch_registry  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
@@ -233,7 +234,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             "campaign_identity_digest": "h" * 64,
         }
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "exactly " + r"{'disposition','mechanism','detail'}"
+            campaign_build.PatchCampaignError, "exactly " + r"{'disposition','mechanism','detail'}"
         ):
             vc._bind_producer_correctness(semantic, binding=binding)
         self.assertFalse((run_dir / "correctness.json").exists())
@@ -246,7 +247,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             "mechanism": "m",
             "detail": "d",
         }
-        with self.assertRaisesRegex(vc.PatchCampaignError, "disposition"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "disposition"):
             vc._bind_producer_correctness(semantic, binding=binding)
 
     def test_bind_correctness_none_passes_through(self) -> None:
@@ -277,7 +278,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             self.assertIn("artifact", observation)
 
     def test_bind_trace_rejects_a_producer_owned_marker_regex(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "exactly 'artifact'"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "exactly 'artifact'"):
             vc._bind_producer_trace_evidence(
                 {
                     "positive": {
@@ -296,7 +297,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             "positive": {"artifact": {"path": "a", "sha256": "1"}},
             "negative": {"artifact": {"path": "b", "sha256": "2"}},
         }
-        with self.assertRaisesRegex(vc.PatchCampaignError, "exactly one trace-marker"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "exactly one trace-marker"):
             vc._bind_producer_trace_evidence(
                 trace,
                 validation_plan=_trace_plan(marker_specs),
@@ -420,7 +421,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         sneaky.write_text("hit", encoding="utf-8")
         sha = hashlib.sha256(b"hit").hexdigest()
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "not declared in the producer manifest"
+            campaign_build.PatchCampaignError, "not declared in the producer manifest"
         ):
             vc._bind_producer_trace_evidence(
                 {
@@ -440,7 +441,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         # In the manifest but NOT claimed in this run's emitted_artifacts:
         # a producer may only bind what it actually wrote this run.
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "not claimed in result.emitted_artifacts"
+            campaign_build.PatchCampaignError, "not claimed in result.emitted_artifacts"
         ):
             vc._bind_producer_trace_evidence(
                 {
@@ -462,7 +463,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         for bad in ("p.log", "artifacts/sub/p.log", "../outside.log"):
             with (
                 self.subTest(path=bad),
-                self.assertRaisesRegex(vc.PatchCampaignError, "artifacts/<basename>"),
+                self.assertRaisesRegex(campaign_build.PatchCampaignError, "artifacts/<basename>"),
             ):
                 vc._bind_producer_trace_evidence(
                     {
@@ -501,7 +502,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             emitted_artifacts=frozenset(),
         )
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "not declared in the producer manifest"
+            campaign_build.PatchCampaignError, "not declared in the producer manifest"
         ):
             vc._bind_producer_result_evidence(
                 result,

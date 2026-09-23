@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 def _write_registry(root: Path, *, topology: str | None = "single", size: int | None = None) -> Path:
@@ -61,28 +62,28 @@ class ResolveBenchmarkModelTests(unittest.TestCase):
 
     def test_unknown_model_id_fails_closed(self) -> None:
         registry = _write_registry(self.root)
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_benchmark_model("nonexistent", model_root=self.root, registry_path=registry)
 
     def test_missing_file_fails_closed(self) -> None:
         registry = _write_registry(self.root)
         (self.root / "model.gguf").unlink()
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_size_mismatch_fails_closed(self) -> None:
         registry = _write_registry(self.root, size=99999)
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_no_declared_topology_never_defaults_to_single(self) -> None:
         registry = _write_registry(self.root, topology=None)
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_unrecognized_topology_fails_closed(self) -> None:
         registry = _write_registry(self.root, topology="tensor-99")
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_real_ministral_entry_in_the_real_registry_is_wired_correctly(self) -> None:
@@ -117,23 +118,23 @@ class ParseDeviceMapTests(unittest.TestCase):
         self.assertEqual(vc.parse_device_map(["gfx1100=1,0"]), {"gfx1100": ("1", "0")})
 
     def test_missing_equals_sign_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.parse_device_map(["gfx1100"])
 
     def test_blank_architecture_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.parse_device_map(["=0,1"])
 
     def test_empty_device_list_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.parse_device_map(["gfx1100="])
 
     def test_blank_device_entry_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.parse_device_map(["gfx1100=0,,1"])
 
     def test_duplicate_architecture_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.parse_device_map(["gfx1100=0", "gfx1100=1"])
 
 
@@ -147,11 +148,11 @@ class ResolveDevicePoolTests(unittest.TestCase):
         self.assertEqual(pool, ("0", "1"))
 
     def test_unmapped_architecture_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_device_pool({"gfx1100": ("0",)}, "gfx1201", 1)
 
     def test_pool_smaller_than_needed_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.resolve_device_pool({"gfx1100": ("0",)}, "gfx1100", 2)
 
 
