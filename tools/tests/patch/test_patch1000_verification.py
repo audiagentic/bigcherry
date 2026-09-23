@@ -10,6 +10,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class _Result:
@@ -42,7 +43,7 @@ class Patch1000CommandTests(unittest.TestCase):
         )
 
     def test_unknown_quant_fails_closed(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc._patch1000_backend_ops_command(Path("test-backend-ops"), "Q4_K", mode="perf")
 
 
@@ -121,7 +122,7 @@ class Patch1000CorrectnessTests(unittest.TestCase):
             return _Result(1, "FAIL\n", "bad result")
 
         vc.subprocess.run = fake_run
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.run_patch1000_backend_ops_correctness(
                 binary=Path("test-backend-ops"),
                 quant="Q6_K",

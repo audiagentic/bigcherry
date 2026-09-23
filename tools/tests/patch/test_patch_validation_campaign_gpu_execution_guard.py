@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class RequireRealGpuExecutionTests(unittest.TestCase):
@@ -40,7 +41,7 @@ class RequireRealGpuExecutionTests(unittest.TestCase):
         )  # must not raise
 
     def test_rocm_init_failure_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
             vc._require_real_gpu_execution(
                 "tg128 | 16.33 t/s\n", "ggml_cuda_init: failed to initialize ROCm: no ROCm-capable "
                 "device is detected\n", context="test",
@@ -51,12 +52,12 @@ class RequireRealGpuExecutionTests(unittest.TestCase):
         # Exit code 0, a plausible-looking metric line, but NO real
         # positive GPU-init evidence anywhere in the output -- exactly
         # the real 2026-09-01 confound.
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
             vc._require_real_gpu_execution("tg128 | 16.33 t/s\n", "", context="test")
         self.assertIn("no real GPU execution evidence", str(ctx.exception))
 
     def test_zero_devices_found_is_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc._require_real_gpu_execution(
                 "ggml_cuda_init: found 0 ROCm devices\n", "", context="test",
             )
@@ -126,7 +127,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
             "tg128 | 16.33 t/s\n",
             stderr="ggml_cuda_init: failed to initialize ROCm: no ROCm-capable device is detected\n",
         )
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc._run_one_trace_probe(
                 name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
                 workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
@@ -145,7 +146,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         # existing "activation probe ... failed with exit code" error,
         # not be masked or reclassified by the GPU-execution guard.
         self._fake_run("", stderr="segfault", returncode=1)
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
             vc._run_one_trace_probe(
                 name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
                 workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,

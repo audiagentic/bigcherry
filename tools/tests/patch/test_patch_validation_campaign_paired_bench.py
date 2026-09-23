@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class _Result:
@@ -63,7 +64,7 @@ class PairedLlamaBenchCommandTests(unittest.TestCase):
         )
 
     def test_unmapped_workload_raises(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc._paired_llama_bench_command(Path("bin"), Path("m.gguf"), "bogus")
 
 

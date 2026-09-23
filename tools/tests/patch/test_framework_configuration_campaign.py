@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class FrameworkConfigurationCampaignTests(unittest.TestCase):
@@ -96,7 +97,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
             root = Path(d)
             source = root / "source"
             source.mkdir()
-            vc.build_tree(
+            campaign_build.build_tree(
                 name="production", extra_cmake_args=[], hip_path=root / "rocm",
                 amdgpu_targets="gfx1201", workdir=root / "build", targets=["llama-server"],
                 source=source, generated_proof_callback=lambda phase, _: phases.append(phase),

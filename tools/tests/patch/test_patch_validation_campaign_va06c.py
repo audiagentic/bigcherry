@@ -39,6 +39,7 @@ from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 PRODUCER_DIR = Path("patches/1233_rd73_stable_graph_cache_key/validation")
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06c"
@@ -331,7 +332,7 @@ class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
 
     def test_no_readings_fails_closed(self) -> None:
         subject_log = self._write_log([])
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.evaluate_rd73_resource_evidence(
                 subject_log_path=subject_log, run_dir=self.run_dir
             )

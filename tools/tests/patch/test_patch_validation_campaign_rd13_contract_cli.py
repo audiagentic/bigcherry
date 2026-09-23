@@ -48,6 +48,7 @@ from bigcherry.patch import activation as patch_activation  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
@@ -639,7 +640,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
 
     def test_probe_none_fails_closed(self) -> None:
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "unexpectedly returned None"
+            campaign_build.PatchCampaignError, "unexpectedly returned None"
         ):
             _dispatch(
                 self._tmp,
@@ -650,7 +651,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
         # non-empty, so None is a bug, not a legitimate skip): no
         # record is persisted.
         recorder = _Recorder()
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(producer=_fake_producer()),
@@ -660,7 +661,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
         self.assertEqual(recorder.calls, [])
 
     def test_producer_supplied_trace_evidence_fails_closed(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "must not supply their own"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "must not supply their own"):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(
@@ -674,7 +675,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
             )
 
     def test_producer_supplied_activation_evidence_fails_closed(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "must not supply their own"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "must not supply their own"):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(
