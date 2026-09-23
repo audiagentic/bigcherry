@@ -1,6 +1,6 @@
 # 1250_nro01_allreduce_q8_wire
 
-Plan: `NRO01`. State: `untested`. Backend: HIP. Required patch: `1001_hip_internal_allreduce`.
+Plan: `NRO01`. State: `untested`. Backend: HIP. Required patch: none (the HIP internal AllReduce formerly from `1001_hip_internal_allreduce` is native upstream since pin b11126).
 
 ## Scope
 
@@ -16,7 +16,7 @@ The initial implementation is deliberately **not validation-ready**. It adds com
 
 Future causal comparison:
 
-- control: `1001_hip_internal_allreduce`, exact FP32 wire, same provider/config;
+- control: base internal AllReduce (formerly `1001_hip_internal_allreduce`), exact FP32 wire, same provider/config;
 - subject: control + this patch with Q8 enabled at a pre-registered threshold.
 
 BF16, RCCL, residual fusion and P2P are characterization/composition arms, not substitutes for the focal control.

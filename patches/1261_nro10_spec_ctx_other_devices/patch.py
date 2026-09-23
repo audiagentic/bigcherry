@@ -14,7 +14,7 @@ from bigcherry.patcher import Edit, FilePatch
 
 PATCHES = [
     FilePatch(
-        path="vendor/llama.cpp/src/llama-context.cpp",
+        path="src/llama-context.cpp",
         edits=(
             Edit(
                 id="pnro10_add_ctx_other_devices",

@@ -160,7 +160,9 @@ opened following gpt-dev-agent's explicit design guidance (dev-gpt-agent
 gateway session `ses_5307d9c58ec645cb`) after the real prefill-regression
 and reduction-byte-histogram evidence in
 `patches/1001_hip_internal_allreduce/SUMMARY.md` and project memory.
-Requires 1001 (the internal pipeline this dispatches into) and 0830 (the
+Requires 0830 (and 1225); the internal pipeline this dispatches into was
+patch 1001 until pin b11126, where upstream absorbed it verbatim (1001
+superseded, dependency dropped). 0830 is (the
 `provider_name`/telemetry field this patch reads and writes). Real hardware
 consolidation validated 2026-09-02 (see above) -- remaining before
 STATE=validated / default patch-set promotion: GP02's admission predicate

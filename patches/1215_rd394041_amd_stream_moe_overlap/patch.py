@@ -129,20 +129,15 @@ PROVENANCE = {
 # ggml/src/ggml-cuda/common.cuh
 # =========================================================================
 
-# --- hunk 1: per-(device,stream) cuBLAS handle array + new scratch fields
-_STRUCT_OLD = """    cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
-    cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
-
-    int curr_stream_no = 0;
-"""
-
-_STRUCT_NEW = """    cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
-    // one cuBLAS handle per (device, stream): the handle carries a workspace that must not be shared
-    // by concurrent streams, otherwise overlapped GEMMs corrupt each other's results
-    cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
-
-    int curr_stream_no = 0;
-"""
+# --- hunk 1 (per-(device,stream) cuBLAS handle array) removed at pin
+# b11126: upstream now declares
+#   cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {nullptr};
+# itself, followed by a per-stream cublas_workspaces array. That is
+# semantically identical to this hunk's intended declaration (same
+# dimensions, zero-initialised; `{nullptr}` vs `{ { nullptr } }` is only
+# brace style) and the upstream-inserted workspace lines broke the old
+# anchor. Every other 1215 edit indexes cublas_handles[i][j], which
+# upstream's declaration satisfies.
 
 # --- hunk 2: dedicated concurrent-branch scratch buffer fields
 _SCRATCH_FIELD_OLD = """    ggml_cuda_stream_context concurrent_stream_context;
@@ -172,9 +167,7 @@ _SCRATCH_FIELD_NEW = """    ggml_cuda_stream_context concurrent_stream_context;
 # ggml-cuda/common.cuh already indexes cublas_handles[device][curr_stream_no]
 # with its own workspace management; re-applying our narrower version
 # would be a regression, not a fix. The struct-field array-widening hunk
-# (immediately above) reports "already-applied" against upstream's own
-# 2D array for the same reason and is deliberately left in place
-# (harmless no-op, documents original intent); this hunk is removed
+# (formerly immediately above) was likewise removed at pin b11126; this hunk is removed
 # outright since keeping a stale anchor here would just re-break on the
 # next drift. See RD39/RD40 plan items and HI154 for the full trail.
 
@@ -567,15 +560,6 @@ PATCH_COMMON_CUH = FilePatch(
                 "concurrent-branch scratch buffer (amd-ecosystem PR #36 / "
                 "RD39-RD42)",
     edits=(
-        Edit(
-            id="rd3942-cublas-handle-array",
-            anchor=re.escape(_STRUCT_OLD),
-            rationale="widen cublas_handles to [device][stream] so "
-                      "concurrent streams never share a handle workspace",
-            mode="replace",
-            text=_STRUCT_NEW,
-            guard=r"cublasHandle_t cublas_handles\[GGML_CUDA_MAX_DEVICES\]\[GGML_CUDA_MAX_STREAMS\]",
-        ),
         Edit(
             id="rd3942-scratch-fields",
             anchor=re.escape(_SCRATCH_FIELD_OLD),
