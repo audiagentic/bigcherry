@@ -94,13 +94,13 @@ def test_patch_applies_cleanly_composed_with_1222(tmp_path):
     # The original non-deterministic branch (unset-seed default) is
     # preserved byte-for-byte inside the new else, not deleted.
     assert (
-        "                for (int64_t r = 0; r < ggml_nrows(t); r++) {\n"
-        "                    std::vector<int32_t> data(t->ne[0]);\n"
-        "                    for (int i = 0; i < t->ne[0]; i++) {\n"
-        "                        data[i] = i % n_mats;\n"
-        "                    }\n"
-        "                    std::shuffle(data.begin(), data.end(), rng);\n"
-        "                    ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));\n"
+        "            for (int64_t r = 0; r < ggml_nrows(t); r++) {\n"
+        "                std::vector<int32_t> data(t->ne[0]);\n"
+        "                for (int i = 0; i < t->ne[0]; i++) {\n"
+        "                    data[i] = i % n_mats;\n"
+        "                }\n"
+        "                std::shuffle(data.begin(), data.end(), rng);\n"
+        "                ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));\n"
     ) in text
 
 
@@ -123,9 +123,10 @@ def test_patch_applies_regardless_of_composition_order(tmp_path):
 def test_patch_does_not_touch_1236s_own_site():
     # 1238 and 1236 fix two DIFFERENT std::random_device sites (this
     # function vs. test_generic_op's own internal branch) -- confirm this
-    # patch's anchor is scoped to init_mul_mat_id_tensors and does not
-    # overlap 1236's anchor text, so the two patches can never collide.
+    # patch's anchor is scoped to init_mul_mat_id_ids (split out of
+    # init_mul_mat_id_tensors upstream at b11126) and does not overlap
+    # 1236's anchor text, so the two patches can never collide.
     text = (ROOT / "vendor" / "llama.cpp" / _REL).read_text(encoding="utf-8")
-    site = text.index("static void init_mul_mat_id_tensors")
+    site = text.index("static void init_mul_mat_id_ids")
     other_site = text.index("} else if (op == GGML_OP_MUL_MAT_ID || op == GGML_OP_ADD_ID) {")
     assert site != other_site
