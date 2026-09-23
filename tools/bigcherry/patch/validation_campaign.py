@@ -18,10 +18,10 @@ out of "untested" is a separate, deliberate decision.
 Usage:
     python -m bigcherry.patch.validation_campaign \\
         --patch <patch-id> \\
-        --model G:/models/qwen3.5-2b/Qwen_Qwen3.5-2B-Q4_K_M.gguf \\
-        --hip-path H:/.../vendor/rocm/7.1 --amdgpu-targets gfx1100 \\
-        --manifest H:/.../artifacts/<rev>/hip-autotune-manifest.json \\
-        --workdir C:/scratch/patch-1204-qwen2b
+        --model $BC_MODEL_ROOT/qwen3.5-2b/Qwen_Qwen3.5-2B-Q4_K_M.gguf \\
+        --hip-path vendor/rocm/7.1 --amdgpu-targets gfx1100 \\
+        --manifest artifacts/<rev>/hip-autotune-manifest.json \\
+        --workdir work/patch-1204-qwen2b
 
 Safe to re-run: source materialization and every build/campaign stage below
 reuse existing output where present (patch_source_isolation.py's manifest-
@@ -44,6 +44,7 @@ from types import SimpleNamespace
 
 from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
+from bigcherry.core.context import ProjectContext
 from bigcherry.core.paths import REPO_ROOT
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import ExecutionIdentity
@@ -2326,6 +2327,16 @@ def run(args: argparse.Namespace) -> int:
     return _persist_validation_record(args, st)
 
 
+def _absolute_path(value: str) -> Path:
+    """argparse type: resolve a path argument to absolute at parse time.
+
+    Source worktrees are created with ``git -C <vendor repo> worktree add
+    <path>``, which interprets a relative path against the OTHER repository
+    and fails (exit 128) -- so --workdir/--build-root/--worktree-root never
+    reach that call relative."""
+    return Path(value).resolve()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
     parser.add_argument(
@@ -2358,12 +2369,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--workdir",
         required=True,
-        type=Path,
+        type=_absolute_path,
         help="per-run campaign output (record/tune/promote/replay/bench/report)",
     )
     parser.add_argument(
         "--build-root",
-        type=Path,
+        type=_absolute_path,
         default=None,
         help="shared build-tree location (tune/replay/stock), reused across "
         "multiple patch+model runs on this machine+arch; defaults to "
@@ -2371,13 +2382,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--worktree-root",
-        type=Path,
-        default=Path(r"C:\bc-worktrees")
-        if sys.platform == "win32"
-        else Path.home() / "bc-worktrees",
+        type=_absolute_path,
+        default=None,
         help="content-addressed isolated source worktrees "
         "(patch_source_isolation.py, HI82) live here, one per "
-        "(base_revision, patch, framework-baseline) identity",
+        "(base_revision, patch, framework-baseline) identity; defaults to "
+        "<ProjectContext work root>/worktrees (project-local, never a user folder)",
     )
     parser.add_argument("--bench-prompt", type=int, default=512)
     parser.add_argument("--bench-gen", type=int, default=128)
@@ -2452,7 +2462,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="PVPS02: host model root config/models.toml paths are relative to (e.g. "
-        "/mnt/vault/llm-models on Brutus). Required with --run-performance-benchmark.",
+        "$BC_MODEL_ROOT). Required with --run-performance-benchmark.",
     )
     parser.add_argument(
         "--benchmark-model",
@@ -2503,6 +2513,8 @@ def main(argv: list[str] | None = None) -> int:
         "the same NAME is given twice.",
     )
     args = parser.parse_args(argv)
+    if args.worktree_root is None:
+        args.worktree_root = ProjectContext.resolve().work_root / "worktrees"
     if args.validation_producer is not None:
         # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
         # dispatch plugs in immediately after parse_args()/common patch
