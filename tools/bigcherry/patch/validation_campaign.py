@@ -538,8 +538,6 @@ def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) ->
     stock_src = scaffold.stock_source
     control_idempotent = scaffold.control_idempotent
     subject_idempotent = scaffold.subject_idempotent
-    build_root = scaffold.build_root
-    build_env = scaffold.build_env
     tune_bin = scaffold.tune_bin
     replay_bin = scaffold.replay_bin
     stock_bin = scaffold.stock_bin
