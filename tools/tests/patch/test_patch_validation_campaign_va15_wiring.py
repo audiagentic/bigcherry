@@ -4,9 +4,9 @@ report campaign is unrelated to a contract's own evidence and must never
 be a hard prerequisite of it -- a real, honest tune-campaign run can
 legitimately promote zero candidates, and that must not block the
 contract's own lane/correctness/trigger/promotion evidence from ever
-being collected. After the 1204/RD08 producer migration, --run-rd73-contract
-is the last specialized execution mode guarded here (the RD08 guards were
-retired with the dedicated flags).
+being collected. Every specialized execution mode (RD08, RD73) has been
+retired from the legacy run() path; contract evidence now comes only from
+--validation-producer.
 
 run() is a large integration entry point (real source materialization,
 7 real cmake builds, the real e2e_smoke_campaign.Campaign class) that
@@ -49,7 +49,6 @@ class LegacyRunPathCorrectnessGateTests(unittest.TestCase):
                 vc._prepare_standard_campaign,
                 vc._run_activation_probe_stage,
                 vc._collect_build_and_correctness_evidence,
-                vc._run_contract_evidence_modes,
                 vc._evaluate_validation_plan,
                 vc._persist_validation_record,
             )
