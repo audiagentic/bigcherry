@@ -17,14 +17,13 @@ from bigcherry.patch import patchset
 from bigcherry.patch import catalog as patch_catalog
 from bigcherry.source.workspace import UpstreamRepository
 
-FOCAL_PATCHES = ["1225", "0840", "1224", "1200", "1001", "1002", "1232"]
+FOCAL_PATCHES = ["1225", "0840", "1224", "1200", "1002", "1232"]  # 1001 superseded upstream at b11126
 
 # Named experiment contexts: (experiment_name, base_source)
 EXPERIMENT_CONTEXTS = [
     ("hi155-hybrid-allreduce-gate", "bigcherry-tuning"),
     ("hi18-reduce-probe", "bigcherry-tuning"),
     ("rd19-only", "bigcherry-tuning"),
-    ("hip-internal-allreduce-only", "bigcherry-tuning"),
 ]
 
 # Focal overlay contexts: (patch_id, base_source)
