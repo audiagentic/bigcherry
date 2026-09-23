@@ -62,7 +62,6 @@ from bigcherry.experiment.attestation import (
     ExecutionIdentity,
     compare_execution_identity,
 )
-from bigcherry.experiment.server_execution import AttestedServerSession
 from bigcherry.patch.validation import (
     ArtifactRef,
     ValidationContext,
@@ -85,12 +84,14 @@ from bigcherry.patch.validation_producer import (
     validate_producer_result,
 )
 
-# GPT review (req_8429aa8e0d35496e, 2026-09-11): every RD73 server session
-# governed by this module's HIP-only selector contract (require_device_
-# visibility()/DeviceVisibility, see PNRO17) must explicitly unset an
-# inherited ROCR_VISIBLE_DEVICES, not merely avoid setting one -- ambient
-# env still reaches ServerRunner.launch() (dict(os.environ) + env_unset,
-# then env_overrides) otherwise, reproducing the double-filtering bug.
+# GPT review (req_8429aa8e0d35496e, 2026-09-11): every server session on the
+# shared/legacy path that uses this module's HIP-only selector contract
+# (require_device_visibility()/DeviceVisibility, see PNRO17) must explicitly
+# unset an inherited ROCR_VISIBLE_DEVICES, not merely avoid setting one --
+# ambient env still reaches ServerRunner.launch() (dict(os.environ) +
+# env_unset, then env_overrides) otherwise, reproducing the double-filtering
+# bug. (RD73's own server sessions live in its patch-local producer and apply
+# the same contract there.)
 _ROCR_VISIBLE_DEVICES_UNSET: tuple[str, ...] = ("ROCR_VISIBLE_DEVICES",)
 
 
@@ -822,9 +823,9 @@ def compute_contract_correctness_gate(
     """VA14 final slice (GPT session ses_5bbee8ce5c9a4265, req_75c09f14757640af):
     delegates to the real, native `experiment_contract.evaluate_correctness_gate()`
     instead of always reporting BLOCKED -- a real per-named-check evidence
-    producer now exists for at least one contract (RD08's
-    require_rd08_correctness_evidence(), orchestrated by
-    run_rd08_contract_correctness() below). Returns None when there is no
+    producer now exists for at least one contract (RD08's patch-local
+    producer, orchestrated by the generic --validation-producer path).
+    Returns None when there is no
     bound contract at all, or the contract declares no required correctness
     checks (a pure-performance contract passes trivially).
 
@@ -964,10 +965,9 @@ def _paired_llama_bench_command(
     RD08's producers build. ``patch_args`` land BEFORE -ngl (RD04's
     historical position for its -fa/-ctk/-ctv flags); ``runtime_args``
     land AFTER -ngl (RD08's historical position for e.g. -sm tensor
-    topology flags via rd08_validation_lane_commands' extra_flags) --
-    kept as two distinct insertion points, not one undifferentiated list,
-    specifically so each caller's exact historical argv order is
-    reproducible byte-for-byte."""
+    topology flags) -- kept as two distinct insertion points, not one
+    undifferentiated list, specifically so each caller's exact historical
+    argv order is reproducible byte-for-byte."""
     if workload not in _PAIRED_BENCH_WORKLOAD_FLAGS:
         raise PatchCampaignError(
             f"paired llama-bench: no flag mapping for workload {workload!r}"
@@ -1260,16 +1260,17 @@ def run_paired_llama_benchmark(
     env_unset: tuple[str, ...] = (),
     execution_identity: "object | None" = None,
 ) -> PairedBenchmarkOutcome:
-    """PVPS02 step 2/4: the shared execution shape behind
-    run_rd08_validation_lanes() (and the 1202/RD04 patch-local producer's
-    paired benchmark, via ProducerRuntime.run_paired_llama_benchmark()) --
-    a pure, semantics-preserving extraction of the duplicated
+    """PVPS02 step 2/4: the shared execution shape behind the patch-local
+    producers' paired benchmarks (1202/RD04 and 1204/RD08, via
+    ProducerRuntime.run_paired_llama_benchmark()) and behind the generic
+    --run-performance-benchmark path (registered as
+    BENCHMARK_EXECUTOR_FUNCS["paired-llama-bench-v1"]) -- a pure,
+    semantics-preserving extraction of the duplicated
     clean-env/runner/command/raw-log/paired-run logic
     (docs/planning/active/patching-validation-package-standard/PVPS02.md).
-    The remaining public caller (run_rd08_validation_lanes) is kept as a
-    compatibility wrapper that does its own result-shaping
-    (validation-lanes.json + LaneEffects) -- its callers/tests see no
-    behavior change.
+    The dedicated RD04/RD08 compatibility wrappers were retired by the
+    PA36 producer migrations; the producers and the generic benchmark
+    executor are the callers.
 
     ``env_overrides`` (step 4): applied on top of the sanitized/stripped
     environment for THIS call's own subprocesses only -- never mutates
@@ -3847,17 +3848,12 @@ def collect_lane_effect_records(
     interval therefore could not be re-derived, re-aggregated across sessions,
     re-analysed under a new estimator, or audited from committed evidence.
 
-    Normalises the two shapes that actually carry a paired-lane measurement
-    into one:
-
-      * RD73's contract qualification returns ``LaneEffect`` dataclasses;
-      * RD08's lanes carry ``block_bootstrap_effect()``'s own stats dict
-        (``PairedLaneRun.stats``).
-
-    Both already contain the ratio vector -- this only decides to KEEP it.
-    ``pair_ratios`` is normalised to a list so a re-read record serialises
-    identically to the one that was written (JSON has no tuple), keeping
-    ``record_digest`` stable across a load/store round trip.
+    The legacy run() path no longer produces lane effects: RD08's
+    historical stats-dict shape was retired with the 1204/RD08 producer
+    migration, and RD73's LaneEffect shape was retired with the RD73 legacy
+    compatibility retirement -- both patches' lane effects now flow through
+    the generic producer path. This collector therefore returns no records;
+    it is retained so make_record()'s lane_effects argument stays uniform.
     """
     records: list[dict[str, object]] = []
 
@@ -3914,9 +3910,9 @@ def compute_persisted_validation_eligible(
     RV95: this predicate must also require what evidence.py's
     ``_record_qualifies()`` requires of the record's OWN top-level
     activation/correctness fields, because the two are read as answering the
-    same question and previously did not. --run-rd73-contract populated the
-    adapter verdict and the contract promotion but left activation/
-    correctness at disposition="unknown", so this returned True while
+    same question and previously did not. The (now-retired) legacy
+    --run-rd73-contract path populated the adapter verdict and the contract
+    promotion but left activation/correctness at disposition="unknown", so this returned True while
     verify_validated_patch() rejected the very same record with "activation
     is not executed+activation-verified; correctness did not pass". The
     campaign then printed "STATE='validated' eligible: yes" for a record no
@@ -3957,8 +3953,9 @@ def build_contract_evidence_for_persistence(
     ``validation_plan.contracts`` (never the singular
     ``descriptor.experiment_contract`` compatibility property, which fails
     closed for a real multi-contract patch) and the existing
-    ``contract_promotions`` dict (populated only by --run-rd08-contract
-    today). A bound contract with no produced promotion result gets an
+    ``contract_promotions`` dict (populated by the generic
+    --validation-producer path).
+    A bound contract with no produced promotion result gets an
     explicit BLOCKED verdict ({"passed": False, "status": "blocked", ...})
     -- never an inferred PASS."""
     promotions = contract_promotions or {}
@@ -6758,34 +6755,28 @@ def run(args: argparse.Namespace) -> int:
 
     # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
     # generic S1-S7 record/tune/promote/replay/bench/report campaign is
-    # unrelated to RD08's own contract evidence -- lanes/correctness/
+    # unrelated to a contract's own evidence -- lanes/correctness/
     # trigger/promotion never consume promoted.jsonl, dispatch.cache,
     # replay coverage, or S6/S7 results. Making that unrelated pipeline's
     # own promotion decision (which can legitimately promote zero
     # candidates on a real, honest run -- that is not a bug) a hard
-    # prerequisite of --run-rd08-contract was itself the real bug,
+    # prerequisite of a contract run was itself the real bug,
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
-    # for RD08's evidence below.
-    # VA06: --run-rd73-contract also skips the generic S1-S7 campaign
-    # pipeline, for the same reason RD08/RD04/RD58 do -- RD73's real
-    # evidence comes entirely from run_rd73_contract_qualification(),
-    # which never reads promoted.jsonl/dispatch.cache/replay coverage/S6
-    # or S7 results. This was actually the real, first root cause hit
-    # during the Brutus qualification run (a manifest_hash mismatch
-    # inside this unrelated pipeline) -- discovered before this
-    # exclusion was added; kept for defense-in-depth even though a
-    # correctly-generated manifest can also make the S1-S7 path succeed.
-    if not (args.run_rd08_contract or args.run_rd73_contract):
-        try:
-            campaign.run()
-        except CampaignError as exc:
-            _print(f"CAMPAIGN FAILED: {exc}")
-            return 1
+    # for the contract evidence below.
+    # (The historical --run-rd73-contract S1-S7 pipeline skip was retired
+    # with the RD73 legacy compatibility retirement; RD73's real evidence
+    # now comes from its producer via the generic path. The generic
+    # S1-S7 pipeline therefore always runs on the legacy run() path.)
+    try:
+        campaign.run()
+    except CampaignError as exc:
+        _print(f"CAMPAIGN FAILED: {exc}")
+        return 1
 
-        report_path = workdir / "campaign" / "report.md"
-        _print(f"done -- report: {report_path}")
-        print(report_path.read_text(encoding="utf-8"))
+    report_path = workdir / "campaign" / "report.md"
+    _print(f"done -- report: {report_path}")
+    print(report_path.read_text(encoding="utf-8"))
 
     # HI83: record what this campaign proved (or didn't), tracked so
     # STATE="validated" can eventually be checked against it. This is
@@ -6815,12 +6806,6 @@ def run(args: argparse.Namespace) -> int:
     # before this fix -- GPT round-7 review, req_3d12aa6668b14bb1).
     correctness_evidence: dict[str, object] = {}
     performance_evidence: dict[str, object] = {}
-    if args.correctness_evidence is not None and args.run_rd08_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --correctness-evidence and --run-rd08-contract are ambiguous "
-            "together -- --run-rd08-contract already produces its own authoritative "
-            "correctness.json"
-        )
     if args.correctness_evidence is not None:
         correctness_summary = patch_validation_evidence.load_correctness_summary(
             args.correctness_evidence,
@@ -7119,9 +7104,14 @@ def run(args: argparse.Namespace) -> int:
         # GPT round 2 (req_3616cc1d90dc4512, blocker #3): RD58's own real
         # test-save-load-state evidence produces a named
         # state_restore_integrity CorrectnessResult -- thread it through
-        # the same way rd08_qualification's named results are threaded,
-        # so the contract's own correctness gate actually reflects the
-        # real evidence instead of reporting missing_checks.
+        # here so the contract's own correctness gate actually reflects
+        # the real evidence instead of reporting missing_checks.
+        # VA23: the legacy run() path no longer produces named
+        # correctness results (RD73's bit_identical named results were
+        # retired with the RD73 legacy compatibility retirement; RD08's
+        # flow through the generic producer path). An empty mapping
+        # preserves the gate's missing_checks fail-closed behavior for any
+        # bound contract that requires a named check.
         contract_correctness_gate = compute_contract_correctness_gate(
             full_contract,
             (
@@ -7141,13 +7131,6 @@ def run(args: argparse.Namespace) -> int:
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
         }
-        if rd08_qualification is not None:
-            validation_check_results["_contract_qualification"] = {
-                "promotion": rd08_qualification["promotion"],
-                "trigger_proof": rd08_qualification["trigger_proof"],
-                "aggregated_effects": rd08_qualification["aggregated_effects"],
-                "artifact": rd08_qualification["artifact"],
-            }
         if contract_correctness_gate is not None:
             validation_check_results["_contract_correctness_gate"] = (
                 contract_correctness_gate
