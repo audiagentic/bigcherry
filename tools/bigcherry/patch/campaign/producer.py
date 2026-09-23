@@ -1018,6 +1018,94 @@ def _run_producer_trace_probes(
     return probe
 
 
+def _run_dispatcher_trace_probe(
+    *,
+    result: ProducerResult,
+    context: ProducerContext,
+    validation_plan: ValidationPlan,
+    validation_context: ValidationContext,
+    evidence_binding_context: ProducerEvidenceBindingContext | None,
+    bench_prompt: int,
+    bench_gen: int,
+):
+    """Run the scaffold's generic two-probe activation probe (trace_probe="run").
+
+    Returns (probe_evidence, probe_disposition, validation_context) with the
+    probe's bound log refs replacing the context's trace_evidence.
+    """
+    if evidence_binding_context is None:
+        raise PatchCampaignError(
+            "trace_probe='run' requires a standard campaign (the "
+            "scaffold subject llama-bench + a bound run_dir)"
+        )
+    probe_evidence, probe_detail = _run_producer_trace_probes(
+        result=result,
+        producer_context=context,
+        validation_plan=validation_plan,
+        run_dir=evidence_binding_context.run_dir,
+        bench_prompt=bench_prompt,
+        bench_gen=bench_gen,
+    )
+    from bigcherry.patch.activation import (
+        verdict as _activation_verdict,
+    )
+
+    probe_disposition = _activation_verdict(probe_evidence, correctness_passed=None)
+    write_activation_json(
+        evidence_binding_context.run_dir / "activation.json",
+        probe_evidence,
+        probe_disposition,
+        extra={
+            "campaign_identity_digest": evidence_binding_context.campaign_identity_digest,
+            "trace_probe": probe_detail,
+        },
+    )
+    _print(f"activation: {probe_evidence.status} ({probe_evidence.mechanism})")
+
+    def _probe_log(
+        detail: dict[str, object],
+        role: str,
+        key: str,
+    ) -> str:
+        observation = detail[role]
+        if not isinstance(observation, Mapping):
+            raise PatchCampaignError(
+                f"trace probe detail {role!r} must be an object"
+            )
+        value = observation[key]
+        if not isinstance(value, str):
+            raise PatchCampaignError(
+                f"trace probe detail {role}.{key} must be a string"
+            )
+        return value
+
+    def _bind_producer_log(relative_log_path: str) -> dict[str, str]:
+        target = (evidence_binding_context.run_dir / relative_log_path).resolve()
+        return {
+            "path": relative_log_path,
+            "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        }
+
+    validation_context = dataclasses.replace(
+        validation_context,
+        trace_evidence={
+            "positive": {
+                "marker_regex": probe_detail["marker_regex"],
+                "artifact": _bind_producer_log(
+                    _probe_log(probe_detail, "positive", "log")
+                ),
+            },
+            "negative": {
+                "marker_regex": probe_detail["marker_regex"],
+                "artifact": _bind_producer_log(
+                    _probe_log(probe_detail, "negative_control", "log")
+                ),
+            },
+        },
+    )
+    return probe_evidence, probe_disposition, validation_context
+
+
 def execute_validation_producer(
     *,
     patch_dir: Path,
@@ -1107,75 +1195,16 @@ def execute_validation_producer(
     probe_evidence: ActivationEvidence | None = None
     probe_disposition: str | None = None
     if selection.spec.trace_probe == "run":
-        if evidence_binding_context is None:
-            raise PatchCampaignError(
-                "trace_probe='run' requires a standard campaign (the "
-                "scaffold subject llama-bench + a bound run_dir)"
+        probe_evidence, probe_disposition, validation_context = (
+            _run_dispatcher_trace_probe(
+                result=result,
+                context=context,
+                validation_plan=validation_plan,
+                validation_context=validation_context,
+                evidence_binding_context=evidence_binding_context,
+                bench_prompt=bench_prompt,
+                bench_gen=bench_gen,
             )
-        probe_evidence, probe_detail = _run_producer_trace_probes(
-            result=result,
-            producer_context=context,
-            validation_plan=validation_plan,
-            run_dir=evidence_binding_context.run_dir,
-            bench_prompt=bench_prompt,
-            bench_gen=bench_gen,
-        )
-        from bigcherry.patch.activation import (
-            verdict as _activation_verdict,
-        )
-
-        probe_disposition = _activation_verdict(probe_evidence, correctness_passed=None)
-        write_activation_json(
-            evidence_binding_context.run_dir / "activation.json",
-            probe_evidence,
-            probe_disposition,
-            extra={
-                "campaign_identity_digest": evidence_binding_context.campaign_identity_digest,
-                "trace_probe": probe_detail,
-            },
-        )
-        _print(f"activation: {probe_evidence.status} ({probe_evidence.mechanism})")
-
-        def _probe_log(
-            detail: dict[str, object],
-            role: str,
-            key: str,
-        ) -> str:
-            observation = detail[role]
-            if not isinstance(observation, Mapping):
-                raise PatchCampaignError(
-                    f"trace probe detail {role!r} must be an object"
-                )
-            value = observation[key]
-            if not isinstance(value, str):
-                raise PatchCampaignError(
-                    f"trace probe detail {role}.{key} must be a string"
-                )
-            return value
-
-        def _bind_producer_log(relative_log_path: str) -> dict[str, str]:
-            target = (evidence_binding_context.run_dir / relative_log_path).resolve()
-            return {
-                "path": relative_log_path,
-                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
-            }
-
-        validation_context = dataclasses.replace(
-            validation_context,
-            trace_evidence={
-                "positive": {
-                    "marker_regex": probe_detail["marker_regex"],
-                    "artifact": _bind_producer_log(
-                        _probe_log(probe_detail, "positive", "log")
-                    ),
-                },
-                "negative": {
-                    "marker_regex": probe_detail["marker_regex"],
-                    "artifact": _bind_producer_log(
-                        _probe_log(probe_detail, "negative_control", "log")
-                    ),
-                },
-            },
         )
 
     # T3/T4 (dev-gpt-agent req_2ecda033763949a9): generic post-producer
