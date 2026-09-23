@@ -57,6 +57,7 @@ from bigcherry.campaign.bench_runner import (  # noqa: F401
     run_bench_runner_server_bench,
 )
 from bigcherry.experiment import contract as experiment_contract
+from bigcherry.experiment.server_execution import AttestedServerSession
 from bigcherry.experiment.attestation import (
     ExecutionAttestation,
     ExecutionIdentity,
