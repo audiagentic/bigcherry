@@ -120,9 +120,7 @@ def _content_identity(
     expected_name = Path(str(entry.get("path", ""))).name
     expected_size = entry.get("size-bytes")
     if not path.is_file():
-        raise vp.ValidationProducerError(
-            f"rd13 {label}: file does not exist: {path}"
-        )
+        raise vp.ValidationProducerError(f"rd13 {label}: file does not exist: {path}")
     if path.name != expected_name:
         raise vp.ValidationProducerError(
             f"rd13 {label}: {path.name!r} does not match registry basename "
