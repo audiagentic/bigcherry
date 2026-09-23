@@ -467,6 +467,8 @@ def cmd_patch_verify_evidence(args: Namespace) -> int:
         pinned_ref=cfg.pinned,
         resolved_base_revision=resolved_base_revision,
         allow_legacy_grandfather=not args.no_legacy_grandfather,
+        # Strict diagnostic: reports whether evidence is current for the pin.
+        carry_forward=False,
     )
     if args.json:
         print(

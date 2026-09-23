@@ -90,6 +90,9 @@ REASON_INVALID_ANCHOR_REGEX = "invalid-anchor-regex"
 REASON_UNSAFE_TARGET = "unsafe-target"
 REASON_OTHER = "other-patch-error"
 REASON_UPSTREAM_PRESENT = "upstream-already-contains-output"
+# The guard matches pristine upstream but the edit's full output does not:
+# upstream changed the same site differently -- needs reconciliation.
+REASON_UPSTREAM_GUARD_ONLY = "upstream-guard-match-without-full-output"
 
 _MATCH_COUNT_RE = re.compile(r"matched (\d+) time\(s\), expected(?: exactly)? (\d+)")
 _SPAN_RE = re.compile(r"matched (\d+) lines, more than the (\d+)-line limit")
@@ -543,8 +546,11 @@ class FileProbe:
         upstream = [e.reason_code == REASON_UPSTREAM_PRESENT for e in self.edits]
         if upstream and all(upstream):
             return STATUS_UPSTREAM_ABSORBED
-        if any(upstream):
-            # Upstream took part of this change: drop those edits (hard).
+        if any(upstream) or any(
+            e.reason_code == REASON_UPSTREAM_GUARD_ONLY for e in self.edits
+        ):
+            # Upstream took part of this change, or touched the same site
+            # differently: reconcile the patch (hard).
             return STATUS_FAILED
         if statuses <= {EDIT_NOT_APPLICABLE}:
             return STATUS_NOT_APPLICABLE
@@ -564,6 +570,7 @@ def _probe_file_patch(
     context_lines: int,
     previous_revision: str | None,
     revision: str,
+    overlay_paths: frozenset[str],
 ) -> FileProbe:
     probe = FileProbe(path=patch.path)
     try:
@@ -625,18 +632,22 @@ def _probe_file_patch(
             # The probe worktree on disk is the pristine pin (overlay and
             # earlier patches live only in ``texts``), so a guard hit there
             # means upstream itself already carries this edit's output.
-            upstream_hit = target.is_file() and bool(
-                re.search(
-                    edit.guard_pattern(),
-                    target.read_text(encoding="utf-8"),
-                    re.MULTILINE,
-                )
-            )
+            upstream_reason = None
+            # Overlay-owned files replace upstream content, so a pristine
+            # match there says nothing about upstream.
+            if patch.path not in overlay_paths and target.is_file():
+                pristine = target.read_text(encoding="utf-8")
+                if re.search(edit.guard_pattern(), pristine, re.MULTILINE):
+                    upstream_reason = (
+                        REASON_UPSTREAM_PRESENT
+                        if edit.text and edit.text in pristine
+                        else REASON_UPSTREAM_GUARD_ONLY
+                    )
             probe.edits.append(
                 EditProbe(
                     edit_id=edit.id,
                     status=EDIT_ALREADY_APPLIED,
-                    reason_code=REASON_UPSTREAM_PRESENT if upstream_hit else None,
+                    reason_code=upstream_reason,
                     anchor=edit.anchor,
                     expect_matches=edit.expect_matches,
                     actual_matches=None,
@@ -794,6 +805,7 @@ def probe_patch(
     context_lines: int,
     previous_revision: str | None,
     revision: str,
+    overlay_paths: frozenset[str],
 ) -> PatchProbe:
     file_patches = _load_module_patches(module)
     files = [
@@ -804,6 +816,7 @@ def probe_patch(
             context_lines=context_lines,
             previous_revision=previous_revision,
             revision=revision,
+            overlay_paths=overlay_paths,
         )
         for fp in file_patches
     ]
@@ -862,6 +875,7 @@ def quarantine_fixed_point(
                 context_lines=context_lines,
                 previous_revision=previous_revision,
                 revision=revision,
+                overlay_paths=frozenset(overlay_texts),
             )
             round_probes[patch_id] = probe
             if probe.status in (STATUS_FAILED, STATUS_UPSTREAM_ABSORBED):

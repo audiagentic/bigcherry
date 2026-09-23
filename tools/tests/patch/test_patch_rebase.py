@@ -868,7 +868,7 @@ if __name__ == "__main__":
 class UpstreamAbsorptionTests(unittest.TestCase):
     """A guard already matching the pristine upstream file is absorption."""
 
-    def _probe(self, disk_text: str, texts: dict, edits) -> str:
+    def _probe(self, disk_text: str, texts: dict, edits, overlay_paths=frozenset()) -> str:
         from bigcherry.patch import rebase
         from bigcherry.patcher import FilePatch
         with tempfile.TemporaryDirectory() as tmp:
@@ -877,6 +877,7 @@ class UpstreamAbsorptionTests(unittest.TestCase):
             probe = rebase._probe_file_patch(
                 FilePatch(path="f.cpp", edits=tuple(edits)), root, texts,
                 context_lines=0, previous_revision=None, revision="r",
+                overlay_paths=overlay_paths,
             )
             return rebase._classify_files([probe])
 
@@ -903,5 +904,21 @@ class UpstreamAbsorptionTests(unittest.TestCase):
         status = self._probe(
             "int a = 1;\n", {"f.cpp": "int b = 2;\n"},
             [self._edit("e", "int a = 1;", "int b = 2;")],
+        )
+        self.assertEqual(status, rebase.STATUS_CLEAN_NOOP)
+
+    def test_guard_only_match_upstream_needs_reconciliation(self):
+        from bigcherry.patch import rebase
+        from bigcherry.patcher import Edit
+        edit = Edit(id="e", anchor=re.escape("int a = 1;"), rationale="t", mode="replace",
+                    text="int b = 2; // ours", guard=re.escape("int b = 2;"))
+        status = self._probe("int b = 2; // theirs\n", {}, [edit])
+        self.assertEqual(status, rebase.STATUS_FAILED)
+
+    def test_overlay_owned_file_is_never_attributed_to_upstream(self):
+        from bigcherry.patch import rebase
+        status = self._probe(
+            "int b = 2;\n", {}, [self._edit("e", "int a = 1;", "int b = 2;")],
+            overlay_paths=frozenset({"f.cpp"}),
         )
         self.assertEqual(status, rebase.STATUS_CLEAN_NOOP)
