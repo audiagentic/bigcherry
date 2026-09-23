@@ -10,7 +10,7 @@ Example::
 
     python -m bigcherry ab-benchmark --cache dispatch.cache --output artifacts/tuning-runs/ab-2026-08-08 \
       --pairs 3 --metric "pp256=pp256.*?([0-9.]+)" -- \
-      /home/audumla/bc-build/bin/llama-bench -m model.gguf -p 256 -n 0 -r 5 -ngl 99
+      work/build/bin/llama-bench -m model.gguf -p 256 -n 0 -r 5 -ngl 99
 """
 
 from __future__ import annotations

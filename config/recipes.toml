@@ -425,15 +425,18 @@ needs = []
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
 options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON" }
-c-compiler = "/opt/rocm/llvm/bin/clang"
-cxx-compiler = "/opt/rocm/llvm/bin/clang++"
+# Host-specific install locations are never committed: ${VAR} references
+# are expanded from the environment (tools/env/rocm-env.sh sets ROCM_PATH).
+c-compiler = "${ROCM_PATH}/llvm/bin/clang"
+cxx-compiler = "${ROCM_PATH}/llvm/bin/clang++"
 
 [platform.windows-gfx1100]
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
-c-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang.exe"
-cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
+# HIP_PATH is set by the AMD HIP SDK installer (or tools/env/rocm-env.ps1).
+c-compiler = "${HIP_PATH}/bin/clang.exe"
+cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
 [platform.vulkan-linux]
 description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
@@ -455,17 +458,17 @@ required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-2]
 backend = "hip"
-sdk-root = "/opt/rocm-7.2"
+sdk-root = "${BIGCHERRY_ROCM_7_2_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-14]
 backend = "hip"
-sdk-root = "/opt/rocm-7.14"
+sdk-root = "${BIGCHERRY_ROCM_7_14_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-10]
 backend = "hip"
-sdk-root = "/opt/rocm-10"
+sdk-root = "${BIGCHERRY_ROCM_10_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.vulkan-radv]
@@ -735,7 +738,8 @@ required = false
 [[trees]]
 name = "brutus"
 alias = "brutus"
-path = "/mnt/vault/development/projects/bigcherry/workspaces/main"
+# Remote checkout location is host-specific: set BIGCHERRY_BRUTUS_TREE.
+path = "${BIGCHERRY_BRUTUS_TREE}"
 role = "campaign"
 required = true
 expected-tooling-revision = ""

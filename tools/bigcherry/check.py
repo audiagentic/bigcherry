@@ -109,6 +109,28 @@ _ARTIFACTS_STRUCTURAL_ALLOWLIST = frozenset(
     }
 )
 _ARTIFACTS_REVISION_DIR_RE = re.compile(r"^[0-9a-f]{12}$")
+# Host-specific values (machine mount points, user home directories, drive
+# roots, private addresses) must never be committed in config or production
+# tooling; they come from config/environment.local.toml or the environment.
+_HOST_SPECIFIC_RE = re.compile(
+    r"/mnt/[A-Za-z0-9]"
+    r"|/home/[a-z][a-z0-9_-]*/"
+    r"|\b[A-Za-z]:[\\/](?:Users|Program Files|development|[a-z]+-)"
+    r"|\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"
+)
+# Production tooling must never default its output into the user profile or
+# an ad hoc drive root; output belongs under the project (artifacts/, work/
+# via bigcherry.core.context.ProjectContext / core.paths).
+_USER_FOLDER_DEFAULT_RE = re.compile(
+    r"Path\.home\(\)"
+    r"|expanduser\(\s*[\"']~"
+    r"|Path\(\s*[\"']~"
+    r"|[\"'](?:LOCAL)?APPDATA[\"']"
+    r"|[\"']XDG_(?:CACHE|DATA|STATE)_HOME[\"']"
+    r"|[\"']USERPROFILE[\"']"
+    r"|tempfile\.gettempdir\(\)"
+    r"|r?[\"'][A-Za-z]:[\\/]"
+)
 _ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
@@ -766,6 +788,61 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     "complete caller/reference proof, then remove it in the owning migration slice",
                 )
             )
+
+    if product_root.is_dir():
+        for path in sorted(product_root.rglob("*.py")):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(lines, start=1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if _USER_FOLDER_DEFAULT_RE.search(line):
+                    findings.append(
+                        _diagnostic(
+                            root,
+                            "TR14.USER_FOLDER_DEFAULT",
+                            "error",
+                            path,
+                            f"line {number} defaults output outside the project "
+                            "(user profile, temp dir, or hardcoded drive root)",
+                            "derive the location from bigcherry.core.context."
+                            "ProjectContext (work_root/artifacts_root) or "
+                            "bigcherry.core.paths; external locations must be "
+                            "explicit arguments or BIGCHERRY_* environment overrides",
+                        )
+                    )
+
+    host_scan: list[Path] = []
+    config_root = root / "config"
+    if config_root.is_dir():
+        host_scan += [
+            p for p in sorted(config_root.glob("*.toml"))
+            if not p.name.endswith((".example.toml", ".local.toml"))
+        ]
+    for sub in (tools_root / "env", product_root):
+        if sub.is_dir():
+            host_scan += sorted(p for p in sub.rglob("*") if p.is_file() and p.suffix in {".py", ".sh", ".ps1", ".toml"})
+    for path in host_scan:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for number, line in enumerate(lines, start=1):
+            if _HOST_SPECIFIC_RE.search(line):
+                findings.append(
+                    _diagnostic(
+                        root,
+                        "TR14.HOST_SPECIFIC_VALUE",
+                        "error",
+                        path,
+                        f"line {number} commits a host-specific location or address",
+                        "use a project-relative path, a ${VAR} reference, "
+                        "config/environment.local.toml (untracked), or a "
+                        "BIGCHERRY_* environment variable",
+                    )
+                )
 
     artifacts_root = root / "artifacts"
     evidence_root = root / "docs" / "evidence"

@@ -11,10 +11,10 @@ dedicated ArtifactStore directory.
 
 Usage:
     python -m bigcherry.re14_real_run \
-        --upstream-repo /mnt/vault/development/bc-branch/vendor/llama.cpp \
+        --upstream-repo "$BC_REPO/vendor/llama.cpp" \
         --inventory artifacts/campaign-gfx1100-inventory.json \
         --arch gfx1100 \
-        --model /mnt/vault/llm-models/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
+        --model "$BC_MODEL_ROOT"/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
         --hip-visible-devices 0
 """
 

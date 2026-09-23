@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import pin_transition
+from ..core.config import require_resolved
 from ..pin_transition import MarkerError, PinTransition
 
 VERDICT_CONSISTENT = "consistent"
@@ -485,7 +486,9 @@ def build_report(
         if tree.name == "local":
             continue
         status = remote_status(
-            tree.name, tree.alias, tree.path, local, llama, probe=probe
+            tree.name, tree.alias,
+            require_resolved(tree.path, f"trees.{tree.name}.path"),
+            local, llama, probe=probe,
         )
         if tree.role == "campaign" and status.reachable:
             want = expected.get(tree.name, tree.expected_tooling_revision)
