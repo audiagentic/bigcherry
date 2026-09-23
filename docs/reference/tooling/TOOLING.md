@@ -177,6 +177,16 @@ Keep ownership distinct:
   obligations, thresholds, and acceptance policy;
 - `docs/evidence/<run-id>/` owns compact, tracked proof of a particular run;
 - `artifacts/<run-id>/` owns large or machine-local outputs and raw traces;
+  `run-id` must be the owning plan-item ID, optionally with a short suffix
+  (`HI65`, `HI65-pass2`, `2026-08-21-HI35-HI36-27b-r9700`) — never a free-text
+  name with no traceable plan-item link. Create these directories through
+  `bigcherry.core.paths.evidence_dir(run_id)` rather than inventing a new
+  ad hoc top-level name, so the convention lives in one place. `bigcherry
+  check --quick`'s `TR14.ARTIFACT_UNTRACEABLE_RUN` finding flags any
+  `artifacts/` top-level directory that is neither a recognised structural
+  path (`logs`, `lab`, `pin-bump`, `patch-validation`, `release-runs`,
+  `release-validation`), a 12-hex revision directory (`artifact_dir()`), nor
+  matched by a `docs/evidence/<run-id>/` counterpart;
 - `patches/<patch-id>/` owns patch contracts, fixtures, and patch evidence; and
 - `docs/reference/` owns reusable guidance, not live hardware verdicts.
 

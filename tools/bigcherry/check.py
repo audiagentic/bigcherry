@@ -94,6 +94,21 @@ _PROTECTED_DOMAINS = frozenset(
     }
 )
 _PATH_AUTHORITY_FILES = frozenset({"tools/bigcherry/core/paths.py"})
+# Structural artifacts/ subdirectories that are code-owned (not one run's raw
+# evidence) and therefore exempt from the run-id/docs-evidence traceability
+# check below; see docs/reference/tooling/TOOLING.md's "Evidence and
+# acceptance boundaries" section.
+_ARTIFACTS_STRUCTURAL_ALLOWLIST = frozenset(
+    {
+        "logs",
+        "lab",
+        "pin-bump",
+        "patch-validation",
+        "release-runs",
+        "release-validation",
+    }
+)
+_ARTIFACTS_REVISION_DIR_RE = re.compile(r"^[0-9a-f]{12}$")
 _DISPOSITION_ROW = re.compile(
     r"^\|\s*`(?P<path>[^`]+)`\s*\|\s*\*\*(?P<disposition>[A-Z-]+)\*\*\s*\|"
 )
@@ -697,6 +712,33 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     path,
                     "disposition map marks this path DELETE but it still exists",
                     "complete caller/reference proof, then remove it in the owning migration slice",
+                )
+            )
+
+    artifacts_root = root / "artifacts"
+    evidence_root = root / "docs" / "evidence"
+    if artifacts_root.is_dir():
+        for path in sorted(artifacts_root.iterdir(), key=lambda item: item.name):
+            name = path.name
+            if not path.is_dir():
+                continue
+            if name in _ARTIFACTS_STRUCTURAL_ALLOWLIST:
+                continue
+            if _ARTIFACTS_REVISION_DIR_RE.match(name):
+                continue
+            if (evidence_root / name).is_dir():
+                continue
+            findings.append(
+                _diagnostic(
+                    root,
+                    "TR14.ARTIFACT_UNTRACEABLE_RUN",
+                    "warning",
+                    path,
+                    "artifacts/ run directory has no plan-item-traceable name and "
+                    "no matching docs/evidence/ counterpart",
+                    "name it after the owning plan-item ID via "
+                    "bigcherry.core.paths.evidence_dir(), or add a "
+                    "docs/evidence/<name>/ record if it holds curated proof",
                 )
             )
 
