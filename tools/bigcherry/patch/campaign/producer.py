@@ -102,43 +102,17 @@ class CampaignProducerRuntime:
     fat_targets: FatTargetPlan
     run_dir: Path
 
-    def build_pair(
+    def _materialize_pair_sources(
         self,
         *,
-        targets: tuple[str, ...],
-        primary_target: str,
-        common_extra_patches: tuple[str, ...] = (),
-        baseline_source: str = "bigcherry",
-        control_extra_cmake_args: tuple[str, ...] = (),
-        subject_extra_cmake_args: tuple[str, ...] = (),
-        require_parity: bool = False,
-    ) -> ProducerBuildPair:
-        """The one authority for the PA36 build-once-fat-multiarch rule:
-        exactly one control build and one subject build, both at the same
-        target set, regardless of how many devices or architectures the
-        producer will later run against.
+        baseline_source: str,
+        common_extra_patches: tuple[str, ...],
+    ):
+        """Resolve and materialize the control/subject source pair.
 
-        ``targets`` is the authoritative, REQUIRED target set (validated
-        through FatTargetPlan, so its non-empty/no-duplicate invariants hold;
-        a producer may request a fat gfx1100;gfx1201;gfx1030 set while the
-        outer run names one execution arch). ``common_extra_patches``
-        resolves into BOTH arms (control = baseline + common; subject =
-        baseline + common + focal) so a producer whose correctness pair
-        needs supplementary evidence patches in both arms passes them here
-        instead of materializing its own pair below the build authority
-        (dev-gpt-agent req_98777b7a51f84820 + review req_052817cb66d14bc1)."""
-        # targets and primary_target are REQUIRED (GPT review
-        # req_052817cb66d14bc1): the pre-existing API already required both,
-        # so silent defaults would only add a path where a future producer
-        # accidentally builds the wrong fat plan or the wrong binary. The
-        # producer names the explicit target set (typically
-        # ctx.fat_targets.targets); FatTargetPlan validates it, and its
-        # cmake_value is the exact AMDGPU_TARGETS string. The binary build
-        # list still comes from primary_target -- build_tree() itself only
-        # ever builds the single requested target for a producer build pair
-        # (a producer wanting multiple binaries calls build_pair() once per
-        # binary set, never widens this one call).
-        target_plan = FatTargetPlan(targets=targets)
+        Returns (base_revision, control_composition, subject_composition,
+        control_src, subject_src).
+        """
         from bigcherry.patch import source as psi
 
         control_revision, control_composition = psi.resolve_source_composition(
@@ -176,6 +150,61 @@ class CampaignProducerRuntime:
             composition=subject_composition,
             overlay_root=psi.REPO_ROOT / "src",
             requested_revision=self.base_revision,
+        )
+        return (
+            control_revision,
+            control_composition,
+            subject_composition,
+            control_src,
+            subject_src,
+        )
+
+    def build_pair(
+        self,
+        *,
+        targets: tuple[str, ...],
+        primary_target: str,
+        common_extra_patches: tuple[str, ...] = (),
+        baseline_source: str = "bigcherry",
+        control_extra_cmake_args: tuple[str, ...] = (),
+        subject_extra_cmake_args: tuple[str, ...] = (),
+        require_parity: bool = False,
+    ) -> ProducerBuildPair:
+        """The one authority for the PA36 build-once-fat-multiarch rule:
+        exactly one control build and one subject build, both at the same
+        target set, regardless of how many devices or architectures the
+        producer will later run against.
+
+        ``targets`` is the authoritative, REQUIRED target set (validated
+        through FatTargetPlan, so its non-empty/no-duplicate invariants hold;
+        a producer may request a fat gfx1100;gfx1201;gfx1030 set while the
+        outer run names one execution arch). ``common_extra_patches``
+        resolves into BOTH arms (control = baseline + common; subject =
+        baseline + common + focal) so a producer whose correctness pair
+        needs supplementary evidence patches in both arms passes them here
+        instead of materializing its own pair below the build authority
+        (dev-gpt-agent req_98777b7a51f84820 + review req_052817cb66d14bc1)."""
+        # targets and primary_target are REQUIRED (GPT review
+        # req_052817cb66d14bc1): the pre-existing API already required both,
+        # so silent defaults would only add a path where a future producer
+        # accidentally builds the wrong fat plan or the wrong binary. The
+        # producer names the explicit target set (typically
+        # ctx.fat_targets.targets); FatTargetPlan validates it, and its
+        # cmake_value is the exact AMDGPU_TARGETS string. The binary build
+        # list still comes from primary_target -- build_tree() itself only
+        # ever builds the single requested target for a producer build pair
+        # (a producer wanting multiple binaries calls build_pair() once per
+        # binary set, never widens this one call).
+        target_plan = FatTargetPlan(targets=targets)
+        (
+            control_revision,
+            control_composition,
+            subject_composition,
+            control_src,
+            subject_src,
+        ) = self._materialize_pair_sources(
+            baseline_source=baseline_source,
+            common_extra_patches=common_extra_patches,
         )
 
         exe = ".exe" if sys.platform == "win32" else ""
