@@ -117,3 +117,11 @@ def test_pristine_apply_replaces_existing_control_flow_without_duplication(tmp_p
     assert cuda.count("ggml_backend_cuda_comm_try_allreduce_nccl;") == 1
     assert meta.count("bool backend_allreduce_success = false;") == 1
     assert meta.count("const ggml_status status = allreduce_fallback(i);") == 1
+
+
+def test_always_built_overlay_does_not_call_patch_defined_snapshot():
+    # The overlay is compiled into every dispatch build, including release
+    # compositions without 0830, which alone defines the snapshot function.
+    # Calling it here left release ggml-hip with an unresolved symbol (a
+    # Windows link failure); 0830's hook resolves the snapshot instead.
+    assert "ggml_hip_reduce_telemetry_context_snapshot" not in TELEMETRY
