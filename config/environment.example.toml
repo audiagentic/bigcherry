@@ -74,3 +74,11 @@ arch = "gfx1201"
 model = "example gfx1201 card"
 vram-mib = 32624
 locator = "0000:02:00.0"
+
+# Values for ${VAR} references in tracked config (config/recipes.toml), e.g.
+# the remote campaign checkout and optional ROCm stack roots. A variable set
+# in the process environment takes precedence over this table.
+[env]
+BIGCHERRY_BRUTUS_TREE = "/srv/example/bigcherry/workspaces/main"
+# ROCM_PATH = "/opt/rocm"            # usually set by tools/env/rocm-env.sh
+# BIGCHERRY_ROCM_7_2_ROOT = "/opt/rocm-7.2"
