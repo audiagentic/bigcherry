@@ -33,5 +33,24 @@ class AuditStageTests(unittest.TestCase):
         self.assertEqual(record.stage, "patched")
 
 
+class PullStageTests(unittest.TestCase):
+    def test_repull_preserves_a_later_stage(self):
+        record = releases.ReleaseRecord(revision="abc123", stage="generated")
+        checkout = tempfile.TemporaryDirectory()
+        self.addCleanup(checkout.cleanup)
+        (Path(checkout.name) / ".git").mkdir()
+        args = mock.Mock()
+        args.llama_root = checkout.name
+        args.ref = None
+        args.source = None
+        args.full = False
+        with mock.patch.object(cli_source, "_run"), \
+             mock.patch.object(cli_source.upstream, "clear_stale_locks", return_value=[]), \
+             mock.patch.object(cli_source.releases, "record_for_checkout", return_value=record), \
+             mock.patch.object(record, "save"):
+            self.assertEqual(cli_source.cmd_pull(args), 0)
+        self.assertEqual(record.stage, "generated")
+
+
 if __name__ == "__main__":
     unittest.main()
