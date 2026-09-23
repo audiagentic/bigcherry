@@ -3,7 +3,6 @@ subject parity, lane-effect records and persisted validation eligibility."""
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -136,63 +135,6 @@ def rd08_validation_lane_commands(
         *extra_flags,
     ]
     return control_command, subject_command
-
-
-_LANE_EFFECT_FIELDS = (
-    "geometric_effect_pct",
-    "decision",
-    "ci95_low_pct",
-    "ci95_high_pct",
-    "paired_rounds",
-)
-
-
-def collect_lane_effect_records(
-    *,
-    rd73_qualification: "dict[str, object] | None",
-) -> list[dict[str, object]]:
-    """RV99: the per-lane measurements to persist in the validation record.
-
-    The record used to keep identity, provenance and verdicts but not the
-    numbers those verdicts came from -- per-lane effects and their
-    ``pair_ratios`` existed only under ``artifacts/``, which is gitignored. An
-    interval therefore could not be re-derived, re-aggregated across sessions,
-    re-analysed under a new estimator, or audited from committed evidence.
-
-    The legacy run() path no longer produces lane effects: RD08's
-    historical stats-dict shape was retired with the 1204/RD08 producer
-    migration, and RD73's LaneEffect shape was retired with the RD73 legacy
-    compatibility retirement -- both patches' lane effects now flow through
-    the generic producer path. This collector therefore returns no records;
-    it is retained so make_record()'s lane_effects argument stays uniform.
-    """
-    records: list[dict[str, object]] = []
-
-    def _add(role: str, metric: str, source: object) -> None:
-        if source is None:
-            return
-        raw = (
-            dataclasses.asdict(source)
-            if dataclasses.is_dataclass(source)
-            else dict(source)
-        )
-        ratios = raw.get("pair_ratios") or ()
-        entry: dict[str, object] = {
-            "role": raw.get("role") or role,
-            "metric": raw.get("metric") or metric,
-            "pair_ratios": [float(value) for value in ratios],
-        }
-        for field in _LANE_EFFECT_FIELDS:
-            if raw.get(field) is not None:
-                entry[field] = raw[field]
-        records.append(entry)
-
-    if rd73_qualification is not None:
-        _add("positive", "mtp_wall_tps", rd73_qualification["mtp"].get("effect"))
-        _add(
-            "control", "decode_tps", rd73_qualification["decode_control"].get("effect")
-        )
-    return records
 
 
 def compute_persisted_validation_eligible(

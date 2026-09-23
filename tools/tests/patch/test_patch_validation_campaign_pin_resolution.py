@@ -49,7 +49,6 @@ class PinResolutionTests(unittest.TestCase):
                 vc._prepare_standard_campaign,
                 vc._run_activation_probe_stage,
                 vc._collect_build_and_correctness_evidence,
-                vc._run_contract_evidence_modes,
                 vc._evaluate_validation_plan,
                 vc._persist_validation_record,
             )
