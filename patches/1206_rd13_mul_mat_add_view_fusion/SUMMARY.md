@@ -1,7 +1,9 @@
 # 1206_rd13_mul_mat_add_view_fusion: Fuse mul_mat + add through a view (reshape) node (RD13)
 
-**Status:** blocked — current producer execution/backend-reference/activation evidence exists, but performance and controls promotion lanes are intentionally absent
-**Plan item:** PA36 migration #3 / PA40
+**Status:** untested
+**Plan item:** RD13
+
+> Status note (PA36 migration #3 / PA40): blocked — current producer execution/backend-reference/activation evidence exists, but performance and controls promotion lanes are intentionally absent
 
 ## What it does
 
