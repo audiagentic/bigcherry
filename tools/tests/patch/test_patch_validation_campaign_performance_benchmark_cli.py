@@ -58,9 +58,9 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
                 "1202_rd04_bf16_flash_attn_tile",
                 "--run-performance-benchmark",
                 "--hip-path",
-                "H:/fake",
+                "fake",
                 "--workdir",
-                "H:/fake-workdir",
+                "fake-workdir",
                 "--device-map",
                 "gfx1100=0",
             ]
@@ -74,11 +74,11 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
                 "1202_rd04_bf16_flash_attn_tile",
                 "--run-performance-benchmark",
                 "--hip-path",
-                "H:/fake",
+                "fake",
                 "--workdir",
-                "H:/fake-workdir",
+                "fake-workdir",
                 "--model-root",
-                "H:/fake-models",
+                "fake-models",
             ]
         )
         self.assertIn("requires --model-root and --device-map", message)
@@ -98,11 +98,11 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
                 "--run-performance-benchmark",
                 "--run-rd73-contract",
                 "--hip-path",
-                "H:/fake",
+                "fake",
                 "--workdir",
-                "H:/fake-workdir",
+                "fake-workdir",
                 "--model-root",
-                "H:/fake-models",
+                "fake-models",
                 "--device-map",
                 "gfx1100=0",
             ]
@@ -118,7 +118,7 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
         # materialization does run (this is a real-integration entry
         # point, not mocked) -- --worktree-root/--workdir are pointed at
         # an isolated tempdir so this does not pollute the real
-        # C:\bc-worktrees content-addressed cache.
+        # project-local content-addressed worktree cache.
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -136,7 +136,7 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
                         "--worktree-root",
                         str(tmp_path / "worktrees"),
                         "--model-root",
-                        "H:/fake-models",
+                        "fake-models",
                         "--device-map",
                         "gfx1100=0",
                     ]
@@ -157,13 +157,13 @@ class PerformanceBenchmarkArgParsingTests(unittest.TestCase):
                 "--patch",
                 "1202_rd04_bf16_flash_attn_tile",
                 "--hip-path",
-                "H:/fake",
+                "fake",
                 "--workdir",
-                "H:/fake-workdir",
+                "fake-workdir",
                 "--model",
-                "H:/fake.gguf",
+                "fake.gguf",
                 "--manifest",
-                "H:/fake-manifest.json",
+                "fake-manifest.json",
             ]
         )
         self.assertIn("--amdgpu-targets", message)
