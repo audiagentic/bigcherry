@@ -12,12 +12,31 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import paths
+
 
 class ConfigError(ValueError):
     pass
 
 
 _ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _local_env_table() -> dict[str, str]:
+    """``[env]`` of the untracked host file (``$BIGCHERRY_ENVIRONMENT`` or
+    ``config/environment.local.toml``): one uncommitted place to set the
+    ``${VAR}`` values tracked config refers to. Process environment wins."""
+    configured = os.environ.get("BIGCHERRY_ENVIRONMENT")
+    path = (
+        Path(configured) if configured
+        else paths.REPO_ROOT / "config" / "environment.local.toml"
+    )
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    table = raw.get("env") or {}
+    return {str(k): str(v) for k, v in table.items()} if isinstance(table, dict) else {}
 
 
 def expand_host_value(value: str | None) -> str | None:
@@ -31,9 +50,10 @@ def expand_host_value(value: str | None) -> str | None:
     """
     if value is None:
         return None
+    local = _local_env_table()
 
     def substitute(match: re.Match[str]) -> str:
-        found = os.environ.get(match.group(1))
+        found = os.environ.get(match.group(1), local.get(match.group(1)))
         if found is None:
             return match.group(0)
         # HIP_PATH ends in a backslash on Windows; keep forward slashes so a
@@ -49,8 +69,9 @@ def require_resolved(value: str | None, where: str) -> str | None:
         if missing:
             raise ConfigError(
                 f"{where}={value!r} references unset environment variable(s) "
-                f"{', '.join(sorted(set(missing)))}; set them in the shell or "
-                "tools/env (host-specific values are never committed)"
+                f"{', '.join(sorted(set(missing)))}; set them in the environment or the "
+                "[env] table of config/environment.local.toml (host-specific values "
+                "are never committed)"
             )
     return value
 
