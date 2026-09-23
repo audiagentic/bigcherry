@@ -121,3 +121,7 @@ vendor/llama.cpp-stock-b10327-linux
 # working directories -- never committed, per-run scratch only.
 /work/
 .nodeterm/
+
+# Host-specific settings are never committed: copy config/environment.example.toml
+# to config/environment.local.toml (or point BIGCHERRY_ENVIRONMENT at a file).
+/config/environment.local.toml

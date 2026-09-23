@@ -6,6 +6,8 @@ handles the top-level ``pinned`` value.
 
 from __future__ import annotations
 
+import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +15,44 @@ from pathlib import Path
 
 class ConfigError(ValueError):
     pass
+
+
+_ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def expand_host_value(value: str | None) -> str | None:
+    """Expand ``${VAR}`` references from the environment.
+
+    Host-specific locations (toolchain installs, remote checkout paths) are
+    never committed; tracked config names them only as ``${VAR}``. A
+    reference whose variable is unset is left in place so config still loads
+    on hosts that never use that field; ``require_resolved`` fails closed
+    wherever the value is actually consumed.
+    """
+    if value is None:
+        return None
+
+    def substitute(match: re.Match[str]) -> str:
+        found = os.environ.get(match.group(1))
+        if found is None:
+            return match.group(0)
+        # HIP_PATH ends in a backslash on Windows; keep forward slashes so a
+        # "${HIP_PATH}/bin/clang.exe" template yields one clean path string.
+        return found.replace("\\", "/").rstrip("/")
+
+    return _ENV_REFERENCE.sub(substitute, value)
+
+
+def require_resolved(value: str | None, where: str) -> str | None:
+    if value is not None:
+        missing = _ENV_REFERENCE.findall(value)
+        if missing:
+            raise ConfigError(
+                f"{where}={value!r} references unset environment variable(s) "
+                f"{', '.join(sorted(set(missing)))}; set them in the shell or "
+                "tools/env (host-specific values are never committed)"
+            )
+    return value
 
 
 def _table(raw: object, where: str) -> dict[str, object]:
@@ -377,8 +417,8 @@ def load(path: str | Path) -> Config:
             name=name,
             targets=_strings(data.get("targets"), f"platform.{name}.targets"),
             options=_options(data.get("options"), f"platform.{name}.options"),
-            c_compiler=c_compiler,
-            cxx_compiler=cxx_compiler,
+            c_compiler=expand_host_value(c_compiler),
+            cxx_compiler=expand_host_value(cxx_compiler),
         )
 
     stacks: dict[str, BackendStack] = {}
@@ -402,9 +442,9 @@ def load(path: str | Path) -> Config:
         stacks[name] = BackendStack(
             name=name,
             backend=backend,
-            sdk_root=sdk_root,
-            c_compiler=c_compiler,
-            cxx_compiler=cxx_compiler,
+            sdk_root=expand_host_value(sdk_root),
+            c_compiler=expand_host_value(c_compiler),
+            cxx_compiler=expand_host_value(cxx_compiler),
             runtime_library_dirs=_strings(
                 data.get("runtime-library-dirs"), f"stack.{name}.runtime-library-dirs"
             ),
@@ -450,7 +490,7 @@ def load(path: str | Path) -> Config:
         # alias/path may be given as the empty string to mean "unset" --
         # alias defaults to the tree name, path to "." (the local tree).
         alias = data.get("alias") or name
-        tpath = data.get("path") or "."
+        tpath = expand_host_value(data.get("path") or ".")
         if not isinstance(alias, str) or not alias:
             raise ConfigError(f"trees[{i}].alias must be a non-empty string")
         if not isinstance(tpath, str) or not tpath:

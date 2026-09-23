@@ -100,6 +100,8 @@ def toolchain_request_for_platform(
     --c-compiler) produces two genuinely separate, side-by-side comparable
     build directories instead of one overwriting the other.
     """
+    campaign_config.require_resolved(platform.c_compiler, f"platform.{platform.name}.c-compiler")
+    campaign_config.require_resolved(platform.cxx_compiler, f"platform.{platform.name}.cxx-compiler")
     values: dict[str, str] = {"CMAKE_GENERATOR": "Ninja"}
     if platform.c_compiler:
         values["CMAKE_C_COMPILER"] = platform.c_compiler
@@ -284,6 +286,8 @@ def cmake_configure_args(
             options["GGML_HIP_AUTOTUNE_GENERATED_DIR"] = str(generated_root.resolve())
         if inventory is not None:
             options["GGML_HIP_AUTOTUNE_SIGNATURE_FILE"] = str(inventory.resolve())
+    campaign_config.require_resolved(c_compiler, "c-compiler")
+    campaign_config.require_resolved(cxx_compiler, "cxx-compiler")
     if c_compiler:
         options["CMAKE_C_COMPILER"] = c_compiler
     if cxx_compiler:

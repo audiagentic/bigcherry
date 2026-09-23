@@ -178,8 +178,8 @@ class NoLegacyTreeStateMechanicsTests(unittest.TestCase):
         # Legacy mutates paths.llama_root()'s default (REPO_ROOT/vendor/
         # llama.cpp) in place. The new path only ever writes under
         # ProjectContext.resolve()'s work_root, which by construction (see
-        # context.py) defaults outside the repo tree entirely (LOCALAPPDATA/
-        # BigCherry/work or ~/.cache/bigcherry) -- never under vendor/.
+        # context.py) defaults to the project-local work/ -- never under
+        # vendor/.
         legacy_root = paths.llama_root().resolve()
         context = context_module.ProjectContext.resolve()
         new_work_root = context.work_root.resolve()

@@ -23,10 +23,10 @@ them -- see docs/reference/build/BUILD.md for cmake invocations):
 
 Usage:
     python -m bigcherry.e2e_smoke_campaign \\
-        --model G:/models/qwen3.5-2b/Qwen_Qwen3.5-2B-Q4_K_M.gguf \\
-        --tune-server C:/bcw/bin/llama-server.exe \\
-        --replay-server C:/bcw-replay/bin/llama-server.exe \\
-        --manifest H:/.../artifacts/<rev>/hip-autotune-manifest.json \\
+        --model "$BC_MODEL_ROOT/qwen3.5-2B/model.gguf" \\
+        --tune-server work/tune/bin/llama-server.exe \\
+        --replay-server work/replay/bin/llama-server.exe \\
+        --manifest artifacts/<rev>/hip-autotune-manifest.json \\
         --workdir C:/scratch/e2e-smoke
 
 Resumable: each stage's output is checked before rerunning it, so a fixed

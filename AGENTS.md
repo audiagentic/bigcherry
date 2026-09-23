@@ -35,6 +35,22 @@ repo-wide clutter, not scoped to any one session.
 - `artifacts/` and `tmp/` are both gitignored; that does not make them a free
   dumping ground — keep output inside a named subdirectory for the run/task
   it belongs to, not loose at their top level.
+- Never write output outside the project folder: not the user profile
+  (`~`, `%LOCALAPPDATA%`, `~/.cache`), not the system temp dir, not a drive
+  root. Tool caches, builds, mirrors and isolated worktrees live under the
+  gitignored project-local `work/` (the `ProjectContext.work_root` default;
+  override only with `BIGCHERRY_WORK_ROOT`). Agents needing an isolated
+  checkout create it under `work/worktrees/`, and keep scratch helpers in
+  `work/` or `tools/lab/<topic>/` — never in ad hoc hidden directories.
+- Never commit host-specific values (absolute machine paths, user home
+  directories, drive roots, host addresses, device PCI locators). Only
+  project-relative paths belong in git. Host facts live in the untracked
+  `config/environment.local.toml` (template: `config/environment.example.toml`,
+  file location overridable with `BIGCHERRY_ENVIRONMENT`, any key with
+  `BIGCHERRY_HOST_<KEY>`); tracked config refers to install locations as
+  `${VAR}` (e.g. `${HIP_PATH}`, `${ROCM_PATH}`, `${BIGCHERRY_BRUTUS_TREE}`).
+  `bigcherry check --quick` enforces this (`TR14.HOST_SPECIFIC_VALUE`,
+  `TR14.USER_FOLDER_DEFAULT`).
 
 <!-- ag:managed:begin -->
 _Managed by AUDiaGentic — generated from component configs. Edit the owning component and re-run surface apply; edits here are overwritten._
