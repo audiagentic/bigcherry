@@ -37,7 +37,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 from bigcherry.experiment import contract as experiment_contract  # noqa: E402
 from bigcherry.patch import evidence as patch_validation_evidence  # noqa: E402
 from bigcherry.patch import validation as pv  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _FIXTURE_ROOT = TOOLS_DIR / "tests" / "fixtures" / "validation_producer"
@@ -113,7 +113,7 @@ def _run_synthetic_producer(patch_dir: Path, *, patch_id: str, run_dir: Path):
         runtime=_FakeProducerRuntime(run_dir),
     )
 
-    execution = vc.execute_validation_producer(
+    execution = campaign_producer.execute_validation_producer(
         patch_dir=patch_dir, producer_id="synthetic",
         provided_inputs={"token": "synthetic-token-value"},
         producer_context=producer_context, validation_plan=plan,

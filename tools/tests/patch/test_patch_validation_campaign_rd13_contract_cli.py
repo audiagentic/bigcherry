@@ -47,7 +47,8 @@ from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch import activation as patch_activation  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
@@ -127,7 +128,7 @@ class Rd13DedicatedPathDeletionTests(unittest.TestCase):
         # The dispatcher (not the producer) runs the probe, against the
         # SCAFFOLD subject llama-bench, and fails closed when the
         # producer supplies its own evidence.
-        core_src = inspect.getsource(vc._run_producer_trace_probes)
+        core_src = inspect.getsource(campaign_producer._run_producer_trace_probes)
         self.assertIn("run_trace_activation_probes(", core_src)
         self.assertIn("result.activation_evidence is not None", core_src)
         self.assertIn("result.trace_evidence is not None", core_src)
@@ -209,7 +210,7 @@ class _FakeScaffold:
 
 
 class _FakeDispatcherRuntime:
-    """Stand-in for vc.CampaignProducerRuntime: one fake llama-server
+    """Stand-in for campaign_producer.CampaignProducerRuntime: one fake llama-server
     pair (fat multi-arch, parity asserted), one device for the run
     architecture, real artifact files under run_dir."""
 
@@ -320,7 +321,7 @@ def _fake_probe(
     write_logs: bool = True,
     **kwargs: object,
 ) -> tuple[patch_activation.ActivationEvidence, dict[str, object]]:
-    """Stand-in for vc.run_trace_activation_probes: the fake writes the
+    """Stand-in for campaign_trace.run_trace_activation_probes: the fake writes the
     two probe logs under the supplied workdir (the dispatcher binds
     their real bytes) and returns the (ActivationEvidence, detail)
     pair the dispatcher consumes."""
@@ -451,7 +452,7 @@ def _dispatch(
     recorders: dict[str, _Recorder] | None = None,
     model_bytes: bytes = b"fake-model-bytes-1206",
 ):
-    """Run vc._run_validation_producer() against the REAL 1206
+    """Run campaign_producer._run_validation_producer() against the REAL 1206
     patch/descriptor/plan with every expensive boundary faked. The
     producer is ALWAYS a fake (the real full-vocabulary measurement is
     covered by the producer-level test file); the trace probe is faked
@@ -485,18 +486,18 @@ def _dispatch(
         return _fake_probe(**kwargs)
 
     patches = [
-        mock.patch.object(vc, "_build_standard_campaign_scaffold", fake_scaffold),
-        mock.patch.object(vc, "CampaignProducerRuntime", _FakeDispatcherRuntime),
+        mock.patch.object(campaign_producer, "_build_standard_campaign_scaffold", fake_scaffold),
+        mock.patch.object(campaign_producer, "CampaignProducerRuntime", _FakeDispatcherRuntime),
         mock.patch.object(psi, "git_worktree_tree", _fake_tree),
         mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
         mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
-        mock.patch.object(vc, "run_trace_activation_probes", fake_probe),
+        mock.patch.object(campaign_producer, "run_trace_activation_probes", fake_probe),
         mock.patch.object(patch_evidence, "make_record", make_record_recorder),
         mock.patch.object(patch_evidence, "write_record", fake_write_record),
     ]
     if selection is not None:
         patches.append(
-            mock.patch.object(vc, "resolve_producer", lambda **kw: selection)
+            mock.patch.object(campaign_producer, "resolve_producer", lambda **kw: selection)
         )
     args = _args(tmp, **(args_overrides or {}))
     if args.model is not None:
@@ -505,7 +506,7 @@ def _dispatch(
     for patcher in patches:
         patcher.start()
     try:
-        exit_code = vc._run_validation_producer(
+        exit_code = campaign_producer._run_validation_producer(
             args,
             producer_id="rd13",
             provided_inputs={},
@@ -639,7 +640,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
 
     def test_probe_none_fails_closed(self) -> None:
         with self.assertRaisesRegex(
-            vc.PatchCampaignError, "unexpectedly returned None"
+            campaign_build.PatchCampaignError, "unexpectedly returned None"
         ):
             _dispatch(
                 self._tmp,
@@ -650,7 +651,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
         # non-empty, so None is a bug, not a legitimate skip): no
         # record is persisted.
         recorder = _Recorder()
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(producer=_fake_producer()),
@@ -660,7 +661,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
         self.assertEqual(recorder.calls, [])
 
     def test_producer_supplied_trace_evidence_fails_closed(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "must not supply their own"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "must not supply their own"):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(
@@ -674,7 +675,7 @@ class Rd13GenericDispatcherTests(unittest.TestCase):
             )
 
     def test_producer_supplied_activation_evidence_fails_closed(self) -> None:
-        with self.assertRaisesRegex(vc.PatchCampaignError, "must not supply their own"):
+        with self.assertRaisesRegex(campaign_build.PatchCampaignError, "must not supply their own"):
             _dispatch(
                 self._tmp,
                 selection=_fake_selection(

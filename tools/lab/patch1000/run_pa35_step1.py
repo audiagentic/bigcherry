@@ -39,7 +39,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from bigcherry.patch import source as psi  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import patch1000_verification as p1000  # noqa: E402
 
 
 def main() -> int:
@@ -54,7 +58,7 @@ def main() -> int:
     args = parser.parse_args()
 
     architecture = "gfx1201"
-    patch_id = vc._PATCH1000_ID
+    patch_id = p1000._PATCH1000_ID
 
     import tomllib
 
@@ -65,22 +69,22 @@ def main() -> int:
         raise SystemExit("patch1000 unexpectedly already in serving-core")
 
     control_revision, control_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=serving_core_ids, base_repo=vc.LLAMA_CPP_SRC,
+        "llama-native", extra_patches=serving_core_ids, base_repo=campaign_build.LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
-        "llama-native", extra_patches=(*serving_core_ids, patch_id), base_repo=vc.LLAMA_CPP_SRC,
+        "llama-native", extra_patches=(*serving_core_ids, patch_id), base_repo=campaign_build.LLAMA_CPP_SRC,
     )
     if control_revision != subject_revision:
         raise SystemExit("control/subject resolved different base revisions")
 
     source_root = args.build_root / "sources"
     control_src = psi.materialize_composition(
-        base_repo=vc.LLAMA_CPP_SRC, worktree_root=source_root / "control",
+        base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "control",
         resolved_revision=control_revision, composition=control_composition,
         overlay_root=REPO_ROOT / "src", requested_revision=control_revision,
     )
     subject_src = psi.materialize_composition(
-        base_repo=vc.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
+        base_repo=campaign_build.LLAMA_CPP_SRC, worktree_root=source_root / "subject",
         resolved_revision=subject_revision, composition=subject_composition,
         overlay_root=REPO_ROOT / "src", requested_revision=subject_revision,
     )
@@ -101,8 +105,8 @@ def main() -> int:
         # a change to shared production cmake args.
         "extra_cmake_args": ["-DCMAKE_SKIP_INSTALL_RPATH=ON"],
     }
-    control_bin = vc.build_tree(name="patch1000-pa35-control", source=control_src, **build_args)
-    subject_bin = vc.build_tree(name="patch1000-pa35-subject", source=subject_src, **build_args)
+    control_bin = campaign_build.build_tree(name="patch1000-pa35-control", source=control_src, **build_args)
+    subject_bin = campaign_build.build_tree(name="patch1000-pa35-subject", source=subject_src, **build_args)
 
     exe = ".exe" if sys.platform == "win32" else ""
     control_ops = control_bin / f"test-backend-ops{exe}"
@@ -114,7 +118,7 @@ def main() -> int:
     visibility = experiment_execution.require_device_visibility(
         context="patch1000 pa35-step1", env=selector_env, exact_count=1,
     )
-    expected_execution = vc.ExecutionIdentity(backend="ROCm", architectures=(architecture,))
+    expected_execution = ExecutionIdentity(backend="ROCm", architectures=(architecture,))
 
     result: dict[str, object] = {
         "producer": "patch1000-pa35-step1-lab-driver",
@@ -141,7 +145,7 @@ def main() -> int:
     for quant in ("Q2_K", "Q6_K"):
         correctness_doc = {}
         for arm, binary in (("control", control_ops), ("subject", subject_ops)):
-            correctness_doc[arm] = vc.run_patch1000_backend_ops_correctness(
+            correctness_doc[arm] = p1000.run_patch1000_backend_ops_correctness(
                 binary=binary, quant=quant, hip_path=args.hip_path,
                 env_overrides=selector_env,
                 log_context=f"patch1000 pa35-step1 {quant} {arm} correctness",
@@ -149,7 +153,7 @@ def main() -> int:
             )
         result["correctness"][quant] = correctness_doc
 
-        result["microbenchmark"][quant] = vc.run_patch1000_backend_ops_perf(
+        result["microbenchmark"][quant] = p1000.run_patch1000_backend_ops_perf(
             control_binary=control_ops, subject_binary=subject_ops, quant=quant,
             hip_path=args.hip_path, env_overrides=selector_env, pairs=args.pairs,
             execution_identity=expected_execution,

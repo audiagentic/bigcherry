@@ -26,7 +26,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
 PATCH = "1205_rd12_paired_mmvq_dual_output"
@@ -68,7 +68,7 @@ def main() -> int:
             producer_corpus=None,
             baseline_source="bigcherry",
         )
-        exit_code = vc._run_validation_producer(
+        exit_code = campaign_producer._run_validation_producer(
             args,
             producer_id="rd12",
             provided_inputs={},

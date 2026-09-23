@@ -46,7 +46,7 @@ from bigcherry.experiment import contract as experiment_contract  # noqa: E402
 from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
@@ -194,7 +194,7 @@ class _FakeScaffold:
 
 
 class _FakeDispatcherRuntime:
-    """Stand-in for vc.CampaignProducerRuntime: one fake llama-results
+    """Stand-in for campaign_producer.CampaignProducerRuntime: one fake llama-results
     pair (fat multi-arch, parity asserted), one device for the run
     architecture, real artifact files under run_dir."""
 
@@ -390,7 +390,7 @@ def _dispatch(
     recorders: dict[str, _Recorder] | None = None,
     model_bytes: bytes = b"fake-model-bytes-1210",
 ):
-    """Run vc._run_validation_producer() against the REAL 1210
+    """Run campaign_producer._run_validation_producer() against the REAL 1210
     patch/descriptor/plan with every expensive boundary faked. The
     producer is ALWAYS a fake (the real raw-logit oracle is covered by
     the producer-level test file). RD26 is trace_probe="skip": no
@@ -415,8 +415,8 @@ def _dispatch(
         return path
 
     patches = [
-        mock.patch.object(vc, "_build_standard_campaign_scaffold", fake_scaffold),
-        mock.patch.object(vc, "CampaignProducerRuntime", _FakeDispatcherRuntime),
+        mock.patch.object(campaign_producer, "_build_standard_campaign_scaffold", fake_scaffold),
+        mock.patch.object(campaign_producer, "CampaignProducerRuntime", _FakeDispatcherRuntime),
         mock.patch.object(psi, "git_worktree_tree", _fake_tree),
         mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
         mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
@@ -425,7 +425,7 @@ def _dispatch(
     ]
     if selection is not None:
         patches.append(
-            mock.patch.object(vc, "resolve_producer", lambda **kw: selection)
+            mock.patch.object(campaign_producer, "resolve_producer", lambda **kw: selection)
         )
     args = _args(tmp, **(args_overrides or {}))
     if args.model is not None:
@@ -434,7 +434,7 @@ def _dispatch(
     for patcher in patches:
         patcher.start()
     try:
-        exit_code = vc._run_validation_producer(
+        exit_code = campaign_producer._run_validation_producer(
             args,
             producer_id="rd26",
             provided_inputs={},

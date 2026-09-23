@@ -28,7 +28,8 @@ from bigcherry.experiment import contract as experiment_contract  # noqa: E402
 from bigcherry.experiment import execution as experiment_execution  # noqa: E402
 from bigcherry.patch import evidence as patch_validation_evidence  # noqa: E402
 from bigcherry.patch import validation as pv  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _PATCH_ID = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
@@ -340,7 +341,7 @@ class _FakeProducerRuntime:
             }
         )
         if self.benchmark_should_fail:
-            raise vc.PatchCampaignError("simulated benchmark failure")
+            raise campaign_build.PatchCampaignError("simulated benchmark failure")
         if log_context == "rd06-performance-positive":
             runs = {"decode": _paired_lane_run(**self.rd06_positive_stats)}
             if not self.rd06_missing_prefill:
@@ -495,7 +496,7 @@ def _run_producer(
         else {"control_model": str(resolved_control_model)}
     )
 
-    execution = vc.execute_validation_producer(
+    execution = campaign_producer.execute_validation_producer(
         patch_dir=_PATCH_DIR,
         producer_id="rd050607",
         provided_inputs=provided_inputs,
@@ -663,7 +664,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         device_map = {"gfx1100": (0,), "gfx1201": (1,), "gfx1030": (2,)}
         with mock.patch("subprocess.run") as run_mock:
             run_mock.side_effect = _make_subprocess_side_effect()
-            with self.assertRaises(vc.PatchCampaignError):
+            with self.assertRaises(campaign_build.PatchCampaignError):
                 _run_producer(
                     run_dir=self.run_dir,
                     device_map=device_map,
@@ -1246,7 +1247,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
         runtime = _FakeProducerRuntime(self.run_dir, device_map=device_map)
 
         def _raise_build_pair(**_kwargs):
-            raise vc.PatchCampaignError("simulated apply/build failure")
+            raise campaign_build.PatchCampaignError("simulated apply/build failure")
 
         runtime.build_pair = _raise_build_pair  # type: ignore[assignment]
         producer_context = vp.ProducerContext(
@@ -1266,8 +1267,8 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
             device_map=device_map,
             runtime=runtime,
         )
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.execute_validation_producer(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_producer.execute_validation_producer(
                 patch_dir=_PATCH_DIR,
                 producer_id="rd050607",
                 provided_inputs={
