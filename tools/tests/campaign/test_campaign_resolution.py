@@ -67,10 +67,9 @@ class CampaignResolutionTests(unittest.TestCase):
             for module in self.catalog
             if module.state == "validated" and module.patch_id in core_patch_ids
         )
-        # 15 serving/campaign/qualification modules (HI70's 1100 the 15th,
-        # PPS03's upstream-fixes split, PA27's 0100/0110 split) + 1
-        # upstream-fixes module = 16.
-        self.assertEqual(len(expected), 16)
+        # 15 serving/campaign/qualification modules + 0
+        # upstream-fixes modules = 15.
+        self.assertEqual(len(expected), 15)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
             len(core_patch_ids - frozenset(self.cfg.patch_sets["upstream-fixes"].patches)),
@@ -78,7 +77,7 @@ class CampaignResolutionTests(unittest.TestCase):
         )
         self.assertEqual(
             len(self.cfg.patch_sets["upstream-fixes"].patches),
-            1,
+            0,
         )
         # bigcherry-qualification-tuning must never report or build a
         # promoted enhancement. That separation is what makes it usable as
@@ -157,7 +156,7 @@ class CampaignResolutionTests(unittest.TestCase):
         )
         # 16 core modules (serving-core + campaign-support +
         # qualification-support + upstream-fixes) + 1 overlay patch = 17.
-        self.assertEqual(len(lane.patch_set.module_ids), 17)
+        self.assertEqual(len(lane.patch_set.module_ids), 16)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn(
             "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids
@@ -831,7 +830,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         )
         self.assertEqual(set(lane.patch_set.module_ids), set(expected))
-        self.assertEqual(len(expected), 16)
+        self.assertEqual(len(expected), 15)
 
     def test_0800_and_1100_are_not_orphaned(self):
         # PA28's own Validation section calls this out explicitly.
