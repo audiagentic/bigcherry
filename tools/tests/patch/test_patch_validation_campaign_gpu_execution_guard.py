@@ -22,6 +22,7 @@ which also gained an explicit -ngl 99 flag.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -76,7 +77,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
     actually exercises the -ngl flag and the guard together."""
 
     def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
+        self._real_subprocess_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.workdir = Path(self._tmp.name)
         self.binary = self.workdir / "fake-binary"
@@ -85,7 +86,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         self.model.write_text("", encoding="utf-8")
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
+        subprocess.run = self._real_subprocess_run
         self._tmp.cleanup()
 
     def _fake_run(self, stdout: str, stderr: str = "", returncode: int = 0):
@@ -100,7 +101,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
             result.stderr = stderr
             return result
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
 
     def test_command_includes_ngl_99(self) -> None:
         self._fake_run("ggml_cuda_init: found 1 ROCm devices\n")

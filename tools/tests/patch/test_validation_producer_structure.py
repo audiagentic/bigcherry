@@ -45,12 +45,10 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # Function names already matching run_rd\d+_*/run_patch\d+_*/_load_rd\d+_*
 # in validation_campaign.py as of the PA36-F step-6 pass. Migrating a
 # producer deletes its entry from BOTH the source file and this baseline in
-# the same commit -- the baseline only ever shrinks.
+# the same commit -- the baseline only ever shrinks. (PA43: the three
+# run_patch1000_* functions left shared code for tools/lab/patch1000/.)
 _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
     {
-        "run_patch1000_backend_ops_correctness",
-        "run_patch1000_backend_ops_perf",
-        "run_patch1000_verification",
         "run_rd73_contract_qualification",
         "run_rd73_decode_control_lane",
         "run_rd73_mtp_server_lane",

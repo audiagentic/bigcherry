@@ -39,8 +39,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from bigcherry.patch import source as psi  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import patch1000_verification as p1000  # noqa: E402
 
 
 def main() -> int:
@@ -55,7 +58,7 @@ def main() -> int:
     args = parser.parse_args()
 
     architecture = "gfx1201"
-    patch_id = vc._PATCH1000_ID
+    patch_id = p1000._PATCH1000_ID
 
     import tomllib
 
@@ -115,7 +118,7 @@ def main() -> int:
     visibility = experiment_execution.require_device_visibility(
         context="patch1000 pa35-step1", env=selector_env, exact_count=1,
     )
-    expected_execution = vc.ExecutionIdentity(backend="ROCm", architectures=(architecture,))
+    expected_execution = ExecutionIdentity(backend="ROCm", architectures=(architecture,))
 
     result: dict[str, object] = {
         "producer": "patch1000-pa35-step1-lab-driver",
@@ -142,7 +145,7 @@ def main() -> int:
     for quant in ("Q2_K", "Q6_K"):
         correctness_doc = {}
         for arm, binary in (("control", control_ops), ("subject", subject_ops)):
-            correctness_doc[arm] = vc.run_patch1000_backend_ops_correctness(
+            correctness_doc[arm] = p1000.run_patch1000_backend_ops_correctness(
                 binary=binary, quant=quant, hip_path=args.hip_path,
                 env_overrides=selector_env,
                 log_context=f"patch1000 pa35-step1 {quant} {arm} correctness",
@@ -150,7 +153,7 @@ def main() -> int:
             )
         result["correctness"][quant] = correctness_doc
 
-        result["microbenchmark"][quant] = vc.run_patch1000_backend_ops_perf(
+        result["microbenchmark"][quant] = p1000.run_patch1000_backend_ops_perf(
             control_binary=control_ops, subject_binary=subject_ops, quant=quant,
             hip_path=args.hip_path, env_overrides=selector_env, pairs=args.pairs,
             execution_identity=expected_execution,
