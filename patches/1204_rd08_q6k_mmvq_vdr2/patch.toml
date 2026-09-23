@@ -1,7 +1,7 @@
 schema = 1
 id = "1204_rd08_q6k_mmvq_vdr2"
 order = 1204
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
