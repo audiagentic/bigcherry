@@ -36,7 +36,6 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
 from bigcherry.patch import registry as patch_registry  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch.campaign import scaffold as campaign_scaffold  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402

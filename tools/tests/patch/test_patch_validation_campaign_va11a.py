@@ -16,7 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.experiment import contract as ec  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch.campaign import contract as campaign_contract  # noqa: E402
 
 _CONTRACTS = ec.load_contracts(

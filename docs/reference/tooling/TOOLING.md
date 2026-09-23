@@ -16,6 +16,7 @@ outside the production package until it has an explicit disposition.
 | Source | `bigcherry.source` | Upstream identity, checkout, source audit, and workspace lifecycle |
 | Build | `bigcherry.build` | Recipes, generated trees, toolchains, compile checks, and builds |
 | Patches | `bigcherry.patch` | Package discovery, lifecycle, application, validation, and patch evidence |
+| Patch-validation campaign | `bigcherry.patch.validation_campaign` (CLI/`run()` orchestrator) over `bigcherry.patch.campaign.*` | Infrastructure lives in the owning submodule: `build` (HIP env, CMake configure, tree builds, shared primitives), `trace` (trace probes, real-GPU guard), `contract` (correctness gate, parity, eligibility), `scaffold` (standard-campaign builds), `benchmark` (paired llama-bench, wiring, device pool), `qualification` (evidence manifests), `producer` (validation-producer runtime). `campaign/*` never imports the CLI module; patch-local producers import neither |
 | Campaigns | `bigcherry.campaign` | Build/smoke/comparison/benchmark orchestration and campaign lanes |
 | Experiments | `bigcherry.experiment` | Contracts, identities, bundles, and experiment state transitions |
 | Tuning/replay | `bigcherry.tuning` | Catalog, journal, measurement, correctness, promotion, ranking, and replay |

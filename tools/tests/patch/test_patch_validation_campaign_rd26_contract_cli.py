@@ -46,7 +46,6 @@ from bigcherry.experiment import contract as experiment_contract  # noqa: E402
 from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
