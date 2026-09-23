@@ -189,7 +189,16 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
                 vc._persist_validation_record,
             )
         )
-        self.impl_source = inspect.getsource(campaign_benchmark._run_performance_benchmark)
+        # PA43: the per-cell execution lives in _run_performance_cell().
+        self.impl_source = "".join(
+            inspect.getsource(fn)
+            for fn in (
+                campaign_benchmark._run_performance_benchmark,
+                campaign_benchmark._resolve_benchmark_architectures,
+                campaign_benchmark._build_performance_binary_pair,
+                campaign_benchmark._run_performance_cell,
+            )
+        )
 
     def test_dispatches_before_the_legacy_single_architecture_flow(self) -> None:
         dispatch_index = self.run_source.index(

@@ -1086,14 +1086,20 @@ def run_rd73_contract_qualification(
     }
 
 
-def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> int:
-    """Build the canonical native framework composition and persist schema-5 proof."""
-    from bigcherry.build import generated_tree
-    from bigcherry.patch import evidence as patch_validation_evidence
-    from bigcherry.patch import source as psi
+@dataclasses.dataclass(frozen=True)
+class _FrameworkSource:
+    baseline_source: str
+    base_revision: str
+    composition: tuple
+    source: Path
+    idempotent: bool
+    source_tree: str
+    source_manifest: dict
+    source_identity: dict
+
+
+def _require_framework_configuration_inputs(args: argparse.Namespace, descriptor) -> None:
     from bigcherry.patch import validation_policy
-    from bigcherry.patch import validation
-    from bigcherry.core import paths as bc_paths
 
     if not validation_policy.is_framework_configuration_patch(descriptor):
         raise PatchCampaignError(
@@ -1127,6 +1133,11 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
             "framework configuration requires explicit AMDGPU compile targets"
         )
     args.amdgpu_targets = ";".join(targets)
+
+
+def _materialize_framework_source(args: argparse.Namespace, descriptor, cfg) -> _FrameworkSource:
+    from bigcherry.patch import source as psi
+
     from bigcherry.core.context import ProjectContext
 
     base_repo = ProjectContext.resolve(
@@ -1174,6 +1185,22 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     source_identity["materialization_plan_id"] = source_identity["source_key"]
     if any(source_manifest.get(key) != value for key, value in source_identity.items()):
         raise PatchCampaignError("framework materialization identity is stale")
+    return _FrameworkSource(
+        baseline_source=baseline_source,
+        base_revision=base_revision,
+        composition=composition,
+        source=source,
+        idempotent=idempotent,
+        source_tree=source_tree,
+        source_manifest=source_manifest,
+        source_identity=source_identity,
+    )
+
+
+def _generate_framework_inputs(args: argparse.Namespace, source: Path):
+    """Generate the registry into a fresh build-root; return (build_root, generated_dir, manifest)."""
+    from bigcherry.build import generated_tree
+
     build_root = (args.build_root or args.workdir) / source.name
     # Qualification owns fresh directories, never retroactively attests a
     # historical build whose inputs were not observed during compilation.
@@ -1203,6 +1230,22 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     generated_manifest = generated_tree.build_manifest(
         generated_dir, compile_inputs=compile_inputs
     )
+    return build_root, generated_dir, generated_manifest
+
+
+def _compile_framework_builds(
+    args: argparse.Namespace,
+    *,
+    source: Path,
+    source_tree: str,
+    build_root: Path,
+    generated_dir: Path,
+    generated_manifest: dict,
+):
+    """Build production/diagnostic trees; return (proof, production, diagnostic, compiler_observations)."""
+    from bigcherry.build import generated_tree
+    from bigcherry.patch import source as psi
+
     proof = {}
 
     def generated_proof(phase, build_dir):
@@ -1315,6 +1358,35 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
                 "issues",
             )
         }
+    return proof, production, diagnostic, compiler_observations
+
+
+def _record_framework_configuration(
+    args: argparse.Namespace,
+    descriptor,
+    cfg,
+    framework: _FrameworkSource,
+    *,
+    build_root: Path,
+    generated_manifest: dict,
+    proof: dict,
+    production,
+    diagnostic,
+    compiler_observations: dict,
+) -> int:
+    """Evaluate the framework checks and persist the schema-5 evidence record."""
+    from bigcherry.patch import evidence as patch_validation_evidence
+    from bigcherry.patch import validation_policy
+    from bigcherry.patch import validation
+    from bigcherry.core import paths as bc_paths
+
+    base_revision = framework.base_revision
+    composition = framework.composition
+    idempotent = framework.idempotent
+    source_tree = framework.source_tree
+    source_manifest = framework.source_manifest
+    source_identity = framework.source_identity
+    baseline_source = framework.baseline_source
     run_dir = args.workdir / "framework" / descriptor.patch_id
     run_dir.mkdir(parents=True, exist_ok=False)
     generated_artifact = _write_bound_artifact(
@@ -1416,6 +1488,35 @@ def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> i
     path = patch_validation_evidence.write_record(record)
     _print(f"framework configuration evidence: {path}")
     return 0 if record["eligible_for_validated_state"] else 1
+
+
+def _run_framework_configuration(args: argparse.Namespace, descriptor, cfg) -> int:
+    """Build the canonical native framework composition and persist schema-5 proof."""
+    _require_framework_configuration_inputs(args, descriptor)
+    framework = _materialize_framework_source(args, descriptor, cfg)
+    build_root, generated_dir, generated_manifest = _generate_framework_inputs(
+        args, framework.source
+    )
+    proof, production, diagnostic, compiler_observations = _compile_framework_builds(
+        args,
+        source=framework.source,
+        source_tree=framework.source_tree,
+        build_root=build_root,
+        generated_dir=generated_dir,
+        generated_manifest=generated_manifest,
+    )
+    return _record_framework_configuration(
+        args,
+        descriptor,
+        cfg,
+        framework,
+        build_root=build_root,
+        generated_manifest=generated_manifest,
+        proof=proof,
+        production=production,
+        diagnostic=diagnostic,
+        compiler_observations=compiler_observations,
+    )
 
 
 def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) -> None:
@@ -1789,13 +1890,130 @@ def _collect_build_and_correctness_evidence(args: argparse.Namespace, st: Simple
     st.performance_evidence = performance_evidence
 
 
-def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
-    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
+def _bind_rd73_qualification_evidence(
+    args: argparse.Namespace,
+    st: SimpleNamespace,
+    rd73_qualification: dict,
+    correctness_evidence,
+):
+    """Bind RD73's contract-produced evidence into the generic adapter and record.
+
+    Returns (performance_evidence, correctness_evidence, trace_evidence,
+    activation_evidence, activation_verdict, correctness_summary).
+    """
     _patch_file = st._patch_file
-    activation_evidence = st.activation_evidence
-    activation_verdict = st.activation_verdict
     base_revision = st.base_revision
     campaign = st.campaign
+    campaign_run_dir = st.campaign_run_dir
+    patch_validation_evidence = st.patch_validation_evidence
+    patched_source_tree = st.patched_source_tree
+    trace_marker_regex = st.trace_marker_regex
+    # VA23: bind RD73's real contract-produced evidence into the generic
+    # adapter, exactly as RD58 does. Before this, the RD73 branch produced
+    # authoritative artifacts but bound none of them, so the declared
+    # performance/controls checks ERRORed ("benchmark artifact requires
+    # non-empty metrics") and correctness stayed BLOCKED -- making
+    # patch-verify-evidence report that no benchmark ran when one had.
+    #
+    # correctness is bound ONLY when the bit_identical evaluation actually
+    # produced an artifact. On Rd73CorrectnessError the artifact is None
+    # and correctness must stay BLOCKED rather than silently pass: a
+    # correctness check that could not be evaluated is not a correctness
+    # check that succeeded.
+    performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
+    if rd73_qualification["correctness"].get("artifact") is not None:
+        correctness_evidence = {
+            "artifact": rd73_qualification["correctness"]["artifact"]
+        }
+    # VA23: the activation lane already ran a real positive/negative
+    # marker probe; bind its bound log refs so _builtin_trace_marker()
+    # can re-read and re-verify them. The validator does its own regex
+    # check against both logs, so this supplies evidence for independent
+    # verification rather than asserting the outcome.
+    trace_evidence = {
+        "positive": rd73_qualification["activation"]["positive"],
+        "negative": rd73_qualification["activation"]["negative"],
+    }
+    # RV95: the three bindings above satisfy validation.toml's DECLARED
+    # checks, but not the record's own top-level activation/correctness
+    # fields -- make_record() reads those from activation_evidence and
+    # correctness_summary, which the RD73 branch never set. They stayed
+    # at disposition="unknown", so verify_validated_patch() rejected an
+    # otherwise-passing record with "activation is not executed+
+    # activation-verified; correctness did not pass" even while
+    # check_results._contract_correctness_gate.passed was true. Bind them
+    # from the SAME real evidence RD08/RD58 use, in the same shape.
+    activation_evidence = ActivationEvidence(
+        status=(
+            "executed"
+            if rd73_qualification["activation"]["subject_hit"]
+            and not rd73_qualification["activation"]["control_hit"]
+            else "not_executed"
+        ),
+        mechanism="rd73-trigger-marker",
+        detail=f"marker={trace_marker_regex!r}",
+    )
+    activation_verdict = verdict(activation_evidence, correctness_passed=None)
+    write_activation_json(
+        campaign_run_dir / "activation.json",
+        activation_evidence,
+        activation_verdict,
+        extra={
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "rd73_trigger": {
+                "subject_hit": rd73_qualification["activation"]["subject_hit"],
+                "control_hit": rd73_qualification["activation"]["control_hit"],
+                "artifact": rd73_qualification["activation"]["artifact"],
+            },
+        },
+    )
+    # Disposition comes from the contract's own correctness gate, which
+    # is already fail-closed: an Rd73CorrectnessError leaves the artifact
+    # None and records passed=False, so a correctness check that could
+    # not be evaluated reports "failed" here rather than silently passing.
+    correctness_summary = {
+        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+        "patch_id": args.patch,
+        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+            _patch_file
+        ),
+        "base_revision": base_revision,
+        "patched_source_tree": patched_source_tree,
+        "campaign_identity_digest": campaign.campaign_identity_digest,
+        "gpu_architectures": [args.amdgpu_targets],
+        "disposition": (
+            "passed"
+            if rd73_qualification["correctness_gate"].get("passed")
+            else "failed"
+        ),
+        "mechanism": "rd73-mtp-bit-identical",
+        "detail": (
+            "paired MTP control/subject completions compared byte-for-byte; "
+            f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
+        ),
+    }
+    correctness_path = campaign_run_dir / "correctness.json"
+    _atomic_write_json(correctness_path, correctness_summary)
+
+    _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
+    _print(
+        f"rd73 promotion: "
+        f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
+    )
+    return (
+        performance_evidence,
+        correctness_evidence,
+        trace_evidence,
+        activation_evidence,
+        activation_verdict,
+        correctness_summary,
+    )
+
+
+def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
+    activation_evidence = st.activation_evidence
+    activation_verdict = st.activation_verdict
     campaign_run_dir = st.campaign_run_dir
     control_bin = st.control_bin
     correctness_evidence = st.correctness_evidence
@@ -1803,7 +2021,6 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
     descriptor = st.descriptor
     exe = st.exe
     patch_validation_evidence = st.patch_validation_evidence
-    patched_source_tree = st.patched_source_tree
     performance_evidence = st.performance_evidence
     trace_evidence = st.trace_evidence
     trace_marker_regex = st.trace_marker_regex
@@ -1865,97 +2082,15 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
 
-        # VA23: bind RD73's real contract-produced evidence into the generic
-        # adapter, exactly as RD58 does. Before this, the RD73 branch produced
-        # authoritative artifacts but bound none of them, so the declared
-        # performance/controls checks ERRORed ("benchmark artifact requires
-        # non-empty metrics") and correctness stayed BLOCKED -- making
-        # patch-verify-evidence report that no benchmark ran when one had.
-        #
-        # correctness is bound ONLY when the bit_identical evaluation actually
-        # produced an artifact. On Rd73CorrectnessError the artifact is None
-        # and correctness must stay BLOCKED rather than silently pass: a
-        # correctness check that could not be evaluated is not a correctness
-        # check that succeeded.
-        performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
-        if rd73_qualification["correctness"].get("artifact") is not None:
-            correctness_evidence = {
-                "artifact": rd73_qualification["correctness"]["artifact"]
-            }
-        # VA23: the activation lane already ran a real positive/negative
-        # marker probe; bind its bound log refs so _builtin_trace_marker()
-        # can re-read and re-verify them. The validator does its own regex
-        # check against both logs, so this supplies evidence for independent
-        # verification rather than asserting the outcome.
-        trace_evidence = {
-            "positive": rd73_qualification["activation"]["positive"],
-            "negative": rd73_qualification["activation"]["negative"],
-        }
-        # RV95: the three bindings above satisfy validation.toml's DECLARED
-        # checks, but not the record's own top-level activation/correctness
-        # fields -- make_record() reads those from activation_evidence and
-        # correctness_summary, which the RD73 branch never set. They stayed
-        # at disposition="unknown", so verify_validated_patch() rejected an
-        # otherwise-passing record with "activation is not executed+
-        # activation-verified; correctness did not pass" even while
-        # check_results._contract_correctness_gate.passed was true. Bind them
-        # from the SAME real evidence RD08/RD58 use, in the same shape.
-        activation_evidence = ActivationEvidence(
-            status=(
-                "executed"
-                if rd73_qualification["activation"]["subject_hit"]
-                and not rd73_qualification["activation"]["control_hit"]
-                else "not_executed"
-            ),
-            mechanism="rd73-trigger-marker",
-            detail=f"marker={trace_marker_regex!r}",
-        )
-        activation_verdict = verdict(activation_evidence, correctness_passed=None)
-        write_activation_json(
-            campaign_run_dir / "activation.json",
+        (
+            performance_evidence,
+            correctness_evidence,
+            trace_evidence,
             activation_evidence,
             activation_verdict,
-            extra={
-                "campaign_identity_digest": campaign.campaign_identity_digest,
-                "rd73_trigger": {
-                    "subject_hit": rd73_qualification["activation"]["subject_hit"],
-                    "control_hit": rd73_qualification["activation"]["control_hit"],
-                    "artifact": rd73_qualification["activation"]["artifact"],
-                },
-            },
-        )
-        # Disposition comes from the contract's own correctness gate, which
-        # is already fail-closed: an Rd73CorrectnessError leaves the artifact
-        # None and records passed=False, so a correctness check that could
-        # not be evaluated reports "failed" here rather than silently passing.
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision,
-            "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": (
-                "passed"
-                if rd73_qualification["correctness_gate"].get("passed")
-                else "failed"
-            ),
-            "mechanism": "rd73-mtp-bit-identical",
-            "detail": (
-                "paired MTP control/subject completions compared byte-for-byte; "
-                f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
-            ),
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-
-        _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
-        _print(
-            f"rd73 promotion: "
-            f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
+            correctness_summary,
+        ) = _bind_rd73_qualification_evidence(
+            args, st, rd73_qualification, correctness_evidence
         )
     st.activation_evidence = activation_evidence
     st.activation_verdict = activation_verdict
@@ -2334,8 +2469,7 @@ def _absolute_path(value: str) -> Path:
     return Path(value).resolve()
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
+def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--patch", required=True, help="patch module name under patches/"
     )
@@ -2440,6 +2574,9 @@ def main(argv: list[str] | None = None) -> int:
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
         "(bench/server_completion.py's load_corpus() format).",
     )
+
+
+def _add_benchmark_and_producer_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--run-performance-benchmark",
         action="store_true",
@@ -2509,46 +2646,56 @@ def main(argv: list[str] | None = None) -> int:
         "if the producer does not declare NAME, a required NAME is missing, or "
         "the same NAME is given twice.",
     )
+
+
+def _dispatch_validation_producer(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
+    # dispatch plugs in immediately after parse_args()/common patch
+    # resolution, before the first other RD-only
+    # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
+    # of known RD flags -- a new --run-rdNN-* flag added later is caught
+    # automatically, with no edit required here.
+    legacy_modes = tuple(
+        name
+        for name, value in vars(args).items()
+        if value
+        and (
+            re.fullmatch(r"run_rd\d+.*", name)
+            or re.fullmatch(r"run_patch\d+.*", name)
+        )
+    )
+    if legacy_modes:
+        parser.error(
+            "--validation-producer is mutually exclusive with legacy execution "
+            f"mode(s): {', '.join(sorted(legacy_modes))}"
+        )
+    selector_patch, producer_id = _parse_validation_producer_selector(
+        args.validation_producer
+    )
+    # --patch stays required at the parser level (retiring that
+    # requirement is the atomic migration sequence's job, not step 5's);
+    # while it is, this just enforces it can never silently diverge from
+    # the selector instead of asking the user to specify the patch twice.
+    if args.patch != selector_patch:
+        parser.error(
+            f"--patch {args.patch!r} does not match --validation-producer's patch "
+            f"component {selector_patch!r} -- do not specify a different patch twice"
+        )
+    provided_inputs = _parse_producer_inputs(args.producer_inputs)
+    return _run_validation_producer(
+        args, producer_id=producer_id, provided_inputs=provided_inputs
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
+    _add_core_arguments(parser)
+    _add_benchmark_and_producer_arguments(parser)
     args = parser.parse_args(argv)
     if args.worktree_root is None:
         args.worktree_root = ProjectContext.resolve().work_root / "worktrees"
     if args.validation_producer is not None:
-        # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
-        # dispatch plugs in immediately after parse_args()/common patch
-        # resolution, before the first other RD-only
-        # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
-        # of known RD flags -- a new --run-rdNN-* flag added later is caught
-        # automatically, with no edit required here.
-        legacy_modes = tuple(
-            name
-            for name, value in vars(args).items()
-            if value
-            and (
-                re.fullmatch(r"run_rd\d+.*", name)
-                or re.fullmatch(r"run_patch\d+.*", name)
-            )
-        )
-        if legacy_modes:
-            parser.error(
-                "--validation-producer is mutually exclusive with legacy execution "
-                f"mode(s): {', '.join(sorted(legacy_modes))}"
-            )
-        selector_patch, producer_id = _parse_validation_producer_selector(
-            args.validation_producer
-        )
-        # --patch stays required at the parser level (retiring that
-        # requirement is the atomic migration sequence's job, not step 5's);
-        # while it is, this just enforces it can never silently diverge from
-        # the selector instead of asking the user to specify the patch twice.
-        if args.patch != selector_patch:
-            parser.error(
-                f"--patch {args.patch!r} does not match --validation-producer's patch "
-                f"component {selector_patch!r} -- do not specify a different patch twice"
-            )
-        provided_inputs = _parse_producer_inputs(args.producer_inputs)
-        return _run_validation_producer(
-            args, producer_id=producer_id, provided_inputs=provided_inputs
-        )
+        return _dispatch_validation_producer(parser, args)
     if (
         not args.framework_configuration
         and not args.run_performance_benchmark

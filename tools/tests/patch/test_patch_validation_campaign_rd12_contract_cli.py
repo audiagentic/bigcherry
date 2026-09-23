@@ -90,19 +90,21 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         # the two promotion-semantic PERSISTENCE helpers below must be
         # pinned to producer_contract_promotions, never
         # execution.contract_verdicts.)
-        core_src = inspect.getsource(campaign_producer._run_validation_producer)
+        core_src = inspect.getsource(
+            campaign_producer._persist_producer_validation_record
+        ) + inspect.getsource(campaign_producer._evaluate_producer_contract_promotions)
         self.assertIn(
             "build_contract_evidence_for_persistence(\n"
-            "                validation_plan.contracts,\n"
-            "                producer_contract_promotions,\n"
-            "            )",
+            "            validation_plan.contracts,\n"
+            "            producer_contract_promotions,\n"
+            "        )",
             core_src,
         )
         self.assertIn(
             "compute_persisted_validation_eligible(\n"
-            "                descriptor,\n"
-            "                execution.verdict,\n"
-            "                producer_contract_promotions,",
+            "            descriptor,\n"
+            "            execution.verdict,\n"
+            "            producer_contract_promotions,",
             core_src,
         )
         # The promotion dict must be built from the producer's typed
@@ -114,8 +116,8 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         )
         self.assertNotIn(
             "build_contract_evidence_for_persistence(\n"
-            "                validation_plan.contracts,\n"
-            "                execution.contract_verdicts",
+            "            validation_plan.contracts,\n"
+            "            execution.contract_verdicts",
             core_src,
         )
 
