@@ -40,16 +40,20 @@ _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
         "run_patch1000_backend_ops_correctness",
         "run_patch1000_backend_ops_perf",
         "run_patch1000_verification",
+        "run_rd73_contract_qualification",
+        "run_rd73_decode_control_lane",
+        "run_rd73_mtp_server_lane",
+        "run_rd73_resource_burst_session",
     }
 )
 
 # --run-rdNN-*/--run-patchNNNN-* string literals already passed to
 # add_argument() in validation_campaign.py as of the PA36-F step-6 pass.
-# Same shrink-only rule. (Shrunk to empty with the RD73 legacy
-# compatibility retirement -- no dedicated --run-rdNN-*/--run-patchNNNN-*
-# flag remains in the shared campaign code.)
+# Same shrink-only rule. The --run-rd73-contract flag remains for the
+# legacy RD73 full-qualification path (PA36 close-out: policy-blocked
+# sub-slice 3, state="rejected"; flag retained for future re-opening).
 _BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
-    set()
+    {"--run-rd73-contract"}
 )
 
 
