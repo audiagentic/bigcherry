@@ -662,6 +662,12 @@ def _add_worktree(base_repo: Path, worktree_dir: Path, base_revision: str) -> No
     # removed leaves it in place, and the re-add below then fails with
     # exit 128 (caught by a real RS05 rebuild test).
     _run(["git", "worktree", "prune"], cwd=base_repo, check=False)
+    if sys.platform == "win32":
+        # Worktrees live under the project-local work/ with 64-hex identity
+        # directory names; llama.cpp's deepest paths then exceed MAX_PATH, and
+        # git refuses them unless core.longpaths is set. Repo-local setting,
+        # shared by every worktree of this base repo.
+        _run(["git", "config", "core.longpaths", "true"], cwd=base_repo)
     _run(
         ["git", "worktree", "add", "--detach", str(worktree_dir), base_revision],
         cwd=base_repo,
