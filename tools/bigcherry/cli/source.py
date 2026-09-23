@@ -164,7 +164,10 @@ def cmd_pull(args: Namespace) -> int:
         _run(["git", "-C", str(root), "checkout", "--force", checkout_target])
 
     record = releases.record_for_checkout(root)
-    record.advance_to("pulled")
+    # Like a repeated audit, re-pulling a revision must not demote a record
+    # that already reached a later stage for it.
+    if record.stage in ("pulled", "broken"):
+        record.advance_to("pulled")
     record.save()
     print(
         f"at {record.revision[:12]}"
