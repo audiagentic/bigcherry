@@ -36,13 +36,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import scaffold as campaign_scaffold  # noqa: E402
 
 
 class PinResolutionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.run_source = inspect.getsource(vc.run)
         self.scaffold_source = inspect.getsource(
-            vc._build_standard_campaign_scaffold)
+            campaign_scaffold._build_standard_campaign_scaffold)
         # The original pre-T2 tests inspected vc.run only; the combined
         # view keeps those assertions working AND extends "no HEAD
         # anywhere" to the scaffold where the resolution now lives.
