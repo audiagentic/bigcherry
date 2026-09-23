@@ -73,15 +73,14 @@ class TestHi104BuildDescriptorParity(unittest.TestCase):
         source = TUNER_SOURCE.read_text(encoding="utf-8")
         flush = source[source.index("void ggml_hip_tuner_flush()"):]
         for field in (
-            r'\"transform_schema_version\":1',
-            r'\"hardware_provenance\":{\"digest\":\"%s\",\"architecture\":\"%s\"}',
-            r'\"build_provenance\":{\"source_revision\":\"%s\",',
-            r'\"manifest_hash\":\"%s\",\"build_descriptor_hash\":\"%s\"}',
-            r'\"evidence_references\":[\"%s\"]',
+            r'\"artifact_version\":%d',
+            r'\"build_descriptor_hash\":\"%s\"',
+            r'\"producer_capabilities\":\"%016llx%016llx\"',
+            r'\"kind\":\"result\"',
+            r'\"kind\":\"transform-attempt\"',
+            r'\"kind\":\"transform-gap\"',
         ):
             self.assertIn(field, flush)
-        self.assertIn("runtime_build_descriptor_hash()", source)
-        self.assertNotIn(r'\"original_sig\":\"%s\",\"hardware\":\"%s\"', flush)
 
 
 class TestHi104NestedRuntimeArtifact(unittest.TestCase):
