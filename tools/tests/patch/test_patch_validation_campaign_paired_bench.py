@@ -9,6 +9,7 @@ planning/active/patching-validation-package-standard/PVPS02.md).
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -71,17 +72,17 @@ class PairedLlamaBenchCommandTests(unittest.TestCase):
 
 class RunPairedLlamaBenchmarkTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
+        self._real_subprocess_run = subprocess.run
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
+        subprocess.run = self._real_subprocess_run
 
     def test_default_workloads_run_both_decode_and_prefill(self) -> None:
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
             return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         outcome = campaign_benchmark.run_paired_llama_benchmark(
             control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
             model=Path("m.gguf"), hip_path=Path("H:/hip"), pairs=1, log_context="test",
@@ -94,7 +95,7 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         outcome = campaign_benchmark.run_paired_llama_benchmark(
             control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
             model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
@@ -107,7 +108,7 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(0, "no rocm devices here\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaisesRegex(Exception, "distinctive-context"):
             campaign_benchmark.run_paired_llama_benchmark(
                 control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
@@ -129,7 +130,7 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
             seen_envs.append(env)
             return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         old = dict(os.environ)
         try:
             os.environ["ROCR_VISIBLE_DEVICES"] = "6"

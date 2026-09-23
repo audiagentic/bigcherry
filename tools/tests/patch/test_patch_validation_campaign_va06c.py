@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -102,14 +103,14 @@ class _FakeServerRunner:
 
 class RunBenchRunnerServerBenchTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
+        self._real_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.runner_root = Path(self._tmp.name)
         (self.runner_root / "bench").mkdir()
         (self.runner_root / "bench" / "run_bench.py").write_text("", encoding="utf-8")
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
+        subprocess.run = self._real_run
         self._tmp.cleanup()
 
     def test_parses_aggregated_results_block(self) -> None:
@@ -125,7 +126,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         metrics = vc.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18080",
             bench_configs="tg128",
@@ -151,7 +152,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         metrics = vc.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18082",
             bench_configs="tg128",
@@ -177,7 +178,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080",
@@ -194,7 +195,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080",
@@ -384,7 +385,7 @@ class EvaluateRd73MtpCorrectnessTests(unittest.TestCase):
 
 class RunRd73ContractQualificationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
+        self._real_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self._tmp.name)
         self.control_binary = self.run_dir / "control-bin"
@@ -400,7 +401,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         ).contracts["RD73-STABLE-GRAPH-CACHE-KEY"]
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
+        subprocess.run = self._real_run
         self._tmp.cleanup()
 
     def _mtp_records(
