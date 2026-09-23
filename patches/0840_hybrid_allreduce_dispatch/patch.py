@@ -1,7 +1,8 @@
 """HI155: size-adaptive internal/RCCL AllReduce provider dispatch.
 
-1001_hip_internal_allreduce (validated) enables a low-latency internal
-AllReduce on HIP that real dual-XTX hardware evidence shows is a large win
+The HIP internal AllReduce (backported by the now-superseded
+1001_hip_internal_allreduce; native upstream since pin b11126) is a
+low-latency internal AllReduce on HIP that real dual-XTX hardware evidence shows is a large win
 for decode (+17.33% TPS, MTP completion-bench; +6.88%, plain tg128) but a
 severe regression for prefill (-32% to -34%, pp512/pp2048/pp4096
 llama-bench) -- see patches/1001_hip_internal_allreduce/SUMMARY.md.

@@ -1,6 +1,6 @@
 # 1001_hip_internal_allreduce: Upstream backport: enable the internal (non-RCCL) AllReduce on HIP
 
-**Status:** validated
+**Status:** superseded
 **Plan item:** none
 
 ## What it does
@@ -106,3 +106,17 @@ https://github.com/ggml-org/llama.cpp/pull/27825. Scoped to the two
 functional edits only; the PR's comment-only wording changes were not
 ported (no runtime effect, and awkward to anchor against this project's
 comment-blanking patch matcher).
+
+## SUPERSEDED (2026-09-23, b11126)
+
+Upstream llama.cpp b11126 (b1ff4ca23630) contains all three of this
+patch's edits verbatim: the `allreduce.cu` HIP compile-guard removal
+(`enable-hip-compile-guard`), the `__builtin_amdgcn_s_sleep` spin-wait
+substitution (`spin-wait-hip-sleep-intrinsic`), and the four host-mapped
+alloc API mappings in `vendors/hip.h` (`map-host-alloc-apis`);
+`patch-rebase-check` classified it UPSTREAM_ABSORBED. The retirement
+condition above ("remove when PR #27825 or an equivalent fix lands in
+the pinned base") is met. State set to `superseded`; `patch.py` is left
+untouched and all evidence above is preserved. Dependents (0840, 1244,
+1250, 1252) no longer require this patch: the capability is part of
+the base source.

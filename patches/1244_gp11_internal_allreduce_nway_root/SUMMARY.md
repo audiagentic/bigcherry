@@ -42,4 +42,6 @@ promotion or generalize the measured result outside the qualified envelope.
 
 ## Requires
 
-`1001_hip_internal_allreduce`.
+None. The HIP internal AllReduce this patch builds on was previously
+provided by `1001_hip_internal_allreduce`; upstream contains it natively
+since pin b11126, so 1001 is superseded and no longer required.
