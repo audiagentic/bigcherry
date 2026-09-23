@@ -37,6 +37,7 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bigcherry.patch import registry as patch_registry  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import scaffold as campaign_scaffold  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
@@ -126,14 +127,14 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         # never executed -- the first real hardware run died with
         # "StandardCampaignScaffold() takes no arguments" AFTER all five
         # builds had completed. Pin the decorator contract structurally.
-        self.assertTrue(dataclasses.is_dataclass(vc.StandardCampaignScaffold))
+        self.assertTrue(dataclasses.is_dataclass(campaign_scaffold.StandardCampaignScaffold))
         # __dataclass_params__ is the only surface that exposes frozen=True;
         # it is private, so the attribute access needs a pyright ignore.
         self.assertTrue(
-            vc.StandardCampaignScaffold.__dataclass_params__.frozen  # pyright: ignore[reportAttributeAccessIssue]
+            campaign_scaffold.StandardCampaignScaffold.__dataclass_params__.frozen  # pyright: ignore[reportAttributeAccessIssue]
         )
         names = frozenset(
-            f.name for f in dataclasses.fields(vc.StandardCampaignScaffold)
+            f.name for f in dataclasses.fields(campaign_scaffold.StandardCampaignScaffold)
         )
         self.assertEqual(
             names,
