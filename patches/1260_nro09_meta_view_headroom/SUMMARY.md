@@ -1,7 +1,9 @@
 # 1260_nro09_meta_view_headroom
 
-**Status:** capacity boundary (C) + real-graph (D) hardware lane verified (2026-09-23)
+**Status:** untested
 **Plan item:** PNRO09
+
+> Status note: capacity boundary (C) + real-graph (D) hardware lane verified (2026-09-23)
 
 ## What it does
 

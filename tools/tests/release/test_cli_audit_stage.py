@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -20,7 +21,10 @@ class AuditStageTests(unittest.TestCase):
         args.llama_root = "."
         args.strict = True
         args.verbose = False
-        with mock.patch.object(cli_source.releases, "record_for_checkout", return_value=record), \
+        # cmd_audit writes its report under paths.ARTIFACTS; keep it out of the repo.
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        with mock.patch.object(cli_source.paths, "ARTIFACTS", Path(scratch.name)),              mock.patch.object(cli_source.releases, "record_for_checkout", return_value=record), \
              mock.patch.object(cli_source.source_audit, "audit", return_value={"source_revision": "abc123", "source_dirty": False, "summary": {}, "checks": []}), \
              mock.patch.object(cli_source.source_audit, "passed", return_value=True), \
              mock.patch.object(cli_source.source_audit, "format_report", return_value=""), \
