@@ -43,7 +43,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             pve, "verify_deferred_hardware_patch",
         ) as fake_deferred:
             result = patch_catalog.validation_evidence_statuses(
-                ["1202_rd04_bf16_flash_attn_tile"],
+                ["1202_rd04_bf16_flash_attn_tile"], carry_forward=False,
             )
         fake_benched.assert_called_once()
         fake_deferred.assert_not_called()
@@ -63,7 +63,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             pve, "verify_ported_benched_patch",
         ) as fake_benched:
             result = patch_catalog.validation_evidence_statuses(
-                ["1217_rd44_graph_opt_default_rdna35"],
+                ["1217_rd44_graph_opt_default_rdna35"], carry_forward=False,
             )
         fake_deferred.assert_called_once()
         fake_benched.assert_not_called()
@@ -73,7 +73,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         with mock.patch.object(pve, "verify_ported_benched_patch") as fake_benched, \
              mock.patch.object(pve, "verify_deferred_hardware_patch") as fake_deferred:
             result = patch_catalog.validation_evidence_statuses(
-                ["1210_rd26_bitidentical_decode_verify_standalone"],
+                ["1210_rd26_bitidentical_decode_verify_standalone"], carry_forward=False,
             )
         fake_benched.assert_not_called()
         fake_deferred.assert_not_called()
@@ -88,7 +88,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             return_value=pve.EvidenceCheck("prospective-validated"),
         ) as fake_validated:
             result = patch_catalog.validation_evidence_statuses(
-                [patch_id], assume_validated=frozenset({patch_id})
+                [patch_id], carry_forward=False, assume_validated=frozenset({patch_id})
             )
         fake_validated.assert_called_once()
         self.assertEqual(result[patch_id].status, "prospective-validated")
@@ -99,7 +99,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         # never the new status-obligation verifiers.
         with mock.patch.object(pve, "verify_ported_benched_patch") as fake_benched, \
              mock.patch.object(pve, "verify_deferred_hardware_patch") as fake_deferred:
-            result = patch_catalog.validation_evidence_statuses(["1000_rdna4_mmq_q2k_q6k_fix"])
+            result = patch_catalog.validation_evidence_statuses(["1000_rdna4_mmq_q2k_q6k_fix"], carry_forward=False)
         fake_benched.assert_not_called()
         fake_deferred.assert_not_called()
         self.assertIn(result["1000_rdna4_mmq_q2k_q6k_fix"].status, ("validated-evidence", "missing-or-stale", "legacy-grandfathered"))
@@ -117,7 +117,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
             pve, "verify_validated_patch"
         ) as fake_runtime:
             result = patch_catalog.validation_evidence_statuses(
-                ["0100_cmake_options"],
+                ["0100_cmake_options"], carry_forward=False,
                 default_validation_architectures=("gfx1201",),
             )
         fake_framework.assert_called_once()
@@ -145,7 +145,7 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
                                return_value=pve.EvidenceCheck("framework-configuration-evidence")) as fake:
             load_registry.return_value.descriptors = [descriptor]
             result = patch_catalog.validation_evidence_statuses(
-                ["framework-test"], default_validation_architectures=("gfx1201", "gfx1030")
+                ["framework-test"], carry_forward=False, default_validation_architectures=("gfx1201", "gfx1030")
             )
         self.assertEqual(result["framework-test"].status, "framework-configuration-evidence")
         self.assertEqual(

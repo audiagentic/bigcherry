@@ -93,7 +93,7 @@ class EvidenceCheck:
         return self.status in {
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
-            "framework-configuration-evidence",
+            "framework-configuration-evidence", "carried-forward",
         }
 
 

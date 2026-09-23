@@ -498,6 +498,9 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
                 if context.intent is GateIntent.PROMOTE
                 else frozenset()
             ),
+            # Building may use pin-stale qualification (revalidate on
+            # request); promotion always needs current evidence.
+            carry_forward=context.intent is GateIntent.BUILD,
         )
     except (
         OSError,
