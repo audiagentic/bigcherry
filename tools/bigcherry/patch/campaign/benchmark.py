@@ -479,38 +479,8 @@ _STANDARD_BENCHMARK_MODEL_IDS: tuple[str, ...] = (
 )
 
 
-def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int:
-    """PVPS02 step 4: the generic --run-performance-benchmark entry point.
-
-    Deliberately does NOT go through the legacy --model/--manifest/one-
-    architecture tune/replay/stock/control/subject flow run() otherwise
-    builds -- that flow is keyed to exactly one amdgpu-targets value and
-    a single --model, neither of which fits a cross-architecture,
-    cross-model matrix. This materializes source ONCE and builds ONE
-    control/subject llama-bench binary pair covering every applicable
-    architecture (AMDGPU_TARGETS=";".join(architectures), a single fat
-    multi-ISA build -- cmake/HIP natively support a semicolon-separated
-    target list), reused across every architecture/model cell instead of
-    rebuilding per architecture. User direction (2026-09-11, after the
-    prior per-architecture-build version's real-hardware merge gate
-    passed on all 3 architectures): device SELECTION is still per-cell
-    via HIP_VISIBLE_DEVICES (see the real-hardware finding on that
-    mechanism above this function), only the BUILD is now shared.
-
-    execution_identity/device-visibility enforcement is turned on here
-    for the FIRST time in this module (steps 1-3 deliberately left it
-    off) -- every cell fails closed before launch on a missing/
-    insufficient/malformed --device-map entry for its architecture, and
-    every measured process is attested for real architecture + device
-    count (not physical card identity -- see DeviceVisibility's own
-    docstring for why that distinction is load-bearing, never
-    overclaimed in evidence)."""
-    from bigcherry.experiment import attestation
-    from bigcherry.experiment.execution import require_device_visibility
-    from bigcherry.patch import source as psi
-
-    wiring = resolve_benchmark_wiring(descriptor)
-
+def _resolve_benchmark_architectures(args: argparse.Namespace, descriptor, cfg):
+    """Return the architectures to benchmark (explicit, or recipe/patch intersection)."""
     requested_arches = tuple(args.benchmark_architecture or ())
     if requested_arches:
         architectures = requested_arches
@@ -527,10 +497,17 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
             "explicitly, or declare validation-architectures overlapping "
             "config/recipes.toml's platform.linux-multi targets"
         )
+    return architectures
 
-    model_ids = tuple(args.benchmark_model or _STANDARD_BENCHMARK_MODEL_IDS)
-    device_map = parse_device_map(list(args.device_map or ()))
-    model_root: Path = args.model_root
+
+def _build_performance_binary_pair(
+    args: argparse.Namespace, cfg, architectures
+):
+    """Materialize control/subject once and build ONE fat llama-bench pair.
+
+    Returns (control_binary, subject_binary).
+    """
+    from bigcherry.patch import source as psi
 
     baseline_source = getattr(args, "baseline_source", "bigcherry")
     control_revision, control_composition = psi.resolve_source_composition(
@@ -570,7 +547,6 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
         requested_revision=cfg.pinned,
     )
 
-    cells: list[dict[str, object]] = []
     build_root: Path = (args.build_root or args.workdir) / subject_src.name
     exe = ".exe" if sys.platform == "win32" else ""
     build_env = _hip_env(args.hip_path)
@@ -633,71 +609,139 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
         subject_build_evidence,
         patch_id=args.patch,
     )
+    return control_binary, subject_binary
+
+
+def _run_performance_cell(
+    args: argparse.Namespace,
+    *,
+    wiring,
+    architecture: str,
+    model_id: str,
+    model_root: Path,
+    device_map,
+    control_binary: Path,
+    subject_binary: Path,
+) -> dict[str, object]:
+    """Run (or skip) one architecture/model cell of the performance matrix."""
+    from bigcherry.experiment import attestation
+    from bigcherry.experiment.execution import require_device_visibility
+
+    cell: dict[str, object] = {"architecture": architecture, "model": model_id}
+    try:
+        resolved_model = resolve_benchmark_model(
+            model_id,
+            model_root=model_root,
+        )
+    except PatchCampaignError as exc:
+        cell.update(status="skipped", reason=f"model resolution failed: {exc}")
+        return cell
+    try:
+        device_ids = resolve_device_pool(
+            device_map,
+            architecture,
+            resolved_model.device_count,
+        )
+    except PatchCampaignError as exc:
+        cell.update(status="skipped", reason=str(exc))
+        return cell
+
+    # Real-hardware finding (2026-09-11, PNRO17): only
+    # HIP_VISIBLE_DEVICES is set here -- also setting
+    # ROCR_VISIBLE_DEVICES to the same value actively breaks
+    # non-prefix-from-0 device selection (confirmed on real
+    # gfx1100/gfx1201/gfx1030 hardware during this matrix's own
+    # merge-gate run). See require_device_visibility()/
+    # DeviceVisibility's docstrings for the full mechanism.
+    env_overrides = {"HIP_VISIBLE_DEVICES": ",".join(device_ids)}
+    visibility = require_device_visibility(
+        context=f"performance-benchmark {architecture}/{model_id}",
+        env=env_overrides,
+        exact_count=resolved_model.device_count,
+    )
+    execution_identity = attestation.ExecutionIdentity(
+        backend="ROCm",
+        architectures=(architecture,) * resolved_model.device_count,
+    )
+    executor_func = BENCHMARK_EXECUTOR_FUNCS[wiring.executor]
+    outcome = executor_func(
+        control_binary=control_binary,
+        subject_binary=subject_binary,
+        model=resolved_model.path,
+        hip_path=args.hip_path,
+        patch_args=wiring.patch_args,
+        runtime_args=resolved_model.runtime_args,
+        pairs=args.bench_repetitions,
+        log_context=f"performance-benchmark {architecture}/{model_id}",
+        env_overrides=env_overrides,
+        execution_identity=execution_identity,
+    )
+    cell.update(
+        status="executed",
+        device_visibility=visibility.document(),
+        commands=outcome.commands,
+        raw_logs=outcome.raw_logs,
+        metrics={
+            workload: {"stats": run.stats, "runs": list(run.runs)}
+            for workload, run in outcome.runs.items()
+        },
+    )
+    return cell
+
+
+def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int:
+    """PVPS02 step 4: the generic --run-performance-benchmark entry point.
+
+    Deliberately does NOT go through the legacy --model/--manifest/one-
+    architecture tune/replay/stock/control/subject flow run() otherwise
+    builds -- that flow is keyed to exactly one amdgpu-targets value and
+    a single --model, neither of which fits a cross-architecture,
+    cross-model matrix. This materializes source ONCE and builds ONE
+    control/subject llama-bench binary pair covering every applicable
+    architecture (AMDGPU_TARGETS=";".join(architectures), a single fat
+    multi-ISA build -- cmake/HIP natively support a semicolon-separated
+    target list), reused across every architecture/model cell instead of
+    rebuilding per architecture. User direction (2026-09-11, after the
+    prior per-architecture-build version's real-hardware merge gate
+    passed on all 3 architectures): device SELECTION is still per-cell
+    via HIP_VISIBLE_DEVICES (see the real-hardware finding on that
+    mechanism above this function), only the BUILD is now shared.
+
+    execution_identity/device-visibility enforcement is turned on here
+    for the FIRST time in this module (steps 1-3 deliberately left it
+    off) -- every cell fails closed before launch on a missing/
+    insufficient/malformed --device-map entry for its architecture, and
+    every measured process is attested for real architecture + device
+    count (not physical card identity -- see DeviceVisibility's own
+    docstring for why that distinction is load-bearing, never
+    overclaimed in evidence)."""
+    wiring = resolve_benchmark_wiring(descriptor)
+
+    architectures = _resolve_benchmark_architectures(args, descriptor, cfg)
+
+    model_ids = tuple(args.benchmark_model or _STANDARD_BENCHMARK_MODEL_IDS)
+    device_map = parse_device_map(list(args.device_map or ()))
+    model_root: Path = args.model_root
+
+    cells: list[dict[str, object]] = []
+    control_binary, subject_binary = _build_performance_binary_pair(
+        args, cfg, architectures
+    )
 
     for architecture in architectures:
         for model_id in model_ids:
-            cell: dict[str, object] = {"architecture": architecture, "model": model_id}
-            try:
-                resolved_model = resolve_benchmark_model(
-                    model_id,
+            cells.append(
+                _run_performance_cell(
+                    args,
+                    wiring=wiring,
+                    architecture=architecture,
+                    model_id=model_id,
                     model_root=model_root,
+                    device_map=device_map,
+                    control_binary=control_binary,
+                    subject_binary=subject_binary,
                 )
-            except PatchCampaignError as exc:
-                cell.update(status="skipped", reason=f"model resolution failed: {exc}")
-                cells.append(cell)
-                continue
-            try:
-                device_ids = resolve_device_pool(
-                    device_map,
-                    architecture,
-                    resolved_model.device_count,
-                )
-            except PatchCampaignError as exc:
-                cell.update(status="skipped", reason=str(exc))
-                cells.append(cell)
-                continue
-
-            # Real-hardware finding (2026-09-11, PNRO17): only
-            # HIP_VISIBLE_DEVICES is set here -- also setting
-            # ROCR_VISIBLE_DEVICES to the same value actively breaks
-            # non-prefix-from-0 device selection (confirmed on real
-            # gfx1100/gfx1201/gfx1030 hardware during this matrix's own
-            # merge-gate run). See require_device_visibility()/
-            # DeviceVisibility's docstrings for the full mechanism.
-            env_overrides = {"HIP_VISIBLE_DEVICES": ",".join(device_ids)}
-            visibility = require_device_visibility(
-                context=f"performance-benchmark {architecture}/{model_id}",
-                env=env_overrides,
-                exact_count=resolved_model.device_count,
             )
-            execution_identity = attestation.ExecutionIdentity(
-                backend="ROCm",
-                architectures=(architecture,) * resolved_model.device_count,
-            )
-            executor_func = BENCHMARK_EXECUTOR_FUNCS[wiring.executor]
-            outcome = executor_func(
-                control_binary=control_binary,
-                subject_binary=subject_binary,
-                model=resolved_model.path,
-                hip_path=args.hip_path,
-                patch_args=wiring.patch_args,
-                runtime_args=resolved_model.runtime_args,
-                pairs=args.bench_repetitions,
-                log_context=f"performance-benchmark {architecture}/{model_id}",
-                env_overrides=env_overrides,
-                execution_identity=execution_identity,
-            )
-            cell.update(
-                status="executed",
-                device_visibility=visibility.document(),
-                commands=outcome.commands,
-                raw_logs=outcome.raw_logs,
-                metrics={
-                    workload: {"stats": run.stats, "runs": list(run.runs)}
-                    for workload, run in outcome.runs.items()
-                },
-            )
-            cells.append(cell)
 
     performance_doc = {
         "patch_id": descriptor.patch_id,
