@@ -1890,13 +1890,130 @@ def _collect_build_and_correctness_evidence(args: argparse.Namespace, st: Simple
     st.performance_evidence = performance_evidence
 
 
-def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
-    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
+def _bind_rd73_qualification_evidence(
+    args: argparse.Namespace,
+    st: SimpleNamespace,
+    rd73_qualification: dict,
+    correctness_evidence,
+):
+    """Bind RD73's contract-produced evidence into the generic adapter and record.
+
+    Returns (performance_evidence, correctness_evidence, trace_evidence,
+    activation_evidence, activation_verdict, correctness_summary).
+    """
     _patch_file = st._patch_file
-    activation_evidence = st.activation_evidence
-    activation_verdict = st.activation_verdict
     base_revision = st.base_revision
     campaign = st.campaign
+    campaign_run_dir = st.campaign_run_dir
+    patch_validation_evidence = st.patch_validation_evidence
+    patched_source_tree = st.patched_source_tree
+    trace_marker_regex = st.trace_marker_regex
+    # VA23: bind RD73's real contract-produced evidence into the generic
+    # adapter, exactly as RD58 does. Before this, the RD73 branch produced
+    # authoritative artifacts but bound none of them, so the declared
+    # performance/controls checks ERRORed ("benchmark artifact requires
+    # non-empty metrics") and correctness stayed BLOCKED -- making
+    # patch-verify-evidence report that no benchmark ran when one had.
+    #
+    # correctness is bound ONLY when the bit_identical evaluation actually
+    # produced an artifact. On Rd73CorrectnessError the artifact is None
+    # and correctness must stay BLOCKED rather than silently pass: a
+    # correctness check that could not be evaluated is not a correctness
+    # check that succeeded.
+    performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
+    if rd73_qualification["correctness"].get("artifact") is not None:
+        correctness_evidence = {
+            "artifact": rd73_qualification["correctness"]["artifact"]
+        }
+    # VA23: the activation lane already ran a real positive/negative
+    # marker probe; bind its bound log refs so _builtin_trace_marker()
+    # can re-read and re-verify them. The validator does its own regex
+    # check against both logs, so this supplies evidence for independent
+    # verification rather than asserting the outcome.
+    trace_evidence = {
+        "positive": rd73_qualification["activation"]["positive"],
+        "negative": rd73_qualification["activation"]["negative"],
+    }
+    # RV95: the three bindings above satisfy validation.toml's DECLARED
+    # checks, but not the record's own top-level activation/correctness
+    # fields -- make_record() reads those from activation_evidence and
+    # correctness_summary, which the RD73 branch never set. They stayed
+    # at disposition="unknown", so verify_validated_patch() rejected an
+    # otherwise-passing record with "activation is not executed+
+    # activation-verified; correctness did not pass" even while
+    # check_results._contract_correctness_gate.passed was true. Bind them
+    # from the SAME real evidence RD08/RD58 use, in the same shape.
+    activation_evidence = ActivationEvidence(
+        status=(
+            "executed"
+            if rd73_qualification["activation"]["subject_hit"]
+            and not rd73_qualification["activation"]["control_hit"]
+            else "not_executed"
+        ),
+        mechanism="rd73-trigger-marker",
+        detail=f"marker={trace_marker_regex!r}",
+    )
+    activation_verdict = verdict(activation_evidence, correctness_passed=None)
+    write_activation_json(
+        campaign_run_dir / "activation.json",
+        activation_evidence,
+        activation_verdict,
+        extra={
+            "campaign_identity_digest": campaign.campaign_identity_digest,
+            "rd73_trigger": {
+                "subject_hit": rd73_qualification["activation"]["subject_hit"],
+                "control_hit": rd73_qualification["activation"]["control_hit"],
+                "artifact": rd73_qualification["activation"]["artifact"],
+            },
+        },
+    )
+    # Disposition comes from the contract's own correctness gate, which
+    # is already fail-closed: an Rd73CorrectnessError leaves the artifact
+    # None and records passed=False, so a correctness check that could
+    # not be evaluated reports "failed" here rather than silently passing.
+    correctness_summary = {
+        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
+        "patch_id": args.patch,
+        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
+            _patch_file
+        ),
+        "base_revision": base_revision,
+        "patched_source_tree": patched_source_tree,
+        "campaign_identity_digest": campaign.campaign_identity_digest,
+        "gpu_architectures": [args.amdgpu_targets],
+        "disposition": (
+            "passed"
+            if rd73_qualification["correctness_gate"].get("passed")
+            else "failed"
+        ),
+        "mechanism": "rd73-mtp-bit-identical",
+        "detail": (
+            "paired MTP control/subject completions compared byte-for-byte; "
+            f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
+        ),
+    }
+    correctness_path = campaign_run_dir / "correctness.json"
+    _atomic_write_json(correctness_path, correctness_summary)
+
+    _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
+    _print(
+        f"rd73 promotion: "
+        f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
+    )
+    return (
+        performance_evidence,
+        correctness_evidence,
+        trace_evidence,
+        activation_evidence,
+        activation_verdict,
+        correctness_summary,
+    )
+
+
+def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
+    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
+    activation_evidence = st.activation_evidence
+    activation_verdict = st.activation_verdict
     campaign_run_dir = st.campaign_run_dir
     control_bin = st.control_bin
     correctness_evidence = st.correctness_evidence
@@ -1904,7 +2021,6 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
     descriptor = st.descriptor
     exe = st.exe
     patch_validation_evidence = st.patch_validation_evidence
-    patched_source_tree = st.patched_source_tree
     performance_evidence = st.performance_evidence
     trace_evidence = st.trace_evidence
     trace_marker_regex = st.trace_marker_regex
@@ -1966,97 +2082,15 @@ def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) 
         )
         contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
 
-        # VA23: bind RD73's real contract-produced evidence into the generic
-        # adapter, exactly as RD58 does. Before this, the RD73 branch produced
-        # authoritative artifacts but bound none of them, so the declared
-        # performance/controls checks ERRORed ("benchmark artifact requires
-        # non-empty metrics") and correctness stayed BLOCKED -- making
-        # patch-verify-evidence report that no benchmark ran when one had.
-        #
-        # correctness is bound ONLY when the bit_identical evaluation actually
-        # produced an artifact. On Rd73CorrectnessError the artifact is None
-        # and correctness must stay BLOCKED rather than silently pass: a
-        # correctness check that could not be evaluated is not a correctness
-        # check that succeeded.
-        performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
-        if rd73_qualification["correctness"].get("artifact") is not None:
-            correctness_evidence = {
-                "artifact": rd73_qualification["correctness"]["artifact"]
-            }
-        # VA23: the activation lane already ran a real positive/negative
-        # marker probe; bind its bound log refs so _builtin_trace_marker()
-        # can re-read and re-verify them. The validator does its own regex
-        # check against both logs, so this supplies evidence for independent
-        # verification rather than asserting the outcome.
-        trace_evidence = {
-            "positive": rd73_qualification["activation"]["positive"],
-            "negative": rd73_qualification["activation"]["negative"],
-        }
-        # RV95: the three bindings above satisfy validation.toml's DECLARED
-        # checks, but not the record's own top-level activation/correctness
-        # fields -- make_record() reads those from activation_evidence and
-        # correctness_summary, which the RD73 branch never set. They stayed
-        # at disposition="unknown", so verify_validated_patch() rejected an
-        # otherwise-passing record with "activation is not executed+
-        # activation-verified; correctness did not pass" even while
-        # check_results._contract_correctness_gate.passed was true. Bind them
-        # from the SAME real evidence RD08/RD58 use, in the same shape.
-        activation_evidence = ActivationEvidence(
-            status=(
-                "executed"
-                if rd73_qualification["activation"]["subject_hit"]
-                and not rd73_qualification["activation"]["control_hit"]
-                else "not_executed"
-            ),
-            mechanism="rd73-trigger-marker",
-            detail=f"marker={trace_marker_regex!r}",
-        )
-        activation_verdict = verdict(activation_evidence, correctness_passed=None)
-        write_activation_json(
-            campaign_run_dir / "activation.json",
+        (
+            performance_evidence,
+            correctness_evidence,
+            trace_evidence,
             activation_evidence,
             activation_verdict,
-            extra={
-                "campaign_identity_digest": campaign.campaign_identity_digest,
-                "rd73_trigger": {
-                    "subject_hit": rd73_qualification["activation"]["subject_hit"],
-                    "control_hit": rd73_qualification["activation"]["control_hit"],
-                    "artifact": rd73_qualification["activation"]["artifact"],
-                },
-            },
-        )
-        # Disposition comes from the contract's own correctness gate, which
-        # is already fail-closed: an Rd73CorrectnessError leaves the artifact
-        # None and records passed=False, so a correctness check that could
-        # not be evaluated reports "failed" here rather than silently passing.
-        correctness_summary = {
-            "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-            "patch_id": args.patch,
-            "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-                _patch_file
-            ),
-            "base_revision": base_revision,
-            "patched_source_tree": patched_source_tree,
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "gpu_architectures": [args.amdgpu_targets],
-            "disposition": (
-                "passed"
-                if rd73_qualification["correctness_gate"].get("passed")
-                else "failed"
-            ),
-            "mechanism": "rd73-mtp-bit-identical",
-            "detail": (
-                "paired MTP control/subject completions compared byte-for-byte; "
-                f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
-            ),
-        }
-        correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
-
-        _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
-        _print(
-            f"rd73 promotion: "
-            f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
+            correctness_summary,
+        ) = _bind_rd73_qualification_evidence(
+            args, st, rd73_qualification, correctness_evidence
         )
     st.activation_evidence = activation_evidence
     st.activation_verdict = activation_verdict
