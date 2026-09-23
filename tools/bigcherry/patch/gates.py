@@ -531,6 +531,9 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             "ported-benched-evidence",
             "deferred-hardware-evidence",
             "framework-configuration-evidence",
+            # Build-only (carry_forward=True): qualified at an earlier pin;
+            # PASS with the revalidate-on-request note as its problem text.
+            "carried-forward",
         }
     )
     recognized_statuses = recognized_ok_statuses | {"missing-or-stale"}

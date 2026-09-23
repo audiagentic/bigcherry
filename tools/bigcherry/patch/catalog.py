@@ -298,8 +298,12 @@ def validation_evidence_statuses(
     same verifier at each earlier pin one of the patch's records was made
     at. If a record fully qualifies there, the only defect is pin freshness
     and the patch is ``carried-forward`` (qualification is re-established on
-    request). Any patch, validation, contract, composition, eligibility or
-    architecture mismatch still fails.
+    request). Changes to the patch itself (implementation/subject digest),
+    its validation package, bound contracts, eligibility or architecture
+    coverage still fail. By policy, changes to OTHER patches in the
+    surrounding composition do not force a re-bench of runtime evidence;
+    framework-configuration evidence (compile-only, cheap to regenerate)
+    still binds its composition.
     """
     entries = load_catalog(catalog_path)
     modules = {module.patch_id: module for module in patchset.catalog(patches_dir)}
@@ -402,12 +406,14 @@ def validation_evidence_statuses(
     for patch_id in patch_ids:
         check = _evaluate(patch_id, pinned_ref, resolved_base_revision)
         if carry_forward and not check.ok and check.status != "not-required":
-            check = _carried_forward(patch_id, check, pinned_ref, evidence_root, _evaluate)
+            check = _carried_forward(
+                patch_id, check, pinned_ref, resolved_base_revision, evidence_root, _evaluate,
+            )
         result[patch_id] = check
     return result
 
 
-def _carried_forward(patch_id, check, pinned_ref, evidence_root, evaluate):
+def _carried_forward(patch_id, check, pinned_ref, resolved_base_revision, evidence_root, evaluate):
     try:
         records = patch_validation_evidence.load_records(patch_id, root=evidence_root)
     except patch_validation_evidence.ValidationEvidenceError:
@@ -415,7 +421,10 @@ def _carried_forward(patch_id, check, pinned_ref, evidence_root, evaluate):
     earlier_pins: list[tuple[str, str]] = []
     for record in reversed(records):
         pin = (str(record.get("base_ref") or ""), str(record.get("base_revision") or ""))
-        if pin[0] and pin[0] != pinned_ref and pin not in earlier_pins:
+        live = pin[0] == pinned_ref and (
+            resolved_base_revision is None or pin[1] == resolved_base_revision
+        )
+        if pin[0] and not live and pin not in earlier_pins:
             earlier_pins.append(pin)
     for ref, revision in earlier_pins:
         if evaluate(patch_id, ref, revision or None).ok:
