@@ -23,10 +23,20 @@ REPO_ROOT = TOOLS_DIR.parent
 sys.path.insert(0, str(TOOLS_DIR))
 
 from bigcherry.patch import validation as pv  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
 _CAMPAIGN_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_campaign.py"
+# PA43: the generic campaign infrastructure was split out of
+# validation_campaign.py into the bigcherry.patch.campaign package. The
+# shared-execution scans below cover the CLI module AND every campaign/*
+# module, so moving code between them can never hide it from a scan.
+_CAMPAIGN_PACKAGE_DIR = TOOLS_DIR / "bigcherry" / "patch" / "campaign"
+_CAMPAIGN_SRC_PATHS: tuple[Path, ...] = (_CAMPAIGN_SRC_PATH,) + tuple(
+    sorted(_CAMPAIGN_PACKAGE_DIR.glob("*.py"))
+)
+_PRODUCER_RUNTIME_SRC_PATH = _CAMPAIGN_PACKAGE_DIR / "producer.py"
 _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py"
 
 # --------------------------------------------------------------- frozen baselines
@@ -34,12 +44,10 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # Function names already matching run_rd\d+_*/run_patch\d+_*/_load_rd\d+_*
 # in validation_campaign.py as of the PA36-F step-6 pass. Migrating a
 # producer deletes its entry from BOTH the source file and this baseline in
-# the same commit -- the baseline only ever shrinks.
+# the same commit -- the baseline only ever shrinks. (PA43: the three
+# run_patch1000_* functions left shared code for tools/lab/patch1000/.)
 _BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
     {
-        "run_patch1000_backend_ops_correctness",
-        "run_patch1000_backend_ops_perf",
-        "run_patch1000_verification",
         "run_rd73_contract_qualification",
         "run_rd73_decode_control_lane",
         "run_rd73_mtp_server_lane",
@@ -87,10 +95,10 @@ class NoNewPatchNamedFunctionsTests(unittest.TestCase):
     """test_shared_campaign_adds_no_new_patch_named_functions"""
 
     def test_shared_campaign_adds_no_new_patch_named_functions(self) -> None:
-        tree = _parse(_CAMPAIGN_SRC_PATH)
         current = {
             name
-            for name in _all_function_names(tree)
+            for path in _CAMPAIGN_SRC_PATHS
+            for name in _all_function_names(_parse(path))
             if re.fullmatch(r"run_rd\d+.*", name)
             or re.fullmatch(r"run_patch\d+.*", name)
             or re.fullmatch(r"_load_rd\d+.*", name)
@@ -115,10 +123,10 @@ class NoNewPatchNamedCliFlagsTests(unittest.TestCase):
     """test_shared_campaign_adds_no_new_patch_named_cli_flags"""
 
     def test_shared_campaign_adds_no_new_patch_named_cli_flags(self) -> None:
-        tree = _parse(_CAMPAIGN_SRC_PATH)
         current = {
             literal
-            for literal in _all_add_argument_string_literals(tree)
+            for path in _CAMPAIGN_SRC_PATHS
+            for literal in _all_add_argument_string_literals(_parse(path))
             if re.fullmatch(r"--run-rd\d+-.*", literal)
             or re.fullmatch(r"--run-patch\d+-.*", literal)
         }
@@ -143,7 +151,7 @@ class NoSingularContractAccessTests(unittest.TestCase):
         # design allows to exist) -- what must never appear is a CONSUMER
         # (an attribute *access*, `x.contract`) anywhere in the shared
         # execution modules.
-        for path in (_CAMPAIGN_SRC_PATH, _PRODUCER_SRC_PATH):
+        for path in (*_CAMPAIGN_SRC_PATHS, _PRODUCER_SRC_PATH):
             tree = _parse(path)
             offenders = [
                 node.lineno
@@ -286,7 +294,7 @@ class NoPatchIdentityBranchesTests(unittest.TestCase):
     """test_generic_dispatch_has_no_patch_identity_branches"""
 
     def test_generic_dispatch_has_no_patch_identity_branches(self) -> None:
-        tree = _parse(_CAMPAIGN_SRC_PATH)
+        tree = _parse(_PRODUCER_RUNTIME_SRC_PATH)
         target = None
         for node in ast.walk(tree):
             if (
@@ -324,7 +332,7 @@ class NoProducerSpecificPayloadDecodingTests(unittest.TestCase):
     def test_generic_dispatch_does_not_decode_producer_specific_payload_keys(
         self,
     ) -> None:
-        tree = _parse(_CAMPAIGN_SRC_PATH)
+        tree = _parse(_PRODUCER_RUNTIME_SRC_PATH)
         target = None
         for node in ast.walk(tree):
             if (
@@ -380,20 +388,29 @@ class ProducerModulesCannotImportCampaignTests(unittest.TestCase):
                 for node in ast.walk(tree):
                     if isinstance(node, ast.Import):
                         for alias in node.names:
-                            if alias.name == "bigcherry.patch.validation_campaign":
+                            if alias.name == "bigcherry.patch.validation_campaign" or (
+                                alias.name == "bigcherry.patch.campaign"
+                                or alias.name.startswith("bigcherry.patch.campaign.")
+                            ):
                                 offenders.append(str(path))
                     if isinstance(node, ast.ImportFrom):
                         module = node.module or ""
                         if (
                             module == "bigcherry.patch.validation_campaign"
                             or module.endswith(".validation_campaign")
+                            # PA43: the campaign infrastructure split out of
+                            # validation_campaign.py is the same forbidden
+                            # coupling under a new module path.
+                            or module == "bigcherry.patch.campaign"
+                            or module.startswith("bigcherry.patch.campaign.")
                         ):
                             offenders.append(str(path))
                         # `from bigcherry.patch import validation_campaign`:
                         # the forbidden module is one of the imported NAMES,
                         # not the dotted `module` prefix itself.
                         if module in ("bigcherry.patch", "patch") and any(
-                            alias.name == "validation_campaign" for alias in node.names
+                            alias.name in ("validation_campaign", "campaign")
+                            for alias in node.names
                         ):
                             offenders.append(str(path))
         self.assertEqual(
@@ -413,7 +430,7 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
         from bigcherry.patch import source as real_psi
 
         fat_targets = vp.FatTargetPlan(targets=("gfx1100", "gfx1201"))
-        runtime = vc.CampaignProducerRuntime(
+        runtime = campaign_producer.CampaignProducerRuntime(
             repo_root=Path("/repo"),
             patch_id="0000_fake",
             base_revision="a" * 40,
@@ -490,12 +507,12 @@ class BuildPairBuildsExactlyTwoFatArmsTests(unittest.TestCase):
                     Path("/repo"),
                 ),
                 mock.patch.object(
-                    vc,
+                    campaign_producer,
                     "build_tree",
                     side_effect=fake_build_tree,
                 ),
                 mock.patch.object(
-                    vc,
+                    campaign_producer,
                     "capture_completed_build_evidence",
                     side_effect=fake_capture,
                 ),
@@ -534,7 +551,7 @@ class DeviceContextsAreHipOnlyTests(unittest.TestCase):
         from bigcherry.core import environment as bc_environment
 
         fat_targets = vp.FatTargetPlan(targets=("gfx1100",))
-        runtime = vc.CampaignProducerRuntime(
+        runtime = campaign_producer.CampaignProducerRuntime(
             repo_root=Path("/repo"),
             patch_id="0000_fake",
             base_revision="a" * 40,
@@ -579,7 +596,7 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
 
     @staticmethod
     def _runtime(fat_targets):
-        return vc.CampaignProducerRuntime(
+        return campaign_producer.CampaignProducerRuntime(
             repo_root=Path("/repo"),
             patch_id="0000_fake",
             base_revision="a" * 40,
@@ -668,12 +685,12 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
             ),
             mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")),
             mock.patch.object(
-                vc,
+                campaign_producer,
                 "build_tree",
                 side_effect=fake_build_tree,
             ),
             mock.patch.object(
-                vc,
+                campaign_producer,
                 "capture_completed_build_evidence",
                 side_effect=fake_capture,
             ),
@@ -788,7 +805,7 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
                 ),
                 mock.patch.object(real_psi, "REPO_ROOT", Path("/repo")),
                 mock.patch.object(
-                    vc,
+                    campaign_producer,
                     "build_tree",
                     side_effect=[
                         Path("/builds/control"),
@@ -796,14 +813,14 @@ class BuildPairOverrideParamsTests(unittest.TestCase):
                     ],
                 ),
                 mock.patch.object(
-                    vc,
+                    campaign_producer,
                     "capture_completed_build_evidence",
                     side_effect=evidences,
                 ),
             ):
                 if parity_mismatch:
                     with self.assertRaisesRegex(
-                        vc.PatchCampaignError,
+                        campaign_build.PatchCampaignError,
                         "parity",
                     ):
                         runtime.build_pair(

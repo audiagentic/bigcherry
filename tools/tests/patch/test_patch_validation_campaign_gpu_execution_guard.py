@@ -22,6 +22,7 @@ which also gained an explicit -ngl 99 flag.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -29,19 +30,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
+from bigcherry.patch.campaign import trace as campaign_trace  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class RequireRealGpuExecutionTests(unittest.TestCase):
     def test_valid_gpu_output_passes(self) -> None:
-        vc._require_real_gpu_execution(
+        campaign_trace._require_real_gpu_execution(
             "ggml_cuda_init: found 2 ROCm devices (Total VRAM: 49120 MiB):\ntg128 | 100.0 t/s\n",
             "", context="test",
         )  # must not raise
 
     def test_rocm_init_failure_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
-            vc._require_real_gpu_execution(
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
+            campaign_trace._require_real_gpu_execution(
                 "tg128 | 16.33 t/s\n", "ggml_cuda_init: failed to initialize ROCm: no ROCm-capable "
                 "device is detected\n", context="test",
             )
@@ -51,18 +54,18 @@ class RequireRealGpuExecutionTests(unittest.TestCase):
         # Exit code 0, a plausible-looking metric line, but NO real
         # positive GPU-init evidence anywhere in the output -- exactly
         # the real 2026-09-01 confound.
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
-            vc._require_real_gpu_execution("tg128 | 16.33 t/s\n", "", context="test")
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
+            campaign_trace._require_real_gpu_execution("tg128 | 16.33 t/s\n", "", context="test")
         self.assertIn("no real GPU execution evidence", str(ctx.exception))
 
     def test_zero_devices_found_is_rejected(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
-            vc._require_real_gpu_execution(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_trace._require_real_gpu_execution(
                 "ggml_cuda_init: found 0 ROCm devices\n", "", context="test",
             )
 
     def test_signature_may_appear_in_stderr(self) -> None:
-        vc._require_real_gpu_execution(
+        campaign_trace._require_real_gpu_execution(
             "", "ggml_cuda_init: found 1 ROCm devices\n", context="test",
         )  # must not raise
 
@@ -73,7 +76,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
     actually exercises the -ngl flag and the guard together."""
 
     def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
+        self._real_subprocess_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.workdir = Path(self._tmp.name)
         self.binary = self.workdir / "fake-binary"
@@ -82,7 +85,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         self.model.write_text("", encoding="utf-8")
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
+        subprocess.run = self._real_subprocess_run
         self._tmp.cleanup()
 
     def _fake_run(self, stdout: str, stderr: str = "", returncode: int = 0):
@@ -97,11 +100,11 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
             result.stderr = stderr
             return result
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
 
     def test_command_includes_ngl_99(self) -> None:
         self._fake_run("ggml_cuda_init: found 1 ROCm devices\n")
-        vc._run_one_trace_probe(
+        campaign_trace._run_one_trace_probe(
             name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
             workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
         )
@@ -115,7 +118,7 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         # purpose is observing log-based activation markers, so it must
         # always request verbose output.
         self._fake_run("ggml_cuda_init: found 1 ROCm devices\n")
-        vc._run_one_trace_probe(
+        campaign_trace._run_one_trace_probe(
             name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
             workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
         )
@@ -126,15 +129,15 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
             "tg128 | 16.33 t/s\n",
             stderr="ggml_cuda_init: failed to initialize ROCm: no ROCm-capable device is detected\n",
         )
-        with self.assertRaises(vc.PatchCampaignError):
-            vc._run_one_trace_probe(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_trace._run_one_trace_probe(
                 name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
                 workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
             )
 
     def test_valid_gpu_run_passes(self) -> None:
         self._fake_run("ggml_cuda_init: found 2 ROCm devices\nBIGCHERRY_PATCH_HIT patch=x\n")
-        combined = vc._run_one_trace_probe(
+        combined = campaign_trace._run_one_trace_probe(
             name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
             workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
         )
@@ -145,8 +148,8 @@ class TraceProbeGpuGuardIntegrationTests(unittest.TestCase):
         # existing "activation probe ... failed with exit code" error,
         # not be masked or reclassified by the GPU-execution guard.
         self._fake_run("", stderr="segfault", returncode=1)
-        with self.assertRaises(vc.PatchCampaignError) as ctx:
-            vc._run_one_trace_probe(
+        with self.assertRaises(campaign_build.PatchCampaignError) as ctx:
+            campaign_trace._run_one_trace_probe(
                 name="test", binary=self.binary, model=self.model, hip_path=Path("H:/hip"),
                 workdir=self.workdir, bench_prompt=0, bench_gen=128, disable_fusion=False,
             )
@@ -160,10 +163,10 @@ class Rd08LaneCommandsGpuFlagTests(unittest.TestCase):
         # dedicated rd08_validation_lane_commands helper was retired with
         # the producer migration; this pins the -ngl 99 guard it used to
         # carry on BOTH the control and subject commands).
-        control_cmd = vc._paired_llama_bench_command(
+        control_cmd = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
         )
-        subject_cmd = vc._paired_llama_bench_command(
+        subject_cmd = campaign_benchmark._paired_llama_bench_command(
             Path("subject_bin"), Path("m.gguf"), "decode",
         )
         for command in (control_cmd, subject_cmd):
@@ -183,7 +186,7 @@ class Rd04CommandGpuFlagTests(unittest.TestCase):
         # flagged for replacement. Now calls the real command builder and
         # checks its actual output, same pattern as
         # Rd08LaneCommandsGpuFlagTests above.
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
             patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
         )

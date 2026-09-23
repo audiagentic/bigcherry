@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 def _device(index: int, arch: str, locator: str | None) -> SimpleNamespace:
@@ -46,7 +46,7 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
 
     def test_resolves_real_configured_device(self) -> None:
         os.environ["HIP_VISIBLE_DEVICES"] = "0"
-        identity, selector_env = vc.resolve_selected_device_execution_identity(
+        identity, selector_env = campaign_build.resolve_selected_device_execution_identity(
             expected_arch="gfx1100", host_devices=_HOST_DEVICES,
         )
         self.assertEqual(identity.backend, "ROCm")
@@ -58,36 +58,36 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
         # Two real gfx1100 cards are not interchangeable once locator
         # identity is pinned -- index 1 must resolve to ITS OWN locator.
         os.environ["HIP_VISIBLE_DEVICES"] = "1"
-        identity, _ = vc.resolve_selected_device_execution_identity(
+        identity, _ = campaign_build.resolve_selected_device_execution_identity(
             expected_arch="gfx1100", host_devices=_HOST_DEVICES,
         )
         self.assertEqual(identity.locators, ("0000:06:00.0",))
 
     def test_missing_hip_visible_devices_fails_closed(self) -> None:
         os.environ.pop("HIP_VISIBLE_DEVICES", None)
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1100", host_devices=_HOST_DEVICES,
             )
 
     def test_multi_device_selector_fails_closed(self) -> None:
         os.environ["HIP_VISIBLE_DEVICES"] = "0,1"
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1100", host_devices=_HOST_DEVICES,
             )
 
     def test_non_numeric_selector_fails_closed(self) -> None:
         os.environ["HIP_VISIBLE_DEVICES"] = "gfx1100"
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1100", host_devices=_HOST_DEVICES,
             )
 
     def test_unconfigured_index_fails_closed(self) -> None:
         os.environ["HIP_VISIBLE_DEVICES"] = "9"
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1100", host_devices=_HOST_DEVICES,
             )
 
@@ -95,8 +95,8 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
         # Index 3 (gfx1030) deliberately has locator=None in this fixture --
         # must never silently proceed without a real, verified locator.
         os.environ["HIP_VISIBLE_DEVICES"] = "3"
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1030", host_devices=_HOST_DEVICES,
             )
 
@@ -104,8 +104,8 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
         # Index 2 is really gfx1201 -- requesting gfx1100 against it must
         # fail rather than silently attest the wrong architecture.
         os.environ["HIP_VISIBLE_DEVICES"] = "2"
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.resolve_selected_device_execution_identity(
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_build.resolve_selected_device_execution_identity(
                 expected_arch="gfx1100", host_devices=_HOST_DEVICES,
             )
 
@@ -114,7 +114,7 @@ class ResolveSelectedDeviceExecutionIdentityTests(unittest.TestCase):
         # against the REAL config/environment.toml -- index 0 is really
         # gfx1100 with a real verified locator on Brutus.
         os.environ["HIP_VISIBLE_DEVICES"] = "0"
-        identity, _ = vc.resolve_selected_device_execution_identity(
+        identity, _ = campaign_build.resolve_selected_device_execution_identity(
             expected_arch="gfx1100",
         )
         self.assertEqual(identity.architectures, ("gfx1100",))

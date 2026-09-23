@@ -9,7 +9,19 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
+
+import importlib.util  # noqa: E402
+
+# PA43: the patch1000 helpers are lab code (tools/lab/patch1000/), which is
+# intentionally not a package -- load the module by path.
+_LAB_MODULE_PATH = (
+    Path(__file__).resolve().parents[1].parent / "lab" / "patch1000" / "patch1000_verification.py"
+)
+_spec = importlib.util.spec_from_file_location("patch1000_verification", _LAB_MODULE_PATH)
+p1000 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(p1000)
 
 
 class _Result:
@@ -21,7 +33,7 @@ class _Result:
 
 class Patch1000CommandTests(unittest.TestCase):
     def test_perf_command_is_exact_upstream_n512_shape(self) -> None:
-        command = vc._patch1000_backend_ops_command(
+        command = p1000._patch1000_backend_ops_command(
             Path("test-backend-ops"), "Q2_K", mode="perf",
         )
         self.assertEqual(
@@ -33,7 +45,7 @@ class Patch1000CommandTests(unittest.TestCase):
         )
 
     def test_correctness_uses_quant_family_not_perf_only_shape(self) -> None:
-        command = vc._patch1000_backend_ops_command(
+        command = p1000._patch1000_backend_ops_command(
             Path("test-backend-ops"), "Q6_K", mode="test",
         )
         self.assertEqual(
@@ -42,16 +54,16 @@ class Patch1000CommandTests(unittest.TestCase):
         )
 
     def test_unknown_quant_fails_closed(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
-            vc._patch1000_backend_ops_command(Path("test-backend-ops"), "Q4_K", mode="perf")
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            p1000._patch1000_backend_ops_command(Path("test-backend-ops"), "Q4_K", mode="perf")
 
 
 class Patch1000BackendPerfTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.real_run = vc.subprocess.run
+        self.real_run = p1000.subprocess.run
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self.real_run
+        p1000.subprocess.run = self.real_run
 
     def test_paired_perf_reports_control_over_subject_speedup(self) -> None:
         seen_envs: list[dict[str, str]] = []
@@ -69,12 +81,12 @@ class Patch1000BackendPerfTests(unittest.TestCase):
             )
             return _Result(0, stdout)
 
-        vc.subprocess.run = fake_run
+        p1000.subprocess.run = fake_run
 
         old_rocr = os.environ.get("ROCR_VISIBLE_DEVICES")
         try:
             os.environ["ROCR_VISIBLE_DEVICES"] = "9"
-            result = vc.run_patch1000_backend_ops_perf(
+            result = p1000.run_patch1000_backend_ops_perf(
                 control_binary=Path("control/test-backend-ops"),
                 subject_binary=Path("subject/test-backend-ops"),
                 quant="Q6_K",
@@ -97,17 +109,17 @@ class Patch1000BackendPerfTests(unittest.TestCase):
 
 class Patch1000CorrectnessTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.real_run = vc.subprocess.run
+        self.real_run = p1000.subprocess.run
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self.real_run
+        p1000.subprocess.run = self.real_run
 
     def test_successful_backend_reference_check_passes(self) -> None:
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(0, "ggml_cuda_init: found 1 ROCm devices\n1/1 tests passed\n")
 
-        vc.subprocess.run = fake_run
-        result = vc.run_patch1000_backend_ops_correctness(
+        p1000.subprocess.run = fake_run
+        result = p1000.run_patch1000_backend_ops_correctness(
             binary=Path("test-backend-ops"),
             quant="Q2_K",
             hip_path=Path("/opt/rocm"),
@@ -120,9 +132,9 @@ class Patch1000CorrectnessTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(1, "FAIL\n", "bad result")
 
-        vc.subprocess.run = fake_run
-        with self.assertRaises(vc.PatchCampaignError):
-            vc.run_patch1000_backend_ops_correctness(
+        p1000.subprocess.run = fake_run
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            p1000.run_patch1000_backend_ops_correctness(
                 binary=Path("test-backend-ops"),
                 quant="Q6_K",
                 hip_path=Path("/opt/rocm"),
@@ -147,7 +159,7 @@ class Patch1000FatBuildTests(unittest.TestCase):
             q2.write_bytes(b"q2")
             q6.write_bytes(b"q6")
 
-            patch_id = vc._PATCH1000_ID
+            patch_id = p1000._PATCH1000_ID
             framework_comp = (("0100_fake_framework", "d0"),)
             subject_comp = (("0100_fake_framework", "d0"), (patch_id, "d1"))
 
@@ -200,9 +212,9 @@ class Patch1000FatBuildTests(unittest.TestCase):
 
             def fake_bench(**kwargs):  # noqa: ANN003
                 bench_calls.append(dict(kwargs))
-                return vc.PairedBenchmarkOutcome(runs={}, commands={}, raw_logs=[])
+                return campaign_benchmark.PairedBenchmarkOutcome(runs={}, commands={}, raw_logs=[])
 
-            result = vc.run_patch1000_verification(
+            result = p1000.run_patch1000_verification(
                 base_revision="base",
                 hip_path=Path("/opt/rocm"),
                 build_root=root / "work",

@@ -17,7 +17,8 @@ control (serving-core composition without patch 1000)?
 
 - `--hip-path /opt/rocm --device 2` (gfx1201) on Brutus.
 - `run_patch1000_backend_ops_correctness` / `run_patch1000_backend_ops_perf`
-  (already-authored backend-ops helpers).
+  (already-authored backend-ops helpers, in `patch1000_verification.py`
+  next to the driver since PA43 moved them out of `validation_campaign.py`).
 - Q2_K/Q6_K model-level `llama-bench` lanes are SKIPPED (no fixture
   registered / not executed) — recorded as not executed, not as evidence.
 

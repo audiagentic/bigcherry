@@ -9,6 +9,7 @@ planning/active/patching-validation-package-standard/PVPS02.md).
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,7 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class _Result:
@@ -28,19 +30,19 @@ class _Result:
 
 class PairedLlamaBenchCommandTests(unittest.TestCase):
     def test_patch_args_land_before_ngl(self) -> None:
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("bin"), Path("m.gguf"), "decode", patch_args=("-fa", "on"),
         )
         self.assertLess(command.index("-fa"), command.index("-ngl"))
 
     def test_runtime_args_land_after_ngl(self) -> None:
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("bin"), Path("m.gguf"), "decode", runtime_args=("-sm", "tensor"),
         )
         self.assertGreater(command.index("-sm"), command.index("-ngl"))
 
     def test_reproduces_rd04_exact_historical_argv_shape(self) -> None:
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
             patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
         )
@@ -55,7 +57,7 @@ class PairedLlamaBenchCommandTests(unittest.TestCase):
         # directly (the dedicated rd08_validation_lane_commands helper
         # was retired with the 1204/RD08 producer migration; this
         # assertion pins the shape it used to build, byte-for-byte).
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
         )
         self.assertEqual(
@@ -63,24 +65,24 @@ class PairedLlamaBenchCommandTests(unittest.TestCase):
         )
 
     def test_unmapped_workload_raises(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
-            vc._paired_llama_bench_command(Path("bin"), Path("m.gguf"), "bogus")
+        with self.assertRaises(campaign_build.PatchCampaignError):
+            campaign_benchmark._paired_llama_bench_command(Path("bin"), Path("m.gguf"), "bogus")
 
 
 class RunPairedLlamaBenchmarkTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
+        self._real_subprocess_run = subprocess.run
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
+        subprocess.run = self._real_subprocess_run
 
     def test_default_workloads_run_both_decode_and_prefill(self) -> None:
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
             return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
-        outcome = vc.run_paired_llama_benchmark(
+        subprocess.run = fake_run
+        outcome = campaign_benchmark.run_paired_llama_benchmark(
             control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
             model=Path("m.gguf"), hip_path=Path("H:/hip"), pairs=1, log_context="test",
         )
@@ -92,8 +94,8 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
-        outcome = vc.run_paired_llama_benchmark(
+        subprocess.run = fake_run
+        outcome = campaign_benchmark.run_paired_llama_benchmark(
             control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
             model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
             pairs=1, log_context="test",
@@ -105,9 +107,9 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
         def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
             return _Result(0, "no rocm devices here\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaisesRegex(Exception, "distinctive-context"):
-            vc.run_paired_llama_benchmark(
+            campaign_benchmark.run_paired_llama_benchmark(
                 control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
                 model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
                 pairs=1, log_context="distinctive-context",
@@ -127,11 +129,11 @@ class RunPairedLlamaBenchmarkTests(unittest.TestCase):
             seen_envs.append(env)
             return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         old = dict(os.environ)
         try:
             os.environ["ROCR_VISIBLE_DEVICES"] = "6"
-            vc.run_paired_llama_benchmark(
+            campaign_benchmark.run_paired_llama_benchmark(
                 control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
                 model=Path("m.gguf"), hip_path=Path("H:/hip"), workloads=("decode",),
                 pairs=1, log_context="test",

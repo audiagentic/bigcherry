@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,6 +40,7 @@ from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 PRODUCER_DIR = Path("patches/1233_rd73_stable_graph_cache_key/validation")
 PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06c"
@@ -101,14 +103,14 @@ class _FakeServerRunner:
 
 class RunBenchRunnerServerBenchTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
+        self._real_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.runner_root = Path(self._tmp.name)
         (self.runner_root / "bench").mkdir()
         (self.runner_root / "bench" / "run_bench.py").write_text("", encoding="utf-8")
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
+        subprocess.run = self._real_run
         self._tmp.cleanup()
 
     def test_parses_aggregated_results_block(self) -> None:
@@ -124,7 +126,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         metrics = vc.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18080",
             bench_configs="tg128",
@@ -150,7 +152,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         metrics = vc.run_bench_runner_server_bench(
             server_url="http://127.0.0.1:18082",
             bench_configs="tg128",
@@ -176,7 +178,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080",
@@ -193,7 +195,7 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
             return _Result()
 
-        vc.subprocess.run = fake_run
+        subprocess.run = fake_run
         with self.assertRaises(bench_runner.BenchRunnerError):
             vc.run_bench_runner_server_bench(
                 server_url="http://127.0.0.1:18080",
@@ -331,7 +333,7 @@ class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
 
     def test_no_readings_fails_closed(self) -> None:
         subject_log = self._write_log([])
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(campaign_build.PatchCampaignError):
             vc.evaluate_rd73_resource_evidence(
                 subject_log_path=subject_log, run_dir=self.run_dir
             )
@@ -383,7 +385,7 @@ class EvaluateRd73MtpCorrectnessTests(unittest.TestCase):
 
 class RunRd73ContractQualificationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._real_run = vc.subprocess.run
+        self._real_run = subprocess.run
         self._tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self._tmp.name)
         self.control_binary = self.run_dir / "control-bin"
@@ -399,7 +401,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
         ).contracts["RD73-STABLE-GRAPH-CACHE-KEY"]
 
     def tearDown(self) -> None:
-        vc.subprocess.run = self._real_run
+        subprocess.run = self._real_run
         self._tmp.cleanup()
 
     def _mtp_records(
