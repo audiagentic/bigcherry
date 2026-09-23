@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
@@ -46,7 +47,7 @@ class ResolveBenchmarkModelTests(unittest.TestCase):
 
     def test_valid_single_topology_resolves(self) -> None:
         registry = _write_registry(self.root, topology="single")
-        resolved = vc.resolve_benchmark_model(
+        resolved = campaign_benchmark.resolve_benchmark_model(
             "test-model", model_root=self.root, registry_path=registry,
         )
         self.assertEqual(resolved.topology, "single")
@@ -55,7 +56,7 @@ class ResolveBenchmarkModelTests(unittest.TestCase):
 
     def test_valid_tensor2_topology_resolves(self) -> None:
         registry = _write_registry(self.root, topology="tensor-2")
-        resolved = vc.resolve_benchmark_model(
+        resolved = campaign_benchmark.resolve_benchmark_model(
             "test-model", model_root=self.root, registry_path=registry,
         )
         self.assertEqual(resolved.device_count, 2)
@@ -63,28 +64,28 @@ class ResolveBenchmarkModelTests(unittest.TestCase):
     def test_unknown_model_id_fails_closed(self) -> None:
         registry = _write_registry(self.root)
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_model("nonexistent", model_root=self.root, registry_path=registry)
+            campaign_benchmark.resolve_benchmark_model("nonexistent", model_root=self.root, registry_path=registry)
 
     def test_missing_file_fails_closed(self) -> None:
         registry = _write_registry(self.root)
         (self.root / "model.gguf").unlink()
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
+            campaign_benchmark.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_size_mismatch_fails_closed(self) -> None:
         registry = _write_registry(self.root, size=99999)
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
+            campaign_benchmark.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_no_declared_topology_never_defaults_to_single(self) -> None:
         registry = _write_registry(self.root, topology=None)
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
+            campaign_benchmark.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_unrecognized_topology_fails_closed(self) -> None:
         registry = _write_registry(self.root, topology="tensor-99")
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
+            campaign_benchmark.resolve_benchmark_model("test-model", model_root=self.root, registry_path=registry)
 
     def test_real_ministral_entry_in_the_real_registry_is_wired_correctly(self) -> None:
         # Hardware-free: does not require the real gguf file to exist on
@@ -106,54 +107,54 @@ class ResolveBenchmarkModelTests(unittest.TestCase):
 
 class ParseDeviceMapTests(unittest.TestCase):
     def test_single_entry_parses(self) -> None:
-        self.assertEqual(vc.parse_device_map(["gfx1100=0,1"]), {"gfx1100": ("0", "1")})
+        self.assertEqual(campaign_benchmark.parse_device_map(["gfx1100=0,1"]), {"gfx1100": ("0", "1")})
 
     def test_multiple_entries_parse(self) -> None:
         self.assertEqual(
-            vc.parse_device_map(["gfx1100=0,1", "gfx1030=3"]),
+            campaign_benchmark.parse_device_map(["gfx1100=0,1", "gfx1030=3"]),
             {"gfx1100": ("0", "1"), "gfx1030": ("3",)},
         )
 
     def test_order_is_preserved(self) -> None:
-        self.assertEqual(vc.parse_device_map(["gfx1100=1,0"]), {"gfx1100": ("1", "0")})
+        self.assertEqual(campaign_benchmark.parse_device_map(["gfx1100=1,0"]), {"gfx1100": ("1", "0")})
 
     def test_missing_equals_sign_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.parse_device_map(["gfx1100"])
+            campaign_benchmark.parse_device_map(["gfx1100"])
 
     def test_blank_architecture_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.parse_device_map(["=0,1"])
+            campaign_benchmark.parse_device_map(["=0,1"])
 
     def test_empty_device_list_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.parse_device_map(["gfx1100="])
+            campaign_benchmark.parse_device_map(["gfx1100="])
 
     def test_blank_device_entry_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.parse_device_map(["gfx1100=0,,1"])
+            campaign_benchmark.parse_device_map(["gfx1100=0,,1"])
 
     def test_duplicate_architecture_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.parse_device_map(["gfx1100=0", "gfx1100=1"])
+            campaign_benchmark.parse_device_map(["gfx1100=0", "gfx1100=1"])
 
 
 class ResolveDevicePoolTests(unittest.TestCase):
     def test_takes_first_n_ids_in_order(self) -> None:
-        pool = vc.resolve_device_pool({"gfx1100": ("1", "0")}, "gfx1100", 1)
+        pool = campaign_benchmark.resolve_device_pool({"gfx1100": ("1", "0")}, "gfx1100", 1)
         self.assertEqual(pool, ("1",))
 
     def test_full_pool_for_exact_count(self) -> None:
-        pool = vc.resolve_device_pool({"gfx1100": ("0", "1")}, "gfx1100", 2)
+        pool = campaign_benchmark.resolve_device_pool({"gfx1100": ("0", "1")}, "gfx1100", 2)
         self.assertEqual(pool, ("0", "1"))
 
     def test_unmapped_architecture_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_device_pool({"gfx1100": ("0",)}, "gfx1201", 1)
+            campaign_benchmark.resolve_device_pool({"gfx1100": ("0",)}, "gfx1201", 1)
 
     def test_pool_smaller_than_needed_rejected(self) -> None:
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_device_pool({"gfx1100": ("0",)}, "gfx1100", 2)
+            campaign_benchmark.resolve_device_pool({"gfx1100": ("0",)}, "gfx1100", 2)
 
 
 if __name__ == "__main__":

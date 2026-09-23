@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import registry as patch_registry  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
@@ -70,7 +71,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
                 'benchmark-extra-args = ["-fa", "on"]\n'
             ),
         )
-        wiring = vc.resolve_benchmark_wiring(descriptor, root=self.root)
+        wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
         self.assertEqual(wiring.executor, "paired-llama-bench-v1")
         self.assertEqual(wiring.patch_args, ("-fa", "on"))
 
@@ -84,13 +85,13 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
                 'benchmark-executor = "paired-llama-bench-v1"\n'
             ),
         )
-        wiring = vc.resolve_benchmark_wiring(descriptor, root=self.root)
+        wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
         self.assertEqual(wiring.patch_args, ())
 
     def test_no_performance_check_at_all_fails_closed(self) -> None:
         descriptor = _write_patch(self.root, "9003_example", performance_toml="")
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_performance_check_without_benchmark_executor_fails_closed(self) -> None:
         descriptor = _write_patch(
@@ -102,7 +103,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
             ),
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_non_required_performance_check_does_not_count(self) -> None:
         descriptor = _write_patch(
@@ -115,7 +116,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
             ),
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_unknown_executor_fails_closed(self) -> None:
         descriptor = _write_patch(
@@ -128,7 +129,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
             ),
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_two_wired_performance_checks_is_ambiguous(self) -> None:
         descriptor = _write_patch(
@@ -145,7 +146,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
             ),
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_non_list_extra_args_fails_closed(self) -> None:
         descriptor = _write_patch(
@@ -159,14 +160,14 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
             ),
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.resolve_benchmark_wiring(descriptor, root=self.root)
+            campaign_benchmark.resolve_benchmark_wiring(descriptor, root=self.root)
 
     def test_real_rd04_patch_resolves(self) -> None:
         from bigcherry.core import paths
 
         registry = patch_registry.load_registry(paths.PATCHES)
         descriptor = registry.by_id["1202_rd04_bf16_flash_attn_tile"]
-        wiring = vc.resolve_benchmark_wiring(descriptor)
+        wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor)
         self.assertEqual(wiring.executor, "paired-llama-bench-v1")
         self.assertEqual(wiring.patch_args, ("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"))
 
@@ -175,7 +176,7 @@ class ResolveBenchmarkWiringTests(unittest.TestCase):
 
         registry = patch_registry.load_registry(paths.PATCHES)
         descriptor = registry.by_id["1204_rd08_q6k_mmvq_vdr2"]
-        wiring = vc.resolve_benchmark_wiring(descriptor)
+        wiring = campaign_benchmark.resolve_benchmark_wiring(descriptor)
         self.assertEqual(wiring.executor, "paired-llama-bench-v1")
         self.assertEqual(wiring.patch_args, ())
 
