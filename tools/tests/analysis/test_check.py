@@ -77,6 +77,29 @@ class CheckTests(TestCase):
                 codes,
             )
 
+    def test_artifact_untraceable_run_allows_textual_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "hi168-e2e-results").mkdir(parents=True)
+            evidence = root / "docs" / "evidence" / "2026-09-08-HI168-e2e"
+            evidence.mkdir(parents=True)
+            (evidence / "README.md").write_text(
+                "Raw traces are under `artifacts/hi168-e2e-results/`.\n",
+                encoding="utf-8",
+            )
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
+    def test_artifact_untraceable_run_allows_date_prefixed_evidence_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "to02-hi16-gpu0").mkdir(parents=True)
+            (root / "docs" / "evidence" / "2026-09-08-TO02-HI16-gpu0").mkdir(parents=True)
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
     def test_artifact_untraceable_run_allows_docs_evidence_counterpart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
