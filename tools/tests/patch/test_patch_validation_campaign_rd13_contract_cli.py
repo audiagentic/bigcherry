@@ -48,6 +48,7 @@ from bigcherry.patch import activation as patch_activation  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import trace as campaign_trace  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
@@ -321,7 +322,7 @@ def _fake_probe(
     write_logs: bool = True,
     **kwargs: object,
 ) -> tuple[patch_activation.ActivationEvidence, dict[str, object]]:
-    """Stand-in for vc.run_trace_activation_probes: the fake writes the
+    """Stand-in for campaign_trace.run_trace_activation_probes: the fake writes the
     two probe logs under the supplied workdir (the dispatcher binds
     their real bytes) and returns the (ActivationEvidence, detail)
     pair the dispatcher consumes."""
