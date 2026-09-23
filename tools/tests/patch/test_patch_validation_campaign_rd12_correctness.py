@@ -661,7 +661,6 @@ class RD12ProducerMeasurementTests(unittest.TestCase):
         from bigcherry.core import paths as bc_paths
         from bigcherry.patch import registry as patch_registry
         from bigcherry.patch import validation as patch_validation
-        from bigcherry.patch import validation_campaign as vc
         from bigcherry.patch.campaign import producer as campaign_producer
         from bigcherry.patch import validation_policy as patch_validation_policy
 

@@ -26,7 +26,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
