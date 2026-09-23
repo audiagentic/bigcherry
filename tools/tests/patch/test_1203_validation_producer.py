@@ -29,6 +29,7 @@ from bigcherry.experiment import execution as experiment_execution  # noqa: E402
 from bigcherry.patch import evidence as patch_validation_evidence  # noqa: E402
 from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
@@ -496,7 +497,7 @@ def _run_producer(
         else {"control_model": str(resolved_control_model)}
     )
 
-    execution = vc.execute_validation_producer(
+    execution = campaign_producer.execute_validation_producer(
         patch_dir=_PATCH_DIR,
         producer_id="rd050607",
         provided_inputs=provided_inputs,
@@ -1268,7 +1269,7 @@ class Patch1203ValidationProducerTests(unittest.TestCase):
             runtime=runtime,
         )
         with self.assertRaises(campaign_build.PatchCampaignError):
-            vc.execute_validation_producer(
+            campaign_producer.execute_validation_producer(
                 patch_dir=_PATCH_DIR,
                 producer_id="rd050607",
                 provided_inputs={

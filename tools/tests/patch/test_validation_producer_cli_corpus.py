@@ -32,6 +32,7 @@ sys.path.insert(0, str(TOOLS_DIR))
 
 from bigcherry.patch import validation as pv  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch import validation_policy as patch_validation_policy  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 
@@ -69,7 +70,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
 
         fake_plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=(), universal_capabilities=())
 
-        with mock.patch.object(vc, "execute_validation_producer", _fake_execute_validation_producer), \
+        with mock.patch.object(campaign_producer, "execute_validation_producer", _fake_execute_validation_producer), \
              mock.patch.object(
                  patch_validation_policy, "require_execution_package", return_value=fake_plan,
              ):
@@ -95,7 +96,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
                 # supplies it. The gate is a pure membership check -- no
                 # file is read.
                 with self.assertRaises(_CapturedExit):
-                    vc._run_validation_producer(
+                    campaign_producer._run_validation_producer(
                         args, producer_id="rd050607",
                         provided_inputs={
                             "control_model": str(Path(tmp) / "control.gguf"),
@@ -128,7 +129,7 @@ class ProducerCorpusCliWiringTests(unittest.TestCase):
 
         fake_plan = pv.ValidationPlan(patch_id=_PATCH_ID, checks=(), universal_capabilities=())
 
-        with mock.patch.object(vc, "execute_validation_producer", _fake_execute_validation_producer), \
+        with mock.patch.object(campaign_producer, "execute_validation_producer", _fake_execute_validation_producer), \
              mock.patch.object(
                  patch_validation_policy, "require_execution_package", return_value=fake_plan,
              ):
