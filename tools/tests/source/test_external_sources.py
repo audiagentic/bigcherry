@@ -167,6 +167,10 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         # integrated=false HIP's own unconditional default) -- see
         # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
         "1209_rd22_integrated_gpu_host_buffer_backout",
+        # Rejected 2026-09-23 on measured contract FAILs -- see each patch's
+        # SUMMARY.md DEMOTION section.
+        "1203_rd050607_rdna4_wmma_fa_q6k_mmq",
+        "1204_rd08_q6k_mmvq_vdr2",
     })
 
     def test_rdna_patches_are_untested_and_in_their_own_group(self):
