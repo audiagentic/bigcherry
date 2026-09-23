@@ -37,20 +37,14 @@ import hashlib
 import os
 import re
 import sys
-from collections.abc import Iterable, Mapping
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
 from bigcherry.build.builds import capture_completed_build_evidence
-from bigcherry.campaign.bench_runner import run_bench_runner_server_bench
 from bigcherry.core.context import ProjectContext
 from bigcherry.core.paths import REPO_ROOT
-from bigcherry.experiment import contract as experiment_contract
-from bigcherry.experiment.attestation import ExecutionIdentity
-from bigcherry.experiment.server_execution import AttestedServerSession
 from bigcherry.patch.activation import (
-    ActivationEvidence,
     verdict,
     write_activation_json,
 )
@@ -59,9 +53,7 @@ from bigcherry.patch.campaign.build import (
     _atomic_write_json,
     _full_requested_cmake_args,
     _hip_env,
-    _hip_only,
     _print,
-    _ROCR_VISIBLE_DEVICES_UNSET,
     _write_bound_artifact,
     build_tree,
     generate_registry,
@@ -69,7 +61,6 @@ from bigcherry.patch.campaign.build import (
 )
 from bigcherry.patch.campaign.contract import (
     build_contract_evidence_for_persistence,
-    collect_lane_effect_records,
     compute_contract_correctness_gate,
     compute_persisted_validation_eligible,
 )
@@ -80,1010 +71,6 @@ from bigcherry.patch.campaign.producer import (
 )
 from bigcherry.patch.campaign.scaffold import _build_standard_campaign_scaffold
 from bigcherry.patch.campaign.trace import run_trace_activation_probes
-
-
-_RD73_RESOURCE_PREFIX = "BIGCHERRY_RD73_RESOURCE"
-
-
-_RD73_RESOURCE_PATTERN = re.compile(
-    r"BIGCHERRY_RD73_RESOURCE graph_cache_entries=(\d+)\s*$"
-)
-
-
-def parse_rd73_resource_telemetry(text: str) -> tuple[int, ...]:
-    """VA06: pure parser for RD73's opt-in graph-cache-entry telemetry
-    (BIGCHERRY_RD73_RESOURCE_TRACE=1, common.cuh's cuda_graph() insertion
-    site) -- extracts every real ``graph_cache_entries=N`` reading from a
-    process's combined stdout/stderr, in emission order. Returns an empty
-    tuple when the patch never emitted (e.g. the control binary, which
-    has no RD73 telemetry code at all). Fails closed: any line carrying
-    the ``BIGCHERRY_RD73_RESOURCE`` prefix that doesn't match the exact
-    expected shape is treated as corrupt evidence, not silently ignored --
-    even when other lines in the same text parse cleanly."""
-    readings = []
-    for line in text.splitlines():
-        if _RD73_RESOURCE_PREFIX not in line:
-            continue
-        match = _RD73_RESOURCE_PATTERN.search(line)
-        if match is None:
-            raise PatchCampaignError(
-                f"rd73 resource telemetry: malformed BIGCHERRY_RD73_RESOURCE line: {line!r}"
-            )
-        readings.append(int(match.group(1)))
-    return tuple(readings)
-
-
-def peak_rd73_resource_result(
-    subject_readings: "tuple[int, ...] | list[int]",
-    control_readings: "tuple[int, ...] | list[int] | None" = None,
-) -> "experiment_contract.ResourceResult":
-    """VA06: reduce raw telemetry readings into the real
-    ``ResourceResult(metric="graph_cache_entries", unit="count", ...)``
-    evaluate_resource_gate() checks against. Fails closed (raises) on
-    missing/malformed evidence -- an empty subject reading set means the
-    real telemetry was never observed at all, which must never silently
-    read as a zero/passing measurement."""
-    from bigcherry.experiment import contract as experiment_contract
-
-    if not subject_readings:
-        raise PatchCampaignError(
-            "rd73 resource evidence: no graph_cache_entries readings observed -- the "
-            "subject binary's telemetry (BIGCHERRY_RD73_RESOURCE_TRACE=1) never emitted"
-        )
-    if any(
-        not isinstance(v, int) or isinstance(v, bool) or v < 0 for v in subject_readings
-    ):
-        raise PatchCampaignError(
-            f"rd73 resource evidence: malformed subject reading(s) in {subject_readings!r}"
-        )
-    control_value = None
-    if control_readings:
-        if any(
-            not isinstance(v, int) or isinstance(v, bool) or v < 0
-            for v in control_readings
-        ):
-            raise PatchCampaignError(
-                f"rd73 resource evidence: malformed control reading(s) in {control_readings!r}"
-            )
-        control_value = float(max(control_readings))
-    return experiment_contract.ResourceResult(
-        metric="graph_cache_entries",
-        unit="count",
-        subject_value=float(max(subject_readings)),
-        control_value=control_value,
-    )
-
-
-def evaluate_rd73_activation_evidence(
-    *,
-    marker_regex: str,
-    control_log_path: Path,
-    subject_log_path: Path,
-    run_dir: Path,
-) -> dict[str, object]:
-    """VA06 (user redirect, 2026-09-01): RD73's real subject-hit/control-miss
-    activation evidence, read from the control/subject llama-server LOG
-    FILES run_rd73_mtp_server_lane() already produced (BIGCHERRY_PATCH_TRACE=1
-    is always set on those servers) -- no separate llama-bench probe.
-    llama-bench itself has proven unworkable for RD73's real 27B/dual-GPU/
-    -sm-tensor config on real hardware (repeated crashes: OOM under
-    resource contention, --fit argument-parse errors), and a second probe
-    would be redundant anyway: the MTP servers already ran the patched/
-    control binaries under real repeated traffic. Mirrors RD08's own
-    control-vs-subject-binary negative control (never the generic tune-
-    binary/GGML_CUDA_DISABLE_FUSION mechanism, which is invalid for RD73's
-    graph-cache-key marker for the same reason RD08's own docstring
-    already establishes)."""
-    pattern = re.compile(marker_regex)
-    subject_text = Path(subject_log_path).read_text(encoding="utf-8", errors="replace")
-    control_text = Path(control_log_path).read_text(encoding="utf-8", errors="replace")
-    subject_hit = pattern.search(subject_text) is not None
-    control_hit = pattern.search(control_text) is not None
-    subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
-    control_rel = Path(control_log_path).relative_to(run_dir).as_posix()
-    doc = {
-        "marker_regex": marker_regex,
-        "subject_hit": subject_hit,
-        "control_hit": control_hit,
-        "positive": {
-            "artifact": {
-                "path": subject_rel,
-                "sha256": hashlib.sha256(
-                    Path(subject_log_path).read_bytes()
-                ).hexdigest(),
-            },
-        },
-        "control": {
-            "artifact": {
-                "path": control_rel,
-                "sha256": hashlib.sha256(
-                    Path(control_log_path).read_bytes()
-                ).hexdigest(),
-            },
-        },
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-activation.json", doc)
-    return {
-        "subject_hit": subject_hit,
-        "control_hit": control_hit,
-        "artifact": artifact_ref,
-        "subject_log_path": subject_rel,
-        "control_log_path": control_rel,
-        # VA23: the per-log bound refs, so the campaign can build the
-        # positive/negative trace_evidence that _builtin_trace_marker()
-        # requires. It re-reads both logs and re-verifies the marker itself,
-        # so this exposes evidence for independent checking rather than
-        # asserting a result -- subject_hit/control_hit above are NOT what
-        # the validator trusts.
-        "positive": {
-            "artifact": doc["positive"]["artifact"],
-            "marker_regex": marker_regex,
-        },
-        "negative": {
-            "artifact": doc["control"]["artifact"],
-            "marker_regex": marker_regex,
-        },
-    }
-
-
-def run_rd73_mtp_server_lane(
-    *,
-    control_binary: Path,
-    subject_binary: Path,
-    model: Path,
-    corpus_path: Path,
-    run_dir: Path,
-    expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1",
-    control_port: int = 18080,
-    subject_port: int = 18081,
-    spec_draft_n_max: int = 4,
-    n_predict: int = 128,
-    warmup_pairs: int = 2,
-    measured_pairs: int = 10,
-    selector_env: "dict[str, str] | None" = None,
-) -> dict[str, object]:
-    """VA06 next slice: RD73's paired control/subject mtp_verify
-    performance lane over a real llama-server HTTP harness (GPT scoping,
-    session ses_89a3ef2b02b94469, req_a25bb805975c43c0/req corrected):
-    upstream llama-bench does not support speculative/MTP flags at all,
-    so unlike RD08's simple paired-subprocess lanes, this reuses
-    tuning/server_runner.py's ServerRunner for real process lifecycle
-    (launch/health-check/shutdown) and bench/server_completion.py's real
-    request/metrics machinery for each measured sample.
-
-    Target metric is wall_tps (client-measured, real request-to-response
-    wall-clock throughput) -- deliberately NOT predicted_tps, which is
-    the server's own self-reported decode timing and can exclude HTTP/
-    queueing overhead; per GPT direction, "the number an end user
-    actually experiences" is what this contract's end_to_end_gain_pct
-    must measure.
-
-    Reuses experiment/execution.py's run_paired_lane() (RD08's own
-    alternating-order + block-bootstrap statistics engine) via a
-    synthetic-stdout adapter rather than duplicating that statistics
-    code: each paired-lane "command" is a control/subject arm tag, and
-    the injected runner performs one real HTTP completion request against
-    the already-launched server for that arm, encoding the real wall_tps
-    it measured into a parseable stdout line. warmup_pairs real paired
-    requests execute first (cold-cache discipline, matching
-    server_completion.run_session()'s own pattern) and are never fed into
-    the paired statistics; only the following measured_pairs are.
-
-    Every per-request record (including generated ``content``) is
-    retained and returned for RD73's separate bit-identical correctness
-    lane to consume -- this function does not itself judge correctness.
-    Fails closed: a request with no usable wall_tps raises
-    PatchCampaignError immediately, never silently drops a sample."""
-    from bigcherry.bench import server_completion as sc
-    from bigcherry.experiment import execution as experiment_execution
-
-    prompts, corpus_sha256 = sc.load_corpus(corpus_path)
-    metric_pattern = re.compile(r"BIGCHERRY_RD73_MTP wall_tps=([0-9.]+)")
-
-    # Real llama-server CLI flags only (verified against vendor/llama.cpp's
-    # own common/arg.cpp -- an earlier draft of this function invented
-    # "--spec-n-max"/"--spec-draft-k"/"--spec-draft-v", none of which
-    # exist; the real flag is --spec-draft-n-max, and there is no
-    # separate draft-cache-type flag this lane needs to set (the
-    # production dual-XTX/27B baseline profile leaves cache types at
-    # their defaults too). -sm tensor is REQUIRED for this 27B model on
-    # 2x gfx1100 -- the default -sm layer understates throughput by
-    # roughly 2-10x (a real, previously-confirmed production finding).
-    # --fit off is ALSO required alongside -sm tensor for llama-SERVER
-    # specifically: llama.cpp's automatic device-memory-fit feature
-    # (default on) raises "llama_params_fit is not implemented for
-    # SPLIT_MODE_TENSOR" and aborts (common/fit.cpp) -- a real hardware
-    # crash found running this exact lane on Brutus. llama-BENCH (used
-    # by RD73's other lanes) does not register this flag at all --
-    # passing --fit to it is itself a hard error ("invalid parameter for
-    # argument: --fit"), also found on real hardware -- so it must never
-    # be added to those lanes' extra_flags.
-    server_args = (
-        "--parallel",
-        "1",
-        "--metrics",
-        "-sm",
-        "tensor",
-        "--fit",
-        "off",
-        "--spec-type",
-        "draft-mtp",
-        "--spec-draft-n-max",
-        str(spec_draft_n_max),
-    )
-    logs_dir = run_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-
-    # User redirect (2026-09-01, real hardware finding): control and
-    # subject servers must NEVER run concurrently for this model --
-    # each needs ~13GB/GPU under -sm tensor split, and two full copies
-    # exceed the 24.5GB/GPU Brutus dual-XTX cards (a real cudaMalloc
-    # out-of-memory abort, confirmed on hardware). So each single
-    # measured/warmup request gets its own fresh server: launch, one
-    # request, shut down -- alternating control/subject in the same
-    # order run_paired_lane already calls them, preserving the real
-    # alternating-order/thermal-drift discipline this project's own
-    # prior production benchmarking found necessary (a non-alternating
-    # "all control then all subject" design previously produced a real,
-    # since-corrected measurement artifact on this exact model/hardware
-    # -- see patches/1233.../README.md's "Historical evidence" section).
-    #
-    # PVPS02 step 7 (2026-09-11): ``selector_env`` carries the already-
-    # validated HIP_VISIBLE_DEVICES value from
-    # run_rd73_contract_qualification()'s single require_device_visibility()
-    # call (validate ONCE, not per-lane/per-request) -- ServerRunner
-    # starts each server from ambient env then applies these overrides,
-    # so this is enough to make the selector explicit for every server
-    # this lane launches without touching global os.environ.
-    rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
-    if selector_env:
-        rd73_env.update(selector_env)
-    # GPT review follow-up (req_d1ef22d846854960, 2026-09-11): defense in
-    # depth alongside env_unset=_ROCR_VISIBLE_DEVICES_UNSET below -- a
-    # future direct caller passing ROCR_VISIBLE_DEVICES via selector_env
-    # must not be able to reintroduce it through env_overrides ordering
-    # (ServerRunner.launch() applies env_unset BEFORE env_overrides).
-    rd73_env.pop("ROCR_VISIBLE_DEVICES", None)
-    ports = {"control": control_port, "subject": subject_port}
-    binaries = {"control": control_binary, "subject": subject_binary}
-    per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
-
-    sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
-    session_kwargs = dict(
-        corpus_id=corpus_path.stem,
-        corpus_sha256=corpus_sha256,
-        bigcherry_revision="rd73-va06",
-        llama_pin="",
-        llama_revision="",
-        model_id=str(model),
-        server_argv=server_args,
-        spec_type="draft-mtp",
-        spec_n_max=spec_draft_n_max,
-        # SessionConfig's spec_draft_k/spec_draft_v fields are provenance
-        # labels only (there is no real --spec-draft-k/--spec-draft-v
-        # llama-server flag); "default" records that this lane leaves the
-        # draft cache type at its build default, matching the production
-        # dual-XTX/27B baseline profile, which does not override it either.
-        spec_draft_k="default",
-        spec_draft_v="default",
-        sampling=sampling,
-        n_predict=n_predict,
-        order_seed=12345,
-    )
-    configs = {
-        "control": sc.SessionConfig(session_id="rd73-mtp-control", **session_kwargs),
-        "subject": sc.SessionConfig(session_id="rd73-mtp-subject", **session_kwargs),
-    }
-
-    request_records: dict[str, list[dict[str, object]]] = {"control": [], "subject": []}
-    request_counters = {"control": 0, "subject": 0}
-
-    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-        arm = command[-1]
-        index = request_counters[arm]
-        request_counters[arm] += 1
-        log_path = logs_dir / f"rd73-mtp-{arm}-server-{index}.log"
-        per_request_logs[arm].append(log_path)
-        session = AttestedServerSession(
-            binary=binaries[arm],
-            model=model,
-            expected=expected_execution,
-            host=host,
-            port=ports[arm],
-            extra_args=server_args,
-            log_path=log_path,
-            env_overrides=rd73_env,
-            env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
-        )
-        with session:
-            transport = sc.HttpTransport(f"http://{host}:{ports[arm]}")
-            sc.validate_server(transport)
-            prompt = prompts[index % len(prompts)]
-            record = sc.run_request(
-                transport, prompt, configs[arm], pass_number=1, order_index=index
-            )
-        request_records[arm].append(record)
-        if not isinstance(record.get("wall_tps"), (int, float)):
-            raise PatchCampaignError(
-                f"rd73 mtp lane ({arm}, request {index}): no usable wall_tps in the "
-                f"real completion response -- refusing to feed a missing sample into "
-                f"the paired statistics"
-            )
-        return experiment_execution.RunnerOutput(
-            returncode=0,
-            stdout=f"BIGCHERRY_RD73_MTP wall_tps={record['wall_tps']}\n",
-            stderr="",
-        )
-
-    for _ in range(warmup_pairs):
-        _runner(["rd73-mtp-lane", "control"])
-        _runner(["rd73-mtp-lane", "subject"])
-
-    paired_run = experiment_execution.run_paired_lane(
-        metric="mtp_wall_tps",
-        control_command=["rd73-mtp-lane", "control"],
-        subject_command=["rd73-mtp-lane", "subject"],
-        pattern=metric_pattern,
-        pairs=measured_pairs,
-        runner=_runner,
-    )
-
-    # Concatenate each arm's per-request server logs into one combined
-    # log file, so downstream evidence readers (correctness/activation
-    # investigation, manual debugging) see one file per arm as before,
-    # even though each request used its own fresh process.
-    combined_log_paths: dict[str, Path] = {}
-    for arm in ("control", "subject"):
-        combined_path = logs_dir / f"rd73-mtp-{arm}-server.log"
-        combined_path.write_text(
-            "".join(
-                p.read_text(encoding="utf-8", errors="replace")
-                for p in per_request_logs[arm]
-            ),
-            encoding="utf-8",
-        )
-        combined_log_paths[arm] = combined_path
-
-    effect = experiment_execution.lane_effect_from_run(
-        "positive", "mtp_wall_tps", paired_run
-    )
-    doc = {
-        "metric": "mtp_wall_tps",
-        "stats": paired_run.stats,
-        "warmup_pairs": warmup_pairs,
-        "measured_pairs": measured_pairs,
-        "control_requests": request_records["control"],
-        "subject_requests": request_records["subject"],
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-mtp-lane.json", doc)
-    return {
-        "effect": effect,
-        "artifact": artifact_ref,
-        "stats": paired_run.stats,
-        "control_requests": request_records["control"],
-        "subject_requests": request_records["subject"],
-        "control_log_path": combined_log_paths["control"],
-        "subject_log_path": combined_log_paths["subject"],
-    }
-
-
-# VA26: run_bench_runner_server_bench() and its constants moved to
-# campaign/bench_runner.py -- the documented server-bench harness is not
-# patch-specific, and the qualification matrix needs it without importing
-# patch internals. Imported below; no alias is kept here.
-def run_rd73_decode_control_lane(
-    *,
-    control_binary: Path,
-    subject_binary: Path,
-    model: Path,
-    run_dir: Path,
-    expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1",
-    control_port: int = 18082,
-    subject_port: int = 18083,
-    pairs: int = 3,
-    extra_flags: tuple[str, ...] = ("-sm", "tensor", "--fit", "off"),
-    selector_env: "dict[str, str] | None" = None,
-) -> dict[str, object]:
-    """VA06 (user redirect, 2026-09-01): RD73's decode control lane --
-    launches real, plain (non-speculative) control/subject llama-server
-    processes (ServerRunner, matching run_rd73_mtp_server_lane()'s
-    lifecycle pattern) and drives each paired measurement via the
-    documented Brutus bench runner (run_bench_runner_server_bench(),
-    "tg128" config) rather than a raw llama-bench subprocess -- see that
-    function's docstring for why llama-bench itself is unworkable here.
-    Reuses experiment/execution.py's run_paired_lane() via the same
-    synthetic-stdout adapter pattern as the MTP lane, rather than
-    duplicating its alternating-order + block-bootstrap statistics."""
-    from bigcherry.experiment import execution as experiment_execution
-
-    metric_pattern = re.compile(r"BIGCHERRY_RD73_DECODE tg128_tps=([0-9.]+)")
-    server_args = ("--parallel", "1", *extra_flags)
-    logs_dir = run_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-
-    # Real hardware finding (2026-09-01): control and subject servers
-    # must never run concurrently for this model -- each needs
-    # ~13GB/GPU under -sm tensor, exceeding the 24.5GB/GPU cards
-    # together (a real cudaMalloc OOM abort). One fresh server per
-    # single bench-runner call, alternating arms, mirrors
-    # run_rd73_mtp_server_lane()'s same fix.
-    ports = {"control": control_port, "subject": subject_port}
-    binaries = {"control": control_binary, "subject": subject_binary}
-    request_counters = {"control": 0, "subject": 0}
-    raw_metrics: dict[str, list[dict[str, float]]] = {"control": [], "subject": []}
-
-    def _runner(command: list[str]) -> "experiment_execution.RunnerOutput":
-        arm = command[-1]
-        index = request_counters[arm]
-        request_counters[arm] += 1
-        session = AttestedServerSession(
-            binary=binaries[arm],
-            model=model,
-            expected=expected_execution,
-            host=host,
-            port=ports[arm],
-            extra_args=server_args,
-            log_path=logs_dir / f"rd73-decode-{arm}-server-{index}.log",
-            env_overrides=_hip_only(selector_env),
-            env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
-        )
-        with session:
-            metrics = run_bench_runner_server_bench(
-                server_url=f"http://{host}:{ports[arm]}",
-                bench_configs="tg128",
-                repetitions=1,
-            )
-        raw_metrics[arm].append(metrics)
-        if "tg128_tps" not in metrics:
-            raise PatchCampaignError(
-                f"rd73 decode control lane ({arm}): bench runner produced no tg128_tps "
-                f"metric (got {sorted(metrics)})"
-            )
-        return experiment_execution.RunnerOutput(
-            returncode=0,
-            stdout=f"BIGCHERRY_RD73_DECODE tg128_tps={metrics['tg128_tps']}\n",
-            stderr="",
-        )
-
-    decode_run = experiment_execution.run_paired_lane(
-        metric="tg128",
-        control_command=["rd73-decode-lane", "control"],
-        subject_command=["rd73-decode-lane", "subject"],
-        pattern=metric_pattern,
-        pairs=pairs,
-        runner=_runner,
-    )
-
-    effect = experiment_execution.lane_effect_from_run("control", "tg128", decode_run)
-    doc = {
-        "metric": "tg128",
-        "stats": decode_run.stats,
-        "control_raw_metrics": raw_metrics["control"],
-        "subject_raw_metrics": raw_metrics["subject"],
-        "runs": list(decode_run.runs),
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-decode-control.json", doc)
-    return {"effect": effect, "artifact": artifact_ref, "stats": decode_run.stats}
-
-
-def evaluate_rd73_resource_evidence(
-    *,
-    subject_log_path: Path,
-    run_dir: Path,
-) -> dict[str, object]:
-    """VA06 (user redirect, 2026-09-01): RD73's real graph-cache-entries
-    resource evidence, read from the subject llama-server LOG FILE
-    run_rd73_mtp_server_lane() already produced
-    (BIGCHERRY_RD73_RESOURCE_TRACE=1 is always set on that server) --
-    no separate llama-bench probe. Subject-only (GPT's phase-1 scoping:
-    the contract's resource_limits only bounds max_value, so no paired
-    control reading is needed). Parses every real graph_cache_entries=N
-    reading (parse_rd73_resource_telemetry(), fails closed on any
-    malformed line) and reduces to a peak ResourceResult
-    (peak_rd73_resource_result())."""
-    subject_text = Path(subject_log_path).read_text(encoding="utf-8", errors="replace")
-    readings = parse_rd73_resource_telemetry(subject_text)
-    result = peak_rd73_resource_result(readings)
-    subject_rel = Path(subject_log_path).relative_to(run_dir).as_posix()
-    doc = {
-        "readings": list(readings),
-        "peak": result.subject_value,
-        "artifact": {
-            "path": subject_rel,
-            "sha256": hashlib.sha256(Path(subject_log_path).read_bytes()).hexdigest(),
-        },
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-resource.json", doc)
-    return {"result": result, "artifact": artifact_ref, "readings": readings}
-
-
-def run_rd73_resource_burst_session(
-    *,
-    subject_binary: Path,
-    model: Path,
-    corpus_path: Path,
-    run_dir: Path,
-    expected_execution: ExecutionIdentity,
-    host: str = "127.0.0.1",
-    port: int = 18084,
-    burst_requests: int = 20,
-    n_predict: int = 32,
-    selector_env: "dict[str, str] | None" = None,
-) -> dict[str, object]:
-    """VA06 (real hardware finding, 2026-09-01): RD73's graph-cache-entries
-    resource evidence needs a real accumulated-cache burst -- repeated
-    requests against ONE long-lived subject server (matching the
-    contract's own documented methodology: "a fixed repeated-shape MTP
-    completion burst", patches/1233.../README.md). This is NOT compatible
-    with run_rd73_mtp_server_lane()'s per-request server restart (needed
-    there to avoid a real control+subject concurrent-VRAM OOM): a fresh
-    process resets the in-memory graph cache every single request, so
-    that lane's own combined logs would only ever show a trivial
-    peak (~1), never the real accumulated cache size the contract's
-    max_value=800 bound was calibrated against (subject peak 651 under
-    VA06's original characterization run). This session is subject-only
-    (no concurrent control server), so it needs no restart discipline --
-    launch once, drive burst_requests real repeated requests against the
-    SAME live process, read the resulting log, shut down."""
-    from bigcherry.bench import server_completion as sc
-
-    prompts, _ = sc.load_corpus(corpus_path)
-    burst_prompt = prompts[0]
-    server_args = (
-        "--parallel",
-        "1",
-        "--metrics",
-        "-sm",
-        "tensor",
-        "--fit",
-        "off",
-        "--spec-type",
-        "draft-mtp",
-        "--spec-draft-n-max",
-        "4",
-    )
-    logs_dir = run_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / "rd73-resource-burst-subject-server.log"
-    rd73_env = {"BIGCHERRY_PATCH_TRACE": "1", "BIGCHERRY_RD73_RESOURCE_TRACE": "1"}
-    if selector_env:
-        rd73_env.update(selector_env)
-    # GPT review follow-up (req_d1ef22d846854960, 2026-09-11): defense in
-    # depth alongside env_unset=_ROCR_VISIBLE_DEVICES_UNSET below -- a
-    # future direct caller passing ROCR_VISIBLE_DEVICES via selector_env
-    # must not be able to reintroduce it through env_overrides ordering
-    # (ServerRunner.launch() applies env_unset BEFORE env_overrides).
-    rd73_env.pop("ROCR_VISIBLE_DEVICES", None)
-    session = AttestedServerSession(
-        binary=subject_binary,
-        model=model,
-        expected=expected_execution,
-        host=host,
-        port=port,
-        extra_args=server_args,
-        log_path=log_path,
-        env_overrides=rd73_env,
-        env_unset=_ROCR_VISIBLE_DEVICES_UNSET,
-    )
-    sampling = sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20)
-    config = sc.SessionConfig(
-        session_id="rd73-resource-burst",
-        corpus_id=corpus_path.stem,
-        corpus_sha256="",
-        bigcherry_revision="rd73-va06",
-        llama_pin="",
-        llama_revision="",
-        model_id=str(model),
-        server_argv=server_args,
-        spec_type="draft-mtp",
-        spec_n_max=4,
-        spec_draft_k="default",
-        spec_draft_v="default",
-        sampling=sampling,
-        n_predict=n_predict,
-        order_seed=12345,
-    )
-    with session:
-        transport = sc.HttpTransport(f"http://{host}:{port}")
-        sc.validate_server(transport)
-        for index in range(burst_requests):
-            sc.run_request(
-                transport, burst_prompt, config, pass_number=1, order_index=index
-            )
-
-    return evaluate_rd73_resource_evidence(subject_log_path=log_path, run_dir=run_dir)
-
-
-class Rd73CorrectnessError(PatchCampaignError):
-    """RD73's bit-identical correctness check found a real content
-    mismatch -- distinct from PatchCampaignError's other, infrastructure-
-    level failure modes only in name (still fails the campaign)."""
-
-
-def evaluate_rd73_mtp_correctness(
-    *,
-    control_requests: list[dict[str, object]],
-    subject_requests: list[dict[str, object]],
-    run_dir: Path,
-) -> dict[str, object]:
-    """VA06 next slice: RD73's bit-identical correctness check, evaluated
-    from run_rd73_mtp_server_lane()'s already-retained per-request
-    ``content`` fields -- reuses the exact same real MTP requests already
-    executed for the performance lane; never launches a second server
-    lane just for correctness. Pairs control/subject requests by
-    order_index (both arms ran the identical corpus/order, so index
-    alignment is real pairing, not a coincidence) and requires EXACT
-    string equality -- no trimming/normalization/tolerance. Fails closed
-    on a mismatch, missing/non-string content, or an unpairable
-    (differently-sized) record set; never silently skips a bad pair."""
-    if len(control_requests) != len(subject_requests):
-        raise Rd73CorrectnessError(
-            f"rd73 correctness: control has {len(control_requests)} request(s) but subject "
-            f"has {len(subject_requests)} -- cannot pair records for comparison"
-        )
-    rows: list[dict[str, object]] = []
-    mismatches: list[str] = []
-    for control_record, subject_record in zip(control_requests, subject_requests):
-        control_index = control_record.get("order_index")
-        subject_index = subject_record.get("order_index")
-        if control_index != subject_index:
-            raise Rd73CorrectnessError(
-                f"rd73 correctness: control/subject request order_index mismatch "
-                f"({control_index!r} vs {subject_index!r}) -- records are not aligned"
-            )
-        control_content = control_record.get("content")
-        subject_content = subject_record.get("content")
-        if not isinstance(control_content, str) or not isinstance(subject_content, str):
-            raise Rd73CorrectnessError(
-                f"rd73 correctness: request order_index={control_index!r} has non-string "
-                f"content (control={type(control_content).__name__}, "
-                f"subject={type(subject_content).__name__}) -- cannot compare"
-            )
-        ok = control_content == subject_content
-        if not ok:
-            mismatches.append(f"order_index={control_index!r}")
-        rows.append({"order_index": control_index, "ok": ok})
-    if mismatches:
-        raise Rd73CorrectnessError(
-            f"rd73 correctness: {len(mismatches)} request(s) mismatched: {', '.join(mismatches)}"
-        )
-    # VA23: "ops" is what _builtin_backend_ops() matches against the check's
-    # declared config. patch 1233's validation.toml declares
-    # ops = ["RD73_MTP_BIT_IDENTICAL"] for its correctness check, so the
-    # producer must emit that exact identifier or the validator cannot tell
-    # this artifact apart from any other correctness evidence. "passed" stays
-    # the real comparison outcome; only the identifier is added.
-    doc = {
-        "check": "bit_identical",
-        "passed": True,
-        "rows": rows,
-        "ops": ["RD73_MTP_BIT_IDENTICAL"],
-    }
-    artifact_ref = _write_bound_artifact(run_dir, "rd73-correctness.json", doc)
-    return {"artifact": artifact_ref, "rows": rows}
-
-
-def run_rd73_contract_qualification(
-    *,
-    contract: object,
-    control_server_binary: Path,
-    subject_server_binary: Path,
-    model: Path,
-    marker_regex: str,
-    corpus_path: Path,
-    run_dir: Path,
-    # VA24: decode_pairs raised 3 -> 10 to match measured_pairs. min_paired_rounds
-    # is a minimum VALIDITY requirement for every interval used to establish an
-    # acceptance bound, so a control decision taken on 3 rounds violates exactly
-    # what a contract declaring 10 claims. The previous asymmetry meant RD73
-    # demanded 10 rounds to prove its own gain while accepting 3 to prove it had
-    # broken nothing. "Controls need less evidence" is not defensible as a
-    # general rule: required sample size depends on variance, distance from the
-    # acceptance boundary, and the estimator -- not on lane role (dev-gpt-agent,
-    # req_875d13b29a204075). Costs ~5 extra minutes on a ~15-minute
-    # qualification, measured.
-    decode_pairs: int = 10,
-    warmup_pairs: int = 2,
-    measured_pairs: int = 10,
-    # RV99: the patch's already-committed validation records, each a prior
-    # measurement SESSION. Required, not defaulted: under a session policy a
-    # caller that forgets them silently under-counts sessions and the gate
-    # reports "collect more" for ever. An empty tuple is the honest value for
-    # a first session, and is meaningless under a non-session policy.
-    prior_session_records: "Iterable[Mapping[str, object]]",
-    # Required: session aggregation must pool only same-hardware sessions,
-    # and this is the run's own architecture.
-    amdgpu_targets: str,
-) -> dict[str, object]:
-    """VA06 next slice: the authoritative RD73 full-qualification path
-    (``--run-rd73-contract``), mirroring RD08's own
-    run_rd08_contract_qualification() result/schema/promotion semantics
-    (real lane execution + real correctness + real trigger proof, composed
-    via evaluate_promotion_gate()) -- no RD73-specific parallel gate model.
-    Every threshold comes from ``contract`` itself
-    (aggregate_contract_effects() / evaluate_resource_gate() /
-    evaluate_promotion_gate()); nothing here hardcodes a number.
-
-    User redirect (2026-09-01): every lane now runs entirely over real
-    llama-server processes driven by HTTP requests / the documented
-    Brutus bench runner -- never a raw llama-bench subprocess, which
-    proved unworkable for RD73's real 27B/dual-GPU/-sm-tensor config on
-    real hardware. The MTP performance lane runs first; its own
-    control/subject server log files (BIGCHERRY_PATCH_TRACE=1 is always
-    set on them) are the real source for activation evidence. Resource
-    evidence uses a SEPARATE subject-only burst session
-    (run_rd73_resource_burst_session()): the MTP lane restarts a fresh
-    server per single request (a real hardware constraint -- control and
-    subject cannot run concurrently, each needs ~13GB/GPU and two copies
-    exceed the 24.5GB/GPU cards), which resets the in-memory graph cache
-    every request and would make a peak reading trivial/meaningless;
-    the burst session's one long-lived process gets the real
-    accumulated-cache reading the contract's resource bound needs.
-    Decode control similarly launches its own control/subject servers
-    one-request-at-a-time (never concurrently) for the same VRAM
-    reason."""
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.experiment.execution import (
-        DeviceVisibilityError as _DeviceVisibilityError,
-        require_device_visibility as _require_device_visibility,
-    )
-
-    # VA25: RD73's dual-XTX qualification is always `-sm tensor` across 2
-    # homogeneous devices of this run's own architecture -- the exact
-    # topology every RD73 server lane's docstring already documents as a
-    # real hardware constraint (concurrent control+subject exceeds VRAM,
-    # etc.). Constructed once here, not per-lane, so all three lanes
-    # attest against the identical expectation.
-    expected_execution = ExecutionIdentity(
-        backend="ROCm",
-        architectures=(amdgpu_targets, amdgpu_targets),
-    )
-
-    # PVPS02 step 7 (2026-09-11): validate the real HIP_VISIBLE_DEVICES
-    # selector ONCE here (the same fail-closed contract RD58/the generic
-    # matrix use), then copy that validated value into every lane's own
-    # server-session env overrides below -- ServerRunner starts each
-    # server from ambient env then applies overrides, so this makes the
-    # selector explicit for every process this qualification launches
-    # without ever mutating global os.environ. ExecutionIdentity above
-    # remains the separate architecture/device-count attestation this
-    # was already doing; selector validation and attestation are
-    # deliberately two different checks, not merged into one.
-    #
-    # Real-hardware finding (2026-09-11, PNRO17): only HIP_VISIBLE_DEVICES
-    # is set here -- also setting ROCR_VISIBLE_DEVICES to the same value
-    # actively breaks non-prefix-from-0 device selection (confirmed on
-    # real gfx1100/gfx1201/gfx1030 hardware; see require_device_visibility()
-    # and DeviceVisibility's own docstrings for the full mechanism).
-    try:
-        rd73_visibility = _require_device_visibility(
-            context=f"--run-rd73-contract ({amdgpu_targets})",
-            exact_count=2,
-        )
-    except _DeviceVisibilityError as exc:
-        raise PatchCampaignError(str(exc)) from exc
-    rd73_selector_env = {"HIP_VISIBLE_DEVICES": rd73_visibility.hip_visible_devices}
-
-    mtp = run_rd73_mtp_server_lane(
-        control_binary=control_server_binary,
-        subject_binary=subject_server_binary,
-        model=model,
-        corpus_path=corpus_path,
-        run_dir=run_dir,
-        expected_execution=expected_execution,
-        warmup_pairs=warmup_pairs,
-        measured_pairs=measured_pairs,
-        selector_env=rd73_selector_env,
-    )
-    activation = evaluate_rd73_activation_evidence(
-        marker_regex=marker_regex,
-        control_log_path=mtp["control_log_path"],
-        subject_log_path=mtp["subject_log_path"],
-        run_dir=run_dir,
-    )
-    resource = run_rd73_resource_burst_session(
-        subject_binary=subject_server_binary,
-        model=model,
-        corpus_path=corpus_path,
-        run_dir=run_dir,
-        expected_execution=expected_execution,
-        selector_env=rd73_selector_env,
-    )
-    decode_control = run_rd73_decode_control_lane(
-        control_binary=control_server_binary,
-        subject_binary=subject_server_binary,
-        model=model,
-        run_dir=run_dir,
-        expected_execution=expected_execution,
-        pairs=decode_pairs,
-        selector_env=rd73_selector_env,
-    )
-    # A real content mismatch (or a missing/non-string/unpaired record) is a
-    # genuine correctness RESULT, not an infrastructure failure -- it must
-    # flow into correctness_gate/promotion as passed=False, never abort the
-    # whole qualification run (mirrors RD08's Rd08CorrectnessError handling
-    # in run_rd08_contract_correctness()).
-    try:
-        correctness = evaluate_rd73_mtp_correctness(
-            control_requests=mtp["control_requests"],
-            subject_requests=mtp["subject_requests"],
-            run_dir=run_dir,
-        )
-        correctness_result = experiment_contract.CorrectnessResult(
-            check="bit_identical", passed=True
-        )
-    except Rd73CorrectnessError as exc:
-        correctness = {"artifact": None, "rows": [], "error": str(exc)}
-        correctness_result = experiment_contract.CorrectnessResult(
-            check="bit_identical",
-            passed=False,
-            detail=str(exc),
-        )
-    correctness_gate = compute_contract_correctness_gate(
-        contract, {"bit_identical": correctness_result}
-    )
-    aggregated_effects = experiment_contract.aggregate_contract_effects(
-        contract,
-        [mtp["effect"], decode_control["effect"]],
-        target_metric="mtp_wall_tps",
-    )
-    # RV99: under a session policy the gain bound is established across
-    # repeated SESSIONS, not from the pairs inside this one run. Fold the
-    # prior sessions' persisted lane effects together with the one just
-    # measured and re-aggregate over all of them.
-    #
-    # prior_session_records are the patch's already-committed validation
-    # records; this run's own measurement is appended last, so the gate always
-    # sees every valid session including the current one. Nothing is selected
-    # or dropped -- aggregate_session_effects() consumes them all, and the
-    # stopping rule decides whether that is yet enough.
-    #
-    # Only the gain field is re-aggregated. The control-regression budget is a
-    # per-run property (this build must not have broken the control lane in
-    # THIS run), not a claim being established across occasions.
-    if contract.acceptance.effect_evidence_policy == "session_ci95_threshold_bound_v1":
-        # The stub must carry gpu_architectures like a real record does, or
-        # aggregate_session_effects' hardware filter would drop the very
-        # session just measured.
-        this_session = {
-            "gpu_architectures": [amdgpu_targets],
-            "lane_effects": collect_lane_effect_records(
-                rd73_qualification={"mtp": mtp, "decode_control": decode_control},
-            ),
-        }
-        gain_field = (
-            "end_to_end_gain_pct"
-            if contract.acceptance.end_to_end_gain_pct is not None
-            else "target_kernel_gain_pct"
-        )
-        aggregated_effects = dict(aggregated_effects)
-        aggregated_effects.update(
-            experiment_contract.aggregate_session_effects(
-                [*prior_session_records, this_session],
-                field=gain_field,
-                role="positive",
-                metric="mtp_wall_tps",
-                # Only sessions measured on THIS hardware may be pooled.
-                architectures=[amdgpu_targets],
-            )
-        )
-    resource_gate = experiment_contract.evaluate_resource_gate(
-        contract,
-        {"graph_cache_entries": resource["result"]},
-    )
-    trigger_proof = experiment_contract.evaluate_trigger_proof(
-        [
-            experiment_contract.TriggerEvidence(
-                role="positive",
-                lane_id="rd73-mtp-subject",
-                candidate_launches=1 if activation["subject_hit"] else 0,
-            ),
-        ]
-    )
-    if activation["control_hit"]:
-        trigger_proof = {
-            "passed": False,
-            "reasons": list(trigger_proof.get("reasons") or [])
-            + [
-                "control-role lane observed the target marker -- the negative "
-                "control is invalid, so trigger proof cannot be trusted"
-            ],
-            "checked_lanes": trigger_proof.get("checked_lanes", 0),
-            "untriggered_lanes": list(trigger_proof.get("untriggered_lanes") or []),
-        }
-    promotion = experiment_contract.evaluate_promotion_gate(
-        contract,
-        correctness_gate=correctness_gate,
-        aggregated_effects=aggregated_effects,
-        trigger_proof=trigger_proof,
-        resource_gate=resource_gate,
-    )
-    qualification_doc = {
-        "contract_id": contract.id,
-        "contract_hash": contract.contract_hash,
-        "activation_artifact": activation["artifact"],
-        "mtp_lane_artifact": mtp["artifact"],
-        "decode_control_artifact": decode_control["artifact"],
-        "resource_artifact": resource["artifact"],
-        "correctness_artifact": correctness["artifact"],
-        "correctness_gate": correctness_gate,
-        "aggregated_effects": aggregated_effects,
-        "resource_gate": resource_gate,
-        "trigger_proof": trigger_proof,
-        "promotion": promotion,
-    }
-    artifact_ref = _write_bound_artifact(
-        run_dir, "rd73-contract-qualification.json", qualification_doc
-    )
-
-    # VA23: emit the generic-adapter performance artifact.
-    #
-    # _builtin_benchmark() (patch/validation.py) requires an artifact with a
-    # non-empty "metrics" dict; without one the declared performance/controls
-    # checks ERROR with "benchmark artifact requires non-empty metrics", and
-    # patch-verify-evidence then reports "no recorded benchmark execution"
-    # even though a real, paired, bootstrapped benchmark demonstrably ran.
-    # That is a false negative in the direction that HIDES real results.
-    #
-    # This is a faithful projection of already-measured values into the
-    # schema the generic validator reads -- the same thing RD58's producer does via its controls_doc. Nothing here is
-    # computed for the first time, and nothing is invented: every number
-    # below is copied from the lane effects the contract gate itself just
-    # consumed. The lane artifacts remain the authoritative record and stay
-    # separately hash-bound; this document references them rather than
-    # replacing them.
-    performance_doc = {
-        "campaign_id": contract.contract_hash,
-        "passed": bool(promotion.get("passed")),
-        "contract_id": contract.id,
-        "target_metric": "mtp_wall_tps",
-        "metrics": {
-            # LaneEffect is a frozen dataclass (experiment/contract.py);
-            # dataclasses.asdict() is its faithful serialisation, so the
-            # recorded fields are exactly the measured
-            # role/metric/geometric_effect_pct/decision the contract gate
-            # consumed -- not a re-derivation.
-            "mtp_verify": {
-                "effect": dataclasses.asdict(mtp["effect"]),
-                "artifact": mtp["artifact"],
-            },
-            "decode_control": {
-                "effect": dataclasses.asdict(decode_control["effect"]),
-                "artifact": decode_control["artifact"],
-            },
-            "aggregated_effects": aggregated_effects,
-        },
-        "promotion": promotion,
-    }
-    performance_artifact = _write_bound_artifact(
-        run_dir,
-        "rd73-performance.json",
-        performance_doc,
-    )
-    return {
-        "performance_artifact": performance_artifact,
-        "activation": activation,
-        "mtp": mtp,
-        "decode_control": decode_control,
-        "resource": resource,
-        "correctness": correctness,
-        "correctness_gate": correctness_gate,
-        "aggregated_effects": aggregated_effects,
-        # VA23: the NAMED correctness result, so the adapter's own
-        # _contract_correctness_gate can be fed the same way RD08's and
-        # RD58's are (see the compute_contract_correctness_gate() call in
-        # run()). Without this RD73 passes None there and the gate reports
-        # missing_checks -> BLOCKED, even though bit_identical was really
-        # evaluated here. Returned as the CorrectnessResult itself, not a
-        # bool, so a failure carries its detail through unchanged.
-        "correctness_named_results": {"bit_identical": correctness_result},
-        "resource_gate": resource_gate,
-        "trigger_proof": trigger_proof,
-        "promotion": promotion,
-        "artifact": artifact_ref,
-    }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1108,9 +95,6 @@ def _require_framework_configuration_inputs(args: argparse.Namespace, descriptor
     if any(
         getattr(args, name, False)
         for name in (
-            "run_rd08_lanes",
-            "run_rd08_contract",
-            "run_rd73_contract",
             "correctness_evidence",
         )
     ):
@@ -1675,35 +659,15 @@ def _run_activation_probe_stage(args: argparse.Namespace, st: SimpleNamespace) -
             raise PatchCampaignError(
                 f"{args.patch}: trace CLI options require a trace-marker validation check"
             )
-    # GPT round 6 (req_bc329f6ae30c4e4c, VA15 real-hardware finding): the
-    # generic tune-binary/fusion-disabled probe is redundant for
-    # --run-rd08-contract -- it is replaced by RD08's own authoritative
-    # validation-subject/control trigger probe below, which is a valid
-    # negative control for RD08's specific marker (the generic probe's
-    # negative control, GGML_CUDA_DISABLE_FUSION=1, is not). Skipping it
-    # here also avoids wasted GPU time on a probe whose result gets
-    # overwritten anyway.
-    # VA06: --run-rd73-contract also skips the generic probe -- the
-    # generic tune-binary/GGML_CUDA_DISABLE_FUSION negative control is
-    # not valid for RD73 (graph-cache keying, not a fusion path), and
-    # the generic probe's plain llama-bench invocation (no -sm tensor)
-    # cannot even load RD73's real 27B contract model on Brutus's dual
-    # gfx1100 GPUs. RD73's own authoritative activation evidence comes
-    # from evaluate_rd73_activation_evidence() inside
-    # run_rd73_contract_qualification().
-    trace_result = (
-        None
-        if (args.run_rd08_contract or args.run_rd73_contract)
-        else run_trace_activation_probes(
-            marker_regex=trace_marker_regex,
-            description=trace_description,
-            binary=tune_bin / f"llama-bench{exe}",
-            model=args.model,
-            hip_path=args.hip_path,
-            workdir=workdir / "campaign",
-            bench_prompt=args.bench_prompt,
-            bench_gen=args.bench_gen,
-        )
+    trace_result = run_trace_activation_probes(
+        marker_regex=trace_marker_regex,
+        description=trace_description,
+        binary=tune_bin / f"llama-bench{exe}",
+        model=args.model,
+        hip_path=args.hip_path,
+        workdir=workdir / "campaign",
+        bench_prompt=args.bench_prompt,
+        bench_gen=args.bench_gen,
     )
     # VA11A: real bound trace_evidence for ValidationContext (was {}
     # unconditionally, which made _builtin_trace_marker always BLOCKED --
@@ -1890,218 +854,6 @@ def _collect_build_and_correctness_evidence(args: argparse.Namespace, st: Simple
     st.performance_evidence = performance_evidence
 
 
-def _bind_rd73_qualification_evidence(
-    args: argparse.Namespace,
-    st: SimpleNamespace,
-    rd73_qualification: dict,
-    correctness_evidence,
-):
-    """Bind RD73's contract-produced evidence into the generic adapter and record.
-
-    Returns (performance_evidence, correctness_evidence, trace_evidence,
-    activation_evidence, activation_verdict, correctness_summary).
-    """
-    _patch_file = st._patch_file
-    base_revision = st.base_revision
-    campaign = st.campaign
-    campaign_run_dir = st.campaign_run_dir
-    patch_validation_evidence = st.patch_validation_evidence
-    patched_source_tree = st.patched_source_tree
-    trace_marker_regex = st.trace_marker_regex
-    # VA23: bind RD73's real contract-produced evidence into the generic
-    # adapter, exactly as RD58 does. Before this, the RD73 branch produced
-    # authoritative artifacts but bound none of them, so the declared
-    # performance/controls checks ERRORed ("benchmark artifact requires
-    # non-empty metrics") and correctness stayed BLOCKED -- making
-    # patch-verify-evidence report that no benchmark ran when one had.
-    #
-    # correctness is bound ONLY when the bit_identical evaluation actually
-    # produced an artifact. On Rd73CorrectnessError the artifact is None
-    # and correctness must stay BLOCKED rather than silently pass: a
-    # correctness check that could not be evaluated is not a correctness
-    # check that succeeded.
-    performance_evidence = {"artifact": rd73_qualification["performance_artifact"]}
-    if rd73_qualification["correctness"].get("artifact") is not None:
-        correctness_evidence = {
-            "artifact": rd73_qualification["correctness"]["artifact"]
-        }
-    # VA23: the activation lane already ran a real positive/negative
-    # marker probe; bind its bound log refs so _builtin_trace_marker()
-    # can re-read and re-verify them. The validator does its own regex
-    # check against both logs, so this supplies evidence for independent
-    # verification rather than asserting the outcome.
-    trace_evidence = {
-        "positive": rd73_qualification["activation"]["positive"],
-        "negative": rd73_qualification["activation"]["negative"],
-    }
-    # RV95: the three bindings above satisfy validation.toml's DECLARED
-    # checks, but not the record's own top-level activation/correctness
-    # fields -- make_record() reads those from activation_evidence and
-    # correctness_summary, which the RD73 branch never set. They stayed
-    # at disposition="unknown", so verify_validated_patch() rejected an
-    # otherwise-passing record with "activation is not executed+
-    # activation-verified; correctness did not pass" even while
-    # check_results._contract_correctness_gate.passed was true. Bind them
-    # from the SAME real evidence RD08/RD58 use, in the same shape.
-    activation_evidence = ActivationEvidence(
-        status=(
-            "executed"
-            if rd73_qualification["activation"]["subject_hit"]
-            and not rd73_qualification["activation"]["control_hit"]
-            else "not_executed"
-        ),
-        mechanism="rd73-trigger-marker",
-        detail=f"marker={trace_marker_regex!r}",
-    )
-    activation_verdict = verdict(activation_evidence, correctness_passed=None)
-    write_activation_json(
-        campaign_run_dir / "activation.json",
-        activation_evidence,
-        activation_verdict,
-        extra={
-            "campaign_identity_digest": campaign.campaign_identity_digest,
-            "rd73_trigger": {
-                "subject_hit": rd73_qualification["activation"]["subject_hit"],
-                "control_hit": rd73_qualification["activation"]["control_hit"],
-                "artifact": rd73_qualification["activation"]["artifact"],
-            },
-        },
-    )
-    # Disposition comes from the contract's own correctness gate, which
-    # is already fail-closed: an Rd73CorrectnessError leaves the artifact
-    # None and records passed=False, so a correctness check that could
-    # not be evaluated reports "failed" here rather than silently passing.
-    correctness_summary = {
-        "schema_version": patch_validation_evidence.CORRECTNESS_SCHEMA_VERSION,
-        "patch_id": args.patch,
-        "patch_validation_subject_digest": patch_validation_evidence.patch_validation_subject_digest(
-            _patch_file
-        ),
-        "base_revision": base_revision,
-        "patched_source_tree": patched_source_tree,
-        "campaign_identity_digest": campaign.campaign_identity_digest,
-        "gpu_architectures": [args.amdgpu_targets],
-        "disposition": (
-            "passed"
-            if rd73_qualification["correctness_gate"].get("passed")
-            else "failed"
-        ),
-        "mechanism": "rd73-mtp-bit-identical",
-        "detail": (
-            "paired MTP control/subject completions compared byte-for-byte; "
-            f"{len(rd73_qualification['correctness'].get('rows') or ())} row(s) compared"
-        ),
-    }
-    correctness_path = campaign_run_dir / "correctness.json"
-    _atomic_write_json(correctness_path, correctness_summary)
-
-    _print(f"rd73 contract qualification: {rd73_qualification['artifact']['path']}")
-    _print(
-        f"rd73 promotion: "
-        f"{'PASS' if rd73_qualification['promotion'].get('passed') else rd73_qualification['promotion'].get('status', 'FAIL')}"
-    )
-    return (
-        performance_evidence,
-        correctness_evidence,
-        trace_evidence,
-        activation_evidence,
-        activation_verdict,
-        correctness_summary,
-    )
-
-
-def _run_contract_evidence_modes(args: argparse.Namespace, st: SimpleNamespace) -> None:
-    """PA43 run() stage. Contract-evidence stage: the specialized RD08/RD73 evidence-producer modes."""
-    activation_evidence = st.activation_evidence
-    activation_verdict = st.activation_verdict
-    campaign_run_dir = st.campaign_run_dir
-    control_bin = st.control_bin
-    correctness_evidence = st.correctness_evidence
-    correctness_summary = st.correctness_summary
-    descriptor = st.descriptor
-    exe = st.exe
-    patch_validation_evidence = st.patch_validation_evidence
-    performance_evidence = st.performance_evidence
-    trace_evidence = st.trace_evidence
-    trace_marker_regex = st.trace_marker_regex
-    validation_subject_bin = st.validation_subject_bin
-    rd73_qualification = None
-    # Every bound contract's evaluate_promotion_gate() result, keyed by
-    # contract id; persistence requires a PASS for each bound contract.
-    contract_promotions: dict[str, dict[str, object]] = {}
-    # VA14-B/VA14-final: RD08 execution, opt-in and scoped to RD08 only.
-    # --run-rd08-lanes stays diagnostic-only (execution + evidence, never
-    # feeds eligibility). --run-rd08-contract is the authoritative full-
-    # qualification path (lanes + real named correctness + real trigger
-    # proof, composed via evaluate_promotion_gate()) and is the ONLY thing
-    # allowed to populate contract_promotions below. The two are mutually
-    # exclusive to avoid a redundant duplicate lane run.
-    if args.run_rd08_lanes and args.run_rd08_contract:
-        raise PatchCampaignError(
-            f"{args.patch}: --run-rd08-contract already runs the lanes -- "
-            "do not also pass --run-rd08-lanes"
-        )
-    if args.run_rd73_contract:
-        if args.run_rd08_lanes or args.run_rd08_contract:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd73-contract is mutually exclusive with the "
-                "other specialized evidence-producer modes"
-            )
-        if descriptor.experiment_contract != "RD73-STABLE-GRAPH-CACHE-KEY":
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd73-contract is RD73-only today"
-            )
-        if args.rd73_corpus is None:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd73-contract requires --rd73-corpus"
-            )
-        from bigcherry.patch import validation as _pv
-
-        rd73_contract = _pv.load_contract_for_descriptor(descriptor)
-        if rd73_contract is None:
-            raise PatchCampaignError(
-                f"{args.patch}: --run-rd73-contract requires a resolvable RD73 contract"
-            )
-        rd73_qualification = run_rd73_contract_qualification(
-            contract=rd73_contract,
-            control_server_binary=control_bin / f"llama-server{exe}",
-            subject_server_binary=validation_subject_bin / f"llama-server{exe}",
-            model=args.model,
-            marker_regex=trace_marker_regex,
-            corpus_path=args.rd73_corpus,
-            run_dir=campaign_run_dir,
-            # RV99: every measurement session already committed for this
-            # patch. Under a session policy the gate aggregates these together
-            # with the session about to be measured, so a run can establish a
-            # bound that no single run could. Read from the tracked evidence
-            # file -- which is exactly why lane_effects had to be persisted
-            # there, and why RV96 had to make a build hold more than one
-            # record before any of this could work.
-            prior_session_records=patch_validation_evidence.load_records(args.patch),
-            amdgpu_targets=args.amdgpu_targets,
-        )
-        contract_promotions[rd73_contract.id] = rd73_qualification["promotion"]
-
-        (
-            performance_evidence,
-            correctness_evidence,
-            trace_evidence,
-            activation_evidence,
-            activation_verdict,
-            correctness_summary,
-        ) = _bind_rd73_qualification_evidence(
-            args, st, rd73_qualification, correctness_evidence
-        )
-    st.activation_evidence = activation_evidence
-    st.activation_verdict = activation_verdict
-    st.correctness_evidence = correctness_evidence
-    st.correctness_summary = correctness_summary
-    st.performance_evidence = performance_evidence
-    st.rd73_qualification = rd73_qualification
-    st.contract_promotions = contract_promotions
-    st.trace_evidence = trace_evidence
-
-
 def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> None:
     """PA43 run() stage. Evaluate the declared validation plan and the contract correctness gate."""
     apply_evidence = st.apply_evidence
@@ -2117,7 +869,6 @@ def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> 
     patched_source_tree = st.patched_source_tree
     patched_src = st.patched_src
     performance_evidence = st.performance_evidence
-    rd73_qualification = st.rd73_qualification
     registry = st.registry
     stock_src = st.stock_src
     trace_evidence = st.trace_evidence
@@ -2138,10 +889,8 @@ def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> 
         # patch_validation.ContractBinding -- a lightweight PROJECTION
         # (contract_id/hash/expected_effect/etc) that deliberately does NOT
         # carry .correctness/.acceptance/etc. compute_contract_correctness_gate()
-        # needs the real experiment_contract.ExperimentContract, which
-        # run_rd08_contract already loaded as rd08_contract for the
-        # --run-rd08-contract path; other contract-bound patches load it
-        # fresh here the same way that block does. PA36-F step 2: also the
+        # needs the real experiment_contract.ExperimentContract, loaded
+        # fresh here. PA36-F step 2: also the
         # source of ValidationContext's plural contracts/contract_hashes
         # below -- loaded once, before the context is constructed.
         full_contract = patch_validation.load_contract_for_descriptor(descriptor)
@@ -2192,25 +941,13 @@ def _evaluate_validation_plan(args: argparse.Namespace, st: SimpleNamespace) -> 
         # state_restore_integrity CorrectnessResult -- thread it through
         # here so the contract's own correctness gate actually reflects
         # the real evidence instead of reporting missing_checks.
-        # VA23: the legacy run() path no longer produces named
-        # correctness results (RD73's bit_identical named results were
-        # retired with the RD73 legacy compatibility retirement; RD08's
-        # flow through the generic producer path). An empty mapping
-        # preserves the gate's missing_checks fail-closed behavior for any
-        # bound contract that requires a named check.
+        # The legacy run() path produces no named correctness results
+        # (RD08/RD73 evidence flows only through the generic
+        # --validation-producer path). An empty mapping preserves the gate's
+        # missing_checks fail-closed behavior for any bound contract that
+        # requires a named check.
         contract_correctness_gate = compute_contract_correctness_gate(
-            full_contract,
-            (
-                # VA23: RD73's bit_identical result is real and already
-                # evaluated inside run_rd73_contract_qualification(); thread
-                # it here so the gate reflects the evidence instead of
-                # reporting missing_checks.
-                (
-                    rd73_qualification["correctness_named_results"]
-                    if rd73_qualification is not None
-                    else {}
-                )
-            ),
+            full_contract, {}
         )
         validation_check_results = {
             check_id: asdict(result) for check_id, result in evaluated.items()
@@ -2250,8 +987,6 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
     patch_validation_evidence = st.patch_validation_evidence
     patched_source_tree = st.patched_source_tree
     psi = st.psi
-    rd73_qualification = st.rd73_qualification
-    contract_promotions = st.contract_promotions
     stock_src = st.stock_src
     subject_composition = st.subject_composition
     validation_check_results = st.validation_check_results
@@ -2259,6 +994,11 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
     validation_subject_build_evidence = st.validation_subject_build_evidence
     validation_verdict = st.validation_verdict
     workdir = st.workdir
+    # The legacy run() path runs no contract qualification (that happens only
+    # through --validation-producer), so no bound contract has a promotion
+    # result here; compute_persisted_validation_eligible() therefore reports
+    # a bound-contract patch ineligible, which is the fail-closed direction.
+    contract_promotions: dict[str, dict[str, object]] = {}
     validation_contracts, validation_contract_verdicts = (
         build_contract_evidence_for_persistence(
             validation_plan.contracts if validation_plan is not None else (),
@@ -2313,9 +1053,7 @@ def _persist_validation_record(args: argparse.Namespace, st: SimpleNamespace) ->
         # RV99: persist the measurements, not only the verdict derived from
         # them, so an interval can be re-derived and sessions aggregated from
         # committed evidence alone.
-        lane_effects=collect_lane_effect_records(
-            rd73_qualification=rd73_qualification,
-        ),
+        lane_effects=[],
         representation=_descriptor.representation,
         validation_implementation_digest=_descriptor.validation_digest,
         contracts=validation_contracts,
@@ -2439,10 +1177,6 @@ def run(args: argparse.Namespace) -> int:
     # discovered on real hardware (VA15). campaign.ensure_campaign_identity()
     # above still ran, so campaign.campaign_identity_digest remains valid
     # for the contract evidence below.
-    # (The historical --run-rd73-contract S1-S7 pipeline skip was retired
-    # with the RD73 legacy compatibility retirement; RD73's real evidence
-    # now comes from its producer via the generic path. The generic
-    # S1-S7 pipeline therefore always runs on the legacy run() path.)
     try:
         campaign.run()
     except CampaignError as exc:
@@ -2454,7 +1188,6 @@ def run(args: argparse.Namespace) -> int:
     print(report_path.read_text(encoding="utf-8"))
 
     _collect_build_and_correctness_evidence(args, st)
-    _run_contract_evidence_modes(args, st)
     _evaluate_validation_plan(args, st)
     return _persist_validation_record(args, st)
 
@@ -2544,35 +1277,13 @@ def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
         "STATE='validated'",
     )
     parser.add_argument(
-        "--run-rd73-contract",
-        action="store_true",
-        default=False,
-        help="VA06: the RD73 full-qualification path -- activation + graph-cache resource "
-        "evidence + real paired MTP-verify performance (server harness) + decode "
-        "control + bit-identical correctness, composed via evaluate_promotion_gate(). "
-        "Populates contract_promotions for RD73 (a real PASS/FAIL/INVALID verdict is "
-        "printed) and rebinds the generic adapter's performance/correctness/trace "
-        "evidence plus the record's own activation/correctness dispositions, so a "
-        "passing run satisfies verify_validated_patch() as well as the eligibility "
-        "flag. RD73-only; an error for any other patch. Mutually exclusive with the "
-        "RD08/RD58 execution modes. Requires --rd73-corpus.",
-    )
-    parser.add_argument(
         "--producer-corpus",
         type=Path,
         default=None,
-        help="text corpus for --validation-producer's ProducerContext.corpus "
-        "-- the generic (non-RD73-specific) analog of --rd73-corpus, "
+        help="text corpus for --validation-producer's ProducerContext.corpus, "
         "threaded into any patch-local producer that "
         "declares a correctness check requiring a real backend-reference "
         "corpus (e.g. 1203's RD05/RD07 backend_reference checks).",
-    )
-    parser.add_argument(
-        "--rd73-corpus",
-        type=Path,
-        default=None,
-        help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
-        "(bench/server_completion.py's load_corpus() format).",
     )
 
 
@@ -2586,8 +1297,7 @@ def _add_benchmark_and_producer_arguments(parser: argparse.ArgumentParser) -> No
         "performance check -- not RD04/RD08/etc-specific. Builds one control/subject "
         "llama-bench per applicable architecture and runs the standard (or "
         "--benchmark-model-selected) model matrix across them. Diagnostic-only for "
-        "eligibility, same as the legacy per-patch modes -- never populates "
-        "contract_promotions. Mutually exclusive with the RD04/RD08/RD58/RD73 modes; "
+        "eligibility -- never populates contract_promotions; "
         "does NOT require --model/--manifest/--amdgpu-targets (those are for the "
         "legacy single-architecture flow).",
     )
@@ -2708,17 +1418,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.model_root is None or not args.device_map:
             parser.error(
                 "--run-performance-benchmark requires --model-root and --device-map"
-            )
-        if any(
-            getattr(args, name, False)
-            for name in (
-                "run_rd08_lanes",
-                "run_rd08_contract",
-                "run_rd73_contract",
-            )
-        ):
-            parser.error(
-                "--run-performance-benchmark is mutually exclusive with the legacy RD modes"
             )
     return run(args)
 

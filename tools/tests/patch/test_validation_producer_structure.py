@@ -45,24 +45,16 @@ _PRODUCER_SRC_PATH = TOOLS_DIR / "bigcherry" / "patch" / "validation_producer.py
 # in validation_campaign.py as of the PA36-F step-6 pass. Migrating a
 # producer deletes its entry from BOTH the source file and this baseline in
 # the same commit -- the baseline only ever shrinks. (PA43: the three
-# run_patch1000_* functions left shared code for tools/lab/patch1000/.)
-_BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset(
-    {
-        "run_rd73_contract_qualification",
-        "run_rd73_decode_control_lane",
-        "run_rd73_mtp_server_lane",
-        "run_rd73_resource_burst_session",
-    }
-)
+# run_patch1000_* functions left shared code for tools/lab/patch1000/, and
+# the four run_rd73_* legacy functions were retired once patch
+# 1233_rd73_stable_graph_cache_key was rejected -- the baseline is now empty.)
+_BASELINE_LEGACY_FUNCTION_NAMES: frozenset[str] = frozenset()
 
 # --run-rdNN-*/--run-patchNNNN-* string literals already passed to
 # add_argument() in validation_campaign.py as of the PA36-F step-6 pass.
-# Same shrink-only rule. The --run-rd73-contract flag remains for the
-# legacy RD73 full-qualification path (PA36 close-out: policy-blocked
-# sub-slice 3, state="rejected"; flag retained for future re-opening).
-_BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset(
-    {"--run-rd73-contract"}
-)
+# Same shrink-only rule. PA43 retired the last one (--run-rd73-contract)
+# with the rejected RD73 patch; the baseline is now empty.
+_BASELINE_LEGACY_CLI_FLAGS: frozenset[str] = frozenset()
 
 
 def _parse(path: Path) -> ast.Module:
