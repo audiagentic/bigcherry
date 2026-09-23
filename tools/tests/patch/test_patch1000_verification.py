@@ -10,6 +10,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
@@ -201,7 +202,7 @@ class Patch1000FatBuildTests(unittest.TestCase):
 
             def fake_bench(**kwargs):  # noqa: ANN003
                 bench_calls.append(dict(kwargs))
-                return vc.PairedBenchmarkOutcome(runs={}, commands={}, raw_logs=[])
+                return campaign_benchmark.PairedBenchmarkOutcome(runs={}, commands={}, raw_logs=[])
 
             result = vc.run_patch1000_verification(
                 base_revision="base",

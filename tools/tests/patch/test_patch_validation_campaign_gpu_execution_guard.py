@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
 from bigcherry.patch.campaign import trace as campaign_trace  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
@@ -162,10 +163,10 @@ class Rd08LaneCommandsGpuFlagTests(unittest.TestCase):
         # dedicated rd08_validation_lane_commands helper was retired with
         # the producer migration; this pins the -ngl 99 guard it used to
         # carry on BOTH the control and subject commands).
-        control_cmd = vc._paired_llama_bench_command(
+        control_cmd = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
         )
-        subject_cmd = vc._paired_llama_bench_command(
+        subject_cmd = campaign_benchmark._paired_llama_bench_command(
             Path("subject_bin"), Path("m.gguf"), "decode",
         )
         for command in (control_cmd, subject_cmd):
@@ -185,7 +186,7 @@ class Rd04CommandGpuFlagTests(unittest.TestCase):
         # flagged for replacement. Now calls the real command builder and
         # checks its actual output, same pattern as
         # Rd08LaneCommandsGpuFlagTests above.
-        command = vc._paired_llama_bench_command(
+        command = campaign_benchmark._paired_llama_bench_command(
             Path("control_bin"), Path("m.gguf"), "decode",
             patch_args=("-fa", "on", "-ctk", "bf16", "-ctv", "bf16"),
         )

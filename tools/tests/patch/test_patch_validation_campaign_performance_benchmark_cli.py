@@ -34,6 +34,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import benchmark as campaign_benchmark  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
@@ -177,7 +178,7 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
         import inspect
 
         self.run_source = inspect.getsource(vc.run)
-        self.impl_source = inspect.getsource(vc._run_performance_benchmark)
+        self.impl_source = inspect.getsource(campaign_benchmark._run_performance_benchmark)
 
     def test_dispatches_before_the_legacy_single_architecture_flow(self) -> None:
         dispatch_index = self.run_source.index(
@@ -200,7 +201,7 @@ class PerformanceBenchmarkDispatchWiringTests(unittest.TestCase):
 
 
 class OrchestrationLogicTests(unittest.TestCase):
-    """Hardware-free: mocks build_tree/generate_registry/source
+    """Hardware-free: mocks build_tree/source
     materialization/resolve_benchmark_wiring/resolve_benchmark_model so
     _run_performance_benchmark()'s real orchestration logic -- device
     resolution, require_device_visibility()/ExecutionIdentity
@@ -260,22 +261,21 @@ class OrchestrationLogicTests(unittest.TestCase):
         executor_func = mock.Mock(return_value=outcome)
 
         patches = [
-            mock.patch.object(vc, "resolve_benchmark_wiring", return_value=wiring),
+            mock.patch.object(campaign_benchmark, "resolve_benchmark_wiring", return_value=wiring),
             mock.patch.object(
-                vc, "resolve_benchmark_model", return_value=resolved_model
+                campaign_benchmark, "resolve_benchmark_model", return_value=resolved_model
             ),
-            mock.patch.object(vc, "generate_registry", return_value=None),
-            mock.patch.object(vc, "build_tree", return_value=self.tmp_path / "bin"),
-            mock.patch.object(vc, "run_paired_llama_benchmark", executor_func),
+            mock.patch.object(campaign_benchmark, "build_tree", return_value=self.tmp_path / "bin"),
+            mock.patch.object(campaign_benchmark, "run_paired_llama_benchmark", executor_func),
             mock.patch.dict(
-                vc.BENCHMARK_EXECUTOR_FUNCS,
+                campaign_benchmark.BENCHMARK_EXECUTOR_FUNCS,
                 {"paired-llama-bench-v1": executor_func},
             ),
             mock.patch.object(
-                vc, "capture_completed_build_evidence", return_value=mock.Mock()
+                campaign_benchmark, "capture_completed_build_evidence", return_value=mock.Mock()
             ),
             mock.patch.object(
-                vc, "assert_validation_subject_parity", return_value=None
+                campaign_benchmark, "assert_validation_subject_parity", return_value=None
             ),
             mock.patch(
                 "bigcherry.patch.source.resolve_source_composition",
@@ -294,7 +294,7 @@ class OrchestrationLogicTests(unittest.TestCase):
                     return_value=mock.Mock(document=partial(dict)),
                 )
             )
-            result = vc._run_performance_benchmark(self.args, self.descriptor, self.cfg)
+            result = campaign_benchmark._run_performance_benchmark(self.args, self.descriptor, self.cfg)
         return result, require_visibility, executor_func
 
     def test_reaches_and_calls_require_device_visibility(self) -> None:
@@ -389,37 +389,34 @@ class OrchestrationLogicTests(unittest.TestCase):
             with contextlib.ExitStack() as stack:
                 stack.enter_context(
                     mock.patch.object(
-                        vc, "resolve_benchmark_wiring", return_value=wiring
+                        campaign_benchmark, "resolve_benchmark_wiring", return_value=wiring
                     )
                 )
                 stack.enter_context(
                     mock.patch.object(
-                        vc, "resolve_benchmark_model", return_value=resolved_model
+                        campaign_benchmark, "resolve_benchmark_model", return_value=resolved_model
                     )
                 )
                 stack.enter_context(
-                    mock.patch.object(vc, "generate_registry", return_value=None)
+                    mock.patch.object(campaign_benchmark, "build_tree", return_value=tmp_path / "bin")
                 )
                 stack.enter_context(
-                    mock.patch.object(vc, "build_tree", return_value=tmp_path / "bin")
-                )
-                stack.enter_context(
-                    mock.patch.object(vc, "run_paired_llama_benchmark", wrong_func)
+                    mock.patch.object(campaign_benchmark, "run_paired_llama_benchmark", wrong_func)
                 )
                 stack.enter_context(
                     mock.patch.dict(
-                        vc.BENCHMARK_EXECUTOR_FUNCS,
+                        campaign_benchmark.BENCHMARK_EXECUTOR_FUNCS,
                         {"paired-llama-bench-v1": dispatch_func},
                     )
                 )
                 stack.enter_context(
                     mock.patch.object(
-                        vc, "capture_completed_build_evidence", return_value=mock.Mock()
+                        campaign_benchmark, "capture_completed_build_evidence", return_value=mock.Mock()
                     )
                 )
                 stack.enter_context(
                     mock.patch.object(
-                        vc, "assert_validation_subject_parity", return_value=None
+                        campaign_benchmark, "assert_validation_subject_parity", return_value=None
                     )
                 )
                 stack.enter_context(
@@ -440,7 +437,7 @@ class OrchestrationLogicTests(unittest.TestCase):
                         return_value=mock.Mock(document=partial(dict)),
                     )
                 )
-                vc._run_performance_benchmark(args, descriptor, cfg)
+                campaign_benchmark._run_performance_benchmark(args, descriptor, cfg)
 
             dispatch_func.assert_called_once()
             wrong_func.assert_not_called()
