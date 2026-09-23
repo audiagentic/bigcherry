@@ -386,6 +386,26 @@ For focal patch `X`, define and record:
    visibility/topology, active processes, VRAM headroom, source pin, and exact
    commands/environment.
 
+## Pin bumps: hard mechanical validity, performance on request
+
+After a pin bump, two things are **hard** gates and two are not:
+
+- **Hard:** every selected patch applies without conflict (anchor/rebase
+  failures stop the bump), and no patch has been absorbed upstream.
+  `patch-rebase-check` compares each already-applied guard against the
+  pristine pin source: all edits present upstream is `UPSTREAM_ABSORBED`
+  (retire the patch via lifecycle); some edits present is
+  `FAILED_NEEDS_RECONCILIATION` (drop the absorbed edits). No `known_broken`
+  disposition can excuse either.
+- **Soft:** qualification/performance evidence that is stale only because
+  the pin or surrounding composition moved is `carried-forward` by patch
+  admission when an eligible record exists for the same
+  `patch_implementation_digest`; builds proceed with a warning and
+  re-benching is an explicit request. A changed patch implementation (e.g. a
+  conflict fix) or no eligible record at all remains a hard failure.
+
+The post-bump real-hardware build + smoke remains mandatory.
+
 ## G4 — Current evidence qualification
 
 G4 consumes persisted evidence, not a README claim. The evidence authority is

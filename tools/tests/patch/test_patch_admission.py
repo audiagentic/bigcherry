@@ -75,6 +75,46 @@ class TestPatchAdmission(unittest.TestCase):
             self.assertEqual(result.status, "escape-hatch")
             self.assertTrue(result.warnings)
 
+    def _stale_eligible_record(self, evidence: Path, patches: Path, *, same_digest: bool) -> None:
+        from bigcherry.patch import patchset
+        digest = {m.patch_id: m.content_hash for m in patchset.catalog(patches)}["0001_test"]
+        evidence.mkdir()
+        (evidence / "0001_test.json").write_text(json.dumps({
+            "schema_version": 5, "patch_id": "0001_test",
+            "records": [{
+                "eligible_for_validated_state": True, "base_ref": "old-pin",
+                "patch_implementation_digest": digest if same_digest else "0" * 64,
+            }],
+        }), encoding="utf-8")
+
+    def test_stale_evidence_for_same_implementation_is_carried_forward(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog, patches = self._catalog(root)
+            evidence = root / "evidence"
+            self._stale_eligible_record(evidence, patches, same_digest=True)
+            result = patch_admission.admit(
+                ["0001_test"], catalog_path=catalog, patches_dir=patches,
+                pinned_ref="pin", evidence_root=evidence,
+            )
+            self.assertTrue(result.admissible)
+            self.assertEqual(result.status, "admitted")
+            self.assertIn("carried-forward", result.warnings[0])
+            self.assertIn("old-pin", result.warnings[0])
+
+    def test_changed_implementation_is_not_carried_forward(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog, patches = self._catalog(root)
+            evidence = root / "evidence"
+            self._stale_eligible_record(evidence, patches, same_digest=False)
+            result = patch_admission.admit(
+                ["0001_test"], catalog_path=catalog, patches_dir=patches,
+                pinned_ref="pin", evidence_root=evidence,
+            )
+            self.assertFalse(result.admissible)
+            self.assertIn("0001_test", result.failures[0])
+
     def test_live_revision_uses_shared_identity_primitive(self):
         with mock.patch.object(patch_admission.source_identity, "git_revision", return_value="abc"):
             self.assertEqual(patch_admission.live_revision(Path("/source")), "abc")

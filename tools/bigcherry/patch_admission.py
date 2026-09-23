@@ -13,10 +13,16 @@ Policy decisions:
   Human confirmation is still required before declaring RDNA3+RDNA4 a global
   obligation; making that expansion here without records would block every
   future promotion.
-* A validated patch is mechanically inadmissible when its current evidence is
-  neither a qualifying record nor an explicitly retained legacy-grandfather
-  record, or when the evidence's base revision no longer equals the live
-  resolved pin.  This is post-selection and fail-closed.
+* A validated patch is admissible with current evidence (qualifying record or
+  retained legacy-grandfather record at the live pin/composition).
+* Performance/qualification evidence is re-established on request, not at
+  every pin bump: when the evidence is stale only because the pin or the
+  surrounding composition moved, but an eligible record exists for this
+  exact patch implementation digest, the patch is admitted as
+  ``carried-forward`` with a warning.  A changed patch implementation, or no
+  eligible record at all, stays a hard failure.  Hard mechanical validity
+  (applies without conflict, not absorbed upstream) is enforced separately by
+  patch-rebase-check and the apply transaction.
 * Direct apply is hard-fail by default.  ``allow_stale_validation_evidence`` is
   an explicit development escape hatch and returns a warning; it never affects
   the production campaign/build gate.
@@ -35,6 +41,8 @@ from typing import Iterable, Literal
 
 from .core import paths
 from .patch import catalog as patch_catalog
+from .patch import evidence as patch_evidence
+from .patch import patchset
 from .source import identity as source_identity
 
 DEFAULT_VALIDATION_ARCHITECTURES = ("gfx1100",)
@@ -87,6 +95,25 @@ def _has_non_grandfathered_eligible(*, evidence_root: Path | None = None) -> boo
     return False
 
 
+def _eligible_record_for_digest(
+    patch_id: str, implementation_digest: str | None, *, evidence_root: Path | None,
+) -> str | None:
+    """base_ref of the newest eligible record for exactly this implementation."""
+    if not implementation_digest:
+        return None
+    try:
+        records = patch_evidence.load_records(patch_id, root=evidence_root)
+    except patch_evidence.ValidationEvidenceError:
+        return None
+    for record in reversed(records):
+        if (
+            record.get("eligible_for_validated_state") is True
+            and record.get("patch_implementation_digest") == implementation_digest
+        ):
+            return str(record.get("base_ref") or "unknown pin")
+    return None
+
+
 def admit(
     patch_ids: Iterable[str],
     *,
@@ -113,17 +140,32 @@ def admit(
         resolved_base_revision=resolved_base_revision,
         default_validation_architectures=DEFAULT_VALIDATION_ARCHITECTURES,
     )
-    failures = tuple(
-        f"{patch_id}: {('; '.join(check.problems) or check.status)}"
-        for patch_id, check in statuses.items()
-        if not check.ok
-    )
+    digests = {m.patch_id: m.content_hash for m in patchset.catalog(patches_dir)}
+    failures: list[str] = []
+    carried: list[str] = []
+    for patch_id, check in statuses.items():
+        if check.ok:
+            continue
+        qualified_at = _eligible_record_for_digest(
+            patch_id, digests.get(patch_id), evidence_root=evidence_root,
+        )
+        if qualified_at is not None:
+            carried.append(
+                f"{patch_id}: carried-forward (qualified at {qualified_at} for this "
+                "implementation; stale for the current pin/composition -- revalidate on request)"
+            )
+        else:
+            failures.append(f"{patch_id}: {('; '.join(check.problems) or check.status)}")
+    failures = tuple(failures)
     bootstrap_ready = _has_non_grandfathered_eligible(evidence_root=evidence_root)
     if mode == "production" and not bootstrap_ready:
         return AdmissionResult(True, False, "not-ready", warnings=failures)
     if failures and mode == "apply" and allow_stale_validation_evidence:
-        return AdmissionResult(True, False, "escape-hatch", warnings=failures)
-    return AdmissionResult(not failures, True, "admitted" if not failures else "rejected", failures=failures)
+        return AdmissionResult(True, False, "escape-hatch", warnings=failures + tuple(carried))
+    return AdmissionResult(
+        not failures, True, "admitted" if not failures else "rejected",
+        failures=failures, warnings=tuple(carried),
+    )
 
 
 def require_admission(*args, **kwargs) -> AdmissionResult:

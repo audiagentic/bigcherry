@@ -468,6 +468,7 @@ def stop_on_bad_rebase_status(
         "FAILED": "PATCH_FAILED_NEEDS_RECONCILIATION",
         "BLOCKED_BY_DEPENDENCY": "PATCH_BLOCKED_BY_DEPENDENCY",
         "QUARANTINED": "PATCH_QUARANTINED",
+        "UPSTREAM_ABSORBED": "PATCH_UPSTREAM_ABSORBED",
     }.get(status, "PATCH_REBASE_BAD_STATUS")
     raise PinBumpStop(
         phase,
@@ -479,6 +480,8 @@ def stop_on_bad_rebase_status(
             "requires": entry.get("requires", ()),
         },
         recommended_actions=[
+            "if UPSTREAM_ABSORBED: upstream already contains this patch -- retire it "
+            "(state superseded) via the patch-lifecycle procedure",
             "reconcile the patch (see the rebase report's per-edit reason_code)",
             "or record a known_broken disposition via `bigcherry patch-disposition set` "
             "if this patch is not in the build recipe",
