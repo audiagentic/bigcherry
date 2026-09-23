@@ -319,36 +319,22 @@ def _qualification_manifest_digest(
     ).hexdigest()
 
 
-def build_qualification_evidence_manifest(
+def _validate_qualification_manifest_inputs(
     *,
     campaign_id: str,
-    contract: object,
-    patch_ids: Iterable[str],
+    patch_ids_t: tuple[str, ...],
     base_revision: str,
     target_metric: str,
-    positive_pct_deltas: Iterable[float],
-    control_pct_deltas: Iterable[float],
-    correctness_results: Mapping[str, object],
-    trigger_evidence: Iterable[object],
-    subject_source_identity: Mapping[str, object],
-    control_source_identity: Mapping[str, object],
-    subject_build_identity: Mapping[str, object],
-    control_build_identity: Mapping[str, object],
+    positive_t: tuple[float, ...],
+    control_t: tuple[float, ...],
+    correctness_t: tuple,
+    trigger_t: tuple,
     model_ref: str,
     model_path: Path,
-    executions: Iterable[QualificationEvidenceExecution],
-    artifacts: Iterable[QualificationEvidenceArtifact],
-) -> QualificationEvidenceManifest:
-    """Construct one immutable, content-bound promotion evidence manifest."""
-
-    patch_ids_t = tuple(patch_ids)
-    positive_t = tuple(float(v) for v in positive_pct_deltas)
-    control_t = tuple(float(v) for v in control_pct_deltas)
-    correctness_t = tuple(correctness_results[k] for k in sorted(correctness_results))
-    trigger_t = tuple(trigger_evidence)
-    executions_t = tuple(executions)
-    artifacts_t = tuple(artifacts)
-
+    executions_t: tuple[QualificationEvidenceExecution, ...],
+    artifacts_t: tuple[QualificationEvidenceArtifact, ...],
+) -> None:
+    """Fail closed on any missing, malformed or unbound manifest input."""
     if not campaign_id:
         raise PatchCampaignError("qualification manifest campaign_id is required")
     if not patch_ids_t or len(set(patch_ids_t)) != len(patch_ids_t):
@@ -417,6 +403,53 @@ def build_qualification_evidence_manifest(
                 f"artifact {artifact.path!r} references unknown execution "
                 f"{artifact.execution!r}"
             )
+
+
+def build_qualification_evidence_manifest(
+    *,
+    campaign_id: str,
+    contract: object,
+    patch_ids: Iterable[str],
+    base_revision: str,
+    target_metric: str,
+    positive_pct_deltas: Iterable[float],
+    control_pct_deltas: Iterable[float],
+    correctness_results: Mapping[str, object],
+    trigger_evidence: Iterable[object],
+    subject_source_identity: Mapping[str, object],
+    control_source_identity: Mapping[str, object],
+    subject_build_identity: Mapping[str, object],
+    control_build_identity: Mapping[str, object],
+    model_ref: str,
+    model_path: Path,
+    executions: Iterable[QualificationEvidenceExecution],
+    artifacts: Iterable[QualificationEvidenceArtifact],
+) -> QualificationEvidenceManifest:
+    """Construct one immutable, content-bound promotion evidence manifest."""
+
+    patch_ids_t = tuple(patch_ids)
+    positive_t = tuple(float(v) for v in positive_pct_deltas)
+    control_t = tuple(float(v) for v in control_pct_deltas)
+    correctness_t = tuple(correctness_results[k] for k in sorted(correctness_results))
+    trigger_t = tuple(trigger_evidence)
+    executions_t = tuple(executions)
+    artifacts_t = tuple(artifacts)
+
+    _validate_qualification_manifest_inputs(
+        campaign_id=campaign_id,
+        patch_ids_t=patch_ids_t,
+        base_revision=base_revision,
+        target_metric=target_metric,
+        positive_t=positive_t,
+        control_t=control_t,
+        correctness_t=correctness_t,
+        trigger_t=trigger_t,
+        model_ref=model_ref,
+        model_path=model_path,
+        executions_t=executions_t,
+        artifacts_t=artifacts_t,
+    )
+
 
     def _checked_identity(
         value: Mapping[str, object],
