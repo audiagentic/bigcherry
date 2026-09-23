@@ -1,20 +1,33 @@
-"""VA06 next slice: RD73's decode control lane, resource-evidence
-producer, bit-identical correctness evaluator, and the full
-run_rd73_contract_qualification() orchestrator + WORKLOAD_METRIC
-registration. GPT scoping (session ses_1e0bd1ea53db4311): mirror RD08's
-result/schema/promotion semantics; load every threshold from the real
-contract, never hardcode. Hardware-free throughout -- subprocess.run and
-run_rd73_mtp_server_lane are faked.
+"""VA06 next slice: RD73's decode control lane + the shared workload-metric
+registration and bench-runner parsing.
+
+PA36 RD73 legacy compatibility retirement: the decode control lane moved
+from shared validation_campaign.py (run_rd73_decode_control_lane) into
+RD73's producer (patches/1233_rd73_stable_graph_cache_key/
+validation/producer.py, _run_decode_control_lane). This test now exercises
+the producer-side lane directly.
+
+The resource-evidence (evaluate_rd73_resource_evidence), bit-identical
+correctness (evaluate_rd73_mtp_correctness), and full-qualification
+orchestrator (run_rd73_contract_qualification) shared functions were
+eliminated/inlined into the producer's run() during the same retirement;
+their unit tests were retired with them. The producer's run() end-to-end
+coverage lives in test_patch_validation_campaign_rd73_contract_cli.py.
+
+GPT scoping (session ses_1e0bd1ea53db4311): mirror RD08's result/schema/
+promotion semantics; load every threshold from the real contract, never
+hardcode. Hardware-free throughout -- subprocess.run and the bench runner
+are faked.
 """
 
 from __future__ import annotations
 
-import json
-import os
+import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -24,6 +37,25 @@ from bigcherry.experiment import contract as ec  # noqa: E402
 from bigcherry.experiment import execution as ee  # noqa: E402
 from bigcherry.campaign import bench_runner  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+
+PRODUCER_DIR = Path(
+    "patches/1233_rd73_stable_graph_cache_key/validation"
+)
+PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06c"
+
+
+def _load_producer() -> Any:
+    """Load the producer module with the required sys.modules registration."""
+    spec = importlib.util.spec_from_file_location(
+        PRODUCER_MODULE,
+        PRODUCER_DIR / "producer.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[PRODUCER_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 class WorkloadMetricRegistrationTests(unittest.TestCase):
@@ -39,8 +71,8 @@ class _FakeServerRunner:
 
     VA25: exposes launch()/wait_healthy()/shutdown() rather than just the
     context-manager protocol, matching what AttestedServerSession actually
-    calls -- run_rd73_decode_control_lane() no longer uses ``with runner:``
-    on a raw ServerRunner directly."""
+    calls -- the lane no longer uses ``with runner:`` on a raw ServerRunner
+    directly."""
 
     instances: list["_FakeServerRunner"] = []
 
@@ -171,6 +203,10 @@ class RunBenchRunnerServerBenchTests(unittest.TestCase):
 
 
 class RunRd73DecodeControlLaneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
     def setUp(self) -> None:
         _FakeServerRunner.instances = []
         self._tmp = tempfile.TemporaryDirectory()
@@ -179,7 +215,16 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _run(self, *, control_tps, subject_tps, pairs=2):
+    def _make_ctx(self) -> Any:
+        class _Ctx:
+            pass
+
+        ctx = _Ctx()
+        ctx.model = Path("m.gguf")
+        ctx.workdir = self.run_dir
+        return ctx
+
+    def _run(self, *, control_tps, subject_tps):
         counters = {"control": 0, "subject": 0}
 
         def fake_bench_runner(
@@ -222,15 +267,16 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
                             backend="ROCm",
                             architectures=("gfx1100", "gfx1100"),
                         ),
-                        pairs=pairs,
+                        selector_env={},
                     )
 
     def test_returns_control_role_effect(self) -> None:
-        result = self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
-        self.assertEqual(result["effect"].role, "control")
-        self.assertEqual(result["effect"].metric, "tg128")
-        artifact_path = self.run_dir / result["artifact"]["path"]
-        self.assertTrue(artifact_path.is_file())
+        # The producer's decode lane runs a fixed 10 measured pairs.
+        result = self._run(
+            control_tps=[90.0] * 10, subject_tps=[100.0] * 10,
+        )
+        self.assertEqual(result.role, "control")
+        self.assertEqual(result.metric, "tg128")
 
     def test_default_extra_flags_include_sm_tensor_and_fit_off(self) -> None:
         # This lane launches real llama-SERVER processes (unlike RD73's
@@ -238,7 +284,7 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
         # servers) -- --fit off is required here, unlike llama-bench-based
         # lanes, which must never receive it (real hardware finding: a
         # hard argument-parse error).
-        self._run(control_tps=[90.0, 90.0], subject_tps=[100.0, 100.0])
+        self._run(control_tps=[90.0] * 10, subject_tps=[100.0] * 10)
         for instance in _FakeServerRunner.instances:
             extra_args = instance.kwargs["extra_args"]
             self.assertIn("-sm", extra_args)
@@ -247,16 +293,19 @@ class RunRd73DecodeControlLaneTests(unittest.TestCase):
             self.assertEqual(extra_args[extra_args.index("--fit") + 1], "off")
 
 
-class EvaluateRd73ResourceEvidenceTests(unittest.TestCase):
-    """User redirect (2026-09-01): resource evidence is now read from the
-    MTP lane's own subject server log file (always
-    BIGCHERRY_RD73_RESOURCE_TRACE=1) rather than a separate llama-bench
-    probe."""
+class RunRd73ResourceBurstFailClosedTests(unittest.TestCase):
+    """PA36 RD73 retirement (GPT round-1 MAJOR): the producer's
+    `_run_resource_burst()` still owns two fail-closed invariants that the
+    e2e test only covers through a single 651-reading happy path --
+    no-reading rejection and peak-of-readings. Restore direct unit
+    coverage for both, plus the corpus-required guard."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.run_dir = Path(self._tmp.name)
-        (self.run_dir / "logs").mkdir()
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -545,7 +594,7 @@ class RunRd73ContractQualificationTests(unittest.TestCase):
                             if prior_session_effect_pct is None
                             else self._prior_sessions(prior_session_effect_pct)
                         ),
-                        amdgpu_targets="gfx1100",
+                        selector_env={},
                     )
 
     def test_a_single_session_is_inconclusive_not_a_verdict(self):
