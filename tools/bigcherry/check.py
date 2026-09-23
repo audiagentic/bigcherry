@@ -109,6 +109,58 @@ _ARTIFACTS_STRUCTURAL_ALLOWLIST = frozenset(
     }
 )
 _ARTIFACTS_REVISION_DIR_RE = re.compile(r"^[0-9a-f]{12}$")
+_ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _referenced_artifact_names(root: Path) -> frozenset[str]:
+    """Names cited as ``artifacts/<name>`` anywhere under docs/ or patches/.
+
+    The project's real evidence convention pairs a short ``artifacts/<name>``
+    raw-data directory with a date-prefixed ``docs/evidence/YYYY-MM-DD-<name
+    or a related slug>/`` write-up that cross-references it by text, not by
+    identical directory name (e.g. ``docs/evidence/2026-09-08-HI168-e2e/``
+    citing ``artifacts/hi168-e2e-results/``). An exact-name-only check
+    against ``docs/evidence/`` produces false positives for every dir named
+    this way, so traceability is real if the name is cited anywhere in
+    tracked prose, not only when the two directory names match verbatim.
+    """
+    names: set[str] = set()
+    for base in (root / "docs", root / "patches"):
+        if not base.is_dir():
+            continue
+        for md_path in base.rglob("*.md"):
+            try:
+                text = md_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for match in _ARTIFACTS_REFERENCE_RE.finditer(text):
+                names.add(match.group(1).rstrip("/").rstrip("`").rstrip("'\"").lower())
+    return frozenset(names)
+
+
+_EVIDENCE_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def _evidence_slugs(root: Path) -> frozenset[str]:
+    """``docs/evidence/<dir>`` names, date-prefix stripped and lowercased.
+
+    Pairs with ``_referenced_artifact_names``: some ``docs/evidence/YYYY-MM-DD-
+    <slug>/`` write-ups cite their raw ``artifacts/<name>/`` counterpart by
+    name in prose (caught there); others are simply the curated copy of the
+    same run and never spell the artifacts path out, but the two directory
+    names agree once the date prefix is stripped (e.g.
+    ``docs/evidence/2026-09-08-TO02-HI16-gpu0/`` <-> ``artifacts/
+    to02-hi16-gpu0/``).
+    """
+    evidence_root = root / "docs" / "evidence"
+    if not evidence_root.is_dir():
+        return frozenset()
+    slugs: set[str] = set()
+    for entry in evidence_root.iterdir():
+        if not entry.is_dir():
+            continue
+        slugs.add(_EVIDENCE_DATE_PREFIX_RE.sub("", entry.name).lower())
+    return frozenset(slugs)
 _DISPOSITION_ROW = re.compile(
     r"^\|\s*`(?P<path>[^`]+)`\s*\|\s*\*\*(?P<disposition>[A-Z-]+)\*\*\s*\|"
 )
@@ -718,6 +770,8 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
     artifacts_root = root / "artifacts"
     evidence_root = root / "docs" / "evidence"
     if artifacts_root.is_dir():
+        referenced_names = _referenced_artifact_names(root)
+        evidence_slugs = _evidence_slugs(root)
         for path in sorted(artifacts_root.iterdir(), key=lambda item: item.name):
             name = path.name
             if not path.is_dir():
@@ -727,6 +781,10 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
             if _ARTIFACTS_REVISION_DIR_RE.match(name):
                 continue
             if (evidence_root / name).is_dir():
+                continue
+            if name.lower() in referenced_names:
+                continue
+            if name.lower() in evidence_slugs:
                 continue
             findings.append(
                 _diagnostic(

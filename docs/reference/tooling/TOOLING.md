@@ -186,7 +186,10 @@ Keep ownership distinct:
   `artifacts/` top-level directory that is neither a recognised structural
   path (`logs`, `lab`, `pin-bump`, `patch-validation`, `release-runs`,
   `release-validation`), a 12-hex revision directory (`artifact_dir()`), nor
-  matched by a `docs/evidence/<run-id>/` counterpart;
+  matched by a `docs/evidence/<run-id>/` counterpart (exact-name, textually
+  cited as `artifacts/<name>` anywhere under `docs/`/`patches/`, or the same
+  slug once a `docs/evidence/YYYY-MM-DD-<slug>/` write-up's date prefix is
+  stripped);
 - `patches/<patch-id>/` owns patch contracts, fixtures, and patch evidence; and
 - `docs/reference/` owns reusable guidance, not live hardware verdicts.
 
