@@ -123,7 +123,7 @@ class Rd04DedicatedPathDeletionTests(unittest.TestCase):
         # never silently picks bound_contracts[0] when several contracts
         # are bound, and never lets duplicate check names silently
         # overwrite each other in the {check: result} mapping.
-        core_src = inspect.getsource(campaign_producer._run_validation_producer)
+        core_src = inspect.getsource(campaign_producer._producer_check_results)
         self.assertIn("len(bound_contracts) != 1", core_src)
         self.assertIn("requires exactly", core_src)
         self.assertIn("{result.check for result in named}", core_src)
