@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 
 
 class LegacyRunPathCorrectnessGateTests(unittest.TestCase):
@@ -59,8 +60,8 @@ class LegacyRunPathCorrectnessGateTests(unittest.TestCase):
         )
         # The refactor moved the gate resolution out of run() into the
         # producer-dispatch path, so check the full module source (not just
-        # run()'s body) for the bound_contracts[0] resolution.
-        full_source = inspect.getsource(vc)
+        # run()'s body) -- now campaign/producer.py -- for the bound_contracts[0] resolution.
+        full_source = inspect.getsource(campaign_producer)
         match = re.search(
             r"compute_contract_correctness_gate\(\s*\n\s*bound_contracts\[0\],",
             full_source,

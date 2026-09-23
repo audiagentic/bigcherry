@@ -42,6 +42,7 @@ if str(TOOLS_ROOT) not in sys.path:
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
@@ -123,7 +124,7 @@ class Rd04DedicatedPathDeletionTests(unittest.TestCase):
         # never silently picks bound_contracts[0] when several contracts
         # are bound, and never lets duplicate check names silently
         # overwrite each other in the {check: result} mapping.
-        core_src = inspect.getsource(vc._run_validation_producer)
+        core_src = inspect.getsource(campaign_producer._run_validation_producer)
         self.assertIn("len(bound_contracts) != 1", core_src)
         self.assertIn("requires exactly", core_src)
         self.assertIn("{result.check for result in named}", core_src)
@@ -208,7 +209,7 @@ class _FakeScaffold:
 
 
 class _FakeDispatcherRuntime:
-    """Stand-in for vc.CampaignProducerRuntime: one fake PPL pair, real
+    """Stand-in for campaign_producer.CampaignProducerRuntime: one fake PPL pair, real
     artifact files under run_dir, one device for the run architecture, and
     a finite fake paired benchmark (the producer reuses the SCAFFOLD
     llama-bench binaries handed to it via ctx.validation_binaries)."""
@@ -412,7 +413,7 @@ def _dispatch(
     model_bytes: bytes = b"fake-model-bytes-1202",
     corpus_bytes: bytes = b"fake-corpus-bytes-1202",
 ):
-    """Run vc._run_validation_producer() against the REAL 1202 patch with
+    """Run campaign_producer._run_validation_producer() against the REAL 1202 patch with
     every expensive boundary faked. Returns a namespace of everything the
     tests assert on."""
     fake_run = _fake_ppl_run(subject_ppl=subject_ppl, control_ppl=control_ppl)
@@ -436,8 +437,8 @@ def _dispatch(
         return path
 
     patches = [
-        mock.patch.object(vc, "_build_standard_campaign_scaffold", fake_scaffold),
-        mock.patch.object(vc, "CampaignProducerRuntime", _FakeDispatcherRuntime),
+        mock.patch.object(campaign_producer, "_build_standard_campaign_scaffold", fake_scaffold),
+        mock.patch.object(campaign_producer, "CampaignProducerRuntime", _FakeDispatcherRuntime),
         mock.patch.object(psi, "git_worktree_tree", _fake_tree),
         mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
         mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
@@ -447,7 +448,7 @@ def _dispatch(
     ]
     if selection is not None:
         patches.append(
-            mock.patch.object(vc, "resolve_producer", lambda **kw: selection)
+            mock.patch.object(campaign_producer, "resolve_producer", lambda **kw: selection)
         )
     args = _args(tmp, **(args_overrides or {}))
     # GPT review req_7a72896b609a48b5 BLOCKER #1: the dispatcher now binds
@@ -464,7 +465,7 @@ def _dispatch(
     for patcher in patches:
         patcher.start()
     try:
-        exit_code = vc._run_validation_producer(
+        exit_code = campaign_producer._run_validation_producer(
             args,
             producer_id="rd04",
             provided_inputs={},

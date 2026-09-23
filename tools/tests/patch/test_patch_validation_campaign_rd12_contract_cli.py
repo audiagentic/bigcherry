@@ -37,12 +37,13 @@ if str(TOOLS_ROOT) not in sys.path:
 
 from bigcherry.patch import registry as patch_registry  # noqa: E402
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch.campaign import scaffold as campaign_scaffold  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
-from bigcherry.patch.validation import ArtifactRef  # noqa: E402
+from bigcherry.patch.validation import ArtifactRef, ValidationContext, ValidationPlan  # noqa: E402
 from bigcherry.tuning import correctness_evidence  # noqa: E402
 
 PATCH_ID = "1205_rd12_paired_mmvq_dual_output"
@@ -90,7 +91,7 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
         # the two promotion-semantic PERSISTENCE helpers below must be
         # pinned to producer_contract_promotions, never
         # execution.contract_verdicts.)
-        core_src = inspect.getsource(vc._run_validation_producer)
+        core_src = inspect.getsource(campaign_producer._run_validation_producer)
         self.assertIn(
             "build_contract_evidence_for_persistence(\n"
             "                validation_plan.contracts,\n"
@@ -168,8 +169,8 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
 # --------------------------------------------------------------- binders
 
 
-def _binding_context(run_dir: Path) -> vc.ProducerEvidenceBindingContext:
-    return vc.ProducerEvidenceBindingContext(
+def _binding_context(run_dir: Path) -> campaign_producer.ProducerEvidenceBindingContext:
+    return campaign_producer.ProducerEvidenceBindingContext(
         run_dir=run_dir,
         patch_id=PATCH_ID,
         patch_path=(TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation.toml"),
@@ -180,7 +181,7 @@ def _binding_context(run_dir: Path) -> vc.ProducerEvidenceBindingContext:
     )
 
 
-def _trace_plan(marker_specs: int = 1) -> vc.ValidationPlan:
+def _trace_plan(marker_specs: int = 1) -> ValidationPlan:
     specs = tuple(
         SimpleNamespace(
             capability="activation",
@@ -190,14 +191,14 @@ def _trace_plan(marker_specs: int = 1) -> vc.ValidationPlan:
         )
         for i in range(marker_specs)
     )
-    return cast("vc.ValidationPlan", SimpleNamespace(checks=specs))
+    return cast("ValidationPlan", SimpleNamespace(checks=specs))
 
 
 class ProducerEvidenceBinderTests(unittest.TestCase):
     def test_bind_correctness_writes_the_root_document(self) -> None:
         run_dir = Path(tempfile.mkdtemp())
         binding = _binding_context(run_dir)
-        document, bound = vc._bind_producer_correctness(
+        document, bound = campaign_producer._bind_producer_correctness(
             {
                 "disposition": "passed",
                 "mechanism": "rd12-paired-mmvq-bit-identical",
@@ -237,7 +238,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         with self.assertRaisesRegex(
             campaign_build.PatchCampaignError, "exactly " + r"{'disposition','mechanism','detail'}"
         ):
-            vc._bind_producer_correctness(semantic, binding=binding)
+            campaign_producer._bind_producer_correctness(semantic, binding=binding)
         self.assertFalse((run_dir / "correctness.json").exists())
 
     def test_bind_correctness_rejects_bad_disposition(self) -> None:
@@ -249,11 +250,11 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             "detail": "d",
         }
         with self.assertRaisesRegex(campaign_build.PatchCampaignError, "disposition"):
-            vc._bind_producer_correctness(semantic, binding=binding)
+            campaign_producer._bind_producer_correctness(semantic, binding=binding)
 
     def test_bind_correctness_none_passes_through(self) -> None:
         run_dir = Path(tempfile.mkdtemp())
-        document, bound = vc._bind_producer_correctness(
+        document, bound = campaign_producer._bind_producer_correctness(
             None,
             binding=_binding_context(run_dir),
         )
@@ -262,7 +263,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         self.assertFalse((run_dir / "correctness.json").exists())
 
     def test_bind_trace_injects_the_plan_owned_marker_regex(self) -> None:
-        bound = vc._bind_producer_trace_evidence(
+        bound = campaign_producer._bind_producer_trace_evidence(
             {
                 "positive": {"artifact": {"path": "artifacts/p.log", "sha256": "1"}},
                 "negative": {"artifact": {"path": "artifacts/n.log", "sha256": "2"}},
@@ -280,7 +281,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
 
     def test_bind_trace_rejects_a_producer_owned_marker_regex(self) -> None:
         with self.assertRaisesRegex(campaign_build.PatchCampaignError, "exactly 'artifact'"):
-            vc._bind_producer_trace_evidence(
+            campaign_producer._bind_producer_trace_evidence(
                 {
                     "positive": {
                         "artifact": {"path": "a", "sha256": "1"},
@@ -299,7 +300,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             "negative": {"artifact": {"path": "b", "sha256": "2"}},
         }
         with self.assertRaisesRegex(campaign_build.PatchCampaignError, "exactly one trace-marker"):
-            vc._bind_producer_trace_evidence(
+            campaign_producer._bind_producer_trace_evidence(
                 trace,
                 validation_plan=_trace_plan(marker_specs),
                 declared_artifacts=frozenset(),
@@ -318,7 +319,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         run_dir = Path(tempfile.mkdtemp())
         binding = _binding_context(run_dir)
         plan = _trace_plan()
-        ctx = vc.ValidationContext(
+        ctx = ValidationContext(
             descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
@@ -348,7 +349,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             lane_effects=(),
             emitted_artifacts=frozenset({"p.log", "n.log"}),
         )
-        bound = vc._bind_producer_result_evidence(
+        bound = campaign_producer._bind_producer_result_evidence(
             result,
             validation_plan=plan,
             validation_context=ctx,
@@ -379,7 +380,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         self.assertIsNotNone(bound.correctness)
 
     def test_bind_result_evidence_skip_path_passes_through(self) -> None:
-        ctx = vc.ValidationContext(
+        ctx = ValidationContext(
             descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
@@ -398,7 +399,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
             lane_effects=(),
             emitted_artifacts=frozenset(),
         )
-        bound = vc._bind_producer_result_evidence(
+        bound = campaign_producer._bind_producer_result_evidence(
             result,
             validation_plan=_trace_plan(),
             validation_context=ctx,
@@ -424,7 +425,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         with self.assertRaisesRegex(
             campaign_build.PatchCampaignError, "not declared in the producer manifest"
         ):
-            vc._bind_producer_trace_evidence(
+            campaign_producer._bind_producer_trace_evidence(
                 {
                     "positive": {
                         "artifact": {"path": "artifacts/sneaky.log", "sha256": sha},
@@ -444,7 +445,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         with self.assertRaisesRegex(
             campaign_build.PatchCampaignError, "not claimed in result.emitted_artifacts"
         ):
-            vc._bind_producer_trace_evidence(
+            campaign_producer._bind_producer_trace_evidence(
                 {
                     "positive": {
                         "artifact": {"path": "artifacts/p.log", "sha256": "1"}
@@ -466,7 +467,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
                 self.subTest(path=bad),
                 self.assertRaisesRegex(campaign_build.PatchCampaignError, "artifacts/<basename>"),
             ):
-                vc._bind_producer_trace_evidence(
+                campaign_producer._bind_producer_trace_evidence(
                     {
                         "positive": {"artifact": {"path": bad, "sha256": "1"}},
                         "negative": {
@@ -481,7 +482,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
     def test_bind_result_rejects_undeclared_performance_artifact(self) -> None:
         # The same gate covers the generic performance_evidence["artifact"]
         # channel, not just trace evidence.
-        ctx = vc.ValidationContext(
+        ctx = ValidationContext(
             descriptor=cast("patch_registry.PatchDescriptor", object()),
             base_revision="a" * 40,
             control_source=None,
@@ -505,7 +506,7 @@ class ProducerEvidenceBinderTests(unittest.TestCase):
         with self.assertRaisesRegex(
             campaign_build.PatchCampaignError, "not declared in the producer manifest"
         ):
-            vc._bind_producer_result_evidence(
+            campaign_producer._bind_producer_result_evidence(
                 result,
                 validation_plan=_trace_plan(),
                 validation_context=ctx,
@@ -594,7 +595,7 @@ class _FakeScaffold:
 
 
 class _FakeDispatcherRuntime:
-    """Stand-in for vc.CampaignProducerRuntime: one fake pair, real
+    """Stand-in for campaign_producer.CampaignProducerRuntime: one fake pair, real
     artifact files under run_dir, one device per run architecture."""
 
     def __init__(
@@ -803,7 +804,7 @@ def _dispatch(
     args_overrides: dict[str, object] | None = None,
     recorders: dict[str, _Recorder] | None = None,
 ):
-    """Run vc._run_validation_producer() against the REAL 1205 patch with
+    """Run campaign_producer._run_validation_producer() against the REAL 1205 patch with
     every expensive boundary faked. Returns a namespace of everything the
     tests assert on."""
     collect = collect or _fake_collect_pass()
@@ -828,8 +829,8 @@ def _dispatch(
         return path
 
     patches = [
-        mock.patch.object(vc, "_build_standard_campaign_scaffold", fake_scaffold),
-        mock.patch.object(vc, "CampaignProducerRuntime", _FakeDispatcherRuntime),
+        mock.patch.object(campaign_producer, "_build_standard_campaign_scaffold", fake_scaffold),
+        mock.patch.object(campaign_producer, "CampaignProducerRuntime", _FakeDispatcherRuntime),
         mock.patch.object(psi, "git_worktree_tree", _fake_tree),
         mock.patch.object(psi, "patch_implementation_digest", lambda pid: "d" * 64),
         mock.patch.object(psi, "composition_digest", lambda c: "e" * 64),
@@ -842,12 +843,12 @@ def _dispatch(
     ]
     if selection is not None:
         patches.append(
-            mock.patch.object(vc, "resolve_producer", lambda **kw: selection)
+            mock.patch.object(campaign_producer, "resolve_producer", lambda **kw: selection)
         )
     for patcher in patches:
         patcher.start()
     try:
-        exit_code = vc._run_validation_producer(
+        exit_code = campaign_producer._run_validation_producer(
             _args(tmp, **(args_overrides or {})),
             producer_id="rd12",
             provided_inputs={},
