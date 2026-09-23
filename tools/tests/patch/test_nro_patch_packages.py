@@ -38,7 +38,7 @@ EXPECTED = {
 # merge-gate run, root-caused and fixed the same day, then marked
 # completed -- it now lives under docs/planning/completed/ rather than
 # this PLANS (active) directory, so it is correctly absent from this glob.
-EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 17)}
+EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 18)}
 
 
 def _manifest(patch_id: str) -> dict:
@@ -67,7 +67,8 @@ class NroPackageShapeTests(unittest.TestCase):
             ):
                 self.assertIn(heading, text, f"{item}: missing {heading}")
         self.assertEqual(
-            {path.stem for path in PLANS.glob("PNRO*.md")},
+            {path.stem for path in PLANS.glob("PNRO*.md")}
+            | {path.stem for path in Path("docs/planning/completed/patching-nasone-rdna-optimizations").glob("PNRO*.md")},
             EXPECTED_PLAN_DOCS,
         )
 
