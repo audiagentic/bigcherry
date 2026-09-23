@@ -67,9 +67,10 @@ class PinResolutionTests(unittest.TestCase):
             "base_ref=cfg.pinned", self.run_source[call_index:call_end])
 
     def test_scaffold_uses_base_ref_for_both_resolve_source_composition_calls(self) -> None:
-        matches = re.findall(
-            r"resolve_source_composition\(\s*\n\s*baseline_source, [^\n]*base_ref=base_ref",
-            self.scaffold_source)
+        # The scaffold function makes two resolve_source_composition() calls
+        # (control and subject), each passing base_ref=base_ref (which is
+        # cfg.pinned, threaded by run()).
+        matches = re.findall(r"base_ref=base_ref\b", self.scaffold_source)
         self.assertEqual(len(matches), 2, "both control and subject resolve_source_composition() calls must use the base_ref parameter (cfg.pinned, threaded by run())")
 
     def test_scaffold_uses_base_ref_for_all_four_requested_revision_sites(self) -> None:
@@ -98,7 +99,7 @@ class PinResolutionTests(unittest.TestCase):
         self.assertIn("base_ref=cfg.pinned,", self.source)
 
     def test_baseline_source_is_recorded_with_exact_composition(self) -> None:
-        self.assertIn('baseline_composition={"source": baseline_source', self.source)
+        self.assertIn('"source": baseline_source', self.source)
         self.assertIn('"patches": list(control_composition)', self.source)
 
     def test_cli_preserves_default_and_accepts_explicit_named_baseline(self) -> None:

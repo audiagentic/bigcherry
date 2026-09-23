@@ -51,8 +51,10 @@ def _patch_source(patch_id: str) -> str:
 
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
-        for i in range(1, 17):
+        for i in range(1, 18):
             item = PLANS / f"PNRO{i:02d}.md"
+            if not item.is_file():
+                item = Path("docs/planning/completed/patching-nasone-rdna-optimizations") / f"PNRO{i:02d}.md"
             self.assertTrue(item.is_file(), item)
             text = item.read_text(encoding="utf-8")
             self.assertRegex(text, rf"(?m)^id: PNRO{i:02d}$")
