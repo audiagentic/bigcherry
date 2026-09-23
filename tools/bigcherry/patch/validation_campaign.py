@@ -2334,8 +2334,7 @@ def _absolute_path(value: str) -> Path:
     return Path(value).resolve()
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
+def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--patch", required=True, help="patch module name under patches/"
     )
@@ -2440,6 +2439,9 @@ def main(argv: list[str] | None = None) -> int:
         help="VA06: prompt corpus JSONL for --run-rd73-contract's MTP server lane "
         "(bench/server_completion.py's load_corpus() format).",
     )
+
+
+def _add_benchmark_and_producer_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--run-performance-benchmark",
         action="store_true",
@@ -2509,46 +2511,56 @@ def main(argv: list[str] | None = None) -> int:
         "if the producer does not declare NAME, a required NAME is missing, or "
         "the same NAME is given twice.",
     )
+
+
+def _dispatch_validation_producer(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
+    # dispatch plugs in immediately after parse_args()/common patch
+    # resolution, before the first other RD-only
+    # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
+    # of known RD flags -- a new --run-rdNN-* flag added later is caught
+    # automatically, with no edit required here.
+    legacy_modes = tuple(
+        name
+        for name, value in vars(args).items()
+        if value
+        and (
+            re.fullmatch(r"run_rd\d+.*", name)
+            or re.fullmatch(r"run_patch\d+.*", name)
+        )
+    )
+    if legacy_modes:
+        parser.error(
+            "--validation-producer is mutually exclusive with legacy execution "
+            f"mode(s): {', '.join(sorted(legacy_modes))}"
+        )
+    selector_patch, producer_id = _parse_validation_producer_selector(
+        args.validation_producer
+    )
+    # --patch stays required at the parser level (retiring that
+    # requirement is the atomic migration sequence's job, not step 5's);
+    # while it is, this just enforces it can never silently diverge from
+    # the selector instead of asking the user to specify the patch twice.
+    if args.patch != selector_patch:
+        parser.error(
+            f"--patch {args.patch!r} does not match --validation-producer's patch "
+            f"component {selector_patch!r} -- do not specify a different patch twice"
+        )
+    provided_inputs = _parse_producer_inputs(args.producer_inputs)
+    return _run_validation_producer(
+        args, producer_id=producer_id, provided_inputs=provided_inputs
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="bigcherry patch-validation-campaign")
+    _add_core_arguments(parser)
+    _add_benchmark_and_producer_arguments(parser)
     args = parser.parse_args(argv)
     if args.worktree_root is None:
         args.worktree_root = ProjectContext.resolve().work_root / "worktrees"
     if args.validation_producer is not None:
-        # PA36-F step 5, GPT design section 5 (req_8ec9b90c05f84a30): generic
-        # dispatch plugs in immediately after parse_args()/common patch
-        # resolution, before the first other RD-only
-        # guard. Reject generically by NAME PATTERN, never a hardcoded tuple
-        # of known RD flags -- a new --run-rdNN-* flag added later is caught
-        # automatically, with no edit required here.
-        legacy_modes = tuple(
-            name
-            for name, value in vars(args).items()
-            if value
-            and (
-                re.fullmatch(r"run_rd\d+.*", name)
-                or re.fullmatch(r"run_patch\d+.*", name)
-            )
-        )
-        if legacy_modes:
-            parser.error(
-                "--validation-producer is mutually exclusive with legacy execution "
-                f"mode(s): {', '.join(sorted(legacy_modes))}"
-            )
-        selector_patch, producer_id = _parse_validation_producer_selector(
-            args.validation_producer
-        )
-        # --patch stays required at the parser level (retiring that
-        # requirement is the atomic migration sequence's job, not step 5's);
-        # while it is, this just enforces it can never silently diverge from
-        # the selector instead of asking the user to specify the patch twice.
-        if args.patch != selector_patch:
-            parser.error(
-                f"--patch {args.patch!r} does not match --validation-producer's patch "
-                f"component {selector_patch!r} -- do not specify a different patch twice"
-            )
-        provided_inputs = _parse_producer_inputs(args.producer_inputs)
-        return _run_validation_producer(
-            args, producer_id=producer_id, provided_inputs=provided_inputs
-        )
+        return _dispatch_validation_producer(parser, args)
     if (
         not args.framework_configuration
         and not args.run_performance_benchmark
