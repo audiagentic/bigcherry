@@ -2120,6 +2120,89 @@ def _persist_producer_validation_record(
     return record_path, validation_contract_verdicts
 
 
+def _write_producer_outcome(
+    args: argparse.Namespace,
+    *,
+    producer_id: str,
+    execution,
+    producer_check_results,
+    scaffold: StandardCampaignScaffold | None,
+    validation_contract_verdicts,
+    record_path: Path | None,
+    run_dir: Path,
+) -> None:
+    """Write the workdir-local producer-execution.json outcome and print the verdict."""
+    outcome_doc = {
+        "patch_id": args.patch,
+        "producer_id": producer_id,
+        "eligible": execution.verdict.eligible,
+        "reasons": list(execution.verdict.reasons),
+        "blocked": execution.verdict.blocked,
+        "errors": list(execution.verdict.errors),
+        "check_results": producer_check_results,
+        "contract_verdicts": (
+            validation_contract_verdicts
+            if scaffold is not None
+            else dict(execution.contract_verdicts)
+        ),
+        "validation_build_identities": dict(
+            execution.result.validation_build_identities
+        ),
+        "evidence_record": str(record_path) if record_path is not None else None,
+    }
+    outcome_path = run_dir / "producer-execution.json"
+    _atomic_write_json(outcome_path, outcome_doc)
+
+    _print(
+        f"validation producer {args.patch}/{producer_id}: "
+        f"{'eligible' if execution.verdict.eligible else 'ineligible'} "
+        f"({len(execution.verdict.reasons)} blocking reasons) -- "
+        f"{outcome_path}"
+    )
+
+
+def _resolve_producer_targets(args: argparse.Namespace, bound_contracts):
+    """Return (fat_targets, device_map), validated against the bound contracts' scope."""
+    amdgpu_targets = args.amdgpu_targets
+    fat_targets = FatTargetPlan(
+        targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
+    )
+    device_map = _parse_producer_device_map(list(args.device_map or ()))
+
+    _validate_producer_architectures(args, bound_contracts, fat_targets, device_map)
+    return fat_targets, device_map
+
+
+def _load_producer_plan(args: argparse.Namespace):
+    """Return (registry, descriptor, cfg, validation_plan, bound_contracts)."""
+    from bigcherry.core import paths as bc_paths
+    from bigcherry.core import config as campaign_config
+    from bigcherry.patch import registry as patch_registry
+    from bigcherry.patch import validation as patch_validation
+    from bigcherry.patch import validation_policy as patch_validation_policy
+
+    registry = patch_registry.load_registry(bc_paths.PATCHES)
+    descriptor = registry.get(args.patch)
+    cfg = campaign_config.load(bc_paths.RECIPES)
+
+    validation_plan = patch_validation_policy.require_execution_package(
+        descriptor,
+        root=bc_paths.PATCHES,
+    )
+    if validation_plan is None:
+        raise PatchCampaignError(
+            f"{args.patch}: --validation-producer requires a resolvable validation plan"
+        )
+
+    # Plural-aware (VA17): a --validation-producer patch may bind more than
+    # one Experiment Contract (e.g. 1203's RD05/RD06/RD07) -- the singular
+    # load_contract_for_descriptor()/.experiment_contract compatibility path
+    # fails closed (PatchRegistryError) for exactly that case, so this
+    # generic dispatcher must use the plural loader, never the singular one.
+    bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
+    return registry, descriptor, cfg, validation_plan, bound_contracts
+
+
 def _run_validation_producer(
     args: argparse.Namespace,
     *,
@@ -2150,10 +2233,6 @@ def _run_validation_producer(
     import os
 
     from bigcherry.core import paths as bc_paths
-    from bigcherry.core import config as campaign_config
-    from bigcherry.patch import registry as patch_registry
-    from bigcherry.patch import validation as patch_validation
-    from bigcherry.patch import validation_policy as patch_validation_policy
 
     os.environ["ROCM_PATH"] = str(args.hip_path)
     os.environ["HIP_PATH"] = str(args.hip_path)
@@ -2161,25 +2240,9 @@ def _run_validation_producer(
         [str(args.hip_path / "bin"), os.environ.get("PATH", "")]
     )
 
-    registry = patch_registry.load_registry(bc_paths.PATCHES)
-    descriptor = registry.get(args.patch)
-    cfg = campaign_config.load(bc_paths.RECIPES)
-
-    validation_plan = patch_validation_policy.require_execution_package(
-        descriptor,
-        root=bc_paths.PATCHES,
+    registry, descriptor, cfg, validation_plan, bound_contracts = (
+        _load_producer_plan(args)
     )
-    if validation_plan is None:
-        raise PatchCampaignError(
-            f"{args.patch}: --validation-producer requires a resolvable validation plan"
-        )
-
-    # Plural-aware (VA17): a --validation-producer patch may bind more than
-    # one Experiment Contract (e.g. 1203's RD05/RD06/RD07) -- the singular
-    # load_contract_for_descriptor()/.experiment_contract compatibility path
-    # fails closed (PatchRegistryError) for exactly that case, so this
-    # generic dispatcher must use the plural loader, never the singular one.
-    bound_contracts = patch_validation.load_contracts_for_descriptor(descriptor)
 
     workdir: Path = args.workdir
     workdir.mkdir(parents=True, exist_ok=True)
@@ -2206,13 +2269,7 @@ def _run_validation_producer(
         performance_benchmark_requested=bool(args.run_performance_benchmark),
     )
 
-    amdgpu_targets = args.amdgpu_targets
-    fat_targets = FatTargetPlan(
-        targets=tuple(amdgpu_targets.split(";")) if amdgpu_targets else (),
-    )
-    device_map = _parse_producer_device_map(list(args.device_map or ()))
-
-    _validate_producer_architectures(args, bound_contracts, fat_targets, device_map)
+    fat_targets, device_map = _resolve_producer_targets(args, bound_contracts)
 
     if selection.spec.standard_campaign == "run":
         setup = _prepare_standard_producer_campaign(
@@ -2278,32 +2335,15 @@ def _run_validation_producer(
             run_dir=run_dir,
         )
 
-    outcome_doc = {
-        "patch_id": args.patch,
-        "producer_id": producer_id,
-        "eligible": execution.verdict.eligible,
-        "reasons": list(execution.verdict.reasons),
-        "blocked": execution.verdict.blocked,
-        "errors": list(execution.verdict.errors),
-        "check_results": producer_check_results,
-        "contract_verdicts": (
-            validation_contract_verdicts
-            if scaffold is not None
-            else dict(execution.contract_verdicts)
-        ),
-        "validation_build_identities": dict(
-            execution.result.validation_build_identities
-        ),
-        "evidence_record": str(record_path) if record_path is not None else None,
-    }
-    outcome_path = run_dir / "producer-execution.json"
-    _atomic_write_json(outcome_path, outcome_doc)
-
-    _print(
-        f"validation producer {args.patch}/{producer_id}: "
-        f"{'eligible' if execution.verdict.eligible else 'ineligible'} "
-        f"({len(execution.verdict.reasons)} blocking reasons) -- "
-        f"{outcome_path}"
+    _write_producer_outcome(
+        args,
+        producer_id=producer_id,
+        execution=execution,
+        producer_check_results=producer_check_results,
+        scaffold=scaffold,
+        validation_contract_verdicts=validation_contract_verdicts,
+        record_path=record_path,
+        run_dir=run_dir,
     )
 
     # Success means the requested producer execution and, when required,
