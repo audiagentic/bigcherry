@@ -20,10 +20,11 @@ IMPLEMENTED-AS-PATCH (sub-scope of 1237). PRBE24's scope (GPU compact MoE MMQ bl
 ## Steps
 
 1. Confirm patch 1237's patch.py already contains the block-map prep kernel (verified this batch via SUMMARY.md/docstring; implementer should read patch.py directly for the exact kernel signature before writing tests).
-2. Author a standalone GPU-map-vs-CPU-reference correctness harness (NOT the full E2E campaign) that runs mmq_build_moe_block_map for uniform/all-one/skew/Zipf/tiny/n_expert=256 routing distributions across token counts 1..4096 and diffs its block_start[]/block_expert[] output against a CPU reference implementation of the same flattening.
-3. Microbenchmark the prep kernel alone: build time, host-device sync count (must be zero in steady state -- no host readback), temporary buffer bytes, and behavior at grid/shared-memory limits (must fail closed to the legacy rectangular grid, verify this path is actually exercised by an overflow fixture).
-4. Record this as PRBE24's own narrow validation evidence, separate from PRBE23's umbrella campaign and PRBE25's launch-efficiency evidence.
-5. Only once this passes does PRBE25's downstream launch-grid benefit become a properly gated measurement (PRBE24 is its prerequisite per the item's own acceptance criteria).
+2. CORRECTED per GPT review: a standalone Python harness has NO callable interface to the static device kernel `mmq_build_moe_block_map` -- it cannot obtain block_start[]/block_expert[] by calling the kernel directly from Python, and kernel-only unit testing also cannot prove the host-side legacy-grid fallback engages. Instead, add validation-only observability at the existing `mmq_build_moe_block_map<<<...>>>` launch site in patch 1237/mmq.cu: an env-gated (e.g. BIGCHERRY_VALIDATE_RD31=1) D2H dump of block_start[0..n_experts] and block_expert[0..actual_blocks) immediately after the launch, with the extra device sync permitted only under this validation mode (never in normal operation, to preserve the 'no host readback in steady state' property). Add an explicit fallback marker (BIGCHERRY_PATCH_TRACE-gated) in the rd30_max_m_blocks/shared-memory rejection branch that engages the legacy rectangular grid.
+3. Author patches/1237_rd30_moe_mmq_compact_grid/validation/rd31_block_map_correctness.py to drive the model/build with BIGCHERRY_VALIDATE_RD31=1, capture the dumped block_start[]/block_expert[] arrays, and diff them against a CPU reference implementation of the same flattening, across uniform/all-one/skew/Zipf/tiny/n_expert=256 routing distributions and token counts 1..4096.
+4. Microbenchmark the prep kernel alone using the same env-gated dump path (build time delta, sync count in validation vs normal mode, temporary buffer bytes) and separately confirm the fallback marker fires on a deliberate overflow fixture (grid/shared-memory limits exceeded).
+5. Record this as PRBE24's own narrow validation evidence, separate from PRBE23's umbrella campaign and PRBE25's launch-efficiency evidence.
+6. Only once this passes does PRBE25's downstream launch-grid benefit become a properly gated measurement.
 
 ## Detailed Solution & Technical Design
 
@@ -61,6 +62,8 @@ Successor key: patching-rdna-boost-experiments-rd31
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (sub-scope of 1237, untested). No GPT design request needed -- no new source design, only a narrower validation script than the umbrella campaign.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the validation mechanism -- a Python harness cannot call the static device kernel mmq_build_moe_block_map directly. Replaced with a required env-gated (BIGCHERRY_VALIDATE_RD31) D2H dump of block_start[]/block_expert[] at the existing launch site in patch 1237, plus an explicit BIGCHERRY_PATCH_TRACE fallback marker in the rd30_max_m_blocks/shared-memory rejection branch, both of which were absent from the prior plan.
+
 ## Change Log
 
 - 2026-09-09T10:55:04.645348+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +79,4 @@ Successor key: patching-rdna-boost-experiments-rd31
 - chg_20260910_025409_moe-mmq-successors-prbe2325-n_6205
 - 2026-09-10T02:54:09.755635+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:49.104330+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:44:14.010348+00:00 (updated-by): Updated: section:steps, section:notes

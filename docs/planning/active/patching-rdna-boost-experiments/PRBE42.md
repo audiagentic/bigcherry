@@ -25,6 +25,13 @@ IMPLEMENTED-AS-PATCH. Patch 1221_rd50_gdn_chunked_recurrence (state=untested) im
 4. Confirm real gfx1100/gfx1201 fallback (old token-by-token kernel path) is exercised and unaffected -- correctness-only check, no gfx1151 hardware needed for this half.
 5. Recurrent-state/output parity vs the old kernel over long sequences plus PPL/deterministic model checks (Qwen hybrid) must pass before any performance claim is trusted.
 
+1. Read patches/1221_rd50_gdn_chunked_recurrence/patch.py to confirm its Edit() anchors still apply cleanly at b11126.
+2. Run patch-lint and patch-rebase-check to confirm mechanical validity before any hardware run.
+3. Add `experiment-contract = "RD50-GDN-CHUNKED-RECURRENCE"` to patches/1221_rd50_gdn_chunked_recurrence/patch.toml (verified: currently no experiment-contract binding field present). Author the contract in config/experiment-contracts.toml if missing: subject=GGML_CUDA_GDN_CHUNKED=1, control=GGML_CUDA_GDN_CHUNKED=0, target gfx1151, correctness=backend_reference + PPL equality.
+4. Add patches/1221_rd50_gdn_chunked_recurrence/validation.toml and a patch-local validation/producer.py (an evidence/ directory already exists per prior notes -- extend it in place) emitting: backend_reference/PPL-equality correctness, activation evidence, paired GDN-op and E2E prefill performance, and decode-n=1 control-regression evidence.
+5. Run gfx1151 target qualification on an actual gfx1151 host -- Brutus does NOT have a gfx1151 device (its GPUs are gfx1100/gfx1201); Brutus is used only to validate the gfx1100/gfx1201/gfx1030 fallback path (old token-by-token kernel, correctness-only, no gfx1151 hardware needed for this half).
+6. Recurrent-state/output parity vs the old kernel over long sequences plus PPL/deterministic model checks (Qwen hybrid) must pass before any performance claim is trusted.
+
 ## Detailed Solution & Technical Design
 
 Replace token-by-token GDN overhead with a chunked HIP recurrence that keeps state in registers/LDS, but only under the exact supported shape predicate: scalar gate, K=1, S_v=128, target gfx1151/RDNA3.5, and eligible prefill ubatches. The eligibility gate must fail closed on gfx1100/gfx1201, decode n=1, other gate modes, S_v/K values, and unsupported model graphs. Preserve the existing dispatch path and state semantics outside the gate.
@@ -37,9 +44,13 @@ Trigger: Qwen hybrid/GDN prefill on gfx1151 with scalar gate, K==1, S_v==128 and
 
 patches/1221_rd50_gdn_chunked_recurrence/patch.py, patch.toml, README.md, evidence/ (existing); config/experiment-contracts.toml (check for an RD50-scoped contract; author if missing).
 
+patches/1221_rd50_gdn_chunked_recurrence/patch.py, patch.toml (add experiment-contract binding), README.md, evidence/ (existing, extend); patches/1221_rd50_gdn_chunked_recurrence/validation.toml (new); patches/1221_rd50_gdn_chunked_recurrence/validation/producer.py (new); config/experiment-contracts.toml ([contract.RD50-GDN-CHUNKED-RECURRENCE], author if missing).
+
 ## Validation
 
 Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1221_rd50_gdn_chunked_recurrence; patch-rebase-check --focal-overlay 1221_rd50_gdn_chunked_recurrence --source bigcherry-tuning. Hardware (on Brutus, not run here): gfx1100/gfx1201/gfx1030 fallback correctness (old kernel path unaffected); gfx1151 direct GDN op parity (recurrent state/output vs old kernel, long sequences) plus Qwen hybrid PPL/deterministic checks; only after correctness passes, gfx1151 GDN op time + E2E prefill benchmark with VGPR/LDS/workspace reporting and decode n=1 neutrality.
+
+Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1221_rd50_gdn_chunked_recurrence; patch-rebase-check --focal-overlay 1221_rd50_gdn_chunked_recurrence --source bigcherry-tuning. Hardware: gfx1100/gfx1201/gfx1030 fallback correctness runs on Brutus (correct host, non-target no-op control); gfx1151 direct GDN op parity, Qwen hybrid PPL/deterministic checks, and GDN/E2E prefill performance MUST run on a real gfx1151 host -- Brutus has no gfx1151 GPU and cannot be used for this leg.
 
 ## Effort & Risk
 
@@ -63,13 +74,14 @@ Supersedes RD50. Root prerequisite for PRBE43 and the later GDN-003/GDN-004 succ
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1221_rd50_gdn_chunked_recurrence, state=untested; found via `grep -rl RD50 patches/*/patch.toml`-equivalent search, SUMMARY.md confirms plan item RD50/RD51/RD52/RD53 mapping). Patch already subsumes PRBE43/44/45 by design (single kernel body, not separable hunks) -- see those items' notes for the same disposition. No GPT design session needed (patch already exists and matches this item's own gating description); qualification is real-hardware evidence gathering, not new design. GPT gateway was busy earlier this session (see PRBE32 notes) but was not needed for this item.
 
+2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding + validation.toml/producer requirement; corrected hardware plan (gfx1151 target qualification cannot run on Brutus).
+
 ## Change Log
 
 - 2026-09-09T10:56:23.562520+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:38.267576+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.319945+00:00 (updated-by): Updated: section:ledger-events
@@ -85,3 +97,5 @@ Supersedes RD50. Root prerequisite for PRBE43 and the later GDN-003/GDN-004 succ
 - 2026-09-24T02:33:26.697599+00:00 (updated-by): Updated: section:notes
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
 - 2026-09-24T02:36:27.926898+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:39:28.699485+00:00 (updated-by): Updated: section:steps, section:files, section:validation
+- 2026-09-24T04:40:01.702855+00:00 (updated-by): Updated: section:notes

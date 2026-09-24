@@ -25,6 +25,13 @@ IMPLEMENTED-AS-PATCH. Patch 1216_rd43_concurrent_join_fusion_guard (state=untest
 4. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216; this requires real hardware (Brutus) and is not run from this planning session.
 5. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
 
+1. Author run_rd43_contract_qualification() in tools/bigcherry/patch/validation_campaign.py -- verified: no such central runner currently exists (only run_rd08_contract_qualification()-style single-op patterns exist; there is no generic contract-qualification dispatcher). Follow the RD08 pattern: control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, emit CorrectnessResult(check="backend_reference", ...) explicitly -- do NOT reuse the existing patch-local producer's current check="ppl_equality" output as-is; it must be relabeled/re-emitted under check="backend_reference" per the RD43-CONCURRENT-JOIN-FUSION-GUARD contract's actual requirement.
+2. Confirm the [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model binding in config/experiment-contracts.toml already correctly names tierM-qwen35b-a3b-moe-mtp (the VA24 migration note below already fixed this) -- do not re-apply a now-stale 'correct the binding' step; verify only.
+3. Add `experiment-contract = "RD43-CONCURRENT-JOIN-FUSION-GUARD"` to patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (verified: currently no experiment-contract binding field present).
+4. Author patches/1216_rd43_concurrent_join_fusion_guard/validation.toml binding the corrected contract and the new qualification function; a validation/ directory already exists for this patch (has a prior rd43_correctness.py-style producer per notes) -- update/extend it in place rather than creating a duplicate.
+5. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216 (hardware, Brutus, not run here).
+6. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
+
 ## Detailed Solution & Technical Design
 
 See this item's own 2026-09-12 notes entries ("full GPT design for the formal qualification runners", req_3e42043eb71a4a92) for the complete, already-approved design: a shared _run_decode_logit_reference_pair() primitive plus two contract-specific runner functions (run_rd39_42_contract_qualification for 1215's bit_identical leg, run_rd43_contract_qualification for 1216's backend_reference leg, reusing the PPL-equality primitive). Only run_rd43_contract_qualification() plus the contract model-binding fix remain unimplemented for this item specifically; 1215's own bit_identical work is tracked under PRBE34.
@@ -37,9 +44,13 @@ Follow the exact pattern of the existing run_rd08_contract_qualification()/run_r
 
 tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model-binding fix); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/README.md (already documents the real evidence).
 
+tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (add experiment-contract binding); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD], verify model binding, already tierM-qwen35b-a3b-moe-mtp per notes); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/validation/ (existing directory, extend producer to emit check="backend_reference").
+
 ## Validation
 
 Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for the new qualification function following the RD08/RD73 test pattern. Hardware (on Brutus, not run here): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses evidence-gathering methodology already proven real in this item's notes.
+
+Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for run_rd43_contract_qualification() following the RD08 test pattern, asserting the emitted CorrectnessResult uses check="backend_reference". Hardware (Brutus, gfx1100/gfx1201 -- this item's contract targets those architectures, not gfx1151; Brutus is a correct host): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses the byte-exact backend_reference evidence already gathered per notes.
 
 ## Effort & Risk
 
@@ -168,13 +179,14 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1216_rd43_concurrent_join_fusion_guard, state=untested). This item's own prior notes already contain a complete GPT-approved design for the remaining formal qualification wiring (req_3e42043eb71a4a92) and real byte-exact backend_reference evidence -- no new GPT session was needed this batch; the structured plan sections above were written directly from that existing scoped design. GPT gateway was also unavailable this session for unrelated items (4 rejected attempts on PRBE32-34, see PRBE32 notes).
 
+2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding to patch.toml requirement, corrected producer to emit check="backend_reference" (not ppl_equality), removed stale central-runner-exists assumption.
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -216,3 +228,5 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 - 2026-09-24T02:30:01.847594+00:00 (updated-by): Updated: section:notes
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
 - 2026-09-24T02:36:10.506291+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:39:07.154381+00:00 (updated-by): Updated: section:steps, section:files, section:validation
+- 2026-09-24T04:39:50.878577+00:00 (updated-by): Updated: section:notes

@@ -15,17 +15,17 @@ priority: P1
 
 ## Description
 
-Replicate lm_head for DFlash2/DSpark full-vocabulary ranking under tensor split, preserving non-replication controls and explicit VRAM limits.
-
-TODO. Verified b11126 already has significant relevant infrastructure: `common/speculative.cpp` (~line 910) implements `common_speculative_impl_draft_dflash` for DFlash/DSpark drafts, already detecting `is_dflash2` from GGUF metadata (`llama_model_dflash_selector_top_k(model_dft)` -> `selector_top_k>0`) and reading `dflash.block_size`/`dflash.sample_from_anchor`/`dflash.attention.causal` metadata keys -- i.e. the item's step 'detect draft architecture/capability from GGUF metadata, not filename' is ALREADY satisfied on the draft side. What is NOT yet present: target-model lm_head replication under tensor split keyed off that draft capability. Also found: `src/llama-model.cpp` (~line 590) already has a `GGML_BACKEND_SPLIT_AXIS_MIRRORED` split-axis kind, used today for `output.weight` when `is_dsv4` (DeepSeek-v4 architecture) is true (~line 590-592) and for several bias/misc tensors by default (~line 601 'everything else' falls back to MIRRORED). This means the exact split-state primitive this item needs (a per-tensor 'mirror across all TP ranks instead of sharding' mode) already exists and is already used for one architecture's output.weight -- the gap is wiring an equivalent MIRRORED selection for the general case 'target lm_head must be mirrored because the attached draft requires full-vocabulary ranking and lacks its own output.weight', not inventing a new split kind from scratch.
+TODO, NOT-READY (target-load ordering unresolved, bias assumption wrong). Replicate lm_head for DFlash2/DSpark full-vocabulary ranking under tensor split -- CORRECTED per GPT review: (1) target-load ordering is explicitly unresolved (already flagged as NEEDS-VERIFICATION in this item's prior notes -- DFlash metadata is currently consumed after the target model already exists, too late to affect the target's own tensor-split decision); (2) the prior plan's bias assumption is WRONG: verified at b11126 src/llama-model.cpp:595-598, `pattern_output_bias` unconditionally returns `GGML_BACKEND_SPLIT_AXIS_0` -- it does NOT read or mirror `output.weight`'s own split-axis config/MIRRORED state (it only asserts output_weight exists via GGML_ASSERT); (3) the pre-load VRAM-fit check is unspecified.
 
 ## Steps
 
-- Detect draft architecture/capability from GGUF metadata before target load, not filename.
-- Carry explicit output_replicated through model parameters/construction and mark output weight and bias mirrored in Meta split state.
-- Enable it only when selector/Markov metadata proves full-output ranking and the draft lacks its own output.weight.
-- Cover shared-target lm_head and draft-owned lm_head; the latter must not force target replication.
-- Test 2+ GPU tensor split, layer-split, ordinary MTP/Eagle/no-spec controls, candidate selection vs single-GPU/reference, and VRAM fit failure.
+1. Add a pre-target-load draft GGUF capability/tensor-inventory probe (read the draft's dflash.*/dspark.* metadata and output.weight presence BEFORE target model construction begins) and thread an explicit replication flag through model params/model construction -- resolving the construction-ordering problem flagged in this item's own prior notes (DFlash metadata today is only available after ctx_tgt/target model already exist, per common/speculative.cpp's own constructor assert). A practical alternative if probing before load proves impractical: a CLI-level opt-in `--replicate-output-for-draft` flag set before target load.
+2. In the tensor-config lambda (src/llama-model.cpp, `pattern_output_weight` branch at ~588-594), extend the MIRRORED condition to `is_dsv4 || requires_replicated_output`.
+3. CORRECTED: in the `pattern_output_bias` branch (verified src/llama-model.cpp:595-598, currently unconditionally `return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);`), make it ALSO return `GGML_BACKEND_SPLIT_AXIS_MIRRORED` when `requires_replicated_output` is set (matching the weight's new mirrored state) -- otherwise preserve the existing unconditional AXIS_0 behavior. Do not assume the bias branch already reads or mirrors the weight's config; it does not.
+4. Specify the exact pre-load VRAM check/error site (currently unspecified): add an explicit VRAM delta estimate at load time (full output.weight copy per rank instead of a 1/N shard) and fail the load clearly, not silently truncate, if the replicated copy does not fit the declared per-device budget.
+5. Enable replication only when selector/Markov metadata proves full-output ranking and the draft lacks its own output.weight.
+6. Cover shared-target lm_head and draft-owned lm_head; the latter must not force target replication.
+7. Test 2+ GPU tensor split, layer-split, ordinary MTP/Eagle/no-spec controls, candidate selection vs single-GPU/reference, and VRAM fit failure.
 
 ## Detailed Solution & Technical Design
 
@@ -69,6 +69,8 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 
 2026-09-24 relevance at b11126: TODO. Grounded directly against b11126 (GGML_BACKEND_SPLIT_AXIS_MIRRORED + is_dsv4 output.weight handling in src/llama-model.cpp; is_dflash2/selector_top_k GGUF-metadata draft detection in common/speculative.cpp) -- anchors grep-verified, not guessed. GPT design request req_fd0a2a33c0804146 (batched PNRO11+PNRO12, dev-gpt-agent) was still running/had not returned a terminal response by the time this item needed to be finalized in this session; design was completed directly from source instead. If/when that GPT response lands later, a follow-up session should read it and reconcile against this design, particularly on the construction-ordering question flagged above.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed target-load ordering remains genuinely unresolved (real prerequisite work, not yet a design). Verified via direct read that src/llama-model.cpp's pattern_output_bias branch (lines 595-598) unconditionally returns GGML_BACKEND_SPLIT_AXIS_0 and does NOT read output.weight's own config/MIRRORED state as previously assumed -- corrected step 3 to explicitly extend the bias branch's own condition rather than relying on inherited state. Added the previously-unspecified pre-load VRAM check/failure requirement.
+
 ## Change Log
 
 - 2026-09-09T10:52:56.925530+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +87,4 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 - 2026-09-10T02:44:33.164554+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:51.105317+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
 - 2026-09-24T02:35:05.511646+00:00 (updated-by): Updated: section:effort_risk, section:notes
+- 2026-09-24T04:50:35.412744+00:00 (updated-by): Updated: section:description, section:steps, section:notes

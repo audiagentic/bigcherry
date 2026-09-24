@@ -20,11 +20,13 @@ TODO, hard-dependent on PRBE05. Evaluate direct Q8_1 production in RMS-norm's ow
 ## Steps
 
 1. Do not start until PRBE05's adversarial correctness matrix and capture-lifecycle gates pass -- this item compares B+PRBE05 against B+PRBE05+PRBE06, never against raw baseline B.
-2. In ggml_cuda_op_rms_norm (ggml/src/ggml-cuda/norm.cu:478) and/or ggml_cuda_op_rms_norm_fused (norm.cu:502, which already fuses RMS-norm with a following MUL), add a direct Q8_1 quantization of the F32 output, publishing it into PRBE05's cache via the reserve/publish API immediately after the kernel enqueue (never before -- publish-after-enqueue is the ordering PRBE05's contract requires to avoid racing the write).
-3. Restrict to qualifying patterns only (explicit output shape/stride/dtype checks); any nonqualifying pattern uses the existing native path (separate quantize kernel), unchanged.
-4. Verify direct-output equivalence against the standalone quantizer/reference path via independent re-quantize + byte-compare, exactly like PRBE05's own verify mode.
-5. Cover graph/non-graph execution and native fallback; measure quantization launch counts, memory, and graph effects.
-6. Compare B+PRBE05 vs B+PRBE05+PRBE06 with balanced repeats; record rejection explicitly if the marginal effect is not a statistically supported positive (no promotion on a flat or negative result).
+2. Add an exact graph-level eligibility selector BEFORE enabling direct production: ggml_cuda_op_rms_norm (norm.cu:478) has no visibility into its downstream consumer, so gate direct-Q8_1 production on an explicit check that the RMS-norm (or RMS-norm+MUL fused, norm.cu:502) output tensor is consumed by an eligible MMVQ dispatch (matching shape/dtype/stride the MMVQ seam in PRBE05 requires) -- do not quantize eagerly based on shape alone, since ggml_cuda_op_rms_norm's output may feed unrelated non-MMVQ consumers.
+3. "Quantize immediately after the RMS kernel enqueue" is still a second, separate quantization kernel launch, not direct in-kernel Q8_1 production -- treat it as such (a scheduling/fusion optimization, not literal single-launch production) unless implementing a genuine fused kernel per step 4.
+4. If pursuing true direct production: extend rms_norm_f32_cuda (norm.cu:304) and its templated rms_norm_f32<block,fused,...> launches (norm.cu:311-401) with a new template variant that emits Q8_1 blocks using the exact same semantics as quantize_row_q8_1_cuda, writing into PRBE05's cache via its reserve/publish API in the same kernel launch. If instead supporting ggml_cuda_op_rms_norm_fused (norm.cu:502), cache the actual mul_tensor->data (post-MUL) output, not the pre-MUL RMS intermediate -- the two are different tensors and only the actually-consumed one may be cached.
+5. Restrict to qualifying patterns only (explicit output shape/stride/dtype checks, proven downstream MMVQ consumer per step 2); any nonqualifying pattern uses the existing native path unchanged.
+6. Verify direct-output equivalence against the standalone quantizer/reference path via independent re-quantize + byte-compare.
+7. Cover graph/non-graph execution and native fallback; measure quantization launch counts, memory, and graph effects.
+8. Compare B+PRBE05 vs B+PRBE05+PRBE06 with balanced repeats; record rejection explicitly if the marginal effect is not a statistically supported positive.
 
 ## Detailed Solution & Technical Design
 
@@ -66,6 +68,8 @@ Successor key: patching-rdna-boost-experiments-rd10
 
 2026-09-24 relevance at b11126: TODO, blocked on PRBE05. Real anchors verified (norm.cu:478/502/304 + kernel templates 311-401). GPT design request submitted (req_5e0e57d9e29f44b0, batched with PRBE05/PRBE10); gateway congested at submission -- authored directly against verified anchors as a fallback.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: added an explicit graph-level producer/consumer eligibility selector (ggml_cuda_op_rms_norm has no downstream-consumer visibility, so shape-only gating would eagerly quantize unrelated outputs); clarified that post-enqueue quantization is a second kernel launch, not true direct production, unless a genuine fused template variant is built; corrected the fused-variant caching target to mul_tensor->data (post-MUL), not the RMS intermediate.
+
 ## Change Log
 
 - 2026-09-09T10:53:51.286520+00:00 (created-by): Created by capability-rebaseline-v3
@@ -81,3 +85,4 @@ Successor key: patching-rdna-boost-experiments-rd10
 - chg_20260910_023232_the-next-three-rdna-successors_5807
 - 2026-09-10T02:32:32.993441+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:16.031005+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:36:43.619023+00:00 (updated-by): Updated: section:steps, section:notes

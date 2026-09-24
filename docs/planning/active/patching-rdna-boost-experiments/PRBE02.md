@@ -19,16 +19,17 @@ TODO, rescoped off dead identity. PRBE02's target (RD05 WMMA flash-attn barrier/
 
 ## Steps
 
-1. Before starting: confirm PRBE110 has landed a new patches/<id>/ package carrying only the rd05-kbc-sync/rd05-k00-sync edits (check its state and plan-ids in patch.toml) -- if it has not landed yet, this item is blocked and should stay pending, not be force-progressed against the dead 1203 identity.
-2. Once the new RD05-only patch exists: resolve baseline composition via this project's real methodology (resolve_source_composition/materialize_composition, same pattern already used for the old 1203 campaign) with ONLY the new RD05 patch applied on top -- no RD06/RD07 co-application.
-3. Run the project's existing require_ppl_equality-based correctness harness (tools/bigcherry/experiment/perplexity.py) on gfx1201 (and gfx1100/gfx1030 controls) as a first-pass whole-model correctness signal -- this alone is NOT sufficient per this item's own acceptance criteria.
-4. Build the item's own stated targeted matrix: head sizes 192/256/320/512/576 where applicable, under BOTH graph and non-graph execution, repeated under load, output compared against native/reference. Author dedicated test-backend-ops or equivalent fixtures per head size if none already exist for these exact shapes.
-5. Run the backend corpus and architecture gates (gfx1100/gfx1201/gfx1030); any failure blocks both this item's closure and any dependent performance claim (there is currently no dependent performance item since RD06 is dead and RD07 lives in PRBE04, not PRBE02).
-6. Record the new patch's resolved identity (id, source SHA), environment, repetition counts and any negative/fallback evidence in this item's notes -- do not reuse the old 1203/PA39 PPL numbers as evidence for the new identity; they are provenance context only.
+1. PRBE110 must land a new patches/<id>/ package carrying ONLY the RD05 edits from 1203/patch.py: `rd05-k00-sync` and `rd05-kbc-sync` in ggml/src/ggml-cuda/fattn-mma-f16.cuh (both anchors verified present and unique in patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py at lines 669 and 687), plus an RD05-only BIGCHERRY_PATCH_HIT marker gated on the `BEST_FATTN_KERNEL_MMA_F16` case in fattn.cu. Exclude all rd06-*/rd0506-config-table/softcap edits from that package. This item is blocked until PRBE110 delivers that exact package.
+2. Bind PRBE02 to PRBE110's final RD05-only package id once it lands (record id+SHA in notes).
+3. Resolve baseline composition (resolve_source_composition/materialize_composition) with ONLY the new RD05-only patch applied -- no RD06/RD07 co-application.
+4. Run require_ppl_equality-based correctness harness (tools/bigcherry/experiment/perplexity.py) on gfx1201 (gfx1100/gfx1030 controls) as a first-pass signal -- not sufficient alone per acceptance criteria.
+5. Build the targeted matrix: head sizes 192/256/320/512/576, graph and non-graph, repeated under load, vs reference. Author dedicated test-backend-ops fixtures per head size if none exist.
+6. Run backend corpus + architecture gates (gfx1100/gfx1201/gfx1030); any failure blocks closure.
+7. Record the new patch identity, environment, repetition counts, fallback evidence -- do not reuse old 1203/PA39 PPL numbers as evidence for the new identity (provenance only).
 
 ## Detailed Solution & Technical Design
 
-Correctness-only, no performance claim, same design intent as originally written -- only the target identity changes (new RD05-only patch instead of 1203). The prior real gfx1201 PPL-equality pass (sigma=1.35, PASS, recorded in this item's existing notes) is directionally reassuring provenance but is NOT valid closing evidence for the new patch identity, since PA39's own decision explicitly voids reuse of 1203's receipt. The specific targeted head-size (192/256/320/512/576) graph/non-graph/loaded matrix required by this item's own acceptance criteria has never actually been run under any identity -- that remains the real, not-yet-done work regardless of which patch carries it.
+Correctness-only qualification, no performance claim. Target identity is now the RD05-only package PRBE110 must produce (patches/<id>/ carrying only rd05-k00-sync + rd05-kbc-sync edits to fattn-mma-f16.cuh, RD05-only activation marker at fattn.cu's BEST_FATTN_KERNEL_MMA_F16 case). The old gfx1201 PPL-equality pass (sigma=1.35, PASS) recorded under the dead 1203 identity is provenance only per PA39/req_f34f50a25c6240fe -- it does not close this item. The targeted head-size (192/256/320/512/576) graph/non-graph/loaded matrix has never been run under any identity and remains the real work, to be executed against PRBE110's new RD05-only package once it lands.
 
 ## Code Samples & Guidance
 
@@ -66,6 +67,10 @@ REAL RESULT 2026-09-12: gfx1201 PPL-equality correctness check completed. BC-bas
 
 2026-09-24 relevance at b11126: TODO, blocked on PRBE110's extraction deliverable; do not duplicate PRBE110's own steps. Prior real PPL-equality evidence (sigma=1.35, PASS) is provenance only, not valid closing evidence for a new identity per PA39/req_f34f50a25c6240fe. GPT design request submitted (req_990c48138f9b408e, batched with PRBE04); gateway was heavily congested at submission time (10 active gpt-auto sessions, recent composer-operation-timeout failures per agent_task_gateway_overview) -- if that request never completes, this plan was authored directly against the real patch.toml/SUMMARY.md evidence on disk instead.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE02's PRBE110 dependency to the RD05-only edits (rd05-k00-sync, rd05-kbc-sync in fattn-mma-f16.cuh, verified present in patches/1203.../patch.py) plus an RD05-only activation marker at fattn.cu's BEST_FATTN_KERNEL_MMA_F16 case, excluding all rd06-*/rd0506 edits; item remains pending/blocked on PRBE110.
+
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE02's PRBE110 dependency to the RD05-only edits (rd05-k00-sync, rd05-kbc-sync in fattn-mma-f16.cuh, verified present in patches/1203.../patch.py) plus an RD05-only activation marker at fattn.cu's BEST_FATTN_KERNEL_MMA_F16 case, excluding all rd06-*/rd0506 edits; item remains pending/blocked on PRBE110.
+
 ## Change Log
 
 - 2026-09-09T10:53:35.078709+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +90,5 @@ REAL RESULT 2026-09-12: gfx1201 PPL-equality correctness check completed. BC-bas
 - 2026-09-11T23:51:03.367650+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-12T03:20:07.065538+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T02:31:34.390785+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:34:23.654204+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T04:34:50.234264+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:notes

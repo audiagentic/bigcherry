@@ -19,11 +19,11 @@ TODO. Patch patches/1205_rd12_paired_mmvq_dual_output exists (state=untested, ex
 
 ## Steps
 
-1. Read patches/1205_rd12_paired_mmvq_dual_output/patch.py in full to confirm the exact pattern-matching predicate it implements (shared source allocation/overlap detection, disjoint outputs, shared quantized-X launch, runtime grid adjustment) before writing any test.
-2. Author exact-pattern fixtures: two MMVQ ops sharing one activation (same src1), same output shape, compatible op/type gates, safe (non-overlapping) view/data intervals -- and negative fixtures: overlapping-but-not-identical source, mismatched output shape, incompatible types, unsafe overlapping intervals.
-3. Verify GLU fusion precedence is untouched: ggml-cuda.cu:1691's `is_mul_mat_id` GLU-fusion check and the mul_mat_id_bias_glu_ops pattern at ggml-cuda.cu:3195 must still fire exactly as before when a graph contains both a GLU-fusable MUL_MAT_ID chain and an otherwise-pairable K/V MMVQ pair -- author a fixture where both patterns are graph-adjacent and confirm GLU wins where the pattern-matching order requires it.
-4. Run isolated-first: native baseline, then baseline+1205 alone (no 1207) -- correctness (paired vs unfused numerical equality), graph capture/replay, then causal performance.
-5. Only after isolated 1205 passes, define the declared 1205-vs-1207 composition recipe: an explicit ordering/precedence rule plus a fixture proving both patches' rewrites coexist correctly on a graph containing both patterns -- 1205 and 1207 remain composition-conflicting (per patch.toml `conflicts`) until this recipe is authored and validated; do not silently apply both.
+1. Read patches/1205_rd12_paired_mmvq_dual_output/patch.py in full to confirm the exact pattern-matching predicate (CORRECTED per source audit: the real `_DETECT_BLOCK` requires exact `mid->src[1] == mm_a->src[1]` (shared-activation identity, not overlap/allocation-sharing) and, as written, contains NO `ggml_cuda_check_fusion_memory_ranges()` call for the two destinations -- add explicit output-range safety before dispatch, e.g. `out_nodes[] = { i, j }` with `ggml_cuda_check_fusion_memory_ranges(cgraph, i, j-i+1, out_nodes, 2)` (or an equivalent exact interval check), in patches/1205_rd12_paired_mmvq_dual_output/patch.py before writing any test against the corrected predicate.
+2. Author exact-pattern fixtures matching the real predicate: two MMVQ ops with identical src1 (exact pointer/tensor identity), same output shape, compatible op/type gates, and now the added disjoint-output-range check passing -- and negative fixtures: src1 merely overlapping/allocation-sharing but not identical (must NOT match), overlapping output ranges (must be rejected once the range check is added), mismatched output shape, incompatible types.
+3. Verify GLU fusion precedence is untouched: ggml-cuda.cu:1691's `is_mul_mat_id` GLU-fusion check and the mul_mat_id_bias_glu_ops pattern at ggml-cuda.cu:3195 must still fire exactly as before.
+4. Run isolated-first: native baseline, then baseline+1205 alone (no 1207) -- correctness (paired vs unfused numerical equality) against the CORRECTED predicate and output-range check, graph capture/replay, then causal performance.
+5. Only after isolated 1205 passes, define the declared 1205-vs-1207 composition recipe; 1205 and 1207 remain composition-conflicting (per patch.toml `conflicts`) until this recipe is authored and validated.
 6. Record resolved patch identity, shape matrix, repetitions, and promotion/reject decision in this item's notes.
 
 ## Detailed Solution & Technical Design
@@ -63,6 +63,8 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 
 2026-09-24 relevance at b11126: TODO, no hardware evidence yet. GPT design request submitted (req_a8361cdd54af4bd5, batched with PRBE12); gateway was congested at submission time -- authored directly against patches/1205.../patch.toml and the project's own composition-conflict convention (declared in patch.toml `conflicts`) as a fallback.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: corrected the documented matcher predicate -- 1205's real `_DETECT_BLOCK` requires exact `mid->src[1] == mm_a->src[1]` identity, not shared-allocation/overlap detection, and has no output-range safety check. Added a required output-range safety check (`ggml_cuda_check_fusion_memory_ranges`) to patch 1205 before dispatch and updated the negative-fixture matrix to match the real predicate.
+
 ## Change Log
 
 - 2026-09-09T10:54:15.041193+00:00 (created-by): Created by capability-rebaseline-v3
@@ -95,3 +97,4 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 - chg_20260914_124427_run-rd12-contract-is-now-a-r_9981
 - 2026-09-14T12:44:30.679907+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:22.636649+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:38:53.320058+00:00 (updated-by): Updated: section:steps, section:notes

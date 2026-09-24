@@ -20,7 +20,7 @@ IMPLEMENTED-AS-PATCH (umbrella). Patch 1237_rd30_moe_mmq_compact_grid (state=unt
 ## Steps
 
 1. Confirm patch 1237's current STATE is still untested and no new hardware evidence has landed since 2026-09-12 (check patch.toml + SUMMARY.md).
-2. Run the full tools/bigcherry/patch_validation_campaign.py record->tune->promote->export->replay->bench->report pipeline for patch 1237 (not run yet, per its own SUMMARY.md) -- this is the umbrella action that formally supersedes the informal evidence already gathered.
+2. Run the full campaign pipeline for patch 1237 (record->tune->promote->export->replay->bench->report) via the real runner CORRECTED per source audit: `tools/bigcherry/patch/validation_campaign.py` (the previously stated `tools/bigcherry/patch_validation_campaign.py` path does not exist) -- this is the umbrella action that formally supersedes the informal evidence already gathered.
 3. Treat mean/expected-occupancy selection as an EXPLANATORY control only inside this campaign, never a standalone promoted candidate -- the compact block-map (PRBE24/PRBE25 scope) is the preferred treatment arm.
 4. Preserve exact expert/tile enumeration and legacy fallback identity throughout; do not let campaign tooling silently drop the fallback arm.
 5. Re-run EC13/RD94 hostile routing (uniform, Zipf/skew, concentrated, single-hot, captured natural routing at n_expert=256) as part of the formal campaign, even though informal versions already passed, since campaign-recorded evidence is what gates promotion, not prose.
@@ -40,7 +40,7 @@ patches/1237_rd30_moe_mmq_compact_grid/ (existing, unchanged); tools/bigcherry/p
 
 ## Validation
 
-Full tools/bigcherry/patch_validation_campaign.py run on Brutus (not run here): record->tune->promote->export->replay->bench->report, dual-gfx1100, Qwen3.6-35B-A3B, hostile routing matrix, native/tune correctness, non-target architecture controls. Only after this formally-recorded run may patch 1237's STATE move from untested toward validated.
+Full campaign run via `tools/bigcherry/patch/validation_campaign.py` on Brutus (CORRECTED runner path; not run here): record->tune->promote->export->replay->bench->report, dual-gfx1100, Qwen3.6-35B-A3B, hostile routing matrix, native/tune correctness, non-target architecture controls. Only after this formally-recorded run may patch 1237's STATE move from untested toward validated.
 
 ## Effort & Risk
 
@@ -62,6 +62,8 @@ Successor key: patching-rdna-boost-experiments-rd30
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1237, untested). No GPT design request needed (no new code -- qualification-only item); PRBE24/PRBE25 sub-scope GPT design was likewise not needed for the same reason. Umbrella item depends on PRBE24 and PRBE25's narrower validation passing first.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the campaign runner path throughout -- `tools/bigcherry/patch_validation_campaign.py` does not exist; the real module is `tools/bigcherry/patch/validation_campaign.py`. Same correction applies to PRBE24/PRBE25's shared campaign references.
+
 ## Change Log
 
 - 2026-09-09T10:55:00.176506+00:00 (created-by): Created by capability-rebaseline-v3
@@ -79,3 +81,4 @@ Successor key: patching-rdna-boost-experiments-rd30
 - chg_20260911_220609_documented-the-most-thoroughly_1414
 - 2026-09-11T22:06:09.771118+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:29.818080+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:43:47.267469+00:00 (updated-by): Updated: section:steps, section:validation, section:notes

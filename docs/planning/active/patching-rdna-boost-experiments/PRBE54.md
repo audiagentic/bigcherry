@@ -17,6 +17,8 @@ priority: null
 
 TODO. Dedicated F16 dequant for Q4_0/Q4_1/Q5_0/Q5_1 KV cache types. Relevance at b11126: confirmed still generic/scalar -- ggml/src/ggml-cuda/convert.cu's templated `dequantize_block<qk,qr,dequantize_kernel_t,dst_t>` (lines 8-40) is a per-thread scalar-callback template (calls `dequantize_kernel(vx, ib, iqs, v)` then writes v.x/v.y individually via `ggml_cuda_cast`), used for the general quant types. Only Q8_0 has a dedicated vectorized half2 fast path: `dequantize_block_q8_0_f16` (lines 43-80) uses `half2 * y2` + `__hmul2` SIMD multiply. No equivalent half2-vectorized function exists for Q4_0/Q4_1/Q5_0/Q5_1 at this pin -- item's premise holds, not upstream-absorbed.
 
+TODO, corrected scope. GPT-corrected premise: Q4_0 and Q4_1 already have dedicated (non-generic-template) dequant kernels at b11126 -- `dequantize_block_q4_0`/`dequantize_block_q4_1` (ggml/src/ggml-cuda/convert.cu:85,113), NOT the generic templated `dequantize_block` this item originally assumed for them. Only Q5_0/Q5_1 remain on generic contiguous dequant (`dequantize_block_q5_K` at :163 is a different, already-specialized K-quant, not the Q5_0/Q5_1 legacy types this item targets -- verify Q5_0/Q5_1 specifically are NOT specialized, separately from Q5_K). More importantly, `ggml_get_to_fp16_cuda()` (convert.cu:547) is a GLOBAL type->function table with no call-site/use-context parameter -- replacing its Q4/Q5 entries cannot be scoped to "KV-only" without affecting every other caller (e.g. weight dequant) of the same function.
+
 ## Steps
 
 1. Confirm no Q4/Q5-specific vectorized function exists: `git -C work/upstream/llama.cpp.git grep -n 'dequantize_block_q4\|dequantize_block_q5' b11126 -- ggml/src/ggml-cuda/convert.cu` (expected: no hits beyond the generic template instantiation lines -- verify before implementing).
@@ -26,6 +28,13 @@ TODO. Dedicated F16 dequant for Q4_0/Q4_1/Q5_0/Q5_1 KV cache types. Relevance at
 5. Preserve the existing generic `dequantize_block` template as fallback for any type/shape combination the new function does not cover (e.g. odd needs_check tail handling -- copy `dequantize_block_q8_0_f16`'s `need_check` template-bool pattern).
 6. Add test-backend-ops CPY/GET_ROWS-equivalent correctness cases (exact numerical match against the existing scalar path) for each of the 4 types, plus a KV-shaped MUL_MAT/FLASH_ATTN_EXT case exercising the dequant through the real FA K/V staging path.
 7. Benchmark dequant kernel time + PP/TG + memory vs Q8_0/F16 controls at the context lengths in the item description; promote per-type only where AMD (gfx1100/gfx1201) shows a repeatable win.
+
+1. Confirm precisely which of Q4_0/Q4_1/Q5_0/Q5_1 lack a half2-vectorized fast path: `git -C work/upstream/llama.cpp.git grep -n 'dequantize_block_q4_0\|dequantize_block_q4_1\|dequantize_block_q5_0\|dequantize_block_q5_1' b11126 -- ggml/src/ggml-cuda/convert.cu` and read each found function body for half2/__hmul2 usage (Q4_0/Q4_1 exist per this pass's grep but their vectorization level is unconfirmed; Q5_0/Q5_1 need the same check).
+2. Do NOT modify ggml_get_to_fp16_cuda()'s global table. Instead add a FA-specific selector `ggml_get_to_fp16_fattn_cuda(ggml_type type)` that defaults to calling `ggml_get_to_fp16_cuda(type)` for every type except the Q4/Q5 KV types being optimized, where it returns the new half2-vectorized variant.
+3. Call `ggml_get_to_fp16_fattn_cuda()` only at the K/V conversion call sites in ggml/src/ggml-cuda/fattn-common.cuh (real anchors: lines ~1033/1041/1067/1076 per prior plan draft -- verify exact line numbers at b11126 before finalizing) -- every other caller of ggml_get_to_fp16_cuda() (weight dequant, etc.) is untouched.
+4. Model any new vectorized function on `dequantize_block_q8_0_f16`'s pattern (half2/__hmul2, block-once load) for whichever of Q4_0/Q4_1/Q5_0/Q5_1 are confirmed (step 1) to still be scalar.
+5. Add test-backend-ops correctness cases (exact numerical match against the existing path) for each newly-vectorized type, plus a KV-shaped FLASH_ATTN_EXT case exercising the new FA-specific selector.
+6. Benchmark dequant kernel time + PP/TG + memory vs Q8_0/F16 controls at the context lengths in the item description; promote per-type only where AMD (gfx1100/gfx1201) shows a repeatable win.
 
 ## Detailed Solution & Technical Design
 
@@ -110,6 +119,8 @@ Successor key: patching-rdna-boost-experiments-rd64
 
 2026-09-24 relevance at b11126: confirmed Q4/Q5 KV dequant still uses generic scalar `dequantize_block` template (convert.cu:8-40); only Q8_0 has a dedicated half2-vectorized fast path (`dequantize_block_q8_0_f16`, convert.cu:43-80). GPT design request req_bf8959fb36d248e4 (batched with PRBE53, submitted, still running as of this pass -- PRBE53 was dispositioned directly from source evidence without waiting; this PRBE54 plan was likewise written directly from source evidence, GPT response to be cross-checked opportunistically).
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- corrected premise (Q4_0/Q4_1 already have dedicated dequant_block_q4_0/_q4_1 kernels, convert.cu:85/113, verified); scoped fix to a new FA-specific ggml_get_to_fp16_fattn_cuda() selector rather than editing the global ggml_get_to_fp16_cuda() table which has no call-site context.
+
 ## Change Log
 
 - 2026-09-09T10:57:14.838615+00:00 (created-by): Created by capability-rebaseline-v3
@@ -125,3 +136,5 @@ Successor key: patching-rdna-boost-experiments-rd64
 - chg_20260910_031217_repaired-four-more-active-succ_7909
 - 2026-09-10T03:12:17.962856+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:02.800907+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:42:19.256026+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:42:24.254176+00:00 (updated-by): Updated: section:notes

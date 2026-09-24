@@ -19,12 +19,12 @@ TODO, narrowed to remaining scope -- real hardware correctness evidence already 
 
 ## Steps
 
-1. Re-read patches/1206_rd13_mul_mat_add_view_fusion/patch.py's existing BIGCHERRY_PATCH_HIT trace marker (added following RD12's/other rdna-boost items' pattern) and confirm it's still present and gated the same way (BIGCHERRY_PATCH_TRACE-gated GGML_LOG_WARN, once-per-process).
-2. Run a real activation-trace probe: launch with BIGCHERRY_PATCH_TRACE=1 against an SSM/Mamba-family model (patch.py's own docstring says the view pattern needs one to fire -- confirm this requirement from the actual patch.py text at implementation time) and confirm the marker fires during a real request, proving the fusion actually activates (the existing gpt-oss-20b PPL run is MoE, not confirmed to exercise the RESHAPE-mediated path).
-3. Author the negative-fixture matrix: null addend, ADD wired to the wrong operand, extra consumers on the VIEW node, a non-VIEW node in the mediating position, and a direct-ADD (non-RESHAPE-mediated) near-miss -- each must NOT trigger the fusion; verify via the same trace marker (absence of BIGCHERRY_PATCH_HIT) plus output equality to the legacy direct-ADD matcher's behavior.
+1. Re-read patches/1206_rd13_mul_mat_add_view_fusion/patch.py's existing activation markers -- CORRECTED per source audit: both markers (patch.py lines ~222 and ~235) currently use `GGML_LOG_INFO`, which is not reliably visible under normal unattended llama-server/bench verbosity (per this project's own HI90/1231 finding, INFO is filtered below llama-server's default level); change both to `GGML_LOG_WARN`, matching the convention already corrected for sibling patches (e.g. RD12/1205).
+2. Run a real activation-trace probe with BIGCHERRY_PATCH_TRACE=1 (now WARN-level) against an SSM/Mamba-family model and confirm the marker fires during a real request.
+3. Author the negative-fixture matrix: null addend, ADD wired to the wrong operand, extra consumers on the VIEW node, and a non-VIEW node in the mediating position -- CORRECTED: the plan's prior wording said "VIEW" generically but the patch matches exactly `GGML_OP_RESHAPE` in the mediating position, not any VIEW-family op; fixtures must target RESHAPE specifically. A direct ADD (MUL_MAT->ADD with no RESHAPE in between) is NOT a negative-fusion case for this patch -- it must retain the pre-existing legacy (unrelated) direct fusion behavior unchanged and simply must not emit the 1206_rd13 marker; construct that fixture and assert both facts (legacy fusion still fires; RD13 marker does not).
 4. Run graph capture/replay with the fusion active on a real activating model; confirm stability across repeated capture/replay cycles.
-5. Only after 2-4 pass, run the real performance claim: balanced timing (moe_decode-style workload per the contract) comparing baseline vs baseline+1206 on an activating model, with enough repeats for a defensible CI.
-6. Author validation.toml and bind the contract once require_execution_package()'s gate requirements are otherwise satisfiable -- if still blocked by the same unconditional-gate issue other rdna-boost items hit, record that explicitly as a known blocker rather than working around it silently.
+5. Only after 2-4 pass, run the real performance claim comparing baseline vs baseline+1206 on an activating model, with enough repeats for a defensible CI.
+6. Author validation.toml and bind the contract once require_execution_package()'s gate requirements are otherwise satisfiable.
 
 ## Detailed Solution & Technical Design
 
@@ -74,6 +74,8 @@ Remaining real work: real activation-trace verification (has real markers alread
 
 2026-09-24 relevance at b11126: TODO, narrowed -- do not repeat the already-real PPL-equality/no-regression evidence; focus on activation proof, negative fixtures, performance, and contract binding. GPT design request submitted (req_a8361cdd54af4bd5, batched with PRBE11); gateway congested at submission -- authored directly against this item's own existing real-hardware notes and patches/1206.../patch.py as a fallback.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: verified via grep that patch 1206's two activation markers use GGML_LOG_INFO (patch.py lines ~222, ~235) -- changed step 1 to require both be changed to GGML_LOG_WARN. Corrected the mediating-node terminology from generic "VIEW" to the patch's actual match target GGML_OP_RESHAPE, and clarified that direct MUL_MAT->ADD (no RESHAPE) should retain legacy fusion behavior without emitting the 1206_rd13 marker rather than being treated as a rejected pattern.
+
 ## Change Log
 
 - 2026-09-09T10:54:19.359011+00:00 (created-by): Created by capability-rebaseline-v3
@@ -94,3 +96,4 @@ Remaining real work: real activation-trace verification (has real markers alread
 - chg_20260911_212428_finished-documenting-one-more_3069
 - 2026-09-11T21:24:28.100057+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:46.365428+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:39:02.337298+00:00 (updated-by): Updated: section:steps, section:notes

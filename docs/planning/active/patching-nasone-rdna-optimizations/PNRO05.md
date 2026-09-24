@@ -15,16 +15,18 @@ priority: P0
 
 ## Description
 
-Qualify the MTP-specific GDN prefix/tail composition independently from PNRO04's raw kernel. Chunk only the long prefix and preserve the final K snapshot-producing recurrence.
+TODO, NOT-READY (rescoped). Verified via patch.py: 1254 only defines the eligibility predicate `bigcherry_nro05_mtp_prefix_candidate()` -- prefix execution, temporary state ownership, the K-token sequential tail, snapshot publication, and fallback are all unwired (nothing actually runs the prefix/tail split). Qualify the MTP-specific GDN prefix/tail composition independently from PNRO04's raw kernel once wired.
 
 ## Steps
 
-1. Require PNRO04 and enable only non-KDA, K>1, n_seqs==1, sufficiently long supported sequences.
-2. Compute n_prefix=n_tokens-K, run chunked prefix with temporary pool-owned state, and use existing sequential recurrence for exactly final K tokens.
-3. On synchronous rejection/failure, use original full-sequential path.
-4. Validate every snapshot slot, final recurrent state, output/logits, threshold edges, K=2/3/5/8, sequence count, graph capture/replay, and pool lifetime.
-5. Include FP32 chunked-prefix control where feasible to separate orchestration errors from BF16 kernel error.
-6. Measure prefix savings versus transition/allocation overhead and MTP acceptance.
+1. Require PNRO04 and enable only non-KDA, K>1, n_seqs==1, sufficiently long supported sequences (existing predicate).
+2. Extend ggml_cuda_op_gated_delta_net_impl() (verify exact function name/location at implementation time) to actually run [0, n_tokens-K) through PNRO04's chunked kernel into pool-owned temporary state, then exactly K tokens through the existing stock sequential recurrence -- this wiring does not exist today.
+3. Publish output/snapshot slots ONLY after both stages succeed; preserve original state/output until success so a rejection can safely rerun the full sequential path.
+4. Add a prefix-tail activation marker (BIGCHERRY_PATCH_TRACE-gated) -- none exists today.
+5. On synchronous rejection/failure, use original full-sequential path.
+6. Validate every snapshot slot, final recurrent state, output/logits, threshold edges, K=2/3/5/8, sequence count, graph capture/replay, and pool lifetime.
+7. Include FP32 chunked-prefix control where feasible to separate orchestration errors from BF16 kernel error.
+8. Measure prefix savings versus transition/allocation overhead and MTP acceptance.
 
 ## Detailed Solution & Technical Design
 
@@ -70,6 +72,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1254_nro05_gdn_mtp_prefix_tail exists, state=untested, depends on PNRO04's patch 1253. No upstream equivalent. Disposition: validate/qualify existing patch; no GPT design needed.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1254 only defines the eligibility predicate with no prefix execution, temp state, tail, publication, or fallback wired -- added the required extension to ggml_cuda_op_gated_delta_net_impl(), the success-gated publication order, and a required activation marker (none existed).
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +89,4 @@ Migration: capability-rebaseline-v3-2026-09
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.303796+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:15.579509+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-09-24T04:49:16.618864+00:00 (updated-by): Updated: section:description, section:steps, section:notes

@@ -17,6 +17,8 @@ priority: null
 
 TODO, primary approach (per item's own preference order). Confirmed real gap at b11126: `ggml_cuda_graph_get_key(ggml_cgraph * cgraph)` in ggml/src/ggml-cuda/ggml-cuda.cu returns only `cgraph->nodes[0]` (the first node's pointer) as the cache key for `cuda_ctx->cuda_graph(graph_key)` -- it carries NO shape/topology information, so a captured graph is reused across calls whose FA stream/shape topology differs as long as the first node's address is the same. This is a plausible root cause for R9700/gfx1201 100K+-context FA instability: the graph executable captured for one topology gets blindly `cudaGraphExecUpdate`'d or replayed against a structurally different one.
 
+TODO, premise corrected (same underlying disproof as PRBE66). GPT confirmed the prior claim that `ggml_cuda_graph_get_key` returning only `cgraph->nodes[0]` means 'no topology information' is misleading: the caller, `ggml_cuda_graph_update_required` (verified, ggml-cuda.cu ~2591-2635), ALREADY does full per-node/per-source property comparison (memcmp of copied tensor struct plus each source's data ptr/ne[]/nb[]) and forces recapture on any difference -- this plan's proposed FA-only fingerprint (`ggml_cuda_graph_topology_fingerprint`) would DUPLICATE and be WEAKER than what already exists (it only hashes FA nodes' ne[], missing the existing check's src-pointer and full-tensor-struct comparison). The only plausible uncovered case is the early `cgraph->uid != 0 && cgraph->uid == graph->uid` fast path (same line as PRBE66's finding), which skips the property comparison entirely when the cgraph object's own uid is unchanged.
+
 ## Steps
 
 1. Reproduce the R9700 100K+ FA failure with GGML_CUDA_OP_TIMING/BIGCHERRY_PATCH_TRACE-style logging added around `ggml_cuda_graph_update_required` and `ggml_cuda_graph_get_key` to confirm: does the key (first-node pointer) stay identical across the failing transition while the actual node count/shapes change underneath it?
@@ -25,6 +27,13 @@ TODO, primary approach (per item's own preference order). Confirmed real gap at 
 4. Add the new topology-fingerprint field to the cached `ggml_cuda_graph` struct (ggml-cuda.cu, near its other members) and thread it through `cuda_ctx->cuda_graph(first_node_ptr)`'s map value.
 5. Correctness/regression test: repeated 100K+-context runs (long-run stability, no crash, output-identical vs graphs-disabled baseline) plus stable-topology controls (short context, repeated identical shape) confirming recapture does NOT fire spuriously and the existing graph speedup is retained.
 6. Compare recapture frequency/cost directly against PRBE66's narrower bypass approach; promote this over PRBE66 only if recapture cost stays bounded and output-identical across repeated long-context runs.
+
+1. Do NOT implement the `ggml_cuda_graph_topology_fingerprint()` design from the prior plan draft -- it duplicates and is weaker than the existing full node-property comparison already in `ggml_cuda_graph_update_required`.
+2. Instrument the R9700/gfx1201 100K+-context FA failure specifically at the `cgraph->uid == graph->uid` fast-path branch (same instrumentation as PRBE66 step 1 -- this item and PRBE66 must NOT ship two separate, possibly-conflicting fixes to the same function; coordinate and converge on one before either is implemented) to determine: does the failing transition hit this fast path with `uid` unchanged but real node/source data changed underneath?
+3. If confirmed: the correct fix is not a NEW fingerprint mechanism but closing the fast-path gap itself -- either stop trusting `uid` equality alone (always run the existing full property comparison, accepting its cost), or add a narrow, cheap FA-specific check (src[1]->ne[1] for FLASH_ATTN_EXT nodes) that must ALSO match before the fast path is allowed to return false.
+4. If NOT confirmed (uid fast path is not implicated): report the actual mechanism found (e.g. `cudaGraphExecUpdate`'s error handling at ggml-cuda.cu ~2641-2657, already flagged as a fallback hypothesis in the original plan) rather than proceeding on this design.
+5. This item and PRBE66 converge on a single implementation once step 2's evidence is in hand -- do not implement both independently.
+6. Correctness/regression test: repeated 100K+-context runs (no crash, output-identical to graphs-disabled baseline) plus stable-topology controls confirming the fast path still short-circuits when nothing changed (no spurious recapture cost, existing speedup retained).
 
 ## Detailed Solution & Technical Design
 
@@ -89,6 +98,8 @@ Successor key: patching-rdna-boost-experiments-rd84
 
 2026-09-24 relevance at b11126: TODO confirmed with a real, verified gap -- `ggml_cuda_graph_get_key` returns only `cgraph->nodes[0]` (git show b11126:ggml/src/ggml-cuda/ggml-cuda.cu line 2591-2593), no shape/topology awareness at all, supporting the stale-key hypothesis as plausible root cause (still unconfirmed pending step 1's real reproduction). GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003); plan authored directly from verified source -- no GPT request id.
 
+2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- disproved 'no shape/topology awareness' premise (same finding as PRBE66); the proposed FA-only fingerprint duplicates and is weaker than the existing full node-property comparison in ggml_cuda_graph_update_required; narrowed to instrumenting and closing the uid-equality fast-path gap, converging with PRBE66 on one fix rather than two.
+
 ## Change Log
 
 - 2026-09-09T10:58:14.009489+00:00 (created-by): Created by capability-rebaseline-v3
@@ -104,3 +115,5 @@ Successor key: patching-rdna-boost-experiments-rd84
 - chg_20260910_031805_repaired-four-more-graph-and-v_2834
 - 2026-09-10T03:18:05.362966+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:42.641725+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:47:06.065592+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:47:10.532978+00:00 (updated-by): Updated: section:notes

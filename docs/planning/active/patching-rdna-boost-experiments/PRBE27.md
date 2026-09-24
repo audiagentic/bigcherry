@@ -15,14 +15,14 @@ priority: null
 
 ## Description
 
-TODO, hardware-blocked. Same redesign-against-current-table approach as PRBE22, scoped to gfx1151 (RDNA3.5, Strix Halo integrated) which already has its OWN dedicated table function `ggml_cuda_mmq_get_config_rdna3_5` (confirmed at b11126, mmq-config-rdna3-5.cuh) -- so 'a dedicated RDNA3.5 MMQ device table' already EXISTS upstream; PRBE27's real scope is tuning/redesigning that existing table's candidate rows, not creating a new dedicated table from scratch. This project has NO gfx1151 hardware (project hardware is gfx1100/gfx1201/gfx1030 per rdna-plan-brief.md and CLAUDE.md/memory) -- this item cannot be validated until such hardware is available. Original upstream PR #25 diff is obsolete against the current table and must not be ported verbatim.
+SUPERSEDED/COMPLETED-ADJACENT for its own stated title goal (per GPT review), retune successor remains hardware-blocked. CORRECTED: gfx1151 already has its OWN dedicated MMQ table upstream at b11126 -- `ggml_cuda_mmq_get_config_rdna3_5` is dispatched via `if (GGML_CUDA_CC_IS_RDNA3_5(cc)) { return ggml_cuda_mmq_get_config_rdna3_5(type, J, fallback); }` and `mmq-config-rdna3-5.cuh` is populated with real rows -- this item's literal title goal ('dedicated RDNA3.5 MMQ device table') is already met and should be marked superseded/completed for that scope. Remaining retuning work (candidate-row replacement within the existing table) has no exact replacement CASE rows defined and remains explicitly hardware-blocked (no gfx1151 in this project's fleet).
 
 ## Steps
 
-1. Use the same catalog-driven approach as PRBE22 (tools/bigcherry/tuning/catalog.py enumerate_mmq, reading mmq-config-rdna3-5.cuh directly) to define gfx1151-only candidate table rows for dense/MoE Qwen corpus at exact Q4/Q6/Q8 shapes.
-2. Build/non-selection controls on gfx1100/gfx1201 (candidates gated `cc` to RDNA3.5's specific value must not be selected on RDNA3/RDNA4 -- verify via build-clean + candidate-selection unit test, no hardware needed for this check).
-3. Author the candidate rows and campaign config now (design-only deliverable).
-4. DO NOT run hardware validation -- retain explicit 'hardware-blocked redesign' disposition until gfx1151 hardware is available in this project.
+1. Mark the 'dedicated table' portion of this item's scope superseded/completed (see notes) -- upstream already provides ggml_cuda_mmq_get_config_rdna3_5 and a populated mmq-config-rdna3-5.cuh.
+2. If retaining a retune successor item: specify exact existing CASE rows to REPLACE using the real CASE-row schema (per PRBE22's correction: `CASE(type, nthreads, occupancy, I, J, sram_layout, K_vram, stream_k, fallback)`, keyed by (type,J,fallback) -- inserting a duplicate-key row is unreachable) inside mmq-config-rdna3-5.cuh; keep architecture selection unchanged at `if (GGML_CUDA_CC_IS_RDNA3_5(cc)) { return ggml_cuda_mmq_get_config_rdna3_5(type, J, fallback); }`.
+3. Build/non-selection controls on gfx1100/gfx1201 (candidates gated to RDNA3.5 must not be selected on RDNA3/RDNA4).
+4. Author the candidate rows and campaign config now (design-only deliverable); do not run hardware validation -- retain 'hardware-blocked redesign' disposition until gfx1151 hardware is available.
 5. When hardware becomes available: run the same parity/temp-0/PP/TG/resource-stat campaign described in PRBE22's validation section, scoped to gfx1151.
 
 ## Detailed Solution & Technical Design
@@ -61,6 +61,8 @@ Successor key: patching-rdna-boost-experiments-rd34
 
 2026-09-24 relevance at b11126: TODO, hardware-blocked. Confirmed gfx1151 already has its own dedicated ggml_cuda_mmq_get_config_rdna3_5 table function upstream -- PRBE27's title goal ('dedicated RDNA3.5 table') is already met; remaining work is candidate-row tuning within it, blocked on gfx1151 hardware this project does not have. GPT design request for PRBE22+27 hit a queue-saturated gateway and was not obtained in-session; plan authored directly from verified mmq.cuh source.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: this item's literal title goal (a dedicated RDNA3.5 MMQ table) is already met upstream -- flagged the 'dedicated table' scope as superseded/completed, keeping only the candidate-row retune successor, which now uses PRBE22's corrected CASE-row schema (replace by key, not insert) and remains hardware-blocked pending gfx1151 fleet availability.
+
 ## Change Log
 
 - 2026-09-09T10:55:19.101435+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +78,4 @@ Successor key: patching-rdna-boost-experiments-rd34
 - chg_20260910_025542_rdna-successors-prbe2628-now_5552
 - 2026-09-10T02:55:42.894059+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:00.635833+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:45:30.449119+00:00 (updated-by): Updated: section:description, section:steps, section:notes

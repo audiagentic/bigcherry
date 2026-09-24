@@ -20,13 +20,14 @@ TODO, two independent sub-candidates. (1) SSM conv_input-concat folding into qkv
 ## Steps
 
 Sub-candidate 1 (conv_input fold):
-1. Audit ggml/src/ggml-cuda/ssm-conv.cu/.cuh and ssm-scan.cu/.cuh for the current concat->conv1d->qkv-read chain.
-2. Define guard: contiguous conv_state, F32, ne[1]==1 (decode shape); insert the fold at the same fusion-detection site used for PRBE18 (ggml-cuda.cu ggml_can_fuse_subgraph idiom, ~3300-3350) as a sibling branch, OR as a lower-level change inside ssm-conv.cu if the fold is below the op-fusion granularity (i.e. inside a single op's kernel rather than across ops) -- determine which during implementation by checking whether conv_input concat is its own ggml op (GGML_OP_CONCAT) feeding GGML_OP_SSM_CONV, or already an internal SSM_CONV detail.
-3. Fallback to native concat+conv when guard fails.
+1. CORRECTED per source audit: at b11126 the conv_input concat is explicitly a real `GGML_OP_CONCAT` op, not an internal SSM_CONV detail -- verified anchor: src/models/delta-net-base.cpp:472 `ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, qkv_mixed, 0);`. conv_input also feeds recurrent-state VIEW/CPY updates (the conv_state_last -> conv_state_update CPY consumers) which any fusion rewrite must NOT break -- audit and explicitly preserve those consumers before authoring the fold.
+2. Define the exact CONCAT->SSM_CONV subgraph: the edges, out-nodes, and the memory-safety check (via ggml_check_edges/output-range check) that proves the fold only fires when conv_input's sole meaningful consumers are the SSM_CONV read and the preserved CPY updates; guard: contiguous conv_state, F32, ne[1]==1 (decode shape).
+3. Insert the fold at the same fusion-detection site used for PRBE18 (ggml-cuda.cu's ggml_cuda_try_fuse-family idiom) as a sibling branch anchored on the exact `ggml_concat(ctx0, conv_states, qkv_mixed, 0)` model-builder line plus its corresponding CUDA fusion dispatch site.
+4. Fallback to native concat+conv when guard fails, preserving the conv_state_last->conv_state_update CPY path unchanged in all cases.
 Sub-candidate 2 (rpb=2 small-K MoE):
-4. Do NOT hand-write a new kernel. Use tools/bigcherry/tuning/catalog.py's enumerate_mmvq() to add a small_k=true, rows_per_block=2 candidate row for the target quant types at small expert hidden-dim (K) shapes seen in tiny/A3B MoE configs, gated gfx1100 (or the relevant architecture family).
-5. Run the existing record->tune->promote campaign (tools/bigcherry/campaign/campaign.py) scoped to this candidate set; do not assume cache or SSM-chain dependency (per item text) -- this sub-candidate is independent of PRBE05/PRBE18.
-6. Compare against the native (small_k=false) row as control.
+5. Split this into its OWN separate candidate package/set (CORRECTED -- do not bundle with sub-candidate 1's patch). Do NOT hand-write a new kernel. Use tools/bigcherry/tuning/catalog.py's enumerate_mmvq() to add exact (type, ncols, K, nwarps, rpb=2) candidate rows for the target quant types at small expert hidden-dim (K) shapes seen in tiny/A3B MoE configs, gated gfx1100. Declare `requires=["0600_mmvq_geometry"]` on this package (CORRECTED -- was previously omitted despite depending on the HI09 explicit-geometry template mechanism from that patch).
+6. Run the existing record->tune->promote campaign (tools/bigcherry/campaign/campaign.py) scoped to this candidate set; independent of PRBE05/PRBE18.
+7. Compare against the native (small_k=false) row as control.
 
 ## Detailed Solution & Technical Design
 
@@ -72,6 +73,8 @@ Successor key: patching-rdna-boost-experiments-rd27
 
 2026-09-24 relevance at b11126: TODO. Sub-candidate 2 is materially cheaper than the item text implies: verified that calc_rows_per_block's small_k parameter and the HI09 nwarps_explicit/rows_per_block_explicit template mechanism already exist as validated core framework (patch 0600_mmvq_geometry); gfx1100's RDNA3_0 table_id does not consume small_k natively, so the explicit-geometry override path is required. GPT design request submission for this item hit a rejected/queue-saturated gateway (concurrency limit reached: 8 queued, 2 running gateway-wide) and was not resubmitted successfully in-session; plan authored directly from verified source.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: resolved sub-candidate 1's central design choice -- verified conv_input is explicitly GGML_OP_CONCAT at src/models/delta-net-base.cpp:472, and added the requirement to preserve its conv_state_last->conv_state_update CPY consumers, which the prior plan did not account for. Split sub-candidate 2 into its own separate package/candidate set with requires=["0600_mmvq_geometry"] (previously bundled and missing that dependency), with exact (type,ncols,K,nwarps,rpb=2) candidate rows to be enumerated at implementation time.
+
 ## Change Log
 
 - 2026-09-09T10:54:53.078402+00:00 (created-by): Created by capability-rebaseline-v3
@@ -87,3 +90,4 @@ Successor key: patching-rdna-boost-experiments-rd27
 - chg_20260910_025218_rdna-successors-prbe2022-now_5714
 - 2026-09-10T02:52:18.419086+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:30:22.125041+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:42:14.202872+00:00 (updated-by): Updated: section:steps, section:notes

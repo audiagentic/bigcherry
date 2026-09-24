@@ -32,7 +32,7 @@ The catalog's own design note (catalog.py module docstring) states MMQ candidate
 
 ## Code Samples & Guidance
 
-Real b11126 anchors (verified): ggml/src/ggml-cuda/mmq-config-rdna3-5.cuh row format (CASE macro, rdna3_5 table -- rdna3's own table, mmq-config-rdna3.cuh, is structurally the same per catalog.py's ARCH_CONFIG_HEADERS mapping and was not read directly this batch, must be confirmed by implementer); mmq.cuh:230 `ggml_cuda_mmq_get_config(const ggml_type type, const int J, const bool fallback, const int cc)` dispatching via `cc` to `ggml_cuda_mmq_get_config_rdna3` for gfx1100. Patch package sketch (only needed if a new CASE row is added, not for a pure catalog/campaign re-scope): patches/12xx_rd28_mmq_tile_width_rdna3/patch.toml (state=untested, plan-item=RD28, kind=enhancement) with an Edit() anchored on the existing CASE-row block in mmq-config-rdna3.cuh, mode="insert_after" the last row of the relevant type, adding one new mmq_x candidate row; guard on `cc == GGML_CUDA_CC_RDNA3`.
+Real b11126 anchors (verified this pass): ggml/src/ggml-cuda/mmq-config-rdna3.cuh:1 `static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config_rdna3(ggml_type type, int J, bool fallback) {` -- CORRECTED: this function has NO `cc` parameter, so a `cc == GGML_CUDA_CC_RDNA3` guard cannot be written inside it; architecture selection already happens one level up in mmq.cuh:244 `if (GGML_CUDA_CC_IS_RDNA3(cc)) { return ggml_cuda_mmq_get_config_rdna3(type, J, fallback); }` (also called at mmq.cuh:272). CORRECTED CASE-row schema (per catalog.py:143): `CASE(type, nthreads, occupancy, I, J, sram_layout, K_vram, stream_k, fallback)`, selected/keyed by (type, J, fallback) -- inserting an additional row with the same (type,J,fallback) key is unreachable, since CASE immediately returns on first match; any new candidate must REPLACE an existing row for that key, never add a duplicate. Edit() anchors must target one exact existing CASE row inside `ggml_cuda_mmq_get_config_rdna3` (mode="replace"), not insert_after a row (which would be dead code), and must not add a cc guard inside this function.
 
 ## Files
 
@@ -62,6 +62,8 @@ Successor key: patching-rdna-boost-experiments-rd28
 
 2026-09-24 relevance at b11126: TODO. Confirmed the project's own tools/bigcherry/tuning/catalog.py already reads MMQ candidates directly out of the current architecture tables (not a stale PR diff) -- this substantially de-scopes PRBE22 from 'design a new kernel' to 'define signatures and run the existing campaign'. mmq-config-rdna3.cuh itself was not read this batch (only rdna3_5's structurally-identical table was); implementer must confirm the exact CASE row shape before adding any new row. GPT design request for PRBE22+27 hit a queue-saturated gateway (8 queued/2 running) and was not obtained in-session; plan authored directly from verified catalog.py + mmq.cuh source.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the CASE-row schema and dispatch mechanism -- verified real schema is CASE(type,nthreads,occupancy,I,J,sram_layout,K_vram,stream_k,fallback) keyed by (type,J,fallback), so an inserted duplicate-key row is unreachable (must replace, not insert). Corrected that ggml_cuda_mmq_get_config_rdna3 has no cc parameter -- architecture gating already happens one level up in mmq.cuh:244/272 via GGML_CUDA_CC_IS_RDNA3(cc).
+
 ## Change Log
 
 - 2026-09-09T10:54:56.585436+00:00 (created-by): Created by capability-rebaseline-v3
@@ -77,3 +79,4 @@ Successor key: patching-rdna-boost-experiments-rd28
 - chg_20260910_025218_rdna-successors-prbe2022-now_5714
 - 2026-09-10T02:52:18.433749+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:30:47.787525+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:43:37.860083+00:00 (updated-by): Updated: section:code_samples, section:notes

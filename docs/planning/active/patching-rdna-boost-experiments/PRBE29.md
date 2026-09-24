@@ -19,14 +19,16 @@ TODO, first-principles investigation, foundational for PRBE30/PRBE31. Persistent
 
 ## Steps
 
-1. Identify the model-load-time device-buffer allocation path (ggml-cuda.cu:883 `ggml_backend_cuda_buffer_type_alloc_buffer`, confirmed this batch) and the point after weight upload where a one-time dequant-to-F16 pass could run for SELECTED eligible dense tensors only.
-2. Define eligibility: dense (non-MoE-expert) weight tensors only, explicit opt-in list/pattern (never a global default, never MoE experts by default per item text).
-3. Implement the persistent F16 shadow allocator: one dequant kernel launch per eligible tensor at load time, populate shadow buffer, keep original quantized buffer resident (shadow is additive, not a replacement, since small-batch decode should keep using native MMQ on the quantized buffer).
-4. Validate shadow contents against a dequant reference (bit/tolerance match).
-5. Measure model-load overhead (extra time) and VRAM delta (shadow size) for Qwen3.6-27B Q8_0 primary, Q4/Q6 economics controls.
-6. Wire the DENSE MUL_MAT dispatch (ggml_cuda_mul_mat_cublas_impl or the MMQ/cuBLAS selection point around it) to optionally use the F16 shadow via existing cuBLAS (not yet hipBLASLt -- that is PRBE31's scope) for M/ubatch >= some threshold, native MMQ below it.
-7. Measure PP across M/ubatch 64..4096 and confirm TG/decode-only neutrality (shadow must not regress small-batch decode).
-8. Selected-tensor-shadow vs all-eligible-shadow A/B; expose explicit opt-in flag; publish durable candidate identity so PRBE30/PRBE31 can depend on it.
+1. CORRECTED per GPT review: `ggml_backend_cuda_buffer_type_alloc_buffer(buft, size)` (ggml-cuda.cu:883) is the WRONG shadow-creation hook -- it has no tensor/name/type argument and runs BEFORE weight upload, so it cannot know which tensor it is allocating for or hold post-upload data. Create shadows only AFTER the load_all_data loop completes (verified: src/llama-model.cpp:1871 calls `ml.load_all_data(...)`, and src/llama-model-loader.cpp:1493 defines `llama_model_loader::load_all_data`) -- shadow population must happen once real weight bytes are resident.
+2. Add CUDA-backend shadow ownership keyed by the original `ggml_tensor *`, stored in the existing `struct ggml_backend_cuda_buffer_context` (verified real struct at ggml-cuda.cu:726) rather than inventing a new ownership structure.
+3. Populate each shadow using `ggml_get_to_fp16_cuda(src->type)` (verified real function, declared convert.cuh:13, defined convert.cu:547, already used at ggml-cuda.cu:1404 and by conv2d.cu/fattn-common.cuh) -- reuse this exact API rather than writing new dequant math.
+4. Define eligibility explicitly: dense (non-MoE-expert) weight tensors only, an explicit opt-in allowlist/pattern with explicit MoE-expert exclusion, never a global default.
+5. Wire the DENSE MUL_MAT dispatch to look up a shadow BEFORE the existing `ggml_cuda_should_use_mmq(src0->type, cc, ne11/ne12, n_experts)` decision (verified real calls at ggml-cuda.cu:1872/1899/1940) -- a shadow hit bypasses native MMQ only for eligible dense tensors at/above the configured M threshold; a miss/ineligible tensor falls through to the existing should_use_mmq decision unchanged.
+6. Add explicit shadow-buffer cleanup in `ggml_backend_cuda_buffer_context`'s destructor (currently unspecified) so shadow memory is freed with its owning buffer.
+7. Validate shadow contents against `ggml_get_to_fp16_cuda`'s own reference output (bit/tolerance match).
+8. Measure model-load overhead and VRAM delta for Qwen3.6-27B Q8_0 primary, Q4/Q6 economics controls.
+9. Measure PP across M/ubatch 64..4096 and confirm TG/decode-only neutrality (shadow must not regress small-batch decode).
+10. Selected-tensor-shadow vs all-eligible-shadow A/B; expose explicit opt-in flag; publish durable candidate identity so PRBE30/PRBE31 can depend on it.
 
 ## Detailed Solution & Technical Design
 
@@ -64,6 +66,8 @@ Successor key: patching-rdna-boost-experiments-rd36
 
 2026-09-24 relevance at b11126: TODO, foundational. Confirmed NO hipBLASLt integration exists at b11126 (only cuBLAS/hipBLAS-compat) -- PRBE29 itself can and should measure through the existing cuBLAS path; PRBE31 alone needs new hipBLASLt integration. GPT design request for PRBE29+30+31 hit a queue-saturated gateway and was not obtained in-session; plan authored directly from verified source, dequant-kernel-reuse anchor flagged as unverified.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the shadow-creation hook -- ggml_backend_cuda_buffer_type_alloc_buffer has no tensor identity and runs pre-upload, so it cannot be the creation site. Moved shadow creation to after llama_model_loader::load_all_data (verified real call sites in llama-model.cpp:1871/llama-model-loader.cpp:1493), specified ownership in the existing ggml_backend_cuda_buffer_context struct (ggml-cuda.cu:726), specified the exact reusable conversion API ggml_get_to_fp16_cuda (convert.cuh:13/convert.cu:547, verified in use elsewhere), the exact lookup point relative to ggml_cuda_should_use_mmq (verified real calls at ggml-cuda.cu:1872/1899/1940), and added explicit dense-weight allowlist/expert-exclusion/cleanup requirements that were previously unspecified.
+
 ## Change Log
 
 - 2026-09-09T10:55:27.064093+00:00 (created-by): Created by capability-rebaseline-v3
@@ -79,3 +83,4 @@ Successor key: patching-rdna-boost-experiments-rd36
 - chg_20260910_025719_dense-gemm-successors-prbe293_6872
 - 2026-09-10T02:57:19.678291+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:57.527150+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:46:40.269201+00:00 (updated-by): Updated: section:steps, section:notes

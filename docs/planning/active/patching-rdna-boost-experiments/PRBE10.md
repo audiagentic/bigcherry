@@ -20,11 +20,13 @@ TODO, hard-dependent on PRBE05 (item text also names PRBE09 as a prerequisite, b
 ## Steps
 
 1. Do not start until PRBE05's cache correctness, generation lifecycle and capture gates pass.
-2. In ggml_cuda_op_mul (ggml/src/ggml-cuda/binbcast.cu:445), add a direct Q8_1 quantization of the MUL output, publishing into PRBE05's cache via reserve/publish immediately after kernel enqueue, at the exact native seam only -- do not alter unrelated dispatch or existing GLU/MUL_MAT_ID fusion logic (ggml-cuda.cu:1691's is_mul_mat_id GLU-fusion path must remain untouched).
-3. Restrict to qualifying shapes (explicit dtype/shape checks matching what a downstream MMVQ consumer expects); nonqualifying or cache-exhausted paths use the existing native quantize kernel unchanged.
-4. Verify direct-output equivalence via independent re-quantize + byte-compare against the standalone reference.
-5. Cover graph/non-graph and native fallback; measure launch/memory/latency effects.
-6. Compare B+PRBE05 vs B+PRBE05+PRBE10 with balanced repeats; promote only with statistically supported end-to-end benefit and no numerical, memory, or fallback regression.
+2. Add an exact graph-level eligibility selector before enabling direct production: ggml_cuda_op_mul (binbcast.cu:445) has no proof by itself that its dst is consumed by an eligible MMVQ dispatch -- gate on an explicit downstream-consumer check (matching PRBE05's MMVQ seam requirements), not shape alone, same defect class as PRBE06.
+3. "Quantize after ggml_cuda_op_bin_bcast<...op_mul>" as a follow-on launch is still a separate kernel, not direct production -- either accept it as a scheduling optimization (documented as such) or add a specialized MUL+Q8_1 producer path anchored at void ggml_cuda_op_mul(...) in binbcast.cu that writes both F32 dst and exact Q8_1 blocks (matching quantize_row_q8_1_cuda semantics) in one launch, publishing into PRBE05's cache via reserve/publish immediately after enqueue.
+4. Do not alter unrelated dispatch or existing GLU/MUL_MAT_ID fusion logic (ggml-cuda.cu:1691's is_mul_mat_id GLU-fusion path and line 3195's mul_mat_id_bias_glu_ops pattern must remain untouched).
+5. Restrict to qualifying shapes with a proven downstream MMVQ consumer; nonqualifying or cache-exhausted paths use the existing native quantize kernel unchanged.
+6. Verify direct-output equivalence via independent re-quantize + byte-compare against the standalone reference.
+7. Cover graph/non-graph and native fallback; measure launch/memory/latency effects.
+8. Compare B+PRBE05 vs B+PRBE05+PRBE10 with balanced repeats; promote only with statistically supported end-to-end benefit and no regression.
 
 ## Detailed Solution & Technical Design
 
@@ -65,6 +67,8 @@ Successor key: patching-rdna-boost-experiments-rd11
 
 2026-09-24 relevance at b11126: TODO, blocked on PRBE05. Flagged and corrected an apparent stale cross-reference to PRBE09 in this item's own original text (PRBE09 is Vulkan AllReduce tracking, unrelated to Q8_1 caching) -- treated PRBE05 as the sole real prerequisite pending a source audit proving otherwise. Real anchor verified (binbcast.cu:445; cross-checked against ggml-cuda.cu:1691/3195 GLU fusion to avoid collision). GPT design request submitted (req_5e0e57d9e29f44b0, batched with PRBE05/PRBE06); gateway congested at submission -- authored directly against verified anchors as a fallback.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: added the same graph-level producer/consumer eligibility selector required for PRBE06 (ggml_cuda_op_mul alone does not prove its output feeds MMVQ); clarified that a follow-on quantize launch is not true direct production, and specified the alternative fused MUL+Q8_1 producer path anchored at ggml_cuda_op_mul in binbcast.cu if genuine single-launch production is pursued.
+
 ## Change Log
 
 - 2026-09-09T10:54:10.807250+00:00 (created-by): Created by capability-rebaseline-v3
@@ -80,3 +84,4 @@ Successor key: patching-rdna-boost-experiments-rd11
 - chg_20260910_023529_three-more-rdna-successors-now_3176
 - 2026-09-10T02:35:29.343335+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:37.368559+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:36:51.841767+00:00 (updated-by): Updated: section:steps, section:notes
