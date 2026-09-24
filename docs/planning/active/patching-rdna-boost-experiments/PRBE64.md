@@ -48,6 +48,19 @@ done
 ```
 (exact env-var names must be confirmed against the installed mesa/RADV version before running -- do not assume the names above are final.)
 
+capture.sh skeleton, corrected per GPT review: the real Q4_K shader is `mul_mat_vec_q4_k.comp` (confirmed present at ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_q4_k.comp). Prior draft's `RADV_DEBUG=${drv:+}` did NOT select a driver (it's a no-op env-var trick) and AMDVLK is not an ACO-based compiler (ACO is RADV-specific; AMDVLK uses LLPC) -- drop the AMDVLK/ACO comparison, compare RADV(ACO) against llvmpipe/software or a differently-optimized RADV build instead if a within-driver control is needed. Driver selection must use `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json` (RADV) vs the AMDVLK equivalent ICD json, not RADV_DEBUG. Each loop iteration must dispatch a DIFFERENT real op/shape (not the same fixed <tiny-model> command every time) to actually force each named shader -- use test-backend-ops with an explicit MUL_MAT_VEC(Q4_K,...) case, or a llama-bench invocation pinned to a model whose Q4_K decode path is guaranteed to dispatch mul_mat_vec_q4_k.comp specifically (confirm via ggml_vk_should_use_mmvq's routing, see PRBE55/61's verified anchors in this same batch), not a generic tiny-model smoke run:
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+OUT=tools/lab/vk-aco-wait-audit/isa
+mkdir -p "$OUT"
+# RADV only (AMDVLK dropped -- not ACO-based, not a valid ACO comparison point)
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.x86_64.json \
+  ACO_DEBUG=validateir,validatera ACO_DUMP_SHADERS=1 \
+  ./build/bin/test-backend-ops perf -o MUL_MAT_VEC -b q4_k 2> "$OUT/radv_q4_k.isa.txt"
+```
+(exact ACO dump env-var names must still be confirmed against the installed mesa version before running -- this remains a required pre-step, not assumed final.)
+
 ## Files
 
 tools/lab/vk-aco-wait-audit/capture.sh; tools/lab/vk-aco-wait-audit/isa/*.txt (captured evidence, not committed if large); tools/lab/vk-aco-wait-audit/mesa-issue.md (if no rewrite qualifies); ggml/src/ggml-vulkan/vulkan-shaders/*.comp (only if a rewrite is later authorized -- separate follow-up patch).
@@ -76,6 +89,8 @@ Successor key: patching-rdna-boost-experiments-rd81
 
 2026-09-24 relevance at b11126: TODO, no existing patch (grep patches/*/patch.toml for RD81/ACO finds nothing) and no upstream absorption possible to check generically (shader-ISA-level, driver-dependent). GPT design request: gateway rejected all submissions this session (VAL-AGW-025, EXT-GPTAUTO-003 in agent_task_gateway_overview); plan authored directly from repo layout inspection (ggml/src/ggml-vulkan/vulkan-shaders/ confirmed present) -- no GPT request id.
 
+2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- corrected real shader name (mul_mat_vec_q4_k.comp, confirmed present in vendor tree); removed invalid RADV_DEBUG driver-selection trick and the AMDVLK-as-ACO-comparison error (AMDVLK is LLPC-based, not ACO); fixed capture loop to dispatch distinct real ops per shader instead of the same tiny-model command.
+
 ## Change Log
 
 - 2026-09-09T10:57:58.168957+00:00 (created-by): Created by capability-rebaseline-v3
@@ -91,3 +106,5 @@ Successor key: patching-rdna-boost-experiments-rd81
 - chg_20260910_031805_repaired-four-more-graph-and-v_2834
 - 2026-09-10T03:18:05.321494+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:24.845486+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:48:07.869768+00:00 (updated-by): Updated: section:code_samples
+- 2026-09-24T04:48:13.655935+00:00 (updated-by): Updated: section:notes

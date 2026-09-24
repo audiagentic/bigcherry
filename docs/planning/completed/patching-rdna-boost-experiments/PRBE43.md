@@ -61,13 +61,14 @@ append
 
 2026-09-24 relevance at b11126: SUPERSEDED/subsumed. patches/1221_rd50_gdn_chunked_recurrence/SUMMARY.md explicitly: "RD51 (DPP reduction)/RD52 (native exp2)/RD53 (launch-bounds tuning) are inline micro-decisions inside the same kernel body in the source PR, not independently portable hunks, so they are subsumed into this one patch rather than artificially split." No separate patch package or qualification runner should be authored for RD51 alone; see PRBE42 for the real qualification plan covering the whole 1221 kernel (which includes whatever reduction primitive it actually uses -- verify DPP vs shuffle by reading patch.py during PRBE42's step 1 patch review, not as separate work here). No GPT session needed; disposition is directly evidenced by the existing patch SUMMARY.
 
+2026-09-24 GPT review req_c18183e0a9034c94: READY
+
 ## Change Log
 
 - 2026-09-09T10:56:27.912675+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:41.977160+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.324437+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +85,4 @@ append
 - 2026-09-24T02:34:17.580154+00:00 (state-transition): State: pending → superseded
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
 - 2026-09-24T02:36:32.651508+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:33:48.391875+00:00 (updated-by): Updated: section:notes

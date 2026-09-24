@@ -15,7 +15,7 @@ priority: P2
 
 ## Description
 
-TODO -- still relevant, tracking/adoption-decision item, not a code change unless upstream lands an implementation. Track the upstream llama.cpp Vulkan tensor-parallel AllReduce PR/issue and decide a BigCherry adoption route without implying an implementation exists yet.
+NON-PATCH-IMPLEMENTATION ITEM (confirmed by GPT review): explicitly upstream-tracking only -- no Vulkan tensor-parallel AllReduce implementation exists or is pinned yet, so no patch package can be authored from this plan today. Concrete next action: search upstream llama.cpp issues/PRs for a Vulkan tensor-parallel AllReduce proposal, record PR/issue number + status + license, and grep b11126 to confirm nothing has landed yet. If a concrete upstream commit is later identified, open a NEW, separate plan item with exact b11126 insertion/dispatch/fallback anchors and tests -- do not fold implementation into PRBE09. Item stays pending until then.
 
 ## Steps
 
@@ -61,6 +61,10 @@ Successor key: patching-rdna-boost-experiments-rd104
 
 2026-09-24 relevance at b11126: TODO. No GPT design request used -- this is upstream-tracking/adoption triage with no local kernel code to design against yet; the concrete next action (search upstream PRs, grep b11126 for any already-landed pieces) is procedural, not a design problem.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed PRBE09 is explicitly upstream-tracking only, no implementation exists to pin; description now states the concrete next action (search upstream, grep b11126) and that adoption spawns a separate implementation item. Item remains pending.
+
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: confirmed PRBE09 is explicitly upstream-tracking only, no implementation exists to pin; description now states the concrete next action (search upstream, grep b11126) and that adoption spawns a separate implementation item. Item remains pending.
+
 ## Change Log
 
 - 2026-09-09T10:54:07.484798+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +80,5 @@ Successor key: patching-rdna-boost-experiments-rd104
 - chg_20260910_023529_three-more-rdna-successors-now_3176
 - 2026-09-10T02:35:29.332235+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:28:13.834516+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:37:18.873788+00:00 (updated-by): Updated: section:description, section:notes
+- 2026-09-24T04:37:30.168702+00:00 (updated-by): Updated: section:notes

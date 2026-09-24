@@ -66,13 +66,14 @@ append
 
 2026-09-24 relevance at b11126: UPSTREAM-ABSORBED. Verified via git -C work/upstream/llama.cpp.git show b11126:ggml/src/ggml-cuda/common.cuh lines ~1447-1571: ggml_backend_cuda_context declares cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS], cublas_workspaces[...][...], streams[...][...], and pools[...][...], all indexed by curr_stream_no; cublas_handle() lazily creates+binds a handle scoped to (device, curr_stream_no) exactly matching this item's acceptance criteria. This is native upstream (not the AMD fork), already exercised by the generic fork/join concurrency mechanism in ggml_backend_cuda_graph_optimize() (see PRBE34 notes). Fork patch 1215 independently ports the same capability and predates this upstream convergence -- needs a rebase/redundancy check, not new qualification work. GPT design request: attempted 4x (req_fcabed9cee0a4998, req_7e9f4036aae94268, req_b465358100a549c7, req_c68b065818504676), all rejected by the gateway (VAL-AGW-025 gateway-ownership-queue-error, queue overloaded with concurrent batch sessions) -- disposition and plan written directly from verified upstream source instead since this is a straightforward supersession, no design synthesis was actually needed.
 
+2026-09-24 GPT review req_c18183e0a9034c94: READY
+
 ## Change Log
 
 - 2026-09-09T10:55:40.618469+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:50.778200+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.272314+00:00 (updated-by): Updated: section:ledger-events
@@ -86,3 +87,4 @@ append
 - 2026-09-24T02:27:48.742236+00:00 (state-transition): State: pending → superseded
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
 - 2026-09-24T02:35:57.909534+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:33:35.115835+00:00 (updated-by): Updated: section:notes

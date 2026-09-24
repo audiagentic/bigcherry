@@ -17,6 +17,8 @@ priority: null
 
 TODO. Sweep Vulkan mul_mat_vec rm_kq (rows-per-shader-invocation for K-quant types) per driver/architecture/kernel-signature instead of the current fixed constant. Relevance at b11126: confirmed rm_kq is still a compile-time-ish constant set once at device init (ggml-vulkan.cpp ~2676-2697): default 2, bumped to 4 only for `AMD_GCN`; RDNA3/RDNA4 (our gfx1100/gfx1201 hardware) fall through to the default rm_kq=2 with only a separate, unrelated `is_rdna3` static-4-rows override applied to a different code path (rm_int_n/rm_id lambdas, not rm_kq itself). No per-driver or per-signature table exists -- item's premise holds, not upstream-absorbed.
 
+TODO, corrected mechanism. GPT identified a real defect: rm_kq is a single scalar consumed by ALL K-quant/TQ pipeline-creation call sites (Q2_K..Q6_K, TQ1_0), and `rm_iq = 2 * rm_kq` (verified at ggml-vulkan.cpp:2697) derives the IQ-type row count FROM rm_kq -- a per-(driver,arch,quant) OVERRIDE TABLE cannot simply reassign the single `rm_kq` variable after the fact, because that would unintentionally also change every IQ-type pipeline's rm_iq value. The override must instead be a per-type function/table (`rm_kq_for(ggml_type)` or `rm_kq_by_type[GGML_TYPE_COUNT]`) consulted separately at each K/TQ pipeline-creation call site, computed AFTER vendor/architecture selection, leaving the baseline scalar `rm_kq`/`rm_iq` (and therefore every IQ pipeline) completely untouched.
+
 ## Steps
 
 1. Re-confirm the anchor at qualification time: `git -C work/upstream/llama.cpp.git grep -n 'uint32_t rm_kq' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp`.
@@ -26,6 +28,14 @@ TODO. Sweep Vulkan mul_mat_vec rm_kq (rows-per-shader-invocation for K-quant typ
 5. Add the activation marker at the point rm_kq is consumed by pipeline creation (ggml-vulkan.cpp:2746 onward), gated by BIGCHERRY_PATCH_TRACE, once per process per quant type.
 6. Add a test-backend-ops MUL_MAT_VEC correctness pass for each K-quant type at both rm_kq=2 (baseline) and any overridden value, confirming reference-parity output (rm_kq only changes row-batching, never numerics, but the new dispatch path must be exercised).
 7. Report VGPR/registers, kernel time, PP/TG vs the unmodified baseline; keep the override table sparse -- only entries with measured, repeatable wins.
+
+1. Re-confirm the anchor: `git -C work/upstream/llama.cpp.git grep -n 'uint32_t rm_kq\|rm_iq = 2' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp` (confirmed: rm_kq default/AMD_GCN block ~2676-2691, `rm_iq = 2 * rm_kq` at line 2697).
+2. Benchmark rm_kq in {1,2,3,4} on R9700 (RDNA4/gfx1201) across RADV and AMD proprietary/AMDVLK, plus gfx1100 (RDNA3) control, for each K-quant pipeline that consumes rm_kq (Q2_K..Q6_K, TQ1_0 -- ggml-vulkan.cpp:2746-2751) -- inspect VGPR/register usage and kernel time, plus end-to-end PP/TG. Use `vk::DriverId::eAmdProprietary` (the exact b11126 enum symbol) for proprietary-driver detection, not a string key.
+3. Retain only repeatable per-(driver, architecture, quant-type) winners; materialize ONLY measured winner rows in the override table -- do not fabricate placeholder rows.
+4. Implement `rm_kq_for(ggml_type type)` (or `rm_kq_by_type[GGML_TYPE_COUNT]` populated after vendor/arch selection) computed immediately after the existing baseline `rm_kq`/`rm_stdq` block, leaving the baseline `rm_kq` variable and the derived `rm_iq = 2 * rm_kq` line completely unmodified -- IQ pipelines continue to read the unmodified baseline rm_iq.
+5. Use the new per-type value ONLY at each K/TQ pipeline-creation call site (replace the bare `rm_kq` argument with `rm_kq_for(GGML_TYPE_Q2_K)` etc. at each relevant call), active only when `BIGCHERRY_VK_RM_KQ_OVERRIDE=1`.
+6. Add the activation marker at pipeline creation, gated by BIGCHERRY_PATCH_TRACE, once per process per quant type.
+7. Add a test-backend-ops MUL_MAT_VEC correctness pass for each K-quant type at both baseline and overridden rm_kq_for() value, confirming reference-parity output; add a regression check that IQ-type pipelines' rm_iq is byte-identical to baseline regardless of override state.
 
 ## Detailed Solution & Technical Design
 
@@ -143,6 +153,8 @@ Successor key: patching-rdna-boost-experiments-rd78
 
 2026-09-24 relevance at b11126: confirmed rm_kq is a fixed vendor/architecture-keyed constant (ggml-vulkan.cpp:2676-2697), default 2, only AMD_GCN gets 4; RDNA3/RDNA4 untouched -- no per-driver/signature table exists. GPT design request req_2f372f7cd0914a6f (batched with PRBE49+PRBE50, submitted, response pending as of this pass -- written directly from source evidence, to cross-check against GPT response once available).
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- corrected mechanism from single-scalar reassignment to a per-type rm_kq_for(type)/rm_kq_by_type table, since rm_iq = 2*rm_kq (verified, line 2697) would otherwise leak the override into unrelated IQ pipelines; specified vk::DriverId::eAmdProprietary as the exact detection symbol; added IQ-non-regression test.
+
 ## Change Log
 
 - 2026-09-09T10:57:45.405833+00:00 (created-by): Created by capability-rebaseline-v3
@@ -158,3 +170,5 @@ Successor key: patching-rdna-boost-experiments-rd78
 - chg_20260910_031644_repaired-four-more-active-succ_8062
 - 2026-09-10T03:16:44.961564+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:47.589745+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:43:57.765144+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:44:03.195312+00:00 (updated-by): Updated: section:notes

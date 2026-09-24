@@ -15,16 +15,18 @@ priority: null
 
 ## Description
 
-TODO, first-principles investigation (no fork source to port). 128-byte row padding for GPU L2 cache-set aliasing on F32/BF16/F16 dense weight rows whose byte-width is a multiple of a cache-set-associativity stride (commonly 2048B). Relevance: still meaningful for gfx1100/gfx1201 (both have set-associative L2). Real b11126 anchor confirmed this batch: ggml/src/ggml-cuda/ggml-cuda.cu:883 `ggml_backend_cuda_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size)` is the device buffer allocation entry point; row-stride (nb[1]) is a per-tensor ggml property set at tensor-metadata time (ggml.c), not at buffer-alloc time, so padding requires intercepting tensor creation/metadata assignment during model load, not just the CUDA buffer allocator.
+TODO, first-principles investigation (no fork source to port), RESCOPED per GPT review: the exact ggml.c anchor exists and is verified, but the generic tensor-creation-site approach is INVALID for weight-only row padding. `ggml_new_tensor_impl` has no weight identity (it is called for every tensor, activations included) and changing only nb[1] there would make GGUF-loaded tensor storage/reads disagree with tightly packed on-disk data (mmap/load code assumes tight packing). Real relevance for gfx1100/gfx1201 (both have set-associative L2) is unchanged; the implementation site must move to the model-loading layer.
 
 ## Steps
 
-1. In ggml.c's tensor-creation path (ggml_new_tensor_impl or equivalent, sets nb[] from ne[]/type), identify F32/BF16/F16 (non-quantized-packed) weight tensors during model load whose tight `ne[0]*type_size` is a multiple of 2048 bytes -- this must happen at load time before any GEMM runs, and only for weight tensors (not activations, not quantized types which already have irregular block layout).
-2. Compute the padded `nb[1]` for a candidate padding value (64/128/256 bytes) and verify every downstream consumer of that tensor's nb[1] (dense MUL_MAT dispatch, any code assuming tight packing) tolerates a non-tight stride -- audit ggml_backend_cuda_buffer_type_alloc_buffer (ggml-cuda.cu:883) and the dense MUL_MAT/cuBLAS path (ggml_cuda_mul_mat_cublas_impl, ggml-cuda.cu:1433) for tight-stride assumptions.
-3. Build a padding-sweep experiment: 0/64/128/256 bytes, grouped by row_bytes/cache-geometry class; keep quantized-packed rows and non-alias-class rows as separate controls.
-4. Verify nb[1] propagation, tensor-layout/model-output parity (PPL match) after padding.
-5. Capture L2 cache-set-conflict counters via rocprofv3 (not just wall-clock timing) to establish causal, not merely correlational, evidence that padding reduced aliasing.
-6. Measure memory cost (VRAM delta from padding) and reject neutral/costly padding; enable only through an architecture/alias-class selector after repeatable evidence -- never unconditional padding. Do not combine with PRBE29-31's dequantized-shadow arms in the same causal measurement.
+1. Verified exact anchor: ggml/src/ggml.c::ggml_new_tensor_impl contains `result->nb[0] = ggml_type_size(type);` / `result->nb[1] = result->nb[0]*(result->ne[0]/ggml_blck_size(type));` -- do NOT edit this generic site (it applies to every tensor, not just weights, and changing it breaks tight-packing assumptions for mmap/GGUF-loaded data).
+2. Instead, make the weight-specific stride edit in src/llama-model-loader.cpp::create_tensor, immediately after `ggml_set_name(tensor, ggml_get_name(&t_meta));` -- this is the real per-weight creation site with tensor identity available.
+3. In load_all_data, anchor `size_t n_size = ggml_nbytes(cur);` and distinguish the tight source bytes (`ggml_nbytes(weight->tensor)`, i.e. the packed GGUF on-disk size) from the padded destination bytes (the new nb[1]); implement a row-wise/2D upload (not a flat memcpy) so each row lands at its padded stride while reading from the tightly-packed source, and disable mmap aliasing for padded tensors (mmap cannot support a stride mismatch between file layout and in-memory layout).
+4. Confirm cuBLAS already consumes nb01 as the leading dimension (`s01 = nb01/src0_ts`) -- this means padded strides are consumable by the existing dense MUL_MAT/cuBLAS path (ggml-cuda.cu:1433) without further change there, once the row-wise upload in step 3 is correct.
+5. Build a padding-sweep experiment: 0/64/128/256 bytes, grouped by row_bytes/cache-geometry class; keep quantized-packed rows and non-alias-class rows as separate controls.
+6. Verify nb[1] propagation, tensor-layout/model-output parity (PPL match) after padding.
+7. Capture L2 cache-set-conflict counters via rocprofv3 (causal, not just wall-clock).
+8. Measure VRAM delta from padding and reject neutral/costly padding; enable only through an architecture/alias-class selector after repeatable evidence.
 
 ## Detailed Solution & Technical Design
 
@@ -62,6 +64,8 @@ Successor key: patching-rdna-boost-experiments-rd35
 
 2026-09-24 relevance at b11126: TODO. Confirmed ggml_backend_cuda_buffer_type_alloc_buffer exists at ggml-cuda.cu:883 as the buffer-allocation entry point, but the actual nb[1]-setting tensor-metadata code (ggml.c) was not located this batch -- this is the load-bearing anchor still needing verification before implementation starts. GPT design request submission hit a queue-saturated gateway (8 queued/2 running gateway-wide) and was not obtained in-session; plan authored directly from partial verified source, flagged as needing a follow-up GPT/human pass specifically to locate the ggml.c anchor.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the implementation site -- the exact ggml.c::ggml_new_tensor_impl anchor exists but editing it is invalid (no weight identity, breaks GGUF/mmap tight-packing assumptions for every tensor including activations). Moved the weight-specific stride edit to src/llama-model-loader.cpp::create_tensor and load_all_data, requiring a row-wise/2D upload that reads tightly-packed source bytes into padded destination stride and disables mmap for padded tensors; confirmed cuBLAS's existing nb01-as-leading-dimension usage needs no further change.
+
 ## Change Log
 
 - 2026-09-09T10:55:23.381054+00:00 (created-by): Created by capability-rebaseline-v3
@@ -77,3 +81,4 @@ Successor key: patching-rdna-boost-experiments-rd35
 - chg_20260910_025542_rdna-successors-prbe2628-now_5552
 - 2026-09-10T02:55:42.907095+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:31.976968+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:45:45.909867+00:00 (updated-by): Updated: section:description, section:steps, section:notes

@@ -20,11 +20,12 @@ TODO, rescoped. Patch 1004 (the item's stated dependency) is `rejected`: its SUM
 ## Steps
 
 1. Confirm at implementation time (re-grep, since this project's pin may move) that ggml_cuda_should_fuse_rope_set_rows in ggml/src/ggml-cuda/ggml-cuda.cu still has the exact mode and dtype guards cited above.
-2. Extend the mode check to also accept GGML_ROPE_TYPE_IMROPE alongside NORMAL/NEOX; extend the dtype check to also accept GGML_TYPE_BF16 for set_rows->type.
-3. Verify rope.cu's kernel dispatch (rope.cu:608 is_imrope = mode == GGML_ROPE_TYPE_IMROPE, and the templated launchers at rope.cu:469-488) already produces correct output for the fused case with no separate kernel-side change needed -- IMRoPE is already a runtime branch inside the existing rope kernel, not a new kernel.
-4. Add BF16 handling to whatever SET_ROWS write path the fusion uses if it is not already dtype-generic (audit ggml_cuda_op_set_rows and the fused write helper for BF16 support before assuming it "just works").
-5. Add correctness fixtures: IMRoPE-mode fused vs unfused (same output), BF16 SET_ROWS fused vs unfused, plus negative fixtures (mode still excluded when neither NORMAL/NEOX/IMROPE, dtype still excluded when neither F32/F16/BF16) to prove the guard didn't become a blanket accept.
-6. Run graph capture/replay with the newly-accepted patterns; run false-positive fallback checks; then balanced timing only after correctness passes, since the acceptance criteria requires never claiming the extension against raw baseline -- compare B (native, unextended gate) vs B+PRBE15 (extended gate).
+2. BEFORE widening the fusion gate's dtype check to accept BF16: verified via grep that ggml_cuda_op_rope_impl()'s dst_type dispatch in rope.cu (lines ~632-690 and ~924-931) only branches on GGML_TYPE_F32/GGML_TYPE_F16 for dst_type -- there is no BF16 branch. Add explicit BF16 destination handling (using nv_bfloat16, matching the existing F16 branch pattern) in ggml_cuda_op_rope_impl() before touching the fusion gate's dtype guard, or the widened gate will dispatch into a path that does not exist and will hit the function's fallback GGML_ABORT.
+3. IMRoPE enters rope_multi_cuda()/rope_multi (rope.cu, is_imrope branch) -- verify at implementation time whether that signature accepts row_indices/set_rows_stride the way rope_norm/rope_neox do for the fused SET_ROWS case; if not, extend rope_multi_cuda/rope_multi to accept and apply them, or explicitly scope this item to exclude IMRoPE+SET_ROWS fusion until that plumbing exists.
+4. Extend the mode check to also accept GGML_ROPE_TYPE_IMROPE alongside NORMAL/NEOX only once step 3 is resolved; extend the dtype check to also accept GGML_TYPE_BF16 for set_rows->type only once step 2 is resolved.
+5. Add a BIGCHERRY_PATCH_TRACE-gated GGML_LOG_WARN activation marker in ggml_cuda_op_rope_impl() (or the fusion call site) that fires only when set_rows != nullptr and the new IMRoPE/BF16 path actually launches -- this item currently specifies no marker at all.
+6. Add correctness fixtures: IMRoPE-mode fused vs unfused, BF16 SET_ROWS fused vs unfused, plus negative fixtures (mode/dtype still excluded outside the widened set) -- test each new mode against fusion-disabled output.
+7. Run graph capture/replay with the newly-accepted patterns; run false-positive fallback checks; then balanced timing only after correctness passes, comparing B (native, unextended gate) vs B+PRBE15 (extended gate).
 
 ## Detailed Solution & Technical Design
 
@@ -90,6 +91,8 @@ Successor key: patching-rdna-boost-experiments-rd18
 
 2026-09-24 relevance at b11126: TODO, rescoped off dead patch 1004 onto the native fusion gate at ggml-cuda.cu:2666-2696 (verified: mode guard excludes IMRoPE, dtype guard excludes BF16). GPT gateway returned VAL-AGW-025 retry-safe rejections on submission for this item; proceeded with direct source-verified design instead of a GPT round.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: verified via grep that ggml_cuda_op_rope_impl() in rope.cu only dispatches F32/F16 dst_type (no BF16 branch) -- widening the fusion gate alone would route BF16 SET_ROWS into a nonexistent/aborting path. Added required BF16 destination handling in ggml_cuda_op_rope_impl() and an IMRoPE row_indices/set_rows_stride plumbing check for rope_multi_cuda/rope_multi as prerequisites before widening the gate, plus a required activation marker (none was specified before).
+
 ## Change Log
 
 - 2026-09-09T10:54:30.186606+00:00 (created-by): Created by capability-rebaseline-v3
@@ -105,3 +108,4 @@ Successor key: patching-rdna-boost-experiments-rd18
 - chg_20260910_024925_rdna-successors-prbe1416-now_9529
 - 2026-09-10T02:49:25.519390+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:28:47.844482+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:39:34.219151+00:00 (updated-by): Updated: section:steps, section:notes

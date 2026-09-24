@@ -61,13 +61,14 @@ append
 
 2026-09-24 relevance at b11126: SUPERSEDED/subsumed, same evidence as PRBE43 (patches/1221_rd50_gdn_chunked_recurrence/SUMMARY.md explicit subsumption statement for RD51/RD52/RD53). PRBE42's validation plan (long-sequence recurrent-state/logit/PPL parity) already covers whatever decay-math approach 1221 actually uses; no separate qualification runner needed. No GPT session needed.
 
+2026-09-24 GPT review req_c18183e0a9034c94: READY
+
 ## Change Log
 
 - 2026-09-09T10:56:32.505332+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:45.997534+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.328390+00:00 (updated-by): Updated: section:ledger-events
@@ -82,3 +83,4 @@ append
 - 2026-09-24T02:35:10.335523+00:00 (state-transition): State: pending → superseded
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
 - 2026-09-24T02:36:37.279386+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:33:57.280153+00:00 (updated-by): Updated: section:notes

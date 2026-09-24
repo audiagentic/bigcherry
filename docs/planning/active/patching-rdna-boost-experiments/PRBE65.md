@@ -25,6 +25,12 @@ TODO. No patch or upstream absorption implements this. At b11126, ggml/src/ggml-
 4. Add a non-AMD vendor control (e.g. NVIDIA vendor id) confirming the branch is untouched.
 5. Hardware validation: FA PP/TG before/after on an AMD device that already reports 65536 (must be unchanged/neutral -- regression control) plus any AMD device in the fleet reporting a different real total (if none exists, document that this step is blocked pending such hardware and is not claimed).
 
+1. Read the full FA config function in ggml/src/ggml-vulkan/ggml-vulkan.cpp containing the `== 65536` block (grep `limit_occupancy_shmem` to confirm the enclosing function name and full signature before editing).
+2. Replace the exact-equality guard with a threshold/table keyed on the real reported `maxComputeSharedMemorySize`, scaling the 26KiB/30KiB/14KiB constants proportionally to reported size relative to the 64KiB baseline; fall back to no occupancy limiting below a safety floor (<16KiB) rather than guessing. Define and record the EXACT expected `limit_occupancy_shmem` output for the documented test points before writing code, per GPT's fix: 64KiB -> unchanged current values (26/30/14 KiB as vec4-count, i.e. `/4/4`); 32KiB -> half those byte targets before the `/4/4` conversion (13/15/7 KiB); 16KiB -> floor triggers, no limiting applied (result.limit_occupancy_shmem left at its unset/default value); non-AMD vendor -> branch entirely untouched (result unset).
+3. Add a unit/offline test (Python or C++ harness under tools/tests or a new ggml-vulkan-specific test) that calls the FA config function (or a thin wrapper) with mocked `maxComputeSharedMemorySize` values of 65536, 32768, 16384, and asserts the EXACT expected vec4-count values from step 2 (not just 'scales and never exceeds').
+4. Add a non-AMD vendor control (e.g. NVIDIA vendor id) confirming the branch is untouched.
+5. Hardware validation: FA PP/TG before/after on an AMD device that already reports 65536 (must be unchanged/neutral -- regression control) plus any AMD device in the fleet reporting a different real total (if none exists, document that this step is blocked pending such hardware and is not claimed).
+
 ## Detailed Solution & Technical Design
 
 Data flow: `ggml_vk_get_flash_attn_config` (or equivalent; confirm exact name via grep 'limit_occupancy_shmem' in ggml-vulkan.cpp) computes `result.limit_occupancy_shmem` used later to inflate the shader's declared shared-memory usage so the driver schedules fewer subgroups per SIMD. The bug is that this is currently gated on `== 65536` verbatim. The fix generalizes to `>= <floor>` with size-proportional scaling, computed once from `device->properties.limits.maxComputeSharedMemorySize`, and must never push the computed occupancy shmem size past the value that the separate legality check (`total_size <= maxComputeSharedMemorySize`) would reject -- clamp explicitly.
@@ -89,6 +95,8 @@ Successor key: patching-rdna-boost-experiments-rd82
 
 2026-09-24 relevance at b11126: TODO confirmed, no existing patch and current code still hard-gates on == 65536 (verified via git show b11126:ggml/src/ggml-vulkan/ggml-vulkan.cpp). GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003, agent_task_gateway_overview); plan authored directly from verified source excerpt -- no GPT request id.
 
+2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- added exact expected limit_occupancy_shmem values (vec4-count, /4/4 conversion) for 64/32/16KiB and non-AMD test points instead of leaving the numeric policy to the implementer.
+
 ## Change Log
 
 - 2026-09-09T10:58:03.403872+00:00 (created-by): Created by capability-rebaseline-v3
@@ -104,3 +112,5 @@ Successor key: patching-rdna-boost-experiments-rd82
 - chg_20260910_031805_repaired-four-more-graph-and-v_2834
 - 2026-09-10T03:18:05.338956+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:14.639554+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:48:16.562912+00:00 (updated-by): Updated: section:steps
+- 2026-09-24T04:48:22.409370+00:00 (updated-by): Updated: section:notes

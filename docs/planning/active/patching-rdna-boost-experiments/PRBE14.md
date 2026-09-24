@@ -21,10 +21,10 @@ TODO, narrowed to remaining scope. Patch 1207_rd17_moe_topk_down_fold has extens
 
 1. Do not re-run or re-litigate performance -- cite the existing closed-negative result (req_7add510830424329) and move directly to the remaining correctness/composition items.
 2. Author the fused-vs-unfused routing/scale-case matrix: multiple expert-ID counts, destination-channel scale shape variations, both fusable (single-column decode) and non-fusable (multi-token, already falls through per the d6e3e46e fix) MUL_MAT_ID shapes -- verify output equality in every case.
-3. Author false-positive fallback fixtures: shapes/types that superficially resemble the six... [pattern-specific per patch.py's actual detection predicate] but must not trigger the fusion -- re-read patch.py's exact detection block (referenced in this item's own notes as `_DETECT_BLOCK`/`_DETECT_ANCHOR`, already refactored to be imported directly by rd17_correctness.py to avoid desync) to enumerate the real negative cases.
+3. Author the false-positive fallback matrix explicitly (CORRECTED, replacing the prior placeholder -- enumerate now rather than deferring to a future patch.py reread): weights->type != F32; non-contiguous weights; ne[0] != 1; ne[1] != mm_node->ne[1]; ne[2]/ne[3] != 1; mm_node->ne[2] != 1; nelements mismatch between weights and the expected single-column scale; general weights/mm_node shape mismatch; an otherwise-MMVQ-ineligible source; MUL wired to the wrong operand; and a failed memory-range check. Each must be its own explicit non-activation fixture (marker must NOT fire, output must match the unfused reference).
 4. Run graph-capture/replay with the fusion active on a real activating model (single-token decode) across multiple capture/replay cycles -- confirm stability, not just a single-shot activation.
-5. Run an NVFP4 model test: confirm x_scale_channel_dst detection and the restored single-column constraint (weights->ne[2]==1 etc.) do not alter NVFP4-path behavior -- this was never explicitly re-checked after the d6e3e46e fix.
-6. Define and run the PKC02 composition-conflict validation with 1205 (PRBE11): confirm the declared conflicts=["1205_rd12_paired_mmvq_dual_output"] is enforced (both patches cannot silently co-apply) and, if a future composed recipe is ever declared, it goes through the same explicit-recipe discipline as PRBE11's own composition step.
+5. Run an NVFP4 model test: confirm x_scale_channel_dst detection and the restored single-column constraint do not alter NVFP4-path behavior.
+6. Define and run the PKC02 composition-conflict validation with 1205 (PRBE11): confirm the declared conflicts=["1205_rd12_paired_mmvq_dual_output"] is enforced.
 
 ## Detailed Solution & Technical Design
 
@@ -108,6 +108,8 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 
 2026-09-24 relevance at b11126: TODO, narrowed -- performance is closed-negative (req_7add510830424329), do not re-litigate; remaining scope is routing/scale coverage, false-positive fixtures, graph-capture stability, NVFP4 check, and PKC02 composition-conflict validation. GPT design request submitted (req_f7861b0b41c84da5, batched with PRBE13); gateway congested at submission -- authored directly against this item's own extensive existing real-hardware notes as a fallback.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: replaced step 3's literal placeholder with the full enumerated rejection-predicate matrix (weights->type != F32, non-contiguous weights, ne[0]!=1, ne[1]!=mm_node->ne[1], ne[2]/ne[3]!=1, mm_node->ne[2]!=1, nelements mismatch, shape mismatch, ineligible MMVQ, wrong MUL wiring, failed memory-range check), each as its own explicit non-activation fixture.
+
 ## Change Log
 
 - 2026-09-09T10:54:26.498754+00:00 (created-by): Created by capability-rebaseline-v3
@@ -138,3 +140,4 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 - chg_20260912_083706_completed-real-hardware-valida_4788
 - 2026-09-12T08:37:06.312262+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:35:38.110487+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:39:23.309354+00:00 (updated-by): Updated: section:steps, section:notes

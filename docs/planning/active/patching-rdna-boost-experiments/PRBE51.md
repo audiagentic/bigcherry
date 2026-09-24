@@ -17,6 +17,8 @@ priority: null
 
 TODO. Full GPU input-layer offload for AMD UMA/iGPU (gfx1151, Strix Halo). Relevance at b11126: upstream already has an integrated-GPU device class (`GGML_BACKEND_DEVICE_TYPE_IGPU`, ggml/include/ggml-backend.h:140) with dedicated handling in device enumeration (src/llama.cpp:260, igpu dedup workaround) and `llama_supports_gpu_offload` (src/llama.cpp:107). gfx1150/1151/1152/1153 are recognized HIP compile targets (ggml/src/ggml-cuda/vendors/hip.h:223) and referenced in CI as having a known batched-inference issue. However, input-LAYER-specific placement policy (keeping input tensors GPU-resident on UMA vs the general host-buffer-list logic in `make_cpu_buft_list`, src/llama-model.cpp:1060-1090) has not been located -- that function adds a host buffer type generically for any device list, with no IGPU-specific carve-out found. Item's premise (repeated CPU/GPU sync from input tensors not staying GPU-resident on UMA) is plausible and not yet addressed by a dedicated policy; TODO stands.
 
+TODO. Full GPU input-layer offload for AMD UMA/iGPU (gfx1151, Strix Halo). GPT-corrected implementation surface: `make_cpu_buft_list()` is a GENERAL host-buffer-list builder, not the input-layer placement site. The actual input-layer device assignment is hardcoded later in model loading at src/llama-model.cpp:1537: `pimpl->dev_input = { cpu_dev, &pimpl->cpu_buft_list };` (verified via `git -C work/upstream/llama.cpp.git grep -n dev_input b11126 -- src/llama-model.cpp` -- 3 hits: struct field decl :1201, this hardcoded CPU assignment :1537, consumer :1888). Current patch anchor (TODO in prior plan draft) must target this exact assignment, not make_cpu_buft_list.
+
 ## Steps
 
 1. Grep for the actual input-tensor buffer-type selection call site: `git -C work/upstream/llama.cpp.git grep -n 'buft_list\|input.*buft\|ggml_backend_dev_host_buffer_type' b11126 -- src/llama-model.cpp` and read the full `make_cpu_buft_list` function (src/llama-model.cpp, starts ~line 1060) plus its caller to see how/when the host buffer type is actually assigned to input-layer tensors (vs other layers).
@@ -24,6 +26,13 @@ TODO. Full GPU input-layer offload for AMD UMA/iGPU (gfx1151, Strix Halo). Relev
 3. Design a policy gated on `ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU`: when the model's primary compute device is IGPU, skip adding the generic CPU host-buffer-type entry for input-layer tensors specifically (leave it in place for all other UMA vs discrete-GPU behavior), so those tensors resolve to the IGPU's own device buffer type and stay GPU-resident.
 4. Instrument a sync-count counter (increment at each host<->device copy triggered by input-tensor access) to measure before/after.
 5. Add a correctness test: output parity (temp-0 identity) for a small model run entirely through the new IGPU input-placement path vs the existing host-buffer path, plus a discrete-GPU (XTX/R9700) control confirming zero behavior change there (predicate must be false for non-IGPU devices).
+6. Benchmark PP across model/batch sizes on gfx1151 with full offload vs CPU-offload vs discrete-GPU controls; report sync count, PP, and residency.
+
+1. Read src/llama-model.cpp around line 1537 in full (the function containing `pimpl->dev_input = { cpu_dev, &pimpl->cpu_buft_list };`) to see its surrounding conditionals -- confirm whether any existing GPU-offload branch already exists nearby that this assignment falls through from.
+2. Define the exact qualified condition per GPT's fix: single-IGPU + full-offload case where `ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_IGPU`, `i_gpu_start == 0`, and `act_gpu_layers == n_layer_all + 1` (i.e. every layer including input is GPU-offloaded). Grep for `i_gpu_start`/`act_gpu_layers`/`n_layer_all` in src/llama-model.cpp to confirm these are the real variable names available at this point in the function.
+3. Under that exact condition, set `pimpl->dev_input` to `{ <selected IGPU device>, &pimpl->gpu_buft_list.at(dev) }` instead of the CPU assignment; otherwise (multi-device, partial offload, discrete GPU, non-IGPU) preserve the existing CPU assignment exactly -- fail closed to CPU, never guess a multi-device policy.
+4. If multiple IGPU devices could ever coexist (unlikely on this project's hardware, but must be handled or explicitly excluded), define exact behavior in the plan and code (fail closed to CPU rather than an unspecified device selection) -- this was previously undefined and must not ship undefined.
+5. Add correctness test: output parity (temp-0 identity) for a small model run entirely through the new IGPU input-placement path vs the existing CPU-host-buffer path, plus a discrete-GPU (XTX/R9700) control confirming the condition in step 2 is false there and dev_input stays CPU-assigned (zero behavior change).
 6. Benchmark PP across model/batch sizes on gfx1151 with full offload vs CPU-offload vs discrete-GPU controls; report sync count, PP, and residency.
 
 ## Detailed Solution & Technical Design
@@ -97,6 +106,12 @@ PATCHES = [
 ]
 ```
 
+Real anchor (verified via `git -C work/upstream/llama.cpp.git grep -n dev_input b11126 -- src/llama-model.cpp`):
+```cpp
+    pimpl->dev_input = { cpu_dev, &pimpl->cpu_buft_list };   // src/llama-model.cpp:1537
+```
+patches/<order>_prbe51_uma_input_offload/patch.py Edit() must anchor on this exact line (read the full enclosing function first per step 1 before finalizing the guard/replace text) -- do NOT anchor on make_cpu_buft_list, which is a shared general-purpose helper used for multiple device/layer buffer-type lists, not the input-layer-specific decision point.
+
 ## Files
 
 src/llama-model.cpp; src/llama.cpp (reference, IGPU enumeration); tests/ (output-parity + sync-count instrumentation); patches/<order>_prbe51_uma_input_offload/{patch.toml,patch.py,SUMMARY.md}
@@ -125,6 +140,8 @@ Successor key: patching-rdna-boost-experiments-rd61
 
 2026-09-24 relevance at b11126: GGML_BACKEND_DEVICE_TYPE_IGPU device class and gfx1150/1151/1152/1153 HIP targets already upstream (ggml-backend.h:140, hip.h:223, llama.cpp:107/260), but no input-layer-specific GPU-residency policy found in make_cpu_buft_list (src/llama-model.cpp:1060-1090) or its caller -- TODO stands. GPT design request req_59325a19cc8d4adb (batched with PRBE56, submitted, response pending as of this pass -- written directly from source evidence, to cross-check against GPT response once available).
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- corrected implementation surface from make_cpu_buft_list() to the real anchor pimpl->dev_input = { cpu_dev, &pimpl->cpu_buft_list } at src/llama-model.cpp:1537 (verified); scoped exact IGPU/full-offload eligibility condition and fail-closed default.
+
 ## Change Log
 
 - 2026-09-09T10:57:01.483332+00:00 (created-by): Created by capability-rebaseline-v3
@@ -140,3 +157,5 @@ Successor key: patching-rdna-boost-experiments-rd61
 - chg_20260910_031217_repaired-four-more-active-succ_7909
 - 2026-09-10T03:12:17.932869+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:36.673061+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:41:59.930173+00:00 (updated-by): Updated: section:description, section:steps, section:code_samples
+- 2026-09-24T04:42:09.294461+00:00 (updated-by): Updated: section:notes

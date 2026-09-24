@@ -17,6 +17,8 @@ priority: null
 
 TODO (scoping/research, not yet code). Scope an AMD-native ggml-hrx backend as a separate experimental lane vs upstream PR #27218, kept fully isolated from HIP patches. Relevance at b11126: confirmed ABSENT -- `git -C work/upstream/llama.cpp.git grep -ln hrx b11126` returns no backend source hits (only an unrelated tools/ui/package-lock.json string match). No ggml-hrx tree exists in-repo at this pin, so there is nothing to grep for absorption and no existing code to design edits against; GPT design step was skipped for this reason (no real anchors exist yet) per brief step 4's judgment allowance.
 
+NON-PATCH-IMPLEMENTATION ITEM (research/tracking only), confirmed by GPT review. No pinned HRX source revision, no in-tree files, no anchors, and no patches/ package can be implemented at b11126 -- ggml-hrx is absent from tree (confirmed via `git -C work/upstream/llama.cpp.git grep -ln hrx b11126`, only an unrelated package-lock.json hit). Concrete next action: pin the exact upstream PR #27218 source commit/snapshot first (network step, outside this offline mirror), THEN specify concrete CMake/backend files and anchored integration edits -- do not treat this as implementation-ready until that pin exists. Kept pending as a tracked research item, not reclassified to a different state.
+
 ## Steps
 
 1. Pull upstream PR #27218 (ggml-hrx) description/diff from GitHub (network-enabled step, not the offline mirror) and record: which ops/kernels it implements, which gfx targets it claims support for, and its CMake/build integration surface.
@@ -65,6 +67,8 @@ append
 
 2026-09-24 relevance at b11126: confirmed ggml-hrx backend absent from tree (`git -C work/upstream/llama.cpp.git grep -ln hrx b11126` only hits tools/ui/package-lock.json, no ggml source). GPT design request: skipped, no in-tree anchors exist for HRX yet.
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- confirmed non-patch-implementation item, description made explicit, concrete next action (pin PR #27218 source first) stated, kept pending.
+
 ## Change Log
 
 - 2026-09-09T10:56:49.423040+00:00 (created-by): Created by capability-rebaseline-v3
@@ -81,3 +85,5 @@ append
 - 2026-09-10T03:10:49.471004+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:04.181945+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T02:26:30.206260+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T04:41:35.446106+00:00 (updated-by): Updated: section:description
+- 2026-09-24T04:41:39.974354+00:00 (updated-by): Updated: section:notes

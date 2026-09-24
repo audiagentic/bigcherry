@@ -17,6 +17,8 @@ priority: null
 
 TODO. Decompose upstream PR #27173's compound multi-GPU speculative-scheduler change into 3 independently-portable subchanges (plan caching, redundant-sync removal, output mirroring). Relevance at b11126: the general multi-GPU split/sync machinery is confirmed present in the CORE scheduler, not the speculative layer -- `ggml_backend_sched_split_graph` (ggml-backend.cpp:1066) builds per-backend `ggml_backend_sched_split`s, and cross-backend synchronization uses per-split-per-copy events (`sched->events[backend_id][sched->cur_copy]`, `ggml_backend_event_synchronize`, ggml-backend.cpp:1664-1687). No speculative-specific multi-GPU plan-cache or sync-skip logic was found in common/speculative.cpp (grepped 'synchronize\|cross.*gpu\|multi.*gpu\|devices\[': only unrelated device-name-string hits at lines 50/54). This means PR #27173's compound change is either not yet in this pin, or lives in a part of the scheduler this grep pass did not localize -- genuinely TODO, and the exact insertion point needs the deeper read in step 1 before any patch is written.
 
+TODO, narrowed and corrected. GPT identified two real defects in the prior draft: (1) caching the raw `ggml_backend_sched_split` struct is unsafe -- splits contain current-graph tensor pointers/views and `split->inputs`, and `split_graph()` rewrites `node->src[]`, so a cached split cannot be replayed verbatim against a new graph instance; only a STABLE TEMPLATE (node backend-ID assignment + split boundaries/signature) can be cached, with instance-specific pointers/copies rematerialized each call. (2) the proposed redundant-sync example is false: verified via `git -C work/upstream/llama.cpp.git grep -n 'prev_backend_id != split_backend_id' b11126 -- ggml/src/ggml-backend.cpp` -- the existing sync ALREADY requires `prev_backend_id != split_backend_id`, so consecutive same-backend splits do not hit a sync in the first place; there is no redundant sync to remove in that case. Any sync-removal subchange must find an actual cross-device lifetime case where a sync currently fires but is provably unnecessary, not a same-backend case that already skips it. Output mirroring has no loader/storage design and belongs in a separate design rooted at model output tensor placement (`pimpl->dev_output`), not folded into ggml-backend.cpp.
+
 ## Steps
 
 1. Read `ggml_backend_sched_split_graph` (ggml-backend.cpp:1066-1460) and the graph-compute/sync loop (ggml-backend.cpp:1628-1700) in full to find where a recurring speculative-decode graph (same shape/topology across verify calls) would be re-split from scratch each call, and where a cross-device `ggml_backend_event_synchronize` fires that a cached/pre-computed split plan could skip.
@@ -26,6 +28,12 @@ TODO. Decompose upstream PR #27173's compound multi-GPU speculative-scheduler ch
 5. Subchange (c) output mirroring: a separate, independently gated experiment -- mirror the output-layer tensor to multiple GPUs to avoid one cross-device fetch, trading VRAM for reduced traffic; keep this as its own patch depending on nothing from (a)/(b).
 6. Each subchange gets its own env-gated flag, its own temp-0 identity + rollback-correctness test, and is benchmarked independently on dual XTX/R9700 (MTP widths 2..8) against single-GPU and speculation-off controls before any promotion; port only subchanges with independent, repeatable wins.
 7. Instrument scheduler CPU time, GPU sync count, copies/token, and effective TG per subchange.
+
+1. Subchange (a) plan-template caching: cache only a STABLE TEMPLATE keyed by graph shape/topology signature -- node-to-backend-ID assignment and split boundaries -- not the live `ggml_backend_sched_split` struct itself (which holds tensor pointers/views/`inputs` that `split_graph()`'s `node->src[]` rewriting invalidates across calls). On a cache hit, rematerialize a fresh split array from the template plus the new graph instance's actual tensor pointers; never reuse pointers across calls.
+2. Subchange (b) sync audit: re-read the full cross-device sync loop (ggml-backend.cpp ~1664-1687) and identify a REAL case where `prev_backend_id != split_backend_id` is true (i.e. an actual cross-backend boundary) but the sync is still provably unnecessary given the speculative draft/verify graph's known, fixed dependency structure -- do not target same-backend consecutive splits, which already skip the sync per the verified grep above.
+3. Subchange (c) output mirroring: scope as its own separate design rooted at model output tensor placement -- read `pimpl->dev_output` (grep `get_layer_buft_list(n_layer_all)` and `LLM_TENSOR_OUTPUT` handling in src/llama-model.cpp) for the real ownership/load path, define explicit mirrored-buffer lifecycle and a VRAM budget gate, before any implementation.
+4. Each subchange gets its own env-gated flag, its own temp-0 identity + rollback-correctness test, and is benchmarked independently on dual XTX/R9700 (MTP widths 2..8) against single-GPU and speculation-off controls before any promotion; port only subchanges with independent, repeatable wins.
+5. Instrument scheduler CPU time, GPU sync count, copies/token, and effective TG per subchange.
 
 ## Detailed Solution & Technical Design
 
@@ -88,6 +96,8 @@ Successor key: patching-rdna-boost-experiments-rd67
 
 2026-09-24 relevance at b11126: no speculative-specific multi-GPU plan-cache or sync-skip code found in common/speculative.cpp; general scheduler split/sync machinery confirmed in ggml-backend.cpp (ggml_backend_sched_split_graph:1066, event-sync loop:1664-1687) as the real implementation surface. GPT design request req_59325a19cc8d4adb (batched with PRBE51, submitted, response pending as of this pass -- written directly from source evidence, to cross-check against GPT response once available).
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- corrected plan-cache design (template only, not raw split struct, since split_graph() rewrites node->src[]); disproved the redundant-sync example (prev_backend_id != split_backend_id already gates it, verified); split output mirroring into its own design at pimpl->dev_output.
+
 ## Change Log
 
 - 2026-09-09T10:57:22.875427+00:00 (created-by): Created by capability-rebaseline-v3
@@ -103,3 +113,5 @@ Successor key: patching-rdna-boost-experiments-rd67
 - chg_20260910_031346_repaired-four-more-migrated-pa_4345
 - 2026-09-10T03:13:46.478053+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:35:42.791029+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:43:23.703453+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:43:28.469762+00:00 (updated-by): Updated: section:notes

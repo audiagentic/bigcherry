@@ -17,6 +17,8 @@ priority: null
 
 TODO. Route small-N (2..8) MTP/speculative verification widths through a decode-like Vulkan path instead of standard MMVQ when MMVQ harms throughput/acceptance. Relevance at b11126: no existing shape/verify-intent selector found; mul_mat_vec pipelines exist (ggml-vulkan.cpp ~2739-2751) and rm_kq-style row-count constants exist (see PRBE61) but there is no N-aware verify-path branch yet -- genuinely new dispatch logic, gated opt-in only.
 
+TODO, corrected real selector. GPT identified the real, already-existing selector (superseding the prior 'no selector found' TODO): `bool quantize_y = ... && ggml_vk_should_use_mmvq(ctx->device, ne01, ne11, ne10, src0->type);` inside `ggml_vk_mul_mat_vec_q_f16()` (verified via `git -C work/upstream/llama.cpp.git grep -n quantize_y b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp` -- real hits at lines 6109, 6442, with `ggml_vk_should_use_mmvq` defined at line 6321). The existing vector path already supports `mul_mat_vec_max_cols = 8` (confirmed, line 2735/5301) -- this item's scope must be N=2..8 (not excluding N=6/7 as the prior draft did). The experimental route is concretely: force `quantize_y = false` for qualified small-N (2..8) matmuls, selecting the F32/F16 DMMV path instead of the Q8_1 MMVQ path -- not an invented 'verify_intent' semantic signal.
+
 ## Steps
 
 1. Run the two mandatory anchor-discovery greps before writing any Edit: `git -C work/upstream/llama.cpp.git grep -n -E 'ne\[1\].*(mul_mat_vec|MMQ|mmvq|split_k)|(mul_mat_vec|MMQ|mmvq|split_k).*ne\[1\]' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp` and `git -C work/upstream/llama.cpp.git grep -n -E 'pipeline_dequant_mul_mat_vec|mul_mat_vec_q|ggml_vk_mul_mat|ggml_backend_vk_mul_mat_id|split_k' b11126 -- ggml/src/ggml-vulkan/ggml-vulkan.cpp` to find the real matmul-route selector branch and paste it into the patch before finalizing anchors -- do not invent the selector block.
@@ -26,6 +28,13 @@ TODO. Route small-N (2..8) MTP/speculative verification widths through a decode-
 5. Add the activation marker (BIGCHERRY_PATCH_HIT patch=1262_prbe55 path=vk_smalln_verify n=<N>) immediately before the real selected launch/dispatch, gated by BIGCHERRY_PATCH_TRACE, once-per-process (atomic flag pattern, see patches/1204_rd08_q6k_mmvq_vdr2/patch.py's _ACTIVATION_MARKER for the established idiom).
 6. Add MUL_MAT backend-op test cases at N={1,2,3,4,5,8,128} for the relevant quantized type; env off must reproduce baseline exactly; env on + verify_intent must only alter routing for N in {2,3,4,5,8}.
 7. Add a temp-0 identity check: same model/prompt/context/seed, baseline vs subject at --temp 0, final token-ID sequence must match; record acceptance/verify-time separately and require no acceptance regression before promotion.
+
+1. Read `ggml_vk_should_use_mmvq()` (ggml-vulkan.cpp:6321) in full to understand its existing N/shape/type decision logic before adding an override.
+2. Implement the override as an explicit, narrowly-scoped experiment: `bigcherry_vk_force_dmmv_smalln(device, ne01, ne11, ne10, src0_type)` returning true only when BIGCHERRY_VK_SMALLN_DMMV=1 (env-gated, qualification-only), device is AMD, and ne11 (N) is in [2,8] inclusive (not excluding 6/7) -- AND the graph is confirmed to be within a speculative/MTP verification context if that signal is cheaply available at this call site (grep for any n_draft/speculative context reaching ggml_vk_mul_mat_vec_q_f16's caller chain); if no such signal reaches this point, explicitly scope the experiment as an env-gated AMD small-N matmul route for ALL eligible small-N matmuls, not just speculative verification -- do not invent a verify_intent parameter that does not exist in the real call chain.
+3. Wire the override immediately before the existing `quantize_y = ... && ggml_vk_should_use_mmvq(...)` assignment at line 6442 (and the equivalent at 6109 if that call site also needs it -- confirm both by reading their surrounding functions): when the override predicate is true, force `quantize_y = false` regardless of `ggml_vk_should_use_mmvq`'s result.
+4. Add the activation marker (BIGCHERRY_PATCH_HIT patch=<id> path=vk_smalln_dmmv n=<N>) immediately after the override forces quantize_y=false, gated by BIGCHERRY_PATCH_TRACE.
+5. Add MUL_MAT backend-op test cases at N={1,2,3,4,5,6,7,8,128} for the relevant quantized type; env off must reproduce baseline exactly; env on must only alter routing for N in [2,8].
+6. Add a temp-0 identity check: same model/prompt/context/seed, baseline vs subject at --temp 0, final token-ID sequence must match; record acceptance/verify-time separately (if a speculative context) and require no acceptance regression before promotion.
 
 ## Detailed Solution & Technical Design
 
@@ -124,6 +133,8 @@ Successor key: patching-rdna-boost-experiments-rd65
 
 2026-09-24 relevance at b11126: no existing small-N verify-path selector found (grep for ne[1]+mul_mat_vec/MMQ/mmvq/split_k patterns not yet run against real selector body -- flagged as mandatory step 1 in this plan, not yet executed by this planning pass). GPT design request req_63a12ebff6544a0a (batched with PRBE62).
 
+2026-09-24 GPT review req_2b65d50ebe9547fd applied: NOT-READY -- replaced 'no selector found' premise with real anchor: quantize_y = ... ggml_vk_should_use_mmvq(...) at ggml-vulkan.cpp:6442/6109; corrected scope to N=2..8 (was wrongly excluding 6/7); removed invented verify_intent, scoped as env-gated AMD small-N DMMV-forcing experiment.
+
 ## Change Log
 
 - 2026-09-09T10:57:18.934230+00:00 (created-by): Created by capability-rebaseline-v3
@@ -139,3 +150,5 @@ Successor key: patching-rdna-boost-experiments-rd65
 - chg_20260910_031217_repaired-four-more-active-succ_7909
 - 2026-09-10T03:12:17.975805+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:30:11.685849+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:43:09.291591+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:43:18.780208+00:00 (updated-by): Updated: section:notes

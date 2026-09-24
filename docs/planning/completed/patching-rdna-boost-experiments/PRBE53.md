@@ -59,6 +59,8 @@ Require reference-quality mixed-K/V outputs, verified non-fallback MMA/tile exec
 
 2026-09-24 relevance at b11126: UPSTREAM-ABSORBED, confirmed via ggml/src/ggml-cuda/fattn.cu:513-527 (ggml_cuda_fattn_kv_type_supported checked independently per K/V) and fattn.cu:423-489 (ggml_cuda_get_fattn_vec_case full cross-product table incl. F16/Q8_0, Q8_0/Q4_0, Q4_0/Q8_0). No K==V equality gate exists in ggml-cuda (only an unrelated one in ggml-opencl.cpp:9157). GPT design request: none needed, disposition made directly from source evidence before the batched GPT request (req_bf8959fb36d248e4, submitted covering PRBE53+PRBE54) returned -- see PRBE54 for that request's use.
 
+2026-09-24 GPT review req_2b65d50ebe9547fd: READY
+
 ## Change Log
 
 - 2026-09-09T10:57:10.449932+00:00 (created-by): Created by capability-rebaseline-v3
@@ -75,3 +77,4 @@ Require reference-quality mixed-K/V outputs, verified non-fallback MMA/tile exec
 - 2026-09-10T03:12:17.949987+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:28:53.607363+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T02:29:15.651094+00:00 (state-transition): State: pending → superseded
+- 2026-09-24T04:34:06.656744+00:00 (updated-by): Updated: section:notes

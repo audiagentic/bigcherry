@@ -15,16 +15,18 @@ priority: P1
 
 ## Description
 
-TODO. No existing BigCherry patch package (item's own Files section already admits "Future package/patch after implementation review"). GPT-assisted relevance check: b11126 ggml-backend.cpp:1693 has an existing "copy only the experts that are used" optimization -- but that reduces each transfer to routed experts per-call; it does NOT retain expert slices resident across decode steps, so it is orthogonal to (not a substitute for) this item's bounded GPU-resident cache goal. Next agent must confirm this by reading the full function around ggml-backend.cpp:1693 before authoring (see detailed_solution) -- if upstream turns out to already keep bounded resident slices with hit/miss remap across decode calls, reclassify UPSTREAM-ABSORBED instead. Absent that, disposition is TODO.
+TODO, NOT-READY. CORRECTED per GPT review: the prior 'first-check' design (per-llama_context cache, include/llama.h params, src/llama-context.cpp wiring, ggml-backend.cpp:1693 integration point) misidentified the real host-weight MUL_MAT_ID branch. Verified at b11126: `ggml_backend_sched_compute_splits()` (ggml-backend.cpp:1646) contains the real `used_ids`/`copy_experts` expert-copy-reduction logic (used_ids bitset built at ~1731-1737, copy_experts lambda at ~1745, consumed ~1760-1781) -- it only copies routed expert ranges for the CURRENT split; it does not retain them across decode calls. This confirms the item is relevant (not upstream-absorbed) but still undesigned against the real anchor.
 
 ## Steps
 
-- Freeze 6ed7fb04... and enumerate CLI/context, routing callback, cache ownership, device tables, CPU skip table, GPU cached mul_mat_id chain, upload worker and decode-boundary publication.
-- Prove exact decomposition: CPU skips cached rows, GPU remaps uncached IDs to zero slot, and summed outputs equal stock for every routing ID.
-- Start with a deterministic static mapping and synthetic routing trace; separate LRU policy from graph correctness before asynchronous replacement.
-- Model mapping generations and publish only after full expert-slice upload; test eviction, active requests, teardown, repeated context creation and callback lifetime.
-- Instrument hits/misses/inserts/evictions/bytes avoided; sweep slots/throttle across no-locality and phase-changing traces; measure host/PCIe traffic, decode TPS, VRAM and warmup.
-- Keep prefill and fully GPU-resident models as strict non-selection controls; promote only when net gain exceeds maintenance and VRAM cost.
+1. Read ggml_backend_sched_compute_splits() (ggml-backend.cpp:1646) in full, including the used_ids bitset construction (~1731-1737) and copy_experts lambda (~1745, consumed ~1760-1781), before authoring any Edit() -- this is the real host-weight MUL_MAT_ID branch, not the ggml-backend.cpp:1693 line previously cited.
+2. Anchor cache ownership in ggml_backend_sched (verify the exact struct/scheduler-state location) rather than a new per-llama_context object, since the real copy-reduction logic lives at the scheduler level, not the context level.
+3. Explicitly specify: CPU skip-table construction (which expert IDs are cache-resident and should be skipped from the host copy), cached-ID remap into resident GPU slots, CUDA MUL_MAT_ID execution against the remapped IDs, the merge of CPU-computed and GPU-cached-slot results, generation publication (atomic, only after a full slice upload completes), slot lifetime, and teardown -- all currently unspecified -- BEFORE authoring patch 1262.
+4. Prove exact decomposition: CPU skips cached rows, GPU remaps uncached IDs to zero slot, and summed outputs equal stock for every routing ID.
+5. Start with a deterministic static mapping and synthetic routing trace; separate LRU policy from graph correctness before asynchronous replacement.
+6. Model mapping generations and publish only after full expert-slice upload; test eviction, active requests, teardown, repeated context creation and callback lifetime.
+7. Instrument hits/misses/inserts/evictions/bytes avoided; sweep slots/throttle across no-locality and phase-changing traces; measure host/PCIe traffic, decode TPS, VRAM and warmup.
+8. Keep prefill and fully GPU-resident models as strict non-selection controls; promote only when net gain exceeds maintenance and VRAM cost.
 
 ## Detailed Solution & Technical Design
 
@@ -62,6 +64,8 @@ Successor key: patching-nasone-rdna-optimizations-nro09
 
 2026-09-24 relevance at b11126: TODO. GPT design request req_dcceb6cbd73245d6 (dev-gpt-agent) completed successfully and its design (per-context llama_moe_expert_cache, CPU-skip/GPU-remap decomposition, static-map-before-LRU staging, generation-counter publication) is incorporated above. GPT flagged that ggml-backend.cpp:1693's existing 'copy only used experts' optimization must be read in full by the next agent before authoring, in case it already covers this scope (would reclassify to UPSTREAM-ABSORBED) -- this was not yet confirmed either way in this session.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: corrected the real anchor from ggml-backend.cpp:1693 to ggml_backend_sched_compute_splits() (ggml-backend.cpp:1646), with the actual used_ids/copy_experts logic verified at ~1731-1781. Cache ownership moved from a proposed new per-llama_context object to ggml_backend_sched itself, matching where the real copy-reduction logic lives. Required explicit CPU skip-table/GPU remap/merge/generation-publication/teardown design before authoring patch 1262 (previously left to the implementer).
+
 ## Change Log
 
 - 2026-09-09T10:52:46.423935+00:00 (created-by): Created by capability-rebaseline-v3
@@ -78,3 +82,4 @@ Successor key: patching-nasone-rdna-optimizations-nro09
 - 2026-09-10T02:43:04.884669+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:53.119489+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk
 - 2026-09-24T02:33:08.094920+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T04:49:41.845664+00:00 (updated-by): Updated: section:description, section:steps, section:notes

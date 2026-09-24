@@ -15,15 +15,18 @@ priority: P0
 
 ## Description
 
-Apply and qualify the wave32-native TOP_K follow-up only as a causal increment on PNRO06.
+TODO, NOT-READY (rescoped, blocked on PNRO06 rebase). Apply and qualify the wave32-native TOP_K follow-up as a causal increment on PNRO06 -- CORRECTED: verified via patch.py that 1257 only adds an UNUSED TOP-1 wave32 reduction helper function; the documented two-half 64-bin scan and ITEMS_PER_THREAD changes are absent, and no selector anywhere calls the helper. This item's parent (PNRO06) also needs rebasing against b11126's existing HIP radix path before this item can proceed (see PNRO06's corrected scope).
 
 ## Steps
 
-- Require PNRO06 post-image and verify source pre-image before applying 7f1d25f7...
-- Port explicit 32-lane shuffle/fallback structure, two-half 64-bin scans, and ITEMS_PER_THREAD tuning separately where possible.
-- Run PNRO06 correctness fixtures unchanged plus 31/32/33 and 63/64/65 boundaries, ties, NaNs and block/item coverage edges.
-- Profile LDS traffic, occupancy, VGPRs, pass count and duration; compare PNRO06-only control with PNRO06+PNRO07 on identical real signatures.
-- Retain selector/fallback when wave32 assumptions are not proven or benefit is subset-only; do not extrapolate wave size.
+1. Wait for PNRO06 to be rebased against b11126's real existing top_k_radix_cuda/bitonic implementation (see PNRO06's corrected plan) -- this item's target kernels do not yet have a stable rebased identity to apply wave32 changes to.
+2. Once rebased, apply source 7f1d25f7...'s wave32 changes to the CONCRETE PNRO06 kernels that actually exist post-rebase (not the unused standalone helper currently in 1257's patch.py).
+3. Gate on runtime warp size 32 (verify the real warp-size detection mechanism already used elsewhere in this project's HIP code).
+4. Implement the documented two-half 64-bin scan and ITEMS_PER_THREAD changes for real, wired into the actual selection kernel -- not as an unused helper.
+5. Preserve non-wave32 fallback.
+6. Add a distinct PNRO07 activation marker (separate from PNRO06's, since PNRO07 is an independent causal increment).
+7. Run PNRO06 correctness fixtures unchanged plus 31/32/33 and 63/64/65 boundaries, ties, NaNs and block/item coverage edges.
+8. Profile LDS traffic, occupancy, VGPRs, pass count and duration; compare PNRO06-only control with PNRO06+PNRO07 on identical real signatures.
 
 ## Detailed Solution & Technical Design
 
@@ -61,6 +64,8 @@ Successor key: patching-nasone-rdna-optimizations-nro08
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. Item title is wave32 TOP_K follow-up; its own Files section and patches/ dir map it to patches/1257_nro08_topk_wave32 (state=untested, requires 1256_nro07_topk_hybrid i.e. PNRO06's patch) -- package literally named nro08 (matches its "Successor key: nro08"/Supersedes NRO08), verified via patches/1257*/patch.toml id field, consistent with the plan item id PNRO07. Disposition: validate/qualify existing patch; no GPT design needed.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1257 only adds an unused TOP-1 wave32 reduction helper with no scan/ITEMS_PER_THREAD wiring and no caller. Rescoped as blocked on PNRO06's rebase (its target kernels don't have a stable post-rebase identity yet) and required the wave32 changes be applied to the real, concrete kernels with a distinct activation marker, rather than left as dead code.
+
 ## Change Log
 
 - 2026-09-09T10:52:42.526873+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +81,4 @@ Successor key: patching-nasone-rdna-optimizations-nro08
 - chg_20260910_024304_three-nasone-successors-now-pr_2691
 - 2026-09-10T02:43:04.870594+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:33.904175+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-09-24T04:49:31.554021+00:00 (updated-by): Updated: section:description, section:steps, section:notes

@@ -15,14 +15,17 @@ priority: P2
 
 ## Description
 
-Explore whether BigCherry can pre-compute a reusable, model-fingerprinted MoE expert placement map before llama.cpp gains runtime expert-parallel execution, and whether routing traces can be replayed offline to estimate device participation and transport cost. This was previously prototyped on a now-deleted branch (`expert-placement-offline`, commits f21d5022..5ccf5ba9, 6 commits, ~740 lines) but was discarded per a GPT deep-review recommendation (2026-09-11): it was 494 commits behind main, its own README marked it an untracked exploratory spike with open question state, its required GGUF/routing validation evidence was never produced, and its files were never registered in the mandatory TOOL_DISPOSITION.md registry. The underlying idea is still worth pursuing -- this item exists so it is resumed as tracked work against whatever `main` is current at pickup time, not by resurrecting the deleted branch.
+TODO, NOT-READY, RECLASSIFIED per GPT review as a tooling-implementation item, not a patches/ item. Explore whether BigCherry can pre-compute a reusable, model-fingerprinted MoE expert placement map before llama.cpp gains runtime expert-parallel execution. CORRECTED: this item was explicitly not a patches/ item and cannot satisfy the review's llama.cpp-Edit()-package handoff contract -- no such package should be fabricated for it. Even judged purely as tooling work, the exact vendored GGUFReader import/API and the concrete evidence path/target model remain marked NEEDS-VERIFICATION/TBD in this item's own detailed_solution -- these must be resolved before implementation, not left open.
 
 ## Steps
 
-1. Re-derive the approach fresh against current main -- do not attempt to cherry-pick or rebase the deleted branch's commits (they predate 494+ commits of unrelated history and the branch is gone).
-2. Re-establish the original spike's scope, which was deliberately runtime-inert (no patching of build_moe_ffn, no GGUF mutation, no runtime expert movement, no new RCCL communicators): exact GGUF tensor/expert inventory via llama.cpp's gguf-py, per-layer packed-expert byte accounting, PLE/Engram and named-MTP byte classification, deterministic static expert-home compilation from explicit per-device expert budgets, model-layout fingerprinting (so a stale map fails validation), global expert ID -> device/local-slot maps for a future llama.cpp executor, and offline routing-trace replay to estimate auxiliary-store touch frequency and minimum activation/result traffic implied by a candidate map.
-3. Register every new tool file in docs/reference/tooling/TOOL_DISPOSITION.md as part of the same change (this was the concrete governance gap that blocked the original spike from merging).
-4. Produce the real GGUF/routing validation evidence the original spike never got to -- this plan item should not be closed on code-exists-and-is-tested alone, per this project's own patch/tool lifecycle doctrine (current qualification requires real evidence, not just a clean implementation).
+1. Treat this explicitly as a tooling-implementation item under tools/lab/moe-expert-placement/ (per this project's own convention: bench/tool scripts go in tools/lab/<topic>/), NOT a patches/ package -- no llama.cpp Edit() should ever be authored for this item's scope.
+2. Before writing inventory.py, resolve the exact vendored GGUFReader import path/API by grepping other tools/lab/* scripts for `import gguf` to match this project's existing convention (currently unresolved/TBD).
+3. Resolve the concrete evidence path and target model for the real-model validation run (currently TBD by convention -- check an existing tools/lab/*/README.md for the project's evidence-artifact placement convention and this project's actual current production benchmarking model) before authoring the CLI pipeline.
+4. Re-derive the approach fresh against current main -- do not attempt to cherry-pick or rebase the deleted branch's commits.
+5. Re-establish the original spike's scope (deliberately runtime-inert: no patching of build_moe_ffn, no GGUF mutation, no runtime expert movement, no new RCCL communicators): GGUF tensor/expert inventory, per-layer packed-expert byte accounting, PLE/Engram and named-MTP byte classification, deterministic static expert-home compilation from explicit per-device expert budgets, model-layout fingerprinting, global expert ID -> device/local-slot maps, and offline routing-trace replay.
+6. Register every new tool file in docs/reference/tooling/TOOL_DISPOSITION.md as part of the same change.
+7. Produce the real GGUF/routing validation evidence the original spike never got to, against a concretely identified model (resolved in step 3) -- this item should not be closed on code-exists-and-is-tested alone.
 
 ## Detailed Solution & Technical Design
 
@@ -58,6 +61,8 @@ Original spike's own topology.brutus.example.json expert budgets were explicitly
 
 2026-09-24 relevance at b11126: TODO (tooling, not a llama.cpp/patches/ change). This item is pure BigCherry tooling under tools/lab/ per project convention (bench/tool scripts go in tools/lab/<topic>/, never /tmp). GPT design consultation was not used for this item -- the design followed directly from the item's own already-detailed steps plus this project's established tools/lab/ and TOOL_DISPOSITION.md conventions (verified docs/reference/tooling/TOOL_DISPOSITION.md exists and states the registry requirement); no llama.cpp source design questions were open that required GPT. Next agent must verify gguf-py's actual import/API surface against the vendored b11126 copy before writing inventory.py, and must re-derive real per-device expert budgets from an actual current model rather than reusing the deleted spike's example numbers (already flagged in this item's pre-existing Notes).
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed this item cannot satisfy the review's patch-package handoff contract since it is explicitly tooling, not a patches/ change -- no Edit() package should be fabricated for it. Required the previously NEEDS-VERIFICATION/TBD items (exact vendored GGUFReader import/API, concrete evidence path/target model) to be resolved as explicit prerequisite steps before implementation, rather than left open at authoring time.
+
 ## Change Log
 
 - 2026-09-11T04:32:00.691672+00:00 (created-by): Created by agent
@@ -70,3 +75,4 @@ Original spike's own topology.brutus.example.json expert budgets were explicitly
 - 2026-09-14T10:50:37.293465+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:44.348953+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk
 - 2026-09-24T02:32:04.448145+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T04:51:51.108221+00:00 (updated-by): Updated: section:description, section:steps, section:notes

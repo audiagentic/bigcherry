@@ -57,6 +57,8 @@ Successor key: patching-rdna-boost-experiments-rd86
 
 2026-09-24 relevance at b11126: OBSOLETE, premise does not hold. Verified via git show b11126:ggml/src/ggml-vulkan/ggml-vulkan.cpp -- device->max_nodes_per_submit is set once (device init) and never adapted/ramped over the run; no warmup-ramp code path exists anywhere in ggml-vulkan.cpp (grep for 'ramp'/'warmup' near max_nodes_per_submit returns nothing). If a genuinely new adaptive-ramp feature is wanted, that is new-feature scope, not a bound on existing behavior, and should be filed as a fresh item once PRBE68 ships and there is real motivation to add ramping (e.g. a measured cold-start cost that a static cap doesn't address) -- not assumed here. Superseded by PRBE68, which already covers the safety concern (timeout-prone older AMD) via a static architecture-aware cap without introducing new ramp complexity. GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003); disposition made directly from source inspection -- no GPT request id.
 
+2026-09-24 GPT review req_d55aed71224e43a8: READY
+
 ## Change Log
 
 - 2026-09-09T10:58:22.589852+00:00 (created-by): Created by capability-rebaseline-v3
@@ -73,3 +75,4 @@ Successor key: patching-rdna-boost-experiments-rd86
 - 2026-09-10T03:19:07.594642+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:36.978396+00:00 (updated-by): Updated: section:description, section:notes
 - 2026-09-24T02:32:57.870595+00:00 (state-transition): State: pending → deprecated
+- 2026-09-24T04:34:15.616708+00:00 (updated-by): Updated: section:notes

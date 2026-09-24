@@ -19,12 +19,13 @@ TODO, rescoped off dead identity. PRBE04's target (RD07 Q6_K MMQ sub-scale fold/
 
 ## Steps
 
-1. Confirm PRBE110 has landed the new RD07-only patch package (bound to RD07-Q6K-MMQ-PREFILL-FOLD contract per PRBE110's own step 1); if not landed, stay blocked rather than qualifying the dead 1203 identity.
-2. Audit the exact Q6_K symbol/hunk in the new package against patch 1000/HI71 (dense-shape-aware eligibility) to resolve the current baseline composition including 1000.
-3. Run PEF01's specific illegal-memory/safety gates FIRST -- this item's own notes explicitly flag that the 2026-09-12 real-hardware pass did NOT include these and that a clean timing number must not be treated as satisfying this item without them (this item's own standard: 'PEF01 quarantine mandatory... never relax EX02').
-4. Run HI71 dense-shape eligibility verification to confirm the treatment only selects eligible Q6_K shapes, not a generalized pattern.
-5. Compare baseline+new-RD07-patch only, on exact Q6_K shapes, gfx1201 primary with gfx1100 non-regression control -- repeat the same shape matrix and repetition discipline as the old (now-voided) 1203 run, but under the new patch identity and citing fresh evidence.
-6. Record the new patch's resolved identity, PEF01/HI71 gate results, shape matrix, and fallback/quarantine decision; only then does the prior RD07 performance signal (pp2048 +6.2%, pp512 +3.4% under the old 1203 identity) become reusable as a directional expectation, not as closing evidence.
+1. PRBE110 must land a new patches/<id>/ package carrying ONLY the RD07 edits from 1203/patch.py: `rd07-hoist-base-scale`, `rd07-fold-subscale`, `rd07-sum-line` in ggml/src/ggml-cuda/mmq-vec-dot.cuh (anchors verified present at patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py lines 752/761/771; note rd07-fold-subscale is order-dependent, anchoring on text inserted by rd07-hoist-base-scale -- preserve edit order), plus the Q6_K dispatch marker/J_MAX/test edits already scoped in 1203. This item is blocked until PRBE110 delivers that exact package.
+2. Bind PRBE04 to PRBE110's final RD07-only package id once it lands.
+3. Audit the Q6_K symbol/hunk in the new package against patch 1000/HI71 (dense-shape-aware eligibility) to resolve baseline composition including 1000.
+4. Run PEF01's illegal-memory/safety gates FIRST -- the 2026-09-12 real-hardware pass under the old 1203 identity did NOT include these; a clean timing number does not satisfy this item without them (standard: 'PEF01 quarantine mandatory... never relax EX02').
+5. Run HI71 dense-shape eligibility verification to confirm the treatment only selects eligible Q6_K shapes.
+6. Compare baseline+new-RD07-patch only, on exact Q6_K shapes, gfx1201 primary with gfx1100 non-regression control -- same shape matrix/repetition discipline as the old run, under the new identity.
+7. Record the new patch identity, PEF01/HI71 gate results, shape matrix, fallback/quarantine decision; only then does the old RD07 performance signal (pp2048 +6.2%, pp512 +3.4%) become a directional expectation, not closing evidence.
 
 ## Detailed Solution & Technical Design
 
@@ -66,6 +67,10 @@ REAL RESULT 2026-09-12: correctness (PPL-equality, see PRBE02) PASS, sigma=1.35.
 
 2026-09-24 relevance at b11126: TODO, blocked on PRBE110; PEF01 safety gate and HI71 eligibility check are the real, never-yet-closed gaps per this item's own prior notes, not the timing claim (which already passed cleanly under the old, now-voided identity). GPT design request submitted (req_990c48138f9b408e, batched with PRBE02); gateway was heavily congested at submission time -- if it doesn't complete, this plan was authored directly against real patch.toml/SUMMARY.md evidence and this item's own prior real-hardware notes.
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE04's PRBE110 dependency to the RD07-only edits (rd07-hoist-base-scale, rd07-fold-subscale, rd07-sum-line in mmq-vec-dot.cuh, verified present and order-dependent in patches/1203.../patch.py) plus Q6_K dispatch marker/J_MAX/test edits; item remains pending/blocked on PRBE110, PEF01/HI71 gates still mandatory.
+
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE04's PRBE110 dependency to the RD07-only edits (rd07-hoist-base-scale, rd07-fold-subscale, rd07-sum-line in mmq-vec-dot.cuh, verified present and order-dependent in patches/1203.../patch.py) plus Q6_K dispatch marker/J_MAX/test edits; item remains pending/blocked on PRBE110, PEF01/HI71 gates still mandatory.
+
 ## Change Log
 
 - 2026-09-09T10:53:43.516065+00:00 (created-by): Created by capability-rebaseline-v3
@@ -87,3 +92,5 @@ REAL RESULT 2026-09-12: correctness (PPL-equality, see PRBE02) PASS, sigma=1.35.
 - chg_20260912_032330_ran-the-first-ever-real-hardwa_3337
 - 2026-09-12T03:23:30.822091+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:31:54.027638+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:34:32.167487+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T04:34:56.164846+00:00 (updated-by): Updated: section:steps, section:notes

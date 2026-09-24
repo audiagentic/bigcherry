@@ -17,6 +17,8 @@ priority: null
 
 TODO. No patch or upstream absorption. At b11126, ggml/src/ggml-vulkan/ggml-vulkan.cpp sets a fixed `device->max_nodes_per_submit = 100` default with only a manual `GGML_VK_MAX_NODES_PER_SUBMIT` env override -- there is no automatic architecture-aware cap today.
 
+TODO. No patch or upstream absorption. At b11126, ggml/src/ggml-vulkan/ggml-vulkan.cpp sets a fixed `device->max_nodes_per_submit = 100` default with only a manual `GGML_VK_MAX_NODES_PER_SUBMIT` env override -- there is no automatic architecture-aware cap today. GPT review confirmed: upstream issue #26679 documents a real gfx1201/RADV regression from PR #26371's submission batching but provides NO numeric GCN-timeout table or architecture-safe ceiling -- there is no evidence to freeze a cap table from today. This item's fallback (leave cap=100, add telemetry logging only) does NOT itself implement the titled 'architecture-aware cap' -- it must be explicitly labeled as the telemetry-only outcome, not silently presented as satisfying the item's own acceptance criteria.
+
 ## Steps
 
 1. Re-read upstream issue #26679's own data (fetch via `gh issue view 26679 --repo ggml-org/llama.cpp` or web) to see which exact architectures/drivers showed timeout risk and which showed the RDNA4 regression from over-conservative submission caps -- do not guess thresholds without this.
@@ -24,6 +26,12 @@ TODO. No patch or upstream absorption. At b11126, ggml/src/ggml-vulkan/ggml-vulk
 3. If #26679 does not contain enough evidence to justify raising the default for any architecture, keep the default at 100 unconditionally and add only a debug log of the chosen value plus the architecture that selected it (telemetry-only path) -- state this explicitly if it is the outcome.
 4. Add a unit test mocking device->architecture/vendor_id/driver_id combinations and asserting the selected cap.
 5. Hardware: long-run stability test (no DeviceLost/timeout) on old AMD/GCN control, gfx1100, gfx1201, plus PP/TG and submission-count telemetry comparison against the current fixed-100 baseline.
+
+1. Re-read upstream issue #26679's own data (fetch via `gh issue view 26679 --repo ggml-org/llama.cpp` or web) -- confirmed by this review to contain a qualitative gfx1201/RADV regression report from PR #26371, but no numeric cap table. Do not assume a table exists; if the issue still lacks numeric evidence when re-checked, proceed directly to step 3 (telemetry-only) rather than guessing thresholds.
+2. Only if #26679 (or a follow-up upstream discussion) is found to contain real numeric evidence: implement an architecture/driver-keyed cap function at the device-init block (ggml-vulkan.cpp, ~line 4058), replacing the fixed default. This is the CONDITIONAL branch, not the default expected outcome of this pass.
+3. DEFAULT/EXPECTED OUTCOME given current evidence: keep `device->max_nodes_per_submit = 100` unconditionally unchanged, and add ONLY a debug log of the chosen value plus the architecture/driver that selected it (telemetry-only path), explicitly recorded in this item's disposition as 'telemetry-only, no numeric cap change -- insufficient upstream evidence for a table' rather than closed as if the architecture-aware cap were implemented.
+4. Add a unit test mocking device->architecture/vendor_id/driver_id combinations and asserting the telemetry log fires with correct values (or, if step 2's conditional branch is taken, asserting the selected cap).
+5. Hardware: long-run stability test (no DeviceLost/timeout) on old AMD/GCN control, gfx1100, gfx1201, plus PP/TG and submission-count telemetry comparison against the current fixed-100 baseline, and explicit reproduction of #26679's gfx1201/RADV regression scenario if feasible (to convert the qualitative report into first-party numeric evidence this project could later use).
 
 ## Detailed Solution & Technical Design
 
@@ -80,6 +88,8 @@ Require architecture-specific cap that prevents safety failures while avoiding m
 
 2026-09-24 relevance at b11126: TODO confirmed, fixed default + manual env override only (verified via git show b11126:ggml/src/ggml-vulkan/ggml-vulkan.cpp ~line 4058). GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003); plan authored directly -- no GPT request id.
 
+2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- confirmed #26679 has no numeric cap table (qualitative gfx1201/RADV regression report only); made telemetry-only the explicit DEFAULT/expected outcome (not silently equated with implementing the titled architecture-aware cap), numeric-cap branch now clearly conditional on future evidence.
+
 ## Change Log
 
 - 2026-09-09T10:58:18.039731+00:00 (created-by): Created by capability-rebaseline-v3
@@ -95,3 +105,5 @@ Require architecture-specific cap that prevents safety failures while avoiding m
 - chg_20260910_031907_repaired-the-vulkan-submission_2651
 - 2026-09-10T03:19:07.580884+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:24.544952+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:48:25.374063+00:00 (updated-by): Updated: section:description, section:steps
+- 2026-09-24T04:48:28.309628+00:00 (updated-by): Updated: section:notes

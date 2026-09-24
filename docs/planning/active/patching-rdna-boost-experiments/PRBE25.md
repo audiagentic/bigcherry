@@ -19,12 +19,12 @@ IMPLEMENTED-AS-PATCH (sub-scope of 1237). PRBE25's scope (compact per-expert MMQ
 
 ## Steps
 
-1. Confirm PRBE24's map-construction correctness/overhead validation has passed (hard dependency, per this item's own acceptance criteria: 'PRBE25 cannot proceed on obsolete source assumptions' and the parent item's explicit prerequisite ordering).
-2. Author a launched/useful-block telemetry extraction (rocprofv3-based) separate from PRBE24's map-only microbenchmark: real launched block count vs. useful (non-empty) block count, empty-block fraction, kernel time.
+1. Confirm PRBE24's map-construction correctness/overhead validation has passed (hard dependency).
+2. CORRECTED per GPT review: rocprofv3 alone can report launched-grid dimensions but NOT the useful-block count, which exists only as the device-side value block_start[n_experts] (the host launches the upper bound rd30_max_m_blocks and the kernel early-returns on the padded tail, so there is no telemetry path exposing the useful count without instrumentation). Reuse PRBE24's env-gated (BIGCHERRY_VALIDATE_RD31) telemetry hook at the compact-launch call site (immediately after `mmq_build_moe_block_map<<<...>>>`) to also emit `{launched_y=rd30_max_m_blocks, useful_y=block_start[n_experts], fallback}` so rd32_launch_efficiency.py can compute the empty-block fraction deterministically, combined with rocprofv3's launched-grid/kernel-time telemetry.
 3. Use the SAME EC13/RD94 hostile-routing distribution matrix as PRBE23/PRBE24 (uniform/all-one/skew/Zipf/tiny/n_expert=256) so results are directly comparable across all three items.
 4. Measure E2E PP for Qwen3.6-35B-A3B at pp128/512/1024/4096, with dense/uniform and tiny-batch controls quantifying indirection overhead.
 5. Compare the measured +0.73%..+0.90% informal result against the formal campaign's re-measurement; note that the existing 3 rounds are described in patch.py/notes as informal, not campaign-recorded.
-6. Promote conditionally only at >=2% PP gain on target routing with <1% dense loss (the informal evidence is currently BELOW this 2% threshold -- flag this explicitly: the item may end up 'not promoted, retain as negative/marginal evidence' rather than promoted, pending the formal re-measurement).
+6. Promote conditionally only at >=2% PP gain on target routing with <1% dense loss (the informal evidence is currently BELOW this 2% threshold -- flag this explicitly).
 
 ## Detailed Solution & Technical Design
 
@@ -62,6 +62,8 @@ Successor key: patching-rdna-boost-experiments-rd32
 
 2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (sub-scope of 1237, untested). No GPT design request needed -- no new source design. Flagged: existing informal +0.73%..+0.90% pp512 evidence is below this item's own explicit >=2% promotion threshold; formal campaign should settle whether this is a real marginal gain or noise, and the plan should not assume promotion is likely.
 
+2026-09-24 GPT review req_2b717df095b44703 applied: corrected the telemetry mechanism -- rocprofv3 can report launched-grid dims but not the useful-block count (device-only value block_start[n_experts]); reused PRBE24's env-gated D2H dump hook (BIGCHERRY_VALIDATE_RD31) to emit launched/useful/fallback counters so rd32_launch_efficiency.py can compute empty-block fraction deterministically.
+
 ## Change Log
 
 - 2026-09-09T10:55:09.148172+00:00 (created-by): Created by capability-rebaseline-v3
@@ -77,3 +79,4 @@ Successor key: patching-rdna-boost-experiments-rd32
 - chg_20260910_025409_moe-mmq-successors-prbe2325-n_6205
 - 2026-09-10T02:54:09.770527+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:09.396393+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:44:24.022042+00:00 (updated-by): Updated: section:steps, section:notes

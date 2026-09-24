@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-TODO -- still relevant, no BigCherry patch exists yet and this is a documentation/triage item, not a code change. Research triage of the third-party BridgeSpec (kdheeraj-p/bridgespec) HIP MTP/DFlash speculative-decoding sidecar and its gfx1100 MMVQ tuning, to decide adopt/adapt/inspiration-only/not-applicable. This is a provenance-and-comparison exercise; it produces a written recommendation, not a patch.
+NON-PATCH-IMPLEMENTATION ITEM (confirmed by GPT review): this is explicitly a research/triage item -- it defines no patch package, files, anchors, dispatch, gate, marker, or correctness test, and none should be fabricated for it. Concrete next action: pin BridgeSpec's exact source commit + license via `gh api`, read it in full, and produce the written adopt/adapt/inspiration-only/not-applicable recommendation described in steps/detailed_solution. If BridgeSpec is adopted, open a NEW, separate plan item with its own exact b11126 files/anchors/patch-package design -- do not fold implementation into PRBE07. Item stays pending until the recommendation is written.
 
 ## Steps
 
@@ -62,6 +62,8 @@ Successor key: patching-rdna-boost-experiments-rd101
 
 2026-09-24 relevance at b11126: TODO, no patch exists, pure research/comparison item (no kernel-level design applies). No GPT design request used -- this item has no code to design against; it is a literature/provenance triage whose output is a written recommendation, consistent with its own Acceptance Criteria ("A written recommendation... no third-party benchmark is represented as BigCherry evidence").
 
+2026-09-24 GPT review req_7f4dea253b7247f0 applied: confirmed PRBE07 is explicitly not a patch-implementation item (research/triage only); description now says so explicitly with the concrete next action (pin commit/license, write recommendation), and reaffirms any adoption spawns a separate implementation item. Item remains pending.
+
 ## Change Log
 
 - 2026-09-09T10:54:00.396867+00:00 (created-by): Created by capability-rebaseline-v3
@@ -77,3 +79,4 @@ Successor key: patching-rdna-boost-experiments-rd101
 - chg_20260910_023232_the-next-three-rdna-successors_5807
 - 2026-09-10T02:32:33.005493+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:27:56.635263+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:37:06.308167+00:00 (updated-by): Updated: section:description, section:notes

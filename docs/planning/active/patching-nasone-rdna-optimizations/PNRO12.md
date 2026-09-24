@@ -15,17 +15,17 @@ priority: P1
 
 ## Description
 
-Resolve upstream ancestry/backport and qualify Qwen4exp gather-based sparse QSA decode; do not duplicate an equivalent upstream implementation.
-
-TODO, but the 'resolve PR #28213 ancestry' step is superseded by a stronger finding: upstream already ships a gather-based sparse QSA decode fusion, but ONLY for the Vulkan backend, not CUDA/HIP. Verified in b11126: `conversion/qwen4exp.py:63` already writes `indexer_top_k` GGUF metadata (`add_indexer_top_k(hp['indexer_budget'])`). `ggml/src/ggml-vulkan/ggml-vulkan.cpp` fully implements the op-fusion: `topk_qsa_pattern` (a `GGML_OP_GET_ROWS, GGML_OP_PERMUTE, ...` op-sequence constant, ggml-vulkan-types.h:530), `topk_qsa_edges` (edge constraints, :535), `ggml_vk_can_fuse_topk_qsa()` (matcher, ggml-vulkan.cpp:13589) and `ggml_vk_topk_qsa()` (the fused gather kernel dispatch, :11173), wired into the graph-fusion pass around :14178. Grepped `ggml/src/ggml-cuda` for 'qsa': zero matches -- no CUDA/HIP equivalent. The correct scope for this item is therefore: PORT the Vulkan fusion's op-pattern design into ggml-cuda's own fusion mechanism (verified real API: `ggml_cuda_can_fuse()`, ggml-cuda.cu:3180, already used for other fusions e.g. `ggml_cuda_can_fuse(cgraph, i, { GGML_OP_ROPE, GGML_OP_VIEW, GGML_OP_SET_ROWS }, {})` at :3544) -- not scan for a separate CUDA-side upstream PR. Masked full-cache attention remains the correct nonqualifying-context fallback either way.
+TODO, NOT-READY (Vulkan reference misinterpreted, per GPT review). CORRECTED: `ggml_vk_can_fuse_topk_qsa()`/`ggml_vk_topk_qsa()` fuse the INDEXER's score-expansion->TOP_K chain (selecting which K/V positions to attend to) -- they do NOT themselves gather K/V or reduce FlashAttention's actual KV length. Verified at b11126: `src/models/qwen4exp.cpp::graph::build_attn_qsa()` (line 695, called at line 841) still feeds the FULL cached K/V plus a sparse mask into attention -- the compaction this item wants (actually shrinking the K/V tensors FlashAttention operates on) is not what the Vulkan fusion does. The proposed `n_kv >= 4*width` crossover criterion is not Vulkan's real gate (that gate was invented, not sourced). The proposed new `topk-qsa.cu` file is also incompatible with BigCherry's anchor-only patcher (Edit() operates on anchored text in existing files, not whole-new-file additions without a corresponding edit-based integration).
 
 ## Steps
 
-- Resolve PR #28213/equivalent head and ancestry against current/candidate pin before authoring a patch.
-- If absent, port with QSA/decode predicate, n_kv>=4*width threshold, runtime escape hatch, and selected K/V/bias indices preserving rotation/cache semantics.
-- Validate padded top-k width, -inf masking and single-token-per-stream restriction; nonqualifying contexts retain masked full-cache path.
-- Sweep below/at/above threshold and compression ratios; compare selected-index and attention outputs to masked reference.
-- Measure KV bytes, gather/dequant/cast cost, FA cost and total decode; retire local patch when equivalent becomes baseline.
+1. Implement the actual compact-K/V graph change at `src/models/qwen4exp.cpp::graph::build_attn_qsa()` (verified real function, line 695, called at line 841), AFTER the `mctx_cur->get_k(...)`/`get_v(...)` calls (verify exact call sites at implementation time) -- this is where full K/V currently gets fed into attention; the real gather/compaction must happen here, not by fusing the indexer's own TOP_K op.
+2. Preserve the selected-index set, masks, stream, and RoPE/cache rotation semantics exactly as the existing masked full-cache path does when building the compacted K/V tensors.
+3. IF a separate port of Vulkan's indexer-TOP_K fusion is also wanted (a distinct, smaller optimization from the K/V compaction in step 1): dispatch it from `ggml_cuda_try_fuse()` (verified real function, ggml-cuda.cu:3432) rather than a new bespoke predicate, and put the implementation/declaration into the EXISTING `top-k.cu`/`top-k.cuh` files (extending them via anchored Edit()s), not a new `topk-qsa.cu` file, since BigCherry's patcher is anchor-only against existing files.
+4. Use the REAL crossover predicate for when compaction is worthwhile -- derive it from measurement (KV-bytes/gather cost vs FA cost trade-off), not the invented `n_kv >= 4*width` rule, which has no basis in the Vulkan source.
+5. Validate padded top-k width, -inf masking and single-token-per-stream restriction; nonqualifying contexts retain the masked full-cache path.
+6. Sweep below/at/above threshold and compression ratios; compare selected-index and attention outputs to masked reference.
+7. Measure KV bytes, gather/dequant/cast cost, FA cost and total decode; retire local patch when an equivalent becomes upstream baseline.
 
 ## Detailed Solution & Technical Design
 
@@ -69,6 +69,8 @@ Successor key: patching-nasone-rdna-optimizations-nro13
 
 2026-09-24 relevance at b11126: TODO, redirected from 'resolve PR #28213 ancestry' to 'port the existing Vulkan topk_qsa fusion (ggml-vulkan.cpp:11173/13589) into ggml-cuda using its own ggml_cuda_can_fuse() mechanism (ggml-cuda.cu:3180, precedent call at :3544)' -- this is a materially better-grounded design than the item's original premise since it found a real reference implementation to mirror instead of an assumed-absent upstream PR. GPT design request req_fd0a2a33c0804146 (batched PNRO11+PNRO12) was still running/had not returned a terminal response by the time this item needed to be finalized in this session; design completed directly from source instead. If/when that GPT response lands later, a follow-up session should read it and reconcile.
 
+2026-09-24 GPT review req_215c89d0b13a4bb7 applied: corrected the misinterpretation of the Vulkan reference -- ggml_vk_can_fuse_topk_qsa/ggml_vk_topk_qsa fuse indexer score-expansion->TOP_K only, they do not gather K/V or shrink FlashAttention's KV length (verified build_attn_qsa at qwen4exp.cpp:695/841 still feeds full K/V+mask). Moved the real compaction work to build_attn_qsa() itself, after get_k/get_v; rescoped any indexer-TOP_K-fusion port to dispatch via the verified real ggml_cuda_try_fuse (ggml-cuda.cu:3432) into the existing top-k.cu/.cuh files rather than a new file the patcher cannot integrate; removed the unsourced n_kv>=4*width rule in favor of a measured crossover.
+
 ## Change Log
 
 - 2026-09-09T10:53:04.447530+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +87,4 @@ Successor key: patching-nasone-rdna-optimizations-nro13
 - 2026-09-10T02:46:30.038448+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:35:47.115828+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
 - 2026-09-24T02:36:56.930450+00:00 (updated-by): Updated: section:effort_risk, section:notes
+- 2026-09-24T04:50:47.897561+00:00 (updated-by): Updated: section:description, section:steps, section:notes
