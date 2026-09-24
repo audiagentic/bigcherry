@@ -15,19 +15,20 @@ priority: null
 
 ## Description
 
-Investigate the BridgeSpec third-party HIP MTP/DFlash sidecar and gfx1100 MMVQ tuning as an unvalidated candidate, not as production evidence.
+TODO -- still relevant, no BigCherry patch exists yet and this is a documentation/triage item, not a code change. Research triage of the third-party BridgeSpec (kdheeraj-p/bridgespec) HIP MTP/DFlash speculative-decoding sidecar and its gfx1100 MMVQ tuning, to decide adopt/adapt/inspiration-only/not-applicable. This is a provenance-and-comparison exercise; it produces a written recommendation, not a patch.
 
 ## Steps
 
-- Read the pinned README, benchmark README/CSV, integration patches and MMVQ tuning code in full; record source commit and license.
-- Compare verification-width 2-8 techniques against THA05/RD-series dispatch without importing unverified claims.
-- Assess sidecar ABI, host-mediated KV state, vocabulary slicing/remap, dual-XTX applicability and VRAM co-residency risks for our MTP work.
-- Treat published numbers as directional only; define a reproducible local 9B/27B probe with acceptance and fallback gates before any adoption claim.
-- Conclude adopt/adapt, inspiration-only, or not applicable with explicit evidence and provenance.
+1. `gh api repos/kdheeraj-p/bridgespec` (or its actual host) to pin the exact source commit and license; read README, benchmark README/CSV, integration patches and MMVQ tuning source in full at that pinned commit -- do not summarize from memory of the project name.
+2. Grep this repo's docs/planning for THA05 and any RD-series speculative-decoding item to identify the current dispatch/verification-width design to compare against (`grep -rl THA05 docs/planning/`).
+3. Build a comparison table: verification-width 2-8 handling, sidecar ABI (how the sidecar process/thread talks to llama-server), host-mediated KV state transfer, vocabulary slicing/remap scheme, VRAM co-residency (sidecar model + main model on the same GPU set).
+4. Explicitly assess dual-XTX tensor-split applicability -- BridgeSpec's published benchmarks are single-GPU; do not generalize them to this project's dual-XTX production topology without saying so.
+5. Treat every published BridgeSpec number as directional only. If (and only if) a reproducible local probe is authorized later, define it here as a follow-up: a small 9B or 27B model, fixed prompt set, acceptance-rate and throughput measurement, with an explicit fallback/rejection gate -- but do not run it as part of this item.
+6. Write the adopt/adapt/inspiration-only/not-applicable recommendation into this item's notes with explicit evidence citations (source commit, license, comparison table) and, if anything is adopted, open a NEW plan item + patch package for it rather than folding it into PRBE07.
 
 ## Detailed Solution & Technical Design
 
-This is research triage for a third-party preview. Keep sidecar architecture and MMVQ tuning separate, preserve our existing runtime-profile VRAM preflight, and do not generalize single-GPU Vulkan/HIP results to dual-XTX tensor-split production.
+This is research triage, not kernel design -- there is no upstream b11126 source to anchor against because BridgeSpec is an external, non-integrated fork. The deliverable is a provenance-backed written comparison and a recommendation with an explicit evidence trail (never representing BridgeSpec's own benchmark numbers as BigCherry evidence, per this item's own standards). Any adopted technique becomes its own new plan item and patch package with its own real hardware qualification -- PRBE07 itself only ever reaches a recommendation, never a promotion.
 
 ## Code Samples & Guidance
 
@@ -35,15 +36,15 @@ This is research triage for a third-party preview. Keep sidecar architecture and
 
 ## Files
 
-pinned BridgeSpec source/README/benchmarks; integration patch review notes; THA05/RD-series comparison; reproducibility probe recipe and evidence.
+No repo files change. Deliverable is this plan item's own notes/description (the written recommendation) plus, only if something is adopted later, a new plan item under docs/planning/active/patching-rdna-boost-experiments/ and a new patches/<id>/ package (out of scope for PRBE07 itself).
 
 ## Validation
 
-Source/license review; controlled local reproduction where authorized; acceptance-rate, throughput and memory-budget measurements; single/dual topology controls; no promotion without independent evidence.
+Source/license verification (pinned commit hash recorded); comparison table cross-checked against this repo's real THA05/RD-series dispatch code (cite file:line); no BigCherry-hardware validation applies to PRBE07 itself since no code changes -- any local reproduction probe described in step 5 is future, separately-authorized work, not part of this item's closure.
 
 ## Effort & Risk
 
-
+S/M effort (reading + writeup, no code). Risk: representing third-party numbers as validated BigCherry evidence -- explicitly disallowed by this item's own standards; mitigate by citing provenance for every number used.
 
 ## Standards
 
@@ -59,13 +60,14 @@ Supersedes: RD101
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd101
 
+2026-09-24 relevance at b11126: TODO, no patch exists, pure research/comparison item (no kernel-level design applies). No GPT design request used -- this item has no code to design against; it is a literature/provenance triage whose output is a written recommendation, consistent with its own Acceptance Criteria ("A written recommendation... no third-party benchmark is represented as BigCherry evidence").
+
 ## Change Log
 
 - 2026-09-09T10:54:00.396867+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:06.504082+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.160426+00:00 (updated-by): Updated: section:ledger-events
@@ -74,3 +76,4 @@ Successor key: patching-rdna-boost-experiments-rd101
 - 2026-09-10T02:32:20.227395+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023232_the-next-three-rdna-successors_5807
 - 2026-09-10T02:32:33.005493+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:27:56.635263+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes

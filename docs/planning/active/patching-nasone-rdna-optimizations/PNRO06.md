@@ -39,7 +39,7 @@ patches/1256_nro07_topk_hybrid/{patch.toml,patch.py,SUMMARY.md,README.md,TESTING
 
 ## Validation
 
-Non-HIP preprocessor preservation; idempotent apply; exact index/order fixtures k=1..ncols and multi-row; unsupported fallback; gfx1100 real MoE/QSA signatures; kernel/scratch/end-to-end call-weighted performance.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1256_nro07_topk_hybrid`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1256_nro07_topk_hybrid --source bigcherry-tuning`; package pytest offline (non-HIP preprocessor preservation, idempotent apply). CPU/reference TOP_K fixtures: exact index/order for k=1..ncols, multi-row, ties, negatives, infinities, duplicates; unsupported-shape fallback to bitonic. Hardware (Brutus, gfx1100): `python -m bigcherry.patch.validation_campaign --overlay 1256_nro07_topk_hybrid --arch gfx1100` against real MoE/QSA signatures at k=1 and routing k=2/4/8/10, kernel/scratch/end-to-end call-weighted performance; keep PNRO07(nro08 wave32) disabled for causal attribution.
 
 ## Effort & Risk
 
@@ -59,13 +59,14 @@ Supersedes: NRO07
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-nasone-rdna-optimizations-nro07
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. Item title says TOP_K hybrid; its own Files section and patches/ dir map it to patches/1256_nro07_topk_hybrid (state=untested) -- note the patch package is literally named nro07 (matches its "Successor key: nro07"/Supersedes NRO07 in Notes) even though the plan item id is PNRO06; this is the correct, verified mapping (grep patches/1256*/patch.toml id field confirms). No upstream HIP-native TOP_K hybrid selection kernel found in b11126 top-k.cu relevant to this scope. Disposition: validate/qualify existing patch; no GPT design needed.
+
 ## Change Log
 
 - 2026-09-09T10:52:38.138969+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:57.337897+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.075875+00:00 (updated-by): Updated: section:ledger-events
@@ -74,3 +75,4 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 - 2026-09-10T02:42:40.812059+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024304_three-nasone-successors-now-pr_2691
 - 2026-09-10T02:43:04.858380+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:26.803643+00:00 (updated-by): Updated: section:validation, section:notes

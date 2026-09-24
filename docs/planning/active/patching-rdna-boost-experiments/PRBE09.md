@@ -15,19 +15,19 @@ priority: P2
 
 ## Description
 
-Track the upstream Vulkan tensor-parallel AllReduce path and decide a BigCherry adoption route; implementation is not implied by tracking.
+TODO -- still relevant, tracking/adoption-decision item, not a code change unless upstream lands an implementation. Track the upstream llama.cpp Vulkan tensor-parallel AllReduce PR/issue and decide a BigCherry adoption route without implying an implementation exists yet.
 
 ## Steps
 
-- Identify the upstream PR/issue, current status, API/ABI and licensing/source commit.
-- Map the proposal to RD68 and RD57 constraints, including tensor-parallel topology and Vulkan provider boundaries.
-- Define a reproducible local control/treatment plan only if an upstream implementation is available and buildable.
-- Measure correctness, synchronization, fallback and end-to-end throughput on representative single/dual topology.
-- Record adopt, defer, or reject with explicit evidence and preserve the upstream reference.
+1. Search upstream llama.cpp issues/PRs for a Vulkan tensor-parallel AllReduce proposal (search terms: "vulkan", "allreduce", "tensor parallel", "tensor-split collective"); if found, record its PR/issue number, current status (draft/open/merged/closed), API/ABI shape and license via `gh api`/`gh pr view`.
+2. `git -C work/upstream/llama.cpp.git.git grep -n <candidate symbol>` against b11126 to check whether any part of it has already landed at this pin -- if the whole thing is already merged and present, this item becomes UPSTREAM-ABSORBED instead.
+3. If nothing is merged yet: read this repo's own RD68 and RD57 items (`docs/planning -- grep RD68/RD57`) to record their tensor-parallel topology and Vulkan-provider-boundary constraints this candidate must respect; do not silently duplicate RD57's scope.
+4. Only if an upstream implementation is available and buildable, define a reproducible local control/treatment plan: single-GPU control, dual-GPU tensor-split treatment, correctness of the collective op, fallback to host-mediated reduce on failure, end-to-end throughput.
+5. Record adopt / defer / reject with explicit evidence (or absence of an implementation to test) and keep the upstream reference (PR/issue URL + commit) in this item's notes.
 
 ## Detailed Solution & Technical Design
 
-This item owns adoption analysis for Vulkan tensor-parallel AllReduce. It must not silently duplicate RD57 or claim a patch exists. Keep host/native fallback, provider identity and topology assumptions explicit.
+This item owns tracking and an adoption decision only. If no upstream Vulkan tensor-parallel AllReduce implementation exists yet at b11126 (to be confirmed in step 1-2), the correct disposition is TODO/deferred with an explicit "nothing to adopt yet" recorded, re-checked at the next llama.cpp pin bump -- not a fabricated implementation plan. If one exists and is merged, re-classify as UPSTREAM-ABSORBED with the exact file:line evidence. If one exists as an unmerged PR, this item's job is the adoption analysis, not authoring a BigCherry patch port until that analysis recommends adoption.
 
 ## Code Samples & Guidance
 
@@ -35,15 +35,15 @@ This item owns adoption analysis for Vulkan tensor-parallel AllReduce. It must n
 
 ## Files
 
-Upstream PR/issue record; Vulkan AllReduce integration seam; RD68/RD57 cross-references; adoption decision and campaign evidence.
+No repo files change from this item alone. Deliverable: this item's own notes recording the upstream PR/issue status, RD68/RD57 cross-reference, and the adopt/defer/reject decision. A future adoption becomes its own new plan item + patches/<id>/ package.
 
 ## Validation
 
-Upstream status and source verification; build/license check; collective correctness and fallback; tensor-parallel topology matrix; balanced performance evidence.
+Upstream status/license check (cite PR/issue URL and commit); `git -C work/upstream/llama.cpp.git.git grep` evidence for any already-merged pieces at b11126; RD68/RD57 cross-reference confirmed by grep in docs/planning/; no hardware validation applies unless step 4's conditions are met, and any such run happens on Brutus separately, not as part of this triage.
 
 ## Effort & Risk
 
-
+S effort for the tracking pass; work escalates to L only if an implementation is actually available to test. Risk: claiming adoption-readiness without a real upstream implementation to point at.
 
 ## Standards
 
@@ -59,13 +59,14 @@ Supersedes: RD104
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd104
 
+2026-09-24 relevance at b11126: TODO. No GPT design request used -- this is upstream-tracking/adoption triage with no local kernel code to design against yet; the concrete next action (search upstream PRs, grep b11126 for any already-landed pieces) is procedural, not a design problem.
+
 ## Change Log
 
 - 2026-09-09T10:54:07.484798+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:13.948243+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.169761+00:00 (updated-by): Updated: section:ledger-events
@@ -74,3 +75,4 @@ Successor key: patching-rdna-boost-experiments-rd104
 - 2026-09-10T02:35:11.802321+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023529_three-more-rdna-successors-now_3176
 - 2026-09-10T02:35:29.332235+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:28:13.834516+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes

@@ -15,23 +15,19 @@ priority: null
 
 ## Description
 
-Retain gfx1151 MMVQ nwarps=2 Q8_0 decode as a gate-verified-blocked hardware-specific experiment; do not claim Brutus validation.
+TODO, but gate-verified-blocked: gfx1151 hardware is not present on Brutus, so this item cannot progress past eligibility-gate verification until gfx1151 hardware exists in this project's fleet. Patch 1208_rd21_gfx1151_mmvq_nwarps_table already exists (state=untested) and defines the gfx1151 MMVQ nwarps=2 Q8_0 decode eligibility table/guard.
 
 ## Steps
 
-1. Apply PRBE19's post-fix bake-in when materializing calc_nwarps(), including the gfx1151 table and ncols_dst extension; this is a source-state rule, not a standalone RD25 prerequisite.
-2. Keep the exact gfx1151 guard and Q8_0 decode scope; obtain gfx1151 hardware before timing.
-3. Compare native control/treatment for exact shapes with correctness, resource/nwarps and decode evidence.
-4. Run explicit non-selection controls on gfx1030/gfx1100/gfx1201 using activation eligibility evidence.
-5. If hardware is unavailable, retain gate-verified-blocked disposition; do not extrapolate from current Brutus.
+1. Verify patches/1208_rd21_gfx1151_mmvq_nwarps_table/patch.toml and patch.py still define the exact gfx1151 guard and Q8_0 decode scope described in this item (re-read the current patch.py Edit() anchors before any other step -- do not assume they are unchanged).
+2. Run patch-lint and patch-rebase-check on 1208 against the current bigcherry-tuning pin -- this is real, runnable work even without gfx1151 hardware.
+3. Run explicit non-selection controls on the hardware this project DOES have (gfx1030/gfx1100/gfx1201): confirm 1208's calc_nwarps()/eligibility table does NOT select the gfx1151 nwarps=2 path on these architectures (build + activation-trace check, no gfx1151-specific timing implied).
+4. Record the current disposition as gate-verified-blocked: non-selection controls pass on available hardware, but no gfx1151 correctness/decode/timing evidence exists and none should be claimed.
+5. Do not extrapolate current Brutus (gfx1030/gfx1100/gfx1201) results to gfx1151 -- leave the item pending/blocked rather than promoting on partial evidence.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+This item's own acceptance criteria already state no current-hardware acceptance claim is possible. The only real, honest work available right now is (a) offline lint/rebase-check on patch 1208, (b) non-selection proof on the three architectures this project actually has. Both are concrete, runnable today. Full promotion remains blocked on gfx1151 hardware acquisition, which is outside this item's control.
 
 ## Code Samples & Guidance
 
@@ -39,15 +35,15 @@ Overlap assessment: No duplicate boundary found; related items are prerequisites
 
 ## Files
 
-gfx1151 MMVQ catalog/source; activation eligibility evidence 1208_rd21_gfx1151_mmvq_nwarps_table; PRBE19 post-fix bake-in rule; non-selection/build tests; gfx1151 campaign artifacts.
+patches/1208_rd21_gfx1151_mmvq_nwarps_table/{patch.toml,patch.py}; gfx1030/gfx1100/gfx1201 non-selection test fixtures.
 
 ## Validation
 
-Eligibility positive/negative architecture evidence; gfx1151 exact Q8_0 shapes; correctness; nwarps/resource; native comparison; no selection elsewhere.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1208_rd21_gfx1151_mmvq_nwarps_table --source bigcherry-tuning`. Hardware (Brutus, available architectures only): build + activation-trace non-selection check on gfx1030/gfx1100/gfx1201 confirming 1208's table never selects the gfx1151 nwarps=2 Q8_0 path there. No gfx1151 evidence is obtainable until that hardware exists in the fleet -- explicitly leave that gap open rather than closing this item.
 
 ## Effort & Risk
 
-
+S effort for the available non-selection/offline work; full closure is blocked on hardware acquisition (not an engineering risk, an availability constraint).
 
 ## Standards
 
@@ -65,13 +61,14 @@ Successor key: patching-rdna-boost-experiments-rd21
 
 Supersedes: RD21 (closed historical predecessor). Preserve source 1818c3b... as provenance. PRBE19 is a constraint applied while materializing calc_nwarps(), not a live prerequisite patch.
 
+2026-09-24 relevance at b11126: TODO/gate-verified-blocked, unchanged disposition -- patch 1208 exists and is untested; real progress is limited to offline lint/rebase-check plus non-selection controls on available (non-gfx1151) hardware. No GPT design request used -- this item has no open kernel-design question, only an availability blocker and procedural non-selection verification.
+
 ## Change Log
 
 - 2026-09-09T10:54:33.728988+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:45.259387+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.201523+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +80,4 @@ Supersedes: RD21 (closed historical predecessor). Preserve source 1818c3b... as 
 - 2026-09-12T09:52:24.101421+00:00 (updated-by): Updated: section:steps, section:files, section:notes
 - chg_20260912_095506_cleaned-the-active-rdna-boost_4906
 - 2026-09-12T09:55:06.232507+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:29:09.948585+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes

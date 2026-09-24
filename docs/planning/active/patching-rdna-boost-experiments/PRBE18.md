@@ -15,35 +15,46 @@ priority: null
 
 ## Description
 
-Port and qualify the exact 16-node SSM pre-scan chain fusion as a Wave-2 candidate, with explicit PRBE05 cache and PRBE19 post-fix source-state dependencies. PRBE18 is the actionable successor to closed RD24.
+TODO. Ports a 16-node SSM pre-scan chain fusion (conv+SiLU+Q/K-norm+V+gate/beta) as an isolated gfx1100 candidate. Relevance confirmed at b11126: upstream already has SSM_CONV fusion infrastructure (ggml-cuda.cu ggml_can_fuse_subgraph, two existing branches at ~3315 for SSM_CONV+SiLU and ~3330 for SSM_CONV+ADD+SiLU) but nothing beyond 3 nodes -- the 16-node chain (through Q/K normalization, V, gate/beta) is NOT upstream-absorbed. Depends on PRBE05 (patch 1235, q8_1 activation cache -- 4 references in fork source) and PRBE19 (post-fix source-state rule, applied below). GPT design request req_9d3d9188405f49f3 was submitted but the gpt-auto queue was saturated (8 queued/2 running gateway-wide) and did not return within this session; design below was produced directly against verified b11126 source and must be reviewed by GPT before a coding agent starts (resume via that request id or open a fresh dev-gpt-agent session).
 
 ## Steps
 
-1. Port the three-file candidate as an isolated PRBE18 experiment; do not port superseded RD14/RD16 separately.
-2. Require the exact 16-node graph: conv F32, ne[1]==1 decode shape, SiLU, Q/K/V views, shared alpha/beta, matching Q/K epsilon, packed Q8_0-compatible layout, contiguity and correct residual/output wiring.
-3. Confirm producer readiness and reject graphs with missing graph edges such as an untracked conv_states read; retain wrong-wiring/no-fuse fallback.
-4. Take the fused SSM region from PRBE19's reviewed post-fix source state, using current selector-derived MMVQ geometry rather than hardcoded historical warp assumptions; audit the four q8_1_cache references as evidence for the real PRBE05 dependency.
-5. Run fused vs unfused output, graph-capture and causal timing on gfx1100 before composition.
+1. Verify PRBE05/patch 1235 (q8_1 activation cache) is available; note its API surface before wiring the fused SSM's downstream Q/K read through it.
+2. In ggml/src/ggml-cuda/ggml-cuda.cu, locate the existing SSM_CONV fusion-detection function containing the `ops.size() == 2 && ops.begin()[0] == GGML_OP_SSM_CONV && ops.begin()[1] == GGML_OP_UNARY` branch (~line 3315) and the 3-node ADD variant (~line 3330); add a new branch recognizing the full 16-op sequence (SSM_CONV, UNARY(SiLU), then the Q/K view+RMS_NORM pair, V view, gate/beta ops) using the same `ggml_can_fuse_subgraph(cgraph, node_idx, ops, out_nodes)` idiom.
+3. Guard predicate (compile-time-cheap, checked every graph build): F32 dtype on every node in the chain (matches existing branches' `->type != GGML_TYPE_F32` checks), `ggml_is_contiguous`/`ggml_is_contiguous_rows` on conv_state/qkv views, ne[1]==1 (decode shape only), shared alpha/beta tensor identity between the two norm ops, matching epsilon constant on both RMS_NORM ops, and a check that the conv_states read is a tracked producer (its src is the actual previous SSM_CONV output/cache, not a dangling/unwritten buffer).
+4. Author a new fused device kernel in ggml/src/ggml-cuda/ssm-conv.cu (or a new ssm-prescan-fused.cu) that performs conv1d+SiLU+Q/K RMS-norm+V-view+gate/beta in one launch for the exact guarded shape; wire its dispatch into ggml-cuda.cu's op-fusion apply path (the code that, once `ggml_can_fuse_subgraph` returns true, swaps in the fused op instead of emitting the individual ops -- follow the existing RMS_NORM+MUL+ROPE fusion pattern at ~3229/3244 as the applied-fusion template).
+5. Preserve wrong-wiring/no-fuse fallback: any guard failure emits the native unfused op sequence unchanged.
+6. Run fused-vs-unfused numeric equality and graph-capture timing on gfx1100 before any composition with other patches.
 
 ## Detailed Solution & Technical Design
 
-The candidate combines conv+SiLU+Q/K normalization+V+gate/beta pre-scan in one 16-node path. PRBE05 is a real dependency because the source contains four q8_1_cache references; wire it through the stable, bounded cache rather than importing a second cache. PRBE19 is the post-fix source-state rule, not a separately applied patch. Enforce exact tensor layouts, epsilon equality, scalar/shape predicates, graph-edge visibility, fallback and current MMVQ selector-derived launch geometry.
+Extends upstream's existing `ggml_can_fuse_subgraph`-based SSM_CONV fusion mechanism (already fusing 2- and 3-node SSM_CONV+SiLU[+ADD] patterns at b11126) rather than inventing new fusion infrastructure. The 16-node candidate is a much longer chain through Q/K RMS-normalization (shared alpha/beta, matching epsilon), a V view, and gate/beta -- none of which upstream's existing branches recognize. Source the fused kernel body from PRBE19's reviewed post-fix state (provenance 9e46e1fd..., verified equivalent to v3 snapshot c8af5361...), using the CURRENT selector-derived MMVQ launch geometry (mmvq.cu's calc_nwarps/calc_rows_per_block, or the HI09 explicit-geometry template params already in mmvq.cu) rather than any hardcoded historical warp count from the original fork commit -- this is the concrete meaning of PRBE19's bake-in rule for this item. The four q8_1_cache references in the historical source are the real evidence for the PRBE05/patch-1235 dependency; wire the fused kernel's activation read through that cache API rather than importing a second cache implementation.
 
 ## Code Samples & Guidance
 
-
+Real b11126 anchor (verified): ggml/src/ggml-cuda/ggml-cuda.cu, function containing:
+```
+if (ops.size() == 2 && ops.begin()[0] == GGML_OP_SSM_CONV && ops.begin()[1] == GGML_OP_UNARY
+ && unary_ops.size() == 1 && unary_ops.begin()[0] == GGML_UNARY_OP_SILU) {
+    const ggml_tensor * ssm_conv = cgraph->nodes[node_idx];
+    const ggml_tensor * silu     = cgraph->nodes[node_idx+1];
+    ...
+    return true;
+}
+```
+Insert a new `if (ops.size() == 16 && ...)` branch immediately after the existing 3-node ADD+SiLU branch (ends ~line 3346), following the same struct: extract each `cgraph->nodes[node_idx+k]`, type-check F32, contiguity-check, then the SSM-specific checks (shared alpha/beta identity, matching epsilon, ne[1]==1, tracked conv_states producer) before returning true. Patch package sketch: patches/12xx_rd24_ssm_prescan_fusion/patch.toml (id, order in the 12xx range after existing SSM/MMVQ patches, state="untested", kind="enhancement", plan-item="RD24", requires=["1235_rd09_q81_activation_cache_foundation"]); patch.py using `from bigcherry.patcher import Edit, FilePatch` with an `Edit(id="ssm_prescan_fuse_detect", anchor=r"if (ops.size() == 3 && ops.begin()[0] == GGML_OP_SSM_CONV && ops.begin()[1] == GGML_OP_ADD", mode="insert_before", text=<new 16-node branch>, guard=r"GGML_OP_SSM_CONV")` plus a second Edit adding the fused kernel file and its dispatch call. Read patches/1204_rd08_q6k_mmvq_vdr2/ first for exact FilePatch/Edit conventions before authoring.
 
 ## Files
 
-ggml-cuda.cu/mmvq.cu/mmvq.cuh; isolated PRBE18 patch; external source entry; PRBE05 cache API and evidence; PRBE19 post-fix identity; exact 16-node/wrong-wiring fixtures; SSM campaign.
+ggml/src/ggml-cuda/ggml-cuda.cu (fusion detection ~3300-3350, applied-fusion dispatch ~3200-3260); ggml/src/ggml-cuda/ssm-conv.cu, ssm-conv.cuh, ssm-scan.cu, ssm-scan.cuh (new fused kernel); patches/12xx_rd24_ssm_prescan_fusion/{patch.toml,patch.py,SUMMARY.md}; new test-backend-ops SSM_CONV/RMS_NORM fused case; PRBE05/patch-1235 cache API.
 
 ## Validation
 
-Guard/wrong-wiring; output equality; graph capture; PRBE05 cache and PRBE19 post-fix source-state checks; gfx1100 causal timing; no RD14/RD16 duplicate port.
+1. `PYTHONPATH=tools python -m bigcherry patch-lint` on the new package. 2. `patch-rebase-check --focal-overlay 12xx_rd24_ssm_prescan_fusion --source bigcherry-tuning`. 3. New/extended test-backend-ops case comparing fused vs unfused output bit-for-bit on the exact guarded shape, plus a wrong-wiring fixture (untracked conv_states) proving fallback engages. 4. PRBE19 bake-in check: diff the fused kernel's sourced SSM region against provenance 9e46e1fd... and confirm semantic equivalence to v3 snapshot c8af5361..., not the raw historical diff. 5. Hardware (Brutus, not run here): gfx1100 graph-capture + causal timing via tools/bigcherry/patch/validation_campaign.py, fused vs unfused arms.
 
 ## Effort & Risk
 
-
+L (large): new CUDA kernel authoring plus fusion-detection extension in a hot dispatch path; correctness risk is high (silent wrong-wiring on a mismatched SSM shape) but is bounded by the guard/fallback design and by reusing upstream's already-proven ggml_can_fuse_subgraph idiom rather than a new mechanism.
 
 ## Standards
 
@@ -61,13 +72,14 @@ Successor key: patching-rdna-boost-experiments-rd24
 
 Supersedes: RD24 (closed historical predecessor); RD14 and RD16 are closed/superseded historical designs and are not separate ports. Preserve RD24 source commit 4a4da30e... as provenance. Live dependencies are PRBE05 and PRBE19.
 
+2026-09-24 relevance at b11126: TODO. Confirmed via grep of b11126 ggml-cuda.cu: existing SSM_CONV fusion covers only 2-3 nodes (SiLU, optional ADD-bias); the 16-node candidate is not upstream. GPT design request req_9d3d9188405f49f3 (dev-gpt-agent, gpt-auto) submitted but queue-saturated/no response in-session -- plan authored directly from verified source, needs GPT/human review before coding starts.
+
 ## Change Log
 
 - 2026-09-09T10:54:45.862958+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:53.591511+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.209644+00:00 (updated-by): Updated: section:ledger-events
@@ -82,3 +94,4 @@ Supersedes: RD24 (closed historical predecessor); RD14 and RD16 are closed/super
 - 2026-09-12T10:09:39.929105+00:00 (updated-by): Updated: section:validation
 - chg_20260912_101015_fixed-the-remaining-plan-taxon_2574
 - 2026-09-12T10:10:15.548038+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:29:21.076816+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes

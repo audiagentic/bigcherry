@@ -40,7 +40,7 @@ Future vendor HIP flash-attention sources; patches/1202_rd04_bf16_flash_attn_til
 
 ## Validation
 
-Build and apply/idempotence; FLASH_ATTN_EXT backend matrix; BF16 same-path correctness; F32 accumulation; long/deep-context numerical quality; gfx1100/gfx1201; unsupported fallback; graph capture; no F16 regression; balanced decode/prompt performance with repeatability.
+Build and apply/idempotence: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1202_rd04_bf16_flash_attn_tile`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1202_rd04_bf16_flash_attn_tile --source bigcherry-tuning`; package pytest offline. FLASH_ATTN_EXT backend correctness matrix (test-backend-ops -o FLASH_ATTN_EXT), BF16 same-path checks, F32 accumulation verification, long/deep-context numerical-quality checks (PPL/KL), unsupported-hardware fallback, no F16 regression. Hardware (Brutus, gfx1100 AND gfx1201 both required per acceptance criteria): `python -m bigcherry.patch.validation_campaign --overlay 1202_rd04_bf16_flash_attn_tile --arch gfx1100,gfx1201` reproducing isolated decode/prompt characterization with balanced interleaved controls; promotion requires correctness+precision+quality+fallback+cross-architecture+performance evidence together, not isolated throughput alone.
 
 ## Effort & Risk
 
@@ -64,13 +64,14 @@ Supersedes: RD04
 Inherited semantic scope: preserve every actionable RD04 gate; historical evidence remains on completed predecessor.
 Migration: capability-rebaseline-v3-2026-09
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1202_rd04_bf16_flash_attn_tile exists, state=untested. Item's own detailed_solution already records isolated gfx1100 evidence as directionally positive (decode gain, prompt deltas noise-adjacent at pp>=1024) but explicitly not a promotion claim -- cross-architecture (gfx1201) repeat and the full correctness/quality gate matrix are still outstanding. No upstream b11126 native-BF16 flash-attention path found matching this scope (b11126 ggml-cuda flash-attn is FP16/F32-path generic, not this project's folded BF16 logical-path experiment). Disposition: validate/qualify existing patch; no GPT design needed (patch already implements the described precision-path experiment).
+
 ## Change Log
 
 - 2026-09-09T10:53:31.014682+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:07.152011+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.129465+00:00 (updated-by): Updated: section:ledger-events
@@ -79,3 +80,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:10:06.643778+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260910_021313_the-semantic-audit-is-now-trac_4827
 - 2026-09-10T02:13:13.308366+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:45.540247+00:00 (updated-by): Updated: section:validation, section:notes

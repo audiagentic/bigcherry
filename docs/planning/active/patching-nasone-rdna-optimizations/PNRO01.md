@@ -44,7 +44,7 @@ patches/1250_nro01_allreduce_q8_wire; HIP AllReduce provider; static/package tes
 
 ## Validation
 
-Patch apply/idempotence/current-pin/dependency/static tests; per-element synthetic correctness on both ranks including tails; actual activation and wire-byte evidence; model numerical quality; paired exact-vs-Q8 sessions across decode and hostile large-prefill controls; no production inclusion before qualification.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1250_nro01_allreduce_q8_wire`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1250_nro01_allreduce_q8_wire --source bigcherry-tuning`; run the package's own pytest (TESTING.md) offline. Synthetic correctness: zeros/alternating-signs/dynamic-range/small-values/non-32 tails/independent-rank inputs vs CPU FP32 and exact internal reference (per-element). Model quality/greedy-divergence gate before timing. Hardware (Brutus only, not run here): `python -m bigcherry.patch.validation_campaign --overlay 1250_nro01_allreduce_q8_wire --requires 1001_hip_internal_allreduce --arch gfx1100` sweeping decode/medium/prefill sizes across RCCL/exact/BF16/Q8 arms; promote only an explicit size/topology envelope.
 
 ## Effort & Risk
 
@@ -70,13 +70,14 @@ Migration: capability-rebaseline-v3-2026-09
 
 REAL FINDING 2026-09-12: this draft had never been built before. First real hardware build attempt (gfx1100/Brutus, isolated scratch clone, requires=1001_hip_internal_allreduce composition) found a genuine compile failure -- two Edit anchors in patches/1250's patch.py ended at the '=' sign of a single-line C++ statement; insert_after splices immediately after the matched text, not after the enclosing statement, corrupting both `GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT`'s declaration and `p->bf16_threshold`'s assignment into unparseable C++ (real compiler errors: 'expected expression', 'use of undeclared identifier'). Fixed by extending both anchors to match the complete single-line statement (one needed this project's own LITERAL-placeholder technique to cross a noise-stripped string literal). Re-verified on real hardware: clean build, generated source inspected and confirmed well-formed. This closes acceptance criterion 1 ('Draft patch applies cleanly on b10705, builds HIP') for the first time -- it was never actually true before this session despite the patch being packaged and offline-tested. The 13 existing offline tests never caught this because they check structural properties, not actual compilation. Remaining acceptance criteria (numerical correctness matrix, activation/wire-byte evidence, model quality gates, 4-arm performance sweep) are all still genuinely not started -- this fix only makes the draft buildable, it does not wire the Q8 path to anything reachable (deliberately, per the patch's own inert-by-design scope).
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1250_nro01_allreduce_q8_wire exists, state=untested, kind=enhancement, requires 1001_hip_internal_allreduce (confirmed patches/1250/patch.toml). Prior session (2026-09-12) already found+fixed a real anchor/compile bug and confirmed clean gfx1100 build. No upstream b11126 equivalent found (Q8_0 AllReduce wire format is BigCherry-internal, not a llama.cpp upstream feature). Disposition: validate/qualify existing patch per its own steps; no design work / GPT needed (patch already implements the described scope, only qualification evidence is outstanding).
+
 ## Change Log
 
 - 2026-09-09T10:52:01.168387+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:30.603565+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.053474+00:00 (updated-by): Updated: section:ledger-events
@@ -88,3 +89,5 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 - 2026-09-12T03:33:46.596780+00:00 (updated-by): Updated: section:notes
 - chg_20260912_033450_documented-a-real-bug-fix-and_2722
 - 2026-09-12T03:34:50.268598+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:25:40.011758+00:00 (updated-by): Updated: section:validation
+- 2026-09-24T02:25:51.817653+00:00 (updated-by): Updated: section:notes

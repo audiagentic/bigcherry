@@ -44,7 +44,7 @@ patches/1251_nro02_allreduce_fused_residual; Meta matcher; AllReduce finish API;
 
 ## Validation
 
-Positive direct/reshape-ADD fixtures; negative wrong wiring, extra consumer, non-mirrored state, shape/type mismatch, provider failure, and second-apply fixtures. Fused/unfused output equivalence under the same wire mode; eliminated-launch activation evidence; balanced performance with non-target regression gate.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1251_nro02_allreduce_fused_residual`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1251_nro02_allreduce_fused_residual --source bigcherry-tuning`; package pytest offline. Positive direct/reshape-ADD fixtures; negative wrong-wiring/extra-consumer/non-mirrored/shape-mismatch/provider-failure/second-apply fixtures. Fused/unfused output equivalence per wire mode. Hardware (Brutus only): `python -m bigcherry.patch.validation_campaign --overlay 1251_nro02_allreduce_fused_residual --requires 1250_nro01_allreduce_q8_wire --arch gfx1100` measuring kernel count/eliminated ADD launch/finish time/graph submission/decode/prefill, with non-target regression gate.
 
 ## Effort & Risk
 
@@ -68,13 +68,14 @@ Supersedes: NRO02
 Inherited semantic scope: preserve graph ownership/use-count, mirrored split, failure clearing, and independent-wire-mode qualification.
 Migration: capability-rebaseline-v3-2026-09
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1251_nro02_allreduce_fused_residual exists, state=untested. Depends on PNRO01's finish abstraction (patch 1250). No upstream equivalent (internal AllReduce fusion is BigCherry-internal). Disposition: validate/qualify existing patch; no GPT design needed.
+
 ## Change Log
 
 - 2026-09-09T10:52:07.096423+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:36.096098+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.057911+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:26:03.477332+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.275437+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:00.678612+00:00 (updated-by): Updated: section:validation, section:notes

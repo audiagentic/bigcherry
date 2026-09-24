@@ -2,7 +2,7 @@
 id: PRBE45
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:56:36.141433+00:00'
 breadth: ''
 skill: advanced
@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Tune launch bounds and VGPR occupancy for the PRBE42 chunked GDN kernel per architecture, preventing register spills while preserving the baseline on non-target generations.
+SUBSUMED-INTO-PRBE42 (disposition: superseded, not a separate implementation). Patch 1221_rd50_gdn_chunked_recurrence's SUMMARY.md states RD53 (launch-bounds/VGPR occupancy tuning, this item) is an inline micro-decision inside the same chunked-kernel body as RD50, folded into 1221. No standalone RD53 code path exists; occupancy/spill characterization is part of 1221's overall performance campaign (tracked under PRBE42), specifically its VGPR/LDS/workspace reporting requirement.
 
 ## Steps
 
@@ -57,6 +57,10 @@ Successor key: patching-rdna-boost-experiments-rd53
 
 Supersedes RD53. Depends on PRBE42 and is last in the AMD-GDN prerequisite chain; do not tune outside the chunked kernel.
 
+append
+
+2026-09-24 relevance at b11126: SUPERSEDED/subsumed, same evidence as PRBE43/44 (patches/1221_rd50_gdn_chunked_recurrence/SUMMARY.md explicit subsumption statement). PRBE42's validation plan (VGPR/LDS/workspace reporting, gfx1151 GDN op time) already covers whatever launch-bounds configuration 1221 actually uses; no separate qualification runner needed. No GPT session needed.
+
 ## Change Log
 
 - 2026-09-09T10:56:36.141433+00:00 (created-by): Created by capability-rebaseline-v3
@@ -73,3 +77,8 @@ Supersedes RD53. Depends on PRBE42 and is last in the AMD-GDN prerequisite chain
 - 2026-09-10T03:07:35.048095+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20260910_030747_carried-forward-the-remaining_4294
 - 2026-09-10T03:07:47.489283+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:35:20.183733+00:00 (updated-by): Updated: section:description, section:notes
+- 2026-09-24T02:35:29.045347+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T02:35:33.549208+00:00 (state-transition): State: pending → superseded
+- chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
+- 2026-09-24T02:36:42.024780+00:00 (updated-by): Updated: section:ledger-events

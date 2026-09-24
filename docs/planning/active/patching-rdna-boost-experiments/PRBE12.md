@@ -15,19 +15,20 @@ priority: null
 
 ## Description
 
-Qualify patch 1206 MUL_MAT+RESHAPE+ADD view fusion after offline safety repair, including CUDA equivalence, capture and causal performance.
+TODO, narrowed to remaining scope -- real hardware correctness evidence already exists. Patch patches/1206_rd13_mul_mat_add_view_fusion (state=untested, experiment-contract=RD13-MUL-MAT-ADD-VIEW-FUSION, conflicts=[]) already has a real gfx1201 PPL-equality run (tierM-gptoss20b-q6k, wikitext2): subject PPL=561.6933+/-1.67373, control identical, delta=0.0, sigma=0.0 -- PASS, proving no regression, but NOT proving the RESHAPE-mediated fusion actually activated (real BIGCHERRY_PATCH_HIT trace markers exist in patch.py per this item's own notes but were not exercised in that run). Remaining work: activation-trace verification, the real performance claim (this contract IS performance-bearing per this item's own notes), the negative-fixture matrix (null addend, wrong wiring, extra consumers, non-VIEW, direct-ADD near-miss), and validation.toml/contract binding (a known, pre-existing blocker: require_execution_package()'s unconditional README+bound-contract+validation.toml gate, same blocker class already hit by RD13/RD17's own producers).
 
 ## Steps
 
-- Use only the exact RESHAPE-mediated view/add pattern and ggml_can_fuse_subgraph safety checks.
-- Require view specifically at ADD.src[0], reject null addends, wrong wiring, extra consumers, non-VIEW nodes and direct-ADD near misses.
-- Compare fused/unfused outputs and graph capture/replay on CUDA/HIP where supported.
-- Keep PRBE05/Q8 cache and other enhancements out of the standalone arm unless explicitly declared in identity.
-- Run balanced timing only after correctness and capture gates pass.
+1. Re-read patches/1206_rd13_mul_mat_add_view_fusion/patch.py's existing BIGCHERRY_PATCH_HIT trace marker (added following RD12's/other rdna-boost items' pattern) and confirm it's still present and gated the same way (BIGCHERRY_PATCH_TRACE-gated GGML_LOG_WARN, once-per-process).
+2. Run a real activation-trace probe: launch with BIGCHERRY_PATCH_TRACE=1 against an SSM/Mamba-family model (patch.py's own docstring says the view pattern needs one to fire -- confirm this requirement from the actual patch.py text at implementation time) and confirm the marker fires during a real request, proving the fusion actually activates (the existing gpt-oss-20b PPL run is MoE, not confirmed to exercise the RESHAPE-mediated path).
+3. Author the negative-fixture matrix: null addend, ADD wired to the wrong operand, extra consumers on the VIEW node, a non-VIEW node in the mediating position, and a direct-ADD (non-RESHAPE-mediated) near-miss -- each must NOT trigger the fusion; verify via the same trace marker (absence of BIGCHERRY_PATCH_HIT) plus output equality to the legacy direct-ADD matcher's behavior.
+4. Run graph capture/replay with the fusion active on a real activating model; confirm stability across repeated capture/replay cycles.
+5. Only after 2-4 pass, run the real performance claim: balanced timing (moe_decode-style workload per the contract) comparing baseline vs baseline+1206 on an activating model, with enough repeats for a defensible CI.
+6. Author validation.toml and bind the contract once require_execution_package()'s gate requirements are otherwise satisfiable -- if still blocked by the same unconditional-gate issue other rdna-boost items hit, record that explicitly as a known blocker rather than working around it silently.
 
 ## Detailed Solution & Technical Design
 
-The new view-mediated matcher is non-commutative by safety contract; preserve legacy direct-ADD matcher behavior unchanged. No false-positive graph rewrite is acceptable.
+The correctness foundation (no-regression) is real and already proven; what remains is proving causation (does it actually fire, and does firing help), plus the negative-fixture safety net around the pattern matcher (view specifically at ADD.src[0], reject null/wrong-wiring/extra-consumer/non-VIEW/direct-ADD near-misses per this item's own acceptance criteria) which has never been run for real.
 
 ## Code Samples & Guidance
 
@@ -35,15 +36,15 @@ The new view-mediated matcher is non-commutative by safety contract; preserve le
 
 ## Files
 
-patches/1206_rd13_mul_mat_add_view_fusion; graph matcher/fusion source; targeted safety tests; fused/unfused output fixtures; graph capture and timing artifacts.
+patches/1206_rd13_mul_mat_add_view_fusion/{patch.toml,patch.py,validation/rd13_correctness.py}; new negative-fixture test cases; activation-trace probe script (BIGCHERRY_PATCH_TRACE=1); validation.toml (to author); campaign artifacts for the activation/performance run.
 
 ## Validation
 
-Direct ADD exclusion; view at src[0]; reversed wiring; null/extra-consumer/non-VIEW rejection; output parity; graph capture/replay; balanced causal timing.
+Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 1206_rd13_mul_mat_add_view_fusion --source bigcherry-tuning`. Hardware (Brutus, not run here): BIGCHERRY_PATCH_TRACE=1 activation probe on a real SSM/Mamba-family model; negative-fixture matrix (marker must NOT fire); graph capture/replay stability; balanced moe_decode-style timing once activation is confirmed real.
 
 ## Effort & Risk
 
-
+M effort -- correctness/no-regression already proven; remaining work is activation proof, negative fixtures, and the performance claim, plus the pre-existing validation.toml blocker shared with sibling items.
 
 ## Standards
 
@@ -71,14 +72,14 @@ Also worth flagging honestly, not blocking: the absolute PPL magnitude (561.69) 
 
 Remaining real work: real activation-trace verification (has real markers already, just not exercised by this specific run), the real performance claim (this contract has none -- CORRECTNESS/DETERMINISM... actually check: RD13's own contract IS performance-bearing, moe_decode workload declared), full validation.toml authoring + contract binding (blocked the same way RD17's is). Patch state remains "untested" -- this is real evidence, not a promotion.
 
+2026-09-24 relevance at b11126: TODO, narrowed -- do not repeat the already-real PPL-equality/no-regression evidence; focus on activation proof, negative fixtures, performance, and contract binding. GPT design request submitted (req_a8361cdd54af4bd5, batched with PRBE11); gateway congested at submission -- authored directly against this item's own existing real-hardware notes and patches/1206.../patch.py as a fallback.
+
 ## Change Log
 
 - 2026-09-09T10:54:19.359011+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:26.671901+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.183883+00:00 (updated-by): Updated: section:ledger-events
@@ -92,3 +93,4 @@ Remaining real work: real activation-trace verification (has real markers alread
 - 2026-09-11T14:55:54.334136+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260911_212428_finished-documenting-one-more_3069
 - 2026-09-11T21:24:28.100057+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:34:46.365428+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
