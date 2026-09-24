@@ -45,7 +45,7 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
-    def test_base_is_exactly_the_sixteen_validated_core_modules(self):
+    def test_base_is_exactly_the_validated_core_modules(self):
         lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", self.cfg, self.catalog
         )
@@ -67,13 +67,13 @@ class CampaignResolutionTests(unittest.TestCase):
             for module in self.catalog
             if module.state == "validated" and module.patch_id in core_patch_ids
         )
-        # 15 serving/campaign/qualification modules + 0
-        # upstream-fixes modules = 15.
-        self.assertEqual(len(expected), 15)
+        # 14 serving/campaign/qualification modules (0820 superseded
+        # 2026-09-24) + 0 upstream-fixes modules = 14.
+        self.assertEqual(len(expected), 14)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
             len(core_patch_ids - frozenset(self.cfg.patch_sets["upstream-fixes"].patches)),
-            15,
+            14,
         )
         self.assertEqual(
             len(self.cfg.patch_sets["upstream-fixes"].patches),
@@ -154,9 +154,9 @@ class CampaignResolutionTests(unittest.TestCase):
         lane = campaign_resolution.resolve_lane(
             "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
-        # 16 core modules (serving-core + campaign-support +
-        # qualification-support + upstream-fixes) + 1 overlay patch = 17.
-        self.assertEqual(len(lane.patch_set.module_ids), 16)
+        # 14 core modules (serving-core + campaign-support +
+        # qualification-support + upstream-fixes) + 1 overlay patch = 15.
+        self.assertEqual(len(lane.patch_set.module_ids), 15)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
         self.assertNotIn(
             "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids
@@ -623,7 +623,6 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             "0110_campaign_tune_record_build",
             "0800_server_shutdown_endpoint",
             "0810_replay_hit_diagnostics",
-            "0820_measurement_signature_shapes",
             "0830_split_reduce_telemetry",
             "0900_pool_workspace_metrics",
             "1100_hi70_direct_op_evidence",
@@ -699,7 +698,9 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             serving_core | campaign_support | qualification_support,
             self._FORMER_FRAMEWORK_MEMBERSHIP,
         )
-        self.assertEqual(len(self._FORMER_FRAMEWORK_MEMBERSHIP), 15)
+        # 15 historically; 0820 superseded 2026-09-24 (its edits live in the
+        # overlay), so the current semantic sets reconstitute 14.
+        self.assertEqual(len(self._FORMER_FRAMEWORK_MEMBERSHIP), 14)
 
     def test_bigcherry_serving_base_is_serving_core_plus_upstream_fixes(self):
         lane = campaign_resolution.resolve_lane(
@@ -830,7 +831,7 @@ class PA28SemanticPatchSetTests(unittest.TestCase):
             | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         )
         self.assertEqual(set(lane.patch_set.module_ids), set(expected))
-        self.assertEqual(len(expected), 15)
+        self.assertEqual(len(expected), 14)
 
     def test_0800_and_1100_are_not_orphaned(self):
         # PA28's own Validation section calls this out explicitly.

@@ -35,7 +35,7 @@ required-state = "validated"
 
 # The PA27 tune/record half (0110) plus the shutdown-endpoint/hit-log/
 # measurement/pool-metrics modules PA28 step 2 assigns here -- 0800/0810/
-# 0820/0900. 0700 moved to serving-core above (GPT review, see its comment);
+# 0900 (0820 superseded 2026-09-24: its edits already live in the overlay). 0700 moved to serving-core above (GPT review, see its comment);
 # 0830 goes to qualification-support below per GPT's PA26-flagged
 # serving-boundary adjudication, not here.
 [patch-set.campaign-support]
@@ -43,7 +43,6 @@ patches = [
   "0110_campaign_tune_record_build",
   "0800_server_shutdown_endpoint",
   "0810_replay_hit_diagnostics",
-  "0820_measurement_signature_shapes",
   "0900_pool_workspace_metrics",
 ]
 required-state = "validated"
