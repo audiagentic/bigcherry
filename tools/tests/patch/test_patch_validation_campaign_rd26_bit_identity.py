@@ -35,6 +35,8 @@ if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
 from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
+from bigcherry.experiment import contract as experiment_contract  # noqa: E402
+from bigcherry.patch import producer_support  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
 
@@ -74,6 +76,7 @@ class _FakeRuntime:
         self.run_dir = run_dir
         self.pair = pair
         self.device = device
+        self.benchmark_calls: list[dict[str, object]] = []
         self.build_pair_calls: list[dict[str, object]] = []
 
     def build_pair(
@@ -116,8 +119,11 @@ class _FakeRuntime:
         pairs: int = 3,
         log_context: str,
         device: vp.ProducerDeviceContext | None = None,
-    ) -> vp.ProducerPairedBenchmarkOutcome:
-        raise AssertionError("the RD26 producer must never benchmark")
+    ) -> SimpleNamespace:
+        # PRBE20: the controls lane -- one 10-round tg128 decode run.
+        (workload,) = workloads
+        self.benchmark_calls.append({"workload": workload, "pairs": pairs, "model": model})
+        return SimpleNamespace(runs={workload: SimpleNamespace(runs=[], stats={"paired_rounds": pairs})})
 
     def write_artifact(
         self,
@@ -253,6 +259,24 @@ def _fake_run(
     return run, calls
 
 
+def _scaffold_benches(temp: Path) -> dict[str, dict[str, Path]]:
+    benches = {}
+    for role in ("control", "subject"):
+        binary = temp / "scaffold" / role / "llama-bench"
+        binary.parent.mkdir(parents=True, exist_ok=True)
+        binary.write_bytes(b"")
+        benches[role] = {"llama-bench": binary}
+    return benches
+
+
+def _fake_lane_effect(outcome, *, workload, metric, role, rounds, label):
+    effect = experiment_contract.LaneEffect(
+        role=role, metric=metric, geometric_effect_pct=0.1, ci95_low_pct=-0.2, ci95_high_pct=0.3,
+        paired_rounds=rounds, pair_ratios=(1.001,) * rounds,
+    )
+    return effect, outcome.runs[workload]
+
+
 def _run_producer(
     module: object,
     *,
@@ -293,7 +317,7 @@ def _run_producer(
         patch_id=SUBJECT_PATCH,
         device_map={architecture: (0,)},
         runtime=runtime,  # type: ignore[arg-type]
-        validation_binaries={},
+        validation_binaries=_scaffold_benches(temp),
     )
     fake_run, calls = _fake_run(
         subject_identical=subject_identical,
@@ -305,6 +329,7 @@ def _run_producer(
     with (
         mock.patch("subprocess.run", fake_run),
         mock.patch("bigcherry.patch.source.git_worktree_tree", _fake_tree),
+        mock.patch.object(producer_support, "lane_effect", _fake_lane_effect),
     ):
         try:
             result = module.run(ctx)  # type: ignore[union-attr]
@@ -332,12 +357,15 @@ class Rd26BitIdentityProducerTests(unittest.TestCase):
         )
         self.assertEqual(
             result.emitted_artifacts,
-            frozenset({"rd26-decode-verify-bit-identity.json"}),
+            frozenset({"rd26-decode-verify-bit-identity.json", "rd26-controls.json"}),
         )
         self.assertEqual(result.check_results, ())
         self.assertIsNone(result.activation_evidence)
-        self.assertIsNone(result.performance_evidence)
         self.assertIsNone(result.trace_evidence)
+        # PRBE20: the controls lane is bound as the performance evidence.
+        assert result.performance_evidence is not None
+        self.assertEqual(result.promotion_target_metric, {"RD26-DECODE-VERIFY-BIT-IDENTITY": "tg128"})
+        self.assertEqual(runtime.benchmark_calls, [{"workload": "decode", "pairs": 10, "model": Path("/models/m.gguf")}])
         # The pair is built once, fat multi-arch, parity asserted, and
         # every arm/mode/replicate ran exactly as the oracle specifies.
         self.assertEqual(len(runtime.build_pair_calls), 1)

@@ -35,12 +35,9 @@ Design rulings applied (req_110d0729beb44d8b):
 - trace_probe='skip': RD26 declares no activation check (its expected
   effect is determinism/correctness only); the producer returns no
   activation/trace evidence.
-- performance_evidence stays None: the contract's controls check
-  remains unsatisfied exactly as the historical record shows it.
-  THIS MIGRATION PROVES PRODUCER EQUIVALENCE, NOT RD26 QUALIFICATION --
-  a real run against the current 2-of-5 base-standalone subset may
-  legitimately FAIL, and that honest FAIL is the expected receipt.
-  Never weaken this check to force a pass.
+- controls (PRBE20): a 10-round paired tg128 decode lane on the standard
+  scaffold llama-bench pair, bound as the performance evidence. Before
+  PRBE20 this stayed None, so the controls check could never pass.
 
 Every canonical identity field (patch digest, source trees, campaign
 identity, root correctness.json) is owned by the shared binder, never
@@ -55,6 +52,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
 
 # One contract architecture per run (the historical RD26 rule): the
@@ -64,6 +62,8 @@ from bigcherry.patch import validation_producer as vp
 _CONTRACT_ARCHITECTURES: tuple[str, ...] = ("gfx1100", "gfx1201", "gfx1030")
 
 _CONTRACT_ID = "RD26-DECODE-VERIFY-BIT-IDENTITY"
+_CONTROLS_ARTIFACT_NAME = "rd26-controls.json"
+_CONTROL_ROUNDS = 10
 _SUBJECT_PATCH = "1210_rd26_bitidentical_decode_verify_standalone"
 
 # Keep verify width n_draft+1 inside RD26's <=8 scope (n_max in [1,7]).
@@ -353,6 +353,36 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         }
         ctx.runtime.write_artifact(name=_ARTIFACT_NAME, payload=doc)
 
+        # PRBE20: the contract's controls lane (tg128 decode must not regress
+        # by more than 1%) on the standard scaffold llama-bench pair. Wave 2
+        # changes nwarps only for ncols_dst 2..8, so decode is the control.
+        benches = {
+            role: ctx.validation_binaries.get(role, {}).get("llama-bench")
+            for role in ("control", "subject")
+        }
+        if not all(isinstance(b, Path) and b.is_file() for b in benches.values()):
+            raise vp.ValidationProducerError("rd26 controls: standard scaffold llama-bench pair is missing")
+        controls_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=benches["control"], subject_binary=benches["subject"], model=model,
+            workloads=("decode",), pairs=_CONTROL_ROUNDS, log_context="rd26-controls", device=device,
+        )
+        control_effect, control_run = support.lane_effect(
+            controls_outcome, workload="decode", metric="tg128", role="control",
+            rounds=_CONTROL_ROUNDS, label="rd26 controls",
+        )
+        controls_ref = ctx.runtime.write_artifact(
+            name=_CONTROLS_ARTIFACT_NAME,
+            payload={
+                "passed": True,
+                "metrics": support.performance_metrics(control_effect),
+                "schema_version": 1,
+                "contract_id": _CONTRACT_ID,
+                "architecture": architecture,
+                "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
+                "control": {"metric": "tg128", "runs": list(control_run.runs), "stats": dict(control_run.stats)},
+            },
+        )
+
         return vp.ProducerResult(
             correctness={
                 "disposition": "passed" if passed else "failed",
@@ -361,12 +391,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             },
             validation_build_identities=pair.validation_build_identities,
             activation_evidence=None,
-            performance_evidence=None,
+            performance_evidence={"artifact": {"path": controls_ref.path, "sha256": controls_ref.sha256}},
             trace_evidence=None,
             check_results=(),
             lane_effects=(),
             contract_correctness_results=(bit_identical_result,),
-            emitted_artifacts=frozenset({_ARTIFACT_NAME}),
+            promotion_lane_effects={_CONTRACT_ID: (control_effect,)},
+            promotion_target_metric={_CONTRACT_ID: "tg128"},
+            emitted_artifacts=frozenset({_ARTIFACT_NAME, _CONTROLS_ARTIFACT_NAME}),
         )
     finally:
         for path in created_outputs:

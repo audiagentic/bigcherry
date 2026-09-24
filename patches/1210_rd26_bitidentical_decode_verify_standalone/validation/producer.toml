@@ -40,4 +40,5 @@ correctness_evidence_cli = "forbid"
 performance_benchmark_cli = "forbid"
 artifacts = [
   "rd26-decode-verify-bit-identity.json",
+  "rd26-controls.json",
 ]
