@@ -116,11 +116,19 @@ workloads = ["prefill"]
 bit_identical = "required"
 
 [contract.RD12-PAIRED-MMVQ-DUAL.acceptance]
-target_kernel_gain_pct = 0.3
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-# PRBE40 (2026-09-24): the producer now measures both lanes; bind them to the
-# interval policy used by the other performance contracts.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD]
@@ -158,9 +166,19 @@ workloads = ["decode"]
 backend_reference = "required"
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.acceptance]
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD21-GFX1151-MMVQ-NWARPS]
@@ -471,13 +489,19 @@ workloads = ["decode"]
 backend_reference = "required"
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.acceptance]
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-# VA24 migration (2026-09-13): the model-binding fix above already changed
-# this contract's hash, voiding config/experiment-contract-legacy.toml's
-# RD13-MUL-MAT-ADD-VIEW-FUSION point-estimate waiver. Migrated in the same
-# change, per the RD08/RD21/RD39-42/RD73 precedent.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD22-IGPU-HOST-BUFFER-BACKOUT]
@@ -598,13 +622,19 @@ workloads = ["decode"]
 bit_identical = "required"
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.acceptance]
-target_kernel_gain_pct = 1
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-# 2026-09-12: model-binding fix changed the hash, so the legacy waiver is
-# void -- same real-hardware-driven situation as RD21 above. Migrated to
-# ci95_threshold_bound_v1 per VA24's stated migration path rather than
-# leaving a stale point-estimate waiver in place.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]
@@ -943,12 +973,19 @@ workloads = ["moe_decode"]
 bit_identical = "required"
 
 [contract.RD30-MOE-MMQ-COMPACT-GRID.acceptance]
-# This contract is being authored after RD30's informal/manual measurements;
-# this threshold is therefore not a preregistration of those old results.
-# Qualification must use fresh formal campaign evidence.
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.PNRO09-META-VIEW-HEADROOM]
@@ -1068,7 +1105,17 @@ workloads = ["decode"]
 backend_reference = "required"
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.acceptance]
-target_kernel_gain_pct = 0.3
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
