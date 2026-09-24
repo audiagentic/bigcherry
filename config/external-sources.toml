@@ -137,6 +137,13 @@ status = "planned"
 note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce. 2026-09-23: 1001 superseded at pin b11126 (upstream now contains its edits verbatim); 1250 no longer requires it."
 
 [[sources.tracked]]
+commit = "670512936d83d12dd41d27c8b30e4bb416a47f31"
+title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K"
+plan-item = "NRO15"
+status = "ported-untested"
+note = "AMD-authored (Annie Ren). Ported to patches/1262_nro15_mmvdq with port_diff: mmvdq.cu/.cuh folded into mmvq.cu/.cuh, plain ne11==1 routing only; the fused SwiGLU route and the RDNA3.5 graph-opt default are excluded. PNRO15."
+
+[[sources.tracked]]
 commit = "7f3e1e4d0b166cb681b2c01503370e610a5b423d"
 title = "ROCm: add hybrid TOP_K kernels"
 plan-item = "NRO07"

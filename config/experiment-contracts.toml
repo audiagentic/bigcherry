@@ -1120,3 +1120,45 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE]
+title = "PNRO15: dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K decode"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["670512936d83d12dd41d27c8b30e4bb416a47f31"]
+atomic_part = "1262_nro15_mmvdq (plain matvec only; fused SwiGLU route and RDNA3.5 graph-opt default excluded)"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "For single-token K-quant decode, dequantizing weights to float and dotting against the F32 activation removes the per-matvec Q8_1 activation quantize launch. Measured opt-in (GGML_CUDA_DQ_MMV=1 on both arms) on gfx1100/gfx1201, where the patch's arch default is off. Output is not bit-identical (float dot vs Q8_1 dot), so correctness is the backend reference tolerance."
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+# Prefill (ne11 > 1) never takes mmvdq.
+[contract.NRO15-MMVDQ-KQUANT-DECODE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25: owner policy, as the other RDNA plan contracts.
+[contract.NRO15-MMVDQ-KQUANT-DECODE.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
