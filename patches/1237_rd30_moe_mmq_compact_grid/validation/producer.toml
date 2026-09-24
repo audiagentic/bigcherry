@@ -1,5 +1,18 @@
 schema = 1
-id = "rd30"
-standard_campaign = "skip"
+
+# PRBE25: bit_identical test-backend-ops pair (own build_pair with the
+# deterministic evidence patches) plus the standard scaffold llama-bench
+# pair for activation and the pp512 positive / tg128 control lanes.
+[producer.rd30]
+entrypoint = "producer.py"
+callable = "run"
 trace_probe = "skip"
-artifacts = ["rd30-correctness.json"]
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd30-correctness.json",
+  "rd30-performance.json",
+  "rd30-subject-trace.log",
+  "rd30-control-trace.log",
+]
