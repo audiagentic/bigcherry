@@ -2,7 +2,7 @@
 id: PRBE39
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:56:09.423127+00:00'
 breadth: ''
 skill: advanced
@@ -67,12 +67,15 @@ append
 
 2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: re-scoped PRBE39 from new-package TODO to extend/qualify 1206_rd13_mul_mat_add_view_fusion (add VIEW support with strict byte-map checks, explicit ggml_cuda_check_fusion_memory_ranges call, GGML_LOG_WARN marker, negative tests); do not author a new package.
 
+2026-09-25 implemented in patch 1206 (commit 'accept zero-offset contiguous VIEW...'): has_view now accepts GGML_OP_RESHAPE or a GGML_OP_VIEW with view_src==matmul, view_offs==0, both contiguous, equal nbytes; ops[1] uses the real mid op; ggml_cuda_check_fusion_memory_ranges(cgraph,i,3,&(i+2),1) guards the view form; markers WARN. Qualified together with PRBE12 (same package) -- see PRBE12 notes for gfx1100 result. Negative-fixture test-backend-ops cases (nonzero-offset/strided VIEW, aliased residual) not yet authored.
+
 ## Change Log
 
 - 2026-09-09T10:56:09.423127+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:25.553774+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.306463+00:00 (updated-by): Updated: section:ledger-events
@@ -89,3 +92,7 @@ append
 - 2026-09-24T04:50:54.912778+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T05:07:15.352025+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:notes
 - 2026-09-24T05:07:21.603909+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T14:09:43.348776+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:09:46.252839+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:21.943775+00:00 (updated-by): Updated: section:ledger-events

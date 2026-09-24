@@ -2,7 +2,7 @@
 id: PRBE35
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:55:53.286868+00:00'
 breadth: ''
 skill: advanced
@@ -181,12 +181,15 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 
 2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding to patch.toml requirement, corrected producer to emit check="backend_reference" (not ppl_equality), removed stale central-runner-exists assumption.
 
+2026-09-25: implemented as a patch-local producer (not a central runner -- PA36 moved all producers patch-local). 1216: WARN activation marker when the fusion horizon is capped; experiment-contract bound; validation.toml; producer: control=bigcherry+1215, subject=+1216, GRAPH_OPT=1, full-vocab backend_reference (tol 5e-4) via shared tools/bigcherry/experiment/full_vocab.py, server-log activation, 10-round tg128 controls. Old PPL-only rd43_correctness.py removed. GPT review req_997c7ff3ed5944bf: tolerance appropriate; noted limits -- marker proves the cap engaged, not that graph capture succeeded; evidence shows guard harmless, not reproduction of the abort. Hardware run pending a free 24GB GPU (model tierM-qwen35b-a3b-moe-mtp).
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.285865+00:00 (updated-by): Updated: section:ledger-events
@@ -230,3 +233,7 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 - 2026-09-24T02:36:10.506291+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:39:07.154381+00:00 (updated-by): Updated: section:steps, section:files, section:validation
 - 2026-09-24T04:39:50.878577+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T14:09:54.966168+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:09:57.889202+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:27.645383+00:00 (updated-by): Updated: section:ledger-events

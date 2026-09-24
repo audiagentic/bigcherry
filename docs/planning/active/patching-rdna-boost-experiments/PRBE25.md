@@ -2,7 +2,7 @@
 id: PRBE25
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:55:09.148172+00:00'
 breadth: ''
 skill: advanced
@@ -64,12 +64,15 @@ Successor key: patching-rdna-boost-experiments-rd32
 
 2026-09-24 GPT review req_2b717df095b44703 applied: corrected the telemetry mechanism -- rocprofv3 can report launched-grid dims but not the useful-block count (device-only value block_start[n_experts]); reused PRBE24's env-gated D2H dump hook (BIGCHERRY_VALIDATE_RD31) to emit launched/useful/fallback counters so rd32_launch_efficiency.py can compute empty-block fraction deterministically.
 
+2026-09-25 (21659ac3): 1237's producer could never run (producer.toml had no [producer.*] table; code used nonexistent ctx.run_dir/amdgpu_targets/build_root/runtime.build_tree). Rewritten: bit_identical 256-expert MUL_MAT_ID test-backend-ops pair, compact-grid WARN marker (activation), pp512 positive / tg128 control on tierM-qwen35b-a3b-moe-mtp, 10 rounds; contract bound; validation.toml added. Same unloadable-producer defect exists in 1200 and 1207. Hardware run pending (gfx1100 only).
+
 ## Change Log
 
 - 2026-09-09T10:55:09.148172+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:23.868961+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.240579+00:00 (updated-by): Updated: section:ledger-events
@@ -80,3 +83,7 @@ Successor key: patching-rdna-boost-experiments-rd32
 - 2026-09-10T02:54:09.770527+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:09.396393+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:44:24.022042+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-09-24T14:10:06.622267+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:10:09.516528+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:33.326483+00:00 (updated-by): Updated: section:ledger-events
