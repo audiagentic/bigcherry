@@ -1,7 +1,7 @@
 schema = 1
 id = "0820_measurement_signature_shapes"
 order = 820
-state = "validated"
+state = "superseded"
 kind = "framework"
 origin = "local"
 backend = "hip"
