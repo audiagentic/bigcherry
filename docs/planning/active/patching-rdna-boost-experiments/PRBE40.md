@@ -2,7 +2,7 @@
 id: PRBE40
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:56:15.028499+00:00'
 breadth: ''
 skill: advanced
@@ -65,12 +65,15 @@ Supersedes RD48. Source is AMD PR Set 4/#59 (discussion #26378), with source sta
 
 2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: added missing ne[0..3]/nb[0..3] equality check, explicit fusion-memory-range disjointness proof, overlap/layout negative tests, fused-pair activation evidence, and gfx1151 to 1205's validation-architectures as prerequisites before qualifying 1205 for PRBE40.
 
+2026-09-25: steps 2,3,5 implemented in 1205 (cd35b01f): ggml_are_same_shape+ggml_are_same_stride+F32 on both outputs, ggml_cuda_check_fusion_memory_ranges over {i,j}, marker names the fused weights. b11126 gfx1100 run r1: apply/build/activation/bit_identical PASS (6/6 rows, marker a=rd12_k_weight b=rd12_v_weight) but no promotion lanes existed; producer extended with tg128 positive / pp512 control, 10 rounds, ci95 policy (bd6272be). r2 running. gfx1201 run r1 died on a clang bus error from host disk pressure (root 98%), not code. gfx1151 BLOCKED (no card). Step 4 negative test-backend-ops fixtures still to author.
+
 ## Change Log
 
 - 2026-09-09T10:56:15.028499+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:29.738621+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.310431+00:00 (updated-by): Updated: section:ledger-events
@@ -87,3 +90,7 @@ Supersedes RD48. Source is AMD PR Set 4/#59 (discussion #26378), with source sta
 - 2026-09-24T04:50:18.038797+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T05:07:35.021954+00:00 (updated-by): Updated: section:description, section:steps, section:validation
 - 2026-09-24T05:07:37.936008+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T14:09:49.158527+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:09:52.081799+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:24.783529+00:00 (updated-by): Updated: section:ledger-events

@@ -2,7 +2,7 @@
 id: PRBE34
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:55:49.488869+00:00'
 breadth: ''
 skill: advanced
@@ -73,12 +73,15 @@ Successor key: patching-rdna-boost-experiments-rd42
 
 2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding + validation.toml/producer wiring requirement to steps/files/validation; corrected PRBE33 dependency (scratch is still needed, not redundant).
 
+2026-09-25 (b9b21353): 1215 got its first own validation package. build_pair gained subject_companion_patches so the unit (1215+1216) is measured against plain bigcherry. Shared-expert-fork WARN marker; contract bound; bit_identical under GRAPH_OPT=1 (full-vocab, tol 0); tg128 positive on tierM-qwen35b-a3b-moe-mtp, control on dense tierA-qwen4b-q6k (contract control model changed: it previously duplicated the positive lane). Trimming 1215 onto upstream's native concurrent_event substrate deferred until this evidence exists. Hardware run pending.
+
 ## Change Log
 
 - 2026-09-09T10:55:49.488869+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:58.630166+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.280175+00:00 (updated-by): Updated: section:ledger-events
@@ -93,3 +96,7 @@ Successor key: patching-rdna-boost-experiments-rd42
 - 2026-09-24T02:36:06.238415+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:38:57.951941+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files, section:validation
 - 2026-09-24T04:39:39.841281+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T14:10:00.800220+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:10:03.723740+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:30.475467+00:00 (updated-by): Updated: section:ledger-events

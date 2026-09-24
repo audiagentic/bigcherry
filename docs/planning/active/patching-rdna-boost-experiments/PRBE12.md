@@ -2,7 +2,7 @@
 id: PRBE12
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:54:19.359011+00:00'
 breadth: ''
 skill: advanced
@@ -76,12 +76,15 @@ Remaining real work: real activation-trace verification (has real markers alread
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: verified via grep that patch 1206's two activation markers use GGML_LOG_INFO (patch.py lines ~222, ~235) -- changed step 1 to require both be changed to GGML_LOG_WARN. Corrected the mediating-node terminology from generic "VIEW" to the patch's actual match target GGML_OP_RESHAPE, and clarified that direct MUL_MAT->ADD (no RESHAPE) should retain legacy fusion behavior without emitting the 1206_rd13 marker rather than being treated as a rejected pattern.
 
+2026-09-25 implementation: 1206 markers moved to GGML_LOG_WARN (commit after cd35b01f); PRBE39 extension (VIEW + memory-range check) landed in the same package. b11126 gfx1100 campaign (work/runs/prbe12-1206-gfx1100 on Brutus): ELIGIBLE, 0 blocking reasons. tg128 positive (tierA-qwen4b-q6k) +0.552% CI95 [0.152, 1.065] n=10; control (tierM-gptoss20b-q6k) -0.001% [-0.105, 0.106]; backend_reference 64 steps x 248320 full-vocab logprobs max diff 0; activation marker subject-only. Caveat: ran while another campaign was building on the host (paired interleaving mitigates); quiet rerun required before promotion. gfx1201 run launched.
+
 ## Change Log
 
 - 2026-09-09T10:54:19.359011+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:26.671901+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
+
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.183883+00:00 (updated-by): Updated: section:ledger-events
@@ -97,3 +100,7 @@ Remaining real work: real activation-trace verification (has real markers alread
 - 2026-09-11T21:24:28.100057+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:46.365428+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:39:02.337298+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-09-24T14:09:37.091460+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:09:40.423483+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:19.108890+00:00 (updated-by): Updated: section:ledger-events
