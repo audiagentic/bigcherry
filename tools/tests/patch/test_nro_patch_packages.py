@@ -49,6 +49,17 @@ def _patch_source(patch_id: str) -> str:
     return (PATCHES / patch_id / "patch.py").read_text(encoding="utf-8")
 
 
+
+def _load_patch_module(patch_id):
+    import importlib.util
+
+    path = PATCHES / patch_id / "patch.py"
+    spec = importlib.util.spec_from_file_location(f"nro_{patch_id}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
         for i in range(1, 18):
@@ -163,13 +174,23 @@ class NroSafetyInvariantTests(unittest.TestCase):
             self.assertIn(fragment, source)
         self.assertIn("Pure/testable controller only", source)
 
-    def test_topk_hybrid_and_wave32_are_separate_and_unwired(self):
-        n7 = _patch_source("1256_nro07_topk_hybrid")
-        n8 = _patch_source("1257_nro08_topk_wave32")
-        self.assertIn("bigcherry_nro07_top_k_float_to_ordered", n7)
-        self.assertIn("Selection kernels/dispatch intentionally await", n7)
-        self.assertIn("static_assert(BLOCK_SIZE % 32 == 0", n8)
-        self.assertIn("Runtime NRO07 dispatch is intentionally unchanged", n8)
+    def test_topk_ports_reproduce_the_fork_and_stay_separate(self):
+        """PNRO06/07: 1256 and 1257 are port_diff-generated from the fork's
+        file states (byte-exact, verified at generation); 1256 carries the
+        hybrid kernels and wave64 flag, 1257 the wave32 kernels and removes
+        the flag, each with its own activation markers."""
+        n7 = _load_patch_module("1256_nro07_topk_hybrid")
+        n8 = _load_patch_module("1257_nro08_topk_wave32")
+        paths = ["ggml/src/ggml-cuda/top-k.cu", "ggml/src/ggml-hip/CMakeLists.txt"]
+        self.assertEqual([p.path for p in n7.PATCHES], paths)
+        self.assertEqual([p.path for p in n8.PATCHES], paths)
+        hybrid = "".join(e.text for p in n7.PATCHES for e in p.edits)
+        wave32 = "".join(e.text for p in n8.PATCHES for e in p.edits)
+        self.assertIn("top_k_parallel_radix_cuda", hybrid)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1256_nro07 path=topk_", hybrid)
+        self.assertIn("-mwavefrontsize64", hybrid)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1257_nro08 path=topk_", wave32)
+        self.assertNotIn("-mwavefrontsize64", "".join(e.text for e in n8.PATCHES[1].edits))
 
 
 if __name__ == "__main__":
