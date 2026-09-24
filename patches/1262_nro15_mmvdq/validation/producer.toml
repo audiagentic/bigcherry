@@ -1,0 +1,18 @@
+schema = 1
+
+# PNRO15: own test-backend-ops pair (correctness + activation, mmvdq enabled
+# on both arms) and the standard scaffold llama-bench pair (tg128 positive,
+# pp512 control), GGML_CUDA_DQ_MMV=1 / GGML_CUDA_DQ_Q6K=1 on both arms.
+[producer.nro15]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro15-correctness.json",
+  "nro15-performance.json",
+  "nro15-subject-trace.log",
+  "nro15-control-trace.log",
+]

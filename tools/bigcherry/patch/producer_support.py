@@ -242,3 +242,39 @@ def performance_metrics(*effects: Any) -> dict[str, dict[str, Any]]:
     if not metrics:
         raise vp.ValidationProducerError("performance artifact needs at least one measured lane")
     return metrics
+
+
+_TBO_PASSED = __import__("re").compile(r"(\d+)/(\d+) tests passed")
+
+
+def run_backend_ops(
+    binary: Path, args: tuple[str, ...], env: Mapping[str, str], *, label: str, timeout_s: int = 3600
+) -> tuple[str, int, int, int]:
+    """Run test-backend-ops (test mode) and return (output, returncode, passed, total).
+
+    ``total`` is the backend's case count from its "N/M tests passed" summary;
+    a run that prints no summary fails closed.
+    """
+    import subprocess
+
+    completed = subprocess.run(
+        [str(binary), *args], capture_output=True, text=True, env=dict(env), check=False, timeout=timeout_s
+    )
+    text = (completed.stdout or "") + "\n" + (completed.stderr or "")
+    counts = _TBO_PASSED.findall(text)
+    if not counts:
+        raise vp.ValidationProducerError(
+            f"{label}: test-backend-ops printed no pass summary (exit {completed.returncode})"
+        )
+    passed, total = (int(v) for v in counts[-1])
+    return text, completed.returncode, passed, total
+
+
+def device_env(ctx: vp.ProducerContext, device: vp.ProducerDeviceContext, extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Build env + the device's selector, device env_unset removed, plus ``extra``."""
+    env = dict(ctx.build_env)
+    env.update(dict(device.env_overrides))
+    for key in device.env_unset:
+        env.pop(key, None)
+    env.update(extra or {})
+    return env

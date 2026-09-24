@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import dataclasses
 import re
-import subprocess
 from pathlib import Path
 
 from bigcherry.experiment import contract as experiment_contract
@@ -41,7 +40,6 @@ _MODEL_REF = "tierL-qwen27b-q8"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=(\d+)")
 _REQUIRED_NCOLS = frozenset(range(1, 9))
-_PASSED = re.compile(r"(\d+)/(\d+) tests passed")
 _ROUNDS = 10
 
 _CORRECTNESS_ARTIFACT = "rd33-correctness.json"
@@ -52,20 +50,6 @@ _CONTROL_TRACE_ARTIFACT = "rd33-control-trace.log"
 
 def _fail(message: str) -> vp.ValidationProducerError:
     return vp.ValidationProducerError(f"{_LABEL}: {message}")
-
-
-def _run_backend_ops(binary: Path, env: dict[str, str]) -> tuple[str, int, int, int]:
-    """(combined output, returncode, passed, total) for the Q8_0 MUL_MAT cases."""
-    completed = subprocess.run(
-        [str(binary), "-o", "MUL_MAT", "-p", "type_a=q8_0,type_b=f32", "-b", "ROCm0"],
-        capture_output=True, text=True, env=env, check=False, timeout=3600,
-    )
-    text = (completed.stdout or "") + "\n" + (completed.stderr or "")
-    counts = _PASSED.findall(text)
-    if not counts:
-        raise _fail(f"test-backend-ops printed no pass summary (exit {completed.returncode})")
-    passed, total = (int(v) for v in counts[-1])
-    return text, completed.returncode, passed, total
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
@@ -93,12 +77,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         targets=(_ARCHITECTURE,), primary_target="test-backend-ops",
         baseline_source="bigcherry", require_parity=True,
     )
-    tbo_env = dict(ctx.build_env)
-    tbo_env.update(dict(device.env_overrides))
-    for key in device.env_unset:
-        tbo_env.pop(key, None)
-    tbo_env["BIGCHERRY_PATCH_TRACE"] = "1"
-    arms = {role: _run_backend_ops(binary, tbo_env)
+    tbo_env = support.device_env(ctx, device, {"BIGCHERRY_PATCH_TRACE": "1"})
+    tbo_args = ("-o", "MUL_MAT", "-p", "type_a=q8_0,type_b=f32", "-b", "ROCm0")
+    arms = {role: support.run_backend_ops(binary, tbo_args, tbo_env, label=_LABEL)
             for role, binary in (("control", pair.control_bin), ("subject", pair.subject_bin))}
     arm_ok = {role: rc == 0 and total > 0 and passed == total for role, (_, rc, passed, total) in arms.items()}
     subject_ncols = {int(n) for n in _MARKER.findall(arms["subject"][0])}
