@@ -22,12 +22,12 @@ class PatchResolutionTests(unittest.TestCase):
 
     def test_exact_resolution_is_deterministic_and_state_checked(self):
         selected = patchset.resolve_exact(
-            ["1000_rdna4_mmq_q2k_q6k_fix", "0100_cmake_options"],
+            ["1200_rd19_single_gpu_meta_bypass", "0100_cmake_options"],
             required_state="validated",
         )
         self.assertEqual(
             [item.patch_id for item in selected.modules],
-            ["0100_cmake_options", "1000_rdna4_mmq_q2k_q6k_fix"],
+            ["0100_cmake_options", "1200_rd19_single_gpu_meta_bypass"],
         )
 
     def test_unknown_duplicate_and_untested_fail_closed(self):

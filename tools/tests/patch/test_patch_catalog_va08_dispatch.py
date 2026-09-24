@@ -94,15 +94,15 @@ class ValidationEvidenceStatusesDispatchTests(unittest.TestCase):
         self.assertEqual(result[patch_id].status, "prospective-validated")
 
     def test_validated_patch_still_uses_verify_validated_patch_unchanged(self) -> None:
-        # 1000_rdna4_mmq_q2k_q6k_fix is real STATE="validated" -- must go
+        # 1200_rd19_single_gpu_meta_bypass is real STATE="validated" -- must go
         # through the original, unmodified verify_validated_patch() path,
         # never the new status-obligation verifiers.
         with mock.patch.object(pve, "verify_ported_benched_patch") as fake_benched, \
              mock.patch.object(pve, "verify_deferred_hardware_patch") as fake_deferred:
-            result = patch_catalog.validation_evidence_statuses(["1000_rdna4_mmq_q2k_q6k_fix"], carry_forward=False)
+            result = patch_catalog.validation_evidence_statuses(["1200_rd19_single_gpu_meta_bypass"], carry_forward=False)
         fake_benched.assert_not_called()
         fake_deferred.assert_not_called()
-        self.assertIn(result["1000_rdna4_mmq_q2k_q6k_fix"].status, ("validated-evidence", "missing-or-stale", "legacy-grandfathered"))
+        self.assertIn(result["1200_rd19_single_gpu_meta_bypass"].status, ("validated-evidence", "missing-or-stale", "legacy-grandfathered"))
 
     def test_validated_framework_uses_configuration_verifier_and_compiled_targets(self) -> None:
         # 0100_cmake_options is a validated, local framework package with no
