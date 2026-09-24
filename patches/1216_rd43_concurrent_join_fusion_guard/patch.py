@@ -151,6 +151,13 @@ _TRY_FUSE_NEW = """                int join_idx = -1;
                 const int saved_n_nodes = cgraph->n_nodes;
                 if (join_idx > i) {
                     cgraph->n_nodes = join_idx;
+                    // bigcherry PRBE35: activation evidence -- the fusion horizon was capped.
+                    if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                        static std::atomic_flag bigcherry_rd43_logged = ATOMIC_FLAG_INIT;
+                        if (!bigcherry_rd43_logged.test_and_set(std::memory_order_relaxed)) {
+                            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1216_rd43 path=join_fusion_cap\\n");
+                        }
+                    }
                 }
                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
                 cgraph->n_nodes = saved_n_nodes;
