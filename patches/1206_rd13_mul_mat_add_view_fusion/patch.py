@@ -140,12 +140,19 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
     for (ggml_op op : { GGML_OP_MUL_MAT, GGML_OP_MUL_MAT_ID }) {
         const ggml_op bias_op = op == GGML_OP_MUL_MAT ? GGML_OP_ADD : GGML_OP_ADD_ID;
 
-        // view (reshape) between the matmul and the add
-        const bool has_view = i + 1 < cgraph->n_nodes && cgraph->nodes[i + 1]->op == GGML_OP_RESHAPE;
+        // view (reshape) between the matmul and the add. bigcherry PRBE39: a
+        // GGML_OP_VIEW is accepted too when it is a zero-offset, contiguous,
+        // same-size view of the matmul output (byte-identical to a reshape).
+        const ggml_tensor * rd13_mid = i + 1 < cgraph->n_nodes ? cgraph->nodes[i + 1] : nullptr;
+        const bool has_view = rd13_mid != nullptr &&
+            (rd13_mid->op == GGML_OP_RESHAPE ||
+             (rd13_mid->op == GGML_OP_VIEW && rd13_mid->view_src == cgraph->nodes[i] && rd13_mid->view_offs == 0 &&
+              ggml_is_contiguous(rd13_mid) && ggml_is_contiguous(cgraph->nodes[i]) &&
+              ggml_nbytes(rd13_mid) == ggml_nbytes(cgraph->nodes[i])));
 
         if (has_view) {
             // use ggml_can_fuse_subgraph: views in the subgraph are allowed here
-            const ggml_op ops[3] = { op, GGML_OP_RESHAPE, bias_op };
+            const ggml_op ops[3] = { op, rd13_mid->op, bias_op };
             const int out_nodes[] = { i + 2 };
             if (!ggml_can_fuse_subgraph(cgraph, i, 3, ops, out_nodes, 1) || cgraph->nodes[i + 1]->src[0] != cgraph->nodes[i]) {
                 continue;
@@ -198,6 +205,15 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
 
         if (bias_op == GGML_OP_ADD && !ggml_are_same_shape(bias_node->src[0], bias_node->src[1])) {
             continue;
+        }
+
+        // bigcherry PRBE39: the fused output must not alias any input of the
+        // 3-node span (upstream's shared overlap proof).
+        if (has_view) {
+            const int rd13_out_idx = i + 2;
+            if (!ggml_cuda_check_fusion_memory_ranges(cgraph, i, 3, &rd13_out_idx, 1)) {
+                continue;
+            }
         }
 
         ggml_cuda_mm_fusion_args_host fusion_data{};
