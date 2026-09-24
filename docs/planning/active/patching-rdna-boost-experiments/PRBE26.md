@@ -2,7 +2,7 @@
 id: PRBE26
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:55:14.091235+00:00'
 breadth: ''
 skill: advanced
@@ -76,6 +76,8 @@ Successor key: patching-rdna-boost-experiments-rd33
 
 2026-09-24 GPT review req_2b717df095b44703 applied: verified via direct read of patch.py that the launcher hardcodes c_ncols_dst=1 (patch.py:288) and the gate is ne1==1 && !forced.requested() (patch.py:322/422) -- merely widening the ne1 gate would not select the correct template instance. Replaced with a required template<int N> launcher + runtime switch for N=1..8, corrected gate replacement text, added requires=[0600_mmvq_geometry] (missing), and corrected the inverted 'forced-only' description.
 
+2026-09-25 (975375b4): 1241 widened to ncols_dst 1..8 -- launcher templated on ncols with a runtime switch; the f32 activation read now honours stride_col_y (it assumed ncols 1); requires 0600_mmvq_geometry; per-ncols WARN marker. New contract RD33-MMVQ-Q8_0-F32-DECODE (backend_reference, positive = real MTP decode mtp_wall_tps on tierL-qwen27b-q8 dual gfx1100, control = dense Q6_K tg128; improvement_no_regression_v1, 4 sessions). Producer: test-backend-ops Q8_0 MUL_MAT (n=1..9) on both arms + markers for every ncols 1..8, shared producer_support.mtp_server_lane (RD73's lane generalised), dense control lane. Hardware: needs a dual-gfx1100 slot (GPU0+1), not yet queued.
+
 ## Change Log
 
 - 2026-09-09T10:55:14.091235+00:00 (created-by): Created by capability-rebaseline-v3
@@ -94,3 +96,5 @@ Successor key: patching-rdna-boost-experiments-rd33
 - 2026-09-10T02:55:42.877445+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:47.756138+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:45:20.608430+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-09-24T15:40:42.696090+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T15:40:45.627605+00:00 (updated-by): Updated: section:notes

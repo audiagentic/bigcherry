@@ -2,7 +2,7 @@
 id: PNRO06
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:52:38.138969+00:00'
 breadth: ''
 skill: advanced
@@ -64,6 +64,8 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified via grep that b11126 top-k.cu already has HIP top_k_radix_cuda (ncols>1024) and bitonic fallback with top_k_float_to_ordered -- corrected the plan's stale premise that this needed a from-scratch HIP port. Rescoped to a re-diff against the current source to find genuinely missing paths, wired ahead of the existing radix/bitonic routes under an opt-in gate, with a required dispatch marker.
 
+2026-09-25 (ef49e4e5): the scaffold is replaced by an EXACT port of nasone 7f3e1e4d + 10fdba9a. The fork's pre-change top-k.cu is byte-identical to b11126's, so no rebase design was needed: new tools/bigcherry/patch/port_diff.py generated 19 anchored edits (+1 CMake wave64 edit) and verified they reproduce the fork file byte-for-byte and are idempotent. Per-route activation markers (patch=1256_nro07 path=topk_small/topk_parallel_radix). TOOLCHAIN BLOCKER: the fork's small-row route is compiled only for HIP >= 7.15; Brutus has ROCm 7.2.4 and 7.14, so only k==1 and ncols>1024 radix routes can activate on the fleet. Next: validation package (test-backend-ops TOP_K correctness both arms + markers; kernel perf via test-backend-ops perf mode; decode control).
+
 ## Change Log
 
 - 2026-09-09T10:52:38.138969+00:00 (created-by): Created by capability-rebaseline-v3
@@ -80,3 +82,5 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 - 2026-09-10T02:43:04.858380+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:26.803643+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-24T04:49:23.947783+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-24T15:40:54.324559+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T15:40:57.228620+00:00 (updated-by): Updated: section:notes

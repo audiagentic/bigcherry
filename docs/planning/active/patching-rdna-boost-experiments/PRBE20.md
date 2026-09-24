@@ -2,7 +2,7 @@
 id: PRBE20
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:54:49.394058+00:00'
 breadth: ''
 skill: advanced
@@ -95,6 +95,8 @@ Decision (per GPT design consultation, req_9b384a623ff24ab8): do not run gfx1201
 
 2026-09-24 GPT review req_2b717df095b44703 applied: pinned the Wave-1 anchor to the verified real function ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1 (was TBD) and its exact ne[1] specialization thresholds; corrected the Wave-2 HI09 template params' provenance (introduced by patch 0600_mmvq_geometry, not raw b11126) and added requires=["0600_mmvq_geometry"] to patch 1210; removed the undefined 'RD26-determinism build flag' language in favor of package activation itself being the gate.
 
+2026-09-25 (760f9d0f): the stew675 fork was squash-rebased -- 93510434f/10b83d6b2/6cdf5aff9 no longer exist; the determinism hunks live in 'block 08' (5efcd85f). Ported ONLY those into 1210 against b11126's own code (no longer gated on 1202/1203; no 0600 requirement -- calc_nwarps body is upstream code): wave 1 = fattn.cu WMMA gate adds && Q->ne[1] > 8, fattn-tile.cuh uses decode's cols_per_block=max(ncols2,2) for every n_q<=8 (an existing instantiation); wave 2 = RDNA3/RDNA4 calc_nwarps whitelist covers ncols_dst<=MMVQ_MAX_BATCH_SIZE. Fork's Q6_K nwarps 2->8 retune and fused SSM/prefill kernels deliberately NOT ported. Producer gained the contract's tg128 controls lane (controls could never pass before). Contract text updated; identity claimed for F16/BF16 KV only (quantized KV n_q 1..2 -> vec kernel, 3..8 -> tile). Hardware run pending (queue after current lanes).
+
 ## Change Log
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
@@ -125,3 +127,5 @@ Decision (per GPT design consultation, req_9b384a623ff24ab8): do not run gfx1201
 - 2026-09-13T17:29:30.492149+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:29:43.023924+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes, section:effort_risk_2
 - 2026-09-24T04:42:04.224768+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-24T15:40:35.936956+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T15:40:39.804717+00:00 (updated-by): Updated: section:notes

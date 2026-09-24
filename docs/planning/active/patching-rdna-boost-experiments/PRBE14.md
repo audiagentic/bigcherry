@@ -2,7 +2,7 @@
 id: PRBE14
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:54:26.498754+00:00'
 breadth: ''
 skill: advanced
@@ -110,6 +110,8 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: replaced step 3's literal placeholder with the full enumerated rejection-predicate matrix (weights->type != F32, non-contiguous weights, ne[0]!=1, ne[1]!=mm_node->ne[1], ne[2]/ne[3]!=1, mm_node->ne[2]!=1, nelements mismatch, shape mismatch, ineligible MMVQ, wrong MUL wiring, failed memory-range check), each as its own explicit non-activation fixture.
 
+2026-09-25 (be9730c2+98edd439): 1207's producer was unloadable; rewritten on the standard scaffold: full-vocab backend_reference (5e-4) + activation on llama-server, tg128 MoE positive (gpt-oss-20B) and dense control (qwen4b). Contract: moe_prefill lane dropped (fold only fires on single-column decode), control moved to a dense model (was the same MoE measurement), backend_reference replaces ppl_equality, improvement_no_regression_v1 x4 sessions. The informal -1.32% (n=6, dual XTX) is NOT treated as a rejection basis on its own; the formal per-arch sessions are queued (q-1207-*). Reject if they confirm the regression.
+
 ## Change Log
 
 - 2026-09-09T10:54:26.498754+00:00 (created-by): Created by capability-rebaseline-v3
@@ -141,3 +143,5 @@ Final disposition for 1207 itself: correct (activation-proven, decode-path-corre
 - 2026-09-12T08:37:06.312262+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:35:38.110487+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:39:23.309354+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-09-24T15:40:48.538509+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T15:40:51.447222+00:00 (updated-by): Updated: section:notes
