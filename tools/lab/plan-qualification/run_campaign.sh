@@ -15,7 +15,8 @@ export TMPDIR=$root/work/tmp
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
 args=(--patch "$patch" --baseline-source bigcherry-tuning --amdgpu-targets "$arch"
       --device-map "$arch=$dev" --model "$BC_MODEL" --hip-path "$BC_HIP_PATH"
-      --workdir "work/runs/$run" --worktree-root work/worktrees)
+      --workdir "work/runs/$run" --worktree-root work/worktrees
+      --build-root "work/builds/$patch")
 [ "$producer" != "-" ] && args+=(--validation-producer "$producer")
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
 echo "CAMPAIGN_EXIT=$?"

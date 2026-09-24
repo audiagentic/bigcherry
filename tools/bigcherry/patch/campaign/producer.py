@@ -1857,9 +1857,11 @@ def _aggregate_producer_session_effects(
     # SESSIONS, not from the pairs inside this one run. Fold the
     # prior sessions' persisted lane effects together with the one
     # just measured and re-aggregate over all of them.
-    if (
-        contract.acceptance.effect_evidence_policy
-        == "session_ci95_threshold_bound_v1"
+    # Both session-unit policies aggregate every matching prior record plus
+    # this session; improvement_no_regression_v1 reads {field}_sessions too.
+    if contract.acceptance.effect_evidence_policy in (
+        "session_ci95_threshold_bound_v1",
+        "improvement_no_regression_v1",
     ):
         from bigcherry.patch import evidence as patch_validation_evidence
 
