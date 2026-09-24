@@ -57,6 +57,8 @@ Successor key: patching-rdna-boost-experiments-rd71
 
 2026-09-24 relevance at b11126: no existing patch for RD71 (grep = no hits); functional-keyword search found related-but-non-overlapping MTP patches (1254/1255/1260/1261), closest analog is 1261 (draft/target backend-device-list plumbing). External fork source (MrLordCat, commits 41a8ca78/1fcc05da) not locally available -- this is a genuine blocker for anchor-level design, documented as this plan's mandatory step 1. GPT design request req_83fbfa0995034d2d (covering this + PRBE58/59/101) was still in progress when this plan was authored; check for its response and merge/reconcile with this plan if it landed with fork-specific detail this session could not obtain.
 
+2026-09-24 GPT req_83fbfa0995034d2d COMPLETED. Its design is more concrete than this plan's skeleton: treats the handoff as choosing a HOME BACKEND for t_h_nextn (not just tensor placement), with a cost(owner)=copy-in+copy-out+sync+host-staging-penalty model over candidate owner GPUs, hook points at src/llama-model.cpp (NEXTN_PROJ_PRE/POST placement override), src/llama-context.cpp (t_h_nextn backend selection pre-graph-alloc), and a new BIGCHERRY_MTP_TOPOLOGY=off|auto|device:N env gate restricted to layer-split + >=2 accelerator devices initially. Test bar: temp=0 identity, byte-identical t_h_nextn rows, identical accept/draft counts, copies/token reporting. This is a genuinely better starting point than this plan's own skeleton -- prefer GPT's design when implementing, using this plan's step-1 fetch requirement (real fork commits 41a8ca78/1fcc05da) to fill in GPT's still-tentative anchors (GPT also had no access to the real fork diff, so its file/hook references are structurally plausible but unverified, same caveat as this plan).
+
 ## Change Log
 
 - 2026-09-09T10:57:26.943294+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,3 +74,4 @@ Successor key: patching-rdna-boost-experiments-rd71
 - chg_20260910_031346_repaired-four-more-migrated-pa_4345
 - 2026-09-10T03:13:46.500792+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:51:54.199727+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
+- 2026-09-24T04:53:30.568089+00:00 (updated-by): Updated: section:notes

@@ -57,6 +57,8 @@ Successor key: patching-rdna-boost-experiments-rd72
 
 2026-09-24 relevance at b11126: no existing patch for RD72 (grep = no hits); no functional overlap found. External fork source (commit 1fcc05da) not locally available -- same blocker as PRBE57, documented as mandatory step 1. GPT design request req_83fbfa0995034d2d (covering this + PRBE57/59/101) was in progress when this plan was authored; check for its response and merge/reconcile if it landed with fork-specific detail.
 
+2026-09-24 GPT req_83fbfa0995034d2d COMPLETED. Its design: a context-owned `mtp_handoff` struct with 4 prioritized paths (same-owner-GPU alias/0 copies; P2P direct/1 copy; host-bounce/2 copies; existing baseline fallback), explicitly contingent on PRBE57's placement choice (matches this plan's own coupling requirement), persistent/reused buffers (no per-token transient Vulkan staging allocation -- a concrete improvement over this plan's vaguer 'reduce copies' framing), and patch.toml `requires=["<PRBE57 package id>"]`. Test bar: byte-identical hidden state and temp=0 tokens, forced-path tests (force-direct/force-bounce/force-baseline), Vulkan copy-command + byte/token tracing targeting <=2 (ideally 0/1). Prefer this design when implementing; anchors still unverified against the real fork diff (same caveat as PRBE57).
+
 ## Change Log
 
 - 2026-09-09T10:57:31.760072+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,3 +74,4 @@ Successor key: patching-rdna-boost-experiments-rd72
 - chg_20260910_031346_repaired-four-more-migrated-pa_4345
 - 2026-09-10T03:13:46.510818+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:52:14.738266+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
+- 2026-09-24T04:53:38.311212+00:00 (updated-by): Updated: section:notes
