@@ -539,22 +539,23 @@ ppl_equality = "required"
 max_control_regression_pct = 1
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY]
-title = "RD26a: decode vs speculative-verify bit-identity (base-standalone hunks)"
+title = "RD26: decode vs speculative-verify bit-identity (MMVF, CPU sgemm, flash-attention, RDNA MMVQ)"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.source]
 source_id = "stew675-rdna-boosts"
 commits = [
   "b2655d381b9575d644ebef794869165ede14b3a3",
   "d152888fc34419c69fb946581f29f927a475b5fa",
+  "5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb",
 ]
-atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (base-standalone subset of a 5-commit determinism cluster -- fattn-tile/RDNA4-mmvq/fused-SSM pieces remain composition-gated on 1202/1203, not covered by this contract)"
+atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (PRBE20, 2026-09-25: the base-standalone MMVF/sgemm hunks plus wave 1 flash-attention and wave 2 RDNA3/RDNA4 MMVQ nwarps, the latter two taken from the rebased fork's block 08; fused-SSM decode and the Q6_K nwarps retune are out of scope)"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.target]
 kind = "determinism"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.hypothesis]
 expected_effect = "correctness"
-rationale = "CORRECTNESS/DETERMINISM ONLY, no performance claim (EC02 Appendix-B rule). Makes decode (n_q=1) and speculative-verify (n_q=n_draft+1) batches produce bit-identical logits -- a soundness precondition for speculative acceptance checks. This contract covers only the base-standalone (non-FA, CPU sgemm.cpp) hunks; do not claim RD26 complete from this contract alone -- the fattn-tile/RDNA4-mmvq/fused-SSM pieces need 1202 (RD04) and 1203 (RD05/06) landed and retained first."
+rationale = "CORRECTNESS/DETERMINISM ONLY, no performance claim (EC02 Appendix-B rule). Makes decode (n_q=1) and speculative-verify (n_q=n_draft+1 <= 8) batches produce bit-identical logits -- a soundness precondition for speculative acceptance checks: MMVF decision, CPU sgemm gate, flash-attention kernel/tile config, and RDNA3/RDNA4 MMVQ nwarps are all made independent of the batch width. Identity is claimed for F16/BF16 KV only: with a quantized KV cache n_q 1..2 take the vector kernel and 3..8 the tile kernel."
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.scope]
 backend = "hip"

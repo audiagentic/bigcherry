@@ -57,7 +57,7 @@ CAMPAIGN_SRC = (
 PRODUCER_SRC = (
     TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
 ).read_text(encoding="utf-8")
-EXPECTED_ARTIFACT_NAMES = frozenset({"rd26-decode-verify-bit-identity.json"})
+EXPECTED_ARTIFACT_NAMES = frozenset({"rd26-decode-verify-bit-identity.json", "rd26-controls.json"})
 
 
 def cfg_pinned() -> str:
@@ -110,7 +110,8 @@ class Rd26DedicatedPathDeletionTests(unittest.TestCase):
         # activation/trace/performance stay untouched.
         self.assertIn("activation_evidence=None", PRODUCER_SRC)
         self.assertIn("trace_evidence=None", PRODUCER_SRC)
-        self.assertIn("performance_evidence=None", PRODUCER_SRC)
+        # PRBE20: performance evidence is now the controls lane artifact.
+        self.assertIn("rd26-controls.json", PRODUCER_SRC)
 
     def test_producer_builds_the_llama_results_pair_once(self) -> None:
         # The isolated llama-results pair is the producer's own
