@@ -2,7 +2,7 @@
 id: PRBE44
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:56:32.505332+00:00'
 breadth: ''
 skill: advanced
@@ -15,7 +15,7 @@ priority: null
 
 ## Description
 
-Implement and qualify native AMD exp2 decay inside the PRBE42 chunked GDN recurrence, preserving recurrent quality while reducing scalar math overhead on supported long-prefill paths.
+SUBSUMED-INTO-PRBE42 (disposition: superseded, not a separate implementation). Patch 1221_rd50_gdn_chunked_recurrence's SUMMARY.md states RD52 (native exp2 decay, this item) is an inline micro-decision inside the same chunked-kernel body as RD50, folded into 1221 rather than a separate patch. No standalone RD52 code path exists to qualify; exp2 decay correctness/tolerance is part of 1221's overall correctness campaign (tracked under PRBE42), specifically the long-sequence recurrent-state/logit/PPL tests already specified there.
 
 ## Steps
 
@@ -57,6 +57,10 @@ Successor key: patching-rdna-boost-experiments-rd52
 
 Supersedes RD52. Depends on PRBE42; no standalone validity outside the chunked GDN kernel.
 
+append
+
+2026-09-24 relevance at b11126: SUPERSEDED/subsumed, same evidence as PRBE43 (patches/1221_rd50_gdn_chunked_recurrence/SUMMARY.md explicit subsumption statement for RD51/RD52/RD53). PRBE42's validation plan (long-sequence recurrent-state/logit/PPL parity) already covers whatever decay-math approach 1221 actually uses; no separate qualification runner needed. No GPT session needed.
+
 ## Change Log
 
 - 2026-09-09T10:56:32.505332+00:00 (created-by): Created by capability-rebaseline-v3
@@ -73,3 +77,8 @@ Supersedes RD52. Depends on PRBE42; no standalone validity outside the chunked G
 - 2026-09-10T03:07:27.823252+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20260910_030747_carried-forward-the-remaining_4294
 - 2026-09-10T03:07:47.473759+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:34:32.076326+00:00 (updated-by): Updated: section:description, section:notes
+- 2026-09-24T02:34:55.912391+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T02:35:10.335523+00:00 (state-transition): State: pending → superseded
+- chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
+- 2026-09-24T02:36:37.279386+00:00 (updated-by): Updated: section:ledger-events

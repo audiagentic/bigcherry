@@ -44,7 +44,7 @@ patches/1254_nro05_gdn_mtp_prefix_tail; orchestration/snapshot path; snapshot fi
 
 ## Validation
 
-Per-slot and final-state parity, continuation behavior, nonqualifying-shape fallback, threshold±1, K extremes, single/multi-sequence, launch rejection, pool reuse, graph replay, and acceptance-aware E2E performance.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1254_nro05_gdn_mtp_prefix_tail`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1254_nro05_gdn_mtp_prefix_tail --source bigcherry-tuning --requires 1253_nro04_gfx1100_bf16_chunked_gdn`; package pytest offline. Per-slot/final-state parity, nonqualifying-shape fallback, threshold+/-1, K=2/3/5/8, single/multi-sequence, launch rejection, pool reuse, graph replay fixtures; FP32 chunked-prefix control to separate orchestration vs kernel error. Hardware (Brutus, gfx1100): `python -m bigcherry.patch.validation_campaign --overlay 1254_nro05_gdn_mtp_prefix_tail --requires 1253_nro04_gfx1100_bf16_chunked_gdn --arch gfx1100` measuring prefix savings vs transition/allocation overhead and MTP acceptance.
 
 ## Effort & Risk
 
@@ -68,13 +68,14 @@ Supersedes: NRO05
 Inherited semantic scope: preserve prefix/tail boundary, snapshot ordering, failure fallback, state lifetime, and acceptance-aware qualification.
 Migration: capability-rebaseline-v3-2026-09
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1254_nro05_gdn_mtp_prefix_tail exists, state=untested, depends on PNRO04's patch 1253. No upstream equivalent. Disposition: validate/qualify existing patch; no GPT design needed.
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:52.793774+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.071633+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:26:22.478825+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 - chg_20260910_022800_five-nasone-successor-plans-no_4030
 - 2026-09-10T02:28:00.303796+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:15.579509+00:00 (updated-by): Updated: section:validation, section:notes

@@ -60,13 +60,14 @@ Supersedes: NRO14
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-nasone-rdna-optimizations-nro14
 
+2026-09-24 relevance at b11126: TODO. Grounded directly against b11126 source (TENSOR_READ_LAZY flag, lazy_read struct in src/llama-model-loader.{h,cpp}); anchors verified by grep, not guessed. GPT design request was submitted (dev-gpt-agent, batched with PNRO14/PNRO15) but the gateway queue was saturated (concurrent-session limit) and did not return a response within this session's time budget -- design was completed directly from source instead of via GPT synthesis.
+
 ## Change Log
 
 - 2026-09-09T10:53:08.931192+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:09:37.677585+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.107936+00:00 (updated-by): Updated: section:ledger-events
@@ -75,3 +76,4 @@ Successor key: patching-nasone-rdna-optimizations-nro14
 - 2026-09-10T02:46:04.398329+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_024630_the-remaining-nasone-successor_5195
 - 2026-09-10T02:46:30.060469+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:30:06.821967+00:00 (updated-by): Updated: section:notes

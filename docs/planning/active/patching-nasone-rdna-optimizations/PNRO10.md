@@ -15,7 +15,7 @@ priority: P1
 
 ## Description
 
-Add ctx_other model devices to speculative scheduler backends as an orchestration correctness fix for shared tensors.
+Add ctx_other model devices to speculative scheduler backends -- orchestration correctness fix for shared tensors under speculative decoding. IMPLEMENTED-AS-PATCH: patches/1261_nro10_spec_ctx_other_devices exists (state=untested); the plan item's own ledger-events already show a 2026-09-20 note '1261-pnro10-verified-o...' indicating prior verification activity. Disposition: validate/qualify existing patch.
 
 ## Steps
 
@@ -39,7 +39,7 @@ src/llama-context.cpp context backend construction; speculative ctx_other setup;
 
 ## Validation
 
-Mismatched-device control vs subject; same-device/no-op; subset/superset/disjoint; Meta split; single GPU; output/copy topology and lifetime checks.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1261_nro10_spec_ctx_other_devices`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1261_nro10_spec_ctx_other_devices --source bigcherry-tuning`; package pytest offline. Fixtures: mismatched-device control vs subject, same-device no-op, subset/superset/disjoint lists, Meta-wrapped tensor split, single-GPU. Static/unit-level output/copy-topology and lifetime checks (no hardware required for most of this item since it's an orchestration/scheduling correctness fix, not a kernel). Hardware confirmation (Brutus, 2+ device speculative config): `python -m bigcherry.patch.validation_campaign --overlay 1261_nro10_spec_ctx_other_devices --arch gfx1100` verifying shared tensors schedule on an allocator-valid backend with output parity and no unexpected copies; initialization failure must be explicit.
 
 ## Effort & Risk
 
@@ -59,14 +59,14 @@ Supersedes: NRO11
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-nasone-rdna-optimizations-nro11
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1261_nro10_spec_ctx_other_devices exists, state=untested. Item's Files section still names raw src/llama-context.cpp paths (pre-patch-package phrasing) but the mapped package already exists (Successor key nro11 / Supersedes NRO11 in Notes, id verified in patches/1261*/patch.toml). No upstream absorption found relevant to this specific ctx_other device-list orchestration bug. Disposition: validate/qualify existing patch; no GPT design needed.
+
 ## Change Log
 
 - 2026-09-09T10:52:53.458006+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:09:20.280241+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.094454+00:00 (updated-by): Updated: section:ledger-events
@@ -77,3 +77,4 @@ Successor key: patching-nasone-rdna-optimizations-nro11
 - 2026-09-10T02:44:33.151338+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260920_064350_patch-1261-pnro10-verified-o_7857
 - 2026-09-20T06:43:55.564429+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:37.993604+00:00 (updated-by): Updated: section:description, section:validation, section:notes

@@ -44,7 +44,7 @@ patches/1252_nro03_allreduce_p2p_provider; provider selector/probes; static test
 
 ## Validation
 
-Repeated bidirectional synthetic validation, size edges, nonzero/asymmetric values, peer-enable handling, forced fallback, GPU count !=2 control, and per-direction evidence. Microbench plus real model lanes with correctness before bandwidth.
+Patch mechanics: `PYTHONPATH=tools python -m bigcherry patch-lint patches/1252_nro03_allreduce_p2p_provider`; `PYTHONPATH=tools python -m bigcherry patch-rebase-check --focal-overlay 1252_nro03_allreduce_p2p_provider --source bigcherry-tuning`; package pytest offline. Bidirectional synthetic validation across sizes/edges, nonzero/asymmetric values, peer-enable handling, forced fallback, GPU-count!=2 control. Hardware (Brutus only, dual gfx1100 required): `python -m bigcherry.patch.validation_campaign --overlay 1252_nro03_allreduce_p2p_provider --requires 1001_hip_internal_allreduce --arch gfx1100 --devices 2` -- correctness before bandwidth; reject if no stable winning envelope.
 
 ## Effort & Risk
 
@@ -70,13 +70,14 @@ Migration: capability-rebaseline-v3-2026-09
 
 REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed in patches/1250 (NRO01) this same session, by inspection (same author/batch, same pattern: anchor ending at '=' mid-statement). Fixed proactively and re-verified with a real isolated gfx1100 build (1001+1252 composition): clean build, BUILD_OK. Closes this draft's 'applies cleanly, builds HIP' bar for the first time. All other acceptance criteria (bidirectional probes, scratch ownership, fallback, content-checked performance campaign) remain entirely unstarted.
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH. patches/1252_nro03_allreduce_p2p_provider exists, state=untested. Prior session (2026-09-12) fixed the same anchor/compile bug class as PNRO01 and confirmed clean gfx1100 build (1001+1252 composition). No upstream equivalent. Disposition: validate/qualify existing patch; no GPT design needed.
+
 ## Change Log
 
 - 2026-09-09T10:52:12.743676+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:08:41.098537+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.061978+00:00 (updated-by): Updated: section:ledger-events
@@ -88,3 +89,4 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 - 2026-09-12T03:47:57.075297+00:00 (updated-by): Updated: section:notes
 - chg_20260912_034828_confirmed-on-real-hardware-tha_4451
 - 2026-09-12T03:48:28.669796+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:26:08.096956+00:00 (updated-by): Updated: section:validation, section:notes

@@ -15,11 +15,15 @@ priority: null
 
 ## Description
 
-Implement and qualify the AMD-GDN-001 chunked fused GatedDeltaNet recurrence on exact supported gfx1151 shapes, with safe fallback on gfx1100/gfx1201 and unsupported workloads.
+IMPLEMENTED-AS-PATCH. Patch 1221_rd50_gdn_chunked_recurrence (state=untested) implements the chunked fused GatedDeltaNet recurrence, folding upstream-fork files gated_delta_net_chunked.cu/.cuh into gated_delta_net.cu, adding a GDN_CHUNK=32-token chunked kernel narrowly gated (scalar gate only, S_v==128, n_tokens>32, RDNA3_5) with an env-var force-disable for A/B benching. This patch SUBSUMES RD51/RD52/RD53 (PRBE43/44/45) per its own SUMMARY.md: DPP reduction, native exp2 decay, and launch-bounds tuning are inline micro-decisions inside the same kernel body in the source PR, not independently portable hunks, so they are one patch, not four. This item's own eligibility gate (scalar gate, K=1, S_v=128, gfx1151) matches the patch's real gating condition.
 
 ## Steps
 
-1. Recheck AMD PR #54 and the pinned GATED_DELTA_NET APIs. 2. Implement chunked recurrence with state retained in registers/LDS for the narrow scalar-gate, K==1, S_v==128 predicate. 3. Gate explicitly by hardware, shape, gate mode, token/ubatch, and workspace limits; keep the old kernel for all other cases. 4. Validate interaction with PRBE41 channels-major SSM_CONV and downstream PRBE43/PRBE44/RD53 work. 5. Run direct recurrent-state/output parity over long sequences and real Qwen hybrid model checks. 6. Benchmark GDN op and end-to-end prefill, reporting VGPR/LDS/workspace and decode n=1 neutrality.
+1. Read patches/1221_rd50_gdn_chunked_recurrence/patch.py to confirm its Edit() anchors still apply cleanly at b11126 (SSM/GDN op code may have shifted between b10901 and b11126 -- this patch predates the current pin per its provenance).
+2. Run patch-lint and patch-rebase-check to confirm mechanical validity before any hardware run.
+3. Real gfx1151 hardware is required to qualify performance (the source's 1.89x/+20% headline claims are explicitly NOT acceptance by themselves per this item's own acceptance criteria) -- schedule via validation_campaign.py, not run here.
+4. Confirm real gfx1100/gfx1201 fallback (old token-by-token kernel path) is exercised and unaffected -- correctness-only check, no gfx1151 hardware needed for this half.
+5. Recurrent-state/output parity vs the old kernel over long sequences plus PPL/deterministic model checks (Qwen hybrid) must pass before any performance claim is trusted.
 
 ## Detailed Solution & Technical Design
 
@@ -31,11 +35,11 @@ Trigger: Qwen hybrid/GDN prefill on gfx1151 with scalar gate, K==1, S_v==128 and
 
 ## Files
 
-HIP GATED_DELTA_NET chunked kernel and dispatch eligibility predicate; state/workspace tests; architecture fallback tests; Qwen hybrid replay manifests and evidence; composition tests with PRBE41 and downstream GDN successors.
+patches/1221_rd50_gdn_chunked_recurrence/patch.py, patch.toml, README.md, evidence/ (existing); config/experiment-contracts.toml (check for an RD50-scoped contract; author if missing).
 
 ## Validation
 
-Correctness: recurrent state and output parity against old kernel over long sequences plus PPL/deterministic model checks. Fallback: real gfx1100/gfx1201 and unsupported-shape runs must use old kernel normally. Performance: report GDN op time, PP E2E, chunk size, VGPR/LDS/workspace, variance, and decode n=1. Promote only with exact predicate and repeatable benefit; source headline 1.89x/+20% is not acceptance by itself.
+Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1221_rd50_gdn_chunked_recurrence; patch-rebase-check --focal-overlay 1221_rd50_gdn_chunked_recurrence --source bigcherry-tuning. Hardware (on Brutus, not run here): gfx1100/gfx1201/gfx1030 fallback correctness (old kernel path unaffected); gfx1151 direct GDN op parity (recurrent state/output vs old kernel, long sequences) plus Qwen hybrid PPL/deterministic checks; only after correctness passes, gfx1151 GDN op time + E2E prefill benchmark with VGPR/LDS/workspace reporting and decode n=1 neutrality.
 
 ## Effort & Risk
 
@@ -57,6 +61,8 @@ Successor key: patching-rdna-boost-experiments-rd50
 
 Supersedes RD50. Root prerequisite for PRBE43 and the later GDN-003/GDN-004 successors. Existing compile-safety and fallback evidence does not substitute for gfx1151 performance qualification.
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1221_rd50_gdn_chunked_recurrence, state=untested; found via `grep -rl RD50 patches/*/patch.toml`-equivalent search, SUMMARY.md confirms plan item RD50/RD51/RD52/RD53 mapping). Patch already subsumes PRBE43/44/45 by design (single kernel body, not separable hunks) -- see those items' notes for the same disposition. No GPT design session needed (patch already exists and matches this item's own gating description); qualification is real-hardware evidence gathering, not new design. GPT gateway was busy earlier this session (see PRBE32 notes) but was not needed for this item.
+
 ## Change Log
 
 - 2026-09-09T10:56:23.562520+00:00 (created-by): Created by capability-rebaseline-v3
@@ -75,3 +81,7 @@ Supersedes RD50. Root prerequisite for PRBE43 and the later GDN-003/GDN-004 succ
 - 2026-09-10T03:05:58.216876+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20260910_030619_removed-migration-placeholder_7703
 - 2026-09-10T03:06:19.338602+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:33:21.468047+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation
+- 2026-09-24T02:33:26.697599+00:00 (updated-by): Updated: section:notes
+- chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
+- 2026-09-24T02:36:27.926898+00:00 (updated-by): Updated: section:ledger-events
