@@ -931,10 +931,10 @@ class RD12GenericDispatcherTests(unittest.TestCase):
 
         self.assertIsNotNone(result.outcome)
         assert result.outcome is not None
-        # apply/build/activation/correctness PASS; performance/controls
-        # stay BLOCKED (the producer declares both benchmark CLIs
-        # forbidden) -- so the verdict is ineligible but the run succeeds.
-        self.assertFalse(result.outcome["eligible"])
+        # PRBE40: the producer now measures its own performance/controls
+        # lanes (the faked lane effects clear the contract), so every check
+        # passes and the verdict is eligible.
+        self.assertTrue(result.outcome["eligible"])
         # The tracked record WAS persisted (exit 0 requires it).
         self.assertIsInstance(result.outcome["evidence_record"], str)
         check_results = result.outcome["check_results"]
@@ -943,10 +943,10 @@ class RD12GenericDispatcherTests(unittest.TestCase):
         self.assertEqual(check_results["build"]["status"], "pass")
         self.assertEqual(check_results["activation"]["status"], "pass")
         self.assertEqual(check_results["correctness"]["status"], "pass")
-        # The producer forbids both benchmark CLIs: performance/controls
-        # can never pass from this path -- the verdict stays ineligible.
+        # The benchmark CLIs stay forbidden; the producer's own lanes satisfy
+        # performance/controls through the bound performance artifact.
         for check_id in ("performance", "controls"):
-            self.assertNotEqual(check_results[check_id]["status"], "pass")
+            self.assertEqual(check_results[check_id]["status"], "pass")
 
         # Root canonical evidence written by the binder.
         correctness = json.loads(

@@ -231,3 +231,14 @@ def mtp_server_lane(
         )
     effect = experiment_execution.lane_effect_from_run(role, "mtp_wall_tps", paired)
     return effect, records, combined
+
+
+def performance_metrics(*effects: Any) -> dict[str, dict[str, Any]]:
+    """The benchmark validator's required ``metrics`` block: one entry per
+    measured lane, keyed ``<role>_<metric>``."""
+    import dataclasses
+
+    metrics = {f"{effect.role}_{effect.metric}": dataclasses.asdict(effect) for effect in effects}
+    if not metrics:
+        raise vp.ValidationProducerError("performance artifact needs at least one measured lane")
+    return metrics
