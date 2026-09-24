@@ -32,6 +32,7 @@ standard_campaign = "run"
 correctness_evidence_cli = "forbid"
 performance_benchmark_cli = "forbid"
 artifacts = [
+  "rd12-performance.json",
   "rd12-correctness-gfx1100.json",
   "rd12-correctness-gfx1201.json",
   "rd12-correctness-gfx1030.json",
