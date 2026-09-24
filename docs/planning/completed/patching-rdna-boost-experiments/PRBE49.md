@@ -2,7 +2,7 @@
 id: PRBE49
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:56:53.658140+00:00'
 breadth: ''
 skill: advanced
@@ -15,11 +15,11 @@ priority: null
 
 ## Description
 
-TODO. GPT unavailable this batch -- design authored directly from verified b11126 source. Relevance: no existing patch (grep for RD59 = no hits). Not clearly upstream-absorbed either way: ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_mmq_funcs.glsl's get_k_scale() (read directly, lines 46-54) returns `FLOAT_TYPEV2` -- a spec-constant-selected type that is fp16 (`f16vec2`) when the device's `device->fp16` capability is enabled (confirmed by the file's own header comment: 'BF16 uses the fp32 shader (FLOAT_TYPE=float)', implying other quant K-types use FLOAT_TYPE=fp16 by default when available) -- so the quantization scale (d) IS computed/stored in FP16 on fp16-capable devices today, matching the exact corruption risk this item describes. Disposition: TODO -- needs the reproduction step (tiny-scale Q4/Q8 KV synthetic test) run before deciding whether this is a real bug here or already mitigated elsewhere (e.g. clamping); could not run hardware/shader tests in this planning pass.
+UPSTREAM-ABSORBED (re-dispositioned 2026-09-24 per GPT review req_e17e0bf5a68c48d5). Upstream premise was wrong: llama.cpp PR #27413 merged the exact fix as commit 78ec4c378031...; b11126 already contains it. Verified directly: ggml/src/ggml-vulkan/vulkan-shaders/flash_attn.comp uses vec4/float types throughout its Q MMQ quantization path (thread_max/amax/qd/qd_inv, thread_sum/sum all declared float; data_qv4 buffer is vec4 -- confirmed at flash_attn.comp:38,75,99,103,124,125,133,636). The original bug was a Q-quantization reciprocal overflow, not a get_k_scale()/V-side scale helper issue as this item originally framed it. No patch package needed; this is a closed/no-op item.
 
 ## Steps
 
-1. Recheck llama.cpp PR #27413 (upstream, not in our pinned tree per the grep evidence above) for its exact FP32 scale/reciprocal fix shape, if fetchable; if not fetchable, proceed from the local evidence alone. 2. Reproduce the failure case first: construct tiny-amplitude Q4_0/Q8_0 K/V synthetic backend-op test (test-backend-ops.cpp test_flash_attn_ext with deliberately tiny d/scale values engineered to underflow fp16) and run it on a Vulkan RDNA backend to CONFIRM NaN/Inf actually occurs at this pin before writing the fix -- do not assume the bug reproduces just because get_k_scale returns fp16; some call sites may already upconvert before further math. 3. If reproduced: change get_k_scale (and its V-side counterpart, presumably get_v_scale in the same file, name TBD by grep) to compute in FLOAT_TYPE regardless of storage precision -- i.e. read the raw fp16 stored `d` value but do the subsequent reciprocal/scale MATH in fp32 (GLSL `float` cast), only narrowing back to FLOAT_TYPE at the point of use if required by downstream shared-memory layout. 4. Scope the change to the MMQ FA path only (this file, flash_attn_mmq_funcs.glsl) -- do not touch the non-MMQ FA shaders (flash_attn.comp, flash_attn_cm1/cm2.comp). 5. Add synthetic tiny-amplitude + normal-range + non-MMQ control test-backend-ops cases. 6. Add a deep-context Qwen model-level regression test (PPL) to catch any subtle accuracy change from the fp32 intermediate math. 7. Measure any performance regression from the extra fp32 conversion against normal-scale controls.
+1. No implementation action -- b11126 already contains the fix. 2. Optionally add a regression test-backend-ops FLASH_ATTN_EXT case with tiny-amplitude Q inputs to guard against future regression, if desired (not required for disposition).
 
 ## Detailed Solution & Technical Design
 
@@ -57,6 +57,8 @@ Successor key: patching-rdna-boost-experiments-rd59
 
 2026-09-24 relevance at b11126: no existing patch (RD59 grep = no hits). Evidence for TODO (not confirmed upstream-absorbed or confirmed necessary): flash_attn_mmq_funcs.glsl read directly at b11126, get_k_scale returns fp16-capable FLOAT_TYPEV2, matching the item's described risk shape, but no local reproduction was possible in this planning pass. GPT design requests this batch (req_6a45d0917b114112, req_3710dbae73fb49be) were unusable; plan authored directly from verified source with an explicit reproduction-first gate.
 
+2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: re-disposed from TODO to upstream-absorbed -- verified flash_attn.comp already uses vec4/float Q MMQ quantization (PR #27413/commit 78ec4c378031 merged into b11126); no patch package authored.
+
 ## Change Log
 
 - 2026-09-09T10:56:53.658140+00:00 (created-by): Created by capability-rebaseline-v3
@@ -72,3 +74,5 @@ Successor key: patching-rdna-boost-experiments-rd59
 - chg_20260910_031049_repaired-three-vulkanbackend_9010
 - 2026-09-10T03:10:49.493059+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:47:36.272555+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
+- 2026-09-24T05:08:46.437598+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-24T05:08:49.332548+00:00 (state-transition): State: pending → superseded

@@ -2,7 +2,7 @@
 id: PRBE50
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:56:57.545335+00:00'
 breadth: ''
 skill: advanced
@@ -15,11 +15,11 @@ priority: null
 
 ## Description
 
-TODO. GPT unavailable this batch -- design authored directly from verified b11126 source. Relevance: no existing patch (grep for RD60 = no hits). Evidence of a REAL, currently-present bug: ggml/src/ggml-vulkan/vulkan-shaders/get_rows_quant.comp (read in full, 48 lines) computes `const uint ib = a_offset + i00/QUANT_K;` where `a_offset = get_aoffset() + i01*p.nb01 + i11*p.nb02 + i12*p.nb03` -- get_aoffset() is a generic byte/element view-offset helper (shared across all get_rows/binary shaders via generic_binary_head.glsl) which for a NON-quantized tensor is a plain element offset, but here it is added DIRECTLY to `ib`, a BLOCK index (ib is later used as an array index into `data_a[...].qs`/`.d`, i.e. it indexes whole quantized blocks, not elements) -- a non-zero view offset that is not an exact multiple of QUANT_K elements (i.e. does not land on a block boundary) would silently misalign every subsequent block read. Disposition: TODO -- this needs verification (does get_aoffset() for a quantized tensor already return a BLOCK offset, not an element offset? Check generic_binary_head.glsl before concluding this is a live bug).
+Already-safe / no bug (re-dispositioned 2026-09-24 per GPT review req_e17e0bf5a68c48d5). The suspected bug is refuted: get_aoffset() is NOT a raw byte/element offset for GET_ROWS. Verified directly: host code computes `a_offset = get_misalign_bytes(ctx, src0) / ggml_type_size(src0->type)` (confirmed at multiple sites in ggml-vulkan.cpp, e.g. line 11342 `sp.misalign_offsets = get_misalign_bytes(ctx, dst) / ggml_type_size(dst->type)`, and generic_binary_head.glsl:42 `uint get_aoffset() { return p.misalign_offsets >> 16; }`). For quantized src0, ggml_type_size() returns the quant-block STORAGE size, so the host-side division already yields a block-index offset. The shader's `ib = a_offset + i00/QUANT_K` is therefore block-index + block-index -- dimensionally correct, not a unit mismatch. No shader patch needed.
 
 ## Steps
 
-1. Read ggml/src/ggml-vulkan/vulkan-shaders/generic_binary_head.glsl's get_aoffset() definition and confirm whether, for quantized src tensors, it already returns an offset in BLOCK units (in which case today's code is correct and this item is UPSTREAM-ABSORBED/already-safe) or in BYTE/ELEMENT units (in which case the direct `a_offset + i00/QUANT_K` addition is a real bug for any non-zero, non-block-aligned view offset). 2. If it's a real bug: fix by converting a_offset to block units explicitly at the point of use -- `const uint ib = a_offset/QUANT_K + i00/QUANT_K;` (only valid if a_offset is guaranteed block-aligned, which it should be since ggml views into quantized tensors are required to start on block boundaries -- GGML_ASSERT this invariant on the host side if not already asserted) or restructure to keep a_offset and the block index separate throughout. 3. Add backend-op test cases: Q4_0/Q8_0 GET_ROWS with non-zero view offsets that cross quantization block boundaries, compared against reference dequantized rows. 4. Add offset-zero and F16/F32/I32 GET_ROWS controls (must be unaffected). 5. Confirm no crash and no silent CPU fallback for the tested cases (check backend supports_op / fallback logic in ggml-vulkan.cpp for GET_ROWS). 6. If a Qwen VL/TTS model exercises view-based quantized gather, add a model-level smoke check (documented as a manual/hardware step, not run here).
+1. No implementation action -- host-side offset computation already divides by ggml_type_size (quant-block storage size for quantized types), making a_offset a block-index, matching the shader's ib addressing. 2. Optionally add nonzero block-aligned quantized-view GET_ROWS regression test cases (Q4_0/Q8_0, offset crossing block boundaries) to test-backend-ops.cpp to guard against future regression, if desired.
 
 ## Detailed Solution & Technical Design
 
@@ -59,6 +59,8 @@ Successor key: patching-rdna-boost-experiments-rd60
 
 2026-09-24 follow-up: generic_binary_head.glsl:42 `uint get_aoffset() { return p.misalign_offsets >> 16; }` -- offset is packed into the top 16 bits of a host-supplied push-constant `misalign_offsets`, NOT independently derivable from this shader file. Whether the host side (ggml-vulkan.cpp, the code that populates `misalign_offsets` for a GET_ROWS dispatch) already pre-divides by QUANT_K for quantized src tensors is still unresolved -- this needs a host-side grep (`misalign_offsets` in ggml-vulkan.cpp, specifically the vk_op_binary_push_constants / get_rows dispatch setup) as the concrete next step, not a shader-only read. Left as the mandatory step-1 verification per this plan's steps.
 
+2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: re-disposed from TODO/suspected-bug to already-safe -- verified host-side get_misalign_bytes(ctx,src0)/ggml_type_size(src0->type) at ggml-vulkan.cpp already produces a block-index offset for quantized types, matching the shader's block-index addressing; no shader patch needed.
+
 ## Change Log
 
 - 2026-09-09T10:56:57.545335+00:00 (created-by): Created by capability-rebaseline-v3
@@ -75,3 +77,5 @@ Successor key: patching-rdna-boost-experiments-rd60
 - 2026-09-10T03:10:49.504719+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:48:04.983117+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T04:48:34.124216+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T05:08:53.489292+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-24T05:08:56.364044+00:00 (state-transition): State: pending → deprecated

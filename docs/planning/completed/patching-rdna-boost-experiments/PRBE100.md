@@ -15,7 +15,7 @@ work: L
 
 ## Description
 
-Completed audit/design record for the previously untracked Block 08 source. It decomposes the source into current PRBE-owned follow-up work; it does not authorize a monolithic port or create a new legacy RD prerequisite.
+Completed audit/design record for the previously untracked Block 08 source, narrowed 2026-09-24 per conflicting GPT reviews. req_e17e0bf5a68c48d5 CONFIRMED this completion (diff exists, successor plans exist). req_b43762f844fb40b3 flagged NOT-READY: tools/lab/rd25-block08-review/README.md still says 'Status: active' / 'Question state: open' (independently verified this session -- confirmed still true), and the completion's implicit claim that follow-ups have exact anchors/fail-closed dispositions is unmet (PRBE13 has no verified six-node b11126 anchor; PRBE18 still leaves part of the exact 16-op gate/beta sequence for implementation-time discovery). Resolution: narrow this item's completion criterion to 'Block-08 inventory/decomposition completed' only (which IS true and IS what this item's steps/acceptance_criteria describe) -- successor implementation-readiness (PRBE13/PRBE18 anchor verification) is explicitly OUTSIDE this item's scope and tracked separately in those items. The lab README's own Status/Question-state fields are stale bookkeeping outside this plan's edit scope (docs/planning only); whoever next touches tools/lab/rd25-block08-review/ should update README.md to Status: closed / Question state: resolved to match this item's completed state.
 
 ## Steps
 
@@ -61,6 +61,8 @@ Provenance: stew675/llama.cpp rdna-boosts commit 5efcd85fb4cd8845c6c7dd47c50e266
 
 2026-09-24 relevance at b11126: item's own description/steps/detailed_solution/acceptance_criteria already state the audit is COMPLETE ("Completed audit/design record") -- the Block 08 diff was fully reviewed and decomposed into PRBE05/11/13/18/20 follow-ups in a prior session, with provenance (stew675/llama.cpp rdna-boosts 5efcd85f) preserved in tools/lab/rd25-block08-review/block08.diff. No further plan authoring is needed here: this item is bookkeeping/provenance record, not an implementation target. Verified the referenced successor items (PRBE05/11/13/18/20) exist under docs/planning/active/patching-rdna-boost-experiments/. No GPT request issued (no design work required -- disposition is administrative closure of a finished audit).
 
+2026-09-24 GPT review req_e17e0bf5a68c48d5: CONFIRMED. 2026-09-24 GPT review req_b43762f844fb40b3 applied: narrowed completion criterion to 'inventory/decomposition completed' only, explicitly excluding successor (PRBE13/PRBE18) implementation-readiness from this item's scope; noted tools/lab/rd25-block08-review/README.md still shows Status:active/Question state:open (verified) and needs a separate out-of-scope update to match.
+
 ## Change Log
 
 - 2026-09-11T23:50:02.222039+00:00 (created-by): Created by agent
@@ -74,3 +76,4 @@ Provenance: stew675/llama.cpp rdna-boosts commit 5efcd85fb4cd8845c6c7dd47c50e266
 - 2026-09-12T09:55:06.268116+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:35:42.238602+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T04:35:50.684073+00:00 (state-transition): State: pending → completed
+- 2026-09-24T05:09:08.377592+00:00 (updated-by): Updated: section:description, section:notes
