@@ -1,7 +1,7 @@
 # b10901 -> b11126 throughput regression
 
 Plan item: bump b11126 follow-up (post-bump smoke showed pp512 -18%, tg128 -14% on Brutus gfx1100)
-Status: active
+Status: complete (no regression; see docs/evidence/2026-09-24-bump-b11126-throughput/)
 Owner: pin-bump process
 Question state: one-shot investigation
 
