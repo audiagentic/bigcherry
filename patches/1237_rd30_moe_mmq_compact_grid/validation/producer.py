@@ -1,167 +1,122 @@
-"""PA36 migration #9 (RD30/1237): patch-local validation producer.
+"""PRBE25 (RD30/1237): patch-local validation producer.
 
-Mechanically migrated off validation_campaign.py's
-run_rd30_correctness_check() -- that function and the --run-rd30-correctness
-CLI path are DELETED from shared code in the same change (no
-compatibility layer, per the project's migrate-up doctrine).
+RD30-MOE-MMQ-COMPACT-GRID is a performance contract with a bit_identical
+correctness obligation, scoped to gfx1100.
 
-The producer owns ONLY the measurement:
-- The exact-output correctness check (256-expert MUL_MAT_ID shapes)
-- bit_identical gate (byte-identical HIP outputs)
-- backend_reference diagnostic
-
-The dispatcher owns:
-- The final promotion verdict
-
-RD30's check (bit_identical):
-- Control = normal BigCherry source + deterministic test-backend-ops evidence chain
-- Subject = same composition + 1237
-- Each arm runs the same exact 256-expert MUL_MAT_ID --test-file shapes
-- The bit-identical gate requires, for every shape/seed:
-  * successful execution in both arms,
-  * identical deterministic routing (leaf_2 digest),
-  * identical CPU-reference output digest,
-  * identical output element count, and
-  * identical HIP backend output bytes (backend1_digest)
-- Scoped to gfx1100 exactly
+- correctness (``bit_identical``): test-backend-ops on the exact 256-expert
+  MUL_MAT_ID shapes (Q4_K and Q8_0, 32 routed tokens so MMQ is taken) must
+  produce byte-identical backend output, routing and reference digests on
+  control and subject for every seed. Both arms carry the deterministic
+  test-backend-ops evidence patches; they differ only by 1237.
+  ``backend_reference`` (each arm within its own NMSE threshold) is recorded
+  as a diagnostic.
+- activation: llama-bench prefill with BIGCHERRY_PATCH_TRACE=1 must emit the
+  compact-grid marker on the subject and not on the control.
+- performance: standard-scaffold llama-bench pair (control = baseline,
+  subject = baseline + 1237), 10 paired rounds each: pp512 on the MoE model
+  is the positive lane, tg128 on the same model is the control lane (MoE
+  decode never takes the compact path).
 """
 
 from __future__ import annotations
 
-from bigcherry.patch import validation_producer as vp
+import dataclasses
+import importlib
+import math
+import re
+import subprocess
+from collections.abc import Mapping
+from pathlib import Path
+
+from bigcherry.patch import validation_producer as vp  # type: ignore[import-not-found]
+
+_CONTRACT_ID = "RD30-MOE-MMQ-COMPACT-GRID"
+_ARCHITECTURE = "gfx1100"
+_SUBJECT_PATCH = "1237_rd30_moe_mmq_compact_grid"
+_EVIDENCE_PATCHES = (
+    "1222_hi67_deterministic_test_backend_ops_seed",
+    "1223_hi67_machine_readable_correctness_metrics",
+    "1236_hi105_deterministic_mul_mat_id_ids",
+)
+_SEEDS = (1, 2, 3)
+# 32 routed tokens is deliberately > MMVQ_MAX_BATCH_SIZE (8), so MMQ runs.
+_SHAPES = (("q4_k-moe-prefill32", "Q4_K"), ("q8_0-moe-prefill32", "Q8_0"))
+_MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1237_rd30 path=moe_mmq_compact_grid"
+_MIN_PAIRED_ROUNDS = 10
+
+_CORRECTNESS_ARTIFACT = "rd30-correctness.json"
+_PERFORMANCE_ARTIFACT = "rd30-performance.json"
+_SUBJECT_TRACE_ARTIFACT = "rd30-subject-trace.log"
+_CONTROL_TRACE_ARTIFACT = "rd30-control-trace.log"
+
+
+def _fail(message: str) -> vp.ValidationProducerError:
+    return vp.ValidationProducerError(f"rd30: {message}")
+
+
+def _enum_id(names: Mapping[int, str], wanted: str, kind: str) -> int:
+    for value, name in names.items():
+        if name.upper() == wanted.upper():
+            return int(value)
+    raise _fail(f"{kind} enum {wanted!r} is absent from the materialized source")
+
+
+def _finite_or_none(value: float) -> float | None:
+    return float(value) if math.isfinite(float(value)) else None
+
+
+def _scaffold_bench(ctx: vp.ProducerContext, role: str) -> Path:
+    binary = ctx.validation_binaries.get(role, {}).get("llama-bench")
+    if not isinstance(binary, Path) or not binary.is_file():
+        raise _fail(f"standard scaffold {role} llama-bench binary is missing")
+    return binary
+
+
+def _lane_effect(outcome, *, workload: str, metric: str, role: str):
+    execution = importlib.import_module("bigcherry.experiment.execution")
+    if set(outcome.runs) != {workload}:
+        raise _fail(f"{role} lane must produce exactly one {workload} lane; got {sorted(outcome.runs)!r}")
+    run = outcome.runs[workload]
+    if dict(run.stats).get("paired_rounds") != _MIN_PAIRED_ROUNDS:
+        raise _fail(f"{role} lane has {run.stats.get('paired_rounds')!r} paired rounds; expected {_MIN_PAIRED_ROUNDS}")
+    return execution.lane_effect_from_run(role, metric, run), run
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
-    """Run RD30's validation producer.
+    experiment_contract = importlib.import_module("bigcherry.experiment.contract")
+    experiment_execution = importlib.import_module("bigcherry.experiment.execution")
+    ActivationEvidence = importlib.import_module("bigcherry.patch.activation").ActivationEvidence
+    correctness_evidence = importlib.import_module("bigcherry.tuning.correctness_evidence")
+    signature_mapping = importlib.import_module("bigcherry.tuning.signature_mapping")
 
-    Returns a ProducerResult with:
-    - contract_correctness_results: the bit_identical and backend_reference results
-    - emitted_artifacts: the required artifacts
-    """
-    import math as _math
-    import os
-    import subprocess
+    if ctx.fat_targets.targets != (_ARCHITECTURE,):
+        raise _fail(f"{_CONTRACT_ID} is scoped to gfx1100 exactly; got {ctx.fat_targets.targets!r}")
+    if ctx.model is None:
+        raise _fail("the MoE contract model (--model) is required")
+    model = ctx.model
 
-    from bigcherry.experiment import contract as experiment_contract
-    from bigcherry.patch import source as psi
-    from bigcherry.tuning import correctness_evidence
-    from bigcherry.tuning import signature_mapping
+    devices = [d for d in ctx.runtime.device_contexts(device_map=ctx.device_map) if d.architecture == _ARCHITECTURE]
+    if len(devices) != 1:
+        raise _fail(f"--device-map must select exactly one gfx1100 device; got {len(devices)}")
+    device = devices[0]
 
-    # RD30 is scoped to gfx1100 exactly
-    targets = tuple(
-        target.strip()
-        for target in ctx.amdgpu_targets.replace(",", ";").split(";")
-        if target.strip()
+    # ---- correctness: bit-identical 256-expert MUL_MAT_ID ----
+    pair = ctx.runtime.build_pair(
+        targets=(_ARCHITECTURE,),
+        primary_target="test-backend-ops",
+        common_extra_patches=_EVIDENCE_PATCHES,
+        baseline_source="bigcherry",
+        require_parity=True,
     )
-    if targets != ("gfx1100",):
-        raise vp.ValidationProducerError(
-            "RD30 correctness is scoped to gfx1100 exactly; "
-            f"got AMDGPU_TARGETS={ctx.amdgpu_targets!r}"
-        )
-
-    seeds = (1, 2, 3)
-    if not seeds or any(seed == 0 for seed in seeds) or len(set(seeds)) != len(seeds):
-        raise vp.ValidationProducerError(
-            "RD30 correctness requires a non-empty set of unique nonzero seeds"
-        )
-
-    evidence_patches = (
-        "1222_hi67_deterministic_test_backend_ops_seed",
-        "1223_hi67_machine_readable_correctness_metrics",
-        "1236_hi105_deterministic_mul_mat_id_ids",
-    )
-    subject_patch = "1237_rd30_moe_mmq_compact_grid"
-
-    # Resolve compositions
-    control_revision, control_composition = psi.resolve_source_composition(
-        "bigcherry",
-        extra_patches=evidence_patches,
-        base_ref=ctx.base_revision,
-        base_repo=ctx.base_repo,
-    )
-    subject_revision, subject_composition = psi.resolve_source_composition(
-        "bigcherry",
-        extra_patches=(*evidence_patches, subject_patch),
-        base_ref=ctx.base_revision,
-        base_repo=ctx.base_repo,
-    )
-    if control_revision != subject_revision:
-        raise vp.ValidationProducerError(
-            "RD30 correctness: control and subject resolved different base revisions"
-        )
-
-    control_src = psi.materialize_composition(
-        base_repo=ctx.base_repo,
-        worktree_root=ctx.worktree_root / "rd30-correctness-control",
-        resolved_revision=control_revision,
-        composition=control_composition,
-        overlay_root=psi.REPO_ROOT / "src",
-        requested_revision=ctx.base_revision,
-    )
-    subject_src = psi.materialize_composition(
-        base_repo=ctx.base_repo,
-        worktree_root=ctx.worktree_root / "rd30-correctness-subject",
-        resolved_revision=subject_revision,
-        composition=subject_composition,
-        overlay_root=psi.REPO_ROOT / "src",
-        requested_revision=ctx.base_revision,
-    )
-
-    # Build test-backend-ops for both
-    exe = ".exe" if __import__("sys").platform == "win32" else ""
-    correctness_build_root = ctx.build_root / "rd30-correctness"
-    architecture_tag = ctx.amdgpu_targets.replace(";", "_").replace(",", "_")
-    control_name = f"rd30-correctness-control-{architecture_tag}"
-    subject_name = f"rd30-correctness-subject-{architecture_tag}"
-
-    control_bin_dir = ctx.runtime.build_tree(
-        name=control_name,
-        hip_path=ctx.hip_path,
-        amdgpu_targets=ctx.amdgpu_targets,
-        workdir=correctness_build_root,
-        targets=["test-backend-ops"],
-        source=control_src,
-        extra_cmake_args=[],
-    )
-    subject_bin_dir = ctx.runtime.build_tree(
-        name=subject_name,
-        hip_path=ctx.hip_path,
-        amdgpu_targets=ctx.amdgpu_targets,
-        workdir=correctness_build_root,
-        targets=["test-backend-ops"],
-        source=subject_src,
-        extra_cmake_args=[],
-    )
-    control_binary = control_bin_dir / f"test-backend-ops{exe}"
-    subject_binary = subject_bin_dir / f"test-backend-ops{exe}"
-
-    # Load op/type names
-    op_names = signature_mapping.load_ggml_op_names(control_src)
-    type_names = signature_mapping.load_ggml_type_names(control_src)
-
-    def _enum_id(names: dict[int, str], wanted: str, kind: str) -> int:
-        for value, name in names.items():
-            if name.upper() == wanted.upper():
-                return int(value)
-        raise vp.ValidationProducerError(
-            f"RD30 correctness: {kind} enum {wanted!r} "
-            "is absent from materialized source"
-        )
-
+    op_names = signature_mapping.load_ggml_op_names(pair.control_source)
+    type_names = signature_mapping.load_ggml_type_names(pair.control_source)
     op_mul_mat_id = _enum_id(op_names, "MUL_MAT_ID", "ggml_op")
     type_f32 = _enum_id(type_names, "F32", "ggml_type")
 
-    # 32 routed tokens is deliberately > upstream MMVQ_MAX_BATCH_SIZE (8).
-    shape_specs = (
-        ("q4_k-moe-prefill32", "Q4_K"),
-        ("q8_0-moe-prefill32", "Q8_0"),
-    )
-
-    scratch_dir = ctx.run_dir / "scratch" / "rd30-correctness"
+    scratch_dir = ctx.workdir / "scratch" / "rd30-correctness"
     scratch_dir.mkdir(parents=True, exist_ok=True)
-
-    mapped_shapes: list[dict[str, object]] = []
-    for shape_name, weight_type in shape_specs:
+    shapes: list[dict[str, object]] = []
+    for name, weight_type in _SHAPES:
         signature = {
             "op": op_mul_mat_id,
             "flags": 0x0F,
@@ -174,17 +129,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "src1_type": type_f32,
             "dst_type": type_f32,
         }
-        line, target_tensor, digest_tensor = (
-            signature_mapping.signature_to_mul_mat_id_test_file_line(
-                signature,
-                vendor_root=control_src,
-            )
+        line, target_tensor, digest_tensor = signature_mapping.signature_to_mul_mat_id_test_file_line(
+            signature, vendor_root=pair.control_source
         )
-        test_file = scratch_dir / f"{shape_name}.txt"
+        test_file = scratch_dir / f"{name}.txt"
         test_file.write_text(line + "\n", encoding="utf-8")
-        mapped_shapes.append(
+        shapes.append(
             {
-                "name": shape_name,
+                "name": name,
                 "weight_type": weight_type,
                 "signature": signature,
                 "test_file": test_file,
@@ -193,192 +145,173 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             }
         )
 
-    runner = subprocess.run
-
-    def _correctness_runner(argv, **kwargs):
-        env = {**os.environ, **(kwargs.pop("env", None) or {})}
-        return runner(argv, env=env, **kwargs)
-
-    def _finite_or_none(value: float) -> float | None:
-        return float(value) if _math.isfinite(float(value)) else None
-
+    device_env = dict(device.env_overrides)
     rows: list[dict[str, object]] = []
-    for shape in mapped_shapes:
-        for seed in seeds:
-            control = correctness_evidence.collect_native_seed_evidence(
-                control_binary,
-                test_file=shape["test_file"],
-                target_tensor=shape["target_tensor"],
-                digest_tensor=shape["digest_tensor"],
-                seed=seed,
-                runner=_correctness_runner,
-            )
-            subject = correctness_evidence.collect_native_seed_evidence(
-                subject_binary,
-                test_file=shape["test_file"],
-                target_tensor=shape["target_tensor"],
-                digest_tensor=shape["digest_tensor"],
-                seed=seed,
-                runner=_correctness_runner,
-            )
+    for shape in shapes:
+        for seed in _SEEDS:
+            arms = {
+                role: correctness_evidence.collect_native_seed_evidence(
+                    binary,
+                    test_file=shape["test_file"],
+                    target_tensor=shape["target_tensor"],
+                    digest_tensor=shape["digest_tensor"],
+                    seed=seed,
+                    env=device_env,
+                    runner=subprocess.run,
+                )
+                for role, binary in (("control", pair.control_bin), ("subject", pair.subject_bin))
+            }
+            c, s = arms["control"], arms["subject"]
 
-            control_backend_ok = (
-                control.native_execution_status == "ok"
-                and _math.isfinite(control.e_n_nmse)
-                and _math.isfinite(control.threshold_t)
-                and control.e_n_nmse <= control.threshold_t
-            )
-            subject_backend_ok = (
-                subject.native_execution_status == "ok"
-                and _math.isfinite(subject.e_n_nmse)
-                and _math.isfinite(subject.threshold_t)
-                and subject.e_n_nmse <= subject.threshold_t
-            )
+            def _within(e) -> bool:
+                return (
+                    e.native_execution_status == "ok"
+                    and math.isfinite(e.e_n_nmse)
+                    and math.isfinite(e.threshold_t)
+                    and e.e_n_nmse <= e.threshold_t
+                )
 
             bit_identical = (
-                control.native_execution_status == "ok"
-                and subject.native_execution_status == "ok"
-                and control.reference_digest == subject.reference_digest
-                and control.reference_output_digest is not None
-                and control.reference_output_digest == subject.reference_output_digest
-                and control.native_output_digest is not None
-                and control.native_output_digest == subject.native_output_digest
-                and control.output_nels is not None
-                and control.output_nels == subject.output_nels
+                c.native_execution_status == "ok"
+                and s.native_execution_status == "ok"
+                and c.reference_digest == s.reference_digest
+                and c.reference_output_digest is not None
+                and c.reference_output_digest == s.reference_output_digest
+                and c.native_output_digest is not None
+                and c.native_output_digest == s.native_output_digest
+                and c.output_nels is not None
+                and c.output_nels == s.output_nels
             )
-
             rows.append(
                 {
                     "shape": shape["name"],
-                    "weight_type": shape["weight_type"],
                     "seed": seed,
-                    "control_status": control.native_execution_status,
-                    "subject_status": subject.native_execution_status,
-                    "control_ids_digest": control.reference_digest,
-                    "subject_ids_digest": subject.reference_digest,
-                    "control_output_digest": control.native_output_digest,
-                    "subject_output_digest": subject.native_output_digest,
-                    "control_reference_output_digest": control.reference_output_digest,
-                    "subject_reference_output_digest": subject.reference_output_digest,
-                    "control_output_nels": control.output_nels,
-                    "subject_output_nels": subject.output_nels,
-                    "control_nmse": _finite_or_none(control.e_n_nmse),
-                    "subject_nmse": _finite_or_none(subject.e_n_nmse),
-                    "control_threshold": _finite_or_none(control.threshold_t),
-                    "subject_threshold": _finite_or_none(subject.threshold_t),
-                    "control_max_abs": _finite_or_none(control.max_abs_native),
-                    "subject_max_abs": _finite_or_none(subject.max_abs_native),
-                    "backend_reference_ok": control_backend_ok and subject_backend_ok,
+                    "control_status": c.native_execution_status,
+                    "subject_status": s.native_execution_status,
+                    "ids_equal": c.reference_digest == s.reference_digest,
+                    "reference_equal": c.reference_output_digest == s.reference_output_digest,
+                    "output_equal": c.native_output_digest == s.native_output_digest,
+                    "control_output_digest": c.native_output_digest,
+                    "subject_output_digest": s.native_output_digest,
+                    "control_nmse": _finite_or_none(c.e_n_nmse),
+                    "subject_nmse": _finite_or_none(s.e_n_nmse),
+                    "backend_reference_ok": _within(c) and _within(s),
                     "bit_identical": bit_identical,
                 }
             )
 
-    # Evaluate gates
-    first_exact_failure = next(
-        (row for row in rows if not row["bit_identical"]),
-        None,
+    exact_failure = next((r for r in rows if not r["bit_identical"]), None)
+    bit_identical_result = experiment_contract.CorrectnessResult(
+        check="bit_identical",
+        passed=exact_failure is None,
+        detail=(
+            f"{len(rows)} 256-expert MUL_MAT_ID (shape,seed) pairs produced byte-identical HIP output"
+            if exact_failure is None
+            else f"exact-output mismatch: {exact_failure!r}"
+        ),
     )
-    if first_exact_failure is None:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical",
-            passed=True,
-            detail=(
-                f"{len(rows)} RD30 256-expert MUL_MAT_ID "
-                "(shape,seed) pairs produced byte-identical HIP outputs"
-            ),
-        )
-    else:
-        bit_identical_result = experiment_contract.CorrectnessResult(
-            check="bit_identical",
-            passed=False,
-            detail=(
-                "RD30 exact-output mismatch for "
-                f"shape={first_exact_failure['shape']!r} "
-                f"seed={first_exact_failure['seed']}: "
-                f"control_status={first_exact_failure['control_status']} "
-                f"subject_status={first_exact_failure['subject_status']} "
-                "ids_equal="
-                f"{first_exact_failure['control_ids_digest'] == first_exact_failure['subject_ids_digest']} "
-                "reference_equal="
-                f"{first_exact_failure['control_reference_output_digest'] == first_exact_failure['subject_reference_output_digest']} "
-                "output_equal="
-                f"{first_exact_failure['control_output_digest'] == first_exact_failure['subject_output_digest']} "
-                "nels_equal="
-                f"{first_exact_failure['control_output_nels'] == first_exact_failure['subject_output_nels']}"
-            ),
-        )
-
-    first_backend_failure = next(
-        (row for row in rows if not row["backend_reference_ok"]),
-        None,
-    )
+    backend_failure = next((r for r in rows if not r["backend_reference_ok"]), None)
     backend_reference_result = experiment_contract.CorrectnessResult(
         check="backend_reference",
-        passed=first_backend_failure is None,
+        passed=backend_failure is None,
         detail=(
-            f"{len(rows)} subject/control rows stayed within each emitted "
-            "backend-reference threshold"
-            if first_backend_failure is None
-            else (
-                "RD30 backend-reference failure for "
-                f"shape={first_backend_failure['shape']!r} "
-                f"seed={first_backend_failure['seed']}: "
-                f"control_nmse={first_backend_failure['control_nmse']} "
-                f"control_threshold={first_backend_failure['control_threshold']} "
-                f"subject_nmse={first_backend_failure['subject_nmse']} "
-                f"subject_threshold={first_backend_failure['subject_threshold']}"
-            )
+            f"{len(rows)} rows within each arm's backend-reference threshold"
+            if backend_failure is None
+            else f"backend-reference failure: {backend_failure!r}"
         ),
     )
-
-    # Write the artifact
-    artifact_doc = {
-        "schema_version": 1,
-        "contract_id": "RD30-MOE-MMQ-COMPACT-GRID",
-        "check": "bit_identical",
-        "passed": bit_identical_result.passed,
-        "base_revision": ctx.base_revision,
-        "architecture": "gfx1100",
-        "mechanism": (
-            "test-backend-ops MUL_MAT_ID native subject/control "
-            "backend1_digest equality"
-        ),
-        "evidence_patches": list(evidence_patches),
-        "subject_patch": subject_patch,
-        "seeds": list(seeds),
-        "shapes": [
-            {
-                "name": shape["name"],
-                "weight_type": shape["weight_type"],
-                "signature": shape["signature"],
-                "target_tensor": shape["target_tensor"],
-                "digest_tensor": shape["digest_tensor"],
-            }
-            for shape in mapped_shapes
-        ],
-        "control_source_tree": str(control_src),
-        "subject_source_tree": str(subject_src),
-        "rows": rows,
-    }
     ctx.runtime.write_artifact(
-        name="rd30-correctness.json",
-        payload=artifact_doc,
+        name=_CORRECTNESS_ARTIFACT,
+        payload={
+            "schema_version": 1,
+            "contract_id": _CONTRACT_ID,
+            "check": "bit_identical",
+            "passed": bit_identical_result.passed,
+            "architecture": _ARCHITECTURE,
+            "evidence_patches": list(_EVIDENCE_PATCHES),
+            "seeds": list(_SEEDS),
+            "shapes": [
+                {k: v for k, v in shape.items() if k != "test_file"} for shape in shapes
+            ],
+            "build_identities": {r: dict(i) for r, i in pair.validation_build_identities.items()},
+            "rows": rows,
+        },
+    )
+
+    # ---- activation + performance on the standard scaffold pair ----
+    bench_control = _scaffold_bench(ctx, "control")
+    bench_subject = _scaffold_bench(ctx, "subject")
+    subject_trace = ctx.runtime.run_trace_probe(
+        binary=bench_subject, model=model, device=device, bench_prompt=512, bench_gen=0,
+        log_context="rd30-trigger-subject",
+    )
+    control_trace = ctx.runtime.run_trace_probe(
+        binary=bench_control, model=model, device=device, bench_prompt=512, bench_gen=0,
+        log_context="rd30-trigger-control",
+    )
+    marker = re.compile(_MARKER_REGEX)
+    subject_hit = marker.search(subject_trace) is not None
+    control_hit = marker.search(control_trace) is not None
+    trigger_hit = subject_hit and not control_hit
+    activation = ActivationEvidence(
+        status="executed" if trigger_hit else ("unobservable" if subject_hit else "not_executed"),
+        mechanism="trace_marker",
+        detail=f"marker {_MARKER_REGEX!r} subject_hit={subject_hit} control_hit={control_hit}",
+    )
+    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT, text=subject_trace)
+    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT, text=control_trace)
+
+    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control, subject_binary=bench_subject, model=model,
+        workloads=("prefill",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30-positive-prefill", device=device,
+    )
+    control_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control, subject_binary=bench_subject, model=model,
+        workloads=("decode",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30-control-decode", device=device,
+    )
+    positive_effect, positive_run = _lane_effect(positive_outcome, workload="prefill", metric="pp512", role="positive")
+    control_effect, control_run = _lane_effect(control_outcome, workload="decode", metric="tg128", role="control")
+
+    performance_ref = ctx.runtime.write_artifact(
+        name=_PERFORMANCE_ARTIFACT,
+        payload={
+            "passed": True,
+            "schema_version": 1,
+            "contract_id": _CONTRACT_ID,
+            "architecture": _ARCHITECTURE,
+            "model": str(model),
+            "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
+            "positive": {"metric": "pp512", "effect": dataclasses.asdict(positive_effect),
+                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
+            "control": {"metric": "tg128", "effect": dataclasses.asdict(control_effect),
+                        "runs": list(control_run.runs), "stats": dict(control_run.stats)},
+            "trigger": {"subject_hit": subject_hit, "control_hit": control_hit},
+        },
+    )
+    trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="rd30-prefill-subject", role="positive", positive_hit=trigger_hit
     )
 
     return vp.ProducerResult(
+        correctness={
+            "disposition": "passed" if bit_identical_result.passed else "failed",
+            "mechanism": "rd30-mul-mat-id-bit-identical",
+            "detail": bit_identical_result.detail,
+        },
         validation_build_identities=ctx.validation_build_identities,
-        promotion_lane_effects={},
-        promotion_target_metric={},
-        promotion_trigger_evidence={},
-        contract_correctness_results=(
-            bit_identical_result,
-            backend_reference_result,
-        ),
-        performance_evidence=None,
-        trace_evidence=None,
+        activation_evidence=activation,
+        performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
+        trace_evidence={
+            "positive": {"artifact": {"path": subject_trace_ref.path, "sha256": subject_trace_ref.sha256}},
+            "negative": {"artifact": {"path": control_trace_ref.path, "sha256": control_trace_ref.sha256}},
+        },
         check_results=(),
         lane_effects=(),
-        correctness=bit_identical_result,
-        activation_evidence=None,
-        emitted_artifacts=frozenset({"rd30-correctness.json"}),
+        contract_correctness_results=(bit_identical_result, backend_reference_result),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
+        promotion_target_metric={_CONTRACT_ID: "pp512"},
+        promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
+        emitted_artifacts=frozenset(
+            {_CORRECTNESS_ARTIFACT, _PERFORMANCE_ARTIFACT, _SUBJECT_TRACE_ARTIFACT, _CONTROL_TRACE_ARTIFACT}
+        ),
     )
