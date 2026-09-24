@@ -164,6 +164,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         name=_PERFORMANCE_ARTIFACT,
         payload={
             "passed": True,
+            "metrics": support.performance_metrics(positive_effect, control_effect),
             "schema_version": 1,
             "contract_id": _CONTRACT_ID,
             "positive_model_identity": identity,
