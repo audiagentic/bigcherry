@@ -21,15 +21,17 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Mapping, NoReturn, cast
+from typing import Mapping, cast
 from unittest import mock
 
 TOOLS_ROOT = Path(__file__).resolve().parents[2]
 if str(TOOLS_ROOT) not in sys.path:
     sys.path.insert(0, str(TOOLS_ROOT))
 
+from bigcherry.experiment import contract as experiment_contract  # noqa: E402
 from bigcherry.experiment.attestation import ExecutionIdentity  # noqa: E402
 from bigcherry.patch import activation as patch_activation  # noqa: E402
+from bigcherry.patch import producer_support  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef  # noqa: E402
@@ -215,6 +217,7 @@ class _FakeRuntime:
         self.device = device
         self.build_pair_calls: list[dict[str, object]] = []
         self.device_contexts_calls: list[Mapping[str, tuple[int, ...]]] = []
+        self.benchmark_calls: list[dict[str, object]] = []
 
     def build_pair(
         self,
@@ -267,8 +270,10 @@ class _FakeRuntime:
         pairs: int = 3,
         log_context: str,
         device: vp.ProducerDeviceContext | None = None,
-    ) -> NoReturn:
-        raise NotImplementedError("the RD12 producer never benchmarks")
+    ) -> SimpleNamespace:
+        (workload,) = workloads
+        self.benchmark_calls.append({"workload": workload, "pairs": pairs, "model": model})
+        return SimpleNamespace(runs={workload: SimpleNamespace(runs=[], stats={"paired_rounds": pairs})})
 
     def _write(self, name: str, text: str) -> ArtifactRef:
         path = self.run_dir / "artifacts" / name
@@ -279,6 +284,14 @@ class _FakeRuntime:
             path=path.relative_to(self.run_dir).as_posix(),
             sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
         )
+
+
+def _fake_lane_effect(outcome, *, workload, metric, role, rounds, label):
+    effect = experiment_contract.LaneEffect(
+        role=role, metric=metric, geometric_effect_pct=1.0, ci95_low_pct=0.5, ci95_high_pct=1.5,
+        paired_rounds=rounds, pair_ratios=(1.01,) * rounds,
+    )
+    return effect, outcome.runs[workload]
 
 
 def _make_pair(temp: Path) -> vp.ProducerBuildPair:
@@ -332,6 +345,14 @@ def _run_producer(
         subject_marker=subject_marker,
         control_marker=control_marker,
     )
+    model = temp / "model.gguf"
+    model.write_bytes(b"gguf")
+    bench = {}
+    for role in ("control", "subject"):
+        binary = temp / "scaffold" / role / "llama-bench"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"")
+        bench[role] = {"llama-bench": binary}
     ctx = vp.ProducerContext(
         repo_root=TOOLS_ROOT.parent,
         patch_dir=PATCH_DIR,
@@ -340,11 +361,15 @@ def _run_producer(
         base_revision="a" * 40,
         hip_path=Path("/opt/rocm"),
         fat_targets=vp.FatTargetPlan(targets=(architecture,)),
-        model=None,
+        validation_binaries=bench,
+        model=model,
         corpus=None,
         build_env={"HIP_PATH": "/opt/rocm"},
         inputs={},
-        validation_build_identities={},
+        validation_build_identities={
+            "control": {"build_id": "fake-scaffold-control"},
+            "subject": {"build_id": "fake-scaffold-subject"},
+        },
         patch_id=SUBJECT_PATCH,
         device_map={architecture: (0,)},
         runtime=runtime,
@@ -355,6 +380,8 @@ def _run_producer(
         ),
         mock.patch.object(psi, "git_worktree_tree", lambda p: f"tree:{p}"),
         mock.patch("subprocess.run", fake_run),
+        mock.patch.object(producer_support, "model_identity", lambda *a, **k: {"model_id": "fake"}),
+        mock.patch.object(producer_support, "lane_effect", _fake_lane_effect),
     ):
         selection = vp.resolve_producer(patch_dir=PATCH_DIR, producer_id="rd12")
         result = selection.producer(ctx)
@@ -431,13 +458,14 @@ class RD12ProducerMeasurementTests(unittest.TestCase):
                     "rd12-trigger-marker",
                 )
 
-                # Exactly the three artifacts this architecture emits;
+                # Exactly the four artifacts this architecture emits;
                 # all are in the producer.toml static allowlist, and the
                 # bound refs hash the real files on disk.
                 expected_names = {
                     f"rd12-correctness-{architecture}.json",
                     f"activation-rd12-{architecture}-subject.log",
                     f"activation-rd12-{architecture}-control.log",
+                    "rd12-performance.json",
                 }
                 self.assertEqual(result.emitted_artifacts, frozenset(expected_names))
                 for name in sorted(expected_names):

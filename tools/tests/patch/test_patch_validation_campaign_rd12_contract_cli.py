@@ -40,6 +40,7 @@ from bigcherry.patch.campaign import producer as campaign_producer  # noqa: E402
 from bigcherry.patch.campaign import scaffold as campaign_scaffold  # noqa: E402
 from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 from bigcherry.patch import evidence as patch_evidence  # noqa: E402
+from bigcherry.patch import producer_support  # noqa: E402
 from bigcherry.patch import source as psi  # noqa: E402
 from bigcherry.patch import validation_producer as vp  # noqa: E402
 from bigcherry.patch.validation import ArtifactRef, ValidationContext, ValidationPlan  # noqa: E402
@@ -643,6 +644,11 @@ class _FakeDispatcherRuntime:
     ):
         return self.pair
 
+    def run_paired_llama_benchmark(self, *, control_binary, subject_binary, model, workloads,
+                                   pairs, log_context, device=None, **_kwargs):
+        (workload,) = workloads
+        return SimpleNamespace(runs={workload: SimpleNamespace(runs=[], stats={"paired_rounds": pairs})})
+
     def device_contexts(self, *, device_map):
         from bigcherry.experiment.attestation import ExecutionIdentity
 
@@ -767,6 +773,16 @@ def _fake_subprocess_pass():
     return run
 
 
+def _fake_lane_effect(outcome, *, workload, metric, role, rounds, label):
+    from bigcherry.experiment import contract as experiment_contract
+
+    effect = experiment_contract.LaneEffect(
+        role=role, metric=metric, geometric_effect_pct=1.0, ci95_low_pct=0.5, ci95_high_pct=1.5,
+        paired_rounds=rounds, pair_ratios=(1.01,) * rounds,
+    )
+    return effect, outcome.runs[workload]
+
+
 class _Recorder:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -816,6 +832,13 @@ def _dispatch(
     write_record_recorder = recorders.setdefault("write_record", _Recorder())
 
     scaffold = _FakeScaffold(tmp / "scaffold")
+    exe = ".exe" if sys.platform == "win32" else ""
+    for bin_dir in (scaffold.control_bin, scaffold.validation_subject_bin):
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / f"llama-bench{exe}").write_bytes(b"")
+    model = tmp / "model.gguf"
+    model.write_bytes(b"gguf")
+    args_overrides = {"model": model, **(args_overrides or {})}
     env_backup = {key: os.environ.get(key) for key in ("ROCM_PATH", "HIP_PATH", "PATH")}
 
     def fake_scaffold(**kwargs) -> _FakeScaffold:
@@ -841,6 +864,8 @@ def _dispatch(
         mock.patch("subprocess.run", fake_run),
         mock.patch.object(patch_evidence, "make_record", make_record_recorder),
         mock.patch.object(patch_evidence, "write_record", fake_write_record),
+        mock.patch.object(producer_support, "model_identity", lambda *a, **k: {"model_id": "fake"}),
+        mock.patch.object(producer_support, "lane_effect", _fake_lane_effect),
     ]
     if selection is not None:
         patches.append(
@@ -960,15 +985,18 @@ class RD12GenericDispatcherTests(unittest.TestCase):
                 "subject": {"build_id": "pair-subject-build"},
             },
         )
-        # The model-free campaign identity is computed from the SCAFFOLD
-        # facts (never the fat-three).
-        expected_digest = patch_evidence.model_free_campaign_identity_digest(
+        # The campaign identity is computed from the SCAFFOLD facts (never
+        # the fat-three) and, since PRBE40 added performance lanes that need
+        # the contract model, is bound to that model file's identity.
+        expected_digest = patch_evidence.producer_campaign_identity_digest(
             patch_name=PATCH_ID,
             patch_digest="d" * 64,
             patched_source_tree=_fake_tree(result.scaffold.subject_source),
             gpu_architecture="gfx1100",
             campaign_build_identities=result.scaffold.campaign_build_identities,
             base_revision=result.scaffold.base_revision,
+            model=campaign_producer._producer_file_identity(self._tmp / "model.gguf"),
+            corpus=None,
         )
         self.assertEqual(kwargs["campaign_identity_digest"], expected_digest)
         # Producer-owned artifact allowlist, bound correctness, activation.
@@ -977,8 +1005,12 @@ class RD12GenericDispatcherTests(unittest.TestCase):
         self.assertIsInstance(bound_correctness, Mapping)
         self.assertEqual(bound_correctness["disposition"], "passed")
         self.assertIsNotNone(kwargs["activation_disposition"])
-        # Lane effects from the producer result.
-        self.assertEqual(kwargs["lane_effects"], ())
+        # Lane effects: the PRBE40 promotion lanes (positive tg128 decode,
+        # control pp512 prefill) from the producer's typed result.
+        self.assertEqual(
+            [(effect["role"], effect["metric"]) for effect in kwargs["lane_effects"]],
+            [("positive", "tg128"), ("control", "pp512")],
+        )
 
     def test_run_path_subject_mismatch_still_exit_zero(self) -> None:
         result = _dispatch(self._tmp, collect=_fake_collect_subject_mismatch())

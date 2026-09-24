@@ -45,11 +45,17 @@ activated.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 import subprocess
+from pathlib import Path
 
 from bigcherry.patch import validation_producer as vp
+
+_CONTRACT_ID = "RD12-PAIRED-MMVQ-DUAL"
+_MODEL_REF = "tierA-qwen4b-q6k"
+_ROUNDS = 10
 
 # One contract architecture per run (the historical RD12 rule): the
 # operator names it via --amdgpu-targets; the binary itself is built ONCE
@@ -457,6 +463,52 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         payload=artifact_doc,
     )
 
+    # PRBE40: the contract's performance lanes, on the standard scaffold
+    # llama-bench pair (control = baseline, subject = baseline + 1205):
+    # tg128 decode is the positive lane (K/V decode projections fuse), pp512
+    # prefill the control lane (batched MUL_MAT never takes MMVQ), 10 paired
+    # rounds each on the contract model.
+    from bigcherry.experiment import execution as experiment_execution
+    from bigcherry.patch import producer_support as support
+
+    if ctx.model is None:
+        raise vp.ValidationProducerError("RD12 performance requires the contract model (--model)")
+    model_identity = support.model_identity(ctx.model, model_id=_MODEL_REF, label="RD12 performance")
+    bench = {
+        role: ctx.validation_binaries.get(role, {}).get("llama-bench")
+        for role in ("control", "subject")
+    }
+    if not all(isinstance(b, Path) and b.is_file() for b in bench.values()):
+        raise vp.ValidationProducerError("RD12 performance requires the standard scaffold llama-bench pair")
+    lanes = {}
+    for role, workload, metric in (("positive", "decode", "tg128"), ("control", "prefill", "pp512")):
+        outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench["control"], subject_binary=bench["subject"], model=ctx.model,
+            workloads=(workload,), pairs=_ROUNDS, log_context=f"rd12-{role}", device=device,
+        )
+        lanes[role] = support.lane_effect(
+            outcome, workload=workload, metric=metric, role=role, rounds=_ROUNDS, label="RD12 performance"
+        )
+    (positive_effect, positive_run), (control_effect, control_run) = lanes["positive"], lanes["control"]
+    performance_ref = ctx.runtime.write_artifact(
+        name="rd12-performance.json",
+        payload={
+            "passed": True,
+            "schema_version": 1,
+            "contract_id": _CONTRACT_ID,
+            "architecture": architecture,
+            "model_identity": model_identity,
+            "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
+            "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
+                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
+            "control": {"metric": "pp512", "effect": dataclasses.asdict(control_effect),
+                        "runs": list(control_run.runs), "stats": dict(control_run.stats)},
+        },
+    )
+    trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="rd12-test-backend-ops-subject", role="positive", positive_hit=activation_result.passed
+    )
+
     # Semantic evidence for the shared binder (T3): exactly
     # {disposition, mechanism, detail} -- no identity fields.
     return vp.ProducerResult(
@@ -465,13 +517,15 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "mechanism": "rd12-paired-mmvq-bit-identical",
             "detail": bit_identical_result.detail,
         },
+        # The record binds the correctness pair; the performance artifact
+        # records the scaffold llama-bench pair identities it measured.
         validation_build_identities=pair.validation_build_identities,
         activation_evidence=patch_activation.ActivationEvidence(
             status="executed" if activation_result.passed else "not_executed",
             mechanism="rd12-trigger-marker",
             detail=activation_result.detail,
         ),
-        performance_evidence={},
+        performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
         # The producer owns ONLY the per-arm artifact refs -- the plan
         # owns the marker semantics (the shared binder injects the
         # marker_regex from validation.toml's trace-marker check).
@@ -491,11 +545,16 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
         check_results=(),
         lane_effects=(),
+        contract_correctness_results=(bit_identical_result, backend_reference_result),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
+        promotion_target_metric={_CONTRACT_ID: "tg128"},
+        promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         emitted_artifacts=frozenset(
             {
                 correctness_artifact_ref.name,
                 subject_log_ref.name,
                 control_log_ref.name,
+                performance_ref.name,
             }
         ),
     )
