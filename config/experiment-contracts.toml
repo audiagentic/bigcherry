@@ -1022,3 +1022,43 @@ greedy_parity = "required"
 max_control_regression_pct = 1
 effect_evidence_policy = "ci95_threshold_bound_v1"
 min_paired_rounds = 10
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE]
+title = "RD33: dense Q8_0 MMVQ without Q8_1 activation quantization (ncols_dst 1..8, gfx1100)"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.source]
+source_id = "local"
+commits = []
+atomic_part = "1241_rd33_mmvq_q8_0_f32_decode"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Dense Q8_0 weights x F32 activations at ncols_dst 1..8 skip the per-matmul Q8_1 quantize kernel and read F32 activations directly (PRBE26). The ncols_dst==1-only form measured null; MTP verification batches (ncols_dst 5/6 with draft-n-max 4) dominate production Qwen3.8-27B Q8_0 dual-gfx1100 decode, so the claim is measured on the real MTP server path. Output is not bit-identical (no activation quantization), so correctness is the backend reference tolerance."
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+# Q6_K never takes the Q8_0 path: a dense non-target model isolates any
+# collateral cost of the widened gate and extra template instantiations.
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.correctness]
+backend_reference = "required"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.acceptance]
+target_kernel_gain_pct = 0.3
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10

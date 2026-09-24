@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject test-backend-ops Q8_0 MUL_MAT logs the path for every ncols_dst 1..8.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode"
+
+# backend_reference: Q8_0 MUL_MAT test-backend-ops within tolerance, both arms.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# MTP mtp_wall_tps on tierL-qwen27b-q8, dual gfx1100 (ci95 bound, 10 pairs).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 on dense Q6_K tierA-qwen4b-q6k (max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

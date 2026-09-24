@@ -121,3 +121,113 @@ def lane_effect(outcome: vp.ProducerPairedBenchmarkOutcome, *, workload: str, me
             f"{label}: {role} lane has {run.stats.get('paired_rounds')!r} paired rounds; expected {rounds}"
         )
     return experiment_execution.lane_effect_from_run(role, metric, run), run
+
+
+MTP_SERVER_ARGS = (
+    "--parallel", "1", "--metrics", "-sm", "tensor", "--fit", "off",
+    "--spec-type", "draft-mtp", "--spec-draft-n-max", "4",
+)
+
+
+def mtp_server_lane(
+    ctx: vp.ProducerContext,
+    *,
+    control_binary: Path,
+    subject_binary: Path,
+    expected: ExecutionIdentity,
+    env: Mapping[str, str],
+    label: str,
+    role: str = "positive",
+    server_args: tuple[str, ...] = MTP_SERVER_ARGS,
+    warmup_pairs: int = 2,
+    measured_pairs: int = 10,
+    n_predict: int = 128,
+) -> tuple[Any, dict[str, list[dict[str, Any]]], dict[str, Path]]:
+    """Paired MTP speculative-decode lane on llama-server (metric mtp_wall_tps).
+
+    Every request gets a fresh server so control and subject never share a
+    GPU (the large-tier model needs ~13GB/GPU under -sm tensor). Prompts come
+    from ``ctx.corpus``; the client-measured wall-clock tokens/s is the
+    sample. Returns (LaneEffect, per-arm request records, per-arm combined log).
+    """
+    import re
+
+    from bigcherry.bench import server_completion as sc
+
+    if ctx.model is None or ctx.corpus is None:
+        raise vp.ValidationProducerError(f"{label}: the MTP lane needs --model and --producer-corpus")
+    prompts, corpus_sha256 = sc.load_corpus(ctx.corpus)
+    logs_dir = ctx.workdir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    binaries = {"control": control_binary, "subject": subject_binary}
+    per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
+    records: dict[str, list[dict[str, Any]]] = {"control": [], "subject": []}
+    counters = {"control": 0, "subject": 0}
+    session_kwargs = dict(
+        corpus_id=ctx.corpus.stem,
+        corpus_sha256=corpus_sha256,
+        bigcherry_revision=label,
+        llama_pin="",
+        llama_revision="",
+        model_id=str(ctx.model),
+        server_argv=server_args,
+        spec_type="draft-mtp",
+        spec_n_max=4,
+        spec_draft_k="default",
+        spec_draft_v="default",
+        sampling=sc.SamplingConfig(temperature=1.0, top_p=0.95, top_k=20),
+        n_predict=n_predict,
+        order_seed=12345,
+    )
+    configs = {arm: sc.SessionConfig(session_id=f"{label}-mtp-{arm}", **session_kwargs) for arm in binaries}
+    server_env = dict(env)
+    server_env.pop("ROCR_VISIBLE_DEVICES", None)
+
+    def _runner(command: list[str]) -> experiment_execution.RunnerOutput:
+        arm = command[-1]
+        index = counters[arm]
+        counters[arm] += 1
+        log_path = logs_dir / f"{label}-mtp-{arm}-server-{index}.log"
+        per_request_logs[arm].append(log_path)
+        session = AttestedServerSession(
+            binary=binaries[arm],
+            model=ctx.model,
+            expected=expected,
+            extra_args=server_args,
+            log_path=log_path,
+            env_overrides=server_env,
+            env_unset=("ROCR_VISIBLE_DEVICES",),
+        )
+        with session:
+            transport = sc.HttpTransport(session.base_url)
+            sc.validate_server(transport)
+            record = sc.run_request(
+                transport, prompts[index % len(prompts)], configs[arm], pass_number=1, order_index=index
+            )
+        records[arm].append(record)
+        if not isinstance(record.get("wall_tps"), (int, float)):
+            raise vp.ValidationProducerError(f"{label} MTP lane ({arm}, request {index}): no usable wall_tps")
+        return experiment_execution.RunnerOutput(
+            returncode=0, stdout=f"BIGCHERRY_MTP_LANE wall_tps={record['wall_tps']}\n", stderr=""
+        )
+
+    for _ in range(warmup_pairs):
+        _runner(["mtp-lane", "control"])
+        _runner(["mtp-lane", "subject"])
+    paired = experiment_execution.run_paired_lane(
+        metric="mtp_wall_tps",
+        control_command=["mtp-lane", "control"],
+        subject_command=["mtp-lane", "subject"],
+        pattern=re.compile(r"BIGCHERRY_MTP_LANE wall_tps=([0-9.]+)"),
+        pairs=measured_pairs,
+        runner=_runner,
+    )
+    combined: dict[str, Path] = {}
+    for arm, paths in per_request_logs.items():
+        combined[arm] = ctx.workdir / f"{label}-mtp-{arm}.log"
+        combined[arm].write_text(
+            "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in paths if p.exists()),
+            encoding="utf-8",
+        )
+    effect = experiment_execution.lane_effect_from_run(role, "mtp_wall_tps", paired)
+    return effect, records, combined

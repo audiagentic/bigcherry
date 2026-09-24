@@ -1,0 +1,22 @@
+schema = 1
+
+# PRBE26: own test-backend-ops pair for correctness/activation; standard
+# scaffold server/bench pair for the MTP positive lane (dual gfx1100) and the
+# dense Q6_K control lane.
+[producer.rd33]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd33-correctness.json",
+  "rd33-performance.json",
+  "rd33-subject-trace.log",
+  "rd33-control-trace.log",
+]
+
+[producer.rd33.input.control_model]
+type = "path"
+required = true
