@@ -69,6 +69,8 @@ append
 
 2026-09-24 relevance at b11126: DEPRECATED. RD06's expanded gfx1201 WMMA FA config (patch 1203 slice) was conclusively measured on real gfx1201 hardware (PA39): CI95 low -0.0745% vs required >=0.5% -- no gain. 1203 is `rejected`; PA41 defers RD06 remediation rather than reopening it now. PRBE03 as originally scoped (qualify this exact config) is closed; do not duplicate PRBE110 (which only re-extracts the passing RD05/RD07 slices, explicitly NOT RD06). No GPT design request needed -- disposition follows directly from existing real hardware evidence already recorded in this item's own notes.
 
+2026-09-24 GPT review req_14f299d271894983: CONFIRMED deprecated (1203 rejected; RD06 CI95 low -0.0745% vs required 0.5%; PA41 defers remediation).
+
 ## Change Log
 
 - 2026-09-09T10:53:39.131985+00:00 (created-by): Created by capability-rebaseline-v3
@@ -91,3 +93,4 @@ append
 - 2026-09-24T02:26:41.916056+00:00 (updated-by): Updated: section:description, section:validation, section:standards, section:notes
 - 2026-09-24T02:26:54.476380+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T02:26:59.903653+00:00 (state-transition): State: pending → deprecated
+- 2026-09-24T05:20:38.480677+00:00 (updated-by): Updated: section:notes

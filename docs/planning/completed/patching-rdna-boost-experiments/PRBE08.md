@@ -63,6 +63,8 @@ placeholder
 
 2026-09-24 relevance at b11126: DEPRECATED. The exact numerical-equivalence contract PRBE08 wanted (tolerance-based, not bit-identical) was already executed for real as part of RD08/patch 1204's own PA40 demotion campaign on gfx1201: worst backend-reference error 2.598e-05 against an explicit 5e-4 tolerance (correctness PASS), then decode-effect performance measured and missing its own threshold (CI95 low +0.094% < required +0.3%). Patch 1204 is `rejected` (terminal, GPT lifecycle review req_f34f50a25c6240fe: any future VDR2 attempt returns as a new identity with fresh evidence, not a reopening of 1204). Re-running PRBE08 as a separate contract-definition exercise on an already-terminally-rejected patch would duplicate completed work with no promotion path. No GPT design request used -- disposition follows directly from 1204's own SUMMARY.md/patch.toml evidence already on disk.
 
+2026-09-24 GPT review req_14f299d271894983: CONFIRMED deprecated (1204 rejected; numerical-equivalence already qualified in PA40 retry-4, performance failed its bound).
+
 ## Change Log
 
 - 2026-09-09T10:54:03.880227+00:00 (created-by): Created by capability-rebaseline-v3
@@ -80,3 +82,4 @@ placeholder
 - 2026-09-24T02:27:10.705700+00:00 (updated-by): Updated: section:description, section:notes
 - 2026-09-24T02:27:21.634133+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T02:27:27.039791+00:00 (state-transition): State: pending → deprecated
+- 2026-09-24T05:20:41.381110+00:00 (updated-by): Updated: section:notes
