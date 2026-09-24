@@ -1,0 +1,86 @@
+"""Offline tests for the PRBE25 (1237) and PRBE35 (1216) patch-local producers."""
+
+from __future__ import annotations
+
+import importlib.util
+import math
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from bigcherry.patch import validation_producer as vp  # noqa: E402
+
+_PATCHES = Path(__file__).resolve().parents[3] / "patches"
+
+
+def _load(patch_id: str):
+    path = _PATCHES / patch_id / "validation" / "producer.py"
+    spec = importlib.util.spec_from_file_location(f"producer_{patch_id}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ProducerResolutionTests(unittest.TestCase):
+    def test_both_producers_resolve(self):
+        for patch_id, producer_id, standard in (
+            ("1216_rd43_concurrent_join_fusion_guard", "rd43", "skip"),
+            ("1237_rd30_moe_mmq_compact_grid", "rd30", "run"),
+        ):
+            selection = vp.resolve_producer(patch_dir=_PATCHES / patch_id, producer_id=producer_id)
+            self.assertEqual(selection.spec.standard_campaign, standard)
+            self.assertTrue(callable(selection.producer))
+
+
+class Rd43FullVocabParsingTests(unittest.TestCase):
+    def setUp(self):
+        self.m = _load("1216_rd43_concurrent_join_fusion_guard")
+
+    def _row(self, vocab, generated=1, drop=None, dup=False):
+        top = [{"id": i, "logprob": -float(i)} for i in range(vocab) if i != drop]
+        if dup:
+            top[-1] = {"id": 0, "logprob": 0.0}
+        return {"id": generated, "top_logprobs": top}
+
+    def test_dense_row_round_trips(self):
+        generated, values = self.m._dense_logprobs(self._row(4), vocab_size=4, arm="control", step=0)
+        self.assertEqual(generated, 1)
+        self.assertEqual(list(values), [0.0, -1.0, -2.0, -3.0])
+
+    def test_partial_vocabulary_fails_closed(self):
+        with self.assertRaises(vp.ValidationProducerError):
+            self.m._dense_logprobs(self._row(4, drop=2), vocab_size=4, arm="control", step=0)
+
+    def test_duplicate_token_fails_closed(self):
+        with self.assertRaises(vp.ValidationProducerError):
+            self.m._dense_logprobs(self._row(4, dup=True), vocab_size=4, arm="control", step=0)
+
+    def test_out_of_range_generated_id_fails_closed(self):
+        with self.assertRaises(vp.ValidationProducerError):
+            self.m._dense_logprobs(self._row(4, generated=9), vocab_size=4, arm="subject", step=3)
+
+    def test_non_finite_logprob_fails_closed(self):
+        row = self._row(2)
+        row["top_logprobs"][0]["logprob"] = math.inf
+        with self.assertRaises(vp.ValidationProducerError):
+            self.m._dense_logprobs(row, vocab_size=2, arm="subject", step=0)
+
+
+class Rd30HelperTests(unittest.TestCase):
+    def setUp(self):
+        self.m = _load("1237_rd30_moe_mmq_compact_grid")
+
+    def test_enum_lookup_is_case_insensitive_and_fails_closed(self):
+        self.assertEqual(self.m._enum_id({7: "mul_mat_id"}, "MUL_MAT_ID", "ggml_op"), 7)
+        with self.assertRaises(vp.ValidationProducerError):
+            self.m._enum_id({7: "mul_mat"}, "MUL_MAT_ID", "ggml_op")
+
+    def test_marker_regex_matches_patch_output(self):
+        patch_text = (_PATCHES / "1237_rd30_moe_mmq_compact_grid" / "patch.py").read_text(encoding="utf-8")
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1237_rd30 \"\n    \"path=moe_mmq_compact_grid", patch_text)
+
+
+if __name__ == "__main__":
+    unittest.main()
