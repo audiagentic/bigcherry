@@ -576,7 +576,10 @@ models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["moe_decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.controls]
-models = ["tierM-qwen35b-a3b-moe-mtp"]
+# PRBE34 (2026-09-24): the control lane was the same MoE model and workload
+# as the positive lane, i.e. the same measurement twice. A dense model with
+# no shared expert never forks the aux stream, so it is the real control.
+models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.correctness]

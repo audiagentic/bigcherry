@@ -108,6 +108,7 @@ class CampaignProducerRuntime:
         *,
         baseline_source: str,
         common_extra_patches: tuple[str, ...],
+        subject_companion_patches: tuple[str, ...] = (),
     ):
         """Resolve and materialize the control/subject source pair.
 
@@ -126,7 +127,7 @@ class CampaignProducerRuntime:
         subject_revision, subject_composition = psi.resolve_source_composition(
             baseline_source,
             focal=self.patch_id,
-            extra_patches=common_extra_patches,
+            extra_patches=(*common_extra_patches, *subject_companion_patches),
             base_ref=self.base_revision,
             base_repo=LLAMA_CPP_SRC,
         )
@@ -166,6 +167,7 @@ class CampaignProducerRuntime:
         targets: tuple[str, ...],
         primary_target: str,
         common_extra_patches: tuple[str, ...] = (),
+        subject_companion_patches: tuple[str, ...] = (),
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),
@@ -206,6 +208,7 @@ class CampaignProducerRuntime:
         ) = self._materialize_pair_sources(
             baseline_source=baseline_source,
             common_extra_patches=common_extra_patches,
+            subject_companion_patches=subject_companion_patches,
         )
 
         exe = ".exe" if sys.platform == "win32" else ""

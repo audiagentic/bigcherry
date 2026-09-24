@@ -1,40 +1,29 @@
-"""PRBE35 (RD43/1216): patch-local validation producer.
+"""PRBE34 (RD39-42/1215): patch-local validation producer.
 
-RD43-CONCURRENT-JOIN-FUSION-GUARD is a correctness contract: 1216 keeps
-op-fusion from absorbing the join node of 1215's concurrent shared-expert
-region. Both arms carry 1215 (its hard prerequisite) and differ only by 1216:
+RD39-42-STREAM-MOE-OVERLAP claims both a gain and bit-identical output for
+MoE shared-expert overlap on an auxiliary stream during batch-1 decode. The
+overlap only runs under GGML_CUDA_GRAPH_OPT=1, and 1215 is only safe there
+together with its join-fusion guard 1216, so the subject is the unit:
 
-  control = bigcherry + 1215
-  subject = bigcherry + 1215 + 1216
+  control = bigcherry
+  subject = bigcherry + 1215 + 1216   (1216 as a declared subject companion)
 
-Everything runs with GGML_CUDA_GRAPH_OPT=1, the only mode in which 1215
-launches concurrent regions and the guard can engage.
-
-- correctness (``backend_reference``): a fixed temperature-0 request on
-  llama-server gives the same generated tokens and full-vocabulary logprobs
-  within 5e-4 on both arms (fusion placement may change FP rounding, so bit
-  identity is not required).
-- activation: the subject server log carries the 1216 marker (the fusion
-  horizon was capped at a join node); the control log cannot.
-- controls: paired decode llama-bench, 10 rounds, both arms under
-  GGML_CUDA_GRAPH_OPT=1 (the contract allows at most a 1% regression).
-
-What this does NOT prove: that the control would have aborted. Earlier real
-runs show the 1215-only control completes on this model, so the evidence is
-"guard engaged, harmless, free", not a reproduction of the hazard.
-
-The standard scaffold is skipped: its control is the plain baseline, which
-cannot carry the subject's prerequisite. Correctness and activation run on
-this producer's llama-server pair; the controls lane on its llama-bench pair
-(same sources and composition, different target), whose identities are the
-record's build identities; the server identities are in the correctness
-artifact.
+- correctness (``bit_identical``): llama-server full-vocabulary logprobs for
+  a fixed temperature-0 request must be exactly equal (tolerance 0.0) with
+  identical generated tokens, both arms under GGML_CUDA_GRAPH_OPT=1.
+- activation: the subject server log carries the 1215 shared-expert-fork
+  marker; the control log cannot.
+- performance: paired llama-bench tg128 on the MoE model, 10 rounds, both
+  arms under GGML_CUDA_GRAPH_OPT=1 (positive lane).
+- controls: the same on a dense model that has no shared expert
+  (``control_model`` input), where the overlap never engages.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import re
+from pathlib import Path
 
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment import execution as experiment_execution
@@ -44,40 +33,45 @@ from bigcherry.patch import source as psi
 from bigcherry.patch import validation_producer as vp
 from bigcherry.patch.activation import ActivationEvidence
 
-_LABEL = "rd43"
+_LABEL = "rd39-42"
 _CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
-_CONTRACT_ID = "RD43-CONCURRENT-JOIN-FUSION-GUARD"
-_PREREQUISITE = "1215_rd394041_amd_stream_moe_overlap"
+_CONTRACT_ID = "RD39-42-STREAM-MOE-OVERLAP"
+_COMPANION = "1216_rd43_concurrent_join_fusion_guard"
 _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
+_CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _GRAPH_OPT_ENV = {"GGML_CUDA_GRAPH_OPT": "1"}
-_MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1216_rd43 path=join_fusion_cap"
-_TOLERANCE = 0.0005
+_MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1215_rd42 path=shared_expert_stream"
 _N_PREDICT = 64
 _PROMPT = (
-    "Explain in one concise sentence why a shared expert can run beside the "
-    "routed experts without changing the layer's output."
+    "Explain in one concise sentence why a mixture-of-experts layer can run its "
+    "shared expert on a second stream."
 )
 _ROUNDS = 10
 
-_ARTIFACT_NAME = "rd43-backend-reference.json"
-_PERFORMANCE_ARTIFACT_NAME = "rd43-controls.json"
-_SUBJECT_TRACE_ARTIFACT_NAME = "rd43-subject-server.log"
-_CONTROL_TRACE_ARTIFACT_NAME = "rd43-control-server.log"
+_ARTIFACT_NAME = "rd3942-bit-identical.json"
+_PERFORMANCE_ARTIFACT_NAME = "rd3942-performance.json"
+_SUBJECT_TRACE_ARTIFACT_NAME = "rd3942-subject-server.log"
+_CONTROL_TRACE_ARTIFACT_NAME = "rd3942-control-server.log"
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     architecture = support.single_architecture(ctx, _CONTRACT_ARCHITECTURES, label=_LABEL)
     if ctx.model is None:
-        raise vp.ValidationProducerError(f"{_LABEL}: a real model (--model) is required")
+        raise vp.ValidationProducerError(f"{_LABEL}: the MoE model (--model) is required")
     model = ctx.model
     identity = support.model_identity(model, model_id=_MODEL_REF, label=_LABEL)
+    control_model_raw = ctx.inputs.get("control_model")
+    if not control_model_raw:
+        raise vp.ValidationProducerError(f"{_LABEL}: --producer-input control_model=<dense gguf> is required")
+    control_model = Path(control_model_raw)
+    control_identity = support.model_identity(control_model, model_id=_CONTROL_MODEL_REF, label=_LABEL)
     device = support.select_device(ctx, architecture, label=_LABEL)
 
     pairs = {
         target: ctx.runtime.build_pair(
             targets=_CONTRACT_ARCHITECTURES,
             primary_target=target,
-            common_extra_patches=(_PREREQUISITE,),
+            subject_companion_patches=(_COMPANION,),
             baseline_source="bigcherry",
             require_parity=True,
         )
@@ -86,8 +80,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     server_pair, bench_pair = pairs["llama-server"], pairs["llama-bench"]
 
     logs = ctx.workdir / "logs"
-    control_log = logs / "rd43-control-server.log"
-    subject_log = logs / "rd43-subject-server.log"
+    control_log = logs / "rd3942-control-server.log"
+    subject_log = logs / "rd3942-subject-server.log"
     server_env = {**_GRAPH_OPT_ENV, "BIGCHERRY_PATCH_TRACE": "1"}
 
     def _factory(binary, log_path):
@@ -102,13 +96,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             subject_session=_factory(server_pair.subject_bin, subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
-            tolerance=_TOLERANCE,
-            scratch_dir=ctx.workdir / "scratch" / "rd43",
+            tolerance=0.0,
+            scratch_dir=ctx.workdir / "scratch" / "rd3942",
         )
     except full_vocab.FullVocabError as exc:
-        raise vp.ValidationProducerError(f"{_LABEL} backend_reference: {exc}") from exc
-    backend_reference = experiment_contract.CorrectnessResult(
-        check="backend_reference", passed=comparison.passed,
+        raise vp.ValidationProducerError(f"{_LABEL} bit_identical: {exc}") from exc
+    bit_identical = experiment_contract.CorrectnessResult(
+        check="bit_identical", passed=comparison.passed,
         detail=f"GGML_CUDA_GRAPH_OPT=1: {comparison.detail}",
     )
 
@@ -126,38 +120,47 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT_NAME, text=subject_text)
     control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT_NAME, text=control_text)
 
-    outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin, model=model,
-        workloads=("decode",), pairs=_ROUNDS, log_context="rd43-controls", device=device,
-        env_overrides=_GRAPH_OPT_ENV,
-    )
-    control_effect, decode_run = support.lane_effect(
-        outcome, workload="decode", metric="tg128", role="control", rounds=_ROUNDS, label=_LABEL
-    )
+    lanes = {}
+    for role, lane_model in (("positive", model), ("control", control_model)):
+        outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin, model=lane_model,
+            workloads=("decode",), pairs=_ROUNDS, log_context=f"rd3942-{role}", device=device,
+            env_overrides=_GRAPH_OPT_ENV,
+        )
+        lanes[role] = support.lane_effect(
+            outcome, workload="decode", metric="tg128", role=role, rounds=_ROUNDS, label=_LABEL
+        )
+    (positive_effect, positive_run), (control_effect, control_run) = lanes["positive"], lanes["control"]
 
-    controls_ref = ctx.runtime.write_artifact(
+    performance_ref = ctx.runtime.write_artifact(
         name=_PERFORMANCE_ARTIFACT_NAME,
         payload={
             "passed": True,
             "schema_version": 1,
             "contract_id": _CONTRACT_ID,
             "architecture": architecture,
-            "model_identity": identity,
             "env": _GRAPH_OPT_ENV,
+            "subject_companion_patches": [_COMPANION],
+            "positive_model_identity": identity,
+            "control_model_identity": control_identity,
             "build_identities": {r: dict(i) for r, i in bench_pair.validation_build_identities.items()},
+            "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
+                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
             "control": {"metric": "tg128", "effect": dataclasses.asdict(control_effect),
-                        "runs": list(decode_run.runs), "stats": dict(decode_run.stats)},
+                        "runs": list(control_run.runs), "stats": dict(control_run.stats)},
+            "trigger": {"subject_hit": subject_hit, "control_hit": control_hit},
         },
     )
     ctx.runtime.write_artifact(
         name=_ARTIFACT_NAME,
         payload={
             "schema_version": 1,
-            "check": "backend_reference",
+            "check": "bit_identical",
             "passed": comparison.passed,
-            "detail": backend_reference.detail,
+            "detail": bit_identical.detail,
             "model_identity": identity,
             "env": server_env,
+            "subject_companion_patches": [_COMPANION],
             "comparison": comparison.document(),
             "subject_source_tree": psi.git_worktree_tree(server_pair.subject_source),
             "control_source_tree": psi.git_worktree_tree(server_pair.control_source),
@@ -165,26 +168,26 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
     )
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
-        lane_id="rd43-server-subject", role="positive", positive_hit=trigger_hit
+        lane_id="rd3942-server-subject", role="positive", positive_hit=trigger_hit
     )
 
     return vp.ProducerResult(
         correctness={
             "disposition": "passed" if comparison.passed else "failed",
-            "mechanism": "rd43-full-vocab-backend-reference",
-            "detail": backend_reference.detail,
+            "mechanism": "rd3942-full-vocab-bit-identical",
+            "detail": bit_identical.detail,
         },
         validation_build_identities=bench_pair.validation_build_identities,
         activation_evidence=activation,
-        performance_evidence={"artifact": {"path": controls_ref.path, "sha256": controls_ref.sha256}},
+        performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
         trace_evidence={
             "positive": {"artifact": {"path": subject_trace_ref.path, "sha256": subject_trace_ref.sha256}},
             "negative": {"artifact": {"path": control_trace_ref.path, "sha256": control_trace_ref.sha256}},
         },
         check_results=(),
         lane_effects=(),
-        contract_correctness_results=(backend_reference,),
-        promotion_lane_effects={_CONTRACT_ID: (control_effect,)},
+        contract_correctness_results=(bit_identical,),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
         promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         emitted_artifacts=frozenset(
