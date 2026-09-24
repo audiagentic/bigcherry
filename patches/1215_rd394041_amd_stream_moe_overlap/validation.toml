@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject llama-server log under GRAPH_OPT=1 + BIGCHERRY_PATCH_TRACE=1 forked a shared expert.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1215_rd42 path=shared_expert_stream"
+
+# bit_identical: full-vocabulary logprobs, baseline vs baseline+1215+1216.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# tg128 on the MoE model (target_kernel_gain_pct 1, ci95 bound, 10 rounds).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 on a dense model with no shared expert (max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

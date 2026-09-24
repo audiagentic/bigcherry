@@ -495,6 +495,13 @@ _MOE_OVERLAP_NEW = """                concurrent_node_ranges.emplace_back(fork_n
         }
         concurrent_events.emplace(fork_node, std::move(concurrent_event));
         GGML_LOG_DEBUG("Adding shared-expert stream at node %s %p\\n", fork_node->name, fork_node);
+        // bigcherry PRBE34: activation evidence -- a MoE shared-expert branch was forked.
+        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            static std::atomic_flag bigcherry_rd42_logged = ATOMIC_FLAG_INIT;
+            if (!bigcherry_rd42_logged.test_and_set(std::memory_order_relaxed)) {
+                GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1215_rd42 path=shared_expert_stream\\n");
+            }
+        }
         concurrent_node_ranges.emplace_back(fork_idx, join_idx);
 
         // the shared-expert nodes get a dedicated buffer (below), so the graph order is left intact

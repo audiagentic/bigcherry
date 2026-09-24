@@ -28,15 +28,19 @@ class ProducerResolutionTests(unittest.TestCase):
         for patch_id, producer_id, standard in (
             ("1216_rd43_concurrent_join_fusion_guard", "rd43", "skip"),
             ("1237_rd30_moe_mmq_compact_grid", "rd30", "run"),
+            ("1215_rd394041_amd_stream_moe_overlap", "rd3942", "skip"),
         ):
             selection = vp.resolve_producer(patch_dir=_PATCHES / patch_id, producer_id=producer_id)
             self.assertEqual(selection.spec.standard_campaign, standard)
             self.assertTrue(callable(selection.producer))
 
 
-class Rd43FullVocabParsingTests(unittest.TestCase):
+class FullVocabParsingTests(unittest.TestCase):
     def setUp(self):
-        self.m = _load("1216_rd43_concurrent_join_fusion_guard")
+        from bigcherry.experiment import full_vocab
+
+        self.m = full_vocab
+        self.err = full_vocab.FullVocabError
 
     def _row(self, vocab, generated=1, drop=None, dup=False):
         top = [{"id": i, "logprob": -float(i)} for i in range(vocab) if i != drop]
@@ -45,27 +49,27 @@ class Rd43FullVocabParsingTests(unittest.TestCase):
         return {"id": generated, "top_logprobs": top}
 
     def test_dense_row_round_trips(self):
-        generated, values = self.m._dense_logprobs(self._row(4), vocab_size=4, arm="control", step=0)
+        generated, values = self.m.dense_logprobs(self._row(4), vocab_size=4, arm="control", step=0)
         self.assertEqual(generated, 1)
         self.assertEqual(list(values), [0.0, -1.0, -2.0, -3.0])
 
     def test_partial_vocabulary_fails_closed(self):
-        with self.assertRaises(vp.ValidationProducerError):
-            self.m._dense_logprobs(self._row(4, drop=2), vocab_size=4, arm="control", step=0)
+        with self.assertRaises(self.err):
+            self.m.dense_logprobs(self._row(4, drop=2), vocab_size=4, arm="control", step=0)
 
     def test_duplicate_token_fails_closed(self):
-        with self.assertRaises(vp.ValidationProducerError):
-            self.m._dense_logprobs(self._row(4, dup=True), vocab_size=4, arm="control", step=0)
+        with self.assertRaises(self.err):
+            self.m.dense_logprobs(self._row(4, dup=True), vocab_size=4, arm="control", step=0)
 
     def test_out_of_range_generated_id_fails_closed(self):
-        with self.assertRaises(vp.ValidationProducerError):
-            self.m._dense_logprobs(self._row(4, generated=9), vocab_size=4, arm="subject", step=3)
+        with self.assertRaises(self.err):
+            self.m.dense_logprobs(self._row(4, generated=9), vocab_size=4, arm="subject", step=3)
 
     def test_non_finite_logprob_fails_closed(self):
         row = self._row(2)
         row["top_logprobs"][0]["logprob"] = math.inf
-        with self.assertRaises(vp.ValidationProducerError):
-            self.m._dense_logprobs(row, vocab_size=2, arm="subject", step=0)
+        with self.assertRaises(self.err):
+            self.m.dense_logprobs(row, vocab_size=2, arm="subject", step=0)
 
 
 class Rd30HelperTests(unittest.TestCase):

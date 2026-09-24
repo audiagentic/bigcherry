@@ -173,6 +173,7 @@ ownership.
 | `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/bump-b11126-regression/run_arms.py` | **TRANSITIONAL** | Bump b11126 follow-up: balanced 4-arm llama-bench harness separating upstream vs BigCherry throughput change; one-shot, archive once attributed. |
+| `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
 | `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
 | `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
 | `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |

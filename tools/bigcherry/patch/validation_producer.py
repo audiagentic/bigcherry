@@ -202,6 +202,11 @@ class ProducerRuntime(Protocol):
         targets: tuple[str, ...],
         primary_target: str,
         common_extra_patches: tuple[str, ...] = (),
+        # Patches that only form a valid unit together with the focal patch
+        # (e.g. a guard the focal needs to be safe) go into the SUBJECT arm
+        # only; the record's subject composition names them, so the claim
+        # is "focal + companions vs baseline", never "focal alone".
+        subject_companion_patches: tuple[str, ...] = (),
         baseline_source: str = "bigcherry",
         control_extra_cmake_args: tuple[str, ...] = (),
         subject_extra_cmake_args: tuple[str, ...] = (),

@@ -1,0 +1,22 @@
+schema = 1
+
+# PRBE34: control = bigcherry, subject = bigcherry + 1215 + 1216 (1216 as a
+# declared subject companion: 1215's overlap is only safe with its guard).
+# Own server and bench pairs; the standard scaffold cannot express the unit.
+[producer.rd3942]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "skip"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd3942-bit-identical.json",
+  "rd3942-performance.json",
+  "rd3942-subject-server.log",
+  "rd3942-control-server.log",
+]
+
+[producer.rd3942.input.control_model]
+type = "path"
+required = true
