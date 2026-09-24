@@ -219,7 +219,7 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
             if (has_view && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_rd13_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_rd13_logged.test_and_set(std::memory_order_relaxed)) {
-                    GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_f\\n");
+                    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_f\\n");
                 }
             }
             ggml_cuda_mul_mat_vec_f(*cuda_ctx, src0, src1, ids, bias_node, &fusion_data);
@@ -232,7 +232,7 @@ _NEW = """    // mul_mat + add, with an optional view (reshape) node between the
             if (has_view && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_rd13_logged_q = ATOMIC_FLAG_INIT;
                 if (!bigcherry_rd13_logged_q.test_and_set(std::memory_order_relaxed)) {
-                    GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q\\n");
+                    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q\\n");
                 }
             }
             ggml_cuda_mul_mat_vec_q(*cuda_ctx, src0, src1, ids, bias_node, &fusion_data);
