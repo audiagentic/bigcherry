@@ -59,6 +59,8 @@ append
 
 2026-09-24 relevance at b11126: UPSTREAM-ABSORBED. ggml-cuda.cu:307 unconditionally sets integrated=false at b11126 (same as patch 1209's own effect); patch 1209 SUMMARY.md already records superseded at b10900 via upstream PR #28604. No GPT design request needed (no code change required).
 
+2026-09-24 GPT review req_14f299d271894983: CONFIRMED superseded (b11126 ggml-cuda.cu unconditionally sets integrated=false, matching RD22/1209's backout).
+
 ## Change Log
 
 - 2026-09-09T10:54:37.108784+00:00 (created-by): Created by capability-rebaseline-v3
@@ -76,3 +78,4 @@ append
 - 2026-09-24T02:23:13.807490+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:validation, section:effort_risk, section:notes
 - 2026-09-24T02:23:29.330802+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T02:23:34.930490+00:00 (state-transition): State: pending → superseded
+- 2026-09-24T05:20:44.291389+00:00 (updated-by): Updated: section:notes
