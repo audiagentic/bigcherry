@@ -335,65 +335,18 @@ def acquire_maintenance_lock(project_root: Path) -> tree_activity.MaintenanceLoc
 
 
 def _sync_campaign_mirror_best_effort(*, target_ref: str, revision: str) -> None:
-    """`bigcherry build`'s isolated-worktree materialization resolves the
-    pinned ref against a SEPARATE bare mirror (ProjectContext.upstream_repo,
-    e.g. work/upstream/llama.cpp.git) -- not vendor/llama.cpp, which this
-    phase just pulled. That mirror has its own independent fetch history
-    and does not learn about a new tag just because vendor/llama.cpp did;
-    without this, the very next `bigcherry build` after any real bump fails
-    immediately with an ambiguous-ref git error. Found live TWICE (the
-    b10680->b10687 and b10687->b10692 bumps) before being made automatic.
-
-    Deliberately best-effort and NEVER raises PinBumpStop: this is a build
-    convenience, not a bump-correctness requirement, and a mirror that
-    doesn't exist yet (a tree that's never run a campaign build) or a
-    network hiccup here must not block a real, already-verified pull."""
+    """Bring the new pin into the campaign build mirror (ProjectContext.
+    upstream_repo), which does not learn tags from vendor/llama.cpp. Found
+    live on three bumps (b10687, b10692, b11126). Best-effort: never raises
+    PinBumpStop, but always warns when the mirror still lacks the tag."""
     from ..core.context import ProjectContext
+    from ..source import upstream
 
-    try:
-        context = ProjectContext.resolve()
-        mirror = context.upstream_repo
-        if not (mirror / "HEAD").is_file() and not (mirror / ".git").exists():
-            return  # no mirror yet -- nothing to sync
-        already = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(mirror),
-                "rev-parse",
-                "--verify",
-                f"{target_ref}^{{commit}}",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if already.returncode == 0:
-            return  # already resolvable, nothing to do
-        subprocess.run(
-            ["git", "-C", str(mirror), "fetch", "--depth=1", "origin", revision],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        tag_result = subprocess.run(
-            ["git", "-C", str(mirror), "tag", target_ref, "FETCH_HEAD"],
-            capture_output=True,
-            text=True,
-        )
-        if tag_result.returncode != 0:
-            print(
-                f"pin-bump: campaign mirror sync for {target_ref!r} did not tag "
-                f"cleanly (git tag exit {tag_result.returncode}): "
-                f"{tag_result.stderr.strip()}",
-                file=sys.stderr,
-            )
-    except Exception as exc:  # noqa: BLE001 -- best-effort convenience, never fatal
-        print(
-            f"pin-bump: campaign mirror sync for {target_ref!r} failed: "
-            f"{type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-
+    warning = upstream.sync_mirror_ref(
+        ProjectContext.resolve().upstream_repo, target_ref, revision or None
+    )
+    if warning:
+        print(f"pin-bump: WARNING {warning}", file=sys.stderr)
 
 def run_phase_preflight(*, repo_root: Path, target_ref: str) -> tuple[str, str]:
     """Returns (resolved_from_ref, resolved_to_sha). Requires a clean

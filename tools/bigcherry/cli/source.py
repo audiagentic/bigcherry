@@ -164,6 +164,14 @@ def cmd_pull(args: Namespace) -> int:
         _run(["git", "-C", str(root), "checkout", "--force", checkout_target])
 
     record = releases.record_for_checkout(root)
+    if ref:
+        from ..core.context import ProjectContext  # noqa: PLC0415
+
+        warning = upstream.sync_mirror_ref(
+            ProjectContext.resolve().upstream_repo, ref, record.revision,
+        )
+        if warning:
+            print(f"pull: WARNING {warning}", file=sys.stderr)
     # Like a repeated audit, re-pulling a revision must not demote a record
     # that already reached a later stage for it.
     if record.stage in ("pulled", "broken"):
