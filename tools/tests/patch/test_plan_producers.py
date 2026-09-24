@@ -30,6 +30,7 @@ class ProducerResolutionTests(unittest.TestCase):
             ("1237_rd30_moe_mmq_compact_grid", "rd30", "run"),
             ("1215_rd394041_amd_stream_moe_overlap", "rd3942", "skip"),
             ("1241_rd33_mmvq_q8_0_f32_decode", "rd33", "run"),
+            ("1207_rd17_moe_topk_down_fold", "rd17", "run"),
         ):
             selection = vp.resolve_producer(patch_dir=_PATCHES / patch_id, producer_id=producer_id)
             self.assertEqual(selection.spec.standard_campaign, standard)

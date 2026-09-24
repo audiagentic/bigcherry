@@ -36,7 +36,7 @@ class LegacyMigrationLintTests(unittest.TestCase):
             )
 
     def test_new_gain_contract_without_a_waiver_fails_lint(self):
-        base = self.registry["RD12-PAIRED-MMVQ-DUAL"]
+        base = self.registry["RD04-BF16-FLASH-ATTN-TILE"]
         fresh = dataclasses.replace(base, id="RDXX-BRAND-NEW")
         registry = ec.ContractRegistry(contracts={"RDXX-BRAND-NEW": fresh})
         problems = ec.lint_effect_evidence_policy(registry, self.waivers)
