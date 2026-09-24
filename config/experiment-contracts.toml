@@ -140,20 +140,28 @@ rationale = "Folds the MoE top-k routing-weight MUL into the down-projection MMV
 backend = "hip"
 architectures = ["gfx1100", "gfx1201", "gfx1030"]
 
+# PRBE14 (2026-09-25): the fold only fires on single-column MUL_MAT_ID
+# decode (the d6e3e46e fix), so moe_prefill was never a lane it could move,
+# and the MoE-model "decode" control was the same measurement as the positive
+# lane. Positive = MoE decode; control = a dense model with no MoE.
 [contract.RD17-MOE-TOPK-DOWN-FOLD.positive]
 models = ["tierM-gptoss20b-q6k"]
-workloads = ["moe_decode", "moe_prefill"]
+workloads = ["moe_decode"]
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.controls]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
 
+# The epilogue scale changes FP rounding, so PPL-only equality is replaced by
+# the full-vocabulary backend reference.
 [contract.RD17-MOE-TOPK-DOWN-FOLD.correctness]
-ppl_equality = "required"
+backend_reference = "required"
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.acceptance]
 target_kernel_gain_pct = 0.5
 max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
 
 [contract.RD21-GFX1151-MMVQ-NWARPS]
 title = "RD21: gfx1151 (RDNA3_5) mmvq nwarps=2 table for Q8_0 decode"
@@ -1027,7 +1035,9 @@ min_paired_rounds = 10
 title = "RD33: dense Q8_0 MMVQ without Q8_1 activation quantization (ncols_dst 1..8, gfx1100)"
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.source]
-source_id = "local"
+# AMD-MMV-001 from the AMD PR set; 1241 is a local implementation of the
+# idea, not a port of a specific commit.
+source_id = "amd-ecosystem-llama-cpp"
 commits = []
 atomic_part = "1241_rd33_mmvq_q8_0_f32_decode"
 
