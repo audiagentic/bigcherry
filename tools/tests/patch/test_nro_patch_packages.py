@@ -22,7 +22,7 @@ EXPECTED = {
     "1250_nro01_allreduce_q8_wire": ("NRO01", []),
     "1251_nro02_allreduce_fused_residual": ("NRO02", ["1250_nro01_allreduce_q8_wire"]),
     "1252_nro03_allreduce_p2p_provider": ("NRO03", []),
-    "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", ["1221_rd50_gdn_chunked_recurrence"]),
+    "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", []),
     "1254_nro05_gdn_mtp_prefix_tail": ("NRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
     "1255_nro06_adaptive_mtp_depth": ("NRO06", []),
     "1256_nro07_topk_hybrid": ("NRO07", []),
@@ -150,20 +150,21 @@ class NroSafetyInvariantTests(unittest.TestCase):
         self.assertIn("GGML_CUDA_AR_P2P", source)
         self.assertIn(", 0) != 0", source)
 
-    def test_gfx1100_bf16_gdn_cannot_activate_in_initial_draft(self):
+    def test_bf16_gdn_port_is_rdna_s128_with_sequential_fallback(self):
+        """PNRO04: exact port of nasone block 02's BF16 route; the fp32 chunked
+        kernel is not ported, so non-BF16 shapes stay sequential."""
         source = _patch_source("1253_nro04_gfx1100_bf16_chunked_gdn")
-        self.assertIn("GGML_CUDA_CC_IS_RDNA3(cc)", source)
+        self.assertIn("create=True", source)
+        self.assertIn("GGML_CUDA_CC_IS_RDNA3(cc_)", source)
         self.assertIn("S_v == 128", source)
-        self.assertRegex(
-            source,
-            re.compile(r"bigcherry_nro04_gfx1100_bf16_ready\(\).*?return false;", re.S),
-        )
+        self.assertIn("patch=1253_nro04 path=gdn_chunked_bf16", source)
+        self.assertNotIn("if (ggml_cuda_op_gated_delta_net_chunked(ctx, dst, state_d_ext))", source)
 
     def test_mtp_prefix_is_exactly_n_tokens_minus_k(self):
         source = _patch_source("1254_nro05_gdn_mtp_prefix_tail")
-        self.assertIn("*n_prefix = n_tokens - K", source)
-        self.assertIn("n_seqs != 1", source)
-        self.assertIn("K <= 1", source)
+        self.assertIn("n_prefix = n_tokens - K", source)
+        self.assertIn("n_seqs == 1", source)
+        self.assertIn("K > 1", source)
 
     def test_adaptive_controller_constants_are_frozen_for_first_sweep(self):
         source = _patch_source("1255_nro06_adaptive_mtp_depth")

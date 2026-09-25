@@ -334,7 +334,7 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
         from bigcherry.core import paths as _paths
 
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
-        self.assertEqual(len(registry.contracts), 24)
+        self.assertEqual(len(registry.contracts), 26)
 
 
 class SourceEvidenceTests(unittest.TestCase):

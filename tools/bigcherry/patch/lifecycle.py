@@ -109,7 +109,8 @@ def _contracts_by_plan_item(contracts_path: Path | None = None) -> dict[str, lis
     for contract_id in (raw.get("contract") or {}):
         parts = contract_id.split("-")
         head = parts[0]
-        if head[:2].upper() not in ("RD", "HI", "EX") or not head[2:].isdigit():
+        prefix = head.rstrip("0123456789").upper()
+        if prefix not in ("RD", "HI", "EX", "NRO") or not head[len(prefix):].isdigit():
             continue
         # "RD39-42-STREAM-..." names a range across two hyphen-joined
         # numeric parts; a single-item id like "RD08-Q6K-..." does not.

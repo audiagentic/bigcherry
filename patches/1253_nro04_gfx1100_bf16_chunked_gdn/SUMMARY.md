@@ -5,12 +5,12 @@
 
 ## What it does
 
-Adds a disabled gfx1100 BF16/WMMA eligibility scaffold on top of RD50. It does not yet include the large WMMA kernel body or live dispatch.
+Adds the nasone fork's BF16/WMMA chunked GatedDeltaNet prefill kernels (gfx11 and gfx12, new files) and routes K == 1 prefill with S_v == 128 on RDNA3/RDNA4 to them by default, falling back to the sequential kernel if the driver rejects the launch. Opt out with `GGML_CUDA_GDN_CHUNKED_BF16=0`.
 
 ## Why
 
-Current nasone GDN work includes a real gfx11 path that BigCherry's RDNA3.5-only RD50 does not cover. The kernel body must be ported only after gfx1100 WMMA fragment fixtures are ready.
+Sequential GDN recurrence dominates prefill on hybrid Qwen models; the chunked form uses tensor cores. Near-lossless, not bit-exact.
 
 ## Upstream
 
-Local staged adaptation of nasone commit `4169fbbf50d24beb6d269a2350e7f780b85369e6`.
+Port of nasone commit `4169fbbf50d24beb6d269a2350e7f780b85369e6` (block 02). The fp32 chunked kernel is not ported (RD50/1221 scope; conflicts with 1221).

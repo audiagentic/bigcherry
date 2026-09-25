@@ -137,6 +137,13 @@ status = "planned"
 note = "Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce. 2026-09-23: 1001 superseded at pin b11126 (upstream now contains its edits verbatim); 1250 no longer requires it."
 
 [[sources.tracked]]
+commit = "4169fbbf50d24beb6d269a2350e7f780b85369e6"
+title = "rdna-boosts: block 02: fused chunked gated-delta-net prefill kernel"
+plan-item = "NRO04"
+status = "ported-untested"
+note = "BF16/WMMA gfx11+gfx12 kernels and K==1 dispatch in patches/1253 (created files); MTP prefix dispatch in patches/1254 (NRO05). fp32 chunked kernel not ported (RD50/1221)."
+
+[[sources.tracked]]
 commit = "670512936d83d12dd41d27c8b30e4bb416a47f31"
 title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K"
 plan-item = "NRO15"
