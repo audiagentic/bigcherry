@@ -135,7 +135,16 @@ required-state = "validated"
 # later, better-controlled measurement is trusted over the earlier one.
 # patch.toml state set validated -> rejected accordingly. Demotion is this
 # deliberate act, not an automatic consequence of either benchmark.
-patches = []
+#
+# PROMOTED 2026-09-26: 1237_rd30_moe_mmq_compact_grid (RD30), gfx1100 only
+# (its declared validation-architectures). Contract RD30-MOE-MMQ-COMPACT-GRID
+# PASS over 4 sessions at pin b11126 (improvement_no_regression_v1): pp512
+# +7.44/+7.44/+7.44/+7.32% on Qwen3.6-35B-A3B MoE, control tg128 -0.07..-0.10%,
+# 6 256-expert MUL_MAT_ID shape/seed pairs byte-identical. Owner-approved;
+# GPT review req_4d131e8b7c1c452d concurred. NOT covered: gfx1201 (not
+# measured; the patch is runtime-gated to cc == GGML_CUDA_CC_RDNA3 exactly,
+# so it is inert elsewhere), the dual-XTX production lane (PVPS05, not yet run).
+patches = ["1237_rd30_moe_mmq_compact_grid"]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
@@ -188,15 +197,14 @@ patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 [experiment.rd39-42-only]
 patches = ["1215_rd394041_amd_stream_moe_overlap"]
 
+# 2026-09-26: 1216/1217 separated from 1215 (rejected). 1216 guards upstream's
+# own GGML_CUDA_GRAPH_OPT concurrent regions (stream_ctx.concurrent_events);
+# 1215 only added more of them.
 [experiment.rd43-only]
-patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
-  "1216_rd43_concurrent_join_fusion_guard",
-]
+patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
 [experiment.rd44-only]
 patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
   "1216_rd43_concurrent_join_fusion_guard",
   "1217_rd44_graph_opt_default_rdna35",
 ]
