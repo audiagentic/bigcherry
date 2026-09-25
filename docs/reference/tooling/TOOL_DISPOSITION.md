@@ -177,6 +177,7 @@ ownership.
 | `tools/lab/plan-qualification/make-serial-2.sh` | **TRANSITIONAL** | Writes the second plan-qualification job batch from environment-provided host paths. |
 | `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
+| `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
 | `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
 | `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |

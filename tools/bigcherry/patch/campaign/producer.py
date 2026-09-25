@@ -2413,11 +2413,34 @@ def _run_validation_producer(
 
     if scaffold is not None and args.model is not None:
         _run_reference_ladder(args, scaffold=scaffold, device_map=device_map, run_dir=run_dir)
+    if scaffold is not None and getattr(args, "production_lane", False):
+        _run_production_lane(scaffold=scaffold, run_dir=run_dir)
 
     # Success means the requested producer execution and, when required,
     # tracked evidence persistence completed. Eligibility is evidence,
     # not process success (dev-gpt-agent req_2ecda033763949a9 T5).
     return 0
+
+
+def _run_production_lane(*, scaffold, run_dir: Path) -> None:
+    """PVPS05: production dual-GPU MTP no-regression lane. Its verdict is
+    recorded in campaign/production-lane.json; a lane that cannot run is
+    recorded as an error there (never silently absent)."""
+    from bigcherry.patch.campaign import production_lane
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    lane_dir = run_dir / "production-lane"
+    lane_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        payload = production_lane.run_production_lane(
+            control_server=scaffold.control_bin / f"llama-server{exe}",
+            subject_server=scaffold.validation_subject_bin / f"llama-server{exe}",
+            workdir=lane_dir,
+        )
+    except Exception as exc:  # recorded, reported by summarize; the verdict stays unset
+        payload = {"schema": production_lane.SCHEMA, "error": repr(exc)}
+    path = production_lane.write(run_dir, payload)
+    _print(f"production lane: {path} verdict={payload.get('verdict')}")
 
 
 def _run_reference_ladder(args, *, scaffold, device_map, run_dir: Path) -> None:

@@ -69,6 +69,24 @@ def _ladder(run_dir: Path) -> list[str]:
     return out
 
 
+def _production_lane(run_dir: Path) -> list[str]:
+    """PVPS05 production dual-GPU MTP no-regression lane."""
+    path = run_dir / "campaign" / "production-lane.json"
+    if not path.is_file():
+        return []
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if "error" in doc:
+        return [f"production lane ERROR: {doc['error']}"]
+    e = doc["effect"]
+    v = doc["verdict"]
+    acc = doc.get("draft_acceptance", {})
+    return [
+        f"production lane {'PASS' if v['passed'] else 'FAIL'}: mtp_wall_tps {e['geometric_effect_pct']:+.3f}% "
+        f"[{e['ci95_low_pct']:+.3f},{e['ci95_high_pct']:+.3f}] acceptance "
+        + " ".join(f"{arm}={val:.3f}" for arm, val in acc.items() if val is not None)
+    ]
+
+
 def main() -> int:
     pattern = sys.argv[1] if len(sys.argv) > 1 else "*"
     for run_dir in sorted((WORK / "runs").iterdir()):
@@ -88,6 +106,8 @@ def main() -> int:
         for lane in _lanes(run_dir):
             print(f"    {lane}")
         for line in _ladder(run_dir):
+            print(f"    {line}")
+        for line in _production_lane(run_dir):
             print(f"    {line}")
         for cid, (status, reasons) in verdicts.items():
             print(f"    {cid}: {status} {reasons or ''}")

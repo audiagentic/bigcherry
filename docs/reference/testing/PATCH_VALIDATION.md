@@ -309,6 +309,15 @@ and code disagree:
   tg128/pp512 on all four arms in rotated order and writes
   `campaign/reference-ladder.json`. The ladder is reference evidence only and
   never changes the verdict.
+- **Production dual-GPU lane (PVPS05, `--production-lane`).** Runs validated
+  BC vs validated BC + patch on the production serving shape (two gfx1100,
+  `-sm tensor`, MTP draft decode, fresh llama-server per request, paired and
+  interleaved; `tools/bigcherry/patch/campaign/production_lane.py`). Model and
+  devices come from `${BIGCHERRY_PRODUCTION_MODEL}` /
+  `${BIGCHERRY_PRODUCTION_DEVICES}`. Passes when the 95% interval of the
+  wall-clock tokens/s effect stays above -1%; mean draft acceptance per arm is
+  recorded so arms that did different work are visible. Result:
+  `campaign/production-lane.json`.
 - `tools/bigcherry/experiment/` provides paired execution, contract
   aggregation, correctness/resource/trigger gates, and promotion evaluation.
 - `tools/bigcherry/patch/validation.py` validates adapter packages and
