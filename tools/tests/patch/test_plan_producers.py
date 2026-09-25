@@ -93,3 +93,23 @@ class Rd30HelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExecutionPackageTests(unittest.TestCase):
+    """A package with a validation.toml must be startable: README, bound
+    contract and adapter all present (1262 once reached hardware without a
+    README and was refused at run time)."""
+
+    def test_every_validation_package_passes_the_execution_gate(self):
+        from bigcherry.patch import registry, validation_policy
+
+        loaded = registry.load_registry()
+        items = getattr(loaded, "descriptors", None) or getattr(loaded, "patches", None) or loaded
+        descriptors = list(items.values()) if isinstance(items, dict) else list(items)
+        for descriptor in descriptors:
+            if descriptor.state in ("rejected", "superseded"):
+                continue
+            if not (_PATCHES / descriptor.patch_id / "validation.toml").is_file():
+                continue
+            with self.subTest(patch=descriptor.patch_id):
+                validation_policy.require_execution_package(descriptor)
