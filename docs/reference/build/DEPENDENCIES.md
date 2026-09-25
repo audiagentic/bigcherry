@@ -45,6 +45,20 @@ Do not silently substitute an unversioned `/opt/rocm` for a requested version.
 
 ### Normal ROCm toolchains
 
+Newer-than-public ROCm (2026-09-25): AMD's public tarball/wheel channels stop
+at 7.13 (stable) and 7.14 (nightly); ROCm 10.x ships HIP 7.16 and is
+published by TheRock's release pipeline (`ROCm/rockrel`) to
+`https://therock-prerelease-artifacts.s3.amazonaws.com/<run-id>-linux/tarballs/`
+(e.g. `therock-dist-linux-multiarch-10.1.0rc2.tar.gz`, run 35923966519). Install
+into `vendor/rocm/<version>/` (stream-extract: `curl -sSf <url> | tar -xz -C
+vendor/rocm/<version>`), then build a campaign prefix with
+`tools/env/make-rocm-campaign-prefix.sh vendor/rocm/<version> vendor/rocm/<version>-campaign`
+(the campaign needs `$HIP_PATH/bin/clang`; TheRock keeps clang under
+`llvm/bin`) and point the matching `BIGCHERRY_ROCM_*_ROOT` at the version tree
+in the host's untracked `config/environment.local.toml`. Building HIP alone
+from source is not a substitute: llama.cpp also needs the matching compiler,
+device libraries, hipcub/rocprim and rocBLAS/hipBLAS.
+
 Keep versioned SDKs under `vendor/rocm/<version>/` when a host-local vendored copy is required. Preserve a complete compiler/header/library layout; partial copies are not interchangeable with a complete SDK. Prefer configured/version-qualified paths in repeatable work.
 
 The ROCm 10.0 runfile installation exposed a shared-host hazard: even with a custom target directory, post-install steps can change system-wide `update-alternatives` entries. Before and after any such install, capture the resolved shared compiler/tool paths and restore only changes introduced by that install. Never assume `target=` confines all side effects.
