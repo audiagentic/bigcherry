@@ -35,6 +35,40 @@ class MetaBindingTests(unittest.TestCase):
         self.assertFalse(se.meta_process_matches_preflight(PREPARED + META, failed))
 
 
+class LayerSplitPreflightTests(unittest.TestCase):
+    def test_preflight_swaps_only_the_split_mode(self) -> None:
+        from pathlib import Path
+        from unittest import mock
+
+        captured = {}
+
+        def fake_preflight(*, binary, model, extra_args, output, env, expected_execution):
+            captured[binary.name] = extra_args
+            return ({"backend": "ROCm", "devices": [
+                {"architecture": "gfx1100", "locator": "0000:03:00.0"},
+                {"architecture": "gfx1100", "locator": "0000:06:00.0"}], "telemetry": {}}, {})
+
+        class _Dev:
+            def __init__(self, index, locator):
+                self.index, self.arch, self.locator = index, "gfx1100", locator
+
+        class _Host:
+            devices = (_Dev(0, "0000:03:00.0"), _Dev(1, "0000:06:00.0"))
+
+        env_obj = mock.Mock()
+        env_obj.host.return_value = _Host()
+        args = ("--parallel", "1", "-sm", "tensor", "--fit", "off")
+        with mock.patch("bigcherry.campaign.benchmark._run_server_attestation_preflight", fake_preflight), \
+             mock.patch("bigcherry.core.environment.load_default", return_value=env_obj):
+            out = support.tensor_split_preflights(
+                {"control": Path("c/llama-server")}, model=Path("m.gguf"), server_args=args,
+                env={"HIP_VISIBLE_DEVICES": "0,1"}, workdir=Path("w"), label="t",
+            )
+        self.assertEqual(captured["llama-server"], ("--parallel", "1", "-sm", "layer", "--fit", "off"))
+        self.assertEqual(out["control"].telemetry["attested_by"], "layer-split-preflight")
+        self.assertEqual(len(out["control"].devices), 2)
+
+
 class TensorSplitDetectionTests(unittest.TestCase):
     def test_detects_both_spellings(self) -> None:
         self.assertTrue(support._is_tensor_split(("-ngl", "99", "-sm", "tensor")))
