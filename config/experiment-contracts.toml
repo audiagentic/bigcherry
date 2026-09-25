@@ -1331,3 +1331,42 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR]
+title = "PRBE41: channels-major SSM_CONV input for the delta-net graph"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["33611a98a53af8a327f4a0e01a42631eb5fcd576"]
+atomic_part = "1263_prbe41_ssm_conv_channels_major"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.target]
+kind = "ssm_gdn"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.hypothesis]
+expected_effect = "both"
+rationale = "Feeding SSM_CONV channels-major removes the physical transpose (CONT) of the conv input in qwen35/qwen35moe/qwen3next; the fork measured CONT 221->10 ms at pp4096 ub=4096. Same arithmetic, so output should match within float reordering."
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10

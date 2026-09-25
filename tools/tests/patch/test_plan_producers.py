@@ -36,6 +36,7 @@ class ProducerResolutionTests(unittest.TestCase):
             ("1254_nro05_gdn_mtp_prefix_tail", "nro05", "run"),
             ("1256_nro07_topk_hybrid", "nro07", "run"),
             ("1257_nro08_topk_wave32", "nro08", "run"),
+            ("1263_prbe41_ssm_conv_channels_major", "prbe41", "run"),
         ):
             selection = vp.resolve_producer(patch_dir=_PATCHES / patch_id, producer_id=producer_id)
             self.assertEqual(selection.spec.standard_campaign, standard)
