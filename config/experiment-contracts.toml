@@ -152,8 +152,11 @@ architectures = ["gfx1100", "gfx1201", "gfx1030"]
 # decode (the d6e3e46e fix), so moe_prefill was never a lane it could move,
 # and the MoE-model "decode" control was the same measurement as the positive
 # lane. Positive = MoE decode; control = a dense model with no MoE.
+# 2026-09-25: four gfx1100 sessions on gpt-oss-20B never logged the fold's
+# marker (its routing never reaches the single-column MUL_MAT_ID+MUL shape);
+# activation was previously proven on Qwen3.6-35B-A3B, so that is the lane.
 [contract.RD17-MOE-TOPK-DOWN-FOLD.positive]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["moe_decode"]
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.controls]
