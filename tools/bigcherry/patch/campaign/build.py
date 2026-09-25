@@ -256,6 +256,28 @@ def _configure_request_document(
     }
 
 
+
+def _drop_foreign_cmake_cache(build_dir: Path, source: Path) -> None:
+    """A build dir keyed by name (not source) outlives a source change: a
+    promotion changes the control composition, so the content-addressed
+    worktree moves and CMake refuses the old cache ("does not match the
+    source"). Drop the cache so the configure below starts clean; objects
+    are rebuilt (cheaply, through the shared compiler cache)."""
+    import shutil
+
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("CMAKE_HOME_DIRECTORY:"):
+            home = line.split("=", 1)[1].strip()
+            if Path(home).resolve() != Path(source).resolve():
+                _print(f"{build_dir.name}: CMake cache belongs to {home}; reconfiguring from {source}")
+                cache.unlink()
+                shutil.rmtree(build_dir / "CMakeFiles", ignore_errors=True)
+                (build_dir / "bigcherry-configure-request.json").unlink(missing_ok=True)
+            return
+
 def _configure_request_matches(*, build_dir: Path, expected: dict[str, object]) -> bool:
     """Whether build_dir's existing CMake cache was configured by the exact
     same request as `expected` -- the real fix for the old, too-broad "skip
@@ -361,6 +383,7 @@ def build_tree(
 
     if generated_proof_callback is not None:
         generated_proof_callback("preconfigure", build_dir)
+    _drop_foreign_cmake_cache(build_dir, source)
 
     # Reconfigure only when the REQUEST actually changed -- the old "skip
     # whenever CMakeCache.txt exists" check could silently reuse a stale
@@ -443,6 +466,7 @@ def ensure_stock_baseline(
     configure_request = _configure_request_document(
         source=stock_src, cmake_args=cmake_args
     )
+    _drop_foreign_cmake_cache(build_dir, stock_src)
     configure_request_path = build_dir / "bigcherry-configure-request.json"
 
     if _configure_request_matches(build_dir=build_dir, expected=configure_request):
