@@ -59,16 +59,14 @@ Supersedes: NRO10
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-nasone-rdna-optimizations-nro10
 
+2026-09-25 finding: patch 1260's validation package cannot start a campaign -- its contract requires a 'controls' capability that no producer supplies, and validation/producer.py copies the pre-recorded evidence/hardware_d.json into the run instead of measuring. README.md was missing (added). Contract backend aligned to 'agnostic'. The recorded (D) 98.3 vs 76.5 gen t/s difference is confounded (a headroom change cannot explain a 28% decode gap) and must not be cited. Needs: a real controls lane (paired tg128 on tierA-qwen4b-q6k) and a producer that runs the MTP real-graph check itself. Listed in tools/tests/patch/test_plan_producers.py _KNOWN_NOT_STARTABLE until fixed.
+
 ## Change Log
 
 - 2026-09-09T10:52:50.276971+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:09:14.697625+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
-
-
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.090326+00:00 (updated-by): Updated: section:ledger-events
@@ -90,3 +88,4 @@ Successor key: patching-nasone-rdna-optimizations-nro10
 - chg_20260922_150002_pnro09-1260-is-complete-the_6574
 - 2026-09-22T15:00:05.265380+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-22T15:00:12.216553+00:00 (state-transition): State: in_progress → completed
+- 2026-09-25T05:12:49.248433+00:00 (updated-by): Updated: section:notes
