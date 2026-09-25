@@ -13,6 +13,13 @@ work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
+# Shared compiler cache for every campaign tree. Worktrees and build dirs have
+# content-addressed paths, so BASEDIR (relative paths) + NOHASHDIR are what let
+# control/subject/stock/other sessions reuse identical objects; the cache is
+# sized for HIP objects (the 5 GiB default thrashes).
+export CCACHE_DIR=${CCACHE_DIR:-$work/ccache} CCACHE_BASEDIR=$work CCACHE_NOHASHDIR=1
+export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100G}
+mkdir -p "$CCACHE_DIR"
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
 args=(--patch "$patch" --baseline-source bigcherry-tuning --amdgpu-targets "$arch"
       --device-map "$arch=$dev" --model "$BC_MODEL" --hip-path "$BC_HIP_PATH"
