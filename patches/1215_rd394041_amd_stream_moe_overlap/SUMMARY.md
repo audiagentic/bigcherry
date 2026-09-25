@@ -1,6 +1,6 @@
 # 1215_rd394041_amd_stream_moe_overlap: Honor active HIP stream, per-stream cuBLAS handles, dedicated concurrent scratch, and MoE shared-expert overlap (RD39/RD40/RD41/RD42)
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** RD39/RD40/RD41/RD42
 
 ## What it does
@@ -14,3 +14,13 @@ The single per-device cuBLAS handle's workspace corrupted concurrent GEMMs shari
 ## Upstream / provenance
 
 Ported from AMD-Ecosystem/llama.cpp PR #36 (merge commit 367c4d04f, https://github.com/AMD-Ecosystem/llama.cpp). Fork-only work, not ancestral to mainline or this project's pin.
+
+## Rejected 2026-09-26
+
+Four sessions per architecture at pin b11126 (contract RD39-42-STREAM-MOE-OVERLAP):
+target tg128 -2.8..-3.3% on gfx1100 and -8.0..-8.2% on gfx1201, and the control
+lanes regressed too (-1.6..-2.2% gfx1100, -6.8% gfx1201), beyond the 1% budget.
+Owner-approved; GPT review req_4d131e8b7c1c452d concurred. Evidence retained in
+evidence/validation.json. Rework, if any, should build on upstream's own
+concurrency substrate. Dependent 1216 (join-fusion guard for this patch) is
+blocked with it.

@@ -129,6 +129,9 @@ MTP_SERVER_ARGS = (
 )
 
 
+_PREFLIGHT_CTX = 4096
+
+
 def _is_tensor_split(server_args: tuple[str, ...]) -> bool:
     return any(a in ("-sm", "--split-mode") and b == "tensor" for a, b in zip(server_args, server_args[1:]))
 
@@ -169,6 +172,15 @@ def tensor_split_preflights(
     # only argument delta and is recorded in the attestation telemetry.
     preflight_args = tuple("layer" if (prev in ("-sm", "--split-mode") and arg == "tensor") else arg
                            for prev, arg in zip(("",) + server_args, server_args))
+    # Layer split puts a whole layer's KV (plus the MTP draft context) on one
+    # card, which the model's default context does not fit (1241: OOM on
+    # device 1). Device identity does not depend on context size, so the
+    # preflight caps it; the cap is the second recorded argument delta.
+    if not any(a in ("-c", "--ctx-size") for a in preflight_args):
+        preflight_args = (*preflight_args, "-c", str(_PREFLIGHT_CTX))
+    else:
+        preflight_args = tuple(str(_PREFLIGHT_CTX) if prev in ("-c", "--ctx-size") else arg
+                               for prev, arg in zip(("",) + preflight_args, preflight_args))
     out: dict[str, Any] = {}
     for arm, binary in binaries.items():
         document, _binding = campaign_benchmark._run_server_attestation_preflight(
@@ -179,6 +191,7 @@ def tensor_split_preflights(
             backend=document["backend"],
             devices=tuple(ObservedDevice(d["architecture"], d["locator"]) for d in document["devices"]),
             telemetry={"attested_by": "layer-split-preflight", "preflight_split_mode": "layer",
+                       "preflight_ctx_size": _PREFLIGHT_CTX,
                        **document.get("telemetry", {})},
         )
     return out

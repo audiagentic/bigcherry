@@ -70,21 +70,14 @@ class ExpandCompositionTests(unittest.TestCase):
     """RE42: computing a REQUIRES closure above resolve_exact()'s fail-closed
     exact layer -- new, opt-in, does not change resolve_lane's behavior."""
 
-    def test_1217s_real_closure_pulls_in_1215_and_1216(self):
+    def test_1217s_real_closure_pulls_in_1216(self):
         result = patchset.expand_composition(["1217_rd44_graph_opt_default_rdna35"])
         self.assertEqual(result.requested, ("1217_rd44_graph_opt_default_rdna35",))
         self.assertEqual(
             result.expanded,
-            (
-                "1215_rd394041_amd_stream_moe_overlap",
-                "1216_rd43_concurrent_join_fusion_guard",
-                "1217_rd44_graph_opt_default_rdna35",
-            ),
+            ("1216_rd43_concurrent_join_fusion_guard", "1217_rd44_graph_opt_default_rdna35"),
         )
-        self.assertEqual(
-            result.pulled_in,
-            ("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"),
-        )
+        self.assertEqual(result.pulled_in, ("1216_rd43_concurrent_join_fusion_guard",))
 
     def test_a_patch_with_no_requires_expands_to_itself(self):
         result = patchset.expand_composition(["0100_cmake_options"])
@@ -96,7 +89,7 @@ class ExpandCompositionTests(unittest.TestCase):
         # to resolve_exact() and have it pass, without hand-listing it.
         result = patchset.expand_composition(["1217_rd44_graph_opt_default_rdna35"])
         resolved = patchset.resolve_exact(list(result.expanded))
-        self.assertEqual(len(resolved.modules), 3)
+        self.assertEqual(len(resolved.modules), 2)  # 1217 -> 1216
 
     def test_unknown_patch_id_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "unknown patch"):

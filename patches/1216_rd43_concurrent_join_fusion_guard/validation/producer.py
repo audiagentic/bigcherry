@@ -1,14 +1,15 @@
 """PRBE35 (RD43/1216): patch-local validation producer.
 
 RD43-CONCURRENT-JOIN-FUSION-GUARD is a correctness contract: 1216 keeps
-op-fusion from absorbing the join node of 1215's concurrent shared-expert
-region. Both arms carry 1215 (its hard prerequisite) and differ only by 1216:
+op-fusion from absorbing the join node of a concurrent region created by
+upstream's graph optimizer (stream_ctx.concurrent_events). Standalone since
+2026-09-26 (1215, which only added more such regions, was rejected):
 
-  control = bigcherry + 1215
-  subject = bigcherry + 1215 + 1216
+  control = validated BC
+  subject = validated BC + 1216
 
-Everything runs with GGML_CUDA_GRAPH_OPT=1, the only mode in which 1215
-launches concurrent regions and the guard can engage.
+Everything runs with GGML_CUDA_GRAPH_OPT=1, the only mode in which concurrent
+regions exist and the guard can engage.
 
 - correctness (``backend_reference``): a fixed temperature-0 request on
   llama-server gives the same generated tokens and full-vocabulary logprobs
@@ -19,13 +20,8 @@ launches concurrent regions and the guard can engage.
 - controls: paired decode llama-bench, 10 rounds, both arms under
   GGML_CUDA_GRAPH_OPT=1 (the contract allows at most a 1% regression).
 
-What this does NOT prove: that the control would have aborted. Earlier real
-runs show the 1215-only control completes on this model, so the evidence is
-"guard engaged, harmless, free", not a reproduction of the hazard.
-
-Runs on the standard scaffold pair with ``--common-patches
-1215_rd394041_amd_stream_moe_overlap`` so both arms carry the prerequisite;
-scaffold resolution fails closed without it (1216 requires 1215).
+What this does NOT prove: that the control would have aborted; the evidence
+is "guard engaged, harmless, free", not a reproduction of the hazard.
 """
 
 from __future__ import annotations

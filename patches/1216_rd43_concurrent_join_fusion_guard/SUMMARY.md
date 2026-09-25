@@ -14,3 +14,12 @@ Without this guard, op-fusion could absorb RD42's (patch 1215's) shared-expert j
 ## Upstream / provenance
 
 Ported from AMD-Ecosystem/llama.cpp PR #71 (merge commit 0f0db6292, https://github.com/AMD-Ecosystem/llama.cpp). Fork-only work; apply after patch 1215.
+
+## Separated from 1215 (2026-09-26)
+
+The guard operates on upstream's own graph-optimizer concurrent regions
+(`stream_ctx.concurrent_events`, active under `GGML_CUDA_GRAPH_OPT=1`); 1215
+only added more such regions. With 1215 rejected, 1216 no longer requires it
+and applies cleanly to b11126 alone. Its earlier four-session PASS was measured
+on top of 1215, so it is re-validated standalone (control = validated BC,
+subject = + 1216, GRAPH_OPT on) before any promotion.

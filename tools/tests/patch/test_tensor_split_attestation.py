@@ -64,7 +64,7 @@ class LayerSplitPreflightTests(unittest.TestCase):
                 {"control": Path("c/llama-server")}, model=Path("m.gguf"), server_args=args,
                 env={"HIP_VISIBLE_DEVICES": "0,1"}, workdir=Path("w"), label="t",
             )
-        self.assertEqual(captured["llama-server"], ("--parallel", "1", "-sm", "layer", "--fit", "off"))
+        self.assertEqual(captured["llama-server"], ("--parallel", "1", "-sm", "layer", "--fit", "off", "-c", "4096"))
         self.assertEqual(out["control"].telemetry["attested_by"], "layer-split-preflight")
         self.assertEqual(len(out["control"].devices), 2)
 
