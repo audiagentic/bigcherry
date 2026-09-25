@@ -56,3 +56,8 @@ Static package test; hardware P2P arm on 2x gfx1100 per TESTING.md.
 ## Change Log
 
 - 2026-09-25T23:16:44.258298+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260925_232233_correctness-checks-for-approxi_1217
+- 2026-09-25T23:22:45.229638+00:00 (updated-by): Updated: section:ledger-events

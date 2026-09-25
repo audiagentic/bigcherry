@@ -56,3 +56,8 @@ Unit test on a synthetic log; one dual-XTX session attests without preflight.
 ## Change Log
 
 - 2026-09-25T23:16:40.340989+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260925_232233_correctness-checks-for-approxi_1217
+- 2026-09-25T23:22:42.336192+00:00 (updated-by): Updated: section:ledger-events

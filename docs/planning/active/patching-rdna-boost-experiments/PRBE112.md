@@ -59,3 +59,8 @@ Owner asked 2026-09-26 whether 1215 can be fixed. 1216 (join-fusion guard) was s
 ## Change Log
 
 - 2026-09-25T23:16:25.986252+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260925_232219_first-patch-promoted-to-the-pr_2756
+- 2026-09-25T23:22:33.660056+00:00 (updated-by): Updated: section:ledger-events
