@@ -144,9 +144,11 @@ def stream_completion_rows(
                     saw_stop = True
                     continue
                 rows = event.get("completion_probabilities")
-                if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], Mapping):
-                    raise FullVocabError("expected exactly one completion_probabilities row per event")
-                yield rows[0]
+                # A speculative (MTP/draft) server streams every token accepted
+                # in one verify step as one event, so an event carries >= 1 rows.
+                if not isinstance(rows, list) or not rows or not all(isinstance(r, Mapping) for r in rows):
+                    raise FullVocabError("expected one or more completion_probabilities rows per event")
+                yield from rows
     except (urllib.error.URLError, OSError, TimeoutError, UnicodeError) as exc:
         raise FullVocabError(f"streaming /completion failed: {exc}") from exc
     if not saw_stop:
