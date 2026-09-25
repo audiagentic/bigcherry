@@ -104,7 +104,7 @@ def generate_edits(old_text: str, new_text: str, *, path: str, prefix: str) -> l
             if n_a_lo < 0 or n_a_hi > len(new_lines):
                 continue
             replacement = "".join(new_lines[n_a_lo:n_a_hi])
-            guard = _guard(replacement, current, new_lines[n_lo:n_hi])
+            guard = _guard(replacement, current + "\n" + old_text, new_lines[n_lo:n_hi])
             if guard is not None:
                 break
         else:
@@ -127,7 +127,9 @@ def generate_edits(old_text: str, new_text: str, *, path: str, prefix: str) -> l
 
 def _guard(replacement: str, current: str, changed: list[str]) -> str | None:
     """A regex only the patched text contains: the first changed line that
-    occurs nowhere in the pre-edit text, else the whole replacement (a pure
+    occurs nowhere in the pre-edit text nor in the pristine original (the
+    rebase check reads a guard hit on pristine upstream as "already
+    upstream"), else the whole replacement (a pure
     deletion's surrounding context); None when neither is distinctive yet,
     so the caller widens the context."""
     for line in changed:

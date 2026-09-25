@@ -144,6 +144,13 @@ status = "ported-untested"
 note = "BF16/WMMA gfx11+gfx12 kernels and K==1 dispatch in patches/1253 (created files); MTP prefix dispatch in patches/1254 (NRO05). fp32 chunked kernel not ported (RD50/1221)."
 
 [[sources.tracked]]
+commit = "33611a98a53af8a327f4a0e01a42631eb5fcd576"
+title = "ssm_conv: add channels-major input mode; drop delta-net transpose"
+plan-item = "PRBE41"
+status = "ported-untested"
+note = "AMD-authored. Ported to patches/1263_prbe41_ssm_conv_channels_major with port_diff; delta-net-base.cpp hand-merged onto b11126 (the fork pre-image carried e2188eb2, which this commit supersedes); Metal supports_op change not ported."
+
+[[sources.tracked]]
 commit = "670512936d83d12dd41d27c8b30e4bb416a47f31"
 title = "ggml-cuda: add dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K"
 plan-item = "NRO15"
