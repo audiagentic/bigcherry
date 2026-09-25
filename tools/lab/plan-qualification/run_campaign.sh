@@ -9,14 +9,15 @@ set -u
 patch=$1; producer=$2; arch=$3; dev=$4; run=$5; shift 5
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
+work=${BIGCHERRY_WORK_ROOT:-$root/work}
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
-mkdir -p work/tmp
-export TMPDIR=$root/work/tmp
+mkdir -p "$work/tmp"
+export TMPDIR=$work/tmp
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
 args=(--patch "$patch" --baseline-source bigcherry-tuning --amdgpu-targets "$arch"
       --device-map "$arch=$dev" --model "$BC_MODEL" --hip-path "$BC_HIP_PATH"
-      --workdir "work/runs/$run" --worktree-root work/worktrees
-      --build-root "work/builds/$patch-$arch")
+      --workdir "$work/runs/$run" --worktree-root "$work/worktrees"
+      --build-root "$work/builds/$patch-$arch")
 [ "$producer" != "-" ] && args+=(--validation-producer "$producer")
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
 echo "CAMPAIGN_EXIT=$?"

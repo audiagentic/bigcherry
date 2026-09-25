@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+WORK = Path(os.environ.get("BIGCHERRY_WORK_ROOT") or ROOT / "work")
 
 
 def _lanes(run_dir: Path) -> list[str]:
@@ -37,7 +39,7 @@ def _lanes(run_dir: Path) -> list[str]:
 
 def main() -> int:
     pattern = sys.argv[1] if len(sys.argv) > 1 else "*"
-    for run_dir in sorted((ROOT / "work" / "runs").iterdir()):
+    for run_dir in sorted((WORK / "runs").iterdir()):
         if not run_dir.is_dir() or not fnmatch.fnmatch(run_dir.name, pattern):
             continue
         execution = run_dir / "campaign" / "producer-execution.json"
