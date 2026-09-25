@@ -2,7 +2,7 @@
 id: PNRO04
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:52:17.766702+00:00'
 breadth: ''
 skill: advanced
@@ -74,6 +74,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified bigcherry_nro04_gfx1100_bf16_ready() unconditionally returns false and no BF16/WMMA kernel or dispatch exists in 1253 -- added the required kernel-materialization and dispatch-wiring steps plus a required activation marker (none existed). Flagged the separate GGML_CUDA_CC_IS_RDNA3 gate as broader than exact gfx1100 if strict scope is intended.
 
+2026-09-25 (d423644d, f4c75c02): 1253 now ports nasone 4169fbbf (block 02) BF16/WMMA chunked GDN: creates gated_delta_net_chunked.cuh, _bf16_gfx11.cu (RDNA3), _bf16.cu (RDNA4) via new FilePatch(create=True); K==1 S_v==128 prefill on RDNA3/RDNA4 routes to BF16 by default (opt-out GGML_CUDA_GDN_CHUNKED_BF16=0), sequential fallback on launch rejection; fork GDN test cases added. fp32 chunked kernel NOT ported (RD50/1221 scope; reciprocal conflict, no longer requires 1221). Contract NRO04-GDN-CHUNKED-BF16 (prefill positive, decode control, owner policy x4 sessions); producer = GATED_DELTA_NET test-backend-ops backend_reference + marker + paired lanes. Hardware sessions not yet queued.
+
 ## Change Log
 
 - 2026-09-09T10:52:17.766702+00:00 (created-by): Created by capability-rebaseline-v3
@@ -90,3 +92,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:28:00.297184+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:11.680244+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-24T04:48:19.490128+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-25T04:23:36.714622+00:00 (updated-by): Updated: section:notes
+- 2026-09-25T04:23:39.602014+00:00 (state-transition): State: pending → in_progress

@@ -78,13 +78,14 @@ Remaining real work: real activation-trace verification (has real markers alread
 
 2026-09-25 implementation: 1206 markers moved to GGML_LOG_WARN (commit after cd35b01f); PRBE39 extension (VIEW + memory-range check) landed in the same package. b11126 gfx1100 campaign (work/runs/prbe12-1206-gfx1100 on Brutus): ELIGIBLE, 0 blocking reasons. tg128 positive (tierA-qwen4b-q6k) +0.552% CI95 [0.152, 1.065] n=10; control (tierM-gptoss20b-q6k) -0.001% [-0.105, 0.106]; backend_reference 64 steps x 248320 full-vocab logprobs max diff 0; activation marker subject-only. Caveat: ran while another campaign was building on the host (paired interleaving mitigates); quiet rerun required before promotion. gfx1201 run launched.
 
+2026-09-25 RESULT: RD13 (1206) gfx1100 PASS (4 sessions: +0.66/+0.53/+0.47/+0.65% tg128, every CI above 0, controls flat, full-vocab logprobs identical, activation proven). gfx1201 FAIL/not established (point estimates +0.2/-0.2/+0.3/+0.4%, control CIs up to +-4% -- sessions ran concurrently with the gfx1100 lane; later sessions run serially). Not re-running gfx1201 to chase the verdict (no optional stopping); a serial-lane re-measurement needs an explicit decision.
+
 ## Change Log
 
 - 2026-09-09T10:54:19.359011+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:26.671901+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.183883+00:00 (updated-by): Updated: section:ledger-events
@@ -104,3 +105,4 @@ Remaining real work: real activation-trace verification (has real markers alread
 - 2026-09-24T14:09:40.423483+00:00 (updated-by): Updated: section:notes
 - chg_20260924_141016_five-experimental-rdna-patches_5706
 - 2026-09-24T14:10:19.108890+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-25T04:23:57.043827+00:00 (updated-by): Updated: section:notes

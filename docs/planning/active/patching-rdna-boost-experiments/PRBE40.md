@@ -67,13 +67,14 @@ Supersedes RD48. Source is AMD PR Set 4/#59 (discussion #26378), with source sta
 
 2026-09-25: steps 2,3,5 implemented in 1205 (cd35b01f): ggml_are_same_shape+ggml_are_same_stride+F32 on both outputs, ggml_cuda_check_fusion_memory_ranges over {i,j}, marker names the fused weights. b11126 gfx1100 run r1: apply/build/activation/bit_identical PASS (6/6 rows, marker a=rd12_k_weight b=rd12_v_weight) but no promotion lanes existed; producer extended with tg128 positive / pp512 control, 10 rounds, ci95 policy (bd6272be). r2 running. gfx1201 run r1 died on a clang bus error from host disk pressure (root 98%), not code. gfx1151 BLOCKED (no card). Step 4 negative test-backend-ops fixtures still to author.
 
+2026-09-25 RESULT: RD12-PAIRED-MMVQ-DUAL gfx1100 PASS under the frozen owner policy (4 independent sessions, session-bootstrap tg128 improvement established; sessions +0.64/+0.69/+0.23/+1.02%; controls within budget; bit-identical K/V outputs; activation proven). gfx1201: 3 sessions (s4 lost to a full disk on Brutus) -- noisy (concurrent lanes), not yet established. gfx1151 BLOCKED (no card). Promotion decision pending gfx1201 and the per-patch test matrix review.
+
 ## Change Log
 
 - 2026-09-09T10:56:15.028499+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:29.738621+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.310431+00:00 (updated-by): Updated: section:ledger-events
@@ -94,3 +95,4 @@ Supersedes RD48. Source is AMD PR Set 4/#59 (discussion #26378), with source sta
 - 2026-09-24T14:09:52.081799+00:00 (updated-by): Updated: section:notes
 - chg_20260924_141016_five-experimental-rdna-patches_5706
 - 2026-09-24T14:10:24.783529+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-25T04:23:54.109804+00:00 (updated-by): Updated: section:notes

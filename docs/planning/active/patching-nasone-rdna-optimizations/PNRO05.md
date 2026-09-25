@@ -2,7 +2,7 @@
 id: PNRO05
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:52:33.316789+00:00'
 breadth: ''
 skill: advanced
@@ -74,6 +74,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1254 only defines the eligibility predicate with no prefix execution, temp state, tail, publication, or fallback wired -- added the required extension to ggml_cuda_op_gated_delta_net_impl(), the success-gated publication order, and a required activation marker (none existed).
 
+2026-09-25 (d423644d): 1254 ports block 02's MTP prefix path on top of 1253: for K>1, single sequence, n_tokens > K+64, BF16 chunked GDN on the first n_tokens-K tokens then sequential on the last K (snapshot slots exact); RDNA3/RDNA4 S_v==128 only (fork's fp32 fallback not ported). Marker patch=1254_nro05 path=gdn_mtp_prefix_bf16. Contract NRO05-GDN-MTP-PREFIX added (mtp_verify on qwen35b MoE+MTP). Producer still to write (needs the MTP server lane).
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
@@ -90,3 +92,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:28:00.303796+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:15.579509+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-24T04:49:16.618864+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-25T04:23:42.505423+00:00 (updated-by): Updated: section:notes
+- 2026-09-25T04:23:45.397057+00:00 (state-transition): State: pending → in_progress
