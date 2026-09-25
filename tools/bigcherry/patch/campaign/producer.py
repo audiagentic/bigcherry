@@ -1605,6 +1605,7 @@ def _prepare_standard_producer_campaign(
         patch_id=args.patch,
         base_ref=cfg.pinned,
         baseline_source=baseline_source,
+        common_patches=tuple(args.common_patches),
         hip_path=args.hip_path,
         amdgpu_targets=args.amdgpu_targets,
         workdir=workdir,

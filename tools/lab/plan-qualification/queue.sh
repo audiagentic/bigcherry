@@ -22,5 +22,9 @@ while read -r line; do
     fi
     echo "start $run $(date -Is)"
     BC_MODEL=$model bash "$here/run_campaign.sh" "$@" > "$log" 2>&1 < /dev/null
+    # Attested llama-servers run at --verbosity 5 and log every full-vocab
+    # response (~1.5 GB per arm); keep the head (startup, device attestation,
+    # activation markers) and cap the rest so a lane cannot fill the disk.
+    find "$root/work/runs/$run" -name '*server*.log' -size +20M -exec truncate -s 20M {} +
     echo "done  $run $(date -Is) $(tail -1 "$log")"
 done < "$jobs"

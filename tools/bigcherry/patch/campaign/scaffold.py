@@ -88,6 +88,7 @@ def _materialize_scaffold_sources(
     patch_id: str,
     base_ref: str,
     baseline_source: str,
+    common_patches: tuple[str, ...],
     worktree_root: Path,
 ) -> _ScaffoldSources:
     """Resolve, materialize and idempotence-check the control/subject/stock sources."""
@@ -96,12 +97,14 @@ def _materialize_scaffold_sources(
     control_revision, control_composition = psi.resolve_source_composition(
         baseline_source,
         focal=None,
+        extra_patches=common_patches,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         baseline_source,
         focal=patch_id,
+        extra_patches=common_patches,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
@@ -382,6 +385,7 @@ def _build_standard_campaign_scaffold(
     patch_id: str,
     base_ref: str,
     baseline_source: str,
+    common_patches: tuple[str, ...],
     hip_path: Path,
     amdgpu_targets: str,
     workdir: Path,
@@ -398,6 +402,7 @@ def _build_standard_campaign_scaffold(
         patch_id=patch_id,
         base_ref=base_ref,
         baseline_source=baseline_source,
+        common_patches=common_patches,
         worktree_root=worktree_root,
     )
     base_revision = sources.base_revision

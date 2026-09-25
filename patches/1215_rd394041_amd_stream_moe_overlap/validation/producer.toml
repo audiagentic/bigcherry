@@ -1,13 +1,11 @@
 schema = 1
 
-# PRBE34: control = bigcherry, subject = bigcherry + 1215 + 1216 (1216 as a
-# declared subject companion: 1215's overlap is only safe with its guard).
-# Own server and bench pairs; the standard scaffold cannot express the unit.
+# PRBE34: standard scaffold pair (control = baseline, subject = + 1215).
 [producer.rd3942]
 entrypoint = "producer.py"
 callable = "run"
 trace_probe = "skip"
-standard_campaign = "skip"
+standard_campaign = "run"
 correctness_evidence_cli = "forbid"
 performance_benchmark_cli = "forbid"
 artifacts = [

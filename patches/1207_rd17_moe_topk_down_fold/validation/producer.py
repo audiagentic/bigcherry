@@ -104,8 +104,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         mechanism="trace_marker",
         detail=f"marker {_MARKER_REGEX!r} subject_hit={subject_hit} control_hit={control_hit}",
     )
-    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT_NAME, text=subject_text)
-    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT_NAME, text=control_text)
+    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT_NAME, text=support.compact_log(subject_text))
+    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT_NAME, text=support.compact_log(control_text))
 
     lanes = {}
     for role, lane_model in (("positive", model), ("control", control_model)):

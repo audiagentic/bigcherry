@@ -278,3 +278,14 @@ def device_env(ctx: vp.ProducerContext, device: vp.ProducerDeviceContext, extra:
         env.pop(key, None)
     env.update(extra or {})
     return env
+
+
+def compact_log(text: str, *, head_lines: int = 400) -> str:
+    """A bounded trace artifact: the log's head (startup, device attestation)
+    plus every BIGCHERRY_ line. Attested servers run at --verbosity 5 and log
+    each full-vocabulary response, so whole logs run to gigabytes."""
+    lines = text.splitlines()
+    markers = [line for line in lines[head_lines:] if "BIGCHERRY_" in line]
+    omitted = len(lines) - head_lines - len(markers)
+    tail = [f"... [{omitted} lines omitted; BIGCHERRY_ lines kept] ..."] if omitted > 0 else []
+    return "\n".join(lines[:head_lines] + tail + markers) + "\n"
