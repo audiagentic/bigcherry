@@ -17,11 +17,14 @@ while read -r line; do
     set -- $line
     model=$BC_MODEL
     hip=$BC_HIP_PATH
+    vis=""
     # Optional leading tokens, in any order: MODEL=<gguf> HIP=<rocm prefix>
+    # VIS=<HIP_VISIBLE_DEVICES> (multi-GPU jobs)
     while :; do
         case "$1" in
             MODEL=*) model=${1#MODEL=}; shift ;;
             HIP=*) hip=${1#HIP=}; shift ;;
+            VIS=*) vis=${1#VIS=}; shift ;;
             *) break ;;
         esac
     done
@@ -31,6 +34,7 @@ while read -r line; do
         echo "skip $run (finished)"; continue
     fi
     echo "start $run $(date -Is)"
+    if [ -n "$vis" ]; then export HIP_VISIBLE_DEVICES=$vis; else unset HIP_VISIBLE_DEVICES; fi
     BC_MODEL=$model BC_HIP_PATH=$hip bash "$here/run_campaign.sh" "$@" > "$log" 2>&1 < /dev/null
     # Attested llama-servers run at --verbosity 5 and log every full-vocab
     # response (~1.5 GB per arm); keep the head (startup, device attestation,
