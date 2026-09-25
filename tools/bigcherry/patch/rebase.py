@@ -595,6 +595,11 @@ def _probe_file_patch(
     elif target.is_file():
         text = target.read_text(encoding="utf-8")
         texts[patch.path] = text
+    elif patch.create:
+        # A file the patch introduces starts from nothing; its \A anchor
+        # probes against the empty text exactly as apply_patch() does.
+        text = ""
+        texts[patch.path] = text
     else:
         for edit in patch.edits:
             probe.edits.append(

@@ -64,6 +64,14 @@ def _offsets(lines: list[str]) -> list[int]:
 
 
 def generate_edits(old_text: str, new_text: str, *, path: str, prefix: str) -> list[Edit]:
+    if old_text == "":
+        # A file the patch creates (FilePatch(create=True)): one insertion at
+        # the start of the empty text, guarded by its first distinctive line.
+        guard = next((re.escape(line.strip()) for line in new_text.splitlines() if len(line.strip()) >= 12), None)
+        if guard is None:
+            raise PortDiffError("created file has no distinctive line to guard on")
+        return [Edit(id=f"{prefix}-01", anchor=r"\A", text=new_text, mode="insert_after", guard=guard,
+                     rationale=f"{prefix}: create {path}", max_span_lines=1)]
     language = csource.language_for(path)
     old_lines = old_text.splitlines(keepends=True)
     new_lines = new_text.splitlines(keepends=True)
@@ -137,7 +145,8 @@ def verify(old_text: str, new_text: str, patch: FilePatch) -> None:
         root = Path(tmp)
         target = root / patch.path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(old_text, encoding="utf-8", newline="")
+        if not patch.create:
+            target.write_text(old_text, encoding="utf-8", newline="")
         first = apply_patch(patch, root)
         if not first.ok:
             raise PortDiffError(f"generated edits fail to apply: {[r.detail for r in first.failed]}")
@@ -149,14 +158,17 @@ def verify(old_text: str, new_text: str, patch: FilePatch) -> None:
 
 
 def render(patch: FilePatch, variable: str) -> str:
-    lines = [f"{variable} = FilePatch(", f"    path={patch.path!r},", f"    description={patch.description!r},", "    edits=("]
+    lines = [f"{variable} = FilePatch(", f"    path={patch.path!r},", f"    description={patch.description!r},"]
+    if patch.create:
+        lines.append("    create=True,")
+    lines.append("    edits=(")
     for edit in patch.edits:
         lines += [
             "        Edit(",
             f"            id={edit.id!r},",
             f"            anchor={edit.anchor!r},",
             f"            text={edit.text!r},",
-            '            mode="replace",',
+            f"            mode={edit.mode!r},",
             f"            guard={edit.guard!r},",
             f"            rationale={edit.rationale!r},",
             f"            max_span_lines={edit.max_span_lines},",

@@ -67,7 +67,14 @@ def port(repo: Path, commit: str, upstream_repo: Path, upstream_ref: str, prefix
     for index, line in enumerate(changes.splitlines(), start=1):
         status, path = line.split("\t", 1)
         if status == "A":
-            ports.append(FilePort(path, "added"))
+            if _show(upstream_repo, upstream_ref, path) is not None:
+                ports.append(FilePort(path, "conflict", detail="added by the commit but present upstream"))
+                continue
+            content = _show(repo, commit, path) or ""
+            edits = port_diff.generate_edits("", content, path=path, prefix=f"{prefix}-{index:02d}")
+            patch = FilePatch(path=path, edits=tuple(edits), description=f"{prefix}: create {path}", create=True)
+            port_diff.verify("", content, patch)
+            ports.append(FilePort(path, "added", patch))
             continue
         if status == "D":
             ports.append(FilePort(path, "deleted"))
