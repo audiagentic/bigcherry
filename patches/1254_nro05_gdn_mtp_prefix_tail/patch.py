@@ -36,4 +36,31 @@ GDN_MTP_PREFIX = FilePatch(
     ),
 )
 
-PATCHES = [GDN_MTP_PREFIX]
+# Correctness surface: GATED_DELTA_NET cases that reach the prefix/tail split
+# (S_v 128, K > 1, n > K + 64) plus the boundary that must stay sequential.
+TESTS = FilePatch(
+    path='tests/test-backend-ops.cpp',
+    description='MTP prefix/tail GATED_DELTA_NET cases and tolerance (on top of 1253)',
+    edits=(
+        Edit(
+            id='nro05-tests-01',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(head_size\\ ==\\ 128\\ \\&\\&\\ !kda\\ \\&\\&\\ K\\ ==\\ 1\\ \\&\\&\\ n_seq_tokens\\ >\\ 1\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ char\\ \\*\\ env\\ \\ =\\ getenv\\(\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ char\\ \\*\\ envb\\ =\\ getenv\\(\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\);\\\n',
+            text='        // the sequential/keep-rs/KDA cases stay tight (they run the fp32 kernels).\n        if (head_size == 128 && !kda && K == 1 && n_seq_tokens > 1) {\n            const char * env  = getenv("GGML_CUDA_GDN_CHUNKED");\n            const char * envb = getenv("GGML_CUDA_GDN_CHUNKED_BF16");\n            if ((env == nullptr || strcmp(env, "0") != 0) &&\n                (envb == nullptr || strcmp(envb, "0") != 0)) {\n                return 5e-2;\n            }\n        }\n        // 1254 (NRO05): MTP prefill (K > 1, one sequence, n > K + 64) runs the\n        // same bf16 chunked kernel on the first n - K tokens, then the fp32\n        // sequential kernel on the last K, so it gets the same relaxed gate.\n        if (head_size == 128 && !kda && K > 1 && n_seqs == 1 && n_seq_tokens > K + 64) {\n            const char * env  = getenv("GGML_CUDA_GDN_CHUNKED");\n            const char * envb = getenv("GGML_CUDA_GDN_CHUNKED_BF16");\n',
+            mode='replace',
+            guard='//\\ 1254\\ \\(NRO05\\):\\ MTP\\ prefill\\ \\(K\\ >\\ 1,\\ one\\ sequence,\\ n\\ >\\ K\\ \\+\\ 64\\)\\ runs\\ the',
+            rationale='nro05-tests hunk 1: upstream lines 4741-4740 -> result lines 4741-4751',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro05-tests-02',
+            anchor='\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 64,\\ 4,\\ 2,\\ 1,\\ true,\\ \\ true\\)\\);\\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 16,\\ 4,\\ 2,\\ 1,\\ true,\\ \\ true\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 64,\\ \\ 64,\\ 1\\)\\);\\\n',
+            text='    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 64, 4, 2, 1, true,  true));\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 16, 4, 2, 1, true,  true));\n    // 1254 (NRO05) MTP prefill: S_v 128, one sequence, K snapshot slots; the\n    // prefix/tail split engages for n > K + 64 (69 with K = 5 stays sequential).\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 100, 1, 1, false, false, 5));\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 200, 1, 1, false, false, 5));\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 130, 1, 1, false, false, 2));\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128,  70, 1, 1, false, false, 5));\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128,  69, 1, 1, false, false, 5));\n    // chunked path: multi-chunk and non-multiple-of-chunk-size (chunk_size=64 GDN, 16 KDA)\n    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 64,  64, 1));\n',
+            mode='replace',
+            guard='//\\ 1254\\ \\(NRO05\\)\\ MTP\\ prefill:\\ S_v\\ 128,\\ one\\ sequence,\\ K\\ snapshot\\ slots;\\ the',
+            rationale='nro05-tests hunk 2: upstream lines 11102-11101 -> result lines 11113-11119',
+            max_span_lines=6,
+        ),
+    ),
+)
+
+PATCHES = [GDN_MTP_PREFIX, TESTS]
