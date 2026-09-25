@@ -1162,3 +1162,82 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.NRO04-GDN-CHUNKED-BF16]
+title = "PNRO04: BF16/WMMA chunked GatedDeltaNet prefill on RDNA3/RDNA4"
+
+[contract.NRO04-GDN-CHUNKED-BF16.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["4169fbbf50d24beb6d269a2350e7f780b85369e6"]
+atomic_part = "1253_nro04_gfx1100_bf16_chunked_gdn (BF16 kernels + K==1 prefill dispatch; fp32 chunked kernel excluded)"
+
+[contract.NRO04-GDN-CHUNKED-BF16.target]
+kind = "ssm_gdn"
+
+[contract.NRO04-GDN-CHUNKED-BF16.hypothesis]
+expected_effect = "both"
+rationale = "K==1 GatedDeltaNet prefill (S_v=128) on RDNA3/RDNA4 runs as a BF16/WMMA chunked recurrence instead of the sequential kernel. Near-lossless, not bit-exact: correctness is the test-backend-ops GATED_DELTA_NET backend reference; prefill of a hybrid GDN model is the positive lane, decode (n_tokens=1, never chunked) the control."
+
+[contract.NRO04-GDN-CHUNKED-BF16.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO04-GDN-CHUNKED-BF16.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["gdn_prefill"]
+
+[contract.NRO04-GDN-CHUNKED-BF16.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO04-GDN-CHUNKED-BF16.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO04-GDN-CHUNKED-BF16.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO05-GDN-MTP-PREFIX]
+title = "PNRO05: chunked GDN on the MTP prefill prefix, sequential snapshot tail"
+prerequisites = ["NRO04-GDN-CHUNKED-BF16"]
+
+[contract.NRO05-GDN-MTP-PREFIX.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["4169fbbf50d24beb6d269a2350e7f780b85369e6"]
+atomic_part = "1254_nro05_gdn_mtp_prefix_tail (MTP prefix dispatch on top of 1253)"
+
+[contract.NRO05-GDN-MTP-PREFIX.target]
+kind = "ssm_gdn"
+
+[contract.NRO05-GDN-MTP-PREFIX.hypothesis]
+expected_effect = "both"
+rationale = "With MTP (K>1) a long single-sequence prefill runs chunked BF16 GDN on the first n_tokens-K tokens and the sequential kernel on the last K, keeping snapshot slots exact. Measured as MTP server throughput on the MTP model; correctness is the backend reference of the MTP path."
+
+[contract.NRO05-GDN-MTP-PREFIX.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO05-GDN-MTP-PREFIX.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.NRO05-GDN-MTP-PREFIX.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.NRO05-GDN-MTP-PREFIX.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO05-GDN-MTP-PREFIX.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
