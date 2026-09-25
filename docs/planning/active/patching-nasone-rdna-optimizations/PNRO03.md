@@ -75,6 +75,8 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1252 only has an env flag and a bare cudaMemcpyPeerAsync helper -- no probe/scratch/selector/fallback/marker exists. Added the required peer-probe/enable step in ggml_cuda_ar_pipeline_init(), source/destination stream+scratch ownership, the actual P2P-selection gate, a required activation marker (none existed), and removed the stale 1001 requires composition.
 
+2026-09-25: IMPLEMENTED (commits bd2fc067/45219a0d). patches/1252 is now a real port of 7c5bb5cb adapted to this item's invariants: per-direction streams/events on the SOURCE device, set_device(source) before every cudaMemcpyPeerAsync, no issuer, ggml_cuda_ar_p2p_probe (4 sizes x 2 directions x 2 passes, byte compare) gates GGML_CUDA_AR_P2P. Marker patch=1252_nro03. Rebase CLEAN at b11126. Next: build + hardware arms per TESTING.md (P2P on vs off, same binary, 2x gfx1100).
+
 ## Change Log
 
 - 2026-09-09T10:52:12.743676+00:00 (created-by): Created by capability-rebaseline-v3
@@ -94,3 +96,6 @@ REAL FINDING 2026-09-12: found the identical compile-breaking anchor bug fixed i
 - 2026-09-12T03:48:28.669796+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:08.096956+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-24T04:48:10.768762+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- chg_20260925_111345_real-ports-of-the-nasone-allre_4524
+- 2026-09-25T11:13:54.348499+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-25T11:14:00.720422+00:00 (updated-by): Updated: section:notes
