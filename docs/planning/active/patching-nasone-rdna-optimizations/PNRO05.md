@@ -78,6 +78,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-26: hardware finding -- backend_reference (full-vocab logprobs on an MTP llama-server) cannot work: with draft-mtp the server returns completion_probabilities only for tokens the main sampler produced, not for accepted draft tokens (gfx1201 s1: 2 rows for 32 tokens). Earlier crashes (multi-row and row-less events) were parser issues, fixed in 39beb84e/ec62fcdf. Remaining 1254 serial-2 sessions disabled. Correctness method must be redesigned: e.g. temperature-0 generated-token identity under MTP (content/tokens stream) plus full-vocab comparison with MTP off on the prefix-tail workload, or a direct GDN op-level backend reference (test-backend-ops) for the prefix/tail shapes. Needs a design decision before rerun.
 
+2026-09-26: correctness redesigned (owner-approved recommendation). backend_reference now requires BOTH (1) test-backend-ops GATED_DELTA_NET on both arms within the CPU-reference tolerance, with 1254 adding S_v 128 / K>1 / n>K+64 prefix-tail cases (n=100,200 K=5; n=130 K=2; boundary n=70/69 K=5) and the same 5e-2 bf16 gate 1253 uses, control = baseline + 1253; and (2) greedy temperature-0 MTP (draft-n-max 4) generation of 64 tokens with identical token ids on both arms. Activation requires the marker in the subject's test-backend-ops output and server log. Serial-2 1254 jobs to be re-enabled on the new producer.
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
@@ -97,3 +99,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-25T04:23:42.505423+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T04:23:45.397057+00:00 (state-transition): State: pending → in_progress
 - 2026-09-25T14:14:50.103255+00:00 (updated-by): Updated: section:notes
+- 2026-09-25T19:42:52.791498+00:00 (updated-by): Updated: section:notes

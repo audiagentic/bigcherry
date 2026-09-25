@@ -4,10 +4,17 @@ NRO05-GDN-MTP-PREFIX on gfx1100/gfx1201. 1254 requires 1253, so the run uses
 ``--common-patches 1253_nro04_gfx1100_bf16_chunked_gdn``: control = baseline
 + 1253, subject = + 1254 (standard scaffold pair).
 
-- correctness (``backend_reference``): full-vocabulary llama-server logprobs
-  with MTP enabled (draft-n-max 4) on a long prompt (> K + 64 tokens, so the
-  prefix path engages) agree within 5e-4 and generate the same tokens.
-- activation: the subject server log carries the MTP-prefix marker.
+- correctness (``backend_reference``), both required:
+  1. test-backend-ops GATED_DELTA_NET (1253's cases plus 1254's S_v 128,
+     K > 1, n > K + 64 prefix/tail cases and the n = K + 64 boundary) within
+     the CPU-reference tolerance on both arms (control = baseline + 1253);
+  2. greedy (temperature 0) generation with MTP on (draft-n-max 4) over a
+     prompt long enough to take the prefix path yields the same token ids on
+     both arms. A per-step full-vocabulary comparison is not possible under
+     MTP: llama-server returns probabilities only for main-sampler tokens,
+     not for accepted draft tokens.
+- activation: the subject's test-backend-ops output AND its server log carry
+  the MTP-prefix marker; the control's carry none.
 - performance (positive): paired MTP speculative decode on llama-server
   (prompts from --producer-corpus), metric mtp_wall_tps, 10 pairs.
 - controls: paired llama-bench tg128 (no MTP, the prefix path never runs).
@@ -21,7 +28,6 @@ from pathlib import Path
 
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment import execution as experiment_execution
-from bigcherry.experiment import full_vocab
 from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
 from bigcherry.patch.activation import ActivationEvidence
@@ -34,8 +40,9 @@ _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1254_nro05 path=gdn_mtp_prefix_bf16"
 _MTP_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--spec-type", "draft-mtp", "--spec-draft-n-max", "4")
 _MTP_LANE_ARGS = ("--parallel", "1", "--metrics", "-ngl", "99", "--fit", "off",
                   "--spec-type", "draft-mtp", "--spec-draft-n-max", "4")
-_TOLERANCE = 0.0005
-_N_PREDICT = 32
+_N_PREDICT = 64
+_COMMON = ("1253_nro04_gfx1100_bf16_chunked_gdn",)
+_TBO_ARGS = ("-o", "GATED_DELTA_NET", "-b", "ROCm0")
 # Long enough that n_tokens > K + 64 for the prefill batch.
 _PROMPT = " ".join(["The recurrent state of a gated delta network carries information across tokens."] * 24)
 _ROUNDS = 10
@@ -60,38 +67,56 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     if not all(isinstance(b, Path) and b.is_file() for arm in binaries.values() for b in arm.values()):
         raise vp.ValidationProducerError(f"{_LABEL}: standard scaffold llama-server/llama-bench pair is missing")
 
-    logs = ctx.workdir / "logs"
-    control_log = logs / "nro05-control-server.log"
-    subject_log = logs / "nro05-subject-server.log"
-
-    def _factory(role, log_path):
-        return support.server_session_factory(
-            ctx, device=device, architecture=architecture, binary=binaries[role]["llama-server"], model=model,
-            log_path=log_path, env={"BIGCHERRY_PATCH_TRACE": "1"}, server_args=_MTP_ARGS,
-        )
-
-    try:
-        comparison = full_vocab.compare_servers(
-            control_session=_factory("control", control_log),
-            subject_session=_factory("subject", subject_log),
-            prompt=_PROMPT, n_predict=_N_PREDICT, tolerance=_TOLERANCE,
-            scratch_dir=ctx.workdir / "scratch" / "nro05",
-        )
-    except full_vocab.FullVocabError as exc:
-        raise vp.ValidationProducerError(f"{_LABEL} backend_reference: {exc}") from exc
-    backend_reference = experiment_contract.CorrectnessResult(
-        check="backend_reference", passed=comparison.passed, detail=f"MTP draft-n-max 4: {comparison.detail}")
-
-    subject_text = subject_log.read_text(encoding="utf-8", errors="replace")
-    control_text = control_log.read_text(encoding="utf-8", errors="replace")
     marker = re.compile(_MARKER_REGEX)
-    subject_hit = marker.search(subject_text) is not None
-    control_hit = marker.search(control_text) is not None
+
+    # ---- 1. kernel reference: test-backend-ops on both arms ----
+    pair = ctx.runtime.build_pair(
+        targets=_ARCHITECTURES, primary_target="test-backend-ops", common_extra_patches=_COMMON,
+        baseline_source="bigcherry", require_parity=True,
+    )
+    tbo_env = support.device_env(ctx, device, {"BIGCHERRY_PATCH_TRACE": "1"})
+    tbo = {role: support.run_backend_ops(binary, _TBO_ARGS, tbo_env, label=_LABEL)
+           for role, binary in (("control", pair.control_bin), ("subject", pair.subject_bin))}
+    tbo_ok = all(rc == 0 and total > 0 and ok == total for _, rc, ok, total in tbo.values())
+
+    # ---- 2. greedy MTP token identity on llama-server ----
+    logs = ctx.workdir / "logs"
+    server_logs = {"control": logs / "nro05-control-server.log", "subject": logs / "nro05-subject-server.log"}
+    tokens: dict[str, list[int]] = {}
+    for role in ("control", "subject"):
+        factory = support.server_session_factory(
+            ctx, device=device, architecture=architecture, binary=binaries[role]["llama-server"], model=model,
+            log_path=server_logs[role], env={"BIGCHERRY_PATCH_TRACE": "1"}, server_args=_MTP_ARGS,
+        )
+        with factory() as session:
+            reply = session.post_json("/completion", {
+                "prompt": _PROMPT, "n_predict": _N_PREDICT, "temperature": 0.0, "top_k": 1, "seed": 42,
+                "cache_prompt": False, "ignore_eos": True, "return_tokens": True,
+            })
+        ids = reply.get("tokens")
+        if not isinstance(ids, list) or len(ids) != _N_PREDICT:
+            raise vp.ValidationProducerError(f"{_LABEL}: {role} server returned {len(ids) if isinstance(ids, list) else ids!r} tokens")
+        tokens[role] = ids
+    first_diff = next((i for i, (a, b) in enumerate(zip(tokens["control"], tokens["subject"])) if a != b), None)
+    greedy_ok = first_diff is None
+
+    passed = tbo_ok and greedy_ok
+    detail = (
+        f"GATED_DELTA_NET test-backend-ops control {tbo['control'][2]}/{tbo['control'][3]}, "
+        f"subject {tbo['subject'][2]}/{tbo['subject'][3]}; greedy MTP (draft-n-max 4) {_N_PREDICT} tokens "
+        + ("identical" if greedy_ok else f"diverge at step {first_diff}")
+    )
+    backend_reference = experiment_contract.CorrectnessResult(check="backend_reference", passed=passed, detail=detail)
+
+    subject_text = server_logs["subject"].read_text(encoding="utf-8", errors="replace")
+    control_text = server_logs["control"].read_text(encoding="utf-8", errors="replace")
+    subject_hit = marker.search(subject_text) is not None and marker.search(tbo["subject"][0]) is not None
+    control_hit = marker.search(control_text) is not None or marker.search(tbo["control"][0]) is not None
     trigger_hit = subject_hit and not control_hit
     activation = ActivationEvidence(
         status="executed" if trigger_hit else ("unobservable" if subject_hit else "not_executed"),
         mechanism="trace_marker",
-        detail=f"marker {_MARKER_REGEX!r} subject_hit={subject_hit} control_hit={control_hit}",
+        detail=f"marker {_MARKER_REGEX!r} subject(tbo+server)={subject_hit} control(any)={control_hit}",
     )
     subject_trace_ref = ctx.runtime.write_text_artifact(
         name=_SUBJECT_TRACE_ARTIFACT_NAME, text=support.compact_log(subject_text))
@@ -132,14 +157,18 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     )
     ctx.runtime.write_artifact(
         name=_ARTIFACT_NAME,
-        payload={"schema_version": 1, "check": "backend_reference", "passed": comparison.passed,
-                 "detail": backend_reference.detail, "model_identity": identity, "comparison": comparison.document()},
+        payload={"schema_version": 1, "check": "backend_reference", "passed": passed,
+                 "detail": backend_reference.detail, "model_identity": identity,
+                 "test_backend_ops": {role: {"returncode": rc, "passed": ok, "total": total}
+                                      for role, (_, rc, ok, total) in tbo.items()},
+                 "greedy_mtp": {"n_predict": _N_PREDICT, "first_divergence": first_diff, "tokens": tokens},
+                 "build_identities": {r: dict(i) for r, i in pair.validation_build_identities.items()}},
     )
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
         lane_id="nro05-server-subject", role="positive", positive_hit=trigger_hit)
     return vp.ProducerResult(
-        correctness={"disposition": "passed" if comparison.passed else "failed",
-                     "mechanism": "nro05-mtp-full-vocab-backend-reference", "detail": backend_reference.detail},
+        correctness={"disposition": "passed" if passed else "failed",
+                     "mechanism": "nro05-tbo-and-greedy-mtp-identity", "detail": backend_reference.detail},
         validation_build_identities=ctx.validation_build_identities,
         activation_evidence=activation,
         performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
