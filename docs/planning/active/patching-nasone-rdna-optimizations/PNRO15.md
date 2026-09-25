@@ -2,7 +2,7 @@
 id: PNRO15
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:53:17.647208+00:00'
 breadth: ''
 skill: advanced
@@ -74,6 +74,8 @@ Successor key: patching-nasone-rdna-optimizations-nro16
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: corrected the dispatch point -- ggml_cuda_mul_mat_vec_q() quantizes src1 itself (mmvq.cu:1506) before calling mul_mat_vec_q_switch_fusion, so branching only at switch_fusion cannot eliminate the Q8_1 launch; moved the MMVDQ routing to before that quantize call. Resolved the previously-unverified dequant helper names to the real functions dequantize_q4_K/q5_K/q6_K (dequantize.cuh:187/215/246). Removed fused GLU cases from this package's validation scope per the item's own stated later-scope framing.
 
+2026-09-25 (10b172eb): new patch 1262_nro15_mmvdq ports nasone/AMD 67051293 with port_diff: mmvdq.cu/.cuh folded into mmvq.cu/.cuh, plain ne11==1 Q4_K/Q5_K/Q6_K routing in ggml_cuda_mul_mat before MMVQ; fused SwiGLU route and RDNA3.5 graph-opt default excluded (per plan). Default on RDNA3.5 only; opt-in GGML_CUDA_DQ_MMV=1 elsewhere. Contract NRO15-MMVDQ-KQUANT-DECODE + producer (K-quant test-backend-ops backend_reference, tg128 positive / pp512 control with mmvdq enabled on both arms). Queued in Brutus serial lane (r-1262-*).
+
 ## Change Log
 
 - 2026-09-09T10:53:17.647208+00:00 (created-by): Created by capability-rebaseline-v3
@@ -91,3 +93,5 @@ Successor key: patching-nasone-rdna-optimizations-nro16
 - 2026-09-24T02:30:42.710721+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
 - 2026-09-24T02:31:05.751575+00:00 (updated-by): Updated: section:effort_risk, section:notes
 - 2026-09-24T04:51:41.710365+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
+- 2026-09-25T04:23:48.292344+00:00 (updated-by): Updated: section:notes
+- 2026-09-25T04:23:51.206471+00:00 (state-transition): State: pending → in_progress
