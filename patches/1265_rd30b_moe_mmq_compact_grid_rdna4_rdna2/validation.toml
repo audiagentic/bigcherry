@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject llama-bench prefill under BIGCHERRY_PATCH_TRACE=1 took the compact grid.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1237_rd30 path=moe_mmq_compact_grid"
+
+# bit_identical: 256-expert MUL_MAT_ID test-backend-ops outputs, 1237 vs none.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# pp512 positive lane (improvement_no_regression_v1, 10 rounds).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 control lane on the same MoE model (max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

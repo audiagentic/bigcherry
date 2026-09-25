@@ -992,6 +992,47 @@ min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2]
+title = "RD30B: 1237's compact MoE MMQ launch grid on gfx1201 and gfx1030"
+prerequisites = []
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["f8864197a4e2d07321bfb85466e3ba071e020aa9"]
+atomic_part = "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 (gate extension of 1237 to RDNA4/RDNA2)"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.target]
+kind = "kernel_family"
+family = "mmq"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.hypothesis]
+family = "mmq"
+expected_effect = "performance"
+rationale = "1237's compact MoE MMQ grid is host-side launch geometry only (no change to kernel arithmetic, accumulation order or routing) and measured +7.3..7.4% pp512 on gfx1100. The same empty per-expert tile launches exist on RDNA4 and RDNA2, so admitting them should reduce launch/dispatch work during MoE prefill with byte-identical output. Control = validated BC (includes 1237, gated off on these archs); subject = + 1265. MoE decode is the negative control (never takes the MMQ compact path)."
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.scope]
+backend = "hip"
+architectures = ["gfx1201", "gfx1030"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_prefill"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.correctness]
+bit_identical = "required"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
 [contract.PNRO09-META-VIEW-HEADROOM]
 title = "PNRO09: Meta compute-container view headroom"
 prerequisites = []
