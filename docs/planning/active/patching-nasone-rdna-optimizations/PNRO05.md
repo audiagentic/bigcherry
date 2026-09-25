@@ -76,6 +76,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-25 (d423644d): 1254 ports block 02's MTP prefix path on top of 1253: for K>1, single sequence, n_tokens > K+64, BF16 chunked GDN on the first n_tokens-K tokens then sequential on the last K (snapshot slots exact); RDNA3/RDNA4 S_v==128 only (fork's fp32 fallback not ported). Marker patch=1254_nro05 path=gdn_mtp_prefix_bf16. Contract NRO05-GDN-MTP-PREFIX added (mtp_verify on qwen35b MoE+MTP). Producer still to write (needs the MTP server lane).
 
+2026-09-26: hardware finding -- backend_reference (full-vocab logprobs on an MTP llama-server) cannot work: with draft-mtp the server returns completion_probabilities only for tokens the main sampler produced, not for accepted draft tokens (gfx1201 s1: 2 rows for 32 tokens). Earlier crashes (multi-row and row-less events) were parser issues, fixed in 39beb84e/ec62fcdf. Remaining 1254 serial-2 sessions disabled. Correctness method must be redesigned: e.g. temperature-0 generated-token identity under MTP (content/tokens stream) plus full-vocab comparison with MTP off on the prefix-tail workload, or a direct GDN op-level backend reference (test-backend-ops) for the prefix/tail shapes. Needs a design decision before rerun.
+
 ## Change Log
 
 - 2026-09-09T10:52:33.316789+00:00 (created-by): Created by capability-rebaseline-v3
@@ -94,3 +96,4 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-24T04:49:16.618864+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-25T04:23:42.505423+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T04:23:45.397057+00:00 (state-transition): State: pending → in_progress
+- 2026-09-25T14:14:50.103255+00:00 (updated-by): Updated: section:notes
