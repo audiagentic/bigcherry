@@ -162,16 +162,24 @@ def tensor_split_preflights(
     }
     full_env = {k: v for k, v in os.environ.items() if k != "ROCR_VISIBLE_DEVICES"}
     full_env.update(env)
+    # The internal HIP AllReduce (not RCCL) carries tensor split at this pin,
+    # so no RCCL binding record exists. The preflight instead runs the same
+    # binary/model/devices under -sm layer, whose "using device ROCmN (...)
+    # (<pci>)" lines name each physical card; that split-mode swap is the
+    # only argument delta and is recorded in the attestation telemetry.
+    preflight_args = tuple("layer" if (prev in ("-sm", "--split-mode") and arg == "tensor") else arg
+                           for prev, arg in zip(("",) + server_args, server_args))
     out: dict[str, Any] = {}
     for arm, binary in binaries.items():
         document, _binding = campaign_benchmark._run_server_attestation_preflight(
-            binary=binary, model=model, extra_args=server_args,
+            binary=binary, model=model, extra_args=preflight_args,
             output=workdir / f"{label}-{arm}-attestation", env=full_env, expected_execution=expected,
         )
         out[arm] = ExecutionAttestation(
             backend=document["backend"],
             devices=tuple(ObservedDevice(d["architecture"], d["locator"]) for d in document["devices"]),
-            telemetry={"attested_by": "rccl-preflight", **document.get("telemetry", {})},
+            telemetry={"attested_by": "layer-split-preflight", "preflight_split_mode": "layer",
+                       **document.get("telemetry", {})},
         )
     return out
 
