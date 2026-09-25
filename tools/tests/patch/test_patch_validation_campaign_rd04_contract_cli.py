@@ -179,6 +179,7 @@ class _FakeScaffold:
             source.mkdir(parents=True, exist_ok=True)
         self.control_idempotent = True
         self.subject_idempotent = True
+        self.validated_patches = ()  # PVPS03: promoted set composed into control
         # The real scaffold builds control/validation-subject with
         # llama-server+llama-bench targets under these bin dirs; the generic
         # path exposes them via ProducerContext.validation_binaries.

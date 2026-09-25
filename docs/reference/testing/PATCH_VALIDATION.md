@@ -298,6 +298,17 @@ and code disagree:
 
 - `tools/bigcherry/patch/validation_campaign.py` builds isolated
   control/validation-subject trees, runs campaign lanes, and writes evidence.
+- **Four arms (PVPS03).** Control is *validated BC*: the baseline source plus
+  every patch in `[patch-set.validated-enhancements]` (the set the production
+  `[source.bigcherry]` ships), excluding the focal patch. Subject is control +
+  the focal patch, so every verdict answers "does this patch help on top of
+  what ships". The scaffold also builds *stock* llama.cpp and *base BC* (the
+  baseline source alone; the same binary as control while the promoted set is
+  empty). After the verdict, a reference ladder
+  (`tools/bigcherry/patch/campaign/ladder.py`) measures llama-bench
+  tg128/pp512 on all four arms in rotated order and writes
+  `campaign/reference-ladder.json`. The ladder is reference evidence only and
+  never changes the verdict.
 - `tools/bigcherry/experiment/` provides paired execution, contract
   aggregation, correctness/resource/trigger gates, and promotion evaluation.
 - `tools/bigcherry/patch/validation.py` validates adapter packages and
