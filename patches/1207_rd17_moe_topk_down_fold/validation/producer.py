@@ -34,7 +34,7 @@ from bigcherry.patch.activation import ActivationEvidence
 _LABEL = "rd17"
 _CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 _CONTRACT_ID = "RD17-MOE-TOPK-DOWN-FOLD"
-_MODEL_REF = "tierM-gptoss20b-q6k"
+_MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1207_rd17 path=moe_topk_down_fold"
 _TOLERANCE = 0.0005
