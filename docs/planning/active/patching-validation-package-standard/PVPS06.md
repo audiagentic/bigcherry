@@ -59,3 +59,8 @@ No legacy fallback: the old absolute-all-vocab path remains only as the bit-iden
 ## Change Log
 
 - 2026-09-25T23:16:32.446729+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260925_232233_correctness-checks-for-approxi_1217
+- 2026-09-25T23:22:36.566063+00:00 (updated-by): Updated: section:ledger-events

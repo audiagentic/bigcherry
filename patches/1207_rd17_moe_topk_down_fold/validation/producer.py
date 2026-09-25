@@ -5,7 +5,7 @@ down-projection MMVQ epilogue. Control = baseline, subject = baseline + 1207,
 both from the standard scaffold (llama-server + llama-bench).
 
 - correctness (``backend_reference``): full-vocabulary llama-server logprobs
-  for a fixed temperature-0 request on the MoE model agree within 5e-4 with
+  for a fixed temperature-0 request on the MoE model meet full_vocab.NEAR_LOSSLESS with
   identical generated tokens (the epilogue scale can change FP rounding).
 - activation: the subject server log carries the 1207 marker; control none.
 - performance (positive): paired llama-bench tg128 on the MoE model
@@ -37,7 +37,6 @@ _CONTRACT_ID = "RD17-MOE-TOPK-DOWN-FOLD"
 _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1207_rd17 path=moe_topk_down_fold"
-_TOLERANCE = 0.0005
 _N_PREDICT = 64
 _PROMPT = "Explain in one concise sentence how a router picks experts for each token."
 _ROUNDS = 10
@@ -84,7 +83,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             subject_session=_factory("subject", subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
-            tolerance=_TOLERANCE,
+            criterion=full_vocab.NEAR_LOSSLESS,
             scratch_dir=ctx.workdir / "scratch" / "rd17",
         )
     except full_vocab.FullVocabError as exc:

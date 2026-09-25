@@ -89,7 +89,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             subject_session=_factory(binaries["subject"]["llama-server"], subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
-            tolerance=0.0,
+            criterion=full_vocab.BIT_IDENTICAL,
             scratch_dir=ctx.workdir / "scratch" / "rd3942",
         )
     except full_vocab.FullVocabError as exc:

@@ -4,7 +4,7 @@ PRBE41-SSM-CONV-CHANNELS-MAJOR: control = baseline, subject = baseline + 1263
 (standard scaffold llama-server + llama-bench pair).
 
 - correctness (``backend_reference``): full-vocabulary llama-server logprobs
-  on the hybrid GDN model within 5e-4 and identical generated tokens (the
+  on the hybrid GDN model meet full_vocab.NEAR_LOSSLESS with identical tokens (the
   graph now feeds SSM_CONV channels-major instead of a transposed copy).
 - activation: the subject server log carries the channels-major marker.
 - performance: pp512 prefill on the hybrid GDN model (positive; the removed
@@ -31,7 +31,6 @@ _CONTRACT_ID = "PRBE41-SSM-CONV-CHANNELS-MAJOR"
 _MODEL_REF = "tierA-qwen4b-q6k"
 _CONTROL_MODEL_REF = "tierM-gptoss20b-q6k"
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major"
-_TOLERANCE = 0.0005
 _N_PREDICT = 64
 _PROMPT = " ".join(["A gated delta network mixes a short causal convolution with a recurrent state."] * 8)
 _ROUNDS = 10
@@ -78,7 +77,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             subject_session=_factory("subject", subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
-            tolerance=_TOLERANCE,
+            criterion=full_vocab.NEAR_LOSSLESS,
             scratch_dir=ctx.workdir / "scratch" / "prbe41",
         )
     except full_vocab.FullVocabError as exc:

@@ -13,7 +13,7 @@ regions exist and the guard can engage.
 
 - correctness (``backend_reference``): a fixed temperature-0 request on
   llama-server gives the same generated tokens and full-vocabulary logprobs
-  within 5e-4 on both arms (fusion placement may change FP rounding, so bit
+  meeting full_vocab.NEAR_LOSSLESS (fusion placement may change FP rounding, so bit
   identity is not required).
 - activation: the subject server log carries the 1216 marker (the fusion
   horizon was capped at a join node); the control log cannot.
@@ -43,7 +43,6 @@ _CONTRACT_ID = "RD43-CONCURRENT-JOIN-FUSION-GUARD"
 _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _GRAPH_OPT_ENV = {"GGML_CUDA_GRAPH_OPT": "1"}
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1216_rd43 path=join_fusion_cap"
-_TOLERANCE = 0.0005
 _N_PREDICT = 64
 _PROMPT = (
     "Explain in one concise sentence why a shared expert can run beside the "
@@ -89,7 +88,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             subject_session=_factory(binaries["subject"]["llama-server"], subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
-            tolerance=_TOLERANCE,
+            criterion=full_vocab.NEAR_LOSSLESS,
             scratch_dir=ctx.workdir / "scratch" / "rd43",
         )
     except full_vocab.FullVocabError as exc:

@@ -38,7 +38,7 @@ EXPECTED = {
 # merge-gate run, root-caused and fixed the same day, then marked
 # completed -- it now lives under docs/planning/completed/ rather than
 # this PLANS (active) directory, so it is correctly absent from this glob.
-EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 18)}
+EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 19)}  # PNRO18 (2026-09-26): 1252 P2P probe hardening
 
 
 def _manifest(patch_id: str) -> dict:
@@ -62,7 +62,7 @@ def _load_patch_module(patch_id):
 
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
-        for i in range(1, 18):
+        for i in range(1, 19):
             item = PLANS / f"PNRO{i:02d}.md"
             if not item.is_file():
                 item = Path("docs/planning/completed/patching-nasone-rdna-optimizations") / f"PNRO{i:02d}.md"
