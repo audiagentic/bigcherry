@@ -19,8 +19,8 @@ PATCHES = ROOT / "patches"
 PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizations"
 
 EXPECTED = {
-    "1250_nro01_allreduce_q8_wire": ("NRO01", []),
-    "1251_nro02_allreduce_fused_residual": ("NRO02", ["1250_nro01_allreduce_q8_wire"]),
+    # e06dcf63 is one atomic commit: NRO02's fusion ships inside 1250.
+    "1250_nro01_allreduce_q8_wire": (["NRO01", "NRO02"], ["1252_nro03_allreduce_p2p_provider"]),
     "1252_nro03_allreduce_p2p_provider": ("NRO03", []),
     "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", []),
     "1254_nro05_gdn_mtp_prefix_tail": ("NRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
@@ -99,7 +99,7 @@ class NroPackageShapeTests(unittest.TestCase):
             self.assertEqual(manifest["id"], patch_id)
             self.assertEqual(manifest["order"], int(patch_id.split("_", 1)[0]))
             self.assertEqual(manifest["state"], "untested")
-            self.assertEqual(manifest["plan-ids"], [plan_id])
+            self.assertEqual(manifest["plan-ids"], plan_id if isinstance(plan_id, list) else [plan_id])
             self.assertEqual(manifest["requires"], requires)
 
     def test_summary_headers_match_manifest(self):
@@ -107,7 +107,7 @@ class NroPackageShapeTests(unittest.TestCase):
             text = (PATCHES / patch_id / "SUMMARY.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith(f"# {patch_id}\n\n"))
             self.assertIn("**Status:** untested", text)
-            self.assertIn(f"**Plan item:** {plan_id}", text)
+            self.assertIn(f"**Plan item:** {'/'.join(plan_id) if isinstance(plan_id, list) else plan_id}", text)
 
     def test_patch_modules_are_valid_python_and_export_patches(self):
         for patch_id in EXPECTED:
@@ -130,26 +130,21 @@ class NroPackageShapeTests(unittest.TestCase):
 
 
 class NroSafetyInvariantTests(unittest.TestCase):
-    def test_q8_wire_is_disabled_by_default_and_unwired(self):
+    def test_allreduce_modes_are_opt_in_and_traced(self):
         source = _patch_source("1250_nro01_allreduce_q8_wire")
-        self.assertIn("BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0", source)
-        self.assertIn("not dispatched until NRO01", source)
-        self.assertIn("i < ne ? src[i] : 0.0f", source)
-
-    def test_residual_child_is_kernel_only(self):
-        source = _patch_source("1251_nro02_allreduce_fused_residual")
-        self.assertIn("bigcherry_nro02_add_residual_kernel", source)
-        self.assertIn("bigcherry_nro02_q8_0_add_residual_kernel", source)
-        self.assertNotIn("skip_node", source)
-
-    def test_p2p_draft_encodes_source_current_push(self):
-        source = _patch_source("1252_nro03_allreduce_p2p_provider")
-        set_pos = source.index("ggml_cuda_set_device(src_device)")
-        copy_pos = source.index("cudaMemcpyPeerAsync", set_pos)
-        self.assertLess(set_pos, copy_pos)
+        self.assertIn("return ggml_cuda_ar_wire_mode::legacy", source)
+        self.assertIn('getenv("GGML_CUDA_AR_FUSED_RESIDUAL") != nullptr', source)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro01", source)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro02", source)
         self.assertNotIn("p2p_issuer", source)
-        self.assertIn("GGML_CUDA_AR_P2P", source)
-        self.assertIn(", 0) != 0", source)
+
+    def test_p2p_port_pushes_source_current_after_a_content_probe(self):
+        source = _patch_source("1252_nro03_allreduce_p2p_provider")
+        self.assertNotIn("p2p_issuer", source.split("PROVENANCE")[1])
+        self.assertIn("ggml_cuda_set_device(p->devices[direction]);  // source-current push", source)
+        self.assertIn("p->p2p_enabled = ggml_cuda_ar_p2p_probe(p);", source)
+        self.assertIn("memcmp(readback.data(), pattern.data(), bytes) == 0", source)
+        self.assertIn('ggml_cuda_ar_env_u64("GGML_CUDA_AR_P2P", 0) != 0', source)
 
     def test_bf16_gdn_port_is_rdna_s128_with_sequential_fallback(self):
         """PNRO04: exact port of nasone block 02's BF16 route; the fp32 chunked

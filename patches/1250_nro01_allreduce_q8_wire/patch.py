@@ -1,126 +1,591 @@
-"""NRO01 draft: Q8_0 wire primitives for the internal AllReduce.
+"""PNRO01 + PNRO02: Q8_0/BF16/F32 AllReduce wire modes, fused residual add, tracing.
 
-This is intentionally a compile-time/scaffolding draft, not a live selector.
-It creates the source primitives required for a correctness fixture before a
-lossy wire format can become reachable. NRO02 owns residual fusion.
+Port of nasone32/llama.cpp-RDNA3-7900xtx-opt e06dcf63 (one atomic commit:
+the Q8 wire and the residual fusion share the finish kernels, so NRO02 is
+carried here rather than in a separate package), generated with
+bigcherry.patch.port_diff and verified byte-exact and idempotent. Stacked on
+1252 exactly as in the fork's history; the fork's P2P enqueue loop keeps
+1252's source-current push.
+
+All behaviour is opt-in:
+  * GGML_CUDA_AR_WIRE = f32 | bf16 | q8_0 (unset = legacy BF16 threshold);
+    GGML_CUDA_AR_Q8_THRESHOLD overrides the 1 MiB Q8 threshold;
+  * GGML_CUDA_AR_FUSED_RESIDUAL set = meta backend fuses the following ADD
+    into the AllReduce finish (ggml_backend_comm_allreduce_fused_add);
+  * GGML_CUDA_AR_PROFILE / -DGGML_HIP_ROCTX=ON = stats and ROCTx ranges.
+BIGCHERRY_PATCH_TRACE logs BIGCHERRY_PATCH_HIT patch=1250_nro01 (Q8 wire)
+and patch=1250_nro02 (fused residual executed).
 """
-
-import re as _re
 
 from bigcherry.patcher import Edit, FilePatch
 
-DRAFT_SOURCE_CONTEXT = {
-    "repo": "https://github.com/nasone32/llama.cpp-RDNA3-7900xtx-opt",
-    "commit": "e06dcf6300718227cb8cfda9e61fb12ccb693418",
-    "title": "ggml: add Q8 wire, residual fusion, and AllReduce tracing",
-    "pin": "b10705",
-    "scope": "Q8_0 wire primitives only; residual fusion split to NRO02",
+PROVENANCE = {
+    "source-id": "nasone-rdna-optimizations",
+    "plan-item": "NRO01",
+    "fork-commit": "e06dcf6300718227cb8cfda9e61fb12ccb693418",
+    "port-mode": "port_diff-generated on top of 1252; activation markers added",
 }
 
-_Q8_KERNELS = r'''
-
-// BIGCHERRY_NRO01_Q8_SCAFFOLD_BEGIN
-// Draft only: these kernels are deliberately not dispatched until NRO01's
-// synthetic numerical fixture and tolerance policy are committed.
-static __global__ void bigcherry_nro01_quantize_q8_0_kernel(
-        const float * __restrict__ src,
-        block_q8_0 * __restrict__ dst,
-        int64_t ne,
-        int64_t nblocks) {
-    const int lane = threadIdx.x % QK8_0;
-    const int64_t warp = ((int64_t) blockIdx.x * blockDim.x + threadIdx.x) / QK8_0;
-    const int64_t nwarps = ((int64_t) gridDim.x * blockDim.x) / QK8_0;
-    for (int64_t ib = warp; ib < nblocks; ib += nwarps) {
-        const int64_t i = ib * QK8_0 + lane;
-        const float x = i < ne ? src[i] : 0.0f;
-        const float amax = warp_reduce_max<QK8_0>(fabsf(x));
-        const float d = amax / 127.0f;
-        const float id = d != 0.0f ? 1.0f / d : 0.0f;
-        dst[ib].qs[lane] = (int8_t) roundf(x * id);
-        if (lane == 0) {
-            dst[ib].d = d;
-        }
-    }
-}
-
-static __global__ void bigcherry_nro01_q8_0_add_kernel(
-        float * __restrict__ dst,
-        const block_q8_0 * __restrict__ rank0,
-        const block_q8_0 * __restrict__ rank1,
-        int count) {
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const int nt = gridDim.x * blockDim.x;
-    for (int i = tid; i < count; i += nt) {
-        const int ib = i / QK8_0;
-        const int iq = i % QK8_0;
-        dst[i] = (float) rank0[ib].d * (float) rank0[ib].qs[iq]
-               + (float) rank1[ib].d * (float) rank1[ib].qs[iq];
-    }
-}
-// BIGCHERRY_NRO01_Q8_SCAFFOLD_END
-'''
-
-PATCHES = [
-    FilePatch(
-        path="ggml/src/ggml-cuda/allreduce.cu",
-        description="add disabled Q8_0 AllReduce wire primitives and policy state",
-        edits=(
-            Edit(
-                # Real bug found on real hardware (2026-09-12, gfx1201 build
-                # attempt): the anchor previously ended at the `=` sign, mid-
-                # statement -- insert_after splices immediately after the
-                # MATCHED TEXT, not after the enclosing line/statement, so
-                # this corrupted `... DEFAULT =\n<inserted>\n1024 * 1024;`
-                # into unparseable C++. The real source is one line
-                # (`... DEFAULT = 1024 * 1024; // 1 MB`); anchor through the
-                # trailing `;` so the insertion lands after the complete
-                # statement. The `// 1 MB` comment starts after the `;` so
-                # no comment/string-literal noise-stripping concern here.
-                id="q8-threshold-constant",
-                anchor=r"^static constexpr size_t GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT = 1024 \* 1024;",
-                mode="insert_after",
-                text="\n// BigCherry NRO01: 0 keeps the draft Q8 path unreachable until qualified.\nstatic constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;",
-                guard=r"^static constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;$",
-                rationale="anchor through the complete single-line statement (not just up to '='), so insert_after lands after the full declaration instead of splicing mid-expression",
-            ),
-            Edit(
-                id="q8-kernel-primitives",
-                anchor=r"^struct ggml_cuda_ar_pipeline \{$",
-                mode="insert_before",
-                text=_Q8_KERNELS + "\n",
-                guard=r"BIGCHERRY_NRO01_Q8_SCAFFOLD_BEGIN",
-                rationale="insert Q8 primitives immediately before the provider state structure using a code anchor",
-            ),
-            Edit(
-                id="q8-pipeline-field",
-                anchor=r"^    size_t   bf16_threshold;",
-                mode="insert_after",
-                text="\n    size_t   nro01_q8_threshold; // draft: 0 disables Q8 wire dispatch",
-                guard=r"nro01_q8_threshold",
-                rationale="keep Q8 threshold in the provider instance alongside BF16 threshold",
-            ),
-            Edit(
-                # Same real bug class as q8-threshold-constant above: the
-                # anchor ended at `=`, mid-statement, corrupting
-                # `p->bf16_threshold   =\n<inserted>\nggml_cuda_ar_env_u64(...)`.
-                # The real source is one line:
-                # `p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);`
-                # -- it contains a string literal, which the patcher blanks
-                # before matching, so the LITERAL-placeholder technique
-                # (patches/1222, patches/1225) is used: write the anchor
-                # template with a placeholder token in place of the string,
-                # then replace the escaped placeholder with a loose
-                # same-line match.
-                id="q8-init-policy",
-                anchor=(
-                    _re.escape('    p->bf16_threshold   = ggml_cuda_ar_env_u64(LITERAL1, 1);')
-                    .replace(_re.escape('LITERAL1'), r'[^\n]*')
-                ),
-                mode="insert_after",
-                text="\n    p->nro01_q8_threshold = ggml_cuda_ar_env_u64(\"GGML_CUDA_AR_Q8_THRESHOLD\", BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT);",
-                guard=r"p->nro01_q8_threshold = ggml_cuda_ar_env_u64",
-                rationale="anchor through the complete single-line assignment (not just up to '='), using the LITERAL-placeholder technique to cross the noise-stripped string literal, so insert_after lands after the full statement instead of splicing mid-call",
-            ),
+PATCH_01 = FilePatch(
+    path='ggml/CMakeLists.txt',
+    description='nro01-q8: ggml/CMakeLists.txt (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-01-01',
+            anchor='option\\(GGML_HIP_MMQ_MFMA\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ MFMA\\ MMA\\ for\\ CDNA\\ in\\ MMQ"\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ON\\)\\\noption\\(GGML_HIP_EXPORT_METRICS\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ kernel\\ perf\\ metrics\\ output"\\ \\ \\ \\ \\ \\ \\ \\ \\ OFF\\)\\\noption\\(GGML_MUSA_GRAPHS\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ use\\ MUSA\\ graph,\\ experimental,\\ unstable"\\ \\ \\ \\ OFF\\)\\\noption\\(GGML_MUSA_MUDNN_COPY\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ muDNN\\ for\\ accelerated\\ copy"\\ \\ \\ \\ \\ \\ \\ \\ \\ OFF\\)\\\n',
+            text='option(GGML_HIP_MMQ_MFMA                    "ggml: enable MFMA MMA for CDNA in MMQ"           ON)\noption(GGML_HIP_EXPORT_METRICS              "ggml: enable kernel perf metrics output"         OFF)\noption(GGML_HIP_ROCTX                       "ggml: enable ROCTx markers for HIP diagnostics"   OFF)\noption(GGML_MUSA_GRAPHS                     "ggml: use MUSA graph, experimental, unstable"    OFF)\noption(GGML_MUSA_MUDNN_COPY                 "ggml: enable muDNN for accelerated copy"         OFF)\n',
+            mode='replace',
+            guard='option\\(GGML_HIP_ROCTX\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ ROCTx\\ markers\\ for\\ HIP\\ diagnostics"\\ \\ \\ OFF\\)',
+            rationale='nro01-q8-01 hunk 1: upstream lines 221-220 -> result lines 221-221',
+            max_span_lines=6,
         ),
     ),
-]
+)
+
+PATCH_02 = FilePatch(
+    path='ggml/include/ggml-backend.h',
+    description='nro01-q8: ggml/include/ggml-backend.h (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-02-01',
+            anchor='\\ \\ \\ \\ typedef\\ void\\ \\ \\ \\(\\*ggml_backend_comm_free_t\\)\\(void\\ \\*\\ comm_ctx\\);\\\n\\ \\ \\ \\ typedef\\ bool\\ \\ \\ \\(\\*ggml_backend_comm_allreduce_tensor_t\\)\\(void\\ \\*\\ comm_ctx,\\ struct\\ ggml_tensor\\ \\*\\*\\ tensors\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='    typedef void   (*ggml_backend_comm_free_t)(void * comm_ctx);\n    typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);\n    typedef bool   (*ggml_backend_comm_allreduce_tensor_fused_add_t)(\n        void * comm_ctx, struct ggml_tensor ** tensors, struct ggml_tensor ** residuals, struct ggml_tensor ** outputs);\n\n    // Split buffer type for tensor parallelism (old)\n',
+            mode='replace',
+            guard='typedef\\ bool\\ \\ \\ \\(\\*ggml_backend_comm_allreduce_tensor_fused_add_t\\)\\(',
+            rationale='nro01-q8-02 hunk 1: upstream lines 211-210 -> result lines 211-212',
+            max_span_lines=6,
+        ),
+    ),
+)
+
+PATCH_03 = FilePatch(
+    path='ggml/src/ggml-backend-meta.cpp',
+    description='nro01-q8: ggml/src/ggml-backend-meta.cpp (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-03-01',
+            anchor='\\ \\ \\ \\ void\\ \\*\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ comm_ctx\\ \\ \\ \\ \\ \\ \\ =\\ nullptr;\\\n\\ \\ \\ \\ ggml_backend_comm_allreduce_tensor_t\\ comm_allreduce\\ =\\ nullptr;\\\n\\\n\\ \\ \\ \\ ggml_backend_meta_context\\(ggml_backend_dev_t\\ meta_dev,\\ const\\ char\\ \\*\\ params\\)\\ \\{\\\n',
+            text='    void *                               comm_ctx       = nullptr;\n    ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;\n    ggml_backend_comm_allreduce_tensor_fused_add_t comm_allreduce_fused_add = nullptr;\n\n    ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {\n',
+            mode='replace',
+            guard='ggml_backend_comm_allreduce_tensor_fused_add_t\\ comm_allreduce_fused_add\\ =\\ nullptr;',
+            rationale='nro01-q8-03 hunk 1: upstream lines 1813-1812 -> result lines 1813-1813',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-03-02',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_get_device\\(simple_backends\\[0\\]\\)\\),\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ GGML_ASSERT\\(comm_allreduce\\ !=\\ nullptr\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\}\\\n',
+            text='                    ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");\n            GGML_ASSERT(comm_allreduce != nullptr);\n            comm_allreduce_fused_add = (ggml_backend_comm_allreduce_tensor_fused_add_t)\n                ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(\n                    ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor_fused_add");\n        }\n    }\n',
+            mode='replace',
+            guard='comm_allreduce_fused_add\\ =\\ \\(ggml_backend_comm_allreduce_tensor_fused_add_t\\)',
+            rationale='nro01-q8-03 hunk 2: upstream lines 1844-1843 -> result lines 1845-1847',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-03-03',
+            anchor='\\\n\\\n\\ \\ \\ \\ for\\ \\(size_t\\ i\\ =\\ 0;\\ i\\ <\\ backend_ctx\\->n_subgraphs;\\ i\\+\\+\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(size_t\\ j\\ =\\ 0;\\ j\\ <\\ n_backends;\\ j\\+\\+\\)\\ \\{\\\n',
+            text='\n\n    int skip_node = -1;\n    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {\n        for (size_t j = 0; j < n_backends; j++) {\n',
+            mode='replace',
+            guard='int\\ skip_node\\ =\\ \\-1;',
+            rationale='nro01-q8-03 hunk 3: upstream lines 2440-2439 -> result lines 2444-2444',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-03-04',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ ggml_status\\ status\\ =\\ ggml_backend_graph_compute_async\\(bcj\\.backend,\\ bcj\\.cgraphs\\[i\\]\\.cgraph_main\\);\\\n',
+            text='            ggml_cgraph * cgraph_compute = bcj.cgraphs[i].cgraph_main;\n            uint32_t flags = 0;\n            if (skip_node >= 0) {\n                GGML_ASSERT(skip_node < cgraph_compute->n_nodes);\n                flags = cgraph_compute->nodes[skip_node]->flags;\n                cgraph_compute->nodes[skip_node]->flags &= ~GGML_TENSOR_FLAG_COMPUTE;\n            }\n            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, cgraph_compute);\n            if (skip_node >= 0) {\n                cgraph_compute->nodes[skip_node]->flags = flags;\n            }\n',
+            mode='replace',
+            guard='ggml_cgraph\\ \\*\\ cgraph_compute\\ =\\ bcj\\.cgraphs\\[i\\]\\.cgraph_main;',
+            rationale='nro01-q8-03 hunk 4: upstream lines 2443-2443 -> result lines 2448-2458',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-03-05',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(n_backends\\ >\\ 1\\ \\&\\&\\ i\\ <\\ backend_ctx\\->n_subgraphs\\ \\-\\ 1\\)\\ \\{\\\n',
+            text='            }\n        }\n        skip_node = -1;\n\n        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {\n',
+            mode='replace',
+            guard='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ skip_node\\ =\\ \\-1;\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(n_backends\\ >\\ 1\\ \\&\\&\\ i\\ <\\ backend_ctx\\->n_subgraphs\\ \\-\\ 1\\)\\ \\{\\\n',
+            rationale='nro01-q8-03 hunk 5: upstream lines 2448-2447 -> result lines 2463-2463',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-03-06',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ backend_allreduce_success\\ =\\ backend_ctx\\->comm_allreduce\\(backend_ctx\\->comm_ctx,\\ nodes\\.data\\(\\)\\);\\\n',
+            text='\n                bool try_fused_add = backend_ctx->comm_allreduce_fused_add != nullptr &&\n                    getenv("GGML_CUDA_AR_FUSED_RESIDUAL") != nullptr;\n                std::vector<ggml_tensor *> residuals;\n                std::vector<ggml_tensor *> outputs;\n                const int i_next = backend_ctx->backend_configs[0].cgraphs[i + 1].offset;\n                int i_add = i_next;\n                if (try_fused_add) {\n                    ggml_tensor * node = cgraph->nodes[i_next - 1];\n                    const int i_next_end = i_next + backend_ctx->backend_configs[0].cgraphs[i + 1].cgraph_main->n_nodes;\n                    while (i_add < i_next_end && cgraph->nodes[i_add]->op == GGML_OP_RESHAPE &&\n                            cgraph->nodes[i_add]->src[0] == node && ggml_node_get_use_count(cgraph, i_add - 1) == 1) {\n                        node = cgraph->nodes[i_add++];\n                    }\n                    try_fused_add = i_add < i_next_end;\n                    ggml_tensor * add = try_fused_add ? cgraph->nodes[i_add] : nullptr;\n                    try_fused_add = try_fused_add && add->op == GGML_OP_ADD && ggml_node_get_use_count(cgraph, i_add - 1) == 1 &&\n                        ggml_are_same_shape(node, add) && node->type == GGML_TYPE_F32 && add->type == GGML_TYPE_F32 &&\n                        (add->src[0] == node || add->src[1] == node);\n                    if (try_fused_add) {\n                        ggml_tensor * residual = add->src[0] == node ? add->src[1] : add->src[0];\n                        try_fused_add = residual != nullptr && residual->type == GGML_TYPE_F32 &&\n                            ggml_are_same_shape(node, residual) &&\n                            ggml_backend_meta_get_split_state(residual, false).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&\n                            ggml_backend_meta_get_split_state(add, false).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED;\n                    }\n                }\n                if (try_fused_add) {\n                    residuals.reserve(n_backends);\n                    outputs.reserve(n_backends);\n                    for (size_t j = 0; j < n_backends; j++) {\n                        auto & bcj = backend_ctx->backend_configs[j];\n                        ggml_cgraph * next = bcj.cgraphs[i + 1].cgraph_main;\n                        const int i_add_next = i_add - i_next;\n                        ggml_tensor * add = next->nodes[i_add_next];\n                        ggml_tensor * reduced = i_add_next == 0 ? nodes[j] : next->nodes[i_add_next - 1];\n                        ggml_tensor * residual = add->src[0] == reduced ? add->src[1] : add->src[0];\n                        if (add->op != GGML_OP_ADD || residual == nullptr ||\n                            !(add->src[0] == reduced || add->src[1] == reduced)) {\n                            try_fused_add = false;\n                            break;\n                        }\n                        residuals.push_back(residual);\n                        outputs.push_back(add);\n                    }\n                }\n                if (try_fused_add) {\n                    backend_allreduce_success = backend_ctx->comm_allreduce_fused_add(\n                        backend_ctx->comm_ctx, nodes.data(), residuals.data(), outputs.data());\n                    skip_node = backend_allreduce_success ? i_add - i_next : -1;\n                }\n                if (!backend_allreduce_success) {\n                    backend_allreduce_success = backend_ctx->comm_allreduce(backend_ctx->comm_ctx, nodes.data());\n                }\n',
+            mode='replace',
+            guard='bool\\ try_fused_add\\ =\\ backend_ctx\\->comm_allreduce_fused_add\\ !=\\ nullptr\\ \\&\\&',
+            rationale='nro01-q8-03 hunk 6: upstream lines 2459-2459 -> result lines 2475-2528',
+            max_span_lines=3,
+        ),
+    ),
+)
+
+PATCH_04 = FilePatch(
+    path='ggml/src/ggml-cuda/allreduce.cu',
+    description='nro01-q8: ggml/src/ggml-cuda/allreduce.cu (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-04-01',
+            anchor='\\\n\\#include\\ <algorithm>\\\n\\#include\\ <cstdlib>\\\n\\#include\\ <cstring>\\\n',
+            text='\n#include <algorithm>\n#include <cinttypes>\n#include <cstdio>\n#include <cstdlib>\n#include <cstring>\n',
+            mode='replace',
+            guard='\\#include\\ <cinttypes>',
+            rationale='nro01-q8-04 hunk 1: upstream lines 9-8 -> result lines 9-10',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-02',
+            anchor='\\#include\\ <mutex>\\\n\\#include\\ <vector>\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='#include <mutex>\n#include <vector>\n\n#if defined(GGML_USE_HIP) && defined(GGML_HIP_ROCTX)\n#include <rocprofiler-sdk-roctx/roctx.h>\n#endif\n\nclass ggml_cuda_ar_profile_range {\npublic:\n    ggml_cuda_ar_profile_range(bool enabled, const char * label) : active(enabled) {\n#if defined(GGML_USE_HIP) && defined(GGML_HIP_ROCTX)\n        if (active) {\n            roctxRangePushA(label);\n        }\n#else\n        (void) label;\n        active = false;\n#endif\n    }\n\n    ~ggml_cuda_ar_profile_range() {\n#if defined(GGML_USE_HIP) && defined(GGML_HIP_ROCTX)\n        if (active) {\n            roctxRangePop();\n        }\n#endif\n    }\n\nprivate:\n    bool active;\n};\n\n// ---------------------------------------------------------------------------\n',
+            mode='replace',
+            guard='\\#if\\ defined\\(GGML_USE_HIP\\)\\ \\&\\&\\ defined\\(GGML_HIP_ROCTX\\)',
+            rationale='nro01-q8-04 hunk 2: upstream lines 14-13 -> result lines 16-44',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-03',
+            anchor='\\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='}\n\ntemplate <typename T_dst, typename T_src>\nstatic __global__ void ggml_cuda_ar_add_residual_kernel(\n        T_dst       * __restrict__ dst,\n        const T_src * __restrict__ src,\n        const T_dst * __restrict__ residual,\n        int count) {\n    const int tid = blockIdx.x * blockDim.x + threadIdx.x;\n    const int nt  = gridDim.x * blockDim.x;\n    for (int i = tid; i < count; i += nt) {\n        const T_src d_low = ggml_cuda_cast<T_src>(dst[i]);\n        const float sum = ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(src[i]);\n        dst[i] = ggml_cuda_cast<T_dst>(sum + ggml_cuda_cast<float>(residual[i]));\n    }\n}\n\nstatic __global__ void ggml_cuda_ar_quantize_q8_0_kernel(\n        const float * __restrict__ src,\n        block_q8_0 * __restrict__ dst,\n        int64_t ne,\n        int64_t nblocks) {\n    const int lane = threadIdx.x % QK8_0;\n    const int64_t warp = ((int64_t) blockIdx.x * blockDim.x + threadIdx.x) / QK8_0;\n    const int64_t nwarps = ((int64_t) gridDim.x * blockDim.x) / QK8_0;\n\n    for (int64_t ib = warp; ib < nblocks; ib += nwarps) {\n        const int64_t i = ib * QK8_0 + lane;\n        const float x = i < ne ? src[i] : 0.0f;\n        const float amax = warp_reduce_max<QK8_0>(fabsf(x));\n        const float d = amax / 127.0f;\n        const float id = d != 0.0f ? 1.0f / d : 0.0f;\n\n        dst[ib].qs[lane] = (int8_t) roundf(x * id);\n        if (lane == 0) {\n            dst[ib].d = d;\n        }\n    }\n}\n\nstatic __global__ void ggml_cuda_ar_q8_0_add_kernel(\n        float * __restrict__ dst,\n        const block_q8_0 * __restrict__ rank0,\n        const block_q8_0 * __restrict__ rank1,\n        int count) {\n    const int tid = blockIdx.x * blockDim.x + threadIdx.x;\n    const int nt = gridDim.x * blockDim.x;\n    for (int i = tid; i < count; i += nt) {\n        const int ib = i / QK8_0;\n        const int iq = i % QK8_0;\n        const float a = (float) rank0[ib].d * (float) rank0[ib].qs[iq];\n        const float b = (float) rank1[ib].d * (float) rank1[ib].qs[iq];\n        dst[i] = a + b;\n    }\n}\n\nstatic __global__ void ggml_cuda_ar_q8_0_add_residual_kernel(\n        float * __restrict__ dst,\n        const block_q8_0 * __restrict__ rank0,\n        const block_q8_0 * __restrict__ rank1,\n        const float * __restrict__ residual,\n        int count) {\n    const int tid = blockIdx.x * blockDim.x + threadIdx.x;\n    const int nt = gridDim.x * blockDim.x;\n    for (int i = tid; i < count; i += nt) {\n        const int ib = i / QK8_0;\n        const int iq = i % QK8_0;\n        const float a = (float) rank0[ib].d * (float) rank0[ib].qs[iq];\n        const float b = (float) rank1[ib].d * (float) rank1[ib].qs[iq];\n        dst[i] = a + b + residual[i];\n    }\n}\n\ntemplate <typename T_src, typename T_dst>\nstatic void ggml_cuda_ar_launch_finish(\n        const T_src *, T_dst * dst, const T_src * peer, const T_dst * residual, int, int64_t ne, cudaStream_t stream) {\n    const int block_size = 256;\n    int n_blocks = (int) ((ne + block_size - 1) / block_size);\n    n_blocks = std::min(n_blocks, 1024);\n    if (residual) {\n        ggml_cuda_ar_add_residual_kernel<T_dst, T_src><<<n_blocks, block_size, 0, stream>>>(dst, peer, residual, (int) ne);\n    } else {\n        ggml_cuda_ar_add_kernel<T_dst, T_src><<<n_blocks, block_size, 0, stream>>>(dst, peer, (int) ne);\n    }\n}\n\nstatic void ggml_cuda_ar_launch_finish(\n        const block_q8_0 * local, float * dst, const block_q8_0 * peer, const float * residual,\n        int rank, int64_t ne, cudaStream_t stream) {\n    const block_q8_0 * rank0 = rank == 0 ? local : peer;\n    const block_q8_0 * rank1 = rank == 0 ? peer : local;\n    const int block_size = 256;\n    int n_blocks = (int) ((ne + block_size - 1) / block_size);\n    n_blocks = std::min(n_blocks, 1024);\n    if (residual) {\n        ggml_cuda_ar_q8_0_add_residual_kernel<<<n_blocks, block_size, 0, stream>>>(dst, rank0, rank1, residual, (int) ne);\n    } else {\n        ggml_cuda_ar_q8_0_add_kernel<<<n_blocks, block_size, 0, stream>>>(dst, rank0, rank1, (int) ne);\n    }\n}\n\n// ---------------------------------------------------------------------------\n// Pipeline structure\n',
+            mode='replace',
+            guard='static\\ __global__\\ void\\ ggml_cuda_ar_add_residual_kernel\\(',
+            rationale='nro01-q8-04 hunk 3: upstream lines 226-225 -> result lines 257-355',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-04',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\nstatic\\ constexpr\\ int\\ GGML_CUDA_AR_POOL_SIZE\\ =\\ 2;\\\n\\\n',
+            text='// lockstep guarantees the two GPUs are at most one AR (or chunk) apart, so\n// slot[N%2] is always safe to reuse -- peer has already consumed slot[N%2]\n// from AR N-2 by the time we get to AR N.  Slot reuse waits for ev.ker before\n// the new AR overwrites staging memory or records a new event generation.\nstatic constexpr int GGML_CUDA_AR_POOL_SIZE = 2;\n\n',
+            mode='replace',
+            guard='//\\ from\\ AR\\ N\\-2\\ by\\ the\\ time\\ we\\ get\\ to\\ AR\\ N\\.\\ \\ Slot\\ reuse\\ waits\\ for\\ ev\\.ker\\ before',
+            rationale='nro01-q8-04 hunk 4: upstream lines 233-235 -> result lines 363-364',
+            max_span_lines=9,
+        ),
+        Edit(
+            id='nro01-q8-04-05',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\nstatic\\ constexpr\\ size_t\\ GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT\\ =\\ 1024\\ \\*\\ 1024;\\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='// kernel path.  Override via GGML_CUDA_AR_COPY_THRESHOLD.\nstatic constexpr size_t GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT = 1024 * 1024; // 1 MB\nstatic constexpr size_t GGML_CUDA_AR_Q8_THRESHOLD_DEFAULT = 1024 * 1024; // 1 MB logical F32 input\n// Per-call CE chunk-size heuristic: chunk_bytes = clamp(nbytes / 4, MIN, MAX).\n// The /4 keeps ~4 chunks in flight at any moment (good D2H/H2D overlap with\n',
+            mode='replace',
+            guard='static\\ constexpr\\ size_t\\ GGML_CUDA_AR_Q8_THRESHOLD_DEFAULT\\ =\\ 1024\\ \\*\\ 1024;\\ //\\ 1\\ MB\\ logical\\ F32\\ input',
+            rationale='nro01-q8-04 hunk 5: upstream lines 249-248 -> result lines 378-378',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-06',
+            anchor='\\ \\ \\ \\ cudaEvent_t\\ h2d\\ =\\ nullptr;\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ cudaEvent_t\\ ker\\ =\\ nullptr;\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='    cudaEvent_t h2d = nullptr;  // copy-engine H2Ds complete\n    cudaEvent_t ker = nullptr;  // AllReduce kernel complete\n};\n\nenum class ggml_cuda_ar_wire_mode {\n    legacy,\n    f32,\n    bf16,\n    q8_0,\n};\n\ntemplate <typename T>\nstruct ggml_cuda_ar_wire_traits {\n    static constexpr int elems_per_unit = 1;\n    static constexpr bool is_q8_0 = false;\n    static constexpr const char * finish_marker = "AR add enqueue";\n\n    static size_t units_for_elems(int64_t ne) {\n        return (size_t) ne;\n    }\n};\n\ntemplate <>\nstruct ggml_cuda_ar_wire_traits<block_q8_0> {\n    static constexpr int elems_per_unit = QK8_0;\n    static constexpr bool is_q8_0 = true;\n    static constexpr const char * finish_marker = "AR Q8_0 dequant-add enqueue";\n\n    static size_t units_for_elems(int64_t ne) {\n        return ((size_t) ne + QK8_0 - 1) / QK8_0;\n    }\n',
+            mode='replace',
+            guard='enum\\ class\\ ggml_cuda_ar_wire_mode\\ \\{',
+            rationale='nro01-q8-04 hunk 6: upstream lines 266-267 -> result lines 396-426',
+            max_span_lines=4,
+        ),
+        Edit(
+            id='nro01-q8-04-07',
+            anchor='\\ \\ \\ \\ bool\\ \\ \\ \\ \\ p2p_enabled;\\\n\\ \\ \\ \\ uint64_t\\ call_count;\\\n',
+            text='    size_t   q8_threshold;\n    ggml_cuda_ar_wire_mode wire_mode;\n    bool     async_slots;\n    bool     p2p_enabled;\n    uint64_t call_count;\n    bool     profile_enabled;\n    bool     report_at_shutdown;\n\n    struct {\n        uint64_t logical_calls;\n        uint64_t logical_bytes;\n        uint64_t wire_bytes;\n        uint64_t bf16_calls;\n        uint64_t q8_calls;\n        uint64_t q8_blocks;\n        uint64_t q8_tail_calls;\n        uint64_t small_calls;\n        uint64_t small_bytes;\n        uint64_t small_chunks;\n        uint64_t host_calls;\n        uint64_t host_bytes;\n        uint64_t host_slices;\n        uint64_t p2p_calls;\n        uint64_t p2p_bytes;\n        uint64_t p2p_slices;\n        uint64_t d2h_bytes;\n        uint64_t h2d_bytes;\n        uint64_t peer_copy_bytes;\n        uint64_t conversion_launches;\n        uint64_t add_launches;\n        uint64_t q8_finish_launches;\n        uint64_t fused_residual_calls;\n    } stats;\n',
+            mode='replace',
+            guard='size_t\\ \\ \\ q8_threshold;',
+            rationale='nro01-q8-04 hunk 7: upstream lines 313-314 -> result lines 472-504',
+            max_span_lines=4,
+        ),
+        Edit(
+            id='nro01-q8-04-08',
+            anchor='\\}\\\n\\\nstruct\\ ggml_cuda_ar_slot_info\\ \\{\\\n\\ \\ \\ \\ int\\ slot;\\\n',
+            text='}\n\nstatic ggml_cuda_ar_wire_mode ggml_cuda_ar_wire_mode_from_env() {\n    const char * value = getenv("GGML_CUDA_AR_WIRE");\n    if (value == nullptr || value[0] == \'\\0\') {\n        return ggml_cuda_ar_wire_mode::legacy;\n    }\n    if (strcmp(value, "f32") == 0) {\n        return ggml_cuda_ar_wire_mode::f32;\n    }\n    if (strcmp(value, "bf16") == 0) {\n        return ggml_cuda_ar_wire_mode::bf16;\n    }\n    if (strcmp(value, "q8_0") == 0) {\n        return ggml_cuda_ar_wire_mode::q8_0;\n    }\n\n    GGML_LOG_WARN("%s: unknown GGML_CUDA_AR_WIRE=%s; using legacy BF16 threshold behavior\\n", __func__, value);\n    return ggml_cuda_ar_wire_mode::legacy;\n}\n\nstruct ggml_cuda_ar_slot_info {\n    int slot;\n',
+            mode='replace',
+            guard='static\\ ggml_cuda_ar_wire_mode\\ ggml_cuda_ar_wire_mode_from_env\\(\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 8: upstream lines 364-363 -> result lines 554-572',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-09',
+            anchor='\\};\\\n\\\nstatic\\ ggml_cuda_ar_slot_info\\ ggml_cuda_ar_acquire_slot\\(ggml_cuda_ar_pipeline\\ \\*\\ p\\)\\ \\{\\\n',
+            text='    bool reused;\n};\n\nstatic ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * p, bool synchronize = true) {\n',
+            mode='replace',
+            guard='bool\\ reused;',
+            rationale='nro01-q8-04 hunk 9: upstream lines 367-369 -> result lines 576-579',
+            max_span_lines=5,
+        ),
+        Edit(
+            id='nro01-q8-04-10',
+            anchor='\\ \\ \\ \\ if\\ \\(pool_lapped\\)\\ \\{\\\n',
+            text='    if (pool_lapped && synchronize) {\n',
+            mode='replace',
+            guard='if\\ \\(pool_lapped\\ \\&\\&\\ synchronize\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 10: upstream lines 374-374 -> result lines 584-584',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-11',
+            anchor='\\ \\ \\ \\ return\\ \\{\\ slot,\\ \\(int\\)\\ p\\->call_count\\ \\};\\\n',
+            text='    return { slot, (int) p->call_count, pool_lapped };\n',
+            mode='replace',
+            guard='return\\ \\{\\ slot,\\ \\(int\\)\\ p\\->call_count,\\ pool_lapped\\ \\};',
+            rationale='nro01-q8-04 hunk 11: upstream lines 381-381 -> result lines 591-591',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-12',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ p\\->bf16_threshold\\ \\ \\ =\\ ggml_cuda_ar_env_u64\\(\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ,\\ 1\\);\\\n\\ \\ \\ \\ for\\ \\(size_t\\ i\\ =\\ 0;\\ i\\ <\\ n_devices;\\ \\+\\+i\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ p\\->devices\\[i\\]\\ =\\ devices\\[i\\];\\\n',
+            text='    // byte threshold to opt out for small tensors.\n    p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);\n    p->q8_threshold     = ggml_cuda_ar_env_u64("GGML_CUDA_AR_Q8_THRESHOLD", GGML_CUDA_AR_Q8_THRESHOLD_DEFAULT);\n    p->wire_mode        = ggml_cuda_ar_wire_mode_from_env();\n    p->async_slots      = ggml_cuda_ar_env_u64("GGML_CUDA_AR_ASYNC_SLOTS", 0) != 0;\n    p->profile_enabled  = ggml_cuda_ar_env_u64("GGML_CUDA_AR_PROFILE", 0) != 0;\n    for (size_t i = 0; i < n_devices; ++i) {\n        p->devices[i] = devices[i];\n',
+            mode='replace',
+            guard='p\\->q8_threshold\\ \\ \\ \\ \\ =\\ ggml_cuda_ar_env_u64\\("GGML_CUDA_AR_Q8_THRESHOLD",\\ GGML_CUDA_AR_Q8_THRESHOLD_DEFAULT\\);',
+            rationale='nro01-q8-04 hunk 12: upstream lines 491-490 -> result lines 701-704',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-13',
+            anchor='\\ \\ \\ \\ GGML_LOG_INFO\\(\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ __func__,\\ n_devices,\\ p\\->buf_bytes\\ >>\\ 10,\\ p\\->copy_bytes\\ >>\\ 20,\\ p\\->p2p_enabled\\ \\?\\ \\ \\ \\ \\ \\ :\\ \\ \\ \\ \\ \\ \\);\\\n',
+            text='    p->report_at_shutdown = true;\n    GGML_LOG_INFO("%s: initialized AllReduce pipeline: %zu GPUs, "\n                   "%zu KB chunked kernel staging + %zu MB copy-engine staging per GPU, async slots %s, P2P %s\\n",\n                   __func__, n_devices, p->buf_bytes >> 10, p->copy_bytes >> 20,\n                   p->async_slots ? "on" : "off", p->p2p_enabled ? "on" : "off");\n',
+            mode='replace',
+            guard='p\\->report_at_shutdown\\ =\\ true;',
+            rationale='nro01-q8-04 hunk 13: upstream lines 636-638 -> result lines 850-854',
+            max_span_lines=5,
+        ),
+        Edit(
+            id='nro01-q8-04-14',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ cudaStreamSynchronize\\(p\\->p2p_stream\\[direction\\]\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\}\\\n\\\n',
+            text='            cudaStreamSynchronize(p->p2p_stream[direction]);\n        }\n    }\n\n    if (p->profile_enabled && p->report_at_shutdown) {\n        const auto & s = p->stats;\n        std::fprintf(stderr, "\\nAllReduce profile summary\\n");\n        std::fprintf(stderr, "  logical: calls=%" PRIu64 ", input_bytes_per_rank=%" PRIu64 ", wire_bytes_per_rank=%" PRIu64 ", bf16_calls=%" PRIu64 ", q8_calls=%" PRIu64 "\\n",\n                     s.logical_calls, s.logical_bytes, s.wire_bytes, s.bf16_calls, s.q8_calls);\n        std::fprintf(stderr, "  Q8_0: blocks_per_rank=%" PRIu64 ", tail_calls=%" PRIu64 ", dequant_add_launches=%" PRIu64 "\\n",\n                     s.q8_blocks, s.q8_tail_calls, s.q8_finish_launches);\n        std::fprintf(stderr, "  fused residual: calls=%" PRIu64 "\\n", s.fused_residual_calls);\n        std::fprintf(stderr, "  mapped: calls=%" PRIu64 ", wire_bytes_per_rank=%" PRIu64 ", chunks=%" PRIu64 "\\n",\n                     s.small_calls, s.small_bytes, s.small_chunks);\n        std::fprintf(stderr, "  host: calls=%" PRIu64 ", wire_bytes_per_rank=%" PRIu64 ", slices=%" PRIu64 ", D2H_bytes_all_ranks=%" PRIu64 ", H2D_bytes_all_ranks=%" PRIu64 "\\n",\n                     s.host_calls, s.host_bytes, s.host_slices, s.d2h_bytes, s.h2d_bytes);\n        std::fprintf(stderr, "  P2P: calls=%" PRIu64 ", wire_bytes_per_rank=%" PRIu64 ", slices=%" PRIu64 ", peer_copy_bytes_both_directions=%" PRIu64 "\\n",\n                     s.p2p_calls, s.p2p_bytes, s.p2p_slices, s.peer_copy_bytes);\n        std::fprintf(stderr, "  kernels: conversion_launches=%" PRIu64 ", add_launches=%" PRIu64 " (durations are in the rocprof trace)\\n",\n                     s.conversion_launches, s.add_launches);\n        std::fprintf(stderr, "  GPU1_link_lower_bound_bytes=%" PRIu64 " (divide by measured 6.48 GB/s)\\n\\n",\n                     s.host_calls > 0 ? s.d2h_bytes / 2 + s.h2d_bytes / 2 : s.peer_copy_bytes);\n    }\n\n',
+            mode='replace',
+            guard='if\\ \\(p\\->profile_enabled\\ \\&\\&\\ p\\->report_at_shutdown\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 14: upstream lines 660-659 -> result lines 876-895',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-15',
+            anchor='template\\ <typename\\ T_src,\\ typename\\ T_dst>\\\nstatic\\ bool\\ ggml_cuda_ar_allreduce_p2p_impl\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_pipeline\\ \\*\\ p,\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_t\\ \\ \\ \\ \\ \\ \\ \\ \\*\\ backends,\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_src\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ src_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_dst\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ bool\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ compute\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ int64_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ne,\\\n\\ \\ \\ \\ \\ \\ \\ \\ size_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ nbytes\\)\\ \\{\\\n\\ \\ \\ \\ GGML_ASSERT\\(p\\->n_devices\\ ==\\ 2\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(p\\->p2p_enabled\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(nbytes\\ <=\\ p\\->copy_bytes\\);\\\n',
+            text='template <typename T_src, typename T_dst>\nstatic bool ggml_cuda_ar_allreduce_p2p_impl(\n        ggml_cuda_ar_pipeline * p,\n        ggml_backend_t        * backends,\n        T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],\n        T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],\n        T_dst * const           residual_buf[GGML_CUDA_MAX_DEVICES],\n        const bool              compute[GGML_CUDA_MAX_DEVICES],\n        int64_t                 ne,\n        size_t                  nbytes) {\n    GGML_ASSERT(p->n_devices == 2);\n    GGML_ASSERT(p->p2p_enabled);\n    GGML_ASSERT(nbytes <= p->copy_bytes);\n',
+            mode='replace',
+            guard='T_dst\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ residual_buf\\[GGML_CUDA_MAX_DEVICES\\],',
+            rationale='nro01-q8-04 hunk 15: upstream lines 722-721 -> result lines 958-958',
+            max_span_lines=14,
+        ),
+        Edit(
+            id='nro01-q8-04-16',
+            anchor='\\ \\ \\ \\ const\\ int\\ slot\\ =\\ ggml_cuda_ar_acquire_slot\\(p\\)\\.slot;\\\n\\ \\ \\ \\ ggml_backend_cuda_context\\ \\*\\ cuda_ctx\\[2\\]\\ =\\ \\{\\};\\\n\\\n\\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ 2;\\ \\+\\+i\\)\\ \\{\\\n',
+            text='    const int slot = ggml_cuda_ar_acquire_slot(p).slot;\n    ggml_backend_cuda_context * cuda_ctx[2] = {};\n\n    if (p->profile_enabled) {\n        p->stats.p2p_slices++;\n        p->stats.peer_copy_bytes += 2 * nbytes;\n    }\n\n    for (int i = 0; i < 2; ++i) {\n',
+            mode='replace',
+            guard='if\\ \\(p\\->profile_enabled\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 16: upstream lines 732-731 -> result lines 969-973',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-17',
+            anchor='\\ \\ \\ \\ for\\ \\(int\\ direction\\ =\\ 0;\\ direction\\ <\\ 2;\\ \\+\\+direction\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ destination\\ =\\ 1\\ \\-\\ direction;\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_set_device\\(p\\->devices\\[direction\\]\\);\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(copy_stream\\[direction\\],\\ p\\->ev_pool\\[direction\\]\\[slot\\]\\.app\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(p\\->dev_tmp_kernel_done_valid\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(copy_stream\\[direction\\],\\ p\\->dev_tmp_kernel_done\\[destination\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaMemcpyPeerAsync\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p\\->dev_tmp\\[destination\\],\\ p\\->devices\\[destination\\],\\ src_buf\\[direction\\],\\ p\\->devices\\[direction\\],\\ nbytes,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ copy_stream\\[direction\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->p2p_done\\[direction\\]\\[slot\\],\\ copy_stream\\[direction\\]\\)\\);\\\n\\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ 2;\\ \\+\\+i\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_set_device\\(p\\->devices\\[i\\]\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(cuda_ctx\\[i\\]\\->stream\\(\\),\\ p\\->p2p_done\\[0\\]\\[slot\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(cuda_ctx\\[i\\]\\->stream\\(\\),\\ p\\->p2p_done\\[1\\]\\[slot\\]\\)\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ block_size\\ =\\ 256;\\\n\\ \\ \\ \\ \\ \\ \\ \\ int\\ n_blocks\\ =\\ \\(int\\)\\ \\(\\(ne\\ \\+\\ block_size\\ \\-\\ 1\\)\\ /\\ block_size\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(n_blocks\\ >\\ 1024\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ n_blocks\\ =\\ 1024;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_add_kernel<T_dst,\\ T_src><<<n_blocks,\\ block_size,\\ 0,\\ cuda_ctx\\[i\\]\\->stream\\(\\)>>>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst_buf\\[i\\],\\ reinterpret_cast<const\\ T_src\\ \\*>\\(p\\->dev_tmp\\[i\\]\\),\\ \\(int\\)\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaGetLastError\\(\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->dev_tmp_kernel_done\\[i\\],\\ cuda_ctx\\[i\\]\\->stream\\(\\)\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->ev_pool\\[i\\]\\[slot\\]\\.ker,\\ cuda_ctx\\[i\\]\\->stream\\(\\)\\)\\);\\\n',
+            text='    {\n        ggml_cuda_ar_profile_range range(p->profile_enabled, "AR P2P copies enqueue");\n        for (int direction = 0; direction < 2; ++direction) {\n            const int destination = 1 - direction;\n            ggml_cuda_set_device(p->devices[direction]);  // source-current push\n            CUDA_CHECK(cudaStreamWaitEvent(copy_stream[direction], p->ev_pool[direction][slot].app));\n            if (p->dev_tmp_kernel_done_valid) {\n                CUDA_CHECK(cudaStreamWaitEvent(copy_stream[direction], p->dev_tmp_kernel_done[destination]));\n            }\n            CUDA_CHECK(cudaMemcpyPeerAsync(\n                p->dev_tmp[destination], p->devices[destination], src_buf[direction], p->devices[direction], nbytes,\n                copy_stream[direction]));\n            CUDA_CHECK(cudaEventRecord(p->p2p_done[direction][slot], copy_stream[direction]));\n        }\n    }\n\n    {\n        const char * marker = residual_buf ? "AR Q8_0 dequant-add-residual enqueue" : ggml_cuda_ar_wire_traits<T_src>::finish_marker;\n        ggml_cuda_ar_profile_range range(p->profile_enabled, marker);\n        for (int i = 0; i < 2; ++i) {\n            ggml_cuda_set_device(p->devices[i]);\n            CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->p2p_done[0][slot]));\n            CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->p2p_done[1][slot]));\n\n            ggml_cuda_ar_launch_finish(\n                src_buf[i], dst_buf[i], reinterpret_cast<const T_src *>(p->dev_tmp[i]),\n                residual_buf ? residual_buf[i] : nullptr, i, ne, cuda_ctx[i]->stream());\n            CUDA_CHECK(cudaGetLastError());\n            CUDA_CHECK(cudaEventRecord(p->dev_tmp_kernel_done[i], cuda_ctx[i]->stream()));\n            CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, cuda_ctx[i]->stream()));\n        }\n    }\n    if (p->profile_enabled) {\n        p->stats.add_launches += 2;\n        p->stats.q8_finish_launches += ggml_cuda_ar_wire_traits<T_src>::is_q8_0 ? 2 : 0;\n',
+            mode='replace',
+            guard='ggml_cuda_ar_profile_range\\ range\\(p\\->profile_enabled,\\ "AR\\ P2P\\ copies\\ enqueue"\\);',
+            rationale='nro01-q8-04 hunk 17: upstream lines 751-778 -> result lines 993-1027',
+            max_span_lines=30,
+        ),
+        Edit(
+            id='nro01-q8-04-18',
+            anchor='template\\ <typename\\ T_src,\\ typename\\ T_dst>\\\nstatic\\ bool\\ ggml_cuda_ar_allreduce_copy_impl\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_pipeline\\ \\*\\ p,\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_t\\ \\ \\ \\ \\ \\ \\ \\ \\*\\ backends,\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_src\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ src_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_dst\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ bool\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ compute\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ int64_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ne,\\\n\\ \\ \\ \\ \\ \\ \\ \\ size_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ nbytes\\)\\ \\{\\\n\\ \\ \\ \\ GGML_ASSERT\\(p\\->n_devices\\ ==\\ 2\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(nbytes\\ <=\\ p\\->copy_bytes\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(ne\\ <=\\ std::numeric_limits<int>::max\\(\\)\\);\\\n',
+            text='template <typename T_src, typename T_dst>\nstatic bool ggml_cuda_ar_allreduce_copy_impl(\n        ggml_cuda_ar_pipeline * p,\n        ggml_backend_t        * backends,\n        T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],\n        T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],\n        T_dst * const           residual_buf[GGML_CUDA_MAX_DEVICES],\n        const bool              compute[GGML_CUDA_MAX_DEVICES],\n        int64_t                 ne,\n        size_t                  nbytes) {\n    GGML_ASSERT(p->n_devices == 2);\n    GGML_ASSERT(nbytes <= p->copy_bytes);\n    GGML_ASSERT(ne <= std::numeric_limits<int>::max());\n',
+            mode='replace',
+            guard='template\\ <typename\\ T_src,\\ typename\\ T_dst>\\\nstatic\\ bool\\ ggml_cuda_ar_allreduce_copy_impl\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_pipeline\\ \\*\\ p,\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_t\\ \\ \\ \\ \\ \\ \\ \\ \\*\\ backends,\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_src\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ src_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_dst\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ T_dst\\ \\*\\ const\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ residual_buf\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ bool\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ compute\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ int64_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ne,\\\n\\ \\ \\ \\ \\ \\ \\ \\ size_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ nbytes\\)\\ \\{\\\n\\ \\ \\ \\ GGML_ASSERT\\(p\\->n_devices\\ ==\\ 2\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(nbytes\\ <=\\ p\\->copy_bytes\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(ne\\ <=\\ std::numeric_limits<int>::max\\(\\)\\);\\\n',
+            rationale='nro01-q8-04 hunk 18: upstream lines 791-790 -> result lines 1040-1040',
+            max_span_lines=14,
+        ),
+        Edit(
+            id='nro01-q8-04-19',
+            anchor='\\ \\ \\ \\ GGML_ASSERT\\(chunk_bytes\\ >\\ 0\\);\\\n\\\n\\ \\ \\ \\ const\\ int\\ slot\\ =\\ ggml_cuda_ar_acquire_slot\\(p\\)\\.slot;\\\n\\ \\ \\ \\ const\\ size_t\\ copy_chunks\\ =\\ \\(nbytes\\ \\+\\ chunk_bytes\\ \\-\\ 1\\)\\ /\\ chunk_bytes;\\\n\\ \\ \\ \\ GGML_ASSERT\\(copy_chunks\\ <=\\ GGML_CUDA_AR_COPY_MAX_CHUNKS\\);\\\n',
+            text='    GGML_ASSERT(chunk_bytes > 0);\n\n    const auto slot_info = ggml_cuda_ar_acquire_slot(p, !p->async_slots);\n    const int slot = slot_info.slot;\n    const size_t copy_chunks = (nbytes + chunk_bytes - 1) / chunk_bytes;\n    GGML_ASSERT(copy_chunks <= GGML_CUDA_AR_COPY_MAX_CHUNKS);\n',
+            mode='replace',
+            guard='const\\ auto\\ slot_info\\ =\\ ggml_cuda_ar_acquire_slot\\(p,\\ !p\\->async_slots\\);',
+            rationale='nro01-q8-04 hunk 19: upstream lines 801-801 -> result lines 1051-1052',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-20',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ 2;\\ \\+\\+i\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_set_device\\(p\\->devices\\[i\\]\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ cuda_ctx\\[i\\]\\ =\\ static_cast<ggml_backend_cuda_context\\ \\*>\\(backends\\[i\\]\\->context\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ GGML_ASSERT\\(cuda_ctx\\[i\\]\\->device\\ ==\\ p\\->devices\\[i\\]\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_wait_for_compute\\(p,\\ cuda_ctx\\[i\\],\\ i,\\ slot\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(p\\->host_large_read_done_valid\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ peer\\ =\\ 1\\ \\-\\ i;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(p\\->streams\\[i\\],\\ p\\->host_large_read_done\\[peer\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(!compute\\[i\\]\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaMemsetAsync\\(src_buf\\[i\\],\\ 0,\\ nbytes,\\ p\\->streams\\[i\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(size_t\\ c\\ =\\ 0;\\ c\\ <\\ copy_chunks;\\ \\+\\+c\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ offset\\ =\\ c\\ \\*\\ chunk_bytes;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ this_bytes\\ =\\ \\(nbytes\\ \\-\\ offset\\)\\ <\\ chunk_bytes\\ \\?\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\(nbytes\\ \\-\\ offset\\)\\ :\\ chunk_bytes;\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaMemcpyAsync\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p\\->host_large\\[i\\]\\.host\\ \\+\\ offset,\\ reinterpret_cast<char\\ \\*>\\(src_buf\\[i\\]\\)\\ \\+\\ offset,\\ this_bytes,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ cudaMemcpyDeviceToHost,\\ p\\->streams\\[i\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->ev_pool\\[i\\]\\[slot\\]\\.cpy\\[c\\],\\ p\\->streams\\[i\\]\\)\\);\\\n',
+            text='    if (p->profile_enabled) {\n        p->stats.host_slices++;\n        p->stats.d2h_bytes += 2 * nbytes;\n        p->stats.h2d_bytes += 2 * nbytes;\n    }\n\n    // Stage 1: both GPUs copy their local contribution to pinned host memory.\n    {\n        ggml_cuda_ar_profile_range range(p->profile_enabled, "AR host D2H enqueue");\n        for (int i = 0; i < 2; ++i) {\n            ggml_cuda_set_device(p->devices[i]);\n            cuda_ctx[i] = static_cast<ggml_backend_cuda_context *>(backends[i]->context);\n            GGML_ASSERT(cuda_ctx[i]->device == p->devices[i]);\n\n            ggml_cuda_ar_wait_for_compute(p, cuda_ctx[i], i, slot);\n\n            if (p->async_slots && slot_info.reused) {\n                const int peer = 1 - i;\n                CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->ev_pool[peer][slot].ker));\n            }\n\n            // Wait for peer\'s H2D from our host_large[i] (recorded in the\n            // previous AR\'s stage 2) to complete before we overwrite host_large[i].\n            // host_large_read_done[peer] = peer finished reading host_large[i].\n            // No-op on the first AR -- no prior record exists.\n            if (p->host_large_read_done_valid) {\n                const int peer = 1 - i;\n                CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->host_large_read_done[peer]));\n            }\n\n            if (!compute[i]) {\n                CUDA_CHECK(cudaMemsetAsync(src_buf[i], 0, nbytes, p->streams[i]));\n            }\n\n            for (size_t c = 0; c < copy_chunks; ++c) {\n                const size_t offset = c * chunk_bytes;\n                const size_t this_bytes = (nbytes - offset) < chunk_bytes ?\n                    (nbytes - offset) : chunk_bytes;\n\n                CUDA_CHECK(cudaMemcpyAsync(\n                    p->host_large[i].host + offset, reinterpret_cast<char *>(src_buf[i]) + offset, this_bytes,\n                    cudaMemcpyDeviceToHost, p->streams[i]));\n                CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].cpy[c], p->streams[i]));\n            }\n',
+            mode='replace',
+            guard='p\\->stats\\.host_slices\\+\\+;',
+            rationale='nro01-q8-04 hunk 20: upstream lines 807-836 -> result lines 1058-1101',
+            max_span_lines=32,
+        ),
+        Edit(
+            id='nro01-q8-04-21',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(p\\->dev_tmp_kernel_done_valid\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(p\\->streams\\[i\\],\\ p\\->dev_tmp_kernel_done\\[i\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(size_t\\ c\\ =\\ 0;\\ c\\ <\\ copy_chunks;\\ \\+\\+c\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ offset\\ =\\ c\\ \\*\\ chunk_bytes;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ this_bytes\\ =\\ \\(nbytes\\ \\-\\ offset\\)\\ <\\ chunk_bytes\\ \\?\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\(nbytes\\ \\-\\ offset\\)\\ :\\ chunk_bytes;\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(p\\->streams\\[i\\],\\ p\\->ev_pool\\[peer\\]\\[slot\\]\\.cpy\\[c\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaMemcpyAsync\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p\\->dev_tmp\\[i\\]\\ \\+\\ offset,\\ p\\->host_large\\[peer\\]\\.host\\ \\+\\ offset,\\ this_bytes,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ cudaMemcpyHostToDevice,\\ p\\->streams\\[i\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->host_large_read_done\\[i\\],\\ p\\->streams\\[i\\]\\)\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->ev_pool\\[i\\]\\[slot\\]\\.h2d,\\ p\\->streams\\[i\\]\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamWaitEvent\\(cuda_ctx\\[i\\]\\->stream\\(\\),\\ p\\->ev_pool\\[i\\]\\[slot\\]\\.h2d\\)\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ block_size\\ =\\ 256;\\\n\\ \\ \\ \\ \\ \\ \\ \\ int\\ n_blocks\\ =\\ \\(int\\)\\ \\(\\(ne\\ \\+\\ block_size\\ \\-\\ 1\\)\\ /\\ block_size\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(n_blocks\\ >\\ 1024\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ n_blocks\\ =\\ 1024;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_add_kernel<T_dst,\\ T_src><<<n_blocks,\\ block_size,\\ 0,\\ cuda_ctx\\[i\\]\\->stream\\(\\)>>>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst_buf\\[i\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ reinterpret_cast<const\\ T_src\\ \\*>\\(p\\->dev_tmp\\[i\\]\\),\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\(int\\)\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaGetLastError\\(\\)\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->dev_tmp_kernel_done\\[i\\],\\ cuda_ctx\\[i\\]\\->stream\\(\\)\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaEventRecord\\(p\\->ev_pool\\[i\\]\\[slot\\]\\.ker,\\ cuda_ctx\\[i\\]\\->stream\\(\\)\\)\\);\\\n',
+            text='        {\n            ggml_cuda_ar_profile_range range(p->profile_enabled, "AR host H2D enqueue");\n            // Wait for the previous AR\'s add_kernel (on the compute stream) to\n            // finish reading dev_tmp before our H2D overwrites it.  No-op on the\n            // first copy_impl call.\n            if (p->dev_tmp_kernel_done_valid) {\n                CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->dev_tmp_kernel_done[i]));\n            }\n\n            for (size_t c = 0; c < copy_chunks; ++c) {\n                const size_t offset = c * chunk_bytes;\n                const size_t this_bytes = (nbytes - offset) < chunk_bytes ?\n                    (nbytes - offset) : chunk_bytes;\n\n                CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->ev_pool[peer][slot].cpy[c]));\n                CUDA_CHECK(cudaMemcpyAsync(\n                    p->dev_tmp[i] + offset, p->host_large[peer].host + offset, this_bytes,\n                    cudaMemcpyHostToDevice, p->streams[i]));\n            }\n\n            // Mark our reads of host_large[peer] complete so peer\'s next AR can\n            // safely overwrite it.\n            CUDA_CHECK(cudaEventRecord(p->host_large_read_done[i], p->streams[i]));\n\n            // Hand off from AR stream (copy engine) to compute stream: compute\n            // stream waits for all H2Ds to finish, then runs the add_kernel.\n            CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].h2d, p->streams[i]));\n            CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d));\n        }\n\n        {\n            const char * marker = residual_buf ? "AR Q8_0 dequant-add-residual enqueue" : ggml_cuda_ar_wire_traits<T_src>::finish_marker;\n            ggml_cuda_ar_profile_range range(p->profile_enabled, marker);\n            ggml_cuda_ar_launch_finish(\n                src_buf[i], dst_buf[i], reinterpret_cast<const T_src *>(p->dev_tmp[i]),\n                residual_buf ? residual_buf[i] : nullptr, i, ne, cuda_ctx[i]->stream());\n            CUDA_CHECK(cudaGetLastError());\n\n            // Record dev_tmp-released on the compute stream so the next copy_impl\n            // can wait for the kernel to finish before overwriting dev_tmp.  Also\n            // record AR-done as ev.ker for safe pool wraparound.\n            CUDA_CHECK(cudaEventRecord(p->dev_tmp_kernel_done[i], cuda_ctx[i]->stream()));\n            CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, cuda_ctx[i]->stream()));\n        }\n    }\n    if (p->profile_enabled) {\n        p->stats.add_launches += 2;\n        p->stats.q8_finish_launches += ggml_cuda_ar_wire_traits<T_src>::is_q8_0 ? 2 : 0;\n',
+            mode='replace',
+            guard='ggml_cuda_ar_profile_range\\ range\\(p\\->profile_enabled,\\ "AR\\ host\\ H2D\\ enqueue"\\);',
+            rationale='nro01-q8-04 hunk 21: upstream lines 851-893 -> result lines 1116-1163',
+            max_span_lines=45,
+        ),
+        Edit(
+            id='nro01-q8-04-22',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ const\\ bool\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ compute\\[GGML_CUDA_MAX_DEVICES\\],\\\n\\ \\ \\ \\ \\ \\ \\ \\ int64_t\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ne\\)\\ \\{\\\n\\ \\ \\ \\ const\\ int64_t\\ outer_max_elems\\ =\\ \\(int64_t\\)\\ \\(p\\->copy_bytes\\ /\\ sizeof\\(T_src\\)\\);\\\n',
+            text='        T_dst * const           residual_buf[GGML_CUDA_MAX_DEVICES],\n        const bool              compute[GGML_CUDA_MAX_DEVICES],\n        int64_t                 ne) {\n    constexpr int elems_per_unit = ggml_cuda_ar_wire_traits<T_src>::elems_per_unit;\n    const int64_t outer_max_elems = (int64_t) (p->copy_bytes / sizeof(T_src)) * elems_per_unit;\n',
+            mode='replace',
+            guard='constexpr\\ int\\ elems_per_unit\\ =\\ ggml_cuda_ar_wire_traits<T_src>::elems_per_unit;',
+            rationale='nro01-q8-04 hunk 22: upstream lines 913-915 -> result lines 1183-1187',
+            max_span_lines=5,
+        ),
+        Edit(
+            id='nro01-q8-04-23',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ const\\ int64_t\\ outer_ne\\ \\ \\ \\ \\ =\\ std::min\\(outer_max_elems,\\ ne\\ \\-\\ outer_start\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ \\ outer_nbytes\\ =\\ \\(size_t\\)\\ outer_ne\\ \\*\\ sizeof\\(T_src\\);\\\n',
+            text='        const int64_t outer_ne = std::min(outer_max_elems, ne - outer_start);\n        const size_t outer_units = ggml_cuda_ar_wire_traits<T_src>::units_for_elems(outer_ne);\n        const size_t outer_nbytes = outer_units * sizeof(T_src);\n        GGML_ASSERT(outer_start % elems_per_unit == 0);\n        GGML_ASSERT(outer_nbytes <= p->copy_bytes);\n',
+            mode='replace',
+            guard='const\\ int64_t\\ outer_ne\\ =\\ std::min\\(outer_max_elems,\\ ne\\ \\-\\ outer_start\\);',
+            rationale='nro01-q8-04 hunk 23: upstream lines 920-921 -> result lines 1192-1196',
+            max_span_lines=4,
+        ),
+        Edit(
+            id='nro01-q8-04-24',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ p\\->n_devices;\\ \\+\\+i\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ src\\[i\\]\\ =\\ src_buf\\[i\\]\\ \\+\\ outer_start;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ dst\\[i\\]\\ =\\ dst_buf\\[i\\]\\ \\+\\ outer_start;\\\n',
+            text='        T_dst * residual[GGML_CUDA_MAX_DEVICES] = {};\n        for (int i = 0; i < p->n_devices; ++i) {\n            src[i] = src_buf[i] + outer_start / elems_per_unit;\n            dst[i] = dst_buf[i] + outer_start;\n            residual[i] = residual_buf ? residual_buf[i] + outer_start : nullptr;\n',
+            mode='replace',
+            guard='T_dst\\ \\*\\ residual\\[GGML_CUDA_MAX_DEVICES\\]\\ =\\ \\{\\};',
+            rationale='nro01-q8-04 hunk 24: upstream lines 925-927 -> result lines 1200-1204',
+            max_span_lines=5,
+        ),
+        Edit(
+            id='nro01-q8-04-25',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ src,\\ dst,\\ compute,\\ outer_ne,\\ outer_nbytes\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\ else\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_impl<T_src,\\ T_dst>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ src,\\ dst,\\ compute,\\ outer_ne,\\ outer_nbytes\\);\\\n',
+            text='                p, backends, src, dst, residual_buf ? residual : nullptr, compute, outer_ne, outer_nbytes);\n        } else {\n            ok = ggml_cuda_ar_allreduce_copy_impl<T_src, T_dst>(\n                p, backends, src, dst, residual_buf ? residual : nullptr, compute, outer_ne, outer_nbytes);\n',
+            mode='replace',
+            guard='p,\\ backends,\\ src,\\ dst,\\ residual_buf\\ \\?\\ residual\\ :\\ nullptr,\\ compute,\\ outer_ne,\\ outer_nbytes\\);',
+            rationale='nro01-q8-04 hunk 25: upstream lines 931-934 -> result lines 1208-1211',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-26',
+            anchor='bool\\ ggml_cuda_ar_allreduce\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_pipeline\\ \\*\\ p,\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_t\\ \\ \\ \\ \\ \\ \\ \\ \\*\\ backends,\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_tensor\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\*\\*\\ tensors\\)\\ \\{\\\n',
+            text='static bool ggml_cuda_ar_allreduce_impl(\n        ggml_cuda_ar_pipeline * p,\n        ggml_backend_t        * backends,\n        ggml_tensor           ** tensors,\n        ggml_tensor           ** residuals,\n        ggml_tensor           ** outputs,\n        bool                     require_q8) {\n',
+            mode='replace',
+            guard='static\\ bool\\ ggml_cuda_ar_allreduce_impl\\(',
+            rationale='nro01-q8-04 hunk 26: upstream lines 940-943 -> result lines 1217-1223',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-27',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ const\\ bool\\ use_bf16\\ =\\\n\\ \\ \\ \\ \\ \\ \\ \\ input_type\\ ==\\ GGML_TYPE_F32\\ \\&\\&\\\n\\ \\ \\ \\ \\ \\ \\ \\ p\\->bf16_threshold\\ >\\ 0\\ \\&\\&\\\n\\ \\ \\ \\ \\ \\ \\ \\ input_nbytes\\ >=\\ p\\->bf16_threshold;\\\n',
+            text='    bool use_bf16 = false;\n    bool use_q8 = false;\n    if (input_type == GGML_TYPE_F32) {\n        switch (p->wire_mode) {\n            case ggml_cuda_ar_wire_mode::legacy:\n                use_bf16 = p->bf16_threshold > 0 && input_nbytes >= p->bf16_threshold;\n                break;\n            case ggml_cuda_ar_wire_mode::f32:\n                break;\n            case ggml_cuda_ar_wire_mode::bf16:\n                use_bf16 = true;\n                break;\n            case ggml_cuda_ar_wire_mode::q8_0:\n                use_q8 = p->q8_threshold > 0 && input_nbytes >= p->q8_threshold;\n                use_bf16 = !use_q8;\n                break;\n        }\n    }\n',
+            mode='replace',
+            guard='bool\\ use_bf16\\ =\\ false;',
+            rationale='nro01-q8-04 hunk 27: upstream lines 957-964 -> result lines 1237-1254',
+            max_span_lines=10,
+        ),
+        Edit(
+            id='nro01-q8-04-28',
+            anchor='\\ \\ \\ \\ const\\ size_t\\ \\ \\ \\ nbytes\\ \\ \\ \\ \\ \\ =\\ \\(size_t\\)\\ ne\\ \\*\\ type_size;\\\n',
+            text='    const size_t q8_blocks = ggml_cuda_ar_wire_traits<block_q8_0>::units_for_elems(ne);\n    const size_t nbytes = use_q8 ? q8_blocks * sizeof(block_q8_0) : (size_t) ne * type_size;\n',
+            mode='replace',
+            guard='const\\ size_t\\ q8_blocks\\ =\\ ggml_cuda_ar_wire_traits<block_q8_0>::units_for_elems\\(ne\\);',
+            rationale='nro01-q8-04 hunk 28: upstream lines 969-969 -> result lines 1259-1260',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-29',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ p\\->copy_threshold\\ >\\ 0\\ \\&\\&\\\n\\ \\ \\ \\ \\ \\ \\ \\ nbytes\\ >=\\ p\\->copy_threshold;\\\n',
+            text='        use_q8 || (p->copy_threshold > 0 && nbytes >= p->copy_threshold);\n    if (require_q8 && (!use_q8 || !use_copy_engine)) {\n        return false;\n    }\n\n    uint64_t profile_call = 0;\n    char profile_label[160] = {};\n    if (p->profile_enabled) {\n        profile_call = ++p->stats.logical_calls;\n        p->stats.logical_bytes += input_nbytes;\n        p->stats.wire_bytes += nbytes;\n        p->stats.bf16_calls += use_bf16 ? 1 : 0;\n        p->stats.q8_calls += use_q8 ? 1 : 0;\n        p->stats.q8_blocks += use_q8 ? q8_blocks : 0;\n        p->stats.q8_tail_calls += use_q8 && ne % QK8_0 != 0 ? 1 : 0;\n        p->stats.fused_residual_calls += residuals ? 1 : 0;\n        if (use_copy_engine && p->p2p_enabled) {\n            p->stats.p2p_calls++;\n            p->stats.p2p_bytes += nbytes;\n        } else if (use_copy_engine) {\n            p->stats.host_calls++;\n            p->stats.host_bytes += nbytes;\n        } else {\n            p->stats.small_calls++;\n            p->stats.small_bytes += nbytes;\n        }\n        const char * format = use_q8 ? "Q8_0" : (use_bf16 ? "BF16" : ggml_type_name(input_type));\n        const char * path = use_copy_engine ? (p->p2p_enabled ? "P2P" : "host") : "mapped";\n        std::snprintf(profile_label, sizeof(profile_label), "AR %" PRIu64 " bytes=%zu wire=%zu format=%s path=%s fused_residual=%d",\n                      profile_call, input_nbytes, nbytes, format, path, residuals ? 1 : 0);\n    }\n    ggml_cuda_ar_profile_range allreduce_range(p->profile_enabled, profile_label);\n',
+            mode='replace',
+            guard='use_q8\\ \\|\\|\\ \\(p\\->copy_threshold\\ >\\ 0\\ \\&\\&\\ nbytes\\ >=\\ p\\->copy_threshold\\);',
+            rationale='nro01-q8-04 hunk 29: upstream lines 980-981 -> result lines 1271-1302',
+            max_span_lines=4,
+        ),
+        Edit(
+            id='nro01-q8-04-30',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ ggml_cuda_pool_alloc<nv_bfloat16>\\ bf16_tmp\\[GGML_CUDA_MAX_DEVICES\\];\\\n\\ \\ \\ \\ void\\ \\*\\ copy_src_ptr\\[GGML_CUDA_MAX_DEVICES\\]\\ =\\ \\{\\};\\\n\\\n',
+            text='    // inline as it writes to host_buf.\n    ggml_cuda_pool_alloc<nv_bfloat16> bf16_tmp[GGML_CUDA_MAX_DEVICES];\n    ggml_cuda_pool_alloc<block_q8_0> q8_tmp[GGML_CUDA_MAX_DEVICES];\n    void * copy_src_ptr[GGML_CUDA_MAX_DEVICES] = {};\n\n',
+            mode='replace',
+            guard='ggml_cuda_pool_alloc<block_q8_0>\\ q8_tmp\\[GGML_CUDA_MAX_DEVICES\\];',
+            rationale='nro01-q8-04 hunk 30: upstream lines 1002-1001 -> result lines 1323-1323',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-31',
+            anchor='\\\n\\ \\ \\ \\ if\\ \\(use_copy_engine\\ \\&\\&\\ use_bf16\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ to_bf16_cuda_t\\ to_bf16\\ =\\ ggml_get_to_bf16_cuda\\(GGML_TYPE_F32\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ n;\\ \\+\\+i\\)\\ \\{\\\n',
+            text='\n    if (use_copy_engine && use_bf16) {\n        ggml_cuda_ar_profile_range range(p->profile_enabled, "AR BF16 conversion enqueue");\n        to_bf16_cuda_t to_bf16 = ggml_get_to_bf16_cuda(GGML_TYPE_F32);\n        for (int i = 0; i < n; ++i) {\n',
+            mode='replace',
+            guard='ggml_cuda_ar_profile_range\\ range\\(p\\->profile_enabled,\\ "AR\\ BF16\\ conversion\\ enqueue"\\);',
+            rationale='nro01-q8-04 hunk 31: upstream lines 1005-1004 -> result lines 1327-1327',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-32',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ to_bf16\\(tensors\\[i\\]\\->data,\\ bf16_tmp\\[i\\]\\.get\\(\\),\\ ne,\\ cuda_ctx\\->stream\\(\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaGetLastError\\(\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\ else\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaMemsetAsync\\(bf16_tmp\\[i\\]\\.get\\(\\),\\ 0,\\ nbytes,\\ cuda_ctx\\->stream\\(\\)\\)\\);\\\n',
+            text='                to_bf16(tensors[i]->data, bf16_tmp[i].get(), ne, cuda_ctx->stream());\n                CUDA_CHECK(cudaGetLastError());\n                if (p->profile_enabled) {\n                    p->stats.conversion_launches++;\n                }\n            } else {\n                CUDA_CHECK(cudaMemsetAsync(bf16_tmp[i].get(), 0, nbytes, cuda_ctx->stream()));\n',
+            mode='replace',
+            guard='p\\->stats\\.conversion_launches\\+\\+;',
+            rationale='nro01-q8-04 hunk 32: upstream lines 1015-1014 -> result lines 1338-1340',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-33',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ copy_src_ptr\\[i\\]\\ =\\ bf16_tmp\\[i\\]\\.get\\(\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\}\\\n\\\n',
+            text='            copy_src_ptr[i] = bf16_tmp[i].get();\n        }\n    } else if (use_q8) {\n        ggml_cuda_ar_profile_range range(p->profile_enabled, "AR Q8_0 conversion enqueue");\n        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {\n            static std::once_flag bigcherry_nro01_logged;\n            std::call_once(bigcherry_nro01_logged, [] {\n                GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1250_nro01 path=allreduce_q8_0_wire\\n");\n            });\n        }\n        constexpr int block_size = 256;\n        constexpr int warps_per_block = block_size / QK8_0;\n        int n_blocks = (int) ((q8_blocks + warps_per_block - 1) / warps_per_block);\n        n_blocks = std::min(n_blocks, 1024);\n        for (int i = 0; i < n; ++i) {\n            auto * cuda_ctx = static_cast<ggml_backend_cuda_context *>(backends[i]->context);\n            GGML_ASSERT(cuda_ctx->device == p->devices[i]);\n            q8_tmp[i].pool = &cuda_ctx->pool();\n            q8_tmp[i].alloc(q8_blocks);\n            ggml_cuda_set_device(p->devices[i]);\n            if (compute_flag[i]) {\n                ggml_cuda_ar_quantize_q8_0_kernel<<<n_blocks, block_size, 0, cuda_ctx->stream()>>>(\n                    static_cast<const float *>(tensors[i]->data), q8_tmp[i].get(), ne, q8_blocks);\n                CUDA_CHECK(cudaGetLastError());\n                if (p->profile_enabled) {\n                    p->stats.conversion_launches++;\n                }\n            } else {\n                CUDA_CHECK(cudaMemsetAsync(q8_tmp[i].get(), 0, nbytes, cuda_ctx->stream()));\n            }\n            copy_src_ptr[i] = q8_tmp[i].get();\n        }\n    }\n\n',
+            mode='replace',
+            guard='\\}\\ else\\ if\\ \\(use_q8\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 33: upstream lines 1020-1019 -> result lines 1346-1375',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-34',
+            anchor='\\ \\ \\ \\ bool\\ ok\\ =\\ true;\\\n\\ \\ \\ \\ if\\ \\(use_copy_engine\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='    bool ok = true;\n    if (use_copy_engine) {\n        // After up-front wire conversion, the tmp buffers already hold the\n        // (possibly zeroed-for-inactive) data, so the inner path can treat\n        // every shard as compute.\n',
+            mode='replace',
+            guard='//\\ After\\ up\\-front\\ wire\\ conversion,\\ the\\ tmp\\ buffers\\ already\\ hold\\ the',
+            rationale='nro01-q8-04 hunk 34: upstream lines 1024-1024 -> result lines 1380-1380',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-35',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ inner_compute\\[i\\]\\ =\\ use_bf16\\ \\?\\ true\\ :\\ compute_flag\\[i\\];\\\n',
+            text='            inner_compute[i] = use_bf16 || use_q8 ? true : compute_flag[i];\n',
+            mode='replace',
+            guard='inner_compute\\[i\\]\\ =\\ use_bf16\\ \\|\\|\\ use_q8\\ \\?\\ true\\ :\\ compute_flag\\[i\\];',
+            rationale='nro01-q8-04 hunk 35: upstream lines 1029-1029 -> result lines 1385-1385',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-36',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(use_bf16\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ GGML_ASSERT\\(kernel_type\\ ==\\ GGML_TYPE_BF16\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ nv_bfloat16\\ \\*\\ src\\[GGML_CUDA_MAX_DEVICES\\]\\ =\\ \\{\\};\\\n',
+            text='        // through BF16 for bit-equivalence and writes F32 directly, so no\n        // post-conversion is needed.  Otherwise src == dst (same native type).\n        if (use_q8) {\n            block_q8_0 * src[GGML_CUDA_MAX_DEVICES] = {};\n            float * dst[GGML_CUDA_MAX_DEVICES] = {};\n            float * residual[GGML_CUDA_MAX_DEVICES] = {};\n            for (int i = 0; i < n; ++i) {\n                src[i] = static_cast<block_q8_0 *>(copy_src_ptr[i]);\n                dst[i] = static_cast<float *>(outputs ? outputs[i]->data : tensors[i]->data);\n                residual[i] = residuals ? static_cast<float *>(residuals[i]->data) : nullptr;\n            }\n            ok = ggml_cuda_ar_allreduce_copy_outer<block_q8_0, float>(\n                p, backends, src, dst, residuals ? residual : nullptr, inner_compute, ne);\n        } else if (use_bf16) {\n            GGML_ASSERT(kernel_type == GGML_TYPE_BF16);\n            nv_bfloat16 * src[GGML_CUDA_MAX_DEVICES] = {};\n',
+            mode='replace',
+            guard='block_q8_0\\ \\*\\ src\\[GGML_CUDA_MAX_DEVICES\\]\\ =\\ \\{\\};',
+            rationale='nro01-q8-04 hunk 36: upstream lines 1037-1037 -> result lines 1393-1404',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-37',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ src,\\ dst,\\ inner_compute,\\ ne\\);\\\n',
+            text='                p, backends, src, dst, nullptr, inner_compute, ne);\n',
+            mode='replace',
+            guard='p,\\ backends,\\ src,\\ dst,\\ nullptr,\\ inner_compute,\\ ne\\);',
+            rationale='nro01-q8-04 hunk 37: upstream lines 1046-1046 -> result lines 1413-1413',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-38',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_outer<float,\\ float>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ buf,\\ buf,\\ inner_compute,\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ break;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n',
+            text='                    }\n                    ok = ggml_cuda_ar_allreduce_copy_outer<float, float>(\n                        p, backends, buf, buf, nullptr, inner_compute, ne);\n                    break;\n                }\n',
+            mode='replace',
+            guard='p,\\ backends,\\ buf,\\ buf,\\ nullptr,\\ inner_compute,\\ ne\\);',
+            rationale='nro01-q8-04 hunk 38: upstream lines 1055-1055 -> result lines 1422-1422',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-39',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_outer<nv_bfloat16,\\ nv_bfloat16>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ buf,\\ buf,\\ inner_compute,\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ break;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n',
+            text='                    }\n                    ok = ggml_cuda_ar_allreduce_copy_outer<nv_bfloat16, nv_bfloat16>(\n                        p, backends, buf, buf, nullptr, inner_compute, ne);\n                    break;\n                }\n',
+            mode='replace',
+            guard='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_outer<nv_bfloat16,\\ nv_bfloat16>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ buf,\\ buf,\\ nullptr,\\ inner_compute,\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ break;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n',
+            rationale='nro01-q8-04 hunk 39: upstream lines 1064-1064 -> result lines 1431-1431',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-40',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_outer<half,\\ half>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ buf,\\ buf,\\ inner_compute,\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ break;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n',
+            text='                    }\n                    ok = ggml_cuda_ar_allreduce_copy_outer<half, half>(\n                        p, backends, buf, buf, nullptr, inner_compute, ne);\n                    break;\n                }\n',
+            mode='replace',
+            guard='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ok\\ =\\ ggml_cuda_ar_allreduce_copy_outer<half,\\ half>\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ p,\\ backends,\\ buf,\\ buf,\\ nullptr,\\ inner_compute,\\ ne\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ break;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n',
+            rationale='nro01-q8-04 hunk 40: upstream lines 1073-1073 -> result lines 1440-1440',
+            max_span_lines=7,
+        ),
+        Edit(
+            id='nro01-q8-04-41',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(int64_t\\ chunk_start\\ =\\ 0;\\ chunk_start\\ <\\ ne;\\ chunk_start\\ \\+=\\ \\(int64_t\\)\\ max_chunk_elems\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ remaining_elems\\ =\\ \\(size_t\\)\\ \\(ne\\ \\-\\ chunk_start\\);\\\n',
+            text='        // small-tensor (tg) latency on the AR-stream variant.  Only ev.ker is\n        // still recorded at end-of-AR for acquire_slot\'s pool-wraparound check.\n        ggml_cuda_ar_profile_range range(p->profile_enabled, "AR mapped kernels enqueue");\n        for (int64_t chunk_start = 0; chunk_start < ne; chunk_start += (int64_t) max_chunk_elems) {\n            const size_t remaining_elems = (size_t) (ne - chunk_start);\n',
+            mode='replace',
+            guard='ggml_cuda_ar_profile_range\\ range\\(p\\->profile_enabled,\\ "AR\\ mapped\\ kernels\\ enqueue"\\);',
+            rationale='nro01-q8-04 hunk 41: upstream lines 1092-1091 -> result lines 1459-1459',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-42',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ const\\ auto\\ \\[slot,\\ token\\]\\ =\\ ggml_cuda_ar_acquire_slot\\(p\\);\\\n',
+            text='            const auto slot_info = ggml_cuda_ar_acquire_slot(p);\n            const int slot = slot_info.slot;\n            const int token = slot_info.token;\n            if (p->profile_enabled) {\n                p->stats.small_chunks++;\n            }\n',
+            mode='replace',
+            guard='const\\ auto\\ slot_info\\ =\\ ggml_cuda_ar_acquire_slot\\(p\\);',
+            rationale='nro01-q8-04 hunk 42: upstream lines 1097-1097 -> result lines 1465-1470',
+            max_span_lines=3,
+        ),
+        Edit(
+            id='nro01-q8-04-43',
+            anchor='\\}\\\n\\\n\\#else\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\\n',
+            text='}\n\nbool ggml_cuda_ar_allreduce(\n        ggml_cuda_ar_pipeline * p,\n        ggml_backend_t        * backends,\n        ggml_tensor           ** tensors) {\n    return ggml_cuda_ar_allreduce_impl(p, backends, tensors, nullptr, nullptr, false);\n}\n\nbool ggml_cuda_ar_allreduce_fused_add(\n        ggml_cuda_ar_pipeline * p,\n        ggml_backend_t        * backends,\n        ggml_tensor           ** tensors,\n        ggml_tensor           ** residuals,\n        ggml_tensor           ** outputs) {\n    return ggml_cuda_ar_allreduce_impl(p, backends, tensors, residuals, outputs, true);\n}\n\n#else // defined(GGML_USE_MUSA)\n\n',
+            mode='replace',
+            guard='return\\ ggml_cuda_ar_allreduce_impl\\(p,\\ backends,\\ tensors,\\ nullptr,\\ nullptr,\\ false\\);',
+            rationale='nro01-q8-04 hunk 43: upstream lines 1152-1151 -> result lines 1525-1540',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-04-44',
+            anchor='\\ \\ \\ \\ return\\ false;\\\n\\}\\\n\\\n\\#endif\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n',
+            text='    return false;\n}\nbool ggml_cuda_ar_allreduce_fused_add(\n        ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **, ggml_tensor **, ggml_tensor **) {\n    return false;\n}\n\n#endif // !defined(GGML_USE_MUSA)\n',
+            mode='replace',
+            guard='ggml_cuda_ar_pipeline\\ \\*,\\ ggml_backend_t\\ \\*,\\ ggml_tensor\\ \\*\\*,\\ ggml_tensor\\ \\*\\*,\\ ggml_tensor\\ \\*\\*\\)\\ \\{',
+            rationale='nro01-q8-04 hunk 44: upstream lines 1168-1167 -> result lines 1557-1560',
+            max_span_lines=6,
+        ),
+    ),
+)
+
+PATCH_05 = FilePatch(
+    path='ggml/src/ggml-cuda/allreduce.cuh',
+    description='nro01-q8: ggml/src/ggml-cuda/allreduce.cuh (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-05-01',
+            anchor='\\ \\ \\ \\ ggml_tensor\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\*\\*\\ tensors\\);\\\n\\\n',
+            text='    ggml_tensor           ** tensors);\n\nbool ggml_cuda_ar_allreduce_fused_add(\n    ggml_cuda_ar_pipeline * pipeline,\n    ggml_backend_t        * backends,\n    ggml_tensor           ** tensors,\n    ggml_tensor           ** residuals,\n    ggml_tensor           ** outputs);\n',
+            mode='replace',
+            guard='bool\\ ggml_cuda_ar_allreduce_fused_add\\(',
+            rationale='nro01-q8-05 hunk 1: upstream lines 30-29 -> result lines 30-35',
+            max_span_lines=4,
+        ),
+    ),
+)
+
+PATCH_06 = FilePatch(
+    path='ggml/src/ggml-cuda/ggml-cuda.cu',
+    description='nro01-q8: ggml/src/ggml-cuda/ggml-cuda.cu (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-06-01',
+            anchor='\\ \\ \\ \\ auto\\ \\*\\ comm_ctx\\ =\\ static_cast<ggml_backend_cuda_comm_context\\ \\*>\\(comm_ctx_v\\);\\\n\\ \\ \\ \\ return\\ comm_ctx\\->try_allreduce\\(comm_ctx,\\ tensors\\);\\\n\\}\\\n\\\n',
+            text='    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);\n    return comm_ctx->try_allreduce(comm_ctx, tensors);\n}\n\nstatic bool ggml_backend_cuda_comm_allreduce_tensor_fused_add(\n        void * comm_ctx_v, struct ggml_tensor ** tensors, struct ggml_tensor ** residuals, struct ggml_tensor ** outputs) {\n    if (comm_ctx_v == nullptr || getenv("GGML_CUDA_AR_FUSED_RESIDUAL") == nullptr) {\n        return false;\n    }\n    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);\n    if (comm_ctx->ar_pipeline == nullptr) {\n        return false;\n    }\n\n    const size_t n_backends = comm_ctx->backends.size();\n    for (size_t i = 0; i < n_backends; ++i) {\n        if (tensors[i] == nullptr || residuals[i] == nullptr || outputs[i] == nullptr ||\n            tensors[i]->type != GGML_TYPE_F32 || residuals[i]->type != GGML_TYPE_F32 || outputs[i]->type != GGML_TYPE_F32 ||\n            !ggml_are_same_shape(tensors[i], residuals[i]) || !ggml_are_same_shape(tensors[i], outputs[i]) ||\n            !ggml_is_contiguously_allocated(tensors[i]) || !ggml_is_contiguously_allocated(residuals[i]) ||\n            !ggml_is_contiguously_allocated(outputs[i])) {\n            return false;\n        }\n    }\n    const bool fused = ggml_cuda_ar_allreduce_fused_add(\n        comm_ctx->ar_pipeline, comm_ctx->backends.data(), tensors, residuals, outputs);\n    if (fused && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {\n        static std::once_flag bigcherry_nro02_logged;\n        std::call_once(bigcherry_nro02_logged, [] {\n            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1250_nro02 path=allreduce_fused_residual\\n");\n        });\n    }\n    return fused;\n}\n\n',
+            mode='replace',
+            guard='static\\ bool\\ ggml_backend_cuda_comm_allreduce_tensor_fused_add\\(',
+            rationale='nro01-q8-06 hunk 1: upstream lines 1258-1257 -> result lines 1258-1288',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-06-02',
+            anchor='\\ \\ \\ \\ \\ \\ \\ \\ return\\ \\(void\\ \\*\\)ggml_backend_cuda_comm_allreduce_tensor;\\\n\\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ if\\ \\(strcmp\\(name,\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\)\\ ==\\ 0\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ return\\ \\(void\\ \\*\\)ggml_backend_cuda_register_host_buffer;\\\n',
+            text='        return (void *)ggml_backend_cuda_comm_allreduce_tensor;\n    }\n    if (strcmp(name, "ggml_backend_comm_allreduce_tensor_fused_add") == 0) {\n        return (void *)ggml_backend_cuda_comm_allreduce_tensor_fused_add;\n    }\n    if (strcmp(name, "ggml_backend_register_host_buffer") == 0) {\n        return (void *)ggml_backend_cuda_register_host_buffer;\n',
+            mode='replace',
+            guard='if\\ \\(strcmp\\(name,\\ "ggml_backend_comm_allreduce_tensor_fused_add"\\)\\ ==\\ 0\\)\\ \\{',
+            rationale='nro01-q8-06 hunk 2: upstream lines 5757-5756 -> result lines 5788-5790',
+            max_span_lines=6,
+        ),
+    ),
+)
+
+PATCH_07 = FilePatch(
+    path='ggml/src/ggml-hip/CMakeLists.txt',
+    description='nro01-q8: ggml/src/ggml-hip/CMakeLists.txt (nasone e06dcf63)',
+    edits=(
+        Edit(
+            id='nro01-q8-07-01',
+            anchor='if\\ \\(GGML_HIP_RCCL\\)\\\n\\ \\ \\ \\ find_package\\(rccl\\ REQUIRED\\)\\\nendif\\(\\)\\\n\\\n',
+            text='if (GGML_HIP_RCCL)\n    find_package(rccl REQUIRED)\nendif()\n\nif (GGML_HIP_ROCTX)\n    find_package(rocprofiler-sdk-roctx REQUIRED CONFIG)\nendif()\n\n',
+            mode='replace',
+            guard='if\\ \\(GGML_HIP_ROCTX\\)',
+            rationale='nro01-q8-07 hunk 1: upstream lines 52-51 -> result lines 52-55',
+            max_span_lines=6,
+        ),
+        Edit(
+            id='nro01-q8-07-02',
+            anchor='endif\\(\\)\\\n\\\nif\\ \\(NOT\\ GGML_CUDA_FA\\)\\\n\\ \\ \\ \\ add_compile_definitions\\(GGML_CUDA_NO_FA\\)\\\n',
+            text='endif()\n\nif (GGML_HIP_ROCTX)\n    target_compile_definitions(ggml-hip PRIVATE GGML_HIP_ROCTX)\n    target_link_libraries(ggml-hip PRIVATE rocprofiler-sdk-roctx::rocprofiler-sdk-roctx)\nendif()\n\nif (NOT GGML_CUDA_FA)\n    add_compile_definitions(GGML_CUDA_NO_FA)\n',
+            mode='replace',
+            guard='target_compile_definitions\\(ggml\\-hip\\ PRIVATE\\ GGML_HIP_ROCTX\\)',
+            rationale='nro01-q8-07 hunk 2: upstream lines 120-119 -> result lines 124-128',
+            max_span_lines=6,
+        ),
+    ),
+)
+
+PATCHES = [PATCH_01, PATCH_02, PATCH_03, PATCH_04, PATCH_05, PATCH_06, PATCH_07]
