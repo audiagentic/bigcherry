@@ -129,6 +129,53 @@ MTP_SERVER_ARGS = (
 )
 
 
+def _is_tensor_split(server_args: tuple[str, ...]) -> bool:
+    return any(a in ("-sm", "--split-mode") and b == "tensor" for a, b in zip(server_args, server_args[1:]))
+
+
+def tensor_split_preflights(
+    binaries: Mapping[str, Path], *, model: Path, server_args: tuple[str, ...],
+    env: Mapping[str, str], workdir: Path, label: str,
+) -> dict[str, Any]:
+    """Attest each arm's tensor-split server once with the untimed RCCL
+    preflight (its only diagnostic delta is NCCL_DEBUG + --verbosity 5).
+    Timed processes of the same binary/model/args/devices are then bound to
+    this attestation (AttestedServerSession tensor_split_preflight)."""
+    import os
+
+    from bigcherry.campaign import benchmark as campaign_benchmark
+    from bigcherry.core import environment as bc_environment
+    from bigcherry.experiment.attestation import ExecutionAttestation, ObservedDevice
+
+    visible = env.get("HIP_VISIBLE_DEVICES", "")
+    ids = [int(d) for d in visible.split(",") if d.strip()]
+    if len(ids) < 2:
+        raise vp.ValidationProducerError(f"{label}: tensor split needs HIP_VISIBLE_DEVICES with >= 2 devices")
+    inventory = {d.index: d for d in bc_environment.load_default().host().devices}
+    missing = [i for i in ids if i not in inventory or inventory[i].locator is None]
+    if missing:
+        raise vp.ValidationProducerError(f"{label}: devices {missing} lack a configured locator")
+    expected = {
+        "backend": "rocm",
+        "architectures": [inventory[i].arch for i in ids],
+        "locators": [inventory[i].locator for i in ids],
+    }
+    full_env = {k: v for k, v in os.environ.items() if k != "ROCR_VISIBLE_DEVICES"}
+    full_env.update(env)
+    out: dict[str, Any] = {}
+    for arm, binary in binaries.items():
+        document, _binding = campaign_benchmark._run_server_attestation_preflight(
+            binary=binary, model=model, extra_args=server_args,
+            output=workdir / f"{label}-{arm}-attestation", env=full_env, expected_execution=expected,
+        )
+        out[arm] = ExecutionAttestation(
+            backend=document["backend"],
+            devices=tuple(ObservedDevice(d["architecture"], d["locator"]) for d in document["devices"]),
+            telemetry={"attested_by": "rccl-preflight", **document.get("telemetry", {})},
+        )
+    return out
+
+
 def mtp_server_lane(
     ctx: vp.ProducerContext,
     *,
@@ -182,6 +229,11 @@ def mtp_server_lane(
     configs = {arm: sc.SessionConfig(session_id=f"{label}-mtp-{arm}", **session_kwargs) for arm in binaries}
     server_env = dict(env)
     server_env.pop("ROCR_VISIBLE_DEVICES", None)
+    preflights = (
+        tensor_split_preflights(binaries, model=ctx.model, server_args=server_args, env=server_env,
+                                workdir=logs_dir, label=label)
+        if _is_tensor_split(server_args) else {arm: None for arm in binaries}
+    )
 
     def _runner(command: list[str]) -> experiment_execution.RunnerOutput:
         arm = command[-1]
@@ -197,6 +249,7 @@ def mtp_server_lane(
             log_path=log_path,
             env_overrides=server_env,
             env_unset=("ROCR_VISIBLE_DEVICES",),
+            tensor_split_preflight=preflights[arm],
         )
         with session:
             transport = sc.HttpTransport(session.base_url)

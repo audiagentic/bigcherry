@@ -38,6 +38,7 @@ see run_rd73_mtp_server_lane's docstring).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -48,6 +49,23 @@ from .attestation import (
     require_execution_identity,
 )
 from ..tuning.server_runner import ServerRunner
+
+# -sm tensor wraps the physical devices in Meta(): the timed process logs
+# "assigned to device Meta()" and its device inventory, but neither a locator
+# nor a per-device layer assignment. Such a process is attested by an untimed
+# RCCL preflight of the same binary/model/args/devices (campaign/benchmark.py
+# _run_server_attestation_preflight); the timed process must then show Meta()
+# assignment over exactly the preflight's device count.
+_META_LAYER = re.compile(r"assigned to device Meta\(\)")
+_PREPARED_DEVICE = re.compile(r"llama_prepare_model_devices:\s*-\s*device\s+(\d+):\s*([A-Za-z]+)\d+\s")
+
+
+def meta_process_matches_preflight(output: str, preflight: ExecutionAttestation) -> bool:
+    """True when a timed tensor-split process ran over the preflight-attested devices."""
+    if not _META_LAYER.search(output) or preflight.failure_signature is not None:
+        return False
+    prepared = {int(m.group(1)) for m in _PREPARED_DEVICE.finditer(output)}
+    return prepared == set(range(len(preflight.devices))) and len(prepared) > 0
 
 
 class AttestedServerSession:
@@ -82,7 +100,9 @@ class AttestedServerSession:
         port: int | None = None,
         shutdown_method: str = "http",
         architecture_by_locator: Mapping[str, str] | None = None,
+        tensor_split_preflight: ExecutionAttestation | None = None,
     ) -> None:
+        self._tensor_split_preflight = tensor_split_preflight
         self._log_path = Path(log_path)
         self._expected = expected
         self._architecture_by_locator = architecture_by_locator
@@ -118,10 +138,13 @@ class AttestedServerSession:
         self._runner.launch()
         try:
             self._runner.wait_healthy()
+            output = self._log_path.read_text(encoding="utf-8", errors="replace")
             observed = parse_llama_server_attestation(
-                self._log_path.read_text(encoding="utf-8", errors="replace"),
-                architecture_by_locator=self._architecture_by_locator,
+                output, architecture_by_locator=self._architecture_by_locator,
             )
+            preflight = self._tensor_split_preflight
+            if observed is None and preflight is not None and meta_process_matches_preflight(output, preflight):
+                observed = preflight
             require_execution_identity(
                 self._expected, observed,
                 context=f"attested server session ({self._log_path.name})",
