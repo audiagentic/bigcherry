@@ -2,7 +2,7 @@
 id: PRBE41
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:56:18.783942+00:00'
 breadth: ''
 skill: advanced
@@ -61,6 +61,8 @@ Supersedes RD49. PRBE21 is a distinct SSM conv_input concat optimization; cross-
 
 2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: replaced the implicit-default layout-parameter approach (which violated this project's no-legacy-shim doctrine) with a separate ggml_ssm_conv_ext() function; defined exact channels-major shape/index algebra (d_inner=sx->ne[0], n_t=sx->ne[1]-d_conv+1) for CPU and CUDA/HIP; required either full backend coverage or capability-aware graph-selection before switching callers.
 
+2026-09-25 (4d7117f6): implemented as patch 1263_prbe41_ssm_conv_channels_major, a port of nasone/AMD 33611a98 generated with bigcherry.patch.port_diff (17 files: ggml.h/ggml.c op mode, CPU + CUDA/HIP ssm-conv kernels, other backends' supports_op rejection, qwen35/qwen35moe/qwen3next graph, delta-net-base build_conv_state hand-merged onto b11126, fork test-backend-ops cases). Metal rejection not ported; conv-state layout changes (saved states not interchangeable). Activation marker patch=1263_prbe41 path=ssm_conv_channels_major. Contract PRBE41-SSM-CONV-CHANNELS-MAJOR (owner policy, 4 sessions/arch): full-vocab backend reference on qwen4b, pp512 positive, gpt-oss tg128 control. Rebase check CLEAN on bigcherry and bigcherry-tuning. Hardware sessions queued after the current batch.
+
 ## Change Log
 
 - 2026-09-09T10:56:18.783942+00:00 (created-by): Created by capability-rebaseline-v3
@@ -80,3 +82,5 @@ Supersedes RD49. PRBE21 is a distinct SSM conv_input concat optimization; cross-
 - 2026-09-10T03:06:19.327420+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:45:40.709189+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T05:07:59.505020+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-25T10:49:09.867182+00:00 (updated-by): Updated: section:notes
+- 2026-09-25T10:49:12.783952+00:00 (state-transition): State: pending → in_progress
