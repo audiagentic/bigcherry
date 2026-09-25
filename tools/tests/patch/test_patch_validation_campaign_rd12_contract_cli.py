@@ -149,6 +149,9 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
                     "control_source",
                     "subject_source",
                     "stock_source",
+                    "base_source",
+                    "base_composition",
+                    "validated_patches",
                     "control_idempotent",
                     "subject_idempotent",
                     "build_root",
@@ -156,11 +159,13 @@ class RD12DedicatedPathDeletionTests(unittest.TestCase):
                     "tune_bin",
                     "replay_bin",
                     "stock_bin",
+                    "base_bin",
                     "control_bin",
                     "validation_subject_bin",
                     "tune_build_evidence",
                     "replay_build_evidence",
                     "stock_build_evidence",
+                    "base_build_evidence",
                     "control_build_evidence",
                     "validation_subject_build_evidence",
                 }
@@ -568,6 +573,7 @@ class _FakeScaffold:
             source.mkdir(parents=True, exist_ok=True)
         self.control_idempotent = True
         self.subject_idempotent = True
+        self.validated_patches = ()  # PVPS03: promoted set composed into control
         # The real scaffold builds control/validation-subject with
         # llama-server+llama-bench targets under these bin dirs; the generic
         # path exposes them via ProducerContext.validation_binaries.

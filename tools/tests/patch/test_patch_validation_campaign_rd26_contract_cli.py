@@ -169,6 +169,7 @@ class _FakeScaffold:
             source.mkdir(parents=True, exist_ok=True)
         self.control_idempotent = True
         self.subject_idempotent = True
+        self.validated_patches = ()  # PVPS03: promoted set composed into control
         self.control_bin = base_dir / "bin" / "control"
         self.validation_subject_bin = base_dir / "bin" / "validation-subject"
         self.tune_build_evidence = _FakeBuildEvidence("tune")

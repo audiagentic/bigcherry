@@ -2411,7 +2411,48 @@ def _run_validation_producer(
         run_dir=run_dir,
     )
 
+    if scaffold is not None and args.model is not None:
+        _run_reference_ladder(args, scaffold=scaffold, device_map=device_map, run_dir=run_dir)
+
     # Success means the requested producer execution and, when required,
     # tracked evidence persistence completed. Eligibility is evidence,
     # not process success (dev-gpt-agent req_2ecda033763949a9 T5).
     return 0
+
+
+def _run_reference_ladder(args, *, scaffold, device_map, run_dir: Path) -> None:
+    """PVPS03: stock / base / validated / validated+patch reference ladder.
+
+    Reference-only evidence, run after the verdict is persisted: a ladder
+    failure is recorded in the artifact and never fails the campaign."""
+    import subprocess
+
+    from bigcherry.campaign.benchmark import sanitize_environment
+    from bigcherry.patch.campaign import ladder
+
+    env = sanitize_environment(_hip_env(args.hip_path), mode="stock")
+    for key in list(env):
+        if key.startswith("BIGCHERRY_") or key in ("GGML_CUDA_DISABLE_FUSION", "ROCR_VISIBLE_DEVICES"):
+            env.pop(key)
+    devices = device_map.get(args.amdgpu_targets.split(",")[0], ())
+    if devices:
+        env["HIP_VISIBLE_DEVICES"] = ",".join(str(d) for d in devices)
+
+    def _runner(command: list[str]) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+
+    try:
+        payload = ladder.run_reference_ladder(
+            arms=scaffold.reference_ladder_bins,
+            model=Path(args.model),
+            runner=_runner,
+            exe=".exe" if sys.platform == "win32" else "",
+        )
+    except Exception as exc:  # reference evidence: record, never fail the campaign
+        payload = {"schema": ladder.LADDER_SCHEMA, "reference_only": True, "error": repr(exc)}
+    payload["architecture"] = args.amdgpu_targets
+    payload["hip_visible_devices"] = env.get("HIP_VISIBLE_DEVICES")
+    payload["model"] = str(args.model)
+    payload["validated_patches"] = list(scaffold.validated_patches)
+    path = ladder.write_ladder(run_dir, payload)
+    _print(f"reference ladder: {path}")

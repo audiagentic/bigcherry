@@ -22,6 +22,23 @@ from bigcherry.patch.campaign.build import (
 )
 from bigcherry.patch.campaign.contract import assert_validation_subject_parity
 
+# PVPS03: the promoted set every patch is validated on top of.
+VALIDATED_PATCH_SET = "validated-enhancements"
+
+
+def validated_enhancement_patches(
+    *, patch_id: str, common_patches: tuple[str, ...], recipes: Path | None = None
+) -> tuple[str, ...]:
+    """The promoted patches composed into control (validated BC), minus the
+    focal patch (re-validating a promoted patch measures it against the rest
+    of the set) and minus anything already named as a common patch."""
+    from bigcherry.core import config as campaign_config
+    from bigcherry.core import paths as bc_paths
+
+    cfg = campaign_config.load(recipes or bc_paths.RECIPES)
+    declared = cfg.patch_sets[VALIDATED_PATCH_SET].patches
+    return tuple(p for p in declared if p != patch_id and p not in common_patches)
+
 
 @dataclass(frozen=True)
 class StandardCampaignScaffold:
@@ -35,9 +52,12 @@ class StandardCampaignScaffold:
     base_revision: str
     control_composition: tuple[tuple[str, str], ...]
     subject_composition: tuple[tuple[str, str], ...]
+    base_composition: tuple[tuple[str, str], ...]
+    validated_patches: tuple[str, ...]
     control_source: Path
     subject_source: Path
     stock_source: Path
+    base_source: Path
     control_idempotent: bool
     subject_idempotent: bool
     build_root: Path
@@ -45,13 +65,28 @@ class StandardCampaignScaffold:
     tune_bin: Path
     replay_bin: Path
     stock_bin: Path
+    base_bin: Path
     control_bin: Path
     validation_subject_bin: Path
     tune_build_evidence: CompletedBuildEvidence
     replay_build_evidence: CompletedBuildEvidence
     stock_build_evidence: CompletedBuildEvidence
+    base_build_evidence: CompletedBuildEvidence
     control_build_evidence: CompletedBuildEvidence
     validation_subject_build_evidence: CompletedBuildEvidence
+
+    @property
+    def reference_ladder_bins(self) -> dict[str, Path]:
+        """PVPS03 arms, in ladder order: stock llama.cpp, base BC (baseline
+        source), validated BC (control) and validated BC + patch (subject).
+        base and validated are the same binary while the promoted set adds
+        nothing on top of the baseline."""
+        return {
+            "stock": self.stock_bin,
+            "base": self.base_bin,
+            "validated": self.control_bin,
+            "validated+patch": self.validation_subject_bin,
+        }
 
     @property
     def campaign_build_identities(self) -> dict[str, dict[str, object]]:
@@ -76,9 +111,12 @@ class _ScaffoldSources:
     base_revision: str
     control_composition: tuple[tuple[str, str], ...]
     subject_composition: tuple[tuple[str, str], ...]
+    base_composition: tuple[tuple[str, str], ...]
+    validated_patches: tuple[str, ...]
     control_src: Path
     patched_src: Path
     stock_src: Path
+    base_src: Path
     control_idempotent: bool
     subject_idempotent: bool
 
@@ -91,20 +129,23 @@ def _materialize_scaffold_sources(
     common_patches: tuple[str, ...],
     worktree_root: Path,
 ) -> _ScaffoldSources:
-    """Resolve, materialize and idempotence-check the control/subject/stock sources."""
+    """Resolve, materialize and idempotence-check the control/subject/stock
+    sources (PVPS03: control = validated BC, subject = control + focal, plus
+    a base-BC source when the promoted set changes the composition)."""
     from bigcherry.patch import source as psi  # noqa: E402
 
+    validated = validated_enhancement_patches(patch_id=patch_id, common_patches=common_patches)
     control_revision, control_composition = psi.resolve_source_composition(
         baseline_source,
         focal=None,
-        extra_patches=common_patches,
+        extra_patches=common_patches + validated,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
     subject_revision, subject_composition = psi.resolve_source_composition(
         baseline_source,
         focal=patch_id,
-        extra_patches=common_patches,
+        extra_patches=common_patches + validated,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
@@ -156,13 +197,36 @@ def _materialize_scaffold_sources(
         base_revision=base_revision,
     )
     _print(f"stock source: {stock_src}")
+    if validated:
+        _, base_composition = psi.resolve_source_composition(
+            baseline_source,
+            focal=None,
+            extra_patches=common_patches,
+            base_ref=base_ref,
+            base_repo=LLAMA_CPP_SRC,
+        )
+        base_src = psi.materialize_composition(
+            base_repo=LLAMA_CPP_SRC,
+            worktree_root=worktree_root / "base",
+            resolved_revision=base_revision,
+            composition=base_composition,
+            overlay_root=psi.REPO_ROOT / "src",
+            requested_revision=base_ref,
+        )
+    else:
+        base_composition, base_src = control_composition, control_src
+    _print(f"validated set: {', '.join(validated) or '(empty: base == validated)'}")
+    _print(f"base source: {base_src}")
     return _ScaffoldSources(
         base_revision=base_revision,
         control_composition=control_composition,
         subject_composition=subject_composition,
+        base_composition=base_composition,
+        validated_patches=validated,
         control_src=control_src,
         patched_src=patched_src,
         stock_src=stock_src,
+        base_src=base_src,
         control_idempotent=control_idempotent,
         subject_idempotent=subject_idempotent,
     )
@@ -274,7 +338,8 @@ def _build_parity_trees(
 ):
     """Build the stock, control and validation-subject parity trees.
 
-    Returns (stock_bin, stock_build_evidence, control_bin,
+    Returns (stock_bin, stock_build_evidence, base_bin, base_build_evidence,
+    control_bin,
     control_build_evidence, validation_subject_bin,
     validation_subject_build_evidence).
     """
@@ -370,9 +435,33 @@ def _build_parity_trees(
         f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
         f"{validation_subject_build_evidence.compile_verification_id[:12]}"
     )
+    if sources.base_src == control_src:
+        base_bin, base_build_evidence = control_bin, control_build_evidence
+    else:
+        base_build_root = (build_root or workdir) / sources.base_src.name
+        base_bin = build_tree(
+            name="base",
+            hip_path=hip_path,
+            amdgpu_targets=amdgpu_targets,
+            workdir=base_build_root,
+            targets=["llama-server", "llama-bench"],
+            source=sources.base_src,
+            extra_cmake_args=[],
+        )
+        base_build_evidence = capture_completed_build_evidence(
+            base_build_root / "base",
+            source_root=sources.base_src,
+            architecture=amdgpu_targets,
+            binary=base_bin / f"llama-bench{exe}",
+            requested_cmake_args=stock_cmake_args,
+            build_env=build_env,
+        )
+        _print(f"base build: {base_build_evidence.effective_build_id[:12]}")
     return (
         stock_bin,
         stock_build_evidence,
+        base_bin,
+        base_build_evidence,
         control_bin,
         control_build_evidence,
         validation_subject_bin,
@@ -452,6 +541,8 @@ def _build_standard_campaign_scaffold(
     (
         stock_bin,
         stock_build_evidence,
+        base_bin,
+        base_build_evidence,
         control_bin,
         control_build_evidence,
         validation_subject_bin,
@@ -471,9 +562,12 @@ def _build_standard_campaign_scaffold(
         base_revision=base_revision,
         control_composition=control_composition,
         subject_composition=subject_composition,
+        base_composition=sources.base_composition,
+        validated_patches=sources.validated_patches,
         control_source=control_src,
         subject_source=patched_src,
         stock_source=stock_src,
+        base_source=sources.base_src,
         control_idempotent=control_idempotent,
         subject_idempotent=subject_idempotent,
         build_root=actual_build_root,
@@ -481,11 +575,13 @@ def _build_standard_campaign_scaffold(
         tune_bin=tune_bin,
         replay_bin=replay_bin,
         stock_bin=stock_bin,
+        base_bin=base_bin,
         control_bin=control_bin,
         validation_subject_bin=validation_subject_bin,
         tune_build_evidence=tune_build_evidence,
         replay_build_evidence=replay_build_evidence,
         stock_build_evidence=stock_build_evidence,
+        base_build_evidence=base_build_evidence,
         control_build_evidence=control_build_evidence,
         validation_subject_build_evidence=validation_subject_build_evidence,
     )

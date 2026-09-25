@@ -94,12 +94,12 @@ class PinResolutionTests(unittest.TestCase):
         # (control and subject), each passing base_ref=base_ref (which is
         # cfg.pinned, threaded by run()).
         matches = re.findall(r"base_ref=base_ref\b", self.scaffold_source)
-        self.assertEqual(len(matches), 2, "both control and subject resolve_source_composition() calls must use the base_ref parameter (cfg.pinned, threaded by run())")
+        self.assertEqual(len(matches), 3, "control, subject and (PVPS03) base-BC resolve_source_composition() calls must use the base_ref parameter (cfg.pinned, threaded by run())")
 
     def test_scaffold_uses_base_ref_for_all_four_requested_revision_sites(self) -> None:
         # materialize_composition (control, subject) + verify_composition_idempotent (control, subject).
         matches = re.findall(r"requested_revision=base_ref", self.scaffold_source)
-        self.assertEqual(len(matches), 4)
+        self.assertEqual(len(matches), 5)  # + PVPS03 base-BC materialization
 
     def test_cfg_is_loaded_before_source_resolution(self) -> None:
         cfg_load_index = self.run_source.index("cfg = campaign_config.load(")

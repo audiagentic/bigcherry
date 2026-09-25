@@ -1,8 +1,9 @@
 """Summarise plan-qualification campaign runs (one line per run).
 
 Usage: python3 tools/lab/plan-qualification/summarize.py [run-name-glob]
-Reads work/runs/<run>/campaign/producer-execution.json and the bound
-performance artifact; prints eligibility, blocking reasons, each lane's
+Reads work/runs/<run>/campaign/producer-execution.json, the bound
+performance artifact and the PVPS03 reference ladder; prints eligibility,
+blocking reasons, each lane's
 effect and CI95, correctness and activation status.
 """
 
@@ -37,6 +38,24 @@ def _lanes(run_dir: Path) -> list[str]:
     return out
 
 
+def _ladder(run_dir: Path) -> list[str]:
+    """PVPS03 reference ladder: each arm's mean and % vs stock llama.cpp."""
+    path = run_dir / "campaign" / "reference-ladder.json"
+    if not path.is_file():
+        return []
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    if "error" in doc:
+        return [f"ladder error: {doc['error']}"]
+    out = []
+    for metric, data in (doc.get("metrics") or {}).items():
+        cells = [
+            f"{arm} {mean:.2f} ({data['pct_vs_stock'].get(arm, 0.0):+.2f}%)"
+            for arm, mean in data.get("mean", {}).items()
+        ]
+        out.append(f"ladder {metric}: " + " | ".join(cells))
+    return out
+
+
 def main() -> int:
     pattern = sys.argv[1] if len(sys.argv) > 1 else "*"
     for run_dir in sorted((WORK / "runs").iterdir()):
@@ -55,6 +74,8 @@ def main() -> int:
         print(f"{run_dir.name}: eligible={doc.get('eligible')} checks={checks}")
         for lane in _lanes(run_dir):
             print(f"    {lane}")
+        for line in _ladder(run_dir):
+            print(f"    {line}")
         for cid, (status, reasons) in verdicts.items():
             print(f"    {cid}: {status} {reasons or ''}")
         if doc.get("reasons"):
