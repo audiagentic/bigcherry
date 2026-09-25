@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject MTP llama-server log shows the chunked prefix route.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1254_nro05 path=gdn_mtp_prefix_bf16"
+
+# backend_reference: full-vocab MTP logprobs within 5e-4.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# MTP server mtp_wall_tps on the MoE+MTP model (4 sessions).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 decode without MTP (max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
