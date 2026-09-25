@@ -10,7 +10,7 @@ set -u
 jobs=$1
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../../.." && pwd)
-work=${BIGCHERRY_WORK_ROOT:-$root/work}
+work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 mkdir -p "$work/runs"
 while read -r line; do
     case "$line" in ''|'#'*) continue ;; esac
