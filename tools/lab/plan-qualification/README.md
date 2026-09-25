@@ -17,7 +17,7 @@ with `BC_HIP_PATH` and `BC_MODEL` set in the environment.
 
 ## Outputs
 
-`$BIGCHERRY_WORK_ROOT/runs/<run-name>/` campaign workdir (default `work/`; on the build server set it to a large scratch volume); evidence appended by the campaign
+`$BIGCHERRY_WORK_ROOT/runs/<run-name>/` campaign workdir (resolved by `work-root.sh`: the environment variable, else `BIGCHERRY_WORK_ROOT` in the untracked `config/environment.local.toml` `[env]` table, else `work/`; on the build server point it at a large scratch volume); evidence appended by the campaign
 to `patches/<id>/evidence/validation.json`.
 
 ## Runtime

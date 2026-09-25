@@ -9,7 +9,7 @@ set -u
 patch=$1; producer=$2; arch=$3; dev=$4; run=$5; shift 5
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
-work=${BIGCHERRY_WORK_ROOT:-$root/work}
+work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp

@@ -16,7 +16,20 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-WORK = Path(os.environ.get("BIGCHERRY_WORK_ROOT") or ROOT / "work")
+
+
+def _work_root() -> Path:
+    """$BIGCHERRY_WORK_ROOT, else environment.local.toml [env], else work/."""
+    if os.environ.get("BIGCHERRY_WORK_ROOT"):
+        return Path(os.environ["BIGCHERRY_WORK_ROOT"])
+    import tomllib
+
+    local = ROOT / "config" / "environment.local.toml"
+    env = tomllib.loads(local.read_text(encoding="utf-8")).get("env", {}) if local.is_file() else {}
+    return Path(env.get("BIGCHERRY_WORK_ROOT") or ROOT / "work")
+
+
+WORK = _work_root()
 
 
 def _lanes(run_dir: Path) -> list[str]:
