@@ -77,6 +77,8 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified via direct read that 1250 is Q8-scaffold-only (kernels deliberately undispatched per patch.py's own comment, threshold var unconsumed, no activation/wire counters) -- the item cannot be closed by qualification alone; real dispatch wiring is required first. Corrected the stale requires=1001_hip_internal_allreduce reference (patch.toml declares requires=[]; b11126 already has HIP internal AllReduce natively).
 
+2026-09-25: IMPLEMENTED (commits bd2fc067/45219a0d). patches/1250 now ports e06dcf63 whole (requires 1252). Q8 wire opt-in via GGML_CUDA_AR_WIRE=q8_0; marker patch=1250_nro01. Lossy: correctness arm is full-vocab divergence vs unset. Campaign needs --common-patches 1252.
+
 ## Change Log
 
 - 2026-09-09T10:52:01.168387+00:00 (created-by): Created by capability-rebaseline-v3
@@ -97,3 +99,6 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 - 2026-09-24T02:25:40.011758+00:00 (updated-by): Updated: section:validation
 - 2026-09-24T02:25:51.817653+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T04:47:44.678692+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:notes
+- chg_20260925_111345_real-ports-of-the-nasone-allre_4524
+- 2026-09-25T11:13:48.596655+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-25T11:14:03.641721+00:00 (updated-by): Updated: section:notes

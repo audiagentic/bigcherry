@@ -74,6 +74,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1251 only adds residual-capable kernel variants with no matcher/comm-API/elision wiring at all. Added the required matcher location (ggml-backend-meta.cpp::ggml_backend_meta_graph_compute) and comm-API extension steps; decoupled exact-FP32 fusion from PNRO01 (only needed for Q8-mode qualification, not the base path).
 
+2026-09-25: IMPLEMENTED inside patches/1250 (e06dcf63 is atomic: meta-backend reshape->ADD matcher, fused_add comm API, fused finish kernels). Opt-in GGML_CUDA_AR_FUSED_RESIDUAL; marker patch=1250_nro02 logged only when the fused path succeeds. 1251 scaffold removed. Must be exact vs unfused; measured as its own arm, separate from Q8.
+
 ## Change Log
 
 - 2026-09-09T10:52:07.096423+00:00 (created-by): Created by capability-rebaseline-v3
@@ -90,3 +92,6 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:28:00.275437+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:00.678612+00:00 (updated-by): Updated: section:validation, section:notes
 - 2026-09-24T04:48:02.098895+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- chg_20260925_111345_real-ports-of-the-nasone-allre_4524
+- 2026-09-25T11:13:51.471143+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-25T11:14:06.579185+00:00 (updated-by): Updated: section:notes
