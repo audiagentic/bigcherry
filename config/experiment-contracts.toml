@@ -1009,7 +1009,9 @@ expected_effect = "correctness"
 rationale = "Headroom 16 is insufficient for supported recurrent/MTP Meta graphs."
 
 [contract.PNRO09-META-VIEW-HEADROOM.scope]
-backend = "hip"
+# The Meta-backend change is backend-agnostic (matches patch.toml backend);
+# its evidence is gathered on HIP devices.
+backend = "agnostic"
 architectures = ["gfx1100"]
 
 [contract.PNRO09-META-VIEW-HEADROOM.scope.gpu_count]

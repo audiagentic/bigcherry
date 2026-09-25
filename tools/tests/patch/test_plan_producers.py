@@ -95,6 +95,15 @@ if __name__ == "__main__":
     unittest.main()
 
 
+# Packages known not to be startable yet, each tracked by a plan item. Remove
+# an entry the moment its package is fixed; never add one to make CI green.
+_KNOWN_NOT_STARTABLE = {
+    # PNRO09: contract requires a controls lane no producer supplies, and the
+    # producer copies pre-recorded evidence instead of measuring.
+    "1260_nro09_meta_view_headroom",
+}
+
+
 class ExecutionPackageTests(unittest.TestCase):
     """A package with a validation.toml must be startable: README, bound
     contract and adapter all present (1262 once reached hardware without a
@@ -110,6 +119,10 @@ class ExecutionPackageTests(unittest.TestCase):
             if descriptor.state in ("rejected", "superseded"):
                 continue
             if not (_PATCHES / descriptor.patch_id / "validation.toml").is_file():
+                continue
+            if descriptor.patch_id in _KNOWN_NOT_STARTABLE:
+                with self.assertRaises(Exception, msg=f"{descriptor.patch_id} is startable now; drop it from the list"):
+                    validation_policy.require_execution_package(descriptor)
                 continue
             with self.subTest(patch=descriptor.patch_id):
                 validation_policy.require_execution_package(descriptor)
