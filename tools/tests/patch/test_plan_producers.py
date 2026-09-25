@@ -129,3 +129,36 @@ class ExecutionPackageTests(unittest.TestCase):
                 continue
             with self.subTest(patch=descriptor.patch_id):
                 validation_policy.require_execution_package(descriptor)
+
+
+class FullVocabStreamTests(unittest.TestCase):
+    """A speculative server streams every token of one verify step as one event."""
+
+    def _stream(self, lines):
+        from unittest import mock
+
+        from bigcherry.experiment import full_vocab
+
+        class _Response:
+            def __enter__(self):
+                return iter(line.encode("utf-8") for line in lines)
+
+            def __exit__(self, *exc):
+                return False
+
+        with mock.patch("urllib.request.urlopen", return_value=_Response()):
+            return list(full_vocab.stream_completion_rows("http://x", {}, timeout_s=1))
+
+    def test_multi_row_event_yields_every_row_in_order(self):
+        rows = self._stream([
+            'data: {"stop": false, "completion_probabilities": [{"id": 1}, {"id": 2}]}',
+            'data: {"stop": false, "completion_probabilities": [{"id": 3}]}',
+            'data: {"stop": true}',
+        ])
+        self.assertEqual([r["id"] for r in rows], [1, 2, 3])
+
+    def test_empty_row_list_fails_closed(self):
+        from bigcherry.experiment import full_vocab
+
+        with self.assertRaises(full_vocab.FullVocabError):
+            self._stream(['data: {"stop": false, "completion_probabilities": []}', 'data: {"stop": true}'])
