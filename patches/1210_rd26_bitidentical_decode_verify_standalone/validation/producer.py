@@ -52,6 +52,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from bigcherry.experiment import execution as experiment_execution
 from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
 
@@ -398,6 +399,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             contract_correctness_results=(bit_identical_result,),
             promotion_lane_effects={_CONTRACT_ID: (control_effect,)},
             promotion_target_metric={_CONTRACT_ID: "tg128"},
+            # RD26 has no positive lane or activation marker yet: record the
+            # controls lane honestly (not triggered), so the gate reports
+            # BLOCKED (no positive trigger evidence) instead of the campaign
+            # crashing on mismatched promotion keysets.
+            promotion_trigger_evidence={_CONTRACT_ID: (experiment_execution.trigger_evidence_from_marker_probe(
+                lane_id="rd26-controls", role="control", positive_hit=False),)},
             emitted_artifacts=frozenset({_ARTIFACT_NAME, _CONTROLS_ARTIFACT_NAME}),
         )
     finally:
