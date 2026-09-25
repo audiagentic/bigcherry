@@ -1248,3 +1248,86 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.NRO07-TOPK-HYBRID]
+title = "PNRO06: hybrid HIP TOP_K kernels"
+
+[contract.NRO07-TOPK-HYBRID.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7f3e1e4d0b166cb681b2c01503370e610a5b423d"]
+atomic_part = "1256_nro07_topk_hybrid"
+
+[contract.NRO07-TOPK-HYBRID.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO07-TOPK-HYBRID.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort; MoE routing (256 experts, top-8) runs it every token. Measured with the ROCm 10.x toolchain on both arms."
+
+[contract.NRO07-TOPK-HYBRID.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO07-TOPK-HYBRID.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.NRO07-TOPK-HYBRID.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO07-TOPK-HYBRID.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO07-TOPK-HYBRID.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO08-TOPK-WAVE32]
+title = "PNRO07: wave32-native HIP TOP_K kernels"
+prerequisites = ["NRO07-TOPK-HYBRID"]
+
+[contract.NRO08-TOPK-WAVE32.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7f1d25f7e05cb34053d317a0f72f601d846c8662"]
+atomic_part = "1257_nro08_topk_wave32"
+
+[contract.NRO08-TOPK-WAVE32.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO08-TOPK-WAVE32.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Wave32 shuffles replace LDS/barrier reductions in 1256's kernels; measured as an increment on 1256 (both arms carry 1256)."
+
+[contract.NRO08-TOPK-WAVE32.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO08-TOPK-WAVE32.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.NRO08-TOPK-WAVE32.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO08-TOPK-WAVE32.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO08-TOPK-WAVE32.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
