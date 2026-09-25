@@ -157,8 +157,17 @@ class FullVocabStreamTests(unittest.TestCase):
         ])
         self.assertEqual([r["id"] for r in rows], [1, 2, 3])
 
-    def test_empty_row_list_fails_closed(self):
+    def test_events_without_rows_are_skipped(self):
+        rows = self._stream([
+            'data: {"stop": false, "completion_probabilities": []}',
+            'data: {"stop": false, "content": ""}',
+            'data: {"stop": false, "completion_probabilities": [{"id": 7}]}',
+            'data: {"stop": true}',
+        ])
+        self.assertEqual([r["id"] for r in rows], [7])
+
+    def test_malformed_rows_fail_closed(self):
         from bigcherry.experiment import full_vocab
 
         with self.assertRaises(full_vocab.FullVocabError):
-            self._stream(['data: {"stop": false, "completion_probabilities": []}', 'data: {"stop": true}'])
+            self._stream(['data: {"stop": false, "completion_probabilities": [1]}', 'data: {"stop": true}'])

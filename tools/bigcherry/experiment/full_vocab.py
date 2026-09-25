@@ -145,9 +145,13 @@ def stream_completion_rows(
                     continue
                 rows = event.get("completion_probabilities")
                 # A speculative (MTP/draft) server streams every token accepted
-                # in one verify step as one event, so an event carries >= 1 rows.
-                if not isinstance(rows, list) or not rows or not all(isinstance(r, Mapping) for r in rows):
-                    raise FullVocabError("expected one or more completion_probabilities rows per event")
+                # in one verify step as one event, and can emit events that carry
+                # no token at all. Rows are counted per arm against n_predict by
+                # compare_servers(), so an empty event cannot hide a lost step.
+                if rows is None:
+                    continue
+                if not isinstance(rows, list) or not all(isinstance(r, Mapping) for r in rows):
+                    raise FullVocabError("completion_probabilities must be a list of row objects")
                 yield from rows
     except (urllib.error.URLError, OSError, TimeoutError, UnicodeError) as exc:
         raise FullVocabError(f"streaming /completion failed: {exc}") from exc
