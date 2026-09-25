@@ -32,6 +32,7 @@ class ProducerResolutionTests(unittest.TestCase):
             ("1241_rd33_mmvq_q8_0_f32_decode", "rd33", "run"),
             ("1207_rd17_moe_topk_down_fold", "rd17", "run"),
             ("1262_nro15_mmvdq", "nro15", "run"),
+            ("1253_nro04_gfx1100_bf16_chunked_gdn", "nro04", "run"),
         ):
             selection = vp.resolve_producer(patch_dir=_PATCHES / patch_id, producer_id=producer_id)
             self.assertEqual(selection.spec.standard_campaign, standard)

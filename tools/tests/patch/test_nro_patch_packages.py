@@ -88,9 +88,10 @@ class NroPackageShapeTests(unittest.TestCase):
             package = PATCHES / patch_id
             for name in ("patch.toml", "patch.py", "SUMMARY.md", "README.md", "TESTING.md"):
                 self.assertTrue((package / name).is_file(), f"{patch_id}: missing {name}")
-            # Validation adapters are intentionally deferred until a resolvable
-            # Experiment Contract and executable correctness producer exist.
-            self.assertFalse((package / "validation.toml").exists())
+            # A validation adapter exists only once a contract and an
+            # executable producer do (1253 first, PNRO04).
+            if (package / "validation.toml").exists():
+                self.assertTrue((package / "validation" / "producer.py").is_file(), patch_id)
 
     def test_manifests_pin_state_plan_and_dependencies(self):
         for patch_id, (plan_id, requires) in EXPECTED.items():

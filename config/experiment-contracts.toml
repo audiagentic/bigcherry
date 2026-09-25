@@ -1185,9 +1185,11 @@ rationale = "K==1 GatedDeltaNet prefill (S_v=128) on RDNA3/RDNA4 runs as a BF16/
 backend = "hip"
 architectures = ["gfx1100", "gfx1201"]
 
+# Prefill of the hybrid GDN model is the GDN-prefill lane (the paired
+# harness maps "prefill" to pp512).
 [contract.NRO04-GDN-CHUNKED-BF16.positive]
 models = ["tierA-qwen4b-q6k"]
-workloads = ["gdn_prefill"]
+workloads = ["prefill"]
 
 [contract.NRO04-GDN-CHUNKED-BF16.controls]
 models = ["tierA-qwen4b-q6k"]

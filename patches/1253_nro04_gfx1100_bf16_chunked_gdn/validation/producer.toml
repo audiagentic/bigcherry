@@ -1,0 +1,18 @@
+schema = 1
+
+# PNRO04: own test-backend-ops pair (GATED_DELTA_NET correctness + activation)
+# and the standard scaffold llama-bench pair (pp512 positive,
+# tg128 control).
+[producer.nro04]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro04-correctness.json",
+  "nro04-performance.json",
+  "nro04-subject-trace.log",
+  "nro04-control-trace.log",
+]
