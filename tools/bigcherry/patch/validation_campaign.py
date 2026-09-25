@@ -1226,6 +1226,13 @@ def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
         "--baseline-source (e.g. a focal patch's hard prerequisite). Named "
         "explicitly, never inferred; recorded in both compositions.",
     )
+    parser.add_argument(
+        "--production-lane",
+        action="store_true",
+        help="PVPS05: after the verdict, run the production dual-GPU MTP "
+        "no-regression lane (validated BC vs validated BC + patch; model and "
+        "devices from ${BIGCHERRY_PRODUCTION_MODEL}/${BIGCHERRY_PRODUCTION_DEVICES}).",
+    )
     parser.add_argument("--model", type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)
     parser.add_argument(
