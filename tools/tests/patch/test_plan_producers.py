@@ -26,9 +26,9 @@ def _load(patch_id: str):
 class ProducerResolutionTests(unittest.TestCase):
     def test_both_producers_resolve(self):
         for patch_id, producer_id, standard in (
-            ("1216_rd43_concurrent_join_fusion_guard", "rd43", "skip"),
+            ("1216_rd43_concurrent_join_fusion_guard", "rd43", "run"),
             ("1237_rd30_moe_mmq_compact_grid", "rd30", "run"),
-            ("1215_rd394041_amd_stream_moe_overlap", "rd3942", "skip"),
+            ("1215_rd394041_amd_stream_moe_overlap", "rd3942", "run"),
             ("1241_rd33_mmvq_q8_0_f32_decode", "rd33", "run"),
             ("1207_rd17_moe_topk_down_fold", "rd17", "run"),
             ("1262_nro15_mmvdq", "nro15", "run"),

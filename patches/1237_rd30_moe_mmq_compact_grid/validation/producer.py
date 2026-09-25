@@ -28,6 +28,7 @@ import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
+from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp  # type: ignore[import-not-found]
 
 _CONTRACT_ID = "RD30-MOE-MMQ-COMPACT-GRID"

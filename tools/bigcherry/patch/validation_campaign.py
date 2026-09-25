@@ -524,6 +524,7 @@ def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) ->
         patch_id=args.patch,
         base_ref=cfg.pinned,
         baseline_source=baseline_source,
+        common_patches=tuple(args.common_patches),
         hip_path=args.hip_path,
         amdgpu_targets=args.amdgpu_targets,
         workdir=workdir,
@@ -1216,6 +1217,14 @@ def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
         help="explicit named source composition for CONTROL; SUBJECT adds "
         "only the focal patch. The focal must be absent from this "
         "baseline; dependencies/conflicts remain enforced.",
+    )
+    parser.add_argument(
+        "--common-patches",
+        type=lambda raw: tuple(p for p in raw.split(",") if p),
+        default=(),
+        help="comma-separated patches added to BOTH scaffold arms on top of "
+        "--baseline-source (e.g. a focal patch's hard prerequisite). Named "
+        "explicitly, never inferred; recorded in both compositions.",
     )
     parser.add_argument("--model", type=Path)
     parser.add_argument("--hip-path", required=True, type=Path)

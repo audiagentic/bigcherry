@@ -3,10 +3,10 @@
 RD39-42-STREAM-MOE-OVERLAP claims both a gain and bit-identical output for
 MoE shared-expert overlap on an auxiliary stream during batch-1 decode. The
 overlap only runs under GGML_CUDA_GRAPH_OPT=1, and 1215 is only safe there
-together with its join-fusion guard 1216, so the subject is the unit:
-
-  control = bigcherry
-  subject = bigcherry + 1215 + 1216   (1216 as a declared subject companion)
+with its join-fusion guard 1216 in production; earlier real runs showed
+1215 alone completes under GRAPH_OPT=1, so it is measured alone here on the
+standard scaffold pair (control = baseline, subject = baseline + 1215) and
+1216 is measured separately on top of it.
 
 - correctness (``bit_identical``): llama-server full-vocabulary logprobs for
   a fixed temperature-0 request must be exactly equal (tolerance 0.0) with
@@ -29,14 +29,12 @@ from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment import execution as experiment_execution
 from bigcherry.experiment import full_vocab
 from bigcherry.patch import producer_support as support
-from bigcherry.patch import source as psi
 from bigcherry.patch import validation_producer as vp
 from bigcherry.patch.activation import ActivationEvidence
 
 _LABEL = "rd39-42"
 _CONTRACT_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 _CONTRACT_ID = "RD39-42-STREAM-MOE-OVERLAP"
-_COMPANION = "1216_rd43_concurrent_join_fusion_guard"
 _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _GRAPH_OPT_ENV = {"GGML_CUDA_GRAPH_OPT": "1"}
@@ -67,17 +65,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     control_identity = support.model_identity(control_model, model_id=_CONTROL_MODEL_REF, label=_LABEL)
     device = support.select_device(ctx, architecture, label=_LABEL)
 
-    pairs = {
-        target: ctx.runtime.build_pair(
-            targets=_CONTRACT_ARCHITECTURES,
-            primary_target=target,
-            subject_companion_patches=(_COMPANION,),
-            baseline_source="bigcherry",
-            require_parity=True,
-        )
-        for target in ("llama-server", "llama-bench")
+    binaries = {
+        role: {target: ctx.validation_binaries.get(role, {}).get(target) for target in ("llama-server", "llama-bench")}
+        for role in ("control", "subject")
     }
-    server_pair, bench_pair = pairs["llama-server"], pairs["llama-bench"]
+    if not all(isinstance(b, Path) and b.is_file() for arm in binaries.values() for b in arm.values()):
+        raise vp.ValidationProducerError(f"{_LABEL}: standard scaffold llama-server/llama-bench pair is missing")
 
     logs = ctx.workdir / "logs"
     control_log = logs / "rd3942-control-server.log"
@@ -92,8 +85,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     try:
         comparison = full_vocab.compare_servers(
-            control_session=_factory(server_pair.control_bin, control_log),
-            subject_session=_factory(server_pair.subject_bin, subject_log),
+            control_session=_factory(binaries["control"]["llama-server"], control_log),
+            subject_session=_factory(binaries["subject"]["llama-server"], subject_log),
             prompt=_PROMPT,
             n_predict=_N_PREDICT,
             tolerance=0.0,
@@ -117,13 +110,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         mechanism="trace_marker",
         detail=f"marker {_MARKER_REGEX!r} subject_hit={subject_hit} control_hit={control_hit}",
     )
-    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT_NAME, text=subject_text)
-    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT_NAME, text=control_text)
+    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT_NAME, text=support.compact_log(subject_text))
+    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT_NAME, text=support.compact_log(control_text))
 
     lanes = {}
     for role, lane_model in (("positive", model), ("control", control_model)):
         outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=bench_pair.control_bin, subject_binary=bench_pair.subject_bin, model=lane_model,
+            control_binary=binaries["control"]["llama-bench"], subject_binary=binaries["subject"]["llama-bench"], model=lane_model,
             workloads=("decode",), pairs=_ROUNDS, log_context=f"rd3942-{role}", device=device,
             env_overrides=_GRAPH_OPT_ENV,
         )
@@ -141,10 +134,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "contract_id": _CONTRACT_ID,
             "architecture": architecture,
             "env": _GRAPH_OPT_ENV,
-            "subject_companion_patches": [_COMPANION],
             "positive_model_identity": identity,
             "control_model_identity": control_identity,
-            "build_identities": {r: dict(i) for r, i in bench_pair.validation_build_identities.items()},
+            "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
             "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
                          "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
             "control": {"metric": "tg128", "effect": dataclasses.asdict(control_effect),
@@ -161,11 +153,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "detail": bit_identical.detail,
             "model_identity": identity,
             "env": server_env,
-            "subject_companion_patches": [_COMPANION],
             "comparison": comparison.document(),
-            "subject_source_tree": psi.git_worktree_tree(server_pair.subject_source),
-            "control_source_tree": psi.git_worktree_tree(server_pair.control_source),
-            "server_build_identities": {r: dict(i) for r, i in server_pair.validation_build_identities.items()},
         },
     )
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
@@ -178,7 +166,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "mechanism": "rd3942-full-vocab-bit-identical",
             "detail": bit_identical.detail,
         },
-        validation_build_identities=bench_pair.validation_build_identities,
+        validation_build_identities=ctx.validation_build_identities,
         activation_evidence=activation,
         performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
         trace_evidence={
