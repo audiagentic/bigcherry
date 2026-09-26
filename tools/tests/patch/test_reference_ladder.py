@@ -29,15 +29,20 @@ class ReferenceLadderTests(unittest.TestCase):
     def _runner(self, command: list[str]) -> subprocess.CompletedProcess:
         arm = Path(command[0]).parent.name
         self.calls.append(arm)
-        metric = "tg128" if "-n" in command and "128" in command else "pp512"
-        return subprocess.CompletedProcess(command, 0, stdout=f"| {metric} | {SPEED[arm]:.2f} ± 0.1 |", stderr="")
+        rows = []
+        if command[command.index("-p") + 1] != "0":
+            rows.append(f"| pp512 | {SPEED[arm] * 30:.2f} ± 1 |")
+        if command[command.index("-n") + 1] != "0":
+            rows.append(f"| tg128 | {SPEED[arm]:.2f} ± 0.1 |")
+        return subprocess.CompletedProcess(command, 0, stdout="\n".join(rows), stderr="")
 
     def test_shared_binary_is_measured_once_and_reported_under_every_name(self) -> None:
         payload = ladder.run_reference_ladder(
-            arms=_arms(self.root), model=Path("m.gguf"), runner=self._runner, workloads=("decode",)
+            arms=_arms(self.root), model=Path("m.gguf"), runner=self._runner, workloads=("decode", "prefill")
         )
-        # 3 distinct binaries x 2 rounds each = 6 rounds x 3 arms.
-        self.assertEqual(len(self.calls), 18)
+        # 3 distinct binaries x 1 rotation = 3 rounds x 3 arms; ONE call measures both workloads.
+        self.assertEqual(len(self.calls), 9)
+        self.assertAlmostEqual(payload["metrics"]["pp512"]["pct_vs_stock"]["validated+patch"], 10.0)
         self.assertEqual(set(self.calls), {"stock", "base", "subject"})
         tg = payload["metrics"]["tg128"]
         self.assertEqual(tg["mean"]["base"], tg["mean"]["validated"])
@@ -47,7 +52,8 @@ class ReferenceLadderTests(unittest.TestCase):
 
     def test_order_rotates_every_round(self) -> None:
         ladder.run_reference_ladder(
-            arms=_arms(self.root), model=Path("m.gguf"), runner=self._runner, workloads=("decode",)
+            arms=_arms(self.root), model=Path("m.gguf"), runner=self._runner, workloads=("decode",),
+            rounds_per_arm=2,
         )
         firsts = [self.calls[i] for i in range(0, len(self.calls), 3)]
         self.assertEqual(firsts[:3], ["stock", "base", "subject"])
@@ -59,7 +65,7 @@ class ReferenceLadderTests(unittest.TestCase):
         payload = ladder.run_reference_ladder(
             arms=_arms(self.root), model=Path("m.gguf"), runner=failing, workloads=("decode",)
         )
-        self.assertEqual(payload["metrics"]["tg128"]["failed_runs"], 18)
+        self.assertEqual(payload["metrics"]["tg128"]["failed_runs"], 9)  # 3 rounds x 3 distinct binaries
         self.assertEqual(payload["metrics"]["tg128"]["mean"], {})
 
 
