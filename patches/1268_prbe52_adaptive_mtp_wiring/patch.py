@@ -4,15 +4,8 @@ import re
 
 from bigcherry.patcher import Edit, FilePatch
 
-_COMMON_H_OLD = """struct common_params_speculative_draft {
-    int32_t n_max = 3; // maximum number of tokens to draft during speculative decoding
-    int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding
-"""
-_COMMON_H_NEW = """struct common_params_speculative_draft {
-    int32_t n_max = 3; // maximum number of tokens to draft during speculative decoding
-    int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding
-    int32_t n_min_adaptive = 0; // adaptive MTP floor; 0 disables adaptive depth
-"""
+_COMMON_H_ANCHOR = "    int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding\n"
+_COMMON_H_INSERT = "    int32_t n_min_adaptive = 0; // adaptive MTP floor; 0 disables adaptive depth\n"
 
 _ARG_OLD = """    add_opt(common_arg(
         {\"--spec-draft-n-min\"}, \"N\",
@@ -167,8 +160,8 @@ PATCHES = [
     FilePatch(
         path="common/common.h",
         description="PRBE52 explicit disabled-by-default adaptive MTP floor",
-        edits=(Edit(id="prbe52-adaptive-param", anchor=re.escape(_COMMON_H_OLD), mode="replace", text=_COMMON_H_NEW,
-                    guard=r"n_min_adaptive = 0", rationale="Expose a separate adaptive floor without overloading fixed n_min.", expect_matches=1, max_span_lines=3),),
+        edits=(Edit(id="prbe52-adaptive-param", anchor=re.escape(_COMMON_H_ANCHOR), mode="insert_after", text=_COMMON_H_INSERT,
+                    guard=r"n_min_adaptive = 0", rationale="Anchor only on the stable n_min field so lower-order composed fields cannot invalidate the edit.", expect_matches=1, max_span_lines=1),),
     ),
     FilePatch(
         path="common/arg.cpp",

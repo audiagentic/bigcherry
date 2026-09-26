@@ -20,6 +20,7 @@ _spec.loader.exec_module(_module)
 
 _COMMON_H = """struct common_params_speculative_draft {
     int32_t n_max = 3; // maximum number of tokens to draft during speculative decoding
+    int32_t n_chain_heads = 0; // lower-order composed field
     int32_t n_min = 0; // minimum number of draft tokens to use for speculative decoding
 """
 _ARG = """    add_opt(common_arg(
@@ -97,7 +98,9 @@ class Patch1268Mechanics(unittest.TestCase):
         with td:
             first = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
-            self.assertIn("n_min_adaptive = 0", (root / "common/common.h").read_text())
+            common_h = (root / "common/common.h").read_text()
+            self.assertIn("n_chain_heads = 0", common_h)
+            self.assertIn("n_min_adaptive = 0", common_h)
             self.assertIn("LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE", (root / "common/arg.cpp").read_text())
             text = (root / "common/speculative.cpp").read_text()
             self.assertIn("effective_n_max", text)
