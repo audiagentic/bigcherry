@@ -1608,3 +1608,47 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.PRBE55-VK-SMALLN-DMMV]
+title = "PRBE55: opt-in Vulkan small-N DMMV routing on AMD RDNA"
+prerequisites = []
+
+[contract.PRBE55-VK-SMALLN-DMMV.source]
+# Local implementation of an upstream-Vulkan routing hypothesis; no immutable source commit is claimed.
+source_id = "amd-ecosystem-llama-cpp"
+commits = []
+atomic_part = "1269_prbe55_vk_smalln_dmmv"
+
+[contract.PRBE55-VK-SMALLN-DMMV.target]
+kind = "orchestration"
+
+[contract.PRBE55-VK-SMALLN-DMMV.hypothesis]
+expected_effect = "both"
+rationale = "When the existing Vulkan selector would quantize F32 activations and use MMVQ, an explicit AMD/RDNA N=2..8 experiment reuses the existing DMMV fallback to avoid Q8_1 activation quantization; default routing, N=1, wider batches, non-AMD devices, and baseline non-MMVQ choices remain unchanged."
+
+[contract.PRBE55-VK-SMALLN-DMMV.scope]
+backend = "vulkan"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.correctness]
+greedy_parity = "required"
+
+[contract.PRBE55-VK-SMALLN-DMMV.measurement]
+server_requests_per_start = 5
+bench_invocation = "combined"
+
+[contract.PRBE55-VK-SMALLN-DMMV.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
