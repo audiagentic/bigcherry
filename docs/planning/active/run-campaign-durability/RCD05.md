@@ -17,7 +17,7 @@ work: M
 
 Implement the per-attempt execution boundary used by every `Executor`. Resolve mutable code refs only when creating a new attempt, pin one exact BigCherry commit for that attempt, create an isolated runner worktree, resolve host/toolchain/model/composition identities, render the existing validation-campaign argv, stream logs, monitor disk/progress, and classify infrastructure failures without interpreting scientific results.
 
-This item extends existing seams rather than replacing them: HI151 remains the repository-maintenance fence; `experiment.bundle.run_managed()` remains the managed child-process seam; `validation_campaign` remains the scientific campaign entry point.
+This item extends existing seams rather than replacing them: HI151 remains the repository-maintenance fence; `experiment.bundle.run_managed()` remains the managed child-process seam; `validation_campaign` remains the scientific campaign entry point. HI151 locking and RCD04/RCD09 domain-store serialization are deliberately separate concerns.
 
 ## Steps
 
@@ -26,10 +26,10 @@ This item extends existing seams rather than replacing them: HI151 remains the r
 3. Render `python -m bigcherry.patch.validation_campaign ...` from typed JobSpec/AttemptSpec; no arbitrary passthrough argv.
 4. Map executor allocation to launch environment:
    - Slurm: preserve scheduler-provided `ROCR_VISIBLE_DEVICES`, resolve allocation to RCD12 stable IDs, normally leave `HIP_VISIBLE_DEVICES` unset;
-   - LocalExecutor: resolve stable IDs to launch-local selectors immediately before spawn.
+   - LocalExecutor: map the series-prebound stable IDs to launch-local selectors immediately before spawn; never choose a replacement cohort.
 5. Change `run_managed()` from `capture_output=True` to direct/streamed stdout/stderr files while preserving durable intent-before-spawn and terminal artifact hashing.
 6. Add root/work disk guards, heartbeat/progress fingerprint, process-group cancellation, bounded log-retention policy and typed infrastructure failures.
-7. Use current HI151 `Lease` around each long-running attempt. Do **not** add a second lock protocol: HI151 already uses the complementary publish/recheck handshake for Lease vs MaintenanceLock.
+7. Use current HI151 `Lease` around each long-running attempt. Do **not** add another tree-maintenance lock protocol: HI151 already uses the complementary publish/recheck handshake for `Lease` vs `MaintenanceLock`. Separately, use the generic host-local multiprocess lock primitive owned by RCD04/RCD09 for event/run-store serialization; it does not participate in HI151 maintenance admission.
 8. Implement result/retention cleanup; never delete unharvested or sole evidence.
 9. Promote the current RCD real-process/recovery/race smokes into permanent `tools/tests/**` coverage when implementing this item.
 
@@ -128,7 +128,7 @@ hash terminal artifacts
 atomically write terminal result
 ```
 
-The RCD CI currently proves intent-before-spawn, success, exit 76 preservation, launch failure 127, KeyboardInterrupt -> interrupted/130, artifact tamper rejection and an 8 MiB real output. The 8 MiB case also confirms the present implementation still buffers output, so streaming remains a required implementation change before 1.5 GB server logs are safe.
+The RCD CI currently proves intent-before-spawn, success, exit 76 preservation, launch failure 127, interruption/failure injection, artifact validation and an 8 MiB real output. The 8 MiB case confirms the present implementation still buffers output, so streaming remains required before ~1.5 GB server logs are safe.
 
 ### Monitoring
 
@@ -172,9 +172,9 @@ Maintenance admission:
   otherwise publish owner and proceed
 ```
 
-This complementary ordering closes the check/create race without an extra `protocol.lock`. Dead local PID leases may be explicitly pruned; remote-host leases remain fail-closed/live.
+This complementary ordering closes the check/create race without an extra tree-protocol lock. Dead local PID leases may be explicitly pruned; remote-host leases remain fail-closed/live.
 
-Planning CI evidence on 2026-09-26:
+Planning CI evidence:
 
 ```text
 real_recovery_smoke.py: 18 checks PASS
@@ -188,7 +188,11 @@ tree_activity_race_smoke.py: 50 simultaneous races / 100 assertions PASS
   entered=50 blocked=50 overlap=0
 ```
 
-Permanent implementation tests must retain a concurrent stress test; an additional host lock is only justified if a future platform/storage implementation invalidates the current atomic-directory/file assumptions.
+### Domain-store serialization lock
+
+RCD04/RCD09 still require a host-local multiprocess lock for operations such as allocating monotonic event sequence numbers and atomically mutating derived run-store indexes. Implement/reuse this as a generic primitive (for example `tools/bigcherry/core/host_lock.py`) with explicit timeout/owner diagnostics.
+
+It must **not** be used to decide repository maintenance admission or GPU/resource scheduling. Conversely, HI151 must not be reused as the event-store mutex. Keeping these lock domains separate prevents accidental global serialization of jobs.
 
 ### Retention
 
@@ -205,13 +209,13 @@ Permanent implementation tests must retain a concurrent stress test; an addition
 - `tools/bigcherry/jobs/monitor.py`
 - `tools/bigcherry/jobs/retention.py`
 - `tools/bigcherry/experiment/bundle.py`
-- `tools/bigcherry/core/tree_activity.py` only if a demonstrated defect remains
+- `tools/bigcherry/core/host_lock.py` shared with RCD04/RCD09 for domain-store serialization
+- `tools/bigcherry/core/tree_activity.py` only if a demonstrated HI151 defect remains
 - `tools/tests/jobs/test_attempt.py`
 - `tools/tests/jobs/test_runner.py`
 - `tools/tests/jobs/test_monitor.py`
+- `tools/tests/core/test_host_lock.py`
 - `tools/tests/core/test_tree_activity.py`
-
-No `core/host_lock.py` is required by the validated design.
 
 ## Validation
 
@@ -223,6 +227,7 @@ Offline/permanent tests:
 - runner vendor/config inputs resolve explicitly;
 - campaign argv deterministic/no unknown passthrough;
 - Slurm launch env never rewrites scheduler visibility with host physical indices;
+- LocalExecutor maps the frozen stable cohort rather than selecting a new one;
 - intent durable before spawn;
 - streamed large output does not scale process RSS with log size;
 - child success/nonzero/launch failure/interruption/tamper all persist correctly;
@@ -230,6 +235,7 @@ Offline/permanent tests:
 - CPU-progress compiler is not false-stalled; all-channel inactivity is stalled;
 - 1.5 GB log behavior tested with sparse/generated stream without retaining 1.5 GB in Python memory;
 - concurrent HI151 lease/maintenance stress has zero overlaps;
+- concurrent event/run-store writers serialize through generic host lock without sequence duplication;
 - crashed local lease prunable only after PID death; remote unknown remains blocking;
 - cleanup never removes unharvested evidence.
 
@@ -247,6 +253,7 @@ Brutus-only:
 - managed output is streamed, not captured in memory;
 - infrastructure incidents have durable typed results;
 - HI151 maintenance/job admission retains zero-overlap regression coverage;
+- domain-store lock and HI151 lock domains remain distinct;
 - no physical GPU ordinal is scientific identity;
 - all offline tests pass.
 
@@ -258,4 +265,5 @@ Per-attempt runner worktrees remain required while campaign evidence writes repo
 
 - 2026-09-26T00:52:05.135167+00:00 (created-by): Created by agent
 - 2026-09-26 (dev-gpt-agent): Specified pinned attempt/worktree/monitoring lifecycle and physical-device-independent execution.
-- 2026-09-26 (dev-gpt-agent): Replaced proposed redundant host-lock protocol with empirically validated HI151 two-phase admission; recorded real process/recovery/race CI gates.
+- 2026-09-26 (dev-gpt-agent): Replaced redundant tree-maintenance lock protocol with empirically validated HI151 two-phase admission; recorded real process/recovery/race CI gates.
+- 2026-09-26 (dev-gpt-agent): Corrected lock ownership: generic host lock remains required for RCD04/RCD09 domain-store serialization but is distinct from HI151 maintenance fencing.
