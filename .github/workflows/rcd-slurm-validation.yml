@@ -61,11 +61,11 @@ jobs:
   slurm-service:
     name: Real Noble Slurm service semantics
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Install and exercise minimal Slurm/MUNGE stack
-        run: bash tools/lab/run-campaign-durability/slurm_noble_v1_smoke.sh
+      - name: Install and exercise Slurm/MUNGE + BigCherry integration
+        run: bash tools/lab/run-campaign-durability/slurm_noble_v2_smoke.sh
       - name: Collect privileged Slurm diagnostics
         if: always()
         shell: bash
@@ -77,7 +77,8 @@ jobs:
             /tmp/bc-slurmctld.log /tmp/bc-slurmd.log \
             /tmp/bc-slurmctld.stdout /tmp/bc-slurmd.stdout \
             /tmp/bc-slurm-jobcomp.log /tmp/bc-squeue.json /tmp/bc-scontrol-config.txt \
-            /tmp/bc-order /tmp/bc-restarts /tmp/bc-bigcherry-slurm.json; do
+            /tmp/bc-licenses.txt /tmp/bc-order /tmp/bc-restarts /tmp/bc-bigcherry-slurm.json \
+            /tmp/bc-cgroup-membership; do
             if sudo test -e "$path"; then
               sudo cp "$path" "$out/$(basename "$path")"
             fi
