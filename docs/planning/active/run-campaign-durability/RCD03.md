@@ -5,41 +5,94 @@ plan: run-campaign-durability
 state: pending
 created-at: '2026-09-26T00:51:56.813138+00:00'
 breadth: ''
-skill: intermediate
+skill: advanced
 created-by: agent
 priority: P1
-work: M
+work: L
 ---
 
 # Install and qualify the Brutus Slurm execution substrate
 
 ## Description
 
-Install the minimal single-node Slurm service used by `SlurmExecutor`: MUNGE, `slurmctld`, `slurmd`; no slurmdbd/MariaDB/slurmrestd in v1. Slurm is an execution/resource substrate only. GPU inventory and generated architecture-typed GRES come from RCD12 discovered hardware state, not hand-maintained slot configuration. Production coexistence remains a BigCherry gate (RCD11), not a Slurm partition model.
+Install and qualify the single-node Slurm service used by `SlurmExecutor`: MUNGE, loopback-only MariaDB, `slurmdbd`, `slurmctld`, and `slurmd`. No `slurmrestd` in v1. The accounting layer is minimal scheduler state, not a second BigCherry authority: BigCherry still owns run/series/attempt identity, commit pinning, retry legality, evidence and reporting.
 
-This item must produce reproducible config templates/generators and offline rendering tests before owner/root installation. Hardware qualification is explicit and cannot be simulated away.
+This requirement is empirically derived. The real Ubuntu 24.04/Slurm 23.11.4 CI smoke successfully started MUNGE/slurmctld/slurmd, registered the node, exposed `squeue --json`, and completed hold/release, then reproduced `PENDING Reason=InvalidAccount` on later submissions when no accounting association existed. v1 therefore provisions exactly one local cluster/account and explicit user association through slurmdbd rather than relying on no-accounting behavior.
+
+GPU inventory/GRES come from RCD12 discovered state. Production coexistence remains RCD11 BigCherry policy, not static Slurm GPU partitions.
 
 ## Steps
 
-1. Add tracked Slurm config templates/default policy; keep rendered host files under `/etc/slurm` generated from accepted RCD12 inventory.
-2. Install `slurm-wlm`/MUNGE on Brutus; create `bigcherry` Slurm account/user mapping only as required by local auth.
-3. Configure one build and one measurement partition, license-aware backfill, basic completion log, cgroup accounting/containment.
-4. Generate `gres.conf` + node `Gres=` from RCD12 inventory; run `slurmd -G` before applying.
-5. Add `SlurmExecutor` command rendering/parsing behind the generic RCD04 interface; subprocess calls are injectable for offline tests.
-6. Run cgroup/ROCm falsification matrix. If any supported configuration fails, set `ConstrainDevices=no`; retain scheduling GRES + `ROCR_VISIBLE_DEVICES` + BigCherry attestation.
-7. Record installed Slurm version/config digest and selected cgroup mode in host policy/status.
+1. Maintain tracked config templates plus `docs/reference/jobs/SLURM_BRUTUS.md`; rendered host files and DB secrets remain untracked.
+2. Install Noble packages `slurm-wlm slurmdbd munge mariadb-server`.
+3. Bind MariaDB to loopback only; create `slurm_acct_db` + least-purpose `slurm` DB user.
+4. Configure/start MUNGE, slurmdbd, cluster `bigcherry`, account `bigcherry`, service-user association, then slurmctld/slurmd in that order.
+5. Configure `bc-build`/`bc-measure`, `bf_licenses`, priority tiers, licenses, `AccountingStorageEnforce=associations`, `RequeueExit=75`, jobcomp and cgroup accounting.
+6. Generate architecture-typed `gres.conf` and node `Gres=` from accepted RCD12 inventory; `slurmd -G` is mandatory before node resume.
+7. Implement `SlurmExecutor` behind RCD04 `Executor`; command runner is injectable and Slurm syntax stays adapter-local.
+8. Run real CPU/service validation in GitHub `ubuntu-24.04` on every RCD/config change.
+9. On Brutus run the AMD GRES/cgroup/ROCm falsification matrix; fallback to `ConstrainDevices=no` if any supported cell fails.
+10. Record Slurm/config/accounting/inventory/cgroup hashes/modes in normalized status and acceptance evidence.
 
 ## Detailed Solution & Technical Design
 
-### Slurm policy
+### Service topology
 
-Tracked template semantics:
+```text
+MariaDB 127.0.0.1:3306
+  ^
+  | accounting_storage/mysql
+slurmdbd 127.0.0.1:6819
+  ^
+  | accounting_storage/slurmdbd
+slurmctld
+  ^       ^
+  |       |
+sbatch   slurmd
+```
+
+Only SSH is agent-facing. MariaDB/slurmdbd are never LAN APIs. MUNGE authenticates Slurm components. BigCherry uses CLI adapter calls (`sbatch`, `squeue --json`, `scontrol`, `scancel`, `sacct`) and never connects to MariaDB directly.
+
+### Accounting bootstrap
+
+Tracked `/etc/slurm/slurmdbd.conf` template:
+
+```ini
+AuthType=auth/munge
+DbdHost=@NODE_NAME@
+DbdAddr=127.0.0.1
+DbdPort=6819
+SlurmUser=slurm
+StorageType=accounting_storage/mysql
+StorageHost=127.0.0.1
+StoragePort=3306
+StorageLoc=slurm_acct_db
+StorageUser=slurm
+StoragePass=@HOST_SECRET@
+```
+
+Host bootstrap:
+
+```bash
+sacctmgr -i add cluster bigcherry
+sacctmgr -i add account bigcherry Cluster=bigcherry Description=BigCherry Organization=BigCherry
+sacctmgr -i add user bigcherry Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry
+```
+
+Every managed `sbatch` explicitly includes `--account=bigcherry`. Human users get explicit associations only if they submit directly.
+
+### Scheduler policy
 
 ```ini
 SchedulerType=sched/backfill
 SchedulerParameters=bf_licenses
 PriorityType=priority/multifactor
 Licenses=host_activity:2,build_slot:1
+
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=127.0.0.1
+AccountingStoragePort=6819
+AccountingStorageEnforce=associations
 
 JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
@@ -54,13 +107,11 @@ PartitionName=bc-build   Nodes=brutus PriorityTier=10  State=UP MaxTime=00:45:00
 PartitionName=bc-measure Nodes=brutus PriorityTier=100 State=UP MaxTime=00:45:00
 ```
 
-No static production-GPU partition and no per-card partition. Every job has finite time. `bf_licenses` + higher `PriorityTier` ensures a queued measurement can reserve/plan `host_activity:2` and is not indefinitely displaced by new build work.
-
-Initial v1 monolithic campaign requests `bc-measure`, `host_activity:2`, required architecture GRES. v1.5 prepare requests `bc-build`/`build_slot:1,host_activity:1`; execute requests `bc-measure`/`host_activity:2`.
+`host_activity=2` is the host-quiet token. v1 monolithic measure consumes both; build consumes one. `bf_licenses` + higher measurement tier are tested against real Slurm, not assumed.
 
 ### GRES
 
-RCD12 returns explicit architecture-typed lines:
+RCD12 generates one line per current render node:
 
 ```text
 Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
@@ -68,19 +119,15 @@ Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
 Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
 ```
 
-and node summary:
+Node summary groups architecture counts only:
 
 ```text
 Gres=gpu:gfx1100:2,gpu:gfx1201:1
 ```
 
-No type contains a slot/index. `File=` is an operational binding generated after discovery. `Flags=amd_gpu_env` supplies Slurm-managed `ROCR_VISIBLE_DEVICES`. Under Slurm BigCherry must preserve this value and must not write host-global physical indices into `HIP_VISIBLE_DEVICES`.
+Never encode ordinal/stable UUID in `Type`. Slurm owns allocation and `ROCR_VISIBLE_DEVICES`; BigCherry maps allocation back to RCD12 stable IDs and preserves visibility. A series-bound proper subset reserves all accepted GPUs of that architecture in v1, then narrows to the pre-bound stable IDs inside the exclusive allocation.
 
-For a constraint requiring an exact/subset card among identical architecture types, RCD12 may request all GPUs of that architecture, then select UUID(s) inside the allocation; correctness over utilization.
-
-### SlurmExecutor
-
-Planned module:
+### SlurmExecutor contract
 
 ```python
 # tools/bigcherry/jobs/slurm.py
@@ -94,13 +141,30 @@ class SlurmExecutor(Executor):
     def events(self, handle: ExecutionHandle, *, after: int | None = None) -> Iterable[ExecutorEvent]: ...
 ```
 
-`CommandRunner` is injected so unit tests feed saved `sbatch --parsable`, `squeue --json`, `scontrol`, and environment fixtures without Slurm installed. Domain packages may not import this module.
+Submission argv includes at least:
 
-Submission wrapper writes BigCherry `submission-intent.json` before `sbatch`, passes a stable job name plus `--comment=bigcherry:<execution_id>`, then persists the returned native job ID. The comment is a recovery/idempotency correlation key only. On crash ambiguity, adapter reconciliation searches `squeue --json` and configured jobcomp history/start-result sentinels; it never submits a duplicate when acceptance cannot be disproved. Slurm native job ID is opaque execution metadata, never scientific identity. `control(hold|release)` maps to Slurm hold/release; unsupported controls are typed errors in other adapters.
+```text
+sbatch --parsable
+  --account bigcherry
+  --job-name bc:<run_id>:a<attempt>
+  --comment bigcherry:<execution_id>
+  --partition <bc-build|bc-measure>
+  --licenses ...
+  --gres gpu:<arch>:<reserved_count>     # when GPU stage
+  --time <finite>
+  --output <attempt>/slurm-%j.out
+  --error <attempt>/slurm-%j.err
+  --export ALL,BIGCHERRY_RUN_ID=...,BIGCHERRY_ATTEMPT=...,BIGCHERRY_ATTEMPT_ROOT=...
+  <attempt>/launch.sh
+```
+
+`submission-intent.json` is durable before `sbatch`. The returned job ID is opaque execution metadata. Recovery searches by `--comment=bigcherry:<execution_id>` plus sentinels/accounting; ambiguous acceptance never causes blind duplicate submission.
+
+Machine parsers consume `squeue --json`/structured fields; never human column output. `sacct` is historical executor evidence, not scientific authority.
 
 ### cgroups
 
-Start with:
+Candidate:
 
 ```ini
 CgroupPlugin=autodetect
@@ -108,93 +172,126 @@ ConstrainDevices=yes
 ConstrainCores=yes
 ```
 
-Hardware matrix per installed toolchain and each discovered capability cohort must prove:
+Brutus acceptance per toolchain/cohort:
 
-- `/dev/kfd` usable;
-- allocated render nodes usable and unallocated nodes inaccessible;
-- Slurm `ROCR_VISIBLE_DEVICES` resolves to exactly the allocated stable devices;
-- `HIP_VISIBLE_DEVICES`/`CUDA_VISIBLE_DEVICES` do not conflict;
-- 100 bounded HIP init/enumeration loops without hangs/errors;
-- llama-bench and llama-server attestation succeed;
-- required peer/`-sm tensor` topology succeeds with its producer preflight.
+- `/dev/kfd` works;
+- allocated render nodes work, unallocated nodes blocked;
+- Slurm visibility maps exactly to stable IDs;
+- no conflicting HIP/CUDA visibility selectors;
+- 100 timeout-bounded HIP init/property loops;
+- llama-bench/server smoke;
+- peer/`-sm tensor` + 4096-context producer preflight where required.
 
-Fallback is an explicit recorded host mode: `ConstrainDevices=no`. This weakens isolation, not scheduling identity.
+Fallback: `ConstrainDevices=no`, while retaining GRES scheduling, Slurm visibility and BigCherry attestation. Record fallback explicitly; do not call it device isolation.
 
 ## Code Samples & Guidance
 
-Offline renderer must be deterministic:
+Deterministic adapter/config functions:
 
 ```python
 def render_slurm_gres(inventory: HardwareInventory) -> str: ...
 def render_slurm_node_gres(inventory: HardwareInventory) -> str: ...
 def build_sbatch_argv(request: ExecutionRequest, policy: SlurmPolicy) -> tuple[str, ...]: ...
 def parse_squeue_json(payload: str) -> tuple[ExecutionStatus, ...]: ...
+def parse_slurm_allocation(env: Mapping[str, str], inventory: HardwareInventory) -> Allocation: ...
 ```
 
-Do not shell-construct command strings; argv only. Do not parse human-column output.
+No shell command construction in production adapter code.
 
 ## Files
 
-Planned:
+Tracked/implemented during plan validation:
+
+- `config/slurm/slurm.conf.example`
+- `config/slurm/slurmdbd.conf.example`
+- `config/slurm/cgroup.conf.example`
+- `config/slurm/gres.conf.example`
+- `docs/reference/jobs/SLURM_BRUTUS.md`
+- `.github/workflows/rcd-slurm-validation.yml`
+- `tools/lab/run-campaign-durability/slurm_noble_smoke.sh`
+
+Planned production:
 
 - `tools/bigcherry/jobs/slurm.py`
 - `tools/bigcherry/jobs/slurm_config.py`
 - `tools/tests/jobs/test_slurm_executor.py`
 - `tools/tests/jobs/test_slurm_config.py`
-- `config/slurm/slurm.conf.example`
-- `config/slurm/cgroup.conf.example`
-- `docs/reference/jobs/SLURM_BRUTUS.md`
 
-Generated/untracked host state:
+Generated host state:
 
 - `/etc/slurm/slurm.conf`
+- `/etc/slurm/slurmdbd.conf` mode 0600
 - `/etc/slurm/gres.conf`
 - `/etc/slurm/cgroup.conf`
+- MariaDB `slurm_acct_db`
 - `/var/log/slurm/bigcherry-jobcomp.log`
 
 ## Validation
 
-Offline, required before sudo/install:
+### Already executed on real GitHub Ubuntu 24.04
 
-- golden render tests for 0/1/N devices and mixed architectures;
-- no generated GRES type contains device ordinal/BDF;
-- `sbatch` argv snapshots for build, monolithic measure, dual-GPU and dependency jobs;
-- `squeue --json` parser fixtures: pending/running/completed/held/cancelled/unknown;
-- `SLURM_JOB_GPUS`/allocation mapping fixture resolves through RCD12 inventory and rejects unknown/stale inventory hash;
-- starvation policy config contains `bf_licenses`, higher measurement `PriorityTier`, finite MaxTime;
-- domain import guard proves `bigcherry.jobs.model/series/service` do not import `bigcherry.jobs.slurm`.
+The CI installs the actual Noble packages, not mocks. Observed/passed so far:
 
-Hardware gates:
+- exact `slurm-wlm 23.11.4-1.2ubuntu5` installation;
+- MUNGE round-trip;
+- real `slurmctld` + `slurmd` launch;
+- node registration into `bc-build`/`bc-measure`;
+- `squeue --json` schema availability;
+- real hold/release job;
+- no-accounting configuration reproduced `InvalidAccount`, driving the slurmdbd correction.
 
-- `slurmd -G` clean against generated config;
-- single and multi-GPU allocation attestation;
-- complete cgroup matrix or recorded fallback;
-- kill/restart `slurmctld` does not lose accepted queued/running execution ownership;
-- `RequeueExit=75` increments `SLURM_RESTART_COUNT`.
+Current CI additionally must pass with the corrected accounting stack:
+
+- loopback MariaDB + real `slurmdbd`;
+- cluster/account/user association;
+- build/license/measurement ordering;
+- `afterok` dependency;
+- `RequeueExit=75` and `SLURM_RESTART_COUNT=0,1`;
+- cancellation;
+- jobcomp and `sacct` history.
+
+### Offline permanent tests before implementation completion
+
+- golden GRES/node renders for synthetic inventories;
+- exact `sbatch` argv snapshots including `--account=bigcherry`;
+- `squeue --json` fixture mappings including unknown states;
+- allocation -> RCD12 stable-ID mapping and stale-inventory rejection;
+- import guard: domain modules do not import Slurm adapter;
+- submission ambiguity/recovery correlation fixtures.
+
+### Brutus-only gates
+
+- `slurmd -G` against generated real GPU config;
+- single/multi-GPU stable-ID attestation;
+- complete ROCm/cgroup matrix or explicit fallback;
+- production gate/window integration;
+- controller restart/recovery with real queued/running work;
+- dynamic hardware drift drain/reconfigure/resume.
 
 ## Effort & Risk
 
-Medium. Highest risk is ROCm behavior under cgroup device filtering, explicitly gated. Slurm install/config errors are operational and reversible; keep old lab queue until RCD10 acceptance.
+Medium-high. Real CI has already falsified one simplifying assumption, validating the approach. Remaining high-risk area is AMD ROCm/cgroup behavior and dynamic production coexistence, both Brutus-only.
 
 ## Standards
 
-RCD02 architecture; RCD12 inventory; Ubuntu Noble Slurm 23.11 behavior fixed by the design review. No slurmdbd in v1.
+RCD02 architecture; RCD12 inventory; tested Ubuntu Noble Slurm 23.11.4 behavior; `docs/reference/jobs/SLURM_BRUTUS.md` is the installation procedure.
 
 ## Acceptance Criteria
 
-- Minimal services running: MUNGE/slurmctld/slurmd only.
-- Generated architecture GRES accepted by `slurmd -G`.
+- Real Noble CI passes complete MUNGE/MariaDB/slurmdbd/slurmctld/slurmd smoke.
+- Explicit BigCherry account association eliminates `InvalidAccount`.
+- Real license/priority/dependency/requeue/cancel tests pass.
+- Generated AMD GRES passes `slurmd -G` on Brutus.
 - Slurm allocation maps to stable RCD12 device identities.
-- License/priority configuration guarantees measurement progress.
-- cgroup mode is empirically qualified or fallback explicitly selected.
-- Offline executor/config tests pass.
+- cgroup mode is empirically qualified or fallback selected.
 - No BigCherry domain module depends on Slurm types.
 
 ## Notes
 
-Owner/root installation is required and is not claimed by offline tests.
+GitHub CI validates real Slurm service/scheduler semantics without GPUs. It does not qualify AMD GRES/cgroups/ROCm or production interference; those remain Brutus gates.
 
 ## Change Log
 
 - 2026-09-26T00:51:56.813138+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Replaced static four-card/sacct assumptions with dynamic RCD12 inventory, generic partitions and testable Slurm adapter.
+- 2026-09-26 (dev-gpt-agent): Replaced static four-card assumptions with dynamic RCD12 inventory and generic partitions.
+- 2026-09-26 (dev-gpt-agent): Real Noble 23.11.4 CI added; no-accounting design falsified by `InvalidAccount`, so v1 now includes minimal loopback MariaDB/slurmdbd associations.
