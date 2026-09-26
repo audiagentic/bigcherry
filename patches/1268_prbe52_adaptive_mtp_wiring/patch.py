@@ -141,6 +141,10 @@ _DRAFT_START_ANCHOR = (
     r"            n_drafting\+\+;\n"
     r"            drafting\[seq_id\] = true;\n"
     r"            common_sampler_reset\(smpls\[seq_id\]\.get\(\)\);\n"
+    # This triple exists in multiple draft implementations. MTP uniquely
+    # follows it by adding id_last plus pending_h to the embedding batch.
+    r"(?=\n            common_batch_add\(batch, dp\.id_last, dp\.pos0, \{ seq_id \}, true\);\n"
+    r"            std::memcpy\(batch\.embd \+ \(size_t\) \(batch\.n_tokens - 1\) \* n_embd, pending_h\[seq_id\]\.data\(\), row_bytes\);)"
 )
 _LIMIT_ANCHOR = (
     r"                result.push_back\(id\);\n\n"
@@ -192,7 +196,7 @@ PATCHES = [
             Edit(id="prbe52-begin-reset", anchor=_BEGIN_ANCHOR, mode="replace", text=_BEGIN_NEW,
                  guard=r"adaptive_state\.at\(seq_id\)\.reset", rationale="Reset adaptation at the request/sequence begin boundary.", expect_matches=1, max_span_lines=6),
             Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="replace", text=_DRAFT_START_NEW,
-                 guard=r"last_n_draft\[seq_id\] = 0", rationale="Prevent stale draft accounting on zero-draft exits.", expect_matches=1, max_span_lines=4),
+                 guard=r"last_n_draft\[seq_id\] = 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a triple shared with other draft implementations.", expect_matches=1, max_span_lines=4),
             Edit(id="prbe52-depth-limit", anchor=_LIMIT_ANCHOR, mode="replace", text=_LIMIT_NEW,
                  guard=r"effective_n_max", rationale="Use adaptive depth only when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=8),
             Edit(id="prbe52-draft-accounting", anchor=_FINALIZE_ANCHOR, mode="replace", text=_FINALIZE_NEW,
