@@ -11,7 +11,7 @@ PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --sel
 Expected:
 
 ```json
-{"checks": 30, "ok": true}
+{"checks": 32, "ok": true}
 ```
 
 Covered without hardware:
@@ -19,6 +19,7 @@ Covered without hardware:
 - capability-based GPU resolution by architecture/count/VRAM/model;
 - deterministic stable-device selection independent of discovery order;
 - one exact hardware cohort bound for a series rather than allocation-time card selection;
+- a series-bound proper subset of one architecture reserves that whole architecture pool in v1 before narrowing to stable IDs;
 - mixed same-architecture model ambiguity fails closed unless model/exact IDs are specified;
 - peer-pair and exact-device selection;
 - a series-bound device set must be contained in the executor allocation and cannot silently rebind;
