@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/rcd-slurm-validation.yml'
       - 'tools/lab/run-campaign-durability/**'
+      - 'tools/bigcherry/core/tree_activity.py'
       - 'tools/bigcherry/experiment/bundle.py'
       - 'tools/bigcherry/tuning/journal.py'
       - 'tools/bigcherry/telemetry.py'
@@ -36,10 +37,14 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
-      - name: Real BigCherry modules and child processes
+      - name: Real BigCherry modules, CLI and child processes
         env:
           PYTHONPATH: tools
         run: python tools/lab/run-campaign-durability/real_bigcherry_process_smoke.py
+      - name: Real HI151 and git commit-pinning/recovery semantics
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_recovery_smoke.py
 
   slurm-service:
     name: Real Noble Slurm service semantics

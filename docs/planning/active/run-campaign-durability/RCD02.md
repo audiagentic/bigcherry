@@ -8,49 +8,62 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P1
-work: S
+work: M
 ---
 
 # Freeze the job-service architecture and implementation boundaries
 
 ## Description
 
-Make `docs/design/JOBS_ORCHESTRATOR.md` the normative architecture for the run-campaign job service and convert its agreed decisions into executable plan boundaries. Adopt host-installed single-node Slurm on Brutus for durable queue/process/resource scheduling behind a platform-neutral BigCherry `Executor`; retain BigCherry authority for scientific identity, series policy, commit pinning, retry legality, evidence, reporting, production coexistence and hardware identity. Reject a custom scheduler database/daemon as an execution authority.
+Make `docs/design/JOBS_ORCHESTRATOR.md` the normative architecture for the run-campaign service and convert the agreed decisions into executable boundaries. Adopt host-installed single-node Slurm on Brutus behind a platform-neutral BigCherry `Executor`; retain BigCherry authority for scientific identity, series policy, commit pinning, retry legality, evidence/reporting, production coexistence and hardware identity. Reject a custom scheduler database/daemon as execution authority.
 
-This item is a design freeze, not a Slurm installation task. Later RCD items may refine implementation details only when falsification finds a contradiction; they must not silently reintroduce physical-index identity, static production-GPU assumptions, per-slot GRES types, mixed-commit attempts, allocation-time card selection, or result-driven retries.
+The design freeze is falsification-driven. Real GitHub Ubuntu 24.04 tests now execute current BigCherry modules/CLI/child processes and install/start actual Noble Slurm 23.11.4 services. Any contradiction found by those tests updates the design instead of being waived. The first real Slurm pass already falsified the earlier no-accounting assumption: later jobs pended `InvalidAccount`, so v1 now includes minimal loopback MariaDB/slurmdbd associations.
 
 ## Steps
 
-1. Treat `docs/design/JOBS_ORCHESTRATOR.md` as normative; RCD02-RCD12 are implementation plans derived from it.
-2. Freeze ownership boundaries:
-   - Slurm: queued/running/held/cancelled execution state, CPU/GPU allocation, dependencies, priority, licenses, containment when qualified, same-commit requeue.
-   - BigCherry: JobSpec/series/run/attempt identity, contract/composition freeze, commit pinning, capability resolution, production gate, retry classification, evidence/harvest/report/events.
-3. Freeze executor abstraction: domain modules depend only on `Executor`; only `jobs/slurm.py` may know `sbatch`, `squeue`, GRES, licenses, `SLURM_*` or Slurm state spellings.
+1. Treat `docs/design/JOBS_ORCHESTRATOR.md` as normative; RCD02-RCD12 implement it.
+2. Freeze ownership:
+   - Slurm: execution queue/state, CPU/GPU allocation, dependencies, priority, licenses, process containment when qualified, same-commit requeue.
+   - slurmdbd: minimal cluster/account/user associations plus executor accounting only; never BigCherry scientific authority.
+   - BigCherry: JobSpec/series/run/attempt, contract/composition freeze, commit pinning, capability/hardware binding, production gate, retry classification, evidence/harvest/report/events.
+3. Freeze adapter boundary: domain modules depend only on `Executor`; only `jobs/slurm.py` may know `sbatch/squeue/scontrol/scancel/sacct`, GRES/licenses/partitions or `SLURM_*`.
 4. Freeze rollout:
-   - v1: monolithic `validation_campaign` Slurm job with RCD06 M1 service-safety seams (external evidence, frozen composition, preflights/progress); retire shell queue only after hardware acceptance.
+   - v1: monolithic `validation_campaign` Slurm job with RCD06 M1 safety seams; retire shell queue only after hardware acceptance/soak.
    - v1.5: prepare/execute split with verified prepared manifest.
-   - v2: RCD01 durable operation/result protocol over already-externalized evidence.
+   - v2: RCD01 durable operation/result protocol over external evidence.
    - v3: full stage DAG.
-   - v4: timed-measure overlap only after `scheduler-isolation-v1`.
-5. Freeze execution order/dependencies:
-   - RCD04 and RCD12 can implement/test most code offline in parallel, but RCD04 final series creation consumes RCD12 deterministic `SeriesGpuBinding`.
-   - RCD03 consumes RCD12 inventory/GRES generation.
+   - v4: timed overlap only after `scheduler-isolation-v1`.
+5. Freeze dependencies:
+   - RCD04 and RCD12 implement/test mostly in parallel; RCD04 final series creation consumes deterministic RCD12 `SeriesGpuBinding`.
+   - RCD03 consumes RCD12 inventory/GRES.
    - RCD05 consumes RCD03/RCD04/RCD12.
    - RCD06 can proceed in parallel with RCD03-RCD05.
-   - RCD11 consumes RCD04/RCD12 stable device identity.
-   - RCD09 consumes RCD04/RCD05 event/run-store primitives.
-   - RCD10 gates v1 retirement after RCD03/RCD04/RCD05/RCD06 milestone M1/RCD09/RCD11/RCD12; RCD06 prepare/execute M2 is v1.5 and not a v1 cutover blocker.
-   - RCD07/RCD08 are post-v1 durability/stage/harvest work.
-6. Maintain a plan-only falsification harness under `tools/lab/run-campaign-durability/`; promote code to `tools/bigcherry/**` only when implementing an RCD item.
-7. Register retained lab files in `docs/reference/tooling/TOOL_DISPOSITION.md` before RCD02 completion; classify the harness/README as RCD-owned `TRANSITIONAL` planning tooling, not production/evidence authority.
+   - RCD11 consumes RCD04/RCD12 identity.
+   - RCD09 consumes RCD04/RCD05 durable event/run-store primitives.
+   - RCD10 gates v1 retirement after RCD03/RCD04/RCD05/RCD06-M1/RCD09/RCD11/RCD12.
+   - RCD07/RCD08 are post-v1 durability/stage/harvest work unless needed for parity.
+6. Maintain executable validation under `tools/lab/run-campaign-durability/`; production code remains under `tools/bigcherry/**`.
+7. Register all retained RCD lab files in `TOOL_DISPOSITION.md` before closing RCD02.
 
 ## Detailed Solution & Technical Design
 
 ### Platform decision
 
-Use Slurm 23.11.x on Ubuntu 24.04 with MUNGE, `slurmctld`, `slurmd`, `jobcomp/filetxt`; no MariaDB/slurmdbd/slurmrestd in v1. Use one generic `bc-measure` partition and one `bc-build` partition. Dynamic production conflicts are BigCherry pre-dispatch/runtime policy, not static partitions/reservations.
+Brutus v1 services:
 
-`Executor` must remain platform-neutral:
+```text
+mariadb (loopback only)
+munge
+slurmdbd (loopback association/accounting service)
+slurmctld
+slurmd
+```
+
+No `slurmrestd`. One generic `bc-build` and one `bc-measure` partition; production GPU conflicts are dynamic BigCherry policy, not static partitions/reservations.
+
+Minimal Slurm accounting is required because the real Noble 23.11.4 smoke reproduced `InvalidAccount` without associations. Every managed submission explicitly uses account `bigcherry`.
+
+### Executor boundary
 
 ```python
 class Executor(Protocol):
@@ -62,104 +75,151 @@ class Executor(Protocol):
     def events(self, handle: ExecutionHandle, *, after: int | None = None) -> Iterable[ExecutorEvent]: ...
 ```
 
-Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attempt is a distinct execution environment/series from Linux ROCm.
+Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. Windows HIP and Linux ROCm attempts never share a series environment.
 
 ### Identity invariants
 
-- `run_id` identifies one planned scientific session and survives harness retries.
-- `attempt_no` increases when a retry uses a new commit/config execution attempt.
-- BigCherry commit is frozen per attempt; stages never resolve branches independently.
-- final series identity freezes planned N, contract/base/focal/common/validated implementation identity, platform environment, and one deterministic exact RCD12 hardware cohort selected from accepted stable device IDs before any session is submitted.
-- every session in a series uses that same stable-device cohort; Slurm may allocate a wider set only for safe all-of-architecture reservation and BigCherry then narrows to the pre-bound IDs.
-- because architecture/count GRES cannot promise which same-arch card it returns, any bound cohort that is a proper subset of the accepted devices for that architecture reserves the whole architecture pool in v1.
-- slots/ordinals/BDF/render node are operational observations, never scientific card identity.
-- same-model replacement card starts a new hardware cohort; topology change starts a new cohort unless equivalence was prequalified.
-- exit 0 includes scientific PASS or FAIL; 75 is same-commit transient requeue; 76 requests new attempt; 77 blocks as invalid/drift.
-- no anomalous result is itself a retry trigger before PVPS09.
+- `run_id` is one planned scientific session and survives harness retries.
+- new-code/config retry increments `attempt_no`; same-commit exit-75 Slurm requeue does not.
+- BigCherry commit is frozen per attempt; no stage independently resolves a branch.
+- series freezes planned N, contract/base/focal/common/validated implementation identity, platform environment and one deterministic exact hardware cohort before any session is submitted.
+- every session uses the same stable-device cohort.
+- architecture/count GRES cannot promise which identical card is returned; a series-bound proper subset reserves the entire accepted architecture pool in v1 then narrows inside that exclusive allocation.
+- slot/index/BDF/render node are observations, not scientific identity.
+- same-model replacement or relevant topology change creates a new cohort/series unless equivalence was pre-qualified.
+- exit 0 includes scientific PASS/FAIL; 75 same-commit transient; 76 new attempt; 77 invalid/drift.
+- anomalous performance is never itself an automatic retry before PVPS09.
 
-### Non-hardware falsification
+### Tree-maintenance invariant
 
-`tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, deterministic series hardware binding and whole-architecture reservation for stable subsets, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
-
-Permanent tests must still replace the lab model before production acceptance.
-
-## Code Samples & Guidance
-
-Production packages planned by later items:
+HI151 is part of the service admission boundary. Validation found that its old API documented maintenance exclusion but `Lease.__enter__()` did not enforce it. The implementation now uses a complementary two-phase handshake:
 
 ```text
-tools/bigcherry/jobs/
-tools/bigcherry/hardware/
-tools/tests/jobs/
-tools/tests/hardware/
+runner:      check maintenance -> publish lease -> recheck maintenance
+maintenance: publish maintenance lock -> scan live leases
 ```
 
-Plan-only validation stays:
+Thus a campaign and pin-bump cannot both be admitted through the supported API, including the check/create race.
 
-```text
-tools/lab/run-campaign-durability/
-```
+## Executable validation
 
-Never make `docs/design/JOBS_ORCHESTRATOR.md` executable configuration. Runtime policy is represented by typed code/config and persisted resolved manifests.
-
-## Files
-
-- `docs/design/JOBS_ORCHESTRATOR.md` — normative architecture.
-- `docs/planning/active/run-campaign-durability/RCD02.md` ... `RCD12.md` — implementation plans.
-- `tools/lab/run-campaign-durability/mock_pipeline.py` — planning simulator.
-- `tools/lab/run-campaign-durability/README.md` — validation scope.
-- `docs/reference/tooling/TOOL_DISPOSITION.md` — required lab-tool classification.
-
-## Validation
-
-Completed during planning:
+### Planning model
 
 ```bash
 PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
 # {"checks": 32, "ok": true}
 ```
 
-Required static review before closing RCD02:
+Covers capability resolution, exact cohort binding, whole-architecture reservation, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor ordering.
 
-- no RCD plan treats physical GPU index as identity;
-- no RCD plan hard-codes production to current GPU slots;
-- no per-slot GRES type such as `gfx1100_0`;
-- no custom SQLite scheduler is execution authority;
-- no stage in one attempt may select a different BigCherry commit;
-- no series may silently select a different stable GPU cohort between sessions;
-- no architecture-only Slurm allocation may silently substitute a different card for a series-bound subset;
-- no scientific FAIL/non-material result is auto-retried;
-- every hardware-dependent claim is an explicit acceptance gate;
-- both RCD lab files are classified in the current TOOL_DISPOSITION registry.
+### Real BigCherry process validation
+
+`real_bigcherry_process_smoke.py` imports current production modules and launches real subprocesses. GitHub Ubuntu 24.04 currently passes 25 checks including:
+
+- `experiment.bundle.run_managed()` success/nonzero/launch failure;
+- separate `python -m bigcherry.experiment.bundle` process;
+- durable stdout/stderr and an 8 MiB output regression;
+- HI48 durable journal + torn-tail recovery;
+- real `validation_campaign.main()` producer selector/input/common-patch/device-map/production-lane parsing while mocking only the hardware/build producer body;
+- fail-closed producer-selector mismatch and missing mandatory runtime inputs.
+
+`real_recovery_smoke.py` additionally exercises current HI151 code and real Git worktrees: maintenance/lease exclusion, crash-stale lease pruning, detached commit pinning, branch advance isolation, runner dirtiness and cleanup.
+
+### Real Noble Slurm validation
+
+`.github/workflows/rcd-slurm-validation.yml` runs on `ubuntu-24.04` and installs actual distro packages. Required final pass:
+
+```text
+Slurm 23.11.4
+MUNGE round trip
+loopback MariaDB + slurmdbd
+bigcherry cluster/account/user association
+slurmctld/slurmd node registration
+squeue --json
+hold/release/cancel
+afterok dependency
+license/priority progress
+RequeueExit=75 + SLURM_RESTART_COUNT
+jobcomp + sacct history
+```
+
+This validates real CPU/service/scheduler behavior, not AMD hardware.
+
+### Brutus-only gates
+
+- generated real AMD `slurmd -G`;
+- RCD12 stable IDs/UUID availability and GRES mapping;
+- ROCm cgroup device matrix or explicit `ConstrainDevices=no` fallback;
+- peer/`-sm tensor`, 4096-context and producer-specific preflights;
+- llama-swap conflict/idle/window watchdog;
+- scheduler-isolation/noise measurements;
+- monolithic campaign evidence parity.
+
+## Files
+
+Validation/config now tracked:
+
+```text
+.github/workflows/rcd-slurm-validation.yml
+config/slurm/slurm.conf.example
+config/slurm/slurmdbd.conf.example
+config/slurm/cgroup.conf.example
+config/slurm/gres.conf.example
+docs/reference/jobs/SLURM_BRUTUS.md
+tools/lab/run-campaign-durability/mock_pipeline.py
+tools/lab/run-campaign-durability/real_bigcherry_process_smoke.py
+tools/lab/run-campaign-durability/real_recovery_smoke.py
+tools/lab/run-campaign-durability/slurm_noble_smoke.sh
+```
+
+Production packages remain the responsibility of RCD03-RCD12.
+
+## Validation
+
+Required static review before RCD02 closes:
+
+- no physical GPU index is scientific identity;
+- no production policy hard-codes current slots;
+- no per-slot GRES type;
+- no custom SQLite scheduler authority;
+- no mixed-commit attempt;
+- no session silently changes stable GPU cohort;
+- no architecture-only allocation substitutes a different card for a bound subset;
+- no scientific result drives automatic retry;
+- all hardware claims are explicit Brutus gates;
+- Slurm v1 documents/uses the tested association layer;
+- all RCD lab files are registered in `TOOL_DISPOSITION.md`.
 
 ## Effort & Risk
 
-Low implementation effort; high leverage. Primary risks are later plans drifting from the normative design and seemingly harmless capability resolution moving a series between physical cards. Mitigate by capability-based executor-neutral policy plus exact pre-series cohort binding.
+Medium. The validation harness has already found/fixed three design defects: allocation-time same-arch card substitution, HI151 maintenance admission, and Noble 23.11 no-accounting `InvalidAccount`. Remaining uncertainty is concentrated in real AMD/production behavior.
 
 ## Standards
 
 - `docs/design/JOBS_ORCHESTRATOR.md`.
+- `docs/reference/jobs/SLURM_BRUTUS.md`.
 - Existing BigCherry provenance/identity rules.
-- `AGENTS.md` / `docs/reference/tooling/TOOLING.md`: permanent code under `tools/bigcherry`, plan-specific falsification under `tools/lab`, tests under `tools/tests`, and every retained lab tool registered in TOOL_DISPOSITION.
+- permanent code under `tools/bigcherry`, permanent tests under `tools/tests`, RCD validation under `tools/lab` with registry disposition.
 
 ## Acceptance Criteria
 
-- Architecture/ownership/rollout/dependency graph above is explicit.
-- RCD03-RCD12 contain implementation-ready modules/signatures/tests and cite hardware-only gates separately.
-- Planning simulator reports 32 checks passing.
-- Final series identity is bound to one deterministic hardware cohort before session submission.
-- Any proper-subset cohort uses safe whole-architecture reservation until an exact-device scheduler mechanism is deliberately qualified.
-- Static contradiction scan above passes.
-- Lab harness/README are classified in TOOL_DISPOSITION.
-- No unresolved platform choice remains.
+- RCD03-RCD12 are implementation-ready with explicit hardware-only gates.
+- 32-check planning model passes.
+- real BigCherry process/recovery smokes pass.
+- real Noble Slurm accounting/service/scheduler smoke passes.
+- final series identity binds one exact deterministic hardware cohort before submission.
+- proper subsets use whole-architecture reservation in v1.
+- static contradiction scan passes.
+- RCD lab tooling is registered.
+- no unresolved platform choice remains.
 
 ## Notes
 
-Decision: Slurm + thin BigCherry domain layer + platform-neutral Executor. The Round-4 dynamic production/hardware design supersedes older GPU-class/static-inventory text.
+Decision: Slurm + minimal local slurmdbd association layer + thin BigCherry domain service + platform-neutral Executor. Real validation results supersede earlier no-accounting/static assumptions.
 
 ## Change Log
 
 - 2026-09-26T00:51:52.243021+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Fully specified final architecture, dependency order, invariants and offline falsification.
-- 2026-09-26 (dev-gpt-agent): Adversarial follow-up added deterministic pre-series hardware binding and lab-tool disposition acceptance gate.
-- 2026-09-26 (dev-gpt-agent): Planning harness extended to 32 checks; proper-subset cohort now requires whole-architecture reservation in v1.
+- 2026-09-26 (dev-gpt-agent): Fully specified architecture/dependencies/offline falsification.
+- 2026-09-26 (dev-gpt-agent): Added deterministic pre-series hardware binding and whole-architecture subset reservation.
+- 2026-09-26 (dev-gpt-agent): Added real BigCherry-process, recovery and Noble Slurm CI; real tests corrected HI151 admission and required minimal slurmdbd associations.
