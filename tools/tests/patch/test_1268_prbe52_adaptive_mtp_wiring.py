@@ -34,6 +34,33 @@ _ARG = """    add_opt(common_arg(
 _SPEC = """#include <algorithm>
 #include <cassert>
 
+struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
+    void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+        const int32_t N = (int32_t) prompt.size();
+        if (N <= 0) {
+            return;
+        }
+    }
+
+    void draft(common_speculative_draft_params_vec & dparams) override {
+            n_drafting++;
+            drafting[seq_id] = true;
+            common_sampler_reset(smpls[seq_id].get());
+
+            other_batch_add(seq_id);
+    }
+};
+
+struct another_draft_impl : public common_speculative_impl {
+    void draft(common_speculative_draft_params_vec & dparams) override {
+            n_drafting++;
+            drafting[seq_id] = true;
+            common_sampler_reset(smpls[seq_id].get());
+
+            other_batch_add_again(seq_id);
+    }
+};
+
 struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]
 
@@ -53,12 +80,22 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         if (N <= 0) {
             return;
         }
+
+        auto * ctx_dft = this->params.ctx_dft;
+        const llama_pos pos_max = llama_memory_seq_pos_max(llama_get_memory(ctx_dft), seq_id);
+
+        if (pos_max < N - 1 && !is_mem_shared) {
+            warn();
+        }
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
             n_drafting++;
             drafting[seq_id] = true;
             common_sampler_reset(smpls[seq_id].get());
+
+            common_batch_add(batch, dp.id_last, dp.pos0, { seq_id }, true);
+            std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
 
                 result.push_back(id);
 
@@ -110,6 +147,8 @@ class Patch1268Mechanics(unittest.TestCase):
             self.assertIn("n_min_adaptive = 0", common_h)
             self.assertIn("LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE", (root / "common/arg.cpp").read_text())
             text = (root / "common/speculative.cpp").read_text()
+            self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
+            self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 2)  # begin reset + MTP draft reset only
             self.assertIn("effective_n_max", text)
             self.assertIn("adaptive_state[seq_id].update", text)
             before = {p: (root / p).read_text() for p in ("common/common.h", "common/arg.cpp", "common/speculative.cpp")}
