@@ -17,7 +17,7 @@ work: S
 
 Make `docs/design/JOBS_ORCHESTRATOR.md` the normative architecture for the run-campaign job service and convert its agreed decisions into executable plan boundaries. Adopt host-installed single-node Slurm on Brutus for durable queue/process/resource scheduling behind a platform-neutral BigCherry `Executor`; retain BigCherry authority for scientific identity, series policy, commit pinning, retry legality, evidence, reporting, production coexistence and hardware identity. Reject a custom scheduler database/daemon as an execution authority.
 
-This item is a design freeze, not a Slurm installation task. Later RCD items may refine implementation details only when falsification finds a contradiction; they must not silently reintroduce physical-index identity, static production-GPU assumptions, per-slot GRES types, mixed-commit attempts, or result-driven retries.
+This item is a design freeze, not a Slurm installation task. Later RCD items may refine implementation details only when falsification finds a contradiction; they must not silently reintroduce physical-index identity, static production-GPU assumptions, per-slot GRES types, mixed-commit attempts, allocation-time card selection, or result-driven retries.
 
 ## Steps
 
@@ -33,7 +33,7 @@ This item is a design freeze, not a Slurm installation task. Later RCD items may
    - v3: full stage DAG.
    - v4: timed-measure overlap only after `scheduler-isolation-v1`.
 5. Freeze execution order/dependencies:
-   - RCD04 and RCD12 can implement/test offline in parallel.
+   - RCD04 and RCD12 can implement/test most code offline in parallel, but RCD04 final series creation consumes RCD12 deterministic `SeriesGpuBinding`.
    - RCD03 consumes RCD12 inventory/GRES generation.
    - RCD05 consumes RCD03/RCD04/RCD12.
    - RCD06 can proceed in parallel with RCD03-RCD05.
@@ -42,6 +42,7 @@ This item is a design freeze, not a Slurm installation task. Later RCD items may
    - RCD10 gates v1 retirement after RCD03/RCD04/RCD05/RCD06 milestone M1/RCD09/RCD11/RCD12; RCD06 prepare/execute M2 is v1.5 and not a v1 cutover blocker.
    - RCD07/RCD08 are post-v1 durability/stage/harvest work.
 6. Maintain a plan-only falsification harness under `tools/lab/run-campaign-durability/`; promote code to `tools/bigcherry/**` only when implementing an RCD item.
+7. Register retained lab files in `docs/reference/tooling/TOOL_DISPOSITION.md` before RCD02 completion; classify the harness/README as RCD-owned `TRANSITIONAL` planning tooling, not production/evidence authority.
 
 ## Detailed Solution & Technical Design
 
@@ -68,7 +69,8 @@ Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attemp
 - `run_id` identifies one planned scientific session and survives harness retries.
 - `attempt_no` increases when a retry uses a new commit/config execution attempt.
 - BigCherry commit is frozen per attempt; stages never resolve branches independently.
-- series identity freezes planned N, contract/base/focal/common/validated implementation identity plus platform/hardware cohort.
+- final series identity freezes planned N, contract/base/focal/common/validated implementation identity, platform environment, and one deterministic exact RCD12 hardware cohort selected from accepted stable device IDs before any session is submitted.
+- every session in a series uses that same stable-device cohort; Slurm may allocate a wider set only for safe all-of-architecture reservation and BigCherry then narrows to the pre-bound IDs.
 - slots/ordinals/BDF/render node are operational observations, never scientific card identity.
 - same-model replacement card starts a new hardware cohort; topology change starts a new cohort unless equivalence was prequalified.
 - exit 0 includes scientific PASS or FAIL; 75 is same-commit transient requeue; 76 requests new attempt; 77 blocks as invalid/drift.
@@ -77,6 +79,8 @@ Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attemp
 ### Non-hardware falsification
 
 `tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
+
+The lab mock is intentionally simpler than final RCD12 binding. Permanent tests must additionally prove discovery-order-independent exact cohort selection, mixed-model ambiguity handling, and identical selected IDs across every session in one series.
 
 ## Code Samples & Guidance
 
@@ -103,13 +107,14 @@ Never make `docs/design/JOBS_ORCHESTRATOR.md` executable configuration. Runtime 
 - `docs/planning/active/run-campaign-durability/RCD02.md` ... `RCD12.md` — implementation plans.
 - `tools/lab/run-campaign-durability/mock_pipeline.py` — planning simulator.
 - `tools/lab/run-campaign-durability/README.md` — validation scope.
+- `docs/reference/tooling/TOOL_DISPOSITION.md` — required lab-tool classification.
 
 ## Validation
 
 Completed during planning:
 
 ```bash
-python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
+PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
 # {"checks": 25, "ok": true}
 ```
 
@@ -120,25 +125,29 @@ Required static review before closing RCD02:
 - no per-slot GRES type such as `gfx1100_0`;
 - no custom SQLite scheduler is execution authority;
 - no stage in one attempt may select a different BigCherry commit;
+- no series may silently select a different stable GPU cohort between sessions;
 - no scientific FAIL/non-material result is auto-retried;
-- every hardware-dependent claim is an explicit acceptance gate.
+- every hardware-dependent claim is an explicit acceptance gate;
+- both RCD lab files are classified in the current TOOL_DISPOSITION registry.
 
 ## Effort & Risk
 
-Low implementation effort; high leverage. Primary risk is later plans drifting from the normative design as hardware/production details evolve. Mitigate by keeping device/resource policy capability-based and executor-neutral.
+Low implementation effort; high leverage. Primary risks are later plans drifting from the normative design and seemingly harmless capability resolution moving a series between physical cards. Mitigate by capability-based executor-neutral policy plus exact pre-series cohort binding.
 
 ## Standards
 
 - `docs/design/JOBS_ORCHESTRATOR.md`.
 - Existing BigCherry provenance/identity rules.
-- `AGENTS.md` / `docs/reference/tooling/TOOLING.md`: permanent code under `tools/bigcherry`, plan-specific falsification under `tools/lab`, tests under `tools/tests`.
+- `AGENTS.md` / `docs/reference/tooling/TOOLING.md`: permanent code under `tools/bigcherry`, plan-specific falsification under `tools/lab`, tests under `tools/tests`, and every retained lab tool registered in TOOL_DISPOSITION.
 
 ## Acceptance Criteria
 
 - Architecture/ownership/rollout/dependency graph above is explicit.
 - RCD03-RCD12 contain implementation-ready modules/signatures/tests and cite hardware-only gates separately.
-- Planning simulator passes.
+- Planning simulator reports 25 checks passing.
+- Final series identity is bound to one deterministic hardware cohort before session submission.
 - Static contradiction scan above passes.
+- Lab harness/README are classified in TOOL_DISPOSITION.
 - No unresolved platform choice remains.
 
 ## Notes
@@ -149,3 +158,4 @@ Decision: Slurm + thin BigCherry domain layer + platform-neutral Executor. The R
 
 - 2026-09-26T00:51:52.243021+00:00 (created-by): Created by agent
 - 2026-09-26 (dev-gpt-agent): Fully specified final architecture, dependency order, invariants and offline falsification.
+- 2026-09-26 (dev-gpt-agent): Adversarial follow-up added deterministic pre-series hardware binding and lab-tool disposition acceptance gate.
