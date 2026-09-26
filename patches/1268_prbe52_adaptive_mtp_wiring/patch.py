@@ -153,6 +153,9 @@ _LIMIT_ANCHOR = (
     r"                    n_drafting--;\n"
     r"                    continue;\n"
     r"                \}\n"
+    # eagle3 has the same depth-cap block. MTP alone branches on chain_heads
+    # immediately afterwards.
+    r"(?=\n                if \(chain_heads\) \{)"
 )
 _FINALIZE_ANCHOR = (
     r"            if \(dp.result->size\(\) < \(size_t\) params.n_min\) \{\n"
@@ -161,6 +164,12 @@ _FINALIZE_ANCHOR = (
     r"        \}\n"
     r"    \}\n\n"
     r"    void accept\(llama_seq_id seq_id, uint16_t n_accepted, bool[^\n]*\) override \{\n"
+    # eagle3 has the same finalize block and accept signature. MTP's accept
+    # reads verify_h_rows; eagle3 reads verify_g_rows.
+    r"(?=        if \(seq_id < 0 \|\| seq_id >= \(llama_seq_id\) n_seq\) \{\n"
+    r"            return;\n"
+    r"        \}\n\n"
+    r"        const int32_t n_rows = verify_h_rows\[seq_id\];)"
 )
 _ACCEPT_ANCHOR = (
     r"        const int32_t i_h = std::min<int32_t>\(n_accepted, n_rows - 1\);\n"
@@ -198,9 +207,9 @@ PATCHES = [
             Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="replace", text=_DRAFT_START_NEW,
                  guard=r"last_n_draft\[seq_id\] = 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a triple shared with other draft implementations.", expect_matches=1, max_span_lines=4),
             Edit(id="prbe52-depth-limit", anchor=_LIMIT_ANCHOR, mode="replace", text=_LIMIT_NEW,
-                 guard=r"effective_n_max", rationale="Use adaptive depth only when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=8),
+                 guard=r"effective_n_max", rationale="Use adaptive depth only in the MTP chain-head-cap block when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=8),
             Edit(id="prbe52-draft-accounting", anchor=_FINALIZE_ANCHOR, mode="replace", text=_FINALIZE_NEW,
-                 guard=r"last_n_draft\[seq_id\] = \(int32_t\) dp\.result->size\(\)", rationale="Identify accept boundary without depending on its parameter comment.", expect_matches=1, max_span_lines=8),
+                 guard=r"last_n_draft\[seq_id\] = \(int32_t\) dp\.result->size\(\)", rationale="Identify the MTP finalize/accept boundary via verify_h_rows without depending on the parameter comment.", expect_matches=1, max_span_lines=8),
             Edit(id="prbe52-accept-update", anchor=_ACCEPT_ANCHOR, mode="replace", text=_ACCEPT_NEW,
                  guard=r"adaptive_state\[seq_id\]\.update", rationale="Feed the real accepted count back; anchor only on executable statements.", expect_matches=1, max_span_lines=6),
         ),
