@@ -16,7 +16,7 @@ _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
 
 _VEC = _module._DF_HOIST_OLD + "\n" + _module._SC_FOLD_OLD + "\n" + "                for (int l = 0; l < tile_C::ne; ++l) {\n                    const int i = i0 + n*tile_C::I + tile_C::get_i(l);\n                    const int8_t * sc = (const int8_t *) (x_sc + i*sram_stride + k00/16);\n                    sum[(j0/tile_C::J + n)*tile_C::ne + l] += C.x[l] * sc[k01/4] * x_df[i*sram_stride] * dB;\n                }\n"
-_MMQ = "#include <cstdint>\n\nstatic void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {\n    switch (args.type_x) {\n        case GGML_TYPE_Q6_K:\n            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);\n            break;\n    }\n}\n"
+_MMQ = "#include <cstdint>\n\nstatic void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream, const int forced_J) {\n    switch (args.type_x) {\n        case GGML_TYPE_Q6_K:\n            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);\n            break;\n    }\n}\n"
 _JMAX = "int f() {\n    int ret = std::min(ne11, int64_t(512));\n    ret -= ret % 8;\n}\n"
 _PERF = "void f() {\n        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));\n    }\n\n\n    return test_cases;\n}\n"
 
