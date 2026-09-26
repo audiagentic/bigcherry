@@ -2472,6 +2472,11 @@ def _run_reference_ladder(args, *, scaffold, device_map, run_dir: Path) -> None:
             arms=scaffold.reference_ladder_bins,
             model=Path(args.model),
             runner=_runner,
+            # Stock/base/validated binaries are shared by every patch on this
+            # build root; measure each once per model and device.
+            cache_dir=(Path(args.build_root) if args.build_root else run_dir) / "reference-ladder-cache",
+            shared_arms=frozenset({"stock", "base", "validated"}),
+            device_key=f"{args.amdgpu_targets}:{env.get('HIP_VISIBLE_DEVICES', '')}",
             exe=".exe" if sys.platform == "win32" else "",
         )
     except Exception as exc:  # reference evidence: record, never fail the campaign
