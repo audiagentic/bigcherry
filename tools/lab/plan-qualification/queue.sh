@@ -28,14 +28,22 @@ while read -r line; do
             *) break ;;
         esac
     done
-    run=$5
+    # PROFILE <arch> <device> <source-run> <prefill|decode> [ENV=VAL ...]:
+    # kernel profile of a finished run's own binaries (profile_run.sh), run
+    # between jobs so it never overlaps a measurement.
+    kind=campaign
+    if [ "$1" = PROFILE ]; then kind=profile; shift; run="p-$3-$4"; else run=$5; fi
     log="$work/runs/$run.log"
-    if [ -f "$log" ] && grep -q '^CAMPAIGN_EXIT=' "$log"; then
+    if [ -f "$log" ] && grep -q '^\(CAMPAIGN\|PROFILE\)_EXIT=' "$log"; then
         echo "skip $run (finished)"; continue
     fi
     echo "start $run $(date -Is)"
     if [ -n "$vis" ]; then export HIP_VISIBLE_DEVICES=$vis; else unset HIP_VISIBLE_DEVICES; fi
-    BC_MODEL=$model BC_HIP_PATH=$hip bash "$here/run_campaign.sh" "$@" > "$log" 2>&1 < /dev/null
+    if [ "$kind" = profile ]; then
+        BC_MODEL=$model BC_HIP_PATH=$hip bash "$here/profile_run.sh" "$@" > "$log" 2>&1 < /dev/null
+    else
+        BC_MODEL=$model BC_HIP_PATH=$hip bash "$here/run_campaign.sh" "$@" > "$log" 2>&1 < /dev/null
+    fi
     # Attested llama-servers run at --verbosity 5 and log every full-vocab
     # response (~1.5 GB per arm); keep the head (startup, device attestation,
     # activation markers) and cap the rest so a lane cannot fill the disk.
