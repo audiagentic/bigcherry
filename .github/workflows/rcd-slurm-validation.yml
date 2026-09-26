@@ -41,10 +41,18 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python tools/lab/run-campaign-durability/real_bigcherry_process_smoke.py
+      - name: Real managed-process failure injection
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_bundle_failure_smoke.py
       - name: Real HI151 and git commit-pinning/recovery semantics
         env:
           PYTHONPATH: tools
         run: python tools/lab/run-campaign-durability/real_recovery_smoke.py
+      - name: Concurrent HI151 admission race
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/tree_activity_race_smoke.py
       - name: Durable submission and event recovery falsifier
         env:
           PYTHONPATH: tools
