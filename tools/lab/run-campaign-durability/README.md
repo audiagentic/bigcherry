@@ -11,7 +11,7 @@ PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --sel
 Expected:
 
 ```json
-{"checks": 16, "ok": true}
+{"checks": 25, "ok": true}
 ```
 
 Covered without hardware:
@@ -19,9 +19,12 @@ Covered without hardware:
 - capability-based GPU resolution by architecture/count/VRAM;
 - peer-pair and exact-device selection;
 - detection that subset/topology constraints require Slurm over-allocation rather than per-slot GRES types;
+- allocation visibility may narrow an already-exclusive allocation but cannot broaden it;
+- `BIGCHERRY_GPU_CLAIM` UUID/architecture grammar and fail-closed malformed/unknown claims;
 - dynamic production conflict policy and fail-closed unknown claims;
 - Linux ROCm vs Windows HIP environment-hash separation;
-- hardware-cohort identity: slot move alone is operational drift, topology change/replacement is a new scientific cohort;
+- hardware-cohort identity: locator move is operational drift, topology change/replacement changes the scientific cohort;
+- inventory drift classes for locator/topology/device-set change;
 - exit-code retry semantics (`75` same-commit requeue, `76` new attempt, `77` block);
 - FakeExecutor dependency ordering for prepare -> execute.
 
@@ -32,7 +35,7 @@ Not covered and must remain hardware acceptance gates:
 - cgroup `/dev/kfd` + render-node behavior for both ROCm toolchains;
 - HIP/ROCr enumeration under cgroups;
 - peer access and `-sm tensor` on the installed cards;
-- llama-swap claim/ process attribution against real production processes;
+- llama-swap claim/process attribution against real production processes;
 - scheduler isolation/noise equivalence;
 - systemd/sudoers/Slurm behavior on Brutus.
 
