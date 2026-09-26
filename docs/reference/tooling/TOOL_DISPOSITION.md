@@ -174,6 +174,7 @@ ownership.
 | `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/bump-b11126-regression/run_arms.py` | **TRANSITIONAL** | Bump b11126 follow-up: balanced 4-arm llama-bench harness separating upstream vs BigCherry throughput change; one-shot, archive once attributed. |
 | `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
+| `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
 | `tools/lab/plan-qualification/make-serial-2.sh` | **TRANSITIONAL** | Writes the second plan-qualification job batch from environment-provided host paths. |
 | `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
