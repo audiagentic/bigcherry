@@ -107,7 +107,7 @@ _MMQ_INCLUDES_NEW = """#include <atomic>
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
 _MMQ_SWITCH_OLD = """        case GGML_TYPE_Q6_K:
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);
+            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
             break;"""
 _MMQ_SWITCH_NEW = """        case GGML_TYPE_Q6_K: {
             // bigcherry: PRBE110/RD07 activation evidence, not source-port logic.
@@ -117,7 +117,7 @@ _MMQ_SWITCH_NEW = """        case GGML_TYPE_Q6_K: {
                     GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold path=q6k_mmq_dispatch contract=PRBE110-RD07-Q6K-MMQ-SCALE-FOLD\\n");
                 }
             }
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream);
+            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
             break;
         }"""
 
@@ -165,12 +165,12 @@ PATCHES = [
     ),
     FilePatch(
         path="ggml/src/ggml-cuda/mmq.cu",
-        description="RD07 activation marker at actual Q6_K MMQ dispatch",
+        description="RD07 activation marker at composed forced-J Q6_K MMQ dispatch",
         edits=(
             Edit(id="rd07-atomic-include", anchor=re.escape(_MMQ_INCLUDES_OLD), mode="replace", text=_MMQ_INCLUDES_NEW,
                  guard=r"#include <atomic>", rationale="Support once-per-process activation instrumentation.", expect_matches=1, max_span_lines=3),
             Edit(id="rd07-activation-marker", anchor=re.escape(_MMQ_SWITCH_OLD), mode="replace", text=_MMQ_SWITCH_NEW,
-                 guard=re.escape("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold"), rationale="Prove the optimized Q6_K MMQ specialization was dispatched.", expect_matches=1, max_span_lines=3),
+                 guard=re.escape("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold"), rationale="Anchor after 0300_mmq_forced_j and prove the optimized Q6_K specialization was dispatched.", expect_matches=1, max_span_lines=3),
         ),
     ),
     FilePatch(
