@@ -1,7 +1,16 @@
-# Summary
+# 1267_rd07_q6k_mmq_scale_fold
 
-- Fresh RD07 identity; no 1203 evidence reuse.
-- Q6_K MMQ row/sub-scale fold only.
-- Correct b11126 no-`forced_J` activation anchor.
-- RD05/RD06 and timing diagnostics excluded.
-- Fresh multi-architecture validation required before promotion.
+**Status:** untested
+**Plan item:** PRBE110
+
+## What it does
+
+Hoists and folds Q6_K MMQ scales and emits a one-shot activation marker from the composed forced-J dispatch path.
+
+## Why
+
+RD07 is isolated from rejected bundle 1203 and requires fresh validation under its own identity.
+
+## Upstream
+
+Adapted from stew675 RD07. Requires `0300_mmq_forced_j` because the activation edit anchors on its composed Q6_K dispatch signature.
