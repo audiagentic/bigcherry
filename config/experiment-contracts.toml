@@ -1565,3 +1565,46 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING]
+title = "PRBE52: adaptive MTP draft-depth runtime wiring"
+prerequisites = []
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["10579a7365a3bc86c4f8e41aaab20e73e1571e5e"]
+atomic_part = "1268_prbe52_adaptive_mtp_wiring (runtime wiring on 1255 controller)"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.target]
+kind = "orchestration"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.hypothesis]
+expected_effect = "both"
+rationale = "Wire the pure adaptive MTP controller into per-sequence draft limits so sustained full acceptance climbs depth and miss pressure backs off, reducing rejected speculative work without changing target-token semantics; fixed behavior remains the control."
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.correctness]
+backend_reference = "required"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.measurement]
+server_requests_per_start = 5
+bench_invocation = "combined"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
