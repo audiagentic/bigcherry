@@ -28,11 +28,12 @@ while read -r line; do
             *) break ;;
         esac
     done
-    # PROFILE <arch> <device> <source-run> <prefill|decode> [ENV=VAL ...]:
-    # kernel profile of a finished run's own binaries (profile_run.sh), run
-    # between jobs so it never overlaps a measurement.
+    # PROFILE <patch-id> <arch> <device> <prefill|decode> <run-name> [args...]:
+    # PVPS10 kernel profile of control vs subject (profile_run.sh), run between
+    # jobs so it never overlaps a measurement.
     kind=campaign
-    if [ "$1" = PROFILE ]; then kind=profile; shift; run="p-$3-$4"; else run=$5; fi
+    if [ "$1" = PROFILE ]; then kind=profile; shift; fi
+    run=$5
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^\(CAMPAIGN\|PROFILE\)_EXIT=' "$log"; then
         echo "skip $run (finished)"; continue
