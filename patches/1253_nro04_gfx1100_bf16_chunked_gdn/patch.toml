@@ -1,7 +1,7 @@
 schema = 1
 id = "1253_nro04_gfx1100_bf16_chunked_gdn"
 order = 1253
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "external-fork"
 external-source = "nasone-rdna-optimizations"
