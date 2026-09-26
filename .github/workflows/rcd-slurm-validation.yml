@@ -45,6 +45,10 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python tools/lab/run-campaign-durability/real_recovery_smoke.py
+      - name: Durable submission and event recovery falsifier
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/service_recovery_smoke.py
 
   slurm-service:
     name: Real Noble Slurm service semantics
@@ -52,7 +56,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Install and exercise Slurm/MUNGE/slurmdbd
+      - name: Install and exercise minimal Slurm/MUNGE stack
         run: bash tools/lab/run-campaign-durability/slurm_noble_smoke.sh
       - name: Collect privileged Slurm diagnostics
         if: always()
@@ -62,11 +66,10 @@ jobs:
           out="${RUNNER_TEMP}/rcd-slurm-diagnostics"
           mkdir -p "$out"
           for path in \
-            /tmp/bc-slurmctld.log /tmp/bc-slurmd.log /tmp/bc-slurmdbd.log \
-            /tmp/bc-mariadb.log /tmp/bc-mariadb-init.log \
-            /tmp/bc-slurmctld.stdout /tmp/bc-slurmd.stdout /tmp/bc-slurmdbd.stdout \
-            /tmp/bc-mariadb.stdout /tmp/bc-slurm-jobcomp.log /tmp/bc-squeue.json \
-            /tmp/bc-order /tmp/bc-restarts /tmp/bc-sacct.txt; do
+            /tmp/bc-slurmctld.log /tmp/bc-slurmd.log \
+            /tmp/bc-slurmctld.stdout /tmp/bc-slurmd.stdout \
+            /tmp/bc-slurm-jobcomp.log /tmp/bc-squeue.json /tmp/bc-scontrol-config.txt \
+            /tmp/bc-order /tmp/bc-restarts /tmp/bc-bigcherry-slurm.json; do
             if sudo test -e "$path"; then
               sudo cp "$path" "$out/$(basename "$path")"
             fi
