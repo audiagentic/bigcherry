@@ -15,26 +15,27 @@ work: M
 
 ## Description
 
-Implement the per-attempt execution boundary used by all executors. Resolve mutable code refs only when creating a new attempt, pin that exact BigCherry commit for the attempt, create an isolated runner worktree, supply gitignored vendor/config inputs explicitly, resolve toolchain/model/file identities, monitor disk/log/progress, and classify infrastructure failures without interpreting scientific results.
+Implement the per-attempt execution boundary used by every `Executor`. Resolve mutable code refs only when creating a new attempt, pin one exact BigCherry commit for that attempt, create an isolated runner worktree, resolve host/toolchain/model/composition identities, render the existing validation-campaign argv, stream logs, monitor disk/progress, and classify infrastructure failures without interpreting scientific results.
 
-GPU resources are capability requests resolved by RCD12/Executor allocations. This layer never treats host physical index as identity and does not globally override Slurm visibility.
+This item extends existing seams rather than replacing them: HI151 remains the repository-maintenance fence; `experiment.bundle.run_managed()` remains the managed child-process seam; `validation_campaign` remains the scientific campaign entry point.
 
 ## Steps
 
-1. Add attempt resolver: mutable ref -> exact commit; freeze commit/toolchain/model/composition/file identities in `attempt.json`.
-2. Add detached runner-worktree creation/cleanup; link canonical gitignored `vendor/llama.cpp`; export canonical host environment file.
-3. Render the existing `python -m bigcherry.patch.validation_campaign ...` invocation from typed JobSpec/AttemptSpec; no arbitrary args.
-4. Implement executor-specific allocation environment handling:
-   - Slurm: preserve scheduler `ROCR_VISIBLE_DEVICES`, map allocation to stable RCD12 IDs, normally leave `HIP_VISIBLE_DEVICES` unset.
-   - Local: RCD11 resolves launch-local device selector.
-5. Implement preflight/continuous root+work disk guards, streaming logs, stall progress fingerprint and bounded log retention.
-6. Integrate `core.tree_activity.Lease`; close the existing check/create race between leases and `MaintenanceLock` with a shared host-local OS lock around protocol transitions.
-7. Implement attempt result/failure classification and retention cleanup.
-8. Test entirely with temporary git repos, fake process handles and FakeExecutor before hardware.
+1. Add attempt resolver: mutable ref -> exact commit; persist commit/toolchain/model/composition/file identities in `attempt.json`.
+2. Create detached per-attempt runner worktree at that commit; use explicit canonical paths for gitignored vendor/config inputs.
+3. Render `python -m bigcherry.patch.validation_campaign ...` from typed JobSpec/AttemptSpec; no arbitrary passthrough argv.
+4. Map executor allocation to launch environment:
+   - Slurm: preserve scheduler-provided `ROCR_VISIBLE_DEVICES`, resolve allocation to RCD12 stable IDs, normally leave `HIP_VISIBLE_DEVICES` unset;
+   - LocalExecutor: resolve stable IDs to launch-local selectors immediately before spawn.
+5. Change `run_managed()` from `capture_output=True` to direct/streamed stdout/stderr files while preserving durable intent-before-spawn and terminal artifact hashing.
+6. Add root/work disk guards, heartbeat/progress fingerprint, process-group cancellation, bounded log-retention policy and typed infrastructure failures.
+7. Use current HI151 `Lease` around each long-running attempt. Do **not** add a second lock protocol: HI151 already uses the complementary publish/recheck handshake for Lease vs MaintenanceLock.
+8. Implement result/retention cleanup; never delete unharvested or sole evidence.
+9. Promote the current RCD real-process/recovery/race smokes into permanent `tools/tests/**` coverage when implementing this item.
 
 ## Detailed Solution & Technical Design
 
-### Attempt resolution
+### Attempt identity
 
 ```python
 @dataclass(frozen=True)
@@ -53,35 +54,33 @@ class AttemptSpec:
     environment: tuple[tuple[str, str], ...]
 ```
 
-Algorithm for `retry --latest`:
+`retry --latest`:
 
 1. read immutable run/series intent;
 2. resolve `code_ref` in canonical checkout;
-3. verify contract/focal/common/frozen-composition identities still match the series rules;
-4. create attempt N+1 with resolved commit;
-5. create worktree at that commit;
-6. re-resolve mutable branch immediately before submission; if it moved and policy is `latest-at-start`, discard unsubmitted worktree/spec and resolve again;
-7. once submitted, never change commit.
+3. verify contract/focal/common/frozen-composition identities still satisfy series rules;
+4. create attempt N+1 at the resolved commit;
+5. create detached runner worktree;
+6. immediately before first submission, if policy is `latest-at-start` and the mutable ref moved, discard the unsubmitted attempt/worktree and resolve again;
+7. after submission, commit is immutable for every stage/requeue of that attempt.
 
-A branch update after submission affects only future attempts. Same-commit Slurm requeue (`75`) reuses the same attempt manifest.
+Exit 75 reuses this attempt and commit. Exit 76 creates a new attempt under the same `run_id` and may resolve a new commit.
 
-### Runner worktree
-
-Layout:
+### Runner layout
 
 ```text
 <work>/jobs/runs/<run>/attempts/NNN/
   runner/
   work/
-  stdout.log
-  stderr.log
   attempt.json
   submission-intent.json
   submission.json
+  stdout.log
+  stderr.log
   result.json
 ```
 
-Creation:
+Creation/environment:
 
 ```text
 git worktree add --detach <runner> <commit>
@@ -96,7 +95,7 @@ CCACHE_MAXSIZE=100G
 CCACHE_COMPILERCHECK=content
 ```
 
-Do not copy environment.local into runner. Do not modify/stash canonical checkout to run an attempt.
+Never stash or mutate the canonical checkout to start a job.
 
 ### Campaign argv
 
@@ -104,23 +103,46 @@ Do not copy environment.local into runner. Do not modify/stash canonical checkou
 def build_validation_campaign_argv(job: JobSpec, attempt: AttemptSpec) -> tuple[str, ...]: ...
 ```
 
-It renders named current flags only: patch, baseline source, common patches, architecture, model, HIP path, work/build/worktree roots, validation producer, producer inputs/corpus, production lane, device-map compatibility where still required. RCD06 later replaces physical-map compatibility with allocation-aware/frozen/prepared seams.
+Render only current named flags: patch, baseline source, common patches, architecture, model, HIP path, work/build/worktree roots, validation producer, producer inputs/corpus, production lane, and transitional device-map compatibility. RCD06 adds frozen/prepared/external-evidence seams; this layer does not duplicate campaign parsing.
+
+The CI smoke already exercises the real `validation_campaign.main()` producer-dispatch seam with mocked hardware body and proves selector mismatch/missing mandatory runtime inputs fail closed.
+
+### Managed child process
+
+Preserve the current HI47 invariant: `experiment.json` intent is atomically durable before child spawn. Replace memory-buffered execution:
+
+```python
+subprocess.run(..., capture_output=True)
+```
+
+with a process-group-aware streaming implementation:
+
+```text
+open stdout.log/stderr.log before spawn
+spawn child in its own process group/session
+stream directly to files
+emit heartbeat/progress events independently
+on cancel/disk/stall: TERM group -> grace -> KILL group
+fsync/close logs
+hash terminal artifacts
+atomically write terminal result
+```
+
+The RCD CI currently proves intent-before-spawn, success, exit 76 preservation, launch failure 127, KeyboardInterrupt -> interrupted/130, artifact tamper rejection and an 8 MiB real output. The 8 MiB case also confirms the present implementation still buffers output, so streaming remains a required implementation change before 1.5 GB server logs are safe.
 
 ### Monitoring
 
-`run_managed()` is extended to stream stdout/stderr directly to files; never `capture_output` potentially gigabyte logs.
+Progress fingerprint:
 
-Progress fingerprint contains:
-
-- latest structured phase/event sequence when available;
+- latest structured phase/event sequence;
 - stdout/stderr byte sizes;
 - selected artifact mtimes/sizes;
 - process-tree CPU ticks;
-- child process existence.
+- child/process-group liveness.
 
-Stall requires all channels unchanged for configured threshold. Quiet compiler periods with CPU progress are not stalls.
+A stall requires all channels unchanged for the configured interval. Quiet compilation with CPU progress is not a stall.
 
-Disk policy is host config, not code constants:
+Host-configured disk policy, not constants:
 
 ```toml
 [jobs.disk]
@@ -130,129 +152,110 @@ poll_seconds = 15
 server_log_retain_mib = 20
 ```
 
-A hard breach terminates process group, writes failure `disk-pressure`, retains failed attempt. Completed oversized server logs may be tail/truncated only after byte count + full-content hash are recorded; evidence-required logs are never destructively truncated.
+Hard breach terminates the process group, persists `disk-pressure`, retains the failed attempt. A completed oversized non-evidence server log may be tail-compacted only after original byte count/full hash are recorded. Evidence-required files are never destructively truncated.
 
-### Tree activity protocol
+### HI151 maintenance fencing
 
-Current HI151 semantics are retained but transition races are closed with one local kernel-held file lock:
-
-```text
-<tree-activity-root>/protocol.lock
-```
-
-`HostFileLock` is an OS advisory lock (`flock` on Linux; equivalent local primitive where supported), automatically released on process exit. It is **not** a distributed lock and the tree-activity root must be local storage.
-
-Lease acquisition:
+Current production HI151 is authoritative:
 
 ```text
-lock protocol.lock
-  prune only confirmed-dead local leases
-  if maintenance.lock exists: refuse
-  atomically publish lease file
-unlock
+Lease admission:
+  if maintenance exists -> refuse
+  publish lease
+  recheck maintenance
+  if maintenance appeared -> withdraw lease + refuse
+
+Maintenance admission:
+  mkdir maintenance marker first
+  scan live leases
+  if any live/remote-unknown lease -> remove marker + refuse
+  otherwise publish owner and proceed
 ```
 
-Maintenance acquisition:
+This complementary ordering closes the check/create race without an extra `protocol.lock`. Dead local PID leases may be explicitly pruned; remote-host leases remain fail-closed/live.
+
+Planning CI evidence on 2026-09-26:
 
 ```text
-lock protocol.lock
-  prune only confirmed-dead local leases
-  if any live/remote-unknown lease: refuse
-  mkdir maintenance.lock + owner record
-unlock
+real_recovery_smoke.py: 18 checks PASS
+  lock->lease refusal
+  lease->lock refusal
+  crashed child stale lease detection/prune
+  pinned git worktree across branch advances
+  runner dirtiness isolated from control checkout
+
+tree_activity_race_smoke.py: 50 simultaneous races / 100 assertions PASS
+  entered=50 blocked=50 overlap=0
 ```
 
-Release operations remain idempotent. A remote-host lease remains fail-closed/live as HI151 specifies. This proves maintenance and a new managed run cannot both cross the admission boundary through a check-then-create race.
+Permanent implementation tests must retain a concurrent stress test; an additional host lock is only justified if a future platform/storage implementation invalidates the current atomic-directory/file assumptions.
 
 ### Retention
 
-- active/unharvested: unlimited;
+- active/unharvested: never automatically remove;
 - successful+harvested runner: eligible after 24h;
 - failed/stalled runner: eligible after 7d;
-- remove via `git worktree remove --force` then `git worktree prune`;
-- disk pressure cleans only eligible roots oldest-first; never deletes sole evidence.
+- cleanup uses `git worktree remove --force` then `git worktree prune`;
+- disk pressure cleans only eligible roots oldest-first.
 
-## Code Samples & Guidance
-
-Planned signatures:
-
-```python
-def resolve_attempt(job: JobSpec, series: SeriesRecord, *, repo: Path, work_root: Path) -> AttemptSpec: ...
-def ensure_runner_worktree(attempt: AttemptSpec, *, canonical_repo: Path) -> Path: ...
-def build_validation_campaign_argv(job: JobSpec, attempt: AttemptSpec) -> tuple[str, ...]: ...
-def progress_fingerprint(ctx: MonitorContext) -> ProgressFingerprint: ...
-def classify_process_result(ctx: AttemptContext, returncode: int) -> AttemptResult: ...
-def cleanup_attempts(policy: RetentionPolicy, *, now: datetime) -> tuple[Path, ...]: ...
-```
-
-Failure classification based on direct observations (disk guard, timeout, preflight status, process exit), not broad regex guesses where avoidable.
-
-## Files
-
-Planned:
+## Planned Files
 
 - `tools/bigcherry/jobs/attempt.py`
 - `tools/bigcherry/jobs/runner.py`
 - `tools/bigcherry/jobs/monitor.py`
 - `tools/bigcherry/jobs/retention.py`
 - `tools/bigcherry/experiment/bundle.py`
-- `tools/bigcherry/core/host_lock.py`
-- `tools/bigcherry/core/tree_activity.py`
+- `tools/bigcherry/core/tree_activity.py` only if a demonstrated defect remains
 - `tools/tests/jobs/test_attempt.py`
 - `tools/tests/jobs/test_runner.py`
 - `tools/tests/jobs/test_monitor.py`
-- `tools/tests/core/test_host_lock.py`
 - `tools/tests/core/test_tree_activity.py`
+
+No `core/host_lock.py` is required by the validated design.
 
 ## Validation
 
-Offline:
+Offline/permanent tests:
 
-- temporary git branch moves between initial resolution and submission -> re-resolved before submission;
-- branch moves after submission -> running attempt unchanged;
-- new-attempt retry may use new commit while same run_id remains;
-- runner vendor symlink points to canonical clone;
-- host config path is explicit and runner checkout may omit it;
+- mutable branch moves before submission -> unsubmitted attempt is re-resolved;
+- branch moves after submission -> running attempt remains pinned;
+- new attempt can use new commit while preserving `run_id`;
+- runner vendor/config inputs resolve explicitly;
 - campaign argv deterministic/no unknown passthrough;
-- Slurm env preservation test never rewrites scheduler `ROCR_VISIBLE_DEVICES` with physical indices;
-- root/work disk guards classify before spawn and mid-run;
-- compiler-like quiet output + CPU activity does not stall;
-- all channels idle does stall;
-- 1.5GB-size simulation uses sparse/mock file metadata and verifies retention policy without allocating 1.5GB;
-- concurrent lease-vs-maintenance admission loop proves never both acquire across the transition;
-- stale local lease may be pruned only after PID-death proof; remote lease remains blocking;
-- host lock releases automatically after process death;
-- cleanup never removes unharvested attempts.
+- Slurm launch env never rewrites scheduler visibility with host physical indices;
+- intent durable before spawn;
+- streamed large output does not scale process RSS with log size;
+- child success/nonzero/launch failure/interruption/tamper all persist correctly;
+- disk guard before spawn and mid-run;
+- CPU-progress compiler is not false-stalled; all-channel inactivity is stalled;
+- 1.5 GB log behavior tested with sparse/generated stream without retaining 1.5 GB in Python memory;
+- concurrent HI151 lease/maintenance stress has zero overlaps;
+- crashed local lease prunable only after PID death; remote unknown remains blocking;
+- cleanup never removes unharvested evidence.
 
-Hardware:
+Brutus-only:
 
-- queued branch update scenario on Brutus;
-- real disk-pressure guard with safe temporary threshold;
-- process-group cancellation;
-- server-log retention on representative campaign.
-
-## Effort & Risk
-
-Medium. Main risks: Git worktree lifecycle under crashes, false stall detection, and losing evidence during cleanup. Fail closed: ambiguous attempt remains retained/failed-harness.
-
-## Standards
-
-Existing build code already handles stale foreign CMake cache/configure-request identity; do not duplicate that logic here.
+- queued branch-update incident;
+- real disk-pressure threshold exercise;
+- process-group cancellation of real campaign tree;
+- representative server-log retention.
 
 ## Acceptance Criteria
 
-- attempt commit immutable after submission;
-- runner requires no dirty/stashed canonical checkout;
-- disk/log/stall incident classes are handled durably;
-- tree maintenance and job lease admission are serialized and cannot overlap through a race;
+- attempt commit immutable after first submission;
+- canonical checkout remains clean/no stash required;
+- managed output is streamed, not captured in memory;
+- infrastructure incidents have durable typed results;
+- HI151 maintenance/job admission retains zero-overlap regression coverage;
 - no physical GPU ordinal is scientific identity;
 - all offline tests pass.
 
 ## Notes
 
-Per-attempt runner worktrees remain necessary while current campaign evidence writes through repo-relative paths. RCD06 external evidence output later permits safer shared/read-only runners where otherwise valid.
+Per-attempt runner worktrees remain required while campaign evidence writes repo-relative state. RCD06 external evidence output later removes that coupling.
 
 ## Change Log
 
 - 2026-09-26T00:52:05.135167+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Specified pinned attempt/worktree/monitoring lifecycle, host-lock tree-activity protocol, and removed physical-device assumptions.
+- 2026-09-26 (dev-gpt-agent): Specified pinned attempt/worktree/monitoring lifecycle and physical-device-independent execution.
+- 2026-09-26 (dev-gpt-agent): Replaced proposed redundant host-lock protocol with empirically validated HI151 two-phase admission; recorded real process/recovery/race CI gates.
