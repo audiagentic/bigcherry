@@ -142,7 +142,7 @@ atomic_part = "1207_rd17_moe_topk_down_fold"
 [contract.RD17-MOE-TOPK-DOWN-FOLD.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "Folds the MoE top-k routing-weight MUL into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
+rationale = "Folds the MoE top-k routing weights into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.scope]
 backend = "hip"
@@ -1664,6 +1664,48 @@ server_requests_per_start = 5
 bench_invocation = "combined"
 
 [contract.PRBE55-VK-SMALLN-DMMV.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PNRO14-RDNA35-FA-TILE-D256]
+title = "PNRO14: gfx1151 D=256 tile FlashAttention occupancy row"
+prerequisites = []
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.source]
+source_id = "nasone-rdna-optimizations"
+commits = []
+atomic_part = "1270_pnro14_rdna35_fa_tile_d256"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.target]
+kind = "attention"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.hypothesis]
+expected_effect = "both"
+rationale = "For gfx1151 only, the D=256/cols=32 tile FlashAttention shape uses a dedicated 256-thread occupancy-4 row with 64x64 batching instead of the generic RDNA occupancy-3/64x128 row. Every other shape and architecture falls through unchanged. Promotion remains hardware-deferred until real gfx1151 evidence exists."
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.positive]
+models = ["tierM-ministral14b-q4km"]
+workloads = ["prefill"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.controls]
+models = ["tierM-ministral14b-q4km"]
+workloads = ["decode"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.correctness]
+backend_reference = "required"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.measurement]
+bench_invocation = "combined"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.acceptance]
 target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
 effect_evidence_policy = "improvement_no_regression_v1"

@@ -1,0 +1,15 @@
+schema = 1
+
+[producer.pnro14]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "pnro14-correctness.json",
+  "pnro14-performance.json",
+  "pnro14-subject.log",
+  "pnro14-control.log",
+]
