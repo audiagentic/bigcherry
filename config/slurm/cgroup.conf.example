@@ -1,0 +1,10 @@
+# BigCherry Brutus cgroup policy (Ubuntu 24.04 cgroup v2).
+# Generated host file: /etc/slurm/cgroup.conf
+# ConstrainDevices=yes is provisional until the RCD03 ROCm falsification matrix
+# passes for every accepted toolchain/device cohort.
+
+CgroupPlugin=autodetect
+ConstrainCores=yes
+ConstrainDevices=yes
+ConstrainRAMSpace=no
+ConstrainSwapSpace=no
