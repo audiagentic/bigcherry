@@ -79,13 +79,9 @@ PartitionName=bc-measure Nodes=${HOST} PriorityTier=100 Default=YES State=UP Max
 EOF
 export SLURM_CONF=/etc/slurm/slurm.conf
 
-# Parse/config validation before daemon startup.
-sudo slurmctld -t >/tmp/bc-slurmctld-config-test.txt 2>&1 || {
-  cat /tmp/bc-slurmctld-config-test.txt >&2 || true
-  die "slurmctld config validation failed"
-}
-log "slurmctld config syntax ok"
-
+# Slurm 23.11 has no slurmctld config-test flag. Controller startup plus
+# structured config interrogation below are the scheduler-config acceptance
+# checks. GPU GRES has its own Brutus-only `slurmd -G` gate.
 sudo slurmctld -Dvv >/tmp/bc-slurmctld.stdout 2>&1 &
 sleep 1
 sudo slurmd -Dvv >/tmp/bc-slurmd.stdout 2>&1 &
