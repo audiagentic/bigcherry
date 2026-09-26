@@ -1,9 +1,26 @@
 # BigCherry campaign configuration v2.
 # All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
-pinned = "b10901"
+pinned = "b11126"
 
-[patch-set.framework]
+# serving-core is PA26's real-hardware-proven serving boundary, confirmed
+# behaviorally equivalent for production replay by PA26's real two-arm
+# hardware comparison (EVALUATED, equivalent=true, 0 differences, two
+# independent runs).
+[patch-set.serving-core]
+# GPT design-review consult (dev-gpt-agent, req_d9bf628dc9954595, 2026-09-15):
+# PA26's own notes flagged that 0700_coverage_counters is not purely
+# diagnostic -- its family-entry block calls ggml_hip_dispatch_family(...)
+# under GGML_HIP_DISPATCH outside the diagnostics-only counter guard, i.e.
+# real serving-relevant dispatch-interception plumbing, not just coverage
+# instrumentation. Splitting 0700 into a serving hook half and a
+# diagnostics-counter half is real patch-authoring work, out of scope for
+# PA28's additive/config-only pass. GPT's approved minimal-safe fallback
+# (bigcherry-tuning already composes serving-core, so nothing is lost for
+# tuning consumers either way): keep 0700 WHOLE, and place it here in
+# serving-core rather than campaign-support, so no serving-relevant code can
+# ever be omitted by a source that only requests serving-core. Revisit when
+# 0700 is actually split (separate plan item).
 patches = [
   "0100_cmake_options",
   "0200_dispatch_hook",
@@ -13,11 +30,29 @@ patches = [
   "0600_mmvq_geometry",
   "0650_mmvq_native_variant",
   "0700_coverage_counters",
+]
+required-state = "validated"
+
+# The PA27 tune/record half (0110) plus the shutdown-endpoint/hit-log/
+# measurement/pool-metrics modules PA28 step 2 assigns here -- 0800/0810/
+# 0900 (0820 superseded 2026-09-24: its edits already live in the overlay). 0700 moved to serving-core above (GPT review, see its comment);
+# 0830 goes to qualification-support below per GPT's PA26-flagged
+# serving-boundary adjudication, not here.
+[patch-set.campaign-support]
+patches = [
+  "0110_campaign_tune_record_build",
   "0800_server_shutdown_endpoint",
   "0810_replay_hit_diagnostics",
-  "0820_measurement_signature_shapes",
-  "0830_split_reduce_telemetry",
   "0900_pool_workspace_metrics",
+]
+required-state = "validated"
+
+# 0830 (split-reduce telemetry, touching the GGML_HIP_REDUCE_PLAN seam) and
+# 1100 (HI70 direct-op evidence corpus) -- PA28 step 3's qualification-only
+# half of the removed-module set.
+[patch-set.qualification-support]
+patches = [
+  "0830_split_reduce_telemetry",
   "1100_hi70_direct_op_evidence",
 ]
 required-state = "validated"
@@ -25,17 +60,47 @@ required-state = "validated"
 [patch-set.upstream-fixes]
 # Correctness backports for real upstream bugs, temporary by design (each
 # carries upstream-ref + retirement in its own patch.toml). Composed into
-# BOTH bigcherry-native and bigcherry below -- a correctness fix is never
+# every serving-relevant source below -- a correctness fix is never
 # optional the way a performance enhancement is (PPS03).
-patches = [
-  "1000_rdna4_mmq_q2k_q6k_fix",
-]
+#
+# Membership here is SEMANTIC: correctness/behavior fixes only. Upstream
+# provenance (kind = "upstream-backport") alone does not qualify a patch
+# for this set -- a performance-optimization patch that happens to be an
+# upstream cherry-pick belongs in validated-enhancements once qualified,
+# not here.
+#
+# REJECTED 2026-09-16 (PA35, docs/planning/active/patching-patch-system/PA35.md):
+# 1000_rdna4_mmq_q2k_q6k_fix was mis-slotted here -- its own SUMMARY.md
+# justification is literally the upstream PR's reported performance numbers
+# (Q6_K 1.90x, Q2_K 28.2x at n=512), an optimization claim, not a described
+# correctness/output-mismatch bug. Real hardware evidence (gfx1201/RDNA4,
+# exact-shape backend-ops paired A/B, 5 rounds, correctness PASS both arms
+# both dtypes) measured Q6_K 1.365x [CI95 1.362x-1.367x] (real gain, below
+# claim) and Q2_K 0.959x [CI95 0.954x-0.963x] (real, statistically
+# significant REGRESSION, directly contradicting the claimed 28.2x gain).
+# GPT design-review (dev-gpt-agent, req_24ceb64100cb41dd) confirmed: the
+# combined package cannot remain validated once it contains a measured
+# regression; the two fixes are structurally independent edits, so the
+# correct action is to reject the combined 1000 package (original evidence
+# and claim preserved verbatim in
+# patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
+# patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
+# and extract the independently-real Q6_K gain into a new patch
+# (1006_rdna4_mmq_q6k_codegen_fix, currently untested pending its own
+# fresh Q6-only hardware A/B before promotion -- the combined-package
+# measurement is not reused as sufficient evidence for the new composition
+# identity). No production patch currently exists for the Q2_K change.
+# patch.toml state set validated -> rejected accordingly, following the
+# same append-only-evidence / deliberate-separate-decision pattern as
+# RD73's 2026-09-09 demotion (see [patch-set.validated-enhancements]
+# comment below).
+patches = []
 required-state = "validated"
 
 [patch-set.validated-enhancements]
 # The production/release enhancement set: performance patches that have
-# ACTUALLY qualified, composed on top of `framework` by [source.bigcherry].
-# This is what separates a release build from bigcherry-native.
+# ACTUALLY qualified, composed on top of `serving-core` by [source.bigcherry].
+# This is what separates a release build from the plain serving-core sources.
 #
 # Entry bar is deliberately higher than `required-state = "validated"` alone.
 # STATE is a durable lifecycle label; it does NOT mean current qualifying
@@ -70,12 +135,31 @@ required-state = "validated"
 # later, better-controlled measurement is trusted over the earlier one.
 # patch.toml state set validated -> rejected accordingly. Demotion is this
 # deliberate act, not an automatic consequence of either benchmark.
-patches = []
+#
+# PROMOTED 2026-09-26: 1237_rd30_moe_mmq_compact_grid (RD30), gfx1100 only
+# (its declared validation-architectures). Contract RD30-MOE-MMQ-COMPACT-GRID
+# PASS over 4 sessions at pin b11126 (improvement_no_regression_v1): pp512
+# +7.44/+7.44/+7.44/+7.32% on Qwen3.6-35B-A3B MoE, control tg128 -0.07..-0.10%,
+# 6 256-expert MUL_MAT_ID shape/seed pairs byte-identical. Owner-approved;
+# GPT review req_4d131e8b7c1c452d concurred. NOT covered: gfx1201 (not
+# measured; the patch is runtime-gated to cc == GGML_CUDA_CC_RDNA3 exactly,
+# so it is inert elsewhere), the dual-XTX production lane (PVPS05, not yet run).
+#
+# PROMOTED 2026-09-26 (auto-promotion of a clear winner, owner-authorized):
+# 1253_nro04_gfx1100_bf16_chunked_gdn (NRO04), gfx1100 + gfx1201 (its contract
+# scope). Contract NRO04-GDN-CHUNKED-BF16 PASS over 4 sessions on EACH arch at
+# pin b11126: pp512 +8.2/+8.8/+7.7/+9.3% (gfx1100) and +10.4/+11.8/+10.6/+11.0%
+# (gfx1201) on the hybrid GDN model, control tg128 flat; GATED_DELTA_NET
+# test-backend-ops within the CPU reference both arms, every session. NOT
+# covered: RDNA3.5 (the runtime gate GGML_CUDA_CC_IS_RDNA3 also admits
+# gfx1151, never measured here); dual-XTX production lane (PVPS05, not run).
+# Near-lossless, not bit-exact (bf16 operands, fp32 accumulation).
+patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn"]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
 # its own [experiment.<name>] entry so `bigcherry build --experiment <name>`
-# adds those patches on top of a source's normal framework patch-set
+# adds those patches on top of a source's normal serving-relevant patch-sets
 # (resolve_lane's experiment= is additive, not a replacement -- see
 # campaign_resolution.py) -- the isolated single-patch(-chain)-vs-native
 # bench unit. Most entries below are still exactly one patch, so benching
@@ -123,15 +207,14 @@ patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 [experiment.rd39-42-only]
 patches = ["1215_rd394041_amd_stream_moe_overlap"]
 
+# 2026-09-26: 1216/1217 separated from 1215 (rejected). 1216 guards upstream's
+# own GGML_CUDA_GRAPH_OPT concurrent regions (stream_ctx.concurrent_events);
+# 1215 only added more of them.
 [experiment.rd43-only]
-patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
-  "1216_rd43_concurrent_join_fusion_guard",
-]
+patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
 [experiment.rd44-only]
 patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
   "1216_rd43_concurrent_join_fusion_guard",
   "1217_rd44_graph_opt_default_rdna35",
 ]
@@ -157,28 +240,16 @@ patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
-[experiment.hip-internal-allreduce-only]
-patches = ["1001_hip_internal_allreduce"]
-
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
-[experiment.hip-internal-allreduce-correctness-gate]
-# Combines 1001 (the AllReduce implementation under test) with 1224 (the
-# SPLIT_REDUCE correctness probe) in one build so test-hip-reduce can
-# actually exercise 1001's HIP-enabled code path -- neither patch alone
-# is enough: 1001 without 1224 has no probe binary to run it through,
-# 1224 without 1001 can only reach RCCL/meta (the internal path stays
-# compiled out). One-off validation build, not a permanent recipe.
-patches = ["1001_hip_internal_allreduce", "1224_hi18_reduce_correctness_probe"]
-
 [experiment.hi155-hybrid-allreduce-gate]
-# 0840 (the hybrid dispatcher) depends on 1001 (the internal pipeline it
-# dispatches into); 1224 (the SPLIT_REDUCE correctness probe) is included
+# 0840 (the hybrid dispatcher) dispatches into the HIP internal AllReduce
+# pipeline, which upstream provides natively since b11126 (formerly the
+# now-superseded patch 1001); 1224 (the SPLIT_REDUCE correctness probe) is included
 # so test-hip-reduce can exercise both sides of the dispatch threshold.
 # One-off validation build, not a permanent recipe.
 patches = [
-    "1001_hip_internal_allreduce",
     "0840_hybrid_allreduce_dispatch",
     "1224_hi18_reduce_correctness_probe",
 ]
@@ -229,15 +300,65 @@ overlay = false
 patch-sets = []
 backend = "vulkan"
 
-[source.bigcherry-native]
-ref = "pinned"
-overlay = true
-patch-sets = ["framework", "upstream-fixes"]
-
 [source.bigcherry]
 ref = "pinned"
 overlay = true
-patch-sets = ["framework", "upstream-fixes", "validated-enhancements"]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): release composition
+# resolves through serving-core (PA26 hardware-proven equivalent to the
+# old aggregate framework composition, removed by PA31). Role/name are
+# unchanged -- this is still THE release source -- only the internal
+# composition narrows to the serving-relevant modules.
+patch-sets = ["serving-core", "upstream-fixes", "validated-enhancements"]
+
+# PA28: additive, transitional semantic sources composed from the new
+# serving-core/campaign-support/qualification-support patch-sets above.
+# None of these are wired into any campaign profile yet and `source.bigcherry`
+# remains the production release owner -- PA29 cuts real consumers over.
+
+# The serving control composition: serving-core + upstream-fixes only. No
+# tune/record/diagnostic/qualification plumbing at all.
+[source.bigcherry-serving-base]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "upstream-fixes"]
+
+# Tuning/campaign composition: serving-core + campaign-support (tune/record/
+# coverage/diagnostics) + upstream-fixes. Enhancements/experiments remain
+# explicit overlays (--experiment), never implicit additions.
+[source.bigcherry-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "upstream-fixes"]
+
+# Qualification composition: serving-core + qualification-support (0830 +
+# 1100) + upstream-fixes. A campaign that also needs campaign-support must
+# request that composition explicitly -- this source does not imply it.
+[source.bigcherry-qualification]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "qualification-support", "upstream-fixes"]
+
+# Originally added for PA30 gate 5/1100: 1100's deterministic test_mul_mat
+# corpus only produces real tuner candidate/correctness evidence when run in
+# GGML_HIP_DISPATCH_MODE=tune, which needs campaign-support's tune/record
+# build plumbing -- bigcherry-qualification intentionally omits
+# campaign-support, so there is no truthful invocation of 1100's tune
+# evidence path through bigcherry-qualification alone (GPT design review,
+# PA30 gate 5).
+#
+# PA31 (GPT design review, PA31 disposition) widened this source's role: it
+# is now also the canonical semantic replacement for the deleted aggregate
+# `framework`+`upstream-fixes` composition (serving-core + campaign-support
+# + qualification-support + upstream-fixes is the literal union PA28 carved
+# `framework` into) -- used by evidence.py's
+# verify_framework_configuration_patch() and validation_campaign.py's
+# --framework-configuration baseline, and by tests asserting the old
+# aggregate composition's full module membership. Not wired into any
+# campaign profile; select it explicitly.
+[source.bigcherry-qualification-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "qualification-support", "upstream-fixes"]
 
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."
@@ -309,15 +430,18 @@ needs = []
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
 options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON" }
-c-compiler = "/opt/rocm/llvm/bin/clang"
-cxx-compiler = "/opt/rocm/llvm/bin/clang++"
+# Host-specific install locations are never committed: ${VAR} references
+# are expanded from the environment (tools/env/rocm-env.sh sets ROCM_PATH).
+c-compiler = "${ROCM_PATH}/llvm/bin/clang"
+cxx-compiler = "${ROCM_PATH}/llvm/bin/clang++"
 
 [platform.windows-gfx1100]
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
-c-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang.exe"
-cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
+# HIP_PATH is set by the AMD HIP SDK installer (or tools/env/rocm-env.ps1).
+c-compiler = "${HIP_PATH}/bin/clang.exe"
+cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
 [platform.vulkan-linux]
 description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
@@ -339,17 +463,17 @@ required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-2]
 backend = "hip"
-sdk-root = "/opt/rocm-7.2"
+sdk-root = "${BIGCHERRY_ROCM_7_2_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-14]
 backend = "hip"
-sdk-root = "/opt/rocm-7.14"
+sdk-root = "${BIGCHERRY_ROCM_7_14_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-10]
 backend = "hip"
-sdk-root = "/opt/rocm-10"
+sdk-root = "${BIGCHERRY_ROCM_10_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.vulkan-radv]
@@ -363,11 +487,22 @@ backend = "vulkan"
 # means the same production build roles `build --all` always covered, not
 # a silently narrower set.
 [campaign.standard]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): source.bigcherry no
+# longer carries 0110_campaign_tune_record_build (it moved to serving-core's
+# sibling campaign-support patch-set), and build.control/record/tune all
+# require 0110's plumbing (0110 fails closed when it is absent) -- so these
+# three lanes move to bigcherry-tuning (serving-core+campaign-support+
+# upstream-fixes), NOT bigcherry-serving-base (control-only, no
+# campaign-support) and NOT plain bigcherry (no campaign-support at all).
+# build.replay is what actually ships, so it alone stays on source=bigcherry
+# (now serving-core+upstream-fixes+validated-enhancements -- the real
+# release composition). Tuning lanes deliberately exclude
+# validated-enhancements per PA29's release/campaign semantic split.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
-  { source = "bigcherry", build = "record", platform = "linux-multi" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi" },
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
@@ -379,14 +514,19 @@ lanes = [
 # audit/full-max remains opt-in: compiling every candidate is unnecessary for
 # an end-to-end workload-specific comparison.
 [campaign.e2e-build-matrix]
+# PA29 cutover: build.native is serving-only (no tuner/diagnostics), so its
+# lane moves to bigcherry-serving-base. control/record/tune/replay-diagnostic
+# all need 0110's campaign plumbing (see campaign.standard's comment above),
+# so they move to bigcherry-tuning. build.replay is the only lane that stays
+# on source=bigcherry (the real release composition).
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-serving-base", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # VA26: the repeatable patch-qualification matrix. `standard` above varies the
@@ -397,7 +537,7 @@ lanes = [
 #
 #   llama-native        upstream, unpatched -- what everything is ultimately
 #                       measured against
-#   bc-native           framework only -- the control for the isolated
+#   bc-native           serving-core only -- the control for the isolated
 #                       comparison, and (vs llama-native) the cost of our own
 #                       instrumentation
 #   bc-native + patch   the patch's ISOLATED effect
@@ -424,31 +564,45 @@ lanes = [
 # (Brutus bench runner)") drives a running llama-server via
 # bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
 #
-# ARM 4 AND ALREADY-SHIPPED PATCHES. Arm 4 is the release composition WITH the
-# patch. How it is written depends on whether the patch has already shipped:
+# ARM 4 AND ALREADY-SHIPPED PATCHES -- PA29 NOTE (GPT design review
+# req_964ec5fc21c14848 approved the lane-source mapping below, but did not
+# catch this consequence; found by actually resolving the profile with
+# tools/tests/campaign/test_campaign_resolution.py::PerLaneExperimentTests,
+# not asserted from theory): arm 4 ("the patch IN SITU, on top of
+# everything already shipped") required source=bigcherry specifically
+# BECAUSE that was the only source carrying validated-enhancements. Every
+# control-family lane (control/record/tune/replay-diagnostic) now requires
+# 0110's campaign plumbing, which only bigcherry-tuning carries among the
+# PA28 sources -- and bigcherry-tuning deliberately EXCLUDES
+# validated-enhancements (PA29's release/campaign semantic split). There is
+# currently no source that composes serving-core + campaign-support +
+# upstream-fixes + validated-enhancements, so arm 4 can no longer be
+# expressed as "release, in-situ, under the instrumented control build" --
+# doing so would silently drop validated-enhancements from what it measures.
 #
-#   not yet shipped -> source = "bigcherry", experiment = "<patch>-only"
-#   already shipped -> source = "bigcherry" alone; the release set already
-#                      contains it, and adding the experiment is rejected with
-#                      "experiment repeats a base patch module" (correctly).
-#
-# RD73 is already in validated-enhancements, so arm 4 carries no experiment
-# here. Note the consequence honestly: RD73 is currently the ONLY promoted
-# enhancement, so arm 4's composition is IDENTICAL to arm 3's (framework +
-# RD73). That makes arm 4 a consistency check -- it proves the release set
-# really does contain the patch -- rather than an independent data point. Once
-# a second enhancement ships, the two diverge and arm 4 starts measuring
-# genuine composition effects.
+# Until a real "instrumented release" source exists (tracked as follow-up
+# work, not created here), arm 4's original degenerate case -- source=
+# bigcherry, build=control, no experiment, from back when validated-
+# enhancements was empty and arm 4 == arm 2's composition anyway -- is
+# removed from this checked-in profile rather than left as a literal
+# duplicate-selector lane (bigcherry-tuning:control:linux-multi would
+# otherwise collide with arm 2). Re-add a real arm 4 explicitly, scoped to
+# the specific campaign that needs an in-situ release comparison, once that
+# source exists; do not resurrect the plain-bigcherry control lane, it no
+# longer resolves the composition its own name implies.
 #
 # `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
 # it, so a lane left at the default publishes -- and therefore builds -- only
 # llama-bench, and produces no server to measure at all.
 [campaign.patch-qualification]
+# PA29 cutover: build.control requires 0110's campaign plumbing (GPT design
+# review req_964ec5fc21c14848), so every control/tune/replay-diagnostic arm
+# here moves to bigcherry-tuning; only the release-composition replay arm (if
+# ever added) would stay on source=bigcherry.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
   # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
   # so comparing it against llama-native measures our instrumentation, not our
   # optimisations. replay is "applies stored winners without measuring -- what
@@ -459,7 +613,7 @@ lanes = [
   # These carry `needs` (tune: inventory; replay: inventory + promoted-winners),
   # so a bare `build --profile patch-qualification` cannot satisfy them --
   # supply --inventory/--winners, or select the control-only lanes explicitly.
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
@@ -589,7 +743,8 @@ required = false
 [[trees]]
 name = "brutus"
 alias = "brutus"
-path = "/mnt/vault/development/projects/bigcherry/workspaces/main"
+# Remote checkout location is host-specific: set BIGCHERRY_BRUTUS_TREE.
+path = "${BIGCHERRY_BRUTUS_TREE}"
 role = "campaign"
 required = true
 expected-tooling-revision = ""

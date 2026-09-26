@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.campaign import resolution as campaign_resolution
 from bigcherry.core import config, paths
-from bigcherry.patch import patchset # noqa: E402
+from bigcherry.patch import patchset  # noqa: E402
 
 
 def _write_patch(patches_root: Path, patch_id: str, *, marker_text: str) -> None:
@@ -45,46 +45,50 @@ class CampaignResolutionTests(unittest.TestCase):
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
-    def test_base_is_exactly_the_fifteen_validated_core_modules(self):
-        lane = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
-        # Scoped to the framework + upstream-fixes patch-sets' own declared
-        # lists (bigcherry-native's real composition, PPS03), not "every
-        # validated module in the catalog" -- since RD19's promotion
-        # (2026-08-24), a validated module can also live in
-        # validated-enhancements, which bigcherry-native must NOT pull in.
-        native_patch_ids = frozenset(self.cfg.patch_sets["framework"].patches) | frozenset(
-            self.cfg.patch_sets["upstream-fixes"].patches
+    def test_base_is_exactly_the_validated_core_modules(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        # PA31: bigcherry-qualification-tuning (serving-core + campaign-support
+        # + qualification-support + upstream-fixes) is the canonical semantic
+        # replacement for the deleted framework+upstream-fixes composition
+        # (GPT design review, PA31 disposition). Scoped to those patch-sets'
+        # own declared lists, not "every validated module in the catalog" --
+        # since RD19's promotion (2026-08-24), a validated module can also
+        # live in validated-enhancements, which this source must NOT pull in.
+        core_patch_ids = (
+            frozenset(self.cfg.patch_sets["serving-core"].patches)
+            | frozenset(self.cfg.patch_sets["campaign-support"].patches)
+            | frozenset(self.cfg.patch_sets["qualification-support"].patches)
+            | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
         )
         expected = tuple(
-            module.patch_id for module in self.catalog
-            if module.state == "validated" and module.patch_id in native_patch_ids
+            module.patch_id
+            for module in self.catalog
+            if module.state == "validated" and module.patch_id in core_patch_ids
         )
-        # HI70: patches/1100_hi70_direct_op_evidence/patch.py added a 15th
-        # validated core module (deterministic direct-op correctness corpus
-        # for MMQ fb1 / MMF nwarps candidates). PPS03 (2026-09-11) moved
-        # 1000_rdna4_mmq_q2k_q6k_fix (an upstream correctness backport, not
-        # framework plumbing) out of the framework patch-set into its own
-        # upstream-fixes patch-set, still composed into bigcherry-native --
-        # the total stays 15, now correctly split 14 framework + 1
-        # upstream-fixes instead of bundled as 15 "framework".
-        self.assertEqual(len(expected), 15)
+        # 14 serving/campaign/qualification modules (0820 superseded
+        # 2026-09-24) + 0 upstream-fixes modules = 14.
+        self.assertEqual(len(expected), 14)
         self.assertEqual(lane.patch_set.module_ids, expected)
         self.assertEqual(
-            len(self.cfg.patch_sets["framework"].patches), 14,
+            len(core_patch_ids - frozenset(self.cfg.patch_sets["upstream-fixes"].patches)),
+            14,
         )
         self.assertEqual(
-            len(self.cfg.patch_sets["upstream-fixes"].patches), 1,
+            len(self.cfg.patch_sets["upstream-fixes"].patches),
+            0,
         )
-        # bigcherry-native is FRAMEWORK ONLY -- it must never report or build
-        # a promoted enhancement. That separation is what makes it usable as
+        # bigcherry-qualification-tuning must never report or build a
+        # promoted enhancement. That separation is what makes it usable as
         # the control arm of a validation campaign: if enhancements leaked in
         # here, every A/B would be measured against a moving baseline.
         #
         # This assertion caught a real defect the moment validated-enhancements
         # stopped being empty (2026-09-05, RD73): promoted_enhancements
-        # returned the whole global set for EVERY source, so the
-        # framework-only control source reported an enhancement it does not
-        # build. Selection itself was always correct; the report was not.
+        # returned the whole global set for EVERY source, so a control
+        # source reported an enhancement it does not build. Selection itself
+        # was always correct; the report was not.
         #
         # (RD19 was briefly in validated-enhancements on 2026-08-24; that
         # promotion post-dated the HI83 evidence contract with no qualifying
@@ -95,49 +99,68 @@ class CampaignResolutionTests(unittest.TestCase):
         non_empty = self.cfg.patch_sets["validated-enhancements"].patches
         for patch_id in non_empty:
             self.assertNotIn(
-                patch_id, lane.patch_set.module_ids,
-                f"{patch_id} leaked into the framework-only control source",
+                patch_id,
+                lane.patch_set.module_ids,
+                f"{patch_id} leaked into the enhancement-free control source",
             )
 
-    def test_release_source_is_framework_plus_validated_enhancements(self):
-        """[source.bigcherry] is the release build: framework + whatever has
+    def test_release_source_is_serving_core_plus_validated_enhancements(self):
+        """[source.bigcherry] is the release build: serving-core (PA29
+        cutover, GPT design review req_964ec5fc21c14848) + whatever has
         actually qualified. This pins the STRUCTURE rather than a count, so
         promoting a patch does not break the test -- only breaking the
-        composition does."""
-        native = campaign_resolution.resolve_lane(
-            "bigcherry-native", self.cfg, self.catalog)
-        release = campaign_resolution.resolve_lane(
-            "bigcherry", self.cfg, self.catalog)
+        composition does.
 
-        native_ids = set(native.patch_set.module_ids)
+        Post-PA31, the old ``framework``/``bigcherry-native`` aggregate
+        identifiers no longer exist -- the semantic replacement
+        (``bigcherry-qualification-tuning``, serving-core + campaign-support
+        + qualification-support + upstream-fixes) is a strict superset of
+        the release build's serving-core baseline, not a subset -- the
+        subset relationship runs the other way for the non-enhancement
+        ids."""
+        serving = campaign_resolution.resolve_lane(
+            "bigcherry-serving-base", self.cfg, self.catalog
+        )
+        release = campaign_resolution.resolve_lane("bigcherry", self.cfg, self.catalog)
+
+        serving_ids = set(serving.patch_set.module_ids)
         release_ids = set(release.patch_set.module_ids)
 
-        # The release build is a strict superset of the native baseline...
-        self.assertTrue(native_ids <= release_ids)
+        # The release build is a strict superset of the serving-core baseline...
+        self.assertTrue(serving_ids <= release_ids)
         # ...and everything extra is exactly the promoted enhancements.
-        self.assertEqual(release_ids - native_ids, set(release.promoted_enhancements))
+        self.assertEqual(release_ids - serving_ids, set(release.promoted_enhancements))
         # Every promoted enhancement must really be STATE="validated" --
         # required-state on the patch-set is what enforces this, and a
         # release build must never ship an unvalidated patch.
         by_id = {module.patch_id: module for module in self.catalog}
         for patch_id in release.promoted_enhancements:
             self.assertEqual(
-                by_id[patch_id].state, "validated",
+                by_id[patch_id].state,
+                "validated",
                 f"{patch_id} is in a release patch-set but is not validated",
             )
 
     def test_one_explicit_experiment_does_not_leak_all_noncore_patches(self):
         experiment = config.Experiment(
-            name="one-fix", patches=("1002_hip_unsafe_math_opt_in",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="one-fix",
+            patches=("1002_hip_unsafe_math_opt_in",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         lane = campaign_resolution.resolve_lane(
-            "bigcherry-native", cfg, self.catalog, experiment="one-fix"
+            "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
-        self.assertEqual(len(lane.patch_set.module_ids), 16)
+        # 14 core modules (serving-core + campaign-support +
+        # qualification-support + upstream-fixes) + 1 overlay patch = 15.
+        self.assertEqual(len(lane.patch_set.module_ids), 15)
         self.assertIn("1002_hip_unsafe_math_opt_in", lane.patch_set.module_ids)
-        self.assertNotIn("1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids)
+        self.assertNotIn(
+            "1003_quantized_cpy_thread_block_fix", lane.patch_set.module_ids
+        )
         self.assertEqual(lane.patch_set.classification, "experimental")
 
 
@@ -184,12 +207,16 @@ class CanonicalSelectionTests(unittest.TestCase):
 
     def test_experiment_forwards_through_to_the_resolved_patch_set(self):
         experiment = config.Experiment(
-            name="one-fix", patches=("1002_hip_unsafe_math_opt_in",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="one-fix",
+            patches=("1002_hip_unsafe_math_opt_in",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         cfg = dataclasses.replace(self.cfg, experiments={"one-fix": experiment})
         selection = campaign_resolution.resolve_canonical_selection(
-            "bigcherry-native", cfg, self.catalog, experiment="one-fix"
+            "bigcherry-qualification-tuning", cfg, self.catalog, experiment="one-fix"
         )
         self.assertIn("1002_hip_unsafe_math_opt_in", selection.patch_ids)
 
@@ -203,15 +230,19 @@ class PatchSetIdentityTests(unittest.TestCase):
     def test_all_is_rejected_and_identity_changes_with_content(self):
         with self.assertRaisesRegex(campaign_resolution.ResolutionError, "not a valid"):
             campaign_resolution.resolve_patch_set("all", self.cfg, self.catalog)
-        first = campaign_resolution.resolve_lane("bigcherry-native", self.cfg, self.catalog)
+        first = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
         changed = dataclasses.replace(
-            self.cfg.patch_sets["framework"],
-            patches=self.cfg.patch_sets["framework"].patches[:-1],
+            self.cfg.patch_sets["serving-core"],
+            patches=self.cfg.patch_sets["serving-core"].patches[:-1],
         )
         cfg = dataclasses.replace(
-            self.cfg, patch_sets={**self.cfg.patch_sets, "framework": changed}
+            self.cfg, patch_sets={**self.cfg.patch_sets, "serving-core": changed}
         )
-        second = campaign_resolution.resolve_lane("bigcherry-native", cfg, self.catalog)
+        second = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", cfg, self.catalog
+        )
         self.assertNotEqual(first.patch_set.patch_set_id, second.patch_set.patch_set_id)
 
 
@@ -224,7 +255,9 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
     genuinely different named-set compositions resolving to the same
     modules/state/classification collided on one patch_set_id."""
 
-    def test_two_different_multiset_compositions_resolving_to_the_same_modules_do_not_collide(self):
+    def test_two_different_multiset_compositions_resolving_to_the_same_modules_do_not_collide(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             patches_root = Path(directory) / "patches"
             _write_patch(patches_root, "0001_a", marker_text="a")
@@ -234,10 +267,17 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             cfg = config.Config(
                 pinned="unused",
                 patch_sets={
-                    "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                    "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                    "set-a": config.PatchSet(
+                        name="set-a", patches=("0001_a",), required_state="validated"
+                    ),
+                    "set-b": config.PatchSet(
+                        name="set-b", patches=("0002_b",), required_state="validated"
+                    ),
                     "set-ab": config.PatchSet(
-                        name="set-ab", patches=("0001_a", "0002_b"), required_state="validated"),
+                        name="set-ab",
+                        patches=("0001_a", "0002_b"),
+                        required_state="validated",
+                    ),
                 },
                 sources={
                     # Two-set composition [set-a, set-b] and single-set
@@ -245,26 +285,43 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
                     # ("0001_a", "0002_b") -- same bytes, different
                     # reviewed logical composition.
                     "via-two-sets": config.Source(
-                        name="via-two-sets", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b")),
+                        name="via-two-sets",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b"),
+                    ),
                     "via-one-set": config.Source(
-                        name="via-one-set", ref="pinned", overlay=False,
-                        patch_sets=("set-ab",)),
+                        name="via-one-set",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-ab",),
+                    ),
                 },
-                builds={}, platforms={}, experiments={}, campaigns={},
+                builds={},
+                platforms={},
+                experiments={},
+                campaigns={},
                 path=Path(directory) / "recipes.toml",
             )
 
             lane_two_sets = campaign_resolution.resolve_lane(
-                "via-two-sets", cfg, catalog, catalog_directory=patches_root)
+                "via-two-sets", cfg, catalog, catalog_directory=patches_root
+            )
             lane_one_set = campaign_resolution.resolve_lane(
-                "via-one-set", cfg, catalog, catalog_directory=patches_root)
+                "via-one-set", cfg, catalog, catalog_directory=patches_root
+            )
 
-            self.assertEqual(lane_two_sets.patch_set.module_ids, lane_one_set.patch_set.module_ids)
+            self.assertEqual(
+                lane_two_sets.patch_set.module_ids, lane_one_set.patch_set.module_ids
+            )
             self.assertNotEqual(
-                lane_two_sets.patch_set.patch_set_id, lane_one_set.patch_set.patch_set_id)
+                lane_two_sets.patch_set.patch_set_id,
+                lane_one_set.patch_set.patch_set_id,
+            )
 
-    def test_two_different_two_set_compositions_resolving_to_the_same_modules_do_not_collide(self):
+    def test_two_different_two_set_compositions_resolving_to_the_same_modules_do_not_collide(
+        self,
+    ):
         # The narrower case: TWO different multi-set compositions (both
         # going through the "__merged__" synthetic-name path), not one
         # multi-set vs one single-set.
@@ -277,30 +334,51 @@ class MultiPatchSetCompositionIdentityTests(unittest.TestCase):
             cfg = config.Config(
                 pinned="unused",
                 patch_sets={
-                    "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                    "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
-                    "set-empty-1": config.PatchSet(name="set-empty-1", patches=(), required_state="validated"),
-                    "set-empty-2": config.PatchSet(name="set-empty-2", patches=(), required_state="validated"),
+                    "set-a": config.PatchSet(
+                        name="set-a", patches=("0001_a",), required_state="validated"
+                    ),
+                    "set-b": config.PatchSet(
+                        name="set-b", patches=("0002_b",), required_state="validated"
+                    ),
+                    "set-empty-1": config.PatchSet(
+                        name="set-empty-1", patches=(), required_state="validated"
+                    ),
+                    "set-empty-2": config.PatchSet(
+                        name="set-empty-2", patches=(), required_state="validated"
+                    ),
                 },
                 sources={
                     "via-a-then-empty1": config.Source(
-                        name="via-a-then-empty1", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b", "set-empty-1")),
+                        name="via-a-then-empty1",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b", "set-empty-1"),
+                    ),
                     "via-a-then-empty2": config.Source(
-                        name="via-a-then-empty2", ref="pinned", overlay=False,
-                        patch_sets=("set-a", "set-b", "set-empty-2")),
+                        name="via-a-then-empty2",
+                        ref="pinned",
+                        overlay=False,
+                        patch_sets=("set-a", "set-b", "set-empty-2"),
+                    ),
                 },
-                builds={}, platforms={}, experiments={}, campaigns={},
+                builds={},
+                platforms={},
+                experiments={},
+                campaigns={},
                 path=Path(directory) / "recipes.toml",
             )
 
             lane_1 = campaign_resolution.resolve_lane(
-                "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root)
+                "via-a-then-empty1", cfg, catalog, catalog_directory=patches_root
+            )
             lane_2 = campaign_resolution.resolve_lane(
-                "via-a-then-empty2", cfg, catalog, catalog_directory=patches_root)
+                "via-a-then-empty2", cfg, catalog, catalog_directory=patches_root
+            )
 
             self.assertEqual(lane_1.patch_set.module_ids, lane_2.patch_set.module_ids)
-            self.assertNotEqual(lane_1.patch_set.patch_set_id, lane_2.patch_set.patch_set_id)
+            self.assertNotEqual(
+                lane_1.patch_set.patch_set_id, lane_2.patch_set.patch_set_id
+            )
 
 
 class EmptyBaseExperimentResolutionTests(unittest.TestCase):
@@ -316,38 +394,57 @@ class EmptyBaseExperimentResolutionTests(unittest.TestCase):
         _write_patch(self.patches_root, "0001_a", marker_text="a")
         self.catalog = patchset.catalog(directory=self.patches_root)
         experiment = config.Experiment(
-            name="exp-a", patches=("0001_a",),
-            cmake_options=(), runtime_env=(), requires=(), conflicts=(),
+            name="exp-a",
+            patches=("0001_a",),
+            cmake_options=(),
+            runtime_env=(),
+            requires=(),
+            conflicts=(),
         )
         self.cfg = config.Config(
             pinned="unused",
             patch_sets={},
             sources={
                 "clean": config.Source(
-                    name="clean", ref="pinned", overlay=False, patch_sets=()),
+                    name="clean", ref="pinned", overlay=False, patch_sets=()
+                ),
             },
-            builds={}, platforms={}, experiments={"exp-a": experiment}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={"exp-a": experiment},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
 
     def test_empty_base_no_experiment_resolves_empty(self):
         lane = campaign_resolution.resolve_lane(
-            "clean", self.cfg, self.catalog, catalog_directory=self.patches_root)
+            "clean", self.cfg, self.catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(lane.patch_set.module_ids, ())
         self.assertEqual(lane.patch_set.classification, "upstream")
 
     def test_empty_base_with_experiment_resolves_exactly_the_experiment(self):
         lane = campaign_resolution.resolve_lane(
-            "clean", self.cfg, self.catalog, experiment="exp-a",
-            catalog_directory=self.patches_root)
+            "clean",
+            self.cfg,
+            self.catalog,
+            experiment="exp-a",
+            catalog_directory=self.patches_root,
+        )
         self.assertEqual(lane.patch_set.module_ids, ("0001_a",))
         self.assertEqual(lane.patch_set.classification, "experimental")
 
     def test_empty_base_with_unknown_experiment_fails_closed(self):
-        with self.assertRaisesRegex(campaign_resolution.ResolutionError, "unknown experiment"):
+        with self.assertRaisesRegex(
+            campaign_resolution.ResolutionError, "unknown experiment"
+        ):
             campaign_resolution.resolve_lane(
-                "clean", self.cfg, self.catalog, experiment="not-real",
-                catalog_directory=self.patches_root)
+                "clean",
+                self.cfg,
+                self.catalog,
+                experiment="not-real",
+                catalog_directory=self.patches_root,
+            )
 
 
 class MultiSetIndependentRequiredStateTests(unittest.TestCase):
@@ -363,15 +460,19 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         _write_patch(self.patches_root, "0001_a", marker_text="a")
         _write_patch(self.patches_root, "0002_b", marker_text="b")
 
-    def _catalog_with_states(self, state_a: str, state_b: str) -> list[patchset.PatchModule]:
+    def _catalog_with_states(
+        self, state_a: str, state_b: str
+    ) -> list[patchset.PatchModule]:
         (self.patches_root / "0001_a.py").write_text(
-            (self.patches_root / "0001_a.py").read_text(encoding="utf-8").replace(
-                "STATE = 'validated'", f"STATE = {state_a!r}"),
+            (self.patches_root / "0001_a.py")
+            .read_text(encoding="utf-8")
+            .replace("STATE = 'validated'", f"STATE = {state_a!r}"),
             encoding="utf-8",
         )
         (self.patches_root / "0002_b.py").write_text(
-            (self.patches_root / "0002_b.py").read_text(encoding="utf-8").replace(
-                "STATE = 'validated'", f"STATE = {state_b!r}"),
+            (self.patches_root / "0002_b.py")
+            .read_text(encoding="utf-8")
+            .replace("STATE = 'validated'", f"STATE = {state_b!r}"),
             encoding="utf-8",
         )
         return patchset.catalog(directory=self.patches_root)
@@ -390,18 +491,30 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="untested"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="untested"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         lane = campaign_resolution.resolve_lane(
-            "multi", cfg, catalog, catalog_directory=self.patches_root)
+            "multi", cfg, catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
         # Two genuinely different policies were used -- the composite
         # required_state is honestly ambiguous, not silently the first
@@ -419,43 +532,313 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="validated"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         with self.assertRaisesRegex(ValueError, "does not satisfy required state"):
             campaign_resolution.resolve_lane(
-                "multi", cfg, catalog, catalog_directory=self.patches_root)
+                "multi", cfg, catalog, catalog_directory=self.patches_root
+            )
 
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
-        # Today's only real production shape (bigcherry: framework +
-        # validated-enhancements, both 'validated') -- required_state must
+        # Today's only real production shape (bigcherry: serving-core +
+        # upstream-fixes + validated-enhancements, all 'validated') --
+        # required_state must
         # resolve to the shared string, not None, so patch_set_id does not
         # silently change for every currently-configured multi-set source.
         catalog = self._catalog_with_states("validated", "validated")
         cfg = config.Config(
             pinned="unused",
             patch_sets={
-                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
-                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+                "set-a": config.PatchSet(
+                    name="set-a", patches=("0001_a",), required_state="validated"
+                ),
+                "set-b": config.PatchSet(
+                    name="set-b", patches=("0002_b",), required_state="validated"
+                ),
             },
             sources={
                 "multi": config.Source(
-                    name="multi", ref="pinned", overlay=False, patch_sets=("set-a", "set-b")),
+                    name="multi",
+                    ref="pinned",
+                    overlay=False,
+                    patch_sets=("set-a", "set-b"),
+                ),
             },
-            builds={}, platforms={}, experiments={}, campaigns={},
+            builds={},
+            platforms={},
+            experiments={},
+            campaigns={},
             path=Path(self.directory.name) / "recipes.toml",
         )
         lane = campaign_resolution.resolve_lane(
-            "multi", cfg, catalog, catalog_directory=self.patches_root)
+            "multi", cfg, catalog, catalog_directory=self.patches_root
+        )
         self.assertEqual(lane.patch_set.required_state, "validated")
         self.assertEqual(set(lane.patch_set.module_ids), {"0001_a", "0002_b"})
+
+
+class PA28SemanticPatchSetTests(unittest.TestCase):
+    """PA28: additive serving-core/campaign-support/qualification-support
+    patch-sets and their composed sources, originally carved from the old
+    aggregate `framework` patch-set. Pins module membership, the
+    no-orphan/no-duplicate-claim property, and that the sources resolve
+    deterministically. PA29 (GPT design review req_964ec5fc21c14848) cut
+    source.bigcherry over from framework to serving-core; PA31 (GPT design
+    review, PA31 disposition) then deleted the old `framework` patch-set and
+    `bigcherry-native` source entirely -- bigcherry-qualification-tuning
+    (serving-core + campaign-support + qualification-support +
+    upstream-fixes) is now the canonical semantic replacement, and module
+    membership below is pinned directly rather than derived from the
+    deleted aggregate."""
+
+    # The 7 modules actually owned by campaign-support/qualification-support
+    # today (GPT design-review correction, PA31 final review): NOT PA26's
+    # historical 8-element EXPECTED_REMOVED_MODULES -- that PA26-era set
+    # included 0700_coverage_counters, which PA28 deliberately put back into
+    # serving-core (see test_serving_core_membership below), so treating it
+    # as "non-serving" here would be actively wrong, not just stale
+    # terminology. Hardcoded since PA31 deleted the historical
+    # replay_equivalence.py module that used to define EXPECTED_REMOVED_MODULES.
+    _CAMPAIGN_AND_QUALIFICATION_MODULES = frozenset(
+        {
+            "0110_campaign_tune_record_build",
+            "0800_server_shutdown_endpoint",
+            "0810_replay_hit_diagnostics",
+            "0830_split_reduce_telemetry",
+            "0900_pool_workspace_metrics",
+            "1100_hi70_direct_op_evidence",
+        }
+    )
+
+    # The former semantic `framework` patch-set's full 15-module membership
+    # (serving-core's 8 + the 7 above), pinned directly -- not derived from
+    # any PA26 terminology.
+    _FORMER_FRAMEWORK_MEMBERSHIP = frozenset(
+        {
+            "0100_cmake_options",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+        }
+    ) | _CAMPAIGN_AND_QUALIFICATION_MODULES
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = config.load(paths.RECIPES)
+        cls.catalog = patchset.catalog()
+
+    def test_serving_core_membership(self):
+        # GPT design-review consult (req_d9bf628dc9954595, 2026-09-15): 0700
+        # contains real serving-relevant dispatch-family routing, not only
+        # diagnostics counters, so PA28 deliberately keeps it whole in
+        # serving-core (the GPT-approved minimal-safe fallback) rather than
+        # campaign-support, pending a future real patch-split.
+        serving_core = set(self.cfg.patch_sets["serving-core"].patches)
+        self.assertEqual(
+            serving_core,
+            self._FORMER_FRAMEWORK_MEMBERSHIP - self._CAMPAIGN_AND_QUALIFICATION_MODULES,
+        )
+        self.assertIn("0700_coverage_counters", serving_core)
+        self.assertEqual(len(serving_core), 8)
+
+    def test_campaign_support_and_qualification_support_partition_the_campaign_and_qualification_modules(self):
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        # No orphan: every module genuinely owned by campaign/qualification
+        # has exactly one documented owner here (0700 is NOT among these --
+        # it belongs to serving-core, see test_serving_core_membership).
+        self.assertEqual(
+            campaign_support | qualification_support,
+            self._CAMPAIGN_AND_QUALIFICATION_MODULES,
+        )
+        # No duplicate claim: the two sets are disjoint.
+        self.assertEqual(campaign_support & qualification_support, set())
+        self.assertNotIn("0700_coverage_counters", campaign_support)
+        self.assertNotIn("0700_coverage_counters", qualification_support)
+        self.assertEqual(
+            qualification_support,
+            {"0830_split_reduce_telemetry", "1100_hi70_direct_op_evidence"},
+        )
+
+    def test_no_module_claimed_by_more_than_one_of_the_three_new_sets(self):
+        serving_core = set(self.cfg.patch_sets["serving-core"].patches)
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        # Pairwise disjoint...
+        self.assertEqual(serving_core & campaign_support, set())
+        self.assertEqual(serving_core & qualification_support, set())
+        self.assertEqual(campaign_support & qualification_support, set())
+        # ...and together they reconstitute exactly the former semantic
+        # `framework` patch-set's 15-module membership, pinned directly
+        # rather than derived from any PA26 terminology.
+        self.assertEqual(
+            serving_core | campaign_support | qualification_support,
+            self._FORMER_FRAMEWORK_MEMBERSHIP,
+        )
+        # 15 historically; 0820 superseded 2026-09-24 (its edits live in the
+        # overlay), so the current semantic sets reconstitute 14.
+        self.assertEqual(len(self._FORMER_FRAMEWORK_MEMBERSHIP), 14)
+
+    def test_bigcherry_serving_base_is_serving_core_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-serving-base", self.cfg, self.catalog
+        )
+        expected = set(self.cfg.patch_sets["serving-core"].patches) | set(
+            self.cfg.patch_sets["upstream-fixes"].patches
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+
+    def test_bigcherry_tuning_is_serving_core_plus_campaign_support_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-tuning", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["campaign-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        self.assertNotIn(
+            "0830_split_reduce_telemetry", lane.patch_set.module_ids
+        )
+        self.assertNotIn(
+            "1100_hi70_direct_op_evidence", lane.patch_set.module_ids
+        )
+
+    def test_bigcherry_qualification_is_serving_core_plus_qualification_support_plus_upstream_fixes(self):
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["qualification-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        # 0700 is now part of serving-core (GPT review), so it's present via
+        # that -- only the campaign-support-only modules must be absent.
+        self.assertNotIn(
+            "0110_campaign_tune_record_build", lane.patch_set.module_ids
+        )
+        self.assertNotIn(
+            "0800_server_shutdown_endpoint", lane.patch_set.module_ids
+        )
+
+    def test_new_sources_have_distinct_deterministic_patch_set_ids(self):
+        lanes = {
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            for name in (
+                "bigcherry-serving-base",
+                "bigcherry-tuning",
+                "bigcherry-qualification",
+            )
+        }
+        ids = {name: lane.patch_set.patch_set_id for name, lane in lanes.items()}
+        self.assertEqual(len(set(ids.values())), 3, f"patch_set_ids collided: {ids}")
+        # Deterministic: resolving again gives byte-identical identity.
+        for name, lane in lanes.items():
+            again = campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            self.assertEqual(again.patch_set.patch_set_id, lane.patch_set.patch_set_id)
+            self.assertEqual(again.patch_set.module_ids, lane.patch_set.module_ids)
+
+    def test_bigcherry_qualification_tuning_is_serving_core_plus_campaign_support_plus_qualification_support_plus_upstream_fixes(self):
+        # PA30 gate 5/1100 fix (GPT design review): 1100's deterministic
+        # test_mul_mat corpus only produces real tuner candidate/correctness
+        # evidence under GGML_HIP_DISPATCH_MODE=tune, which needs
+        # campaign-support's tune/record build plumbing -- omitted by
+        # bigcherry-qualification. This explicit combined source composes
+        # serving-core + campaign-support + qualification-support +
+        # upstream-fixes for that exceptional qualification+tuning case.
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        expected = (
+            set(self.cfg.patch_sets["serving-core"].patches)
+            | set(self.cfg.patch_sets["campaign-support"].patches)
+            | set(self.cfg.patch_sets["qualification-support"].patches)
+            | set(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), expected)
+        # No orphan/duplicate claim: this is exactly the union of the
+        # already-disjoint component sets, plus upstream-fixes.
+        self.assertIn("0110_campaign_tune_record_build", lane.patch_set.module_ids)
+        self.assertIn("0830_split_reduce_telemetry", lane.patch_set.module_ids)
+        self.assertIn("1100_hi70_direct_op_evidence", lane.patch_set.module_ids)
+
+    def test_bigcherry_qualification_tuning_has_distinct_deterministic_patch_set_id(self):
+        lanes = {
+            name: campaign_resolution.resolve_lane(name, self.cfg, self.catalog)
+            for name in (
+                "bigcherry-serving-base",
+                "bigcherry-tuning",
+                "bigcherry-qualification",
+                "bigcherry-qualification-tuning",
+            )
+        }
+        ids = {name: lane.patch_set.patch_set_id for name, lane in lanes.items()}
+        self.assertEqual(len(set(ids.values())), 4, f"patch_set_ids collided: {ids}")
+        again = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        self.assertEqual(
+            again.patch_set.patch_set_id,
+            lanes["bigcherry-qualification-tuning"].patch_set.patch_set_id,
+        )
+        self.assertEqual(
+            again.patch_set.module_ids,
+            lanes["bigcherry-qualification-tuning"].patch_set.module_ids,
+        )
+
+    def test_old_framework_and_native_identifiers_are_gone_after_pa31(self):
+        # PA31 (GPT design review, PA31 disposition): the old aggregate
+        # `framework` patch-set and `bigcherry-native` source are DELETED,
+        # not aliased or shimmed -- no compatibility layer. The semantic
+        # sources (serving-core/campaign-support/qualification-support and
+        # their composed bigcherry-* sources) resolve as declared instead.
+        self.assertNotIn("framework", self.cfg.patch_sets)
+        self.assertNotIn("bigcherry-native", self.cfg.sources)
+
+        lane = campaign_resolution.resolve_lane(
+            "bigcherry-qualification-tuning", self.cfg, self.catalog
+        )
+        expected = (
+            frozenset(self.cfg.patch_sets["serving-core"].patches)
+            | frozenset(self.cfg.patch_sets["campaign-support"].patches)
+            | frozenset(self.cfg.patch_sets["qualification-support"].patches)
+            | frozenset(self.cfg.patch_sets["upstream-fixes"].patches)
+        )
+        self.assertEqual(set(lane.patch_set.module_ids), set(expected))
+        self.assertEqual(len(expected), 14)
+
+    def test_0800_and_1100_are_not_orphaned(self):
+        # PA28's own Validation section calls this out explicitly.
+        campaign_support = set(self.cfg.patch_sets["campaign-support"].patches)
+        qualification_support = set(self.cfg.patch_sets["qualification-support"].patches)
+        self.assertIn("0800_server_shutdown_endpoint", campaign_support)
+        self.assertIn("1100_hi70_direct_op_evidence", qualification_support)
 
 
 if __name__ == "__main__":
@@ -469,6 +852,7 @@ class PerLaneExperimentTests(unittest.TestCase):
 
     def setUp(self):
         from bigcherry.core import config, paths
+
         self.cfg = config.load(paths.RECIPES)
 
     def test_profile_declares_patched_and_unpatched_arms(self):
@@ -499,7 +883,7 @@ class PerLaneExperimentTests(unittest.TestCase):
         # survive), not a lane count -- the profile legitimately grows as
         # build variants like tune/replay are added.
         self.assertEqual(len(ids), len(set(ids)), f"lane ids collided: {ids}")
-        native = [i for i in ids if i.startswith("bigcherry-native:control")]
+        native = [i for i in ids if i.startswith("bigcherry-tuning:control")]
         self.assertEqual(len(native), 2, "expected a patched and unpatched pair")
 
     def test_lane_experiment_overrides_request_level(self):
@@ -508,13 +892,14 @@ class PerLaneExperimentTests(unittest.TestCase):
         lanes = plan(
             CampaignRequest(
                 selectors=tuple(self.cfg.campaigns["patch-qualification"].lanes),
-                architectures=("gfx1100",), experiment="rd73-only",
+                architectures=("gfx1100",),
+                experiment="rd73-only",
             ),
             self.cfg,
         )
         # Request-level fills the baselines that declare none; a lane that
         # declares its own keeps it.
-        by_source = {(l.source_name, l.experiment) for l in lanes}
+        by_source = {(lane.source_name, lane.experiment) for lane in lanes}
         self.assertIn(("bigcherry", "rd73-only"), by_source)
 
     def test_unknown_lane_experiment_is_rejected(self):
@@ -522,7 +907,9 @@ class PerLaneExperimentTests(unittest.TestCase):
         # time, not silently plan an arm that is identical to its baseline --
         # which would make the comparison quietly meaningless.
         text = paths.RECIPES.read_text(encoding="utf-8").replace(
-            'experiment = "rd73-only"', 'experiment = "no-such-experiment"', 1,
+            'experiment = "rd73-only"',
+            'experiment = "no-such-experiment"',
+            1,
         )
         with tempfile.TemporaryDirectory() as tmp:
             recipes = Path(tmp) / "recipes.toml"
@@ -530,3 +917,100 @@ class PerLaneExperimentTests(unittest.TestCase):
             with self.assertRaises(config.ConfigError) as caught:
                 config.load(recipes)
         self.assertIn("no-such-experiment", str(caught.exception))
+
+
+class SelectorIdentityAuthorityTests(unittest.TestCase):
+    """PA34.2 structural invariant: the canonical selector identity is
+    constructed ONLY inside campaign/resolution.py.
+
+    rebase/gates/validation consumers must never hand-assemble a selector
+    identity (the dataclass) or its payload -- they obtain it through
+    ``resolve_canonical_selection()`` / ``build_all_patches_identity()`` and
+    validate it through ``SelectorIdentity.from_payload()``. This test walks
+    the whole production tree and fails closed if any other module constructs
+    the identity directly.
+
+    Adversarial-review follow-up (dev-gpt-agent req_b6af12ef4ad34bad P3 #8):
+    the original check only caught a bare ``SelectorIdentity(...)`` name
+    call. It now also catches
+      * a dotted constructor ``<module>.SelectorIdentity(...)`` (the
+        ``campaign_resolution.SelectorIdentity(...)`` alias form), and
+      * a hand-assembled identity PAYLOAD -- a dict literal carrying BOTH
+        the ``"selector_kind"`` and ``"module_hashes"`` keys, which is the
+        exact shape ``to_payload()`` produces and which no other domain data
+        carries. (``from_payload`` / ``describe_diff`` / annotations / comments
+        never match: they are not constructor calls nor such dict literals.)
+      * the same payload hand-assembled via the ``dict(...)`` BUILTIN call
+        form instead of a ``{...}`` literal -- ``dict(selector_kind=...,
+        module_hashes=...)`` produces byte-identical data to the dict
+        literal above but was missed by the literal-only check (dev-gpt-agent
+        review req_1d02cb052310446c P3).
+    """
+
+    _PAYLOAD_MARKER_KEYS = frozenset(("selector_kind", "module_hashes"))
+
+    def test_identity_is_constructed_only_in_the_authority_module(self) -> None:
+        import ast
+
+        repo_root = Path(__file__).resolve().parents[3]
+        production = repo_root / "tools" / "bigcherry"
+        authority = production / "campaign" / "resolution.py"
+
+        offenders: list[str] = []
+        for source_file in sorted(production.rglob("*.py")):
+            if source_file == authority:
+                continue
+            tree = ast.parse(
+                source_file.read_text(encoding="utf-8"),
+                filename=str(source_file),
+            )
+            for node in ast.walk(tree):
+                # (a) a bare or dotted SelectorIdentity(...) constructor call.
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    if isinstance(func, ast.Name) and func.id == "SelectorIdentity":
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"constructs SelectorIdentity by name"
+                        )
+                    elif (
+                        isinstance(func, ast.Attribute)
+                        and func.attr == "SelectorIdentity"
+                    ):
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"constructs <module>.SelectorIdentity by attribute"
+                        )
+                    # (c) the builtin dict(...) call-form of (b): keyword
+                    # names instead of dict-literal keys.
+                    elif isinstance(func, ast.Name) and func.id == "dict":
+                        keyword_names = {
+                            kw.arg for kw in node.keywords if kw.arg is not None
+                        }
+                        if keyword_names.issuperset(self._PAYLOAD_MARKER_KEYS):
+                            offenders.append(
+                                f"{source_file}:{node.lineno} "
+                                f"hand-assembles a selector identity payload "
+                                "via dict(selector_kind=..., module_hashes=...)"
+                            )
+                # (b) a hand-assembled identity payload dict literal.
+                elif isinstance(node, ast.Dict):
+                    string_keys = {
+                        key.value
+                        for key in node.keys
+                        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    }
+                    if string_keys.issuperset(self._PAYLOAD_MARKER_KEYS):
+                        offenders.append(
+                            f"{source_file}:{node.lineno} "
+                            f"hand-assembles a selector identity payload "
+                            "(dict with selector_kind + module_hashes)"
+                        )
+        self.assertEqual(
+            offenders,
+            [],
+            "selector identity must be constructed only in "
+            "campaign/resolution.py; consumers must use "
+            "resolve_canonical_selection()/build_all_patches_identity() "
+            "-- offenders: " + "; ".join(offenders),
+        )

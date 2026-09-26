@@ -1,0 +1,63 @@
+# BigCherry Brutus Slurm v1 policy (Ubuntu 24.04 / Slurm 23.11.x)
+# Render placeholders from accepted RCD12 hardware inventory.
+# Generated host file: /etc/slurm/slurm.conf
+
+ClusterName=bigcherry
+SlurmctldHost=@NODE_NAME@
+SlurmUser=slurm
+SlurmdUser=root
+
+AuthType=auth/munge
+# Noble 23.11 uses cred_expire as the automatic-requeue eligibility delay.
+# Default is 120s. 30s is the BigCherry single-host v1 policy; change only
+# after a real launch/requeue test on Brutus.
+AuthInfo=cred_expire=30
+CredType=cred/munge
+
+StateSaveLocation=/var/spool/slurmctld
+SlurmdSpoolDir=/var/spool/slurmd
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdLogFile=/var/log/slurm/slurmd.log
+ReturnToService=2
+SwitchType=switch/none
+MpiDefault=none
+
+# One host, externally managed scientific policy: FIFO within a partition and
+# PriorityTier across partitions. No fair-share/account association DB needed.
+SchedulerType=sched/backfill
+SchedulerParameters=bf_licenses,bf_interval=2,sched_interval=2
+PriorityType=priority/basic
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+
+# build consumes host_activity:1 + build_slot:1; timed measurement consumes all
+# host_activity:2. bf_licenses + PriorityTier prevents a stream of new builds
+# from passing an already-pending measurement after the current build releases.
+Licenses=host_activity:2,build_slot:1
+
+# v1 deliberately has no slurmdbd/MariaDB. BigCherry is the durable domain
+# authority; Slurm keeps controller state and a lightweight completion trail.
+AccountingStorageType=accounting_storage/none
+JobCompType=jobcomp/filetxt
+JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
+MinJobAge=600
+
+# Exit 75 is SAME-COMMIT automatic requeue only. Exit 76 terminates and BigCherry
+# creates attempt+1/new Slurm job at the newly resolved BigCherry commit.
+RequeueExit=75
+
+# Production process/accounting containment. RCD03 CI proves these plugins with
+# ConstrainDevices=no; Brutus must separately qualify AMD device filtering.
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency=30
+
+GresTypes=gpu
+
+# CPU/RAM and GPU architecture counts are rendered from current accepted RCD12
+# inventory; no slot/device ordinal is scientific identity.
+NodeName=@NODE_NAME@ CPUs=@CPUS@ RealMemory=@REAL_MEMORY_MIB@ Gres=@NODE_GRES@ State=UNKNOWN
+
+PartitionName=bc-build Nodes=@NODE_NAME@ PriorityTier=10 Default=NO State=UP MaxTime=00:45:00
+PartitionName=bc-measure Nodes=@NODE_NAME@ PriorityTier=100 Default=YES State=UP MaxTime=00:45:00

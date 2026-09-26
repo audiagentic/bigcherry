@@ -11,17 +11,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.patch import validation_campaign as patch_validation_campaign # noqa: E402
+from bigcherry.patch.campaign import trace as campaign_trace  # noqa: E402
 
 
 class TraceProbeClassificationTests(unittest.TestCase):
     def _run(self, monkeypatch, outputs, patch_name="1205_rd12_paired_mmvq_dual_output"):
         iterator = iter(outputs)
         monkeypatch.setattr(
-            patch_validation_campaign, "_run_one_trace_probe",
+            campaign_trace, "_run_one_trace_probe",
             lambda **kwargs: next(iterator),
         )
-        return patch_validation_campaign.run_trace_activation_probes(
+        return campaign_trace.run_trace_activation_probes(
             marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
             description="RD12 trace", binary=Path("unused"), model=Path("unused"),
             hip_path=Path("unused"), workdir=Path("unused"),
@@ -29,7 +29,7 @@ class TraceProbeClassificationTests(unittest.TestCase):
         )
 
     def test_unknown_patch_returns_none(self):
-        result = patch_validation_campaign.run_trace_activation_probes(
+        result = campaign_trace.run_trace_activation_probes(
             marker_regex=None, description=None, binary=Path("unused"), model=Path("unused"),
             hip_path=Path("unused"), workdir=Path("unused"),
             bench_prompt=512, bench_gen=128,
@@ -39,13 +39,13 @@ class TraceProbeClassificationTests(unittest.TestCase):
     def test_positive_hit_and_negative_absence_is_executed(self, monkeypatch=None):
         import unittest.mock as mock
         with mock.patch.object(
-            patch_validation_campaign, "_run_one_trace_probe",
+            campaign_trace, "_run_one_trace_probe",
             side_effect=[
                 "...\nBIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion\n...",
                 "... no marker ...",
             ],
         ):
-            result = patch_validation_campaign.run_trace_activation_probes(
+            result = campaign_trace.run_trace_activation_probes(
                 marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
                 description="RD12 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,
@@ -59,9 +59,9 @@ class TraceProbeClassificationTests(unittest.TestCase):
     def test_missing_positive_is_not_executed(self):
         import unittest.mock as mock
         with mock.patch.object(
-            patch_validation_campaign, "_run_one_trace_probe", return_value="no marker",
+            campaign_trace, "_run_one_trace_probe", return_value="no marker",
         ):
-            evidence, _ = patch_validation_campaign.run_trace_activation_probes(
+            evidence, _ = campaign_trace.run_trace_activation_probes(
                 marker_regex=r"BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion",
                 description="RD12 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,
@@ -72,9 +72,9 @@ class TraceProbeClassificationTests(unittest.TestCase):
         import unittest.mock as mock
         marker = "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q"
         with mock.patch.object(
-            patch_validation_campaign, "_run_one_trace_probe", return_value=marker,
+            campaign_trace, "_run_one_trace_probe", return_value=marker,
         ):
-            evidence, _ = patch_validation_campaign.run_trace_activation_probes(
+            evidence, _ = campaign_trace.run_trace_activation_probes(
                 marker_regex=r"BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)",
                 description="RD13 trace", binary=Path("unused"), model=Path("unused"), hip_path=Path("unused"),
                 workdir=Path("unused"), bench_prompt=512, bench_gen=128,

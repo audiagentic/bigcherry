@@ -15,6 +15,43 @@ rules produced by the tooling-rationalisation program (TR00–TR18,
 `docs/planning/*/rationalisation/`). Do not create a second campaign engine,
 patch loader, or evidence framework without an explicit architecture review.
 
+## Ad-hoc output placement
+
+Never write logs, scratch scripts, or one-off run output directly into the
+repo root — it is a shared, multi-agent working tree and loose root files are
+repo-wide clutter, not scoped to any one session.
+
+- Ad-hoc command output / logs (e.g. `cmd > foo.log`) go under
+  `artifacts/logs/manual/`, not the repo root.
+- One-off or exploratory shell/python scripts go under `tools/lab/<topic>/`,
+  named for what they're for — never loose in the repo root or in `/tmp`.
+- Raw/large evidence for a specific plan-item run (benchmark traces, worktree
+  copies, measurement jsonl) goes under `artifacts/<run-id>/` where `run-id`
+  is the owning plan-item ID (optionally with a short suffix) — create it via
+  `bigcherry.core.paths.evidence_dir(run_id)`, never a free-text name. See
+  [`docs/reference/tooling/TOOLING.md`](docs/reference/tooling/TOOLING.md)'s
+  "Evidence and acceptance boundaries" section — `bigcherry check --quick`
+  enforces this (`TR14.ARTIFACT_UNTRACEABLE_RUN`).
+- `artifacts/` and `tmp/` are both gitignored; that does not make them a free
+  dumping ground — keep output inside a named subdirectory for the run/task
+  it belongs to, not loose at their top level.
+- Never write output outside the project folder: not the user profile
+  (`~`, `%LOCALAPPDATA%`, `~/.cache`), not the system temp dir, not a drive
+  root. Tool caches, builds, mirrors and isolated worktrees live under the
+  gitignored project-local `work/` (the `ProjectContext.work_root` default;
+  override only with `BIGCHERRY_WORK_ROOT`). Agents needing an isolated
+  checkout create it under `work/worktrees/`, and keep scratch helpers in
+  `work/` or `tools/lab/<topic>/` — never in ad hoc hidden directories.
+- Never commit host-specific values (absolute machine paths, user home
+  directories, drive roots, host addresses, device PCI locators). Only
+  project-relative paths belong in git. Host facts live in the untracked
+  `config/environment.local.toml` (template: `config/environment.example.toml`,
+  file location overridable with `BIGCHERRY_ENVIRONMENT`, any key with
+  `BIGCHERRY_HOST_<KEY>`); tracked config refers to install locations as
+  `${VAR}` (e.g. `${HIP_PATH}`, `${ROCM_PATH}`, `${BIGCHERRY_BRUTUS_TREE}`).
+  `bigcherry check --quick` enforces this (`TR14.HOST_SPECIFIC_VALUE`,
+  `TR14.USER_FOLDER_DEFAULT`).
+
 <!-- ag:managed:begin -->
 _Managed by AUDiaGentic — generated from component configs. Edit the owning component and re-run surface apply; edits here are overwritten._
 

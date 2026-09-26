@@ -162,6 +162,11 @@ class FilePatch:
     #: whether string literals are noise -- in CMake they carry the content an
     #: anchor needs to see.
     language: str = ""
+    #: The patch introduces this file. Upstream must NOT have it: the patch
+    #: starts from an empty text (anchor ``\A``), and an existing file whose
+    #: content the edits' guards do not recognise fails closed -- that means
+    #: upstream grew a file at this path and the port must be reconciled.
+    create: bool = False
 
     def dialect(self) -> str:
         return self.language or csource.language_for(self.path)
@@ -254,10 +259,20 @@ def apply_patch(patch: FilePatch, root: Path, *, dry_run: bool = False,
         text = texts[patch.path]
     else:
         if not target.is_file():
-            result.results.append(EditResult(
-                "<file>", "failed", f"target file does not exist: {patch.path}"))
-            return result
-        text = target.read_text(encoding="utf-8")
+            if not patch.create:
+                result.results.append(EditResult(
+                    "<file>", "failed", f"target file does not exist: {patch.path}"))
+                return result
+            text = ""
+        else:
+            text = target.read_text(encoding="utf-8")
+            if patch.create and not all(
+                    re.search(edit.guard_pattern(), text, re.MULTILINE) for edit in patch.edits):
+                result.results.append(EditResult(
+                    "<file>", "failed",
+                    f"{patch.path} already exists upstream with other content; "
+                    f"a created file must not collide with an upstream file"))
+                return result
     original = text
 
     for edit in patch.edits:
@@ -313,6 +328,8 @@ def apply_patch(patch: FilePatch, root: Path, *, dry_run: bool = False,
         texts[patch.path] = text
     if result.changed and result.ok and not dry_run:
         # newline="" keeps the LF endings upstream uses, on Windows too.
+        if patch.create:
+            target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8", newline="")
     return result
 

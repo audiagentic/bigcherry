@@ -69,10 +69,18 @@ PYTHONPATH=tools python -m bigcherry build \
   [--inventory PATH] [--winners PATH] [--experiment NAME] [--run-id ID]
 ```
 
-Real `source` names: `bigcherry` (normal patch-set), `bigcherry-native`
-(framework only, no validated-enhancement patches — the fair "before" baseline
-for an A/B), `llama-native` (genuinely stock upstream, same pin, zero
-patches). Real `build` names: `stock`, `control`, `record`, `tune`, `replay`,
+Real `source` names: `bigcherry` (release: serving-core + upstream-fixes +
+validated-enhancements, PA29 cutover), `bigcherry-serving-base` (serving-core
++ upstream-fixes only, no validated-enhancement patches — the fair "before"
+baseline for an A/B), `bigcherry-tuning` (serving-core + campaign-support +
+upstream-fixes, for record/tune/control builds that need the tuner's own
+plumbing), `bigcherry-qualification` (serving-core + qualification-support +
+upstream-fixes), `bigcherry-qualification-tuning` (serving-core +
+campaign-support + qualification-support + upstream-fixes, the full
+semantic composition used for framework-configuration evidence),
+`llama-native` (genuinely stock upstream, same pin, zero patches). The old
+aggregate `bigcherry-native` source (and the `framework` patch-set it
+composed) was deleted by PA31 -- no alias or shim was kept. Real `build` names: `stock`, `control`, `record`, `tune`, `replay`,
 `audit`. Real `platform`: `linux-multi`, `windows-gfx1100`, `vulkan-linux`.
 `--inventory`/`--winners` are required by builds whose recipe declares
 `needs = [...]` for them (`record`/`tune` need inventory; `replay` needs

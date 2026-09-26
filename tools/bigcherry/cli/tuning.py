@@ -45,7 +45,11 @@ def cmd_generate(args: Namespace) -> int:
         forwarded += ["--dry-run"]
 
     status = autotune_catalog.main(forwarded)
-    if status == 0 and not args.dry_run:
+    # An out-of-tree --generated-root is an isolated worktree's generation
+    # (validation campaigns): that tree shares the checkout's revision, so
+    # recording it would rewrite the canonical releases/<rev>.json stage and
+    # manifest hash for a build that is not the checkout's.
+    if status == 0 and not args.dry_run and not args.generated_root:
         manifest_path = (
             paths.artifact_dir(record.revision) / "hip-autotune-manifest.json"
         )

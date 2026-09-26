@@ -16,7 +16,8 @@ from bigcherry.cli import tuning  # noqa: E402
 
 class TuningCliRecordLookupTests(unittest.TestCase):
     @staticmethod
-    def _args(*, force: bool = False, dry_run: bool = False, llama_root: str | None = None) -> Namespace:
+    def _args(*, force: bool = False, dry_run: bool = False, llama_root: str | None = None,
+              generated_root: str | None = None) -> Namespace:
         return Namespace(
             llama_root=llama_root,
             force=force,
@@ -24,7 +25,7 @@ class TuningCliRecordLookupTests(unittest.TestCase):
             arch="gfx1100",
             inventory=None,
             winners=None,
-            generated_root=None,
+            generated_root=generated_root,
             dry_run=dry_run,
         )
 
@@ -115,6 +116,27 @@ class TuningCliRecordLookupTests(unittest.TestCase):
             self.assertEqual(catalog.call_args.args[0][:4], [
                 "--variant-set", "default", "--arch", "gfx1100",
             ])
+
+    def test_out_of_tree_generation_never_touches_the_release_record(self) -> None:
+        # Validation campaigns generate into isolated worktrees that share the
+        # checkout's revision; recording that would rewrite the canonical
+        # releases/<rev>.json (observed on Brutus: stage and manifest hash).
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = mock.Mock(stage="patched", revision="abc123")
+            args = self._args(force=True, llama_root=str(root), generated_root=str(root / "gen"))
+            with mock.patch.object(
+                tuning.paths, "llama_root", return_value=root,
+            ), mock.patch.object(
+                tuning.releases, "record_for_checkout", return_value=record,
+            ), mock.patch(
+                "bigcherry.tuning.catalog.main", return_value=0,
+            ):
+                status = tuning.cmd_generate(args)
+
+            self.assertEqual(status, 0)
+            record.advance_to.assert_not_called()
+            record.save.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,93 @@
+name: RCD Slurm validation
+
+on:
+  push:
+    branches: [patch-refactor]
+    paths:
+      - '.github/workflows/rcd-slurm-validation.yml'
+      - 'tools/lab/run-campaign-durability/**'
+      - 'tools/bigcherry/core/tree_activity.py'
+      - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/tuning/journal.py'
+      - 'tools/bigcherry/telemetry.py'
+      - 'tools/bigcherry/patch/validation_campaign.py'
+      - 'tools/bigcherry/patch/campaign/producer.py'
+      - 'config/slurm/**'
+      - 'docs/design/JOBS_ORCHESTRATOR.md'
+      - 'docs/reference/jobs/SLURM_BRUTUS.md'
+      - 'docs/planning/active/run-campaign-durability/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bigcherry-process:
+    name: Real BigCherry process semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile RCD validation tools
+        run: python -m compileall -q tools/lab/run-campaign-durability
+      - name: Planning falsifier
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
+      - name: Real BigCherry modules, CLI and child processes
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_bigcherry_process_smoke.py
+      - name: Real managed-process failure injection
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_bundle_failure_smoke.py
+      - name: Real HI151 and git commit-pinning/recovery semantics
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_recovery_smoke.py
+      - name: Concurrent HI151 admission race
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/tree_activity_race_smoke.py
+      - name: Durable submission and event recovery falsifier
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/service_recovery_smoke.py
+
+  slurm-service:
+    name: Real Noble Slurm service semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and exercise Slurm/MUNGE + BigCherry integration
+        run: bash tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh
+      - name: Collect privileged Slurm diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -eu
+          out="${RUNNER_TEMP}/rcd-slurm-diagnostics"
+          mkdir -p "$out"
+          for path in \
+            /tmp/bc-slurmctld.log /tmp/bc-slurmd.log \
+            /tmp/bc-slurmctld.stdout /tmp/bc-slurmd.stdout \
+            /tmp/bc-slurm-jobcomp.log /tmp/bc-squeue.json /tmp/bc-scontrol-config.txt \
+            /tmp/bc-licenses.txt /tmp/bc-order /tmp/bc-restarts /tmp/bc-bigcherry-slurm.json \
+            /tmp/bc-cgroup-membership; do
+            if sudo test -e "$path"; then
+              sudo cp "$path" "$out/$(basename "$path")"
+            fi
+          done
+          sudo chown -R "$(id -u):$(id -g)" "$out"
+      - name: Preserve Slurm diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcd-slurm-diagnostics-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/rcd-slurm-diagnostics

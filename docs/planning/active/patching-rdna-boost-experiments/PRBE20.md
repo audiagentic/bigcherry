@@ -2,7 +2,7 @@
 id: PRBE20
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:54:49.394058+00:00'
 breadth: ''
 skill: advanced
@@ -15,35 +15,49 @@ priority: null
 
 ## Description
 
-Complete the coordinated decode/speculative-verify bit-identity cluster as one active plan. PRBE20 is the actionable successor to closed RD26; its internal Wave 1/Wave 2 structure preserves the historical five-commit evidence without splitting the acceptance property.
+IMPLEMENTED-AS-PATCH, needs extension. Patch 1210_rd26_bitidentical_decode_verify_standalone (state=untested) already ports 2 of 5 fork commits. Real contract-gate hardware run (2026-09-13/14, gfx1100) confirms the FULL cross-batch bit-identity property still FAILS with just these 2 hunks (first_file_byte_mismatch=480) -- Wave 1 (flash-attn, commit 93510434f) and Wave 2 (RDNA4/RDNA3 MMVQ/SSM, commits 10b83d6b2/6cdf5aff9) are not yet ported. CORRECTED (source-verified): the Wave-1 verified anchor is `ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1` in ggml/src/ggml-cuda/fattn.cu, whose specialization selection branches on `Q->ne[1] <= 8/ncols2`, `<= 16/ncols2`, `<= 32/ncols2` -- the exact invariant specialization boundary for n_q=1..8 must be pinned here, not left TBD. Wave-2's nwarps_explicit/rows_per_block_explicit HI09 template params are NOT b11126 source -- they are added by patch 0600_mmvq_geometry, so 1210 must declare `requires=["0600_mmvq_geometry"]` before anchoring on them (currently requires=[]). The "RD26-determinism build flag" referenced below is undefined; package activation itself is the gate (no separate compile/runtime flag exists or should be invented).
 
 ## Steps
 
-1. Preserve all five source identities: 93510434f, b2655d381, d152888fc, 10b83d6b2 and 6cdf5aff9.
-2. Wave 1: fattn/non-flash attention and CPU changes, sourced through the current owners of the required 1202 then 1203 preimages.
-3. Wave 2: RDNA4/RDNA3 MMVQ/SSM regions sourced under PRBE19 post-fix semantics.
-4. Keep the standalone materialized subset explicit; it is not full cross-batch determinism. Do not introduce a half-cluster acceptance.
-5. Compare decode n_q=1 with speculative-verify n_q up to 8 on identical inputs using raw outputs/logits, native controls and graph/capture coverage; record determinism cost and causal performance.
+1. Wave 1 (flash-attn, commit 93510434f): the verified anchor is `ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1` in ggml/src/ggml-cuda/fattn.cu -- audit its Q->ne[1] <= 8/ncols2, <=16/ncols2, <=32/ncols2 specialization-selection branches and specify the exact invariant specialization to force for n_q=1..8 so decode (n_q=1) and speculative-verify (n_q up to 8) select the same code path. Force the same reduction order/specialization across both, gated to gfx1100/gfx1201.
+2. Wave 2 (RDNA4/RDNA3 MMVQ, commits 10b83d6b2/6cdf5aff9): in ggml/src/ggml-cuda/mmvq.cu, calc_nwarps/calc_rows_per_block branch on ncols_dst (verified at b11126). Add a determinism-mode instantiation via the HI09 nwarps_explicit/rows_per_block_explicit template params -- CORRECTED: these params are introduced by patch 0600_mmvq_geometry, not raw b11126 source; add `requires=["0600_mmvq_geometry"]` to patch 1210's patch.toml before anchoring on them.
+3. Apply Wave 1 and Wave 2 as additive Edit()s to patch 1210 (new anchors, gfx1100/gfx1201-gated), not a new patch package.
+4. Define package activation itself as the gate -- CORRECTED: do not reference an undefined "RD26-determinism build flag"; the determinism behavior is active whenever patch 1210's Wave 1/Wave 2 edits are applied, full stop.
+5. Build a real within-binary cross-batch raw-logit comparison harness extending run_rd26_decode_verify_bit_identity_check().
+6. Re-run --run-rd26-contract on gfx1100 (then gfx1201/gfx1030) only after all 5 commits are composed.
 
 ## Detailed Solution & Technical Design
 
-The acceptance property is cross-batch bit identity across the full five-commit cluster, not merely PPL equality or ordinary decode no-regression. Translate historical 1202/1203 artifacts to their current PRBE owners; PRBE06 is not a fattn prerequisite. PRBE19 is a source-state constraint for Wave 2, not a prerequisite patch. Keep native and partial-subset evidence clearly scoped.
+The acceptance property is full-cluster cross-batch bit identity, not PPL equality. Wave 1 and Wave 2 are additive Edit sets on the SAME patch 1210 package (not new packages), each gated to its own architecture scope. Wave 2's mechanism is now concretely identified: mmvq.cu's ncols_dst-keyed calc_nwarps/calc_rows_per_block dispatch (verified real source, not inferred) is the RDNA3/RDNA4 half of the determinism gap, and the project's own existing HI09 explicit-geometry template parameters (nwarps_explicit/rows_per_block_explicit, patch 0600_mmvq_geometry, already validated/in the core framework) are the natural mechanism to force matching geometry across ncols_dst values under an RD26-determinism flag -- this avoids inventing a new geometry-override path. Wave 1's fattn mechanism still needs direct source audit (not yet done this batch) before an anchor can be named with certainty.
 
 ## Code Samples & Guidance
 
-
+Real b11126 anchor (verified), ggml/src/ggml-cuda/mmvq.cu, MMVQ_PARAMETERS_RDNA3_0 branch inside calc_nwarps:
+```
+if (table_id == MMVQ_PARAMETERS_RDNA3_0) {
+    if (ncols_dst == 1) {
+        switch (type) {
+            case GGML_TYPE_Q4_0: ... return 8;
+            case GGML_TYPE_Q6_K: return 2;
+            ...
+        }
+    }
+    return 1;
+}
+```
+and the existing HI09 template (mmvq.cu, ~line 616): `template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false, int nwarps_explicit = 0, int rows_per_block_explicit = 0>`. RD26 Wave 2 Edit should add generated instantiations (via the tools/bigcherry/tuning/catalog.py enumerate_mmvq path, or a dedicated RD26-only Edit if catalog integration is out of scope) that set nwarps_explicit/rows_per_block_explicit to the SAME value for ncols_dst 1..8 for the whitelisted types, active only under an RD26-determinism build flag. Wave 1 fattn anchor: NOT YET VERIFIED -- flagged as open work, do not code against a guessed anchor.
 
 ## Files
 
-fattn sources; ggml-cuda.cu; mmvq.cu; CPU sgemm; current owners of 1202/1203 preimages; PRBE19 post-fix regions; patch 1210 standalone evidence; exact decode/verify fixtures and campaign evidence.
+ggml/src/ggml-cuda/fattn*.cu (Wave 1, anchor TBD); ggml/src/ggml-cuda/mmvq.cu (Wave 2, calc_nwarps/calc_rows_per_block + HI09 template, verified); patches/1210_rd26_bitidentical_decode_verify_standalone/patch.py (additive Edits); tools/bigcherry/tuning/catalog.py (if geometry variants are generated via the catalog rather than a standalone Edit); patches/1210.../validation/rd26_correctness.py (extend for within-binary cross-batch harness).
 
 ## Validation
 
-All five commit identities; dependency/order checks; byte-identical outputs; native control; gfx1100 and reachable RDNA4/RDNA3; graph/capture where applicable; no unintended performance regression.
+1. patch-lint + rebase-check on the extended 1210 package. 2. Extend run_rd26_decode_verify_bit_identity_check() (or add a sibling) for a real within-binary decode-vs-verify raw-logit byte comparison, not just subject-vs-control. 3. Native/non-RD26 control unaffected (existing types/ncols_dst not in the determinism whitelist keep upstream's own nwarps/rows_per_block). 4. Hardware (Brutus, not run here): gfx1100 --run-rd26-contract must flip from FAIL to PASS once all 5 commits are composed; then gfx1201/gfx1030 per the existing blocked-until-complete decision.
 
 ## Effort & Risk
 
-
+L: Wave 1 (fattn) anchor is unverified and is real open risk; Wave 2 (mmvq) is lower risk since it reuses the already-validated HI09 mechanism. Determinism-mode geometry forcing could itself regress throughput for the forced ncols_dst range -- must be gated to only apply when RD26 determinism is explicitly requested, never as a new default.
 
 ## Standards
 
@@ -77,13 +91,18 @@ This FAIL is EXPECTED and already anticipated in run_rd26_decode_verify_bit_iden
 
 Decision (per GPT design consultation, req_9b384a623ff24ab8): do not run gfx1201/gfx1030 --run-rd26-contract for the current subset -- more architectures would only produce more expected FAILs and add no new information. Block further 1210 contract-gate qualification runs until the remaining 3 commits (93510434f flash-attn, 10b83d6b2 RDNA4 MMVQ/fused SSM, 6cdf5aff9 RDNA3 MMVQ) are authored/composed into the full cluster per Wave 1/Wave 2 above. Resume all-three-architecture contract coverage only after that.
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1210, untested), needs Wave1/Wave2 extension. GPT design request req_bc106a2613754b6b (dev-gpt-agent, gpt-auto) submitted but queue-saturated/no response in-session for the fattn (Wave 1) anchor specifically -- that part of this plan is unverified and flagged; mmvq (Wave 2) part is grounded in real verified source. PRBE19 post-fix bake-in rule applies to the Wave 2 MMVQ region sourced from the historical fork commits.
+
+2026-09-24 GPT review req_2b717df095b44703 applied: pinned the Wave-1 anchor to the verified real function ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1 (was TBD) and its exact ne[1] specialization thresholds; corrected the Wave-2 HI09 template params' provenance (introduced by patch 0600_mmvq_geometry, not raw b11126) and added requires=["0600_mmvq_geometry"] to patch 1210; removed the undefined 'RD26-determinism build flag' language in favor of package activation itself being the gate.
+
+2026-09-25 (760f9d0f): the stew675 fork was squash-rebased -- 93510434f/10b83d6b2/6cdf5aff9 no longer exist; the determinism hunks live in 'block 08' (5efcd85f). Ported ONLY those into 1210 against b11126's own code (no longer gated on 1202/1203; no 0600 requirement -- calc_nwarps body is upstream code): wave 1 = fattn.cu WMMA gate adds && Q->ne[1] > 8, fattn-tile.cuh uses decode's cols_per_block=max(ncols2,2) for every n_q<=8 (an existing instantiation); wave 2 = RDNA3/RDNA4 calc_nwarps whitelist covers ncols_dst<=MMVQ_MAX_BATCH_SIZE. Fork's Q6_K nwarps 2->8 retune and fused SSM/prefill kernels deliberately NOT ported. Producer gained the contract's tg128 controls lane (controls could never pass before). Contract text updated; identity claimed for F16/BF16 KV only (quantized KV n_q 1..2 -> vec kernel, 3..8 -> tile). Hardware run pending (queue after current lanes).
+
 ## Change Log
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:02.133012+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.219018+00:00 (updated-by): Updated: section:ledger-events
@@ -106,3 +125,7 @@ Decision (per GPT design consultation, req_9b384a623ff24ab8): do not run gfx1201
 - 2026-09-13T17:29:17.167484+00:00 (updated-by): Updated: section:notes
 - chg_20260913_172927_fixed-a-real-hardware-attestat_9172
 - 2026-09-13T17:29:30.492149+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:29:43.023924+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes, section:effort_risk_2
+- 2026-09-24T04:42:04.224768+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-24T15:40:35.936956+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T15:40:39.804717+00:00 (updated-by): Updated: section:notes

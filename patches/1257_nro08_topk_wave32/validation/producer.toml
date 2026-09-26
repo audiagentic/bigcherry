@@ -1,0 +1,22 @@
+schema = 1
+
+# NRO08: own test-backend-ops pair (TOP_K correctness + route markers) and the
+# standard scaffold llama-bench pair (MoE tg128 positive, dense tg128 control).
+# Run with a ROCm >= 10.x prefix (HIP >= 7.15) so the small-row route exists.
+[producer.nro08]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro08-correctness.json",
+  "nro08-performance.json",
+  "nro08-subject-trace.log",
+  "nro08-control-trace.log",
+]
+
+[producer.nro08.input.control_model]
+type = "path"
+required = true

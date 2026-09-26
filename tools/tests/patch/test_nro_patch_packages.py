@@ -19,10 +19,10 @@ PATCHES = ROOT / "patches"
 PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizations"
 
 EXPECTED = {
-    "1250_nro01_allreduce_q8_wire": ("NRO01", ["1001_hip_internal_allreduce"]),
-    "1251_nro02_allreduce_fused_residual": ("NRO02", ["1250_nro01_allreduce_q8_wire"]),
-    "1252_nro03_allreduce_p2p_provider": ("NRO03", ["1001_hip_internal_allreduce"]),
-    "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", ["1221_rd50_gdn_chunked_recurrence"]),
+    # e06dcf63 is one atomic commit: NRO02's fusion ships inside 1250.
+    "1250_nro01_allreduce_q8_wire": (["NRO01", "NRO02"], ["1252_nro03_allreduce_p2p_provider"]),
+    "1252_nro03_allreduce_p2p_provider": ("NRO03", []),
+    "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", []),
     "1254_nro05_gdn_mtp_prefix_tail": ("NRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
     "1255_nro06_adaptive_mtp_depth": ("NRO06", []),
     "1256_nro07_topk_hybrid": ("NRO07", []),
@@ -38,7 +38,22 @@ EXPECTED = {
 # merge-gate run, root-caused and fixed the same day, then marked
 # completed -- it now lives under docs/planning/completed/ rather than
 # this PLANS (active) directory, so it is correctly absent from this glob.
-EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 16)}
+# Promoted into [patch-set.validated-enhancements] on a 4-session PASS on
+# every contract-scope architecture (1253/NRO04: 2026-09-26).
+PROMOTED = {"1253_nro04_gfx1100_bf16_chunked_gdn"}
+
+
+def _pnro_numbers() -> list[int]:
+    """Every PNRO<nn> plan document, active or completed. The set is derived
+    from the files; the test requires it to be contiguous from PNRO01 (a gap
+    means a deleted or misfiled item) rather than pinning a hand-kept count."""
+    found = set()
+    for root in (PLANS, Path("docs/planning/completed/patching-nasone-rdna-optimizations")):
+        found.update(int(m.group(1)) for f in root.glob("PNRO*.md") if (m := re.fullmatch(r"PNRO(\d+)", f.stem)))
+    return sorted(found)
+
+
+EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in _pnro_numbers()}
 
 
 def _manifest(patch_id: str) -> dict:
@@ -49,10 +64,25 @@ def _patch_source(patch_id: str) -> str:
     return (PATCHES / patch_id / "patch.py").read_text(encoding="utf-8")
 
 
+
+def _load_patch_module(patch_id):
+    import importlib.util
+
+    path = PATCHES / patch_id / "patch.py"
+    spec = importlib.util.spec_from_file_location(f"nro_{patch_id}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
-        for i in range(1, 16):
+        numbers = _pnro_numbers()
+        self.assertEqual(numbers, list(range(1, len(numbers) + 1)), "PNRO numbering has a gap")
+        for i in numbers:
             item = PLANS / f"PNRO{i:02d}.md"
+            if not item.is_file():
+                item = Path("docs/planning/completed/patching-nasone-rdna-optimizations") / f"PNRO{i:02d}.md"
             self.assertTrue(item.is_file(), item)
             text = item.read_text(encoding="utf-8")
             self.assertRegex(text, rf"(?m)^id: PNRO{i:02d}$")
@@ -65,7 +95,8 @@ class NroPackageShapeTests(unittest.TestCase):
             ):
                 self.assertIn(heading, text, f"{item}: missing {heading}")
         self.assertEqual(
-            {path.stem for path in PLANS.glob("PNRO*.md")},
+            {path.stem for path in PLANS.glob("PNRO*.md")}
+            | {path.stem for path in Path("docs/planning/completed/patching-nasone-rdna-optimizations").glob("PNRO*.md")},
             EXPECTED_PLAN_DOCS,
         )
 
@@ -74,25 +105,26 @@ class NroPackageShapeTests(unittest.TestCase):
             package = PATCHES / patch_id
             for name in ("patch.toml", "patch.py", "SUMMARY.md", "README.md", "TESTING.md"):
                 self.assertTrue((package / name).is_file(), f"{patch_id}: missing {name}")
-            # Validation adapters are intentionally deferred until a resolvable
-            # Experiment Contract and executable correctness producer exist.
-            self.assertFalse((package / "validation.toml").exists())
+            # A validation adapter exists only once a contract and an
+            # executable producer do (1253 first, PNRO04).
+            if (package / "validation.toml").exists():
+                self.assertTrue((package / "validation" / "producer.py").is_file(), patch_id)
 
     def test_manifests_pin_state_plan_and_dependencies(self):
         for patch_id, (plan_id, requires) in EXPECTED.items():
             manifest = _manifest(patch_id)
             self.assertEqual(manifest["id"], patch_id)
             self.assertEqual(manifest["order"], int(patch_id.split("_", 1)[0]))
-            self.assertEqual(manifest["state"], "untested")
-            self.assertEqual(manifest["plan-ids"], [plan_id])
+            self.assertEqual(manifest["state"], "validated" if patch_id in PROMOTED else "untested")
+            self.assertEqual(manifest["plan-ids"], plan_id if isinstance(plan_id, list) else [plan_id])
             self.assertEqual(manifest["requires"], requires)
 
     def test_summary_headers_match_manifest(self):
         for patch_id, (plan_id, _) in EXPECTED.items():
             text = (PATCHES / patch_id / "SUMMARY.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith(f"# {patch_id}\n\n"))
-            self.assertIn("**Status:** untested", text)
-            self.assertIn(f"**Plan item:** {plan_id}", text)
+            self.assertIn(f"**Status:** {'validated' if patch_id in PROMOTED else 'untested'}", text)
+            self.assertIn(f"**Plan item:** {'/'.join(plan_id) if isinstance(plan_id, list) else plan_id}", text)
 
     def test_patch_modules_are_valid_python_and_export_patches(self):
         for patch_id in EXPECTED:
@@ -110,46 +142,42 @@ class NroPackageShapeTests(unittest.TestCase):
         production = set()
         for patch_set in recipes.get("patch-set", {}).values():
             production.update(patch_set.get("patches", []))
-        leaked = production.intersection(EXPECTED)
+        leaked = production.intersection(EXPECTED) - PROMOTED
         self.assertFalse(leaked, f"NRO drafts leaked into production: {leaked}")
 
 
 class NroSafetyInvariantTests(unittest.TestCase):
-    def test_q8_wire_is_disabled_by_default_and_unwired(self):
+    def test_allreduce_modes_are_opt_in_and_traced(self):
         source = _patch_source("1250_nro01_allreduce_q8_wire")
-        self.assertIn("BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0", source)
-        self.assertIn("not dispatched until NRO01", source)
-        self.assertIn("i < ne ? src[i] : 0.0f", source)
-
-    def test_residual_child_is_kernel_only(self):
-        source = _patch_source("1251_nro02_allreduce_fused_residual")
-        self.assertIn("bigcherry_nro02_add_residual_kernel", source)
-        self.assertIn("bigcherry_nro02_q8_0_add_residual_kernel", source)
-        self.assertNotIn("skip_node", source)
-
-    def test_p2p_draft_encodes_source_current_push(self):
-        source = _patch_source("1252_nro03_allreduce_p2p_provider")
-        set_pos = source.index("ggml_cuda_set_device(src_device)")
-        copy_pos = source.index("cudaMemcpyPeerAsync", set_pos)
-        self.assertLess(set_pos, copy_pos)
+        self.assertIn("return ggml_cuda_ar_wire_mode::legacy", source)
+        self.assertIn('getenv("GGML_CUDA_AR_FUSED_RESIDUAL") != nullptr', source)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro01", source)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro02", source)
         self.assertNotIn("p2p_issuer", source)
-        self.assertIn("GGML_CUDA_AR_P2P", source)
-        self.assertIn(", 0) != 0", source)
 
-    def test_gfx1100_bf16_gdn_cannot_activate_in_initial_draft(self):
+    def test_p2p_port_pushes_source_current_after_a_content_probe(self):
+        source = _patch_source("1252_nro03_allreduce_p2p_provider")
+        self.assertNotIn("p2p_issuer", source.split("PROVENANCE")[1])
+        self.assertIn("ggml_cuda_set_device(p->devices[direction]);  // source-current push", source)
+        self.assertIn("p->p2p_enabled = ggml_cuda_ar_p2p_probe(p);", source)
+        self.assertIn("memcmp(readback.data(), pattern.data(), bytes) == 0", source)
+        self.assertIn('ggml_cuda_ar_env_u64("GGML_CUDA_AR_P2P", 0) != 0', source)
+
+    def test_bf16_gdn_port_is_rdna_s128_with_sequential_fallback(self):
+        """PNRO04: exact port of nasone block 02's BF16 route; the fp32 chunked
+        kernel is not ported, so non-BF16 shapes stay sequential."""
         source = _patch_source("1253_nro04_gfx1100_bf16_chunked_gdn")
-        self.assertIn("GGML_CUDA_CC_IS_RDNA3(cc)", source)
+        self.assertIn("create=True", source)
+        self.assertIn("GGML_CUDA_CC_IS_RDNA3(cc_)", source)
         self.assertIn("S_v == 128", source)
-        self.assertRegex(
-            source,
-            re.compile(r"bigcherry_nro04_gfx1100_bf16_ready\(\).*?return false;", re.S),
-        )
+        self.assertIn("patch=1253_nro04 path=gdn_chunked_bf16", source)
+        self.assertNotIn("if (ggml_cuda_op_gated_delta_net_chunked(ctx, dst, state_d_ext))", source)
 
     def test_mtp_prefix_is_exactly_n_tokens_minus_k(self):
         source = _patch_source("1254_nro05_gdn_mtp_prefix_tail")
-        self.assertIn("*n_prefix = n_tokens - K", source)
-        self.assertIn("n_seqs != 1", source)
-        self.assertIn("K <= 1", source)
+        self.assertIn("n_prefix = n_tokens - K", source)
+        self.assertIn("n_seqs == 1", source)
+        self.assertIn("K > 1", source)
 
     def test_adaptive_controller_constants_are_frozen_for_first_sweep(self):
         source = _patch_source("1255_nro06_adaptive_mtp_depth")
@@ -160,13 +188,23 @@ class NroSafetyInvariantTests(unittest.TestCase):
             self.assertIn(fragment, source)
         self.assertIn("Pure/testable controller only", source)
 
-    def test_topk_hybrid_and_wave32_are_separate_and_unwired(self):
-        n7 = _patch_source("1256_nro07_topk_hybrid")
-        n8 = _patch_source("1257_nro08_topk_wave32")
-        self.assertIn("bigcherry_nro07_top_k_float_to_ordered", n7)
-        self.assertIn("Selection kernels/dispatch intentionally await", n7)
-        self.assertIn("static_assert(BLOCK_SIZE % 32 == 0", n8)
-        self.assertIn("Runtime NRO07 dispatch is intentionally unchanged", n8)
+    def test_topk_ports_reproduce_the_fork_and_stay_separate(self):
+        """PNRO06/07: 1256 and 1257 are port_diff-generated from the fork's
+        file states (byte-exact, verified at generation); 1256 carries the
+        hybrid kernels and wave64 flag, 1257 the wave32 kernels and removes
+        the flag, each with its own activation markers."""
+        n7 = _load_patch_module("1256_nro07_topk_hybrid")
+        n8 = _load_patch_module("1257_nro08_topk_wave32")
+        paths = ["ggml/src/ggml-cuda/top-k.cu", "ggml/src/ggml-hip/CMakeLists.txt"]
+        self.assertEqual([p.path for p in n7.PATCHES], paths)
+        self.assertEqual([p.path for p in n8.PATCHES], paths)
+        hybrid = "".join(e.text for p in n7.PATCHES for e in p.edits)
+        wave32 = "".join(e.text for p in n8.PATCHES for e in p.edits)
+        self.assertIn("top_k_parallel_radix_cuda", hybrid)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1256_nro07 path=topk_", hybrid)
+        self.assertIn("-mwavefrontsize64", hybrid)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1257_nro08 path=topk_", wave32)
+        self.assertNotIn("-mwavefrontsize64", "".join(e.text for e in n8.PATCHES[1].edits))
 
 
 if __name__ == "__main__":

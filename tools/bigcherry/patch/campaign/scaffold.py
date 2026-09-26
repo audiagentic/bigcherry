@@ -1,0 +1,593 @@
+"""Standard-campaign scaffold: the shared control/subject build + evidence
+frame every standard campaign lane runs inside."""
+
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+from bigcherry.build.builds import (
+    capture_completed_build_evidence,
+    CompletedBuildEvidence,
+)
+from bigcherry.patch.campaign.build import (
+    _full_requested_cmake_args,
+    _hip_env,
+    _print,
+    build_tree,
+    ensure_stock_baseline,
+    generate_registry,
+    LLAMA_CPP_SRC,
+)
+from bigcherry.patch.campaign.contract import assert_validation_subject_parity
+
+# PVPS03: the promoted set every patch is validated on top of.
+VALIDATED_PATCH_SET = "validated-enhancements"
+
+
+def validated_enhancement_patches(
+    *, patch_id: str, common_patches: tuple[str, ...], recipes: Path | None = None
+) -> tuple[str, ...]:
+    """The promoted patches composed into control (validated BC), minus the
+    focal patch (re-validating a promoted patch measures it against the rest
+    of the set) and minus anything already named as a common patch."""
+    from bigcherry.core import config as campaign_config
+    from bigcherry.core import paths as bc_paths
+
+    cfg = campaign_config.load(recipes or bc_paths.RECIPES)
+    declared = cfg.patch_sets[VALIDATED_PATCH_SET].patches
+    return tuple(p for p in declared if p != patch_id and p not in common_patches)
+
+
+@dataclass(frozen=True)
+class StandardCampaignScaffold:
+    """The five standard campaign builds and their provenance evidence.
+
+    The campaign domain deliberately keeps tune/replay/stock separate from
+    the validation-domain control/subject pair: persistence requires both
+    provenance domains, and a producer's own correctness pair is neither.
+    """
+
+    base_revision: str
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    base_composition: tuple[tuple[str, str], ...]
+    validated_patches: tuple[str, ...]
+    control_source: Path
+    subject_source: Path
+    stock_source: Path
+    base_source: Path
+    control_idempotent: bool
+    subject_idempotent: bool
+    build_root: Path
+    build_env: dict[str, str]
+    tune_bin: Path
+    replay_bin: Path
+    stock_bin: Path
+    base_bin: Path
+    control_bin: Path
+    validation_subject_bin: Path
+    tune_build_evidence: CompletedBuildEvidence
+    replay_build_evidence: CompletedBuildEvidence
+    stock_build_evidence: CompletedBuildEvidence
+    base_build_evidence: CompletedBuildEvidence
+    control_build_evidence: CompletedBuildEvidence
+    validation_subject_build_evidence: CompletedBuildEvidence
+
+    @property
+    def reference_ladder_bins(self) -> dict[str, Path]:
+        """PVPS03 arms, in ladder order: stock llama.cpp, base BC (baseline
+        source), validated BC (control) and validated BC + patch (subject).
+        base and validated are the same binary while the promoted set adds
+        nothing on top of the baseline."""
+        return {
+            "stock": self.stock_bin,
+            "base": self.base_bin,
+            "validated": self.control_bin,
+            "validated+patch": self.validation_subject_bin,
+        }
+
+    @property
+    def campaign_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "tune": self.tune_build_evidence.campaign_identity(),
+            "replay": self.replay_build_evidence.campaign_identity(),
+            "stock": self.stock_build_evidence.campaign_identity(),
+        }
+
+    @property
+    def scaffold_validation_build_identities(self) -> dict[str, dict[str, object]]:
+        return {
+            "control": self.control_build_evidence.campaign_identity(),
+            "subject": self.validation_subject_build_evidence.campaign_identity(),
+        }
+
+
+@dataclass(frozen=True)
+class _ScaffoldSources:
+    """Materialized control/subject/stock sources for one standard campaign."""
+
+    base_revision: str
+    control_composition: tuple[tuple[str, str], ...]
+    subject_composition: tuple[tuple[str, str], ...]
+    base_composition: tuple[tuple[str, str], ...]
+    validated_patches: tuple[str, ...]
+    control_src: Path
+    patched_src: Path
+    stock_src: Path
+    base_src: Path
+    control_idempotent: bool
+    subject_idempotent: bool
+
+
+def _materialize_scaffold_sources(
+    *,
+    patch_id: str,
+    base_ref: str,
+    baseline_source: str,
+    common_patches: tuple[str, ...],
+    worktree_root: Path,
+    allow_rejected: bool = False,
+) -> _ScaffoldSources:
+    """Resolve, materialize and idempotence-check the control/subject/stock
+    sources (PVPS03: control = validated BC, subject = control + focal, plus
+    a base-BC source when the promoted set changes the composition)."""
+    from bigcherry.patch import source as psi  # noqa: E402
+
+    validated = validated_enhancement_patches(patch_id=patch_id, common_patches=common_patches)
+    control_revision, control_composition = psi.resolve_source_composition(
+        baseline_source,
+        focal=None,
+        extra_patches=common_patches + validated,
+        allow_rejected=allow_rejected,
+        base_ref=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+    )
+    subject_revision, subject_composition = psi.resolve_source_composition(
+        baseline_source,
+        focal=patch_id,
+        extra_patches=common_patches + validated,
+        allow_rejected=allow_rejected,
+        base_ref=base_ref,
+        base_repo=LLAMA_CPP_SRC,
+    )
+    if control_revision != subject_revision:
+        raise RuntimeError(
+            "control and subject source plans resolved different base revisions"
+        )
+    base_revision = subject_revision
+    _print(f"materializing control and subject source plans @ {base_revision[:12]} ...")
+    control_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "control",
+        resolved_revision=base_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
+    )
+    patched_src = psi.materialize_composition(
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
+    )
+    _print(f"control source: {control_src}")
+    _print(f"subject source: {patched_src}")
+    control_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC,
+        source=control_src,
+        worktree_root=worktree_root / "control",
+        resolved_revision=base_revision,
+        composition=control_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
+    )
+    subject_idempotent = psi.verify_composition_idempotent(
+        base_repo=LLAMA_CPP_SRC,
+        source=patched_src,
+        worktree_root=worktree_root / "subject",
+        resolved_revision=base_revision,
+        composition=subject_composition,
+        overlay_root=psi.REPO_ROOT / "src",
+        requested_revision=base_ref,
+    )
+    stock_src = psi.materialize_stock_source(
+        base_repo=LLAMA_CPP_SRC,
+        worktree_root=worktree_root / "stock",
+        base_revision=base_revision,
+    )
+    _print(f"stock source: {stock_src}")
+    if validated:
+        _, base_composition = psi.resolve_source_composition(
+            baseline_source,
+            focal=None,
+            extra_patches=common_patches,
+            base_ref=base_ref,
+            base_repo=LLAMA_CPP_SRC,
+            allow_rejected=allow_rejected,
+        )
+        base_src = psi.materialize_composition(
+            base_repo=LLAMA_CPP_SRC,
+            worktree_root=worktree_root / "base",
+            resolved_revision=base_revision,
+            composition=base_composition,
+            overlay_root=psi.REPO_ROOT / "src",
+            requested_revision=base_ref,
+        )
+    else:
+        base_composition, base_src = control_composition, control_src
+    _print(f"validated set: {', '.join(validated) or '(empty: base == validated)'}")
+    _print(f"base source: {base_src}")
+    return _ScaffoldSources(
+        base_revision=base_revision,
+        control_composition=control_composition,
+        subject_composition=subject_composition,
+        base_composition=base_composition,
+        validated_patches=validated,
+        control_src=control_src,
+        patched_src=patched_src,
+        stock_src=stock_src,
+        base_src=base_src,
+        control_idempotent=control_idempotent,
+        subject_idempotent=subject_idempotent,
+    )
+
+
+def _build_tune_and_replay_trees(
+    *,
+    hip_path: Path,
+    amdgpu_targets: str,
+    actual_build_root: Path,
+    patched_src: Path,
+    generated_dir: Path,
+    exe: str,
+    build_env: dict[str, str],
+):
+    """Build the instrumented tune and replay trees from the patched source.
+
+    Returns (tune_bin, tune_build_evidence, replay_bin, replay_build_evidence).
+    """
+    tune_extra_cmake_args = [
+        "-DGGML_HIP_AUTOTUNE=ON",
+        "-DGGML_HIP_AUTOTUNE_RECORD=ON",
+        "-DGGML_HIP_ROUTING_TRANSFORM=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
+    ]
+    tune_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=tune_extra_cmake_args,
+    )
+    tune_bin = build_tree(
+        name="tune",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
+        extra_cmake_args=tune_extra_cmake_args,
+    )
+    # HI82 item 7: refuse to hand a build to Campaign() until its actual
+    # compiled command lines are proven to match configured intent -- a
+    # build that silently lost a flag (the HI81 shape) must never reach
+    # benchmarking. Raises BuildIdentityError uncaught, which is the
+    # intended fail-closed behavior: no partial/best-effort campaign runs
+    # against an unverified build. Reuses builds.py's existing identity/
+    # reuse contract (effective_build_id/runtime_bundle_hash) rather than
+    # a second, parallel identity authority -- see HI82 review history.
+    tune_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "tune",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
+        binary=tune_bin / f"llama-server{exe}",
+        extra_binaries=(tune_bin / f"llama-bench{exe}",),
+        requested_cmake_args=tune_cmake_args,
+        build_env=build_env,
+    )
+    _print(
+        f"tune build: {tune_build_evidence.effective_build_id[:12]} / "
+        f"{tune_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{tune_build_evidence.compile_verification_id[:12]}"
+    )
+
+    replay_extra_cmake_args = [
+        "-DGGML_HIP_DISPATCH_REPLAY=ON",
+        f"-DGGML_HIP_AUTOTUNE_GENERATED_DIR={generated_dir}",
+    ]
+    replay_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=replay_extra_cmake_args,
+    )
+    replay_bin = build_tree(
+        name="replay",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
+        extra_cmake_args=replay_extra_cmake_args,
+    )
+    replay_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "replay",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
+        binary=replay_bin / f"llama-server{exe}",
+        extra_binaries=(replay_bin / f"llama-bench{exe}",),
+        requested_cmake_args=replay_cmake_args,
+        build_env=build_env,
+    )
+    _print(
+        f"replay build: {replay_build_evidence.effective_build_id[:12]} / "
+        f"{replay_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{replay_build_evidence.compile_verification_id[:12]}"
+    )
+    return tune_bin, tune_build_evidence, replay_bin, replay_build_evidence
+
+
+def _build_parity_trees(
+    *,
+    patch_id: str,
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    build_root: Path | None,
+    actual_build_root: Path,
+    sources: _ScaffoldSources,
+    exe: str,
+    build_env: dict[str, str],
+):
+    """Build the stock, control and validation-subject parity trees.
+
+    Returns (stock_bin, stock_build_evidence, base_bin, base_build_evidence,
+    control_bin,
+    control_build_evidence, validation_subject_bin,
+    validation_subject_build_evidence).
+    """
+    stock_src = sources.stock_src
+    control_src = sources.control_src
+    patched_src = sources.patched_src
+    stock_build_root = (build_root or workdir) / stock_src.name
+    stock_bin = ensure_stock_baseline(
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=stock_build_root,
+        stock_src=stock_src,
+    )
+    stock_cmake_args = _full_requested_cmake_args(
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        extra_cmake_args=[],
+    )
+    stock_build_evidence = capture_completed_build_evidence(
+        stock_build_root / "stock",
+        source_root=stock_src,
+        architecture=amdgpu_targets,
+        binary=stock_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
+    )
+    _print(
+        f"stock build: {stock_build_evidence.effective_build_id[:12]} / "
+        f"{stock_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{stock_build_evidence.compile_verification_id[:12]}"
+    )
+
+    # RS10: the authoritative control source is independently built as well;
+    # it is not merely a recorded tree next to a subject-only campaign.
+    control_build_root = (build_root or workdir) / control_src.name
+    control_bin = build_tree(
+        name="control",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=control_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=control_src,
+        extra_cmake_args=[],
+    )
+    control_build_evidence = capture_completed_build_evidence(
+        control_build_root / "control",
+        source_root=control_src,
+        architecture=amdgpu_targets,
+        binary=control_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
+    )
+    _print(
+        f"control build: {control_build_evidence.effective_build_id[:12]} / "
+        f"{control_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{control_build_evidence.compile_verification_id[:12]}"
+    )
+
+    # VA14-B: the validation-domain subject is a real, independently-built
+    # parity binary from patched_src -- NOT the tune-mode binary (that build
+    # carries GGML_HIP_AUTOTUNE/AUTOTUNE_RECORD/ROUTING_TRANSFORM
+    # instrumentation the control build never had, which would confound a
+    # measured RD08 lane effect with instrumentation overhead, not just the
+    # patch). Built with exactly control's extra_cmake_args=[].
+    validation_subject_bin = build_tree(
+        name="validation-subject",
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=actual_build_root,
+        targets=["llama-server", "llama-bench"],
+        source=patched_src,
+        extra_cmake_args=[],
+    )
+    # GPT round 3 (req_e75c4936e2354351): capture symmetrically with
+    # control_build_evidence below (binary=llama-bench only, no
+    # extra_binaries) -- an asymmetric capture is not a like-for-like
+    # comparison even when the underlying build tree is parity.
+    validation_subject_build_evidence = capture_completed_build_evidence(
+        actual_build_root / "validation-subject",
+        source_root=patched_src,
+        architecture=amdgpu_targets,
+        binary=validation_subject_bin / f"llama-bench{exe}",
+        requested_cmake_args=stock_cmake_args,
+        build_env=build_env,
+    )
+    assert_validation_subject_parity(
+        control_build_evidence,
+        validation_subject_build_evidence,
+        patch_id=patch_id,
+    )
+    _print(
+        f"validation-subject build: {validation_subject_build_evidence.effective_build_id[:12]} / "
+        f"{validation_subject_build_evidence.runtime_bundle_hash[:12]} / "
+        f"{validation_subject_build_evidence.compile_verification_id[:12]}"
+    )
+    if sources.base_src == control_src:
+        base_bin, base_build_evidence = control_bin, control_build_evidence
+    else:
+        base_build_root = (build_root or workdir) / sources.base_src.name
+        base_bin = build_tree(
+            name="base",
+            hip_path=hip_path,
+            amdgpu_targets=amdgpu_targets,
+            workdir=base_build_root,
+            targets=["llama-server", "llama-bench"],
+            source=sources.base_src,
+            extra_cmake_args=[],
+        )
+        base_build_evidence = capture_completed_build_evidence(
+            base_build_root / "base",
+            source_root=sources.base_src,
+            architecture=amdgpu_targets,
+            binary=base_bin / f"llama-bench{exe}",
+            requested_cmake_args=stock_cmake_args,
+            build_env=build_env,
+        )
+        _print(f"base build: {base_build_evidence.effective_build_id[:12]}")
+    return (
+        stock_bin,
+        stock_build_evidence,
+        base_bin,
+        base_build_evidence,
+        control_bin,
+        control_build_evidence,
+        validation_subject_bin,
+        validation_subject_build_evidence,
+    )
+
+
+def _build_standard_campaign_scaffold(
+    *,
+    patch_id: str,
+    base_ref: str,
+    baseline_source: str,
+    common_patches: tuple[str, ...],
+    hip_path: Path,
+    amdgpu_targets: str,
+    workdir: Path,
+    worktree_root: Path,
+    build_root: Path | None,
+    allow_rejected: bool = False,
+) -> StandardCampaignScaffold:
+    """Materialize control/subject/stock sources and build the five
+    standard campaign trees in the historical order, capturing per-build
+    evidence and asserting validation-subject/control parity. Moved
+    verbatim from run() (PA36 sub-slice 2, dev-gpt-agent
+    req_2ecda033763949a9 T2) so the generic producer path and run() share
+    one owner of the five-build contract."""
+    sources = _materialize_scaffold_sources(
+        patch_id=patch_id,
+        base_ref=base_ref,
+        baseline_source=baseline_source,
+        common_patches=common_patches,
+        worktree_root=worktree_root,
+        allow_rejected=allow_rejected,
+    )
+    base_revision = sources.base_revision
+    control_composition = sources.control_composition
+    subject_composition = sources.subject_composition
+    control_src = sources.control_src
+    patched_src = sources.patched_src
+    stock_src = sources.stock_src
+    control_idempotent = sources.control_idempotent
+    subject_idempotent = sources.subject_idempotent
+
+    # Build trees are keyed by --build-root, not --workdir: build_tree()/
+    # ensure_stock_baseline() always reconfigure (cheap/incremental) but
+    # `cmake --build` itself only recompiles what actually changed, so a
+    # build tree is still effectively reusable across runs on this
+    # machine+arch as long as its SOURCE (an isolated, content-addressed
+    # worktree, not the shared vendor/llama.cpp tree -- HI82) hasn't changed
+    # identity. --workdir (record/tune/promote/replay/bench/report output)
+    # is what needs to be fresh per patch+model.
+    actual_build_root: Path = (build_root or workdir) / patched_src.name
+
+    # One shared out-of-tree registry serves both the tune and replay builds
+    # of this same patched source -- both need it (ggml-hip/CMakeLists.txt
+    # gates on GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY), and it is
+    # pure generated-from-source content, not build-mode-specific.
+    generated_dir = actual_build_root / "generated"
+    generate_registry(
+        source=patched_src,
+        amdgpu_targets=amdgpu_targets,
+        generated_dir=generated_dir,
+    )
+
+    exe = ".exe" if sys.platform == "win32" else ""
+    build_env = _hip_env(hip_path)
+
+    tune_bin, tune_build_evidence, replay_bin, replay_build_evidence = (
+        _build_tune_and_replay_trees(
+            hip_path=hip_path,
+            amdgpu_targets=amdgpu_targets,
+            actual_build_root=actual_build_root,
+            patched_src=patched_src,
+            generated_dir=generated_dir,
+            exe=exe,
+            build_env=build_env,
+        )
+    )
+    (
+        stock_bin,
+        stock_build_evidence,
+        base_bin,
+        base_build_evidence,
+        control_bin,
+        control_build_evidence,
+        validation_subject_bin,
+        validation_subject_build_evidence,
+    ) = _build_parity_trees(
+        patch_id=patch_id,
+        hip_path=hip_path,
+        amdgpu_targets=amdgpu_targets,
+        workdir=workdir,
+        build_root=build_root,
+        actual_build_root=actual_build_root,
+        sources=sources,
+        exe=exe,
+        build_env=build_env,
+    )
+    return StandardCampaignScaffold(
+        base_revision=base_revision,
+        control_composition=control_composition,
+        subject_composition=subject_composition,
+        base_composition=sources.base_composition,
+        validated_patches=sources.validated_patches,
+        control_source=control_src,
+        subject_source=patched_src,
+        stock_source=stock_src,
+        base_source=sources.base_src,
+        control_idempotent=control_idempotent,
+        subject_idempotent=subject_idempotent,
+        build_root=actual_build_root,
+        build_env=build_env,
+        tune_bin=tune_bin,
+        replay_bin=replay_bin,
+        stock_bin=stock_bin,
+        base_bin=base_bin,
+        control_bin=control_bin,
+        validation_subject_bin=validation_subject_bin,
+        tune_build_evidence=tune_build_evidence,
+        replay_build_evidence=replay_build_evidence,
+        stock_build_evidence=stock_build_evidence,
+        base_build_evidence=base_build_evidence,
+        control_build_evidence=control_build_evidence,
+        validation_subject_build_evidence=validation_subject_build_evidence,
+    )

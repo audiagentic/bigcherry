@@ -93,7 +93,7 @@ class EvidenceCheck:
         return self.status in {
             "not-required", "validated-evidence", "legacy-grandfathered",
             "ported-benched-evidence", "deferred-hardware-evidence",
-            "framework-configuration-evidence",
+            "framework-configuration-evidence", "carried-forward",
         }
 
 
@@ -186,6 +186,161 @@ def patch_validation_subject_digest(path: Path) -> str:
     )
 
 
+MODEL_FREE_CAMPAIGN_IDENTITY_SCHEMA = (
+    "validation-producer-model-free-campaign-identity-v1"
+)
+
+
+def model_free_campaign_identity_digest(
+    *,
+    patch_name: str,
+    patch_digest: str,
+    patched_source_tree: str,
+    gpu_architecture: str,
+    campaign_build_identities: Mapping[str, Mapping[str, object]],
+    base_revision: str,
+) -> str:
+    """Canonical campaign-identity binding for producer runs that consume
+    no model and no manifest (PA36 RD12 pilot, dev-gpt-agent design
+    req_f6fc41bf6bf94468). The generic e2e_smoke_campaign.Campaign never
+    runs for such a patch, so its model/manifest-bearing identity binding
+    does not exist -- this helper binds the record's
+    ``campaign_identity_digest`` from the same facts the generic Campaign
+    would bind, minus model/manifest, using the same canonical-JSON sha256
+    convention. This module is the one owner of evidence-record identity
+    formats: producer code never defines one. ``campaign_build_identities``
+    must be EXACTLY the campaign domain (tune, replay, stock) -- the
+    producer's own correctness-pair identities are a separate domain
+    (VALIDATION_BUILD_ROLES) and never belong here."""
+    if set(campaign_build_identities) != set(CAMPAIGN_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            "model-free campaign identity requires exactly "
+            f"{set(CAMPAIGN_BUILD_ROLES)!r}"
+        )
+    builds = {
+        role: _validate_build_identity(
+            campaign_build_identities[role],
+            field=f"campaign_build_identities.{role}",
+        )
+        for role in CAMPAIGN_BUILD_ROLES
+    }
+    payload = {
+        "schema": MODEL_FREE_CAMPAIGN_IDENTITY_SCHEMA,
+        "patch_identity": {
+            "name": _require_string(patch_name, "patch_name"),
+            "digest": _require_hex(patch_digest, "patch_digest", (64,)),
+        },
+        "patched_source_tree": _require_hex(
+            patched_source_tree, "patched_source_tree", (40, 64)
+        ),
+        "gpu_architecture": _require_string(gpu_architecture, "gpu_architecture"),
+        "campaign_build_identities": builds,
+        "base_revision": _require_hex(base_revision, "base_revision", (40, 64)),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+PRODUCER_CAMPAIGN_IDENTITY_SCHEMA = "bigcherry.producer-campaign-identity.v1"
+
+
+def _require_file_identity(value: object, field: str) -> dict[str, object]:
+    """Validate one producer-input file fact binding: exactly {path, size,
+    sha256} -- a path string alone is never sufficient (GPT review
+    req_7a72896b609a48b5 BLOCKER #1): two runs whose model/corpus BYTES
+    differ must never share a campaign identity."""
+    if not isinstance(value, Mapping):
+        raise ValidationEvidenceError(f"{field} must be an object")
+    required = {"path", "size", "sha256"}
+    if set(value) != required:
+        raise ValidationEvidenceError(
+            f"{field} must have exactly the fields {sorted(required)!r}, got "
+            f"{sorted(map(str, value))!r}"
+        )
+    _require_string(value["path"], f"{field}.path")
+    size = value["size"]
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise ValidationEvidenceError(
+            f"{field}.size must be a non-negative int, got {size!r}"
+        )
+    _require_hex(value["sha256"], f"{field}.sha256", (64,))
+    return {"path": str(value["path"]), "size": size, "sha256": str(value["sha256"])}
+
+
+def producer_campaign_identity_digest(
+    *,
+    patch_name: str,
+    patch_digest: str,
+    patched_source_tree: str,
+    gpu_architecture: str,
+    campaign_build_identities: Mapping[str, Mapping[str, object]],
+    base_revision: str,
+    model: Mapping[str, object] | None = None,
+    corpus: Mapping[str, object] | None = None,
+    producer_inputs: Mapping[str, object] | None = None,
+) -> str:
+    """Input-bound canonical campaign-identity binding for producer runs
+    that consume real model/corpus files (PA36 migration #2, GPT review
+    req_7a72896b609a48b5 BLOCKER #1). RD04's producer run depends on BOTH
+    the model and the PPL corpus, so the model-free digest (which binds
+    neither) would let two materially different RD04 runs share one
+    campaign identity. The binding adds the real file facts ({path, size,
+    sha256}) for model and corpus, plus any validated producer inputs.
+
+    When model, corpus, and producer_inputs are ALL absent the digest is
+    EXACTLY model_free_campaign_identity_digest() -- the RD12 pilot
+    records' digests stay bit-identical (that producer consumes no
+    inputs). Same canonical-JSON sha256 convention; this module remains
+    the one owner of evidence-record identity formats."""
+    if model is None and corpus is None and not producer_inputs:
+        return model_free_campaign_identity_digest(
+            patch_name=patch_name,
+            patch_digest=patch_digest,
+            patched_source_tree=patched_source_tree,
+            gpu_architecture=gpu_architecture,
+            campaign_build_identities=campaign_build_identities,
+            base_revision=base_revision,
+        )
+    if set(campaign_build_identities) != set(CAMPAIGN_BUILD_ROLES):
+        raise ValidationEvidenceError(
+            "producer campaign identity requires exactly "
+            f"{set(CAMPAIGN_BUILD_ROLES)!r}"
+        )
+    builds = {
+        role: _validate_build_identity(
+            campaign_build_identities[role],
+            field=f"campaign_build_identities.{role}",
+        )
+        for role in CAMPAIGN_BUILD_ROLES
+    }
+    payload = {
+        "schema": PRODUCER_CAMPAIGN_IDENTITY_SCHEMA,
+        "patch_identity": {
+            "name": _require_string(patch_name, "patch_name"),
+            "digest": _require_hex(patch_digest, "patch_digest", (64,)),
+        },
+        "patched_source_tree": _require_hex(
+            patched_source_tree, "patched_source_tree", (40, 64)
+        ),
+        "gpu_architecture": _require_string(gpu_architecture, "gpu_architecture"),
+        "campaign_build_identities": builds,
+        "base_revision": _require_hex(base_revision, "base_revision", (40, 64)),
+        "model": (
+            _require_file_identity(model, "model") if model is not None else None
+        ),
+        "corpus": (
+            _require_file_identity(corpus, "corpus") if corpus is not None else None
+        ),
+        "producer_inputs": dict(producer_inputs or {}),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _validate_build_identity(value: object, *, field: str) -> dict[str, object]:
     """Full CompletedBuildEvidence.campaign_identity() shape validation,
     parameterized by the caller's field path (VA07: reused identically for
@@ -233,44 +388,56 @@ def evidence_path(patch_id: str, *, root: Path | None = None) -> Path:
     return paths.PATCHES / "_validation" / f"{patch_id}.json"
 
 
-def _artifact_refs(campaign_workdir: Path) -> list[dict[str, str]]:
+# PA36-F step 4: generic, patch/RD-agnostic campaign artifacts every
+# campaign run may produce regardless of which producer executed --
+# always collected, whether or not a declarative producer artifact
+# allowlist is in play.
+_CORE_ARTIFACT_PATHS: tuple[str, ...] = (
+    "status.json", "activation.json", "correctness.json", "bench.json", "report.md",
+    "tune.jsonl.measurements.jsonl", "promoted.jsonl", "coverage.json", "dispatch.cache",
+    "performance.json",
+)
+
+# Legacy (pre-PA36-F) hardcoded, RD/patch-specific artifact names. Only
+# collected when no declarative producer artifact allowlist is supplied
+# (producer_artifact_names=None) -- i.e. the still-unmigrated RD paths.
+# A producer run must NEVER accidentally absorb one of these stale paths
+# belonging to a different, unmigrated RD path.
+_LEGACY_ARTIFACT_PATHS: tuple[str, ...] = (
+    "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
+    "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
+    "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
+    # (RD73's VA23 contract artifacts were retired with the RD73 legacy
+    # compatibility retirement -- RD73 now runs through its producer via
+    # the generic path, whose artifacts are declared by its producer.toml
+    # allowlist rather than this legacy enumeration.)
+    # PA39: RD04's real backend_reference+ppl_equality correctness
+    # producer (run_rd04_contract_correctness()) namespaces its
+    # artifact by the architecture the run actually executed against.
+    "artifacts/rd04-correctness-gfx1100.json",
+    "artifacts/rd04-correctness-gfx1201.json",
+    "artifacts/rd04-correctness-gfx1030.json",
+)
+
+
+def _artifact_refs(
+    campaign_workdir: Path, *, producer_artifact_names: Iterable[str] | None = None,
+) -> list[dict[str, str]]:
+    """PA36-F step 4: when ``producer_artifact_names`` is ``None`` (no
+    generic producer executed), preserve the complete legacy hardcoded
+    artifact list unchanged. When it is not ``None`` (a generic producer
+    executed via ``execute_validation_producer()``), collect only the
+    generic core campaign artifacts plus the producer's own declared
+    ``artifacts/<basename>`` files -- never any legacy RD-specific path,
+    so a producer run cannot accidentally absorb stale artifacts left
+    behind by an unrelated, unmigrated RD path."""
     root = Path(campaign_workdir).resolve()
-    names = (
-        "status.json", "activation.json", "correctness.json", "bench.json", "report.md",
-        "tune.jsonl.measurements.jsonl", "promoted.jsonl", "coverage.json", "dispatch.cache",
-        "performance.json",
-        "artifacts/validation-lanes.json", "artifacts/rd08-correctness.json",
-        "artifacts/rd08-trigger.json", "artifacts/contract-qualification.json",
-        "logs/activation-rd08-trigger-subject.log", "logs/activation-rd08-trigger-control.log",
-        # VA23: RD73's contract artifacts. This list is the record's own
-        # AUTHORITATIVE artifact_hashes map -- verify_evidence() only accepts
-        # a passing performance/controls check whose artifact appears here,
-        # so a contract whose artifacts are absent reports "no recorded
-        # benchmark execution" no matter how real the run was. The
-        # enumeration is deliberate (only known artifact names count, so an
-        # arbitrary file dropped in the workdir cannot become evidence), so
-        # each new contract's artifacts must be added explicitly, exactly as
-        # RD08's are above.
-        "artifacts/rd73-performance.json", "artifacts/rd73-correctness.json",
-        "artifacts/rd73-contract-qualification.json", "artifacts/rd73-activation.json",
-        "artifacts/rd73-mtp-lane.json", "artifacts/rd73-decode-control.json",
-        "artifacts/rd73-resource.json",
-        "logs/rd73-mtp-subject-server.log", "logs/rd73-mtp-control-server.log",
-        # PA39: RD12's real bit-identical correctness producer
-        # (run_rd12_correctness_check()) namespaces its artifact by the
-        # architecture the run actually executed against.
-        "artifacts/rd12-correctness-gfx1100.json",
-        "artifacts/rd12-correctness-gfx1201.json",
-        "artifacts/rd12-correctness-gfx1030.json",
-        # PA39: RD04's real backend_reference+ppl_equality correctness
-        # producer (run_rd04_contract_correctness()) namespaces its
-        # artifact by the architecture the run actually executed against.
-        "artifacts/rd04-correctness-gfx1100.json",
-        "artifacts/rd04-correctness-gfx1201.json",
-        "artifacts/rd04-correctness-gfx1030.json",
-        "artifacts/rd13-backend-reference.json",
-        "artifacts/rd26-decode-verify-bit-identity.json",
-    )
+    if producer_artifact_names is None:
+        names: tuple[str, ...] = _CORE_ARTIFACT_PATHS + _LEGACY_ARTIFACT_PATHS
+    else:
+        names = _CORE_ARTIFACT_PATHS + tuple(
+            f"artifacts/{name}" for name in producer_artifact_names
+        )
     return [{"path": name, "sha256": _sha256_file(root / name)} for name in names if (root / name).is_file()]
 
 
@@ -521,8 +688,10 @@ def verify_framework_configuration_record(
         problems.append("record is not eligible")
     if source_composition is None or record.get("source_composition") != [{"id": str(p[0]), "digest": str(p[1])} for p in source_composition]:
         problems.append("source composition mismatch")
-    if record.get("source_name") != "bigcherry-native":
-        problems.append("source is not canonical bigcherry-native framework")
+    # source_name is receipt provenance only (PA31): historical records may
+    # legitimately retain the deleted "bigcherry-native" name. Composition/
+    # base/source identity are the actual authority checks, enforced above
+    # via source_identity/source_composition.
     if source_composition is not None and (descriptor.patch_id, descriptor.implementation_digest) not in source_composition:
         problems.append("focal implementation absent from composition")
     for field, lengths in (("base_revision", (40,64)), ("source_tree", (40,64)), ("source_slice_id", (32,))):
@@ -556,7 +725,9 @@ def verify_framework_configuration_patch(
         from bigcherry.campaign import resolution
         catalog_root = module.catalog_root or paths.PATCHES
         cfg = config.load(paths.RECIPES)
-        lane = resolution.resolve_lane("bigcherry-native", cfg, patchset.catalog(directory=catalog_root))
+        lane = resolution.resolve_lane(
+            "bigcherry-qualification-tuning", cfg, patchset.catalog(directory=catalog_root)
+        )
         resolved = patchset.resolve_exact(tuple(lane.patch_set.module_ids), directory=catalog_root)
         registry = patch_registry.load_registry(catalog_root)
         composition = tuple((member.patch_id, registry.get(member.patch_id).implementation_digest)
@@ -566,7 +737,8 @@ def verify_framework_configuration_patch(
             raise ValidationEvidenceError("resolved base revision required for source identity")
         identity = patch_source._make_source_identity_v2(
             resolved_revision=resolved_base_revision, composition=composition,
-            overlay_root=patch_source.REPO_ROOT / "src" if cfg.sources["bigcherry-native"].overlay else None,
+            overlay_root=patch_source.REPO_ROOT / "src"
+            if cfg.sources["bigcherry-qualification-tuning"].overlay else None,
         )
         identity["materialization_plan_id"] = identity["source_key"]
     except Exception as exc:
@@ -602,6 +774,7 @@ def make_record(
     campaign_identity_digest: str, build_identities: Mapping[str, Mapping[str, object]],
     validation_build_identities: Mapping[str, Mapping[str, object]],
     campaign_workdir: Path,
+    producer_artifact_names: Iterable[str] | None = None,
     representation: str = "simple", validation_implementation_digest: str | None = None,
     contract_id: str | None = None, contract_hash: str | None = None,
     contracts: Iterable[Mapping[str, str]] = (),
@@ -762,7 +935,7 @@ def make_record(
             "activation": dict(activation), "correctness": dict(correctness_doc),
         }),
         "hardware": {"architectures": list(archs)},
-        "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir) if isinstance(item, Mapping)},
+        "artifact_hashes": {str(item.get("path")): item.get("sha256") for item in _artifact_refs(campaign_workdir, producer_artifact_names=producer_artifact_names) if isinstance(item, Mapping)},
         "blockers": list(blockers),
         "final_eligibility": eligible,
         "patch_id": patch_id,
@@ -789,7 +962,7 @@ def make_record(
         ),
         "campaign_build_identities": builds,
         "validation_build_identities": validation_builds,
-        "campaign_artifacts": _artifact_refs(campaign_workdir),
+        "campaign_artifacts": _artifact_refs(campaign_workdir, producer_artifact_names=producer_artifact_names),
         # RV99: the MEASUREMENTS, not just the verdict derived from them.
         # Before this the record kept identity, provenance, check verdicts and
         # artifact hashes, but the per-lane effects and their pair_ratios lived

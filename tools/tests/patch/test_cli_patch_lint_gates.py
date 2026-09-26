@@ -185,7 +185,7 @@ class PatchLintCliTests(unittest.TestCase):
                 'title = "invalid"\nplan-item = "EX01"\n'
                 'status = "ported-benched"\npatch = "0002_invalid"\n\n'
                 "[[sources.tracked]]\n"
-                f'commit = "{sha}"\noriginal = "{sha}"\n'
+                f'commit = "{"b" * 40}"\noriginal = "{"b" * 40}"\n'
                 'title = "grandfathered"\nplan-item = "EX02"\n'
                 'status = "ported-benched"\npatch = "0004_grandfathered"\n',
                 encoding="utf-8",

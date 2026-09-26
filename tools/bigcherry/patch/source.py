@@ -662,6 +662,12 @@ def _add_worktree(base_repo: Path, worktree_dir: Path, base_revision: str) -> No
     # removed leaves it in place, and the re-add below then fails with
     # exit 128 (caught by a real RS05 rebuild test).
     _run(["git", "worktree", "prune"], cwd=base_repo, check=False)
+    if sys.platform == "win32":
+        # Worktrees live under the project-local work/ with 64-hex identity
+        # directory names; llama.cpp's deepest paths then exceed MAX_PATH, and
+        # git refuses them unless core.longpaths is set. Repo-local setting,
+        # shared by every worktree of this base repo.
+        _run(["git", "config", "core.longpaths", "true"], cwd=base_repo)
     _run(
         ["git", "worktree", "add", "--detach", str(worktree_dir), base_revision],
         cwd=base_repo,
@@ -984,8 +990,14 @@ def resolve_source_composition(
     base_repo: Path | None = None,
     recipes: Path | None = None,
     patches_root: Path | None = None,
+    allow_rejected: bool = False,
 ) -> tuple[str, tuple[tuple[str, str], ...]]:
     """Resolve a source's EXPLICIT named composition for identity purposes.
+
+    ``allow_rejected`` admits rejected/superseded patches ONLY when they were
+    named explicitly (``focal`` or ``extra_patches``) -- an operator choosing to
+    re-examine a retired patch. A retired patch reaching the composition any
+    other way still fails closed; the patch's lifecycle state is unchanged.
 
     ``source_name``'s ``[patch-set.*]`` sets from config/recipes.toml (plus
     an optional single ``focal`` patch and/or an explicit ``extra_patches``
@@ -1029,8 +1041,20 @@ def resolve_source_composition(
         extras.append(focal)
     if len(set(extras)) != len(extras):
         raise PatchSourceIsolationError("explicit composition contains duplicates")
-    ids = [*ids, *extras]
-    resolved = patchset.resolve_exact(tuple(ids), directory=patches_root)
+    # An extra that the named composition already carries (e.g. a common
+    # patch later promoted into validated-enhancements) is already present:
+    # the resolved composition is the same, so it is not added twice.
+    ids = [*ids, *(extra for extra in extras if extra not in ids)]
+    resolved = patchset.resolve_exact(tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
+    if allow_rejected:
+        unexpected = [
+            m.patch_id for m in resolved.modules
+            if m.state in patchset.RETIRED_STATES and m.patch_id not in extras
+        ]
+        if unexpected:
+            raise PatchSourceIsolationError(
+                f"allow_rejected admits only explicitly named patches; retired but not named: {unexpected}"
+            )
     registry = _patch_registry().load_registry(patches_root)
     composition = tuple(
         (

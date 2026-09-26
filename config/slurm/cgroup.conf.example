@@ -1,0 +1,13 @@
+# BigCherry Brutus cgroup policy (Ubuntu 24.04 cgroup v2).
+# Generated host file: /etc/slurm/cgroup.conf
+#
+# Start with ConstrainDevices=no. GitHub Noble CI qualifies the cgroup process/
+# task/accounting plugins without GPU filtering. Only switch to yes after the
+# Brutus AMD matrix proves /dev/kfd + allocated render nodes work and
+# unallocated render nodes are blocked for every accepted ROCm toolchain/cohort.
+
+CgroupPlugin=autodetect
+ConstrainCores=yes
+ConstrainDevices=no
+ConstrainRAMSpace=no
+ConstrainSwapSpace=no

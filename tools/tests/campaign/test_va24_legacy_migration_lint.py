@@ -36,13 +36,13 @@ class LegacyMigrationLintTests(unittest.TestCase):
             )
 
     def test_new_gain_contract_without_a_waiver_fails_lint(self):
-        base = self.registry["RD08-Q6K-MMVQ-VDR2"]
+        base = self.registry["RD04-BF16-FLASH-ATTN-TILE"]
         fresh = dataclasses.replace(base, id="RDXX-BRAND-NEW")
         registry = ec.ContractRegistry(contracts={"RDXX-BRAND-NEW": fresh})
         problems = ec.lint_effect_evidence_policy(registry, self.waivers)
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("RDXX-BRAND-NEW", problems[0])
-        self.assertIn("ci95_threshold_bound_v1", problems[0])
+        self.assertIn("point_estimate_v1", problems[0])
 
     def test_correctness_only_contract_needs_no_waiver(self):
         """A contract with no gain threshold has nothing to evidence with an

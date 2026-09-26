@@ -1,6 +1,10 @@
 """Host environment: the machine-specific facts, loaded once, by role.
 
-Companion to ``config/environment.toml``. The shell side is
+Host-specific values are never committed. The configured file is
+``$BIGCHERRY_ENVIRONMENT`` or, by default, the gitignored
+``config/environment.local.toml`` (template: ``config/environment.example.toml``);
+scalar keys of the default host can be overridden with
+``BIGCHERRY_HOST_<KEY>`` environment variables. The shell side is
 ``tools/env/bigcherry-env.sh``; this is the same data for Python callers, so
 tooling can resolve a model root or a bench port without hardcoding one
 person's paths -- which is exactly what the reference docs used to do, in 40
@@ -17,6 +21,7 @@ Merging them would make every consumer of one depend on the other.
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from dataclasses import dataclass
@@ -157,14 +162,38 @@ def _require(table: dict, key: str, where: str) -> object:
     return table[key]
 
 
+_HOST_SCALAR_KEYS = (
+    "hostname", "address", "home", "repo", "cache-root", "share", "model-root",
+    "bench-harness", "rocm", "rocm-shim", "production-port", "bench-port",
+)
+
+
+def _apply_env_overrides(raw: dict) -> None:
+    """``BIGCHERRY_HOST_<KEY>`` overrides a scalar of the default host."""
+    hosts = raw.get("host") or {}
+    name = raw.get("default-host") or next(iter(hosts), None)
+    body = hosts.get(name) if name else None
+    if not isinstance(body, dict):
+        return
+    for key in _HOST_SCALAR_KEYS:
+        value = os.environ.get("BIGCHERRY_HOST_" + key.upper().replace("-", "_"))
+        if value is not None:
+            body[key] = value
+
+
 def load(path: str | Path) -> Environment:
     path = Path(path)
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise EnvironmentError_(f"{path}: not found") from exc
+        raise EnvironmentError_(
+            f"{path}: not found -- host settings are not committed; copy "
+            "config/environment.example.toml to config/environment.local.toml "
+            "and fill it in, or set BIGCHERRY_ENVIRONMENT"
+        ) from exc
     except tomllib.TOMLDecodeError as exc:
         raise EnvironmentError_(f"{path}: {exc}") from exc
+    _apply_env_overrides(raw)
 
     hosts: dict[str, Host] = {}
     for name, body in (raw.get("host") or {}).items():
@@ -246,8 +275,16 @@ def _repo_root() -> Path:
 
 
 def default_path(repo_root: str | Path | None = None) -> Path:
+    configured = os.environ.get("BIGCHERRY_ENVIRONMENT")
+    if configured:
+        return Path(configured)
     root = Path(repo_root) if repo_root else _repo_root()
-    return root / "config" / "environment.toml"
+    return root / "config" / "environment.local.toml"
+
+
+def example_path(repo_root: str | Path | None = None) -> Path:
+    root = Path(repo_root) if repo_root else _repo_root()
+    return root / "config" / "environment.example.toml"
 
 
 def load_default(repo_root: str | Path | None = None) -> Environment:

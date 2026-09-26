@@ -6,7 +6,7 @@ against the real current campaign/patch primitives -- this module composes
 those primitives, it does not reimplement them:
 
 - ``campaign.resolution.resolve_lane`` / ``resolve_lane_overlay`` for
-  "control" (current release / bigcherry-native) vs "subject"
+  "control" (current release / bigcherry-tuning, PA29 cutover) vs "subject"
   (control + candidate patch) compositions and their canonical
   ``patch_set_id`` identity.
 - ``patch.patchset.expand_composition`` for the candidate patch's REQUIRES
@@ -174,8 +174,14 @@ def build_qualification_matrix_plan(
 
     closure = patchset.expand_composition((patch_id,), directory=catalog_directory).expanded
 
+    # PA29 cutover (GPT design review req_964ec5fc21c14848): the isolated
+    # control moves to bigcherry-tuning -- consistent with
+    # [campaign.patch-qualification]'s own migrated control/tune arms, which
+    # this module's cells back -- not bigcherry-serving-base, since the
+    # qualification-matrix control needs the same campaign/tune plumbing
+    # (0110) those lanes need.
     native_lane = resolution.resolve_lane(
-        "bigcherry-native", cfg, catalog, catalog_directory=catalog_directory,
+        "bigcherry-tuning", cfg, catalog, catalog_directory=catalog_directory,
     )
     release_lane = resolution.resolve_lane(
         "bigcherry", cfg, catalog, catalog_directory=catalog_directory,
@@ -191,7 +197,7 @@ def build_qualification_matrix_plan(
     release_overlay = tuple(m for m in closure if m not in set(release_lane.patch_set.module_ids))
 
     isolated_subject_lane = resolution.resolve_lane_overlay(
-        "bigcherry-native", cfg, catalog,
+        "bigcherry-tuning", cfg, catalog,
         overlay_patch_ids=isolated_overlay, overlay_name=f"pqm:{patch_id}",
         catalog_directory=catalog_directory,
     )

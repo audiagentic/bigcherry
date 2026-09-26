@@ -1,0 +1,16 @@
+schema = 1
+id = "0110_campaign_tune_record_build"
+order = 110
+state = "validated"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = ["PA27"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []

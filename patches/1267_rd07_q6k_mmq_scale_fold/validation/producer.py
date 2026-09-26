@@ -1,0 +1,186 @@
+"""Validation producer for 1267 / PRBE110 RD07."""
+
+from __future__ import annotations
+
+import dataclasses
+import re
+from pathlib import Path
+
+from bigcherry.experiment import contract as experiment_contract
+from bigcherry.experiment import execution as experiment_execution
+from bigcherry.experiment import full_vocab
+from bigcherry.patch import producer_support as support
+from bigcherry.patch import validation_producer as vp
+from bigcherry.patch.activation import ActivationEvidence
+
+_LABEL = "prbe110-rd07"
+_CONTRACT_ID = "PRBE110-RD07-Q6K-MMQ-SCALE-FOLD"
+_ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
+_MODEL_REF = "tierM-gptoss20b-q6k"
+_MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold path=q6k_mmq_dispatch contract=PRBE110-RD07-Q6K-MMQ-SCALE-FOLD"
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
+_MEASUREMENT = support.contract_measurement(_CONTRACT_ID)
+_PROMPT = " ".join(["Quantized matrix multiplication evaluates the current transformer state."] * 8)
+_N_PREDICT = 64
+
+
+def _combined_lane_effect(outcome: vp.ProducerPairedBenchmarkOutcome, *, workload: str, metric: str, role: str):
+    if workload not in outcome.runs:
+        raise vp.ValidationProducerError(
+            f"{_LABEL}: combined {role} lane is missing {workload!r}; got {sorted(outcome.runs)!r}"
+        )
+    run = outcome.runs[workload]
+    if dict(run.stats).get("paired_rounds") != _ROUNDS:
+        raise vp.ValidationProducerError(
+            f"{_LABEL}: {role} lane has {run.stats.get('paired_rounds')!r} paired rounds; expected {_ROUNDS}"
+        )
+    return experiment_execution.lane_effect_from_run(role, metric, run), run
+
+
+def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
+    architecture = support.single_architecture(ctx, _ARCHITECTURES, label=_LABEL)
+    if ctx.model is None:
+        raise vp.ValidationProducerError(f"{_LABEL}: --model is required")
+    if _MEASUREMENT.bench_invocation != "combined":
+        raise vp.ValidationProducerError(f"{_LABEL}: contract requires bench_invocation=combined")
+    model = ctx.model
+    identity = support.model_identity(model, model_id=_MODEL_REF, label=_LABEL)
+    device = support.select_device(ctx, architecture, label=_LABEL)
+    binaries = {
+        role: {
+            target: ctx.validation_binaries.get(role, {}).get(target)
+            for target in ("llama-server", "llama-bench")
+        }
+        for role in ("control", "subject")
+    }
+    if not all(isinstance(binary, Path) and binary.is_file() for arm in binaries.values() for binary in arm.values()):
+        raise vp.ValidationProducerError(f"{_LABEL}: standard scaffold llama-server/llama-bench pair is missing")
+
+    logs = ctx.workdir / "logs"
+    control_log = logs / "prbe110-rd07-control-server.log"
+    subject_log = logs / "prbe110-rd07-subject-server.log"
+
+    def session(role: str, log_path: Path):
+        return support.server_session_factory(
+            ctx,
+            device=device,
+            architecture=architecture,
+            binary=binaries[role]["llama-server"],
+            model=model,
+            log_path=log_path,
+            env={"BIGCHERRY_PATCH_TRACE": "1"},
+        )
+
+    try:
+        comparison = full_vocab.compare_servers(
+            control_session=session("control", control_log),
+            subject_session=session("subject", subject_log),
+            prompt=_PROMPT,
+            n_predict=_N_PREDICT,
+            criterion=full_vocab.NEAR_LOSSLESS,
+            scratch_dir=ctx.workdir / "scratch" / "prbe110-rd07",
+        )
+    except full_vocab.FullVocabError as exc:
+        raise vp.ValidationProducerError(f"{_LABEL}: backend_reference: {exc}") from exc
+
+    correctness = experiment_contract.CorrectnessResult(
+        check="backend_reference", passed=comparison.passed, detail=comparison.detail
+    )
+    control_text = control_log.read_text(encoding="utf-8", errors="replace")
+    subject_text = subject_log.read_text(encoding="utf-8", errors="replace")
+    marker = re.compile(_MARKER_REGEX)
+    subject_hit = marker.search(subject_text) is not None
+    control_hit = marker.search(control_text) is not None
+    trigger_hit = subject_hit and not control_hit
+    activation = ActivationEvidence(
+        status="executed" if trigger_hit else ("unobservable" if subject_hit else "not_executed"),
+        mechanism="trace_marker",
+        detail=f"marker subject_hit={subject_hit} control_hit={control_hit}",
+    )
+    subject_trace = ctx.runtime.write_text_artifact(
+        name="prbe110-rd07-subject.log", text=support.compact_log(subject_text)
+    )
+    control_trace = ctx.runtime.write_text_artifact(
+        name="prbe110-rd07-control.log", text=support.compact_log(control_text)
+    )
+
+    outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=binaries["control"]["llama-bench"],
+        subject_binary=binaries["subject"]["llama-bench"],
+        model=model,
+        workloads=("prefill", "decode"),
+        pairs=_ROUNDS,
+        log_context="prbe110-rd07-lanes",
+        device=device,
+        combined=True,
+    )
+    positive_effect, positive_run = _combined_lane_effect(
+        outcome, workload="prefill", metric="pp512", role="positive"
+    )
+    control_effect, control_run = _combined_lane_effect(
+        outcome, workload="decode", metric="tg128", role="control"
+    )
+    performance = ctx.runtime.write_artifact(
+        name="prbe110-rd07-performance.json",
+        payload={
+            "schema_version": 1,
+            "contract_id": _CONTRACT_ID,
+            "architecture": architecture,
+            "model_identity": identity,
+            "metrics": support.performance_metrics(positive_effect, control_effect),
+            "positive": {
+                "metric": "pp512",
+                "effect": dataclasses.asdict(positive_effect),
+                "runs": list(positive_run.runs),
+                "stats": dict(positive_run.stats),
+            },
+            "control": {
+                "metric": "tg128",
+                "effect": dataclasses.asdict(control_effect),
+                "runs": list(control_run.runs),
+                "stats": dict(control_run.stats),
+            },
+            "trigger": {"subject_hit": subject_hit, "control_hit": control_hit},
+        },
+    )
+    ctx.runtime.write_artifact(
+        name="prbe110-rd07-correctness.json",
+        payload={
+            "schema_version": 1,
+            "check": "backend_reference",
+            "passed": comparison.passed,
+            "detail": comparison.detail,
+            "comparison": comparison.document(),
+        },
+    )
+    trigger = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="prbe110-rd07-subject", role="positive", positive_hit=trigger_hit
+    )
+    return vp.ProducerResult(
+        correctness={
+            "disposition": "passed" if comparison.passed else "failed",
+            "mechanism": "full-vocab-backend-reference",
+            "detail": comparison.detail,
+        },
+        validation_build_identities=ctx.validation_build_identities,
+        activation_evidence=activation,
+        performance_evidence={"artifact": {"path": performance.path, "sha256": performance.sha256}},
+        trace_evidence={
+            "positive": {"artifact": {"path": subject_trace.path, "sha256": subject_trace.sha256}},
+            "negative": {"artifact": {"path": control_trace.path, "sha256": control_trace.sha256}},
+        },
+        check_results=(),
+        lane_effects=(),
+        contract_correctness_results=(correctness,),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
+        promotion_target_metric={_CONTRACT_ID: "pp512"},
+        promotion_trigger_evidence={_CONTRACT_ID: (trigger,)},
+        emitted_artifacts=frozenset(
+            {
+                "prbe110-rd07-correctness.json",
+                "prbe110-rd07-performance.json",
+                "prbe110-rd07-subject.log",
+                "prbe110-rd07-control.log",
+            }
+        ),
+    )

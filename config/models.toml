@@ -12,7 +12,7 @@
 #     names. It is a STABLE LABEL, not a path: re-quantising or moving a file
 #     changes `path`/`size-bytes` here, never the id a contract cites.
 #   - `path` is relative to the host's model root (on Brutus,
-#     /mnt/vault/llm-models). The root is host configuration and deliberately
+#     $BC_MODEL_ROOT). The root is host configuration and deliberately
 #     NOT recorded here -- this registry is about model identity, not about
 #     one machine's layout.
 #   - `size-bytes` (measured on Brutus, 2026-09-05) is a cheap, real

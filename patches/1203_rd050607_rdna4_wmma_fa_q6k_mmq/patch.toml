@@ -1,7 +1,7 @@
 schema = 1
 id = "1203_rd050607_rdna4_wmma_fa_q6k_mmq"
 order = 1203
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
@@ -14,7 +14,7 @@ experiment-contracts = [
 ]
 plan-ids = []
 requires = []
-conflicts = []
+conflicts = ["1266_rd05_wmma_fa_tileq_sync", "1267_rd07_q6k_mmq_scale_fold"]
 requires-options = []
 forbids-options = []
 subsystems = []

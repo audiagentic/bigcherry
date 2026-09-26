@@ -219,8 +219,10 @@ python -m bigcherry build --lane <source>:<build>:<platform> \
 ```
 
 - Pick the lane matching the tree you just bumped (e.g.
-  `bigcherry-native:control:windows-gfx1100` for a local Windows GPU,
-  `bigcherry:control:linux-multi` for Brutus).
+  `bigcherry-tuning:control:windows-gfx1100` for a local Windows GPU,
+  `bigcherry-tuning:control:linux-multi` for Brutus -- PA29 cutover:
+  `build.control` needs 0110's campaign plumbing, which only
+  `bigcherry-tuning` composes among the semantic sources).
 - `--model` triggers the built-in runtime-smoke validation automatically --
   don't treat a plain compile-only `build` (no `--model`) as sufficient.
 - Confirm the GPU is actually idle first (step 0's liveness check applies

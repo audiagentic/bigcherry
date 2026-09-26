@@ -1,0 +1,19 @@
+schema = 1
+
+# PRBE35: control = bigcherry + 1215, subject = + 1216, both under
+# GGML_CUDA_GRAPH_OPT=1. The standard scaffold is skipped because its control
+# (the plain baseline) cannot carry the subject's hard prerequisite 1215; the
+# producer builds its own server and bench pairs with 1215 in both arms.
+[producer.rd43]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd43-backend-reference.json",
+  "rd43-controls.json",
+  "rd43-subject-server.log",
+  "rd43-control-server.log",
+]

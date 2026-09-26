@@ -18,9 +18,9 @@ not merely that content-hash verification exists somewhere.
 
 Usage:
     python -m bigcherry.re15_tamper_evidence \
-        --artifact-root ~/.cache/bigcherry/artifacts-store \
-        --work-root ~/.cache/bigcherry \
-        --model /mnt/vault/llm-models/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
+        --artifact-root work/artifacts-store \
+        --work-root work \
+        --model "$BC_MODEL_ROOT"/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
         --dispatch-db-artifact-id <inventory's dispatch-db artifact id, C's output> \
         --runtime-bundle-artifact-id <replay lane's runtime-bundle artifact id> \
         --replay-cache-artifact-id <replay cache artifact id> \

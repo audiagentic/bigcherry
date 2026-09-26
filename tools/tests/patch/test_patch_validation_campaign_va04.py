@@ -1,165 +1,115 @@
-"""VA04 hardware-free preflight slice: run_rd04_benchmark_evidence() --
-an RD04-scoped validation-domain paired benchmark producer, analogous to
-RD08's real lanes but without contract promotion/generalisation (GPT
-session ses_5bbee8ce5c9a4265, req_da015a1366044ad1). Hardware-free via
-an injected fake subprocess.run(), consistent with VA14's established
-pattern.
+"""VA04 hardware-free preflight slice (post-PA36 migration #2): the
+RD04-scoped paired benchmark evidence producer (the deleted
+run_rd04_benchmark_evidence()) and its --run-rd04-benchmark CLI wiring
+moved to the patch-local producer at
+patches/1202_rd04_bf16_flash_attn_tile/validation/producer.py -- its
+measurement semantics (forced -fa/-ctk/-ctv flags, control/subject
+alternation, real sha binding, fail-closed nonzero arms) are now
+covered by test_patch_validation_campaign_rd04_correctness.py, and its
+CLI surface by test_patch_validation_campaign_rd04_contract_cli.py.
+
+What remains in THIS file is the generic, still-current VA04 invariant:
+the fallback "benchmark" validator's contract -- a bound performance
+artifact with non-empty metrics + passed=true makes the performance AND
+controls checks PASS, and a missing artifact stays honestly blocked
+(never fabricated).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.experiment import execution as ex  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
-
-class _Result:
-    def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-        self.returncode = returncode
-        self.stdout = stdout
-        self.stderr = stderr
-
-
-class RunRd04BenchmarkEvidenceTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._real_subprocess_run = vc.subprocess.run
-
-    def tearDown(self) -> None:
-        vc.subprocess.run = self._real_subprocess_run
-
-    def _run_dir(self) -> Path:
-        return Path(tempfile.mkdtemp())
-
-    def test_alternates_control_subject_and_uses_exact_rd04_flags(self) -> None:
-        seen_commands: list[list[str]] = []
-
-        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
-            seen_commands.append(command)
-            binary = command[0]
-            metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
-            value = {"control_bin": 100.0, "subject_bin": 103.39}[binary]
-            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | {value} t/s\n")
-
-        vc.subprocess.run = fake_run
-        result = vc.run_rd04_benchmark_evidence(
-            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self._run_dir(),
-            campaign_id="campaign123", amdgpu_targets="gfx1100",
-            control_build_identity={"effective_build_id": "c1"},
-            subject_build_identity={"effective_build_id": "s1"},
-            pairs=2,
-        )
-        self.assertTrue(result["passed"])
-        # decode: pair0 control,subject ; pair1 subject,control ; then prefill same pattern.
-        self.assertEqual(
-            [c[0] for c in seen_commands],
-            ["control_bin", "subject_bin", "subject_bin", "control_bin",
-             "control_bin", "subject_bin", "subject_bin", "control_bin"],
-        )
-        for command in seen_commands:
-            self.assertIn("-fa", command)
-            self.assertEqual(command[command.index("-fa") + 1], "on")
-            self.assertIn("-ctk", command)
-            self.assertEqual(command[command.index("-ctk") + 1], "bf16")
-            self.assertIn("-ctv", command)
-            self.assertEqual(command[command.index("-ctv") + 1], "bf16")
-        decode_commands = seen_commands[:4]
-        prefill_commands = seen_commands[4:]
-        for command in decode_commands:
-            self.assertEqual(command[command.index("-p") + 1], "0")
-            self.assertEqual(command[command.index("-n") + 1], "128")
-        for command in prefill_commands:
-            self.assertEqual(command[command.index("-p") + 1], "512")
-            self.assertEqual(command[command.index("-n") + 1], "0")
-
-    def test_nonzero_arm_fails_closed(self) -> None:
-        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
-            if command[0] == "subject_bin":
-                return _Result(1, "", "boom")
-            return _Result(0, "ggml_cuda_init: found 1 ROCm devices\ntg128 | 100.0 t/s\n")
-
-        vc.subprocess.run = fake_run
-        with self.assertRaises(ex.LaneExecutionError):
-            vc.run_rd04_benchmark_evidence(
-                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-                model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=self._run_dir(),
-                campaign_id="campaign123", amdgpu_targets="gfx1100",
-                control_build_identity={}, subject_build_identity={}, pairs=1,
-            )
-
-    def test_artifact_hash_is_real(self) -> None:
-        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
-            metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
-            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
-
-        vc.subprocess.run = fake_run
-        run_dir = self._run_dir()
-        result = vc.run_rd04_benchmark_evidence(
-            control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-            model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=run_dir,
-            campaign_id="campaign123", amdgpu_targets="gfx1100",
-            control_build_identity={}, subject_build_identity={}, pairs=1,
-        )
-        import hashlib
-
-        performance_path = run_dir / "performance.json"
-        self.assertTrue(performance_path.is_file())
-        real_hash = hashlib.sha256(performance_path.read_bytes()).hexdigest()
-        self.assertEqual(result["artifact"]["sha256"], real_hash)
-        self.assertEqual(result["artifact"]["path"], "performance.json")
-        doc = json.loads(performance_path.read_text(encoding="utf-8"))
-        self.assertTrue(doc["passed"])
-        self.assertEqual(doc["campaign_id"], "campaign123")
-        self.assertIn("decode", doc["metrics"])
-        self.assertIn("prefill", doc["metrics"])
-
-    def test_generic_s6_bench_json_is_never_consumed(self) -> None:
-        # This producer must be entirely self-contained -- it never reads
-        # any pre-existing campaign/bench.json (S6's stock/native/replay
-        # measurement, which cannot prove RD04's patch effect at all).
-        import inspect
-        source = inspect.getsource(vc.run_rd04_benchmark_evidence)
-        self.assertNotIn("bench.json", source)
+def _rd04_performance_doc() -> dict[str, object]:
+    """The exact shape the migrated producer persists in its
+    rd04-performance-<arch>.json artifact (legacy document shape,
+    producer-built PPL pair identities)."""
+    return {
+        "passed": True,
+        "campaign_id": "campaign123",
+        "model": "m.gguf",
+        "architecture": "gfx1100",
+        "validation_build_identities": {
+            "control": {"build_id": "ppl-pair-control-build"},
+            "subject": {"build_id": "ppl-pair-subject-build"},
+        },
+        "commands": {
+            "decode": {
+                "control": ["c-bench", "-m", "m.gguf"],
+                "subject": ["s-bench", "-m", "m.gguf"],
+            },
+            "prefill": {
+                "control": ["c-bench", "-m", "m.gguf"],
+                "subject": ["s-bench", "-m", "m.gguf"],
+            },
+        },
+        "raw_logs": [
+            {"path": "artifacts/rd04-benchmark-decode.log", "sha256": "0" * 64},
+            {"path": "artifacts/rd04-benchmark-prefill.log", "sha256": "0" * 64},
+        ],
+        "metrics": {
+            "decode": {
+                "metric": "tg128",
+                "stats": {"geometric_effect_pct": 3.41, "p_value": 0.02},
+                "runs": [
+                    {"metric": "tg128", "role": "control", "value": 100.0},
+                    {"metric": "tg128", "role": "subject", "value": 103.4},
+                ],
+            },
+            "prefill": {
+                "metric": "pp512",
+                "stats": {"geometric_effect_pct": 2.97, "p_value": 0.04},
+                "runs": [
+                    {"metric": "pp512", "role": "control", "value": 500.0},
+                    {"metric": "pp512", "role": "subject", "value": 514.8},
+                ],
+            },
+        },
+    }
 
 
 class BenchmarkArtifactBindingTests(unittest.TestCase):
-    """Proves binding run_rd04_benchmark_evidence()'s real artifact into
+    """Proves binding a producer-shaped real artifact into
     ctx.performance_evidence makes both the real "performance" and
     "controls" checks (validator="benchmark") reach PASS."""
 
-    def test_performance_and_controls_checks_both_pass_from_the_bound_artifact(self) -> None:
+    def test_performance_and_controls_checks_both_pass_from_the_bound_artifact(
+        self,
+    ) -> None:
         from bigcherry.patch import validation as pv
 
-        def fake_run(command, capture_output, text, check, env):  # noqa: ANN001
-            metric = "tg128" if "-n" in command and command[command.index("-n") + 1] == "128" else "pp512"
-            return _Result(0, f"ggml_cuda_init: found 1 ROCm devices\n{metric} | 100.0 t/s\n")
-
-        real_subprocess_run = vc.subprocess.run
-        vc.subprocess.run = fake_run
-        try:
-            run_dir = Path(tempfile.mkdtemp())
-            result = vc.run_rd04_benchmark_evidence(
-                control_binary=Path("control_bin"), subject_binary=Path("subject_bin"),
-                model=Path("m.gguf"), hip_path=Path("H:/hip"), run_dir=run_dir,
-                campaign_id="campaign123", amdgpu_targets="gfx1100",
-                control_build_identity={}, subject_build_identity={}, pairs=1,
-            )
-        finally:
-            vc.subprocess.run = real_subprocess_run
-
-        performance_evidence = {"artifact": result["artifact"]}
-        ctx = pv.ValidationContext(
-            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
-            run_dir=run_dir, performance_evidence=performance_evidence,
+        run_dir = Path(tempfile.mkdtemp())
+        performance_path = run_dir / "performance.json"
+        performance_path.write_text(
+            json.dumps(_rd04_performance_doc(), indent=2),
+            encoding="utf-8",
         )
-        performance_spec = pv.CheckSpec("performance", "performance", "benchmark", True, {})
+        performance_evidence = {
+            "artifact": {
+                "path": "performance.json",
+                "sha256": hashlib.sha256(performance_path.read_bytes()).hexdigest(),
+            },
+        }
+        # The benchmark validator only reads performance_evidence +
+        # run_dir -- the namespace cast is this test file's established
+        # pattern for that seam (a full ValidationContext needs a real
+        # PatchDescriptor, which is irrelevant here).
+        ctx = cast(
+            "pv.ValidationContext",
+            SimpleNamespace(run_dir=run_dir, performance_evidence=performance_evidence),
+        )
+        performance_spec = pv.CheckSpec(
+            "performance", "performance", "benchmark", True, {}
+        )
         controls_spec = pv.CheckSpec("controls", "controls", "benchmark", True, {})
         performance_result = pv.evaluate_check(performance_spec, ctx)
         controls_result = pv.evaluate_check(controls_spec, ctx)
@@ -169,54 +119,13 @@ class BenchmarkArtifactBindingTests(unittest.TestCase):
     def test_missing_benchmark_evidence_is_blocked_not_fabricated(self) -> None:
         from bigcherry.patch import validation as pv
 
-        ctx = pv.ValidationContext(
-            descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
-            run_dir=Path(tempfile.mkdtemp()), performance_evidence={},
+        ctx = cast(
+            "pv.ValidationContext",
+            SimpleNamespace(run_dir=Path(tempfile.mkdtemp()), performance_evidence={}),
         )
         spec = pv.CheckSpec("performance", "performance", "benchmark", True, {})
         result = pv.evaluate_check(spec, ctx)
         self.assertNotEqual(result.status, pv.PASS)
-
-
-class Rd04CliWiringTests(unittest.TestCase):
-    """run() is a large real-hardware integration entry point (source
-    materialization, 7 real cmake builds) -- consistent with VA14/VA15's
-    established scope boundary, these prove the real committed wiring via
-    source inspection rather than mocking the entire pipeline."""
-
-    def setUp(self) -> None:
-        import inspect
-        self.source = inspect.getsource(vc.run)
-
-    def test_run_rd04_benchmark_flag_exists_and_defaults_false(self) -> None:
-        import argparse
-        parser = argparse.ArgumentParser()
-        # main()'s own parser construction is easiest to check indirectly:
-        # confirm the CLI wiring string is present in main()'s source.
-        import inspect
-        main_source = inspect.getsource(vc.main)
-        self.assertIn('"--run-rd04-benchmark"', main_source)
-        self.assertIn('action="store_true", default=False', main_source.replace("'", '"'))
-
-    def test_mutually_exclusive_with_rd08_modes(self) -> None:
-        self.assertIn("--run-rd04-benchmark is mutually exclusive with the", self.source)
-        block_start = self.source.index("if args.run_rd04_benchmark:")
-        block = self.source[block_start:block_start + 400]
-        self.assertIn("args.run_rd08_lanes", block)
-        self.assertIn("args.run_rd08_contract", block)
-        self.assertIn("args.run_rd13_contract", block)
-        self.assertIn("args.run_rd26_contract", block)
-
-    def test_rd04_only_gating(self) -> None:
-        self.assertIn('descriptor.experiment_contract != "RD04-BF16-FLASH-ATTN-TILE"', self.source)
-
-    def test_binds_only_performance_evidence_never_contract_promotions(self) -> None:
-        # RD04 mode must never write into contract_promotions -- eligibility
-        # must stay false regardless of a PASS.
-        rd04_block_start = self.source.index("if args.run_rd04_benchmark:")
-        rd04_block = self.source[rd04_block_start:self.source.index("if args.run_rd58_state_restore:")]
-        self.assertIn("performance_evidence = {\"artifact\": rd04_result[\"artifact\"]}", rd04_block)
-        self.assertNotIn("contract_promotions[", rd04_block)
 
 
 if __name__ == "__main__":

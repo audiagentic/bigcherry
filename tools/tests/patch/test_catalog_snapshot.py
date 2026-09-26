@@ -65,10 +65,7 @@ state = "validated"
         # not just via a direct patchset.catalog() call.
         snapshot = patch_catalog.build_snapshot()
         module = snapshot.by_id["1217_rd44_graph_opt_default_rdna35"]
-        self.assertEqual(
-            module.requires,
-            ("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"),
-        )
+        self.assertEqual(module.requires, ("1216_rd43_concurrent_join_fusion_guard",))
 
 
 if __name__ == "__main__":

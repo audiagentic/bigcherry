@@ -66,6 +66,60 @@ class CheckTests(TestCase):
             self.assertIn("TR14.DISPOSITION_DELETE_PENDING", codes)
             self.assertTrue(all(item.remediation for item in findings))
 
+    def test_artifact_untraceable_run_flags_unmatched_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "some-ad-hoc-name").mkdir(parents=True)
+            findings = check.tooling_hygiene(root)
+            codes = {(item.code, item.path) for item in findings}
+            self.assertIn(
+                ("TR14.ARTIFACT_UNTRACEABLE_RUN", "artifacts/some-ad-hoc-name"),
+                codes,
+            )
+
+    def test_artifact_untraceable_run_allows_textual_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "hi168-e2e-results").mkdir(parents=True)
+            evidence = root / "docs" / "evidence" / "2026-09-08-HI168-e2e"
+            evidence.mkdir(parents=True)
+            (evidence / "README.md").write_text(
+                "Raw traces are under `artifacts/hi168-e2e-results/`.\n",
+                encoding="utf-8",
+            )
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
+    def test_artifact_untraceable_run_allows_date_prefixed_evidence_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "to02-hi16-gpu0").mkdir(parents=True)
+            (root / "docs" / "evidence" / "2026-09-08-TO02-HI16-gpu0").mkdir(parents=True)
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
+    def test_artifact_untraceable_run_allows_docs_evidence_counterpart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "HI65").mkdir(parents=True)
+            (root / "docs" / "evidence" / "HI65").mkdir(parents=True)
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
+    def test_artifact_untraceable_run_allows_structural_and_revision_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "artifacts" / "release-runs").mkdir(parents=True)
+            (root / "artifacts" / "28ff0958291c").mkdir(parents=True)
+            (root / "artifacts" / "not-a-dir.txt").parent.mkdir(parents=True, exist_ok=True)
+            (root / "artifacts" / "not-a-dir.txt").write_text("x", encoding="utf-8")
+            findings = check.tooling_hygiene(root)
+            codes = {item.code for item in findings}
+            self.assertNotIn("TR14.ARTIFACT_UNTRACEABLE_RUN", codes)
+
     def test_tooling_hygiene_is_registered_in_quick_and_preserves_overlay_failure(self) -> None:
         ids = [(spec.id, spec.tier) for spec in check.check_specs()]
         self.assertIn(("tooling-hygiene", "quick"), ids)

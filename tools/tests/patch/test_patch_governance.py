@@ -22,16 +22,15 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
     def setUp(self):
         self.modules = {m.patch_id: m for m in patchset.catalog()}
 
-    def test_1216_requires_1215(self):
-        self.assertEqual(
-            self.modules["1216_rd43_concurrent_join_fusion_guard"].requires,
-            ("1215_rd394041_amd_stream_moe_overlap",),
-        )
+    def test_1216_is_standalone(self):
+        # 2026-09-26: separated from the rejected 1215 -- the guard protects
+        # upstream's own graph-opt concurrent regions.
+        self.assertEqual(self.modules["1216_rd43_concurrent_join_fusion_guard"].requires, ())
 
-    def test_1217_requires_1215_and_1216(self):
+    def test_1217_requires_1216(self):
         self.assertEqual(
             self.modules["1217_rd44_graph_opt_default_rdna35"].requires,
-            ("1215_rd394041_amd_stream_moe_overlap", "1216_rd43_concurrent_join_fusion_guard"),
+            ("1216_rd43_concurrent_join_fusion_guard",),
         )
 
     def test_1205_and_1207_conflict_reciprocally(self):
@@ -44,9 +43,9 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
             self.modules["1207_rd17_moe_topk_down_fold"].conflicts,
         )
 
-    def test_resolve_exact_enforces_1216_requires_1215(self):
+    def test_resolve_exact_enforces_1217_requires_1216(self):
         with self.assertRaises(ValueError) as ctx:
-            patchset.resolve_exact(["1216_rd43_concurrent_join_fusion_guard"])
+            patchset.resolve_exact(["1217_rd44_graph_opt_default_rdna35"])
         self.assertIn("requires explicitly selected", str(ctx.exception))
 
     def test_resolve_exact_enforces_1205_1207_conflict(self):
@@ -54,19 +53,18 @@ class RequiresConflictsBackfillTests(unittest.TestCase):
             patchset.resolve_exact([
                 "1205_rd12_paired_mmvq_dual_output",
                 "1207_rd17_moe_topk_down_fold",
-            ])
+            ], allow_rejected=True)  # 1207 rejected 2026-09-26; the conflict still holds
         self.assertIn("conflicts with selected", str(ctx.exception))
 
     def test_real_recipe_chains_still_resolve_cleanly(self):
         # Regression proof: every existing config/recipes.toml entry naming
-        # 1216/1217 already includes their full REQUIRES chain, so this
-        # backfill must not break real experiment resolution.
+        # 1216/1217 includes their full REQUIRES chain (1217 -> 1216; both
+        # separated from the rejected 1215 on 2026-09-26).
         resolved = patchset.resolve_exact([
-            "1215_rd394041_amd_stream_moe_overlap",
             "1216_rd43_concurrent_join_fusion_guard",
             "1217_rd44_graph_opt_default_rdna35",
         ])
-        self.assertEqual(len(resolved.modules), 3)
+        self.assertEqual(len(resolved.modules), 2)
 
 
 class NoPatchToPatchImportsTests(unittest.TestCase):

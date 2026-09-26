@@ -1,13 +1,14 @@
 schema = 1
 id = "1207_rd17_moe_topk_down_fold"
 order = 1207
-state = "untested"
+state = "rejected"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 plan-item = "RD17"
 external-source = "stew675-rdna-boosts"
-plan-ids = []
+plan-ids = ["RD17"]
+experiment-contract = "RD17-MOE-TOPK-DOWN-FOLD"
 requires = []
 conflicts = ["1205_rd12_paired_mmvq_dual_output"]
 requires-options = []

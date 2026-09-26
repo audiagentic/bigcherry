@@ -68,25 +68,24 @@ class ProjectContext:
             or os.environ.get("BIGCHERRY_ARTIFACT_ROOT")
             or project / "artifacts"
         )
-        if work_root is None:
-            work_root = os.environ.get("BIGCHERRY_WORK_ROOT")
-        if work_root is None:
-            local = os.environ.get("LOCALAPPDATA")
-            if local:
-                work_root = Path(local) / "BigCherry" / "work"
-            else:
-                work_root = Path(
-                    os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
-                ) / "bigcherry"
-        work = _absolute(work_root)
+        # Tool output never defaults into the user profile (LOCALAPPDATA,
+        # ~/.cache, ~): the gitignored project-local work/ is the default so
+        # every run's output stays inside the project folder. An explicit
+        # argument or BIGCHERRY_WORK_ROOT may still point elsewhere (e.g. a
+        # large scratch volume on a campaign host).
+        work = _absolute(
+            work_root
+            or os.environ.get("BIGCHERRY_WORK_ROOT")
+            or project / "work"
+        )
         upstream_was_explicit = upstream_repo is not None
         upstream = _absolute(
             upstream_repo or work / "upstream" / "llama.cpp.git"
         )
-        # The host-local default deliberately nests its bare upstream cache
-        # below the host-local work root.  The guard protects explicit
-        # topology configuration, where aliasing a caller-owned checkout
-        # would let campaign writes mutate it.
+        # The default deliberately nests its bare upstream cache below the
+        # work root.  The guard protects explicit topology configuration,
+        # where aliasing a caller-owned checkout would let campaign writes
+        # mutate it.
         if upstream_was_explicit and _paths_overlap(work, upstream):
             raise ValueError(
                 "work_root and upstream_repo must be disjoint: "

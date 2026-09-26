@@ -16,12 +16,6 @@
 
 #include <hip/hip_runtime_api.h>
 
-extern bool ggml_hip_reduce_telemetry_context_snapshot(
-        void * comm_ctx,
-        const int ** devices,
-        size_t * device_count,
-        const char ** requested_provider);
-
 namespace {
 
 std::mutex g_mutex;
@@ -406,16 +400,12 @@ void ggml_hip_reduce_telemetry_fallback(
 
 void ggml_hip_reduce_telemetry_fallback_context(
         void * comm_ctx,
+        const int * devices,
+        size_t device_count,
+        const char * requested_provider,
         ggml_tensor ** tensors,
         const char * handoff,
         size_t fallback_depth) {
-    const int * devices = nullptr;
-    size_t device_count = 0;
-    const char * requested_provider = nullptr;
-    if (!ggml_hip_reduce_telemetry_context_snapshot(
-            comm_ctx, &devices, &device_count, &requested_provider)) {
-        return;
-    }
     const bool explicitly_requested_meta =
         g_last_comm_ctx == comm_ctx && g_last_requested_provider == "meta";
     ggml_hip_reduce_telemetry_fallback(

@@ -13,10 +13,15 @@ Policy decisions:
   Human confirmation is still required before declaring RDNA3+RDNA4 a global
   obligation; making that expansion here without records would block every
   future promotion.
-* A validated patch is mechanically inadmissible when its current evidence is
-  neither a qualifying record nor an explicitly retained legacy-grandfather
-  record, or when the evidence's base revision no longer equals the live
-  resolved pin.  This is post-selection and fail-closed.
+* A validated patch is admissible with current evidence (qualifying record or
+  retained legacy-grandfather record at the live pin/composition).
+* Performance/qualification evidence is re-established on request, not at
+  every pin bump: evidence that fully qualifies at an earlier pin it was
+  recorded at is admitted as ``carried-forward`` with a warning (shared
+  authority: ``patch.catalog.validation_evidence_statuses(carry_forward=True)``).
+  Any non-pin mismatch, or no eligible record, stays a hard failure.  Hard
+  mechanical validity (applies without conflict, not absorbed upstream) is
+  enforced separately by patch-rebase-check and the apply transaction.
 * Direct apply is hard-fail by default.  ``allow_stale_validation_evidence`` is
   an explicit development escape hatch and returns a warning; it never affects
   the production campaign/build gate.
@@ -112,18 +117,27 @@ def admit(
         allow_legacy_grandfather=allow_legacy_grandfather,
         resolved_base_revision=resolved_base_revision,
         default_validation_architectures=DEFAULT_VALIDATION_ARCHITECTURES,
+        carry_forward=True,
     )
     failures = tuple(
         f"{patch_id}: {('; '.join(check.problems) or check.status)}"
         for patch_id, check in statuses.items()
         if not check.ok
     )
+    carried = tuple(
+        f"{patch_id}: carried-forward ({'; '.join(check.problems)})"
+        for patch_id, check in statuses.items()
+        if check.status == "carried-forward"
+    )
     bootstrap_ready = _has_non_grandfathered_eligible(evidence_root=evidence_root)
     if mode == "production" and not bootstrap_ready:
         return AdmissionResult(True, False, "not-ready", warnings=failures)
     if failures and mode == "apply" and allow_stale_validation_evidence:
-        return AdmissionResult(True, False, "escape-hatch", warnings=failures)
-    return AdmissionResult(not failures, True, "admitted" if not failures else "rejected", failures=failures)
+        return AdmissionResult(True, False, "escape-hatch", warnings=failures + carried)
+    return AdmissionResult(
+        not failures, True, "admitted" if not failures else "rejected",
+        failures=failures, warnings=carried,
+    )
 
 
 def require_admission(*args, **kwargs) -> AdmissionResult:

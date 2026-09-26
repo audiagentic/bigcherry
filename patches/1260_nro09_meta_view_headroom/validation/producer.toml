@@ -1,0 +1,28 @@
+schema = 1
+
+# PNRO09/1260: capacity (correctness-scoped) producer. Not a
+# performance contract lane -- the 1260 change is a compute-container
+# headroom increase (compute_headroom 16 -> 80), and its validation is
+# a capacity proof (the (C) hardware-free boundary test) plus a benignity
+# check on a real recurrent+MTP graph (the (D) hardware lane). The
+# producer builds the control (headroom=16) and subject (headroom=80)
+# meta-backend variants, runs the C++ boundary fixture against each to
+# probe N_max at two independent S values, asserts the ~5x N_max ratio,
+# and records the boundary + real-graph evidence.
+#
+# standard_campaign = "skip": no generic benchmark/correctness/activation
+# lanes -- the producer owns the capacity measurement directly.
+# correctness_evidence_cli / performance_benchmark_cli = "forbid":
+# --correctness-evidence and --run-performance-benchmark are ambiguous
+# with this producer's authoritative capacity evidence.
+[producer.nro09]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "skip"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro09-boundary.json",
+  "nro09-hardware-d.json",
+]

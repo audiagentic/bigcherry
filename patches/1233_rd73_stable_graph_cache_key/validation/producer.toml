@@ -1,0 +1,19 @@
+schema = 1
+
+[producer.rd73]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd73-mtp-lane.json",
+  "rd73-decode-control.json",
+  "rd73-resource.json",
+  "rd73-resource-burst-subject.log",
+  "rd73-correctness.json",
+  "rd73-mtp-subject.log",
+  "rd73-mtp-control.log",
+  "rd73-performance.json",
+]

@@ -1,18 +1,34 @@
 """VA06 next slice: RD73's paired control/subject mtp_verify performance
-lane over a real llama-server HTTP harness (run_rd73_mtp_server_lane()).
+lane over a real llama-server HTTP harness.
+
+PA36 RD73 legacy compatibility retirement: the lane moved from shared
+validation_campaign.py (run_rd73_mtp_server_lane) into RD73's producer
+(patches/1233_rd73_stable_graph_cache_key/validation/producer.py,
+_run_mtp_server_lane). This test now exercises the producer-side lane
+directly.
+
 GPT scoping (session ses_89a3ef2b02b94469): reuse ServerRunner +
 server_completion.py's real request/metrics machinery; target metric is
 client-measured wall_tps, not the server's self-reported predicted_tps.
 Hardware-free: ServerRunner and server_completion's transport/request
-primitives are faked, exercising only this adapter's own control flow.
+primitives are faked, exercising only the lane's own control flow.
+
+Note: the producer's _run_mtp_server_lane returns a TUPLE
+(lane_effect, subject_records, control_records, subject_log, control_log)
+and does NOT write the rd73-mtp-lane.json artifact (that is written by
+the producer's run(); covered by test_patch_validation_campaign_rd73_
+contract_cli.py). The historical test_artifact_written assertion is
+therefore retired with this migration.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -20,26 +36,43 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.bench import server_completion as sc  # noqa: E402
 from bigcherry.experiment import attestation as att  # noqa: E402
 from bigcherry.experiment import server_execution as se  # noqa: E402
-from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
-# VA25: run_rd73_mtp_server_lane() now drives each arm through
-# AttestedServerSession, not raw ServerRunner directly. This fixture's
-# ExecutionIdentity is arbitrary but must be non-empty (see
-# ExecutionIdentity.__post_init__) and is only ever compared against the
-# also-fixed fake attestation below -- the real attestation-content
-# parsing is covered by test_attested_server_session.py and
+PRODUCER_DIR = Path(
+    "patches/1233_rd73_stable_graph_cache_key/validation"
+)
+PRODUCER_MODULE = "patches_1233_rd73_stable_graph_cache_key_validation_producer_va06b"
+
+
+def _load_producer() -> Any:
+    """Load the producer module with the required sys.modules registration."""
+    spec = importlib.util.spec_from_file_location(
+        PRODUCER_MODULE,
+        PRODUCER_DIR / "producer.py",
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[PRODUCER_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+# The producer lane drives each arm through AttestedServerSession; this
+# fixture's ExecutionIdentity is arbitrary but non-empty (see
+# ExecutionIdentity.__post_init__) and is only compared against the
+# also-fixed fake attestation below -- real attestation-content parsing
+# is covered by test_attested_server_session.py and
 # test_execution_attestation.py, not re-tested here.
 _FAKE_EXPECTED_EXECUTION = att.ExecutionIdentity(backend="ROCm", architectures=("gfx1100", "gfx1100"))
 
 
 class _FakeServerRunner:
     """Stands in for tuning.server_runner.ServerRunner -- no real process,
-    no real HTTP -- so this adapter's own orchestration logic (warmup vs.
+    no real HTTP -- so the lane's own orchestration logic (warmup vs.
     measured, arm routing, fail-closed on missing wall_tps) can be tested
-    without a GPU. Exposes launch()/wait_healthy()/shutdown() rather than
-    just the context-manager protocol, matching what AttestedServerSession
-    actually calls (it does not use ``with runner:`` on the wrapped
-    ServerRunner directly)."""
+    without a GPU. Exposes launch()/wait_healthy()/shutdown() matching what
+    AttestedServerSession actually calls (it does not use ``with runner:``
+    on the wrapped ServerRunner directly)."""
 
     instances: list["_FakeServerRunner"] = []
 
@@ -53,10 +86,9 @@ class _FakeServerRunner:
         self.host = kwargs.get("host", "127.0.0.1")
         self.port = kwargs.get("port", 0)
         # Real ServerRunner always creates its log file on launch (stdout
-        # redirect); run_rd73_mtp_server_lane() now reads per-request log
-        # files back (sequential single-request-per-launch restart, a real
-        # hardware fix for control+subject VRAM contention) so the fake
-        # must produce one too.
+        # redirect); the lane reads per-request log files back (sequential
+        # single-request-per-launch restart, a real hardware fix for
+        # control+subject VRAM contention) so the fake must produce one too.
         log_path = kwargs.get("log_path")
         if log_path is not None:
             Path(log_path).parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +123,10 @@ def _fake_corpus():
 
 
 class RunRd73MtpServerLaneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.producer = _load_producer()
+
     def setUp(self) -> None:
         _FakeServerRunner.instances = []
         _FakeServerRunner.concurrent_entries = []
@@ -105,6 +141,16 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+
+    def _make_ctx(self) -> Any:
+        class _Ctx:
+            pass
+
+        ctx = _Ctx()
+        ctx.model = self.model
+        ctx.corpus = self.corpus_path
+        ctx.workdir = self.run_dir
+        return ctx
 
     def _patches(self, wall_tps_by_arm):
         """wall_tps_by_arm: {"control": [values...], "subject": [values...]}
@@ -123,11 +169,11 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
             }
 
         return [
-            # VA25: run_rd73_mtp_server_lane() now goes through
-            # AttestedServerSession, which imports ServerRunner into its OWN
-            # module namespace -- patching sr.ServerRunner (the source
-            # module attribute) would not reach that already-bound name, so
-            # the fake must be installed on server_execution's namespace.
+            # The lane goes through AttestedServerSession, which imports
+            # ServerRunner into its OWN module namespace -- patching
+            # sr.ServerRunner (the source module attribute) would not reach
+            # that already-bound name, so the fake must be installed on
+            # server_execution's namespace.
             mock.patch.object(se, "ServerRunner", _FakeServerRunner),
             # Real attestation-content parsing is tested elsewhere
             # (test_attested_server_session.py, test_execution_attestation.py);
@@ -154,30 +200,32 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         for p in patches:
             p.start()
         self.addCleanup(lambda: [p.stop() for p in patches])
-        return vc.run_rd73_mtp_server_lane(
-            control_binary=self.control_binary, subject_binary=self.subject_binary,
-            model=self.model, corpus_path=self.corpus_path, run_dir=self.run_dir,
+        return self.producer._run_mtp_server_lane(
+            ctx=self._make_ctx(),
+            control_binary=self.control_binary,
+            subject_binary=self.subject_binary,
             expected_execution=_FAKE_EXPECTED_EXECUTION,
+            selector_env={},
             warmup_pairs=1, measured_pairs=3, **kwargs,
         )
 
     def test_subject_faster_than_control_yields_positive_effect(self) -> None:
-        result = self._run({
+        lane_effect, _subject, _control, _subject_log, _control_log = self._run({
             "control": [10.0] * 4,  # 1 warmup + 3 measured
             "subject": [20.0] * 4,
         })
-        self.assertGreater(result["effect"].geometric_effect_pct, 0.0)
+        self.assertGreater(lane_effect.geometric_effect_pct, 0.0)
 
     def test_warmup_requests_are_not_fed_into_statistics(self) -> None:
         # If the warmup pair's values (999.0) leaked into the paired stats,
         # the mean would be pulled far from the measured 10.0/20.0 values.
-        result = self._run({
+        lane_effect, subject_requests, control_requests, _sl, _cl = self._run({
             "control": [999.0, 10.0, 10.0, 10.0],
             "subject": [999.0, 20.0, 20.0, 20.0],
         })
-        self.assertEqual(len(result["control_requests"]), 4)
-        self.assertEqual(len(result["subject_requests"]), 4)
-        self.assertAlmostEqual(result["effect"].geometric_effect_pct, 100.0, delta=1.0)
+        self.assertEqual(len(control_requests), 4)
+        self.assertEqual(len(subject_requests), 4)
+        self.assertAlmostEqual(lane_effect.geometric_effect_pct, 100.0, delta=1.0)
 
     def test_one_server_launched_per_single_request_both_arms(self) -> None:
         # Real hardware fix (2026-09-01): control and subject servers
@@ -201,20 +249,17 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
         self.assertEqual(max(_FakeServerRunner.concurrent_entries), 1)
 
     def test_missing_wall_tps_fails_closed(self) -> None:
-        with self.assertRaises(vc.PatchCampaignError):
+        with self.assertRaises(self.producer.ValidationProducerError):
             self._run({"control": [None] * 4, "subject": [20.0] * 4})
 
     def test_content_retained_for_correctness_lane(self) -> None:
-        result = self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
+        _le, _subject, control_requests, _sl, _cl = self._run({
+            "control": [10.0] * 4, "subject": [20.0] * 4,
+        })
         self.assertEqual(
-            [r["content"] for r in result["control_requests"]],
+            [r["content"] for r in control_requests],
             ["control-0", "control-1", "control-2", "control-3"],
         )
-
-    def test_artifact_written(self) -> None:
-        result = self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
-        self.assertTrue((self.run_dir / "artifacts" / "rd73-mtp-lane.json").is_file())
-        self.assertIsNotNone(result["artifact"])
 
     def test_server_launched_with_real_llama_server_flags(self) -> None:
         # Regression coverage: an earlier draft invented "--spec-n-max"/
@@ -251,9 +296,13 @@ class RunRd73MtpServerLaneTests(unittest.TestCase):
             self.assertEqual(env_overrides.get("BIGCHERRY_RD73_RESOURCE_TRACE"), "1")
 
     def test_returns_server_log_paths_for_activation_and_resource_evidence(self) -> None:
-        result = self._run({"control": [10.0] * 4, "subject": [20.0] * 4})
-        self.assertIn("control_log_path", result)
-        self.assertIn("subject_log_path", result)
+        _le, _subject, _control, subject_log, control_log = self._run({
+            "control": [10.0] * 4, "subject": [20.0] * 4,
+        })
+        self.assertIsInstance(subject_log, Path)
+        self.assertIsInstance(control_log, Path)
+        self.assertTrue(subject_log.is_file())
+        self.assertTrue(control_log.is_file())
 
 
 if __name__ == "__main__":

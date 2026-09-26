@@ -215,12 +215,18 @@ states = ["validated"]
         loaded = config.load(paths.RECIPES)
         self.assertTrue(loaded.pinned)
         self.assertEqual(loaded.sources["llama-native"].patch_sets, ())
+        # PA31: the old aggregate `bigcherry-native` source/`framework`
+        # patch-set were deleted -- bigcherry-qualification-tuning is the
+        # canonical semantic replacement composition.
         self.assertEqual(
-            loaded.sources["bigcherry-native"].patch_sets, ("framework", "upstream-fixes")
+            loaded.sources["bigcherry-qualification-tuning"].patch_sets,
+            ("serving-core", "campaign-support", "qualification-support", "upstream-fixes"),
         )
+        # PA29 cutover (GPT design review req_964ec5fc21c14848): the release
+        # source now composes serving-core, not framework.
         self.assertEqual(
             loaded.sources["bigcherry"].patch_sets,
-            ("framework", "upstream-fixes", "validated-enhancements"),
+            ("serving-core", "upstream-fixes", "validated-enhancements"),
         )
         self.assertEqual(loaded.builds["control"].options, (("GGML_HIP_AUTOTUNE", "ON"),))
         self.assertEqual(loaded.builds["tune"].needs, frozenset({"inventory"}))

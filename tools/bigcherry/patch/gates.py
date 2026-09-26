@@ -8,11 +8,13 @@ immutable request/result types and their ordered composition.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from ..campaign import resolution as campaign_resolution
 from ..core import paths
 from . import catalog as patch_catalog
 from . import docs as patch_docs
@@ -91,6 +93,11 @@ class GateContext:
     validation_baseline_path: Path | None = None
     dispositions_dir: Path = paths.DISPOSITIONS
     source_root: Path | None = None
+    # PA34: the exact selector identity the caller is evaluating. When set,
+    # G2 rejects a fresh report produced under a different selector identity
+    # -- the report must be evidence for THIS selection, not merely a
+    # current one.
+    expected_selector: campaign_resolution.SelectorIdentity | None = None
     rebase_report: Mapping[str, Any] | None = None
     allow_legacy_grandfather: bool = True
     catalog_states: Mapping[str, str] | None = None
@@ -104,9 +111,13 @@ def gate_applies(gate_id: GateId, intent: GateIntent) -> bool:
     applicable = {
         GateIntent.AUTHOR: frozenset((GateId.G0, GateId.G1)),
         GateIntent.VALIDATE: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G3)),
-        GateIntent.PROMOTE: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4, GateId.G5)),
+        GateIntent.PROMOTE: frozenset(
+            (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4, GateId.G5)
+        ),
         GateIntent.REBASE: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G6)),
-        GateIntent.BUILD: frozenset((GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7)),
+        GateIntent.BUILD: frozenset(
+            (GateId.G0, GateId.G1, GateId.G2, GateId.G4, GateId.G6, GateId.G7)
+        ),
         GateIntent.LINT: frozenset((GateId.G1, GateId.G3)),
     }
     return gate_id in applicable[intent]
@@ -117,31 +128,51 @@ def evaluate_composition_gate(context: GateContext) -> GateResult:
     ids = tuple(module.patch_id for module in context.composition.modules)
     try:
         resolved = patchset.resolve_exact(
-            ids, directory=context.patches_dir, allow_rejected=False,
+            ids,
+            directory=context.patches_dir,
+            allow_rejected=False,
         )
     except (OSError, TypeError, ValueError) as exc:
         return GateResult(
-            GateId.G0, GateStatus.BLOCKED, "composition", "patchset.resolve_exact",
+            GateId.G0,
+            GateStatus.BLOCKED,
+            "composition",
+            "patchset.resolve_exact",
             (f"composition could not be resolved: {exc}",),
         )
-    expected = tuple((module.patch_id, module.content_hash) for module in context.composition.modules)
-    actual = tuple((module.patch_id, module.content_hash) for module in resolved.modules)
+    expected = tuple(
+        (module.patch_id, module.content_hash) for module in context.composition.modules
+    )
+    actual = tuple(
+        (module.patch_id, module.content_hash) for module in resolved.modules
+    )
     if actual != expected:
         return GateResult(
-            GateId.G0, GateStatus.BLOCKED, "composition", "patchset.resolve_exact",
+            GateId.G0,
+            GateStatus.BLOCKED,
+            "composition",
+            "patchset.resolve_exact",
             ("resolved composition identity differs from the supplied composition",),
         )
-    return GateResult(GateId.G0, GateStatus.PASS, "composition", "patchset.resolve_exact")
+    return GateResult(
+        GateId.G0, GateStatus.PASS, "composition", "patchset.resolve_exact"
+    )
 
 
 def evaluate_summary_gate(context: GateContext) -> GateResult:
     """Evaluate focal SUMMARY consistency through the scoped authority."""
     try:
-        problems = patch_docs.check_summary_for_patch(context.descriptor, context.patches_dir)
+        problems = patch_docs.check_summary_for_patch(
+            context.descriptor, context.patches_dir
+        )
     except (OSError, TypeError, ValueError) as exc:
-        return GateResult(GateId.G1, GateStatus.BLOCKED, "documentation", "patch.docs", (str(exc),))
+        return GateResult(
+            GateId.G1, GateStatus.BLOCKED, "documentation", "patch.docs", (str(exc),)
+        )
     if problems:
-        return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
+        return GateResult(
+            GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems
+        )
     return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
 
 
@@ -152,7 +183,9 @@ def _evaluate_lint_summary(
     """Evaluate one repository-static SUMMARY gate without fake GateContext."""
     problems = patch_docs.check_summary_for_patch(descriptor, patches_dir)
     if problems:
-        return GateResult(GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems)
+        return GateResult(
+            GateId.G1, GateStatus.FAIL, "documentation", "patch.docs", problems
+        )
     return GateResult(GateId.G1, GateStatus.PASS, "documentation", "patch.docs")
 
 
@@ -176,15 +209,25 @@ def _evaluate_lint_package(
         package_detail = ()
     else:
         return GateResult(
-            GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy",
-            (f"unknown package-policy status {status.status!r} for {descriptor.patch_id!r}",),
+            GateId.G3,
+            GateStatus.BLOCKED,
+            "package",
+            "patch.validation_policy",
+            (
+                f"unknown package-policy status {status.status!r} for {descriptor.patch_id!r}",
+            ),
         )
     if performance_problems:
         return GateResult(
-            GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy",
+            GateId.G3,
+            GateStatus.FAIL,
+            "package",
+            "patch.validation_policy",
             (*package_detail, *performance_problems),
         )
-    return GateResult(GateId.G3, package_status, "package", "patch.validation_policy", package_detail)
+    return GateResult(
+        GateId.G3, package_status, "package", "patch.validation_policy", package_detail
+    )
 
 
 def evaluate_repository_lint_gates(
@@ -201,7 +244,10 @@ def evaluate_repository_lint_gates(
     static policy authorities rather than by fabricating a ``GateContext``.
     """
     registry = patch_registry.load_registry(patches_dir)
-    def evaluate_summaries() -> tuple[tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]]:
+
+    def evaluate_summaries() -> tuple[
+        tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]
+    ]:
         results: list[ScopedGateResult] = []
         problems: list[str] = []
         for descriptor in registry.descriptors:
@@ -210,32 +256,40 @@ def evaluate_repository_lint_gates(
             problems.extend(result.detail)
         return tuple(results), tuple(problems), ()
 
-    def evaluate_packages() -> tuple[tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]]:
+    def evaluate_packages() -> tuple[
+        tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]
+    ]:
         package_report = validation_policy.check_validation_packages(
             root=patches_dir,
             registry_path=patches_dir,
             external_sources_path=external_sources_path,
             baseline_path=validation_baseline_path,
         )
-        package_statuses = {status.patch_id: status for status in package_report.statuses}
+        package_statuses = {
+            status.patch_id: status for status in package_report.statuses
+        }
         performance_problems: list[str] = []
         package_results: list[ScopedGateResult] = []
         for descriptor in registry.descriptors:
             problems = validation_policy.check_performance_evidence_for_patch(
-                descriptor, root=patches_dir, assume_validated=False,
+                descriptor,
+                root=patches_dir,
+                assume_validated=False,
             )
             performance_problems.extend(problems)
             package_results.append(
                 ScopedGateResult(
                     descriptor.patch_id,
                     _evaluate_lint_package(
-                        descriptor, package_statuses.get(descriptor.patch_id), problems,
+                        descriptor,
+                        package_statuses.get(descriptor.patch_id),
+                        problems,
                     ),
                 )
             )
         return (
             tuple(package_results),
-            tuple((*package_report.problems, *performance_problems)),
+            (*package_report.problems, *performance_problems),
             tuple(package_report.grandfathered),
         )
 
@@ -252,8 +306,13 @@ def evaluate_repository_lint_gates(
         evaluator = evaluators.get(gate_id)
         if evaluator is None:
             result = GateResult(
-                gate_id, GateStatus.BLOCKED, "lint", "patch.gates",
-                (f"applicable repository lint gate {gate_id.value} is not implemented",),
+                gate_id,
+                GateStatus.BLOCKED,
+                "lint",
+                "patch.gates",
+                (
+                    f"applicable repository lint gate {gate_id.value} is not implemented",
+                ),
             )
             results.append(ScopedGateResult("<repository>", result))
             problems.extend(result.detail)
@@ -274,21 +333,50 @@ def evaluate_rebase_gate(context: GateContext) -> GateResult:
     """Evaluate G2 through the canonical rebase freshness authority."""
     if context.rebase_report is None:
         return GateResult(
-            GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase",
+            GateId.G2,
+            GateStatus.BLOCKED,
+            "rebase",
+            "patch.rebase",
             ("no rebase report was supplied",),
         )
     if context.source_root is None:
         return GateResult(
-            GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase",
+            GateId.G2,
+            GateStatus.BLOCKED,
+            "rebase",
+            "patch.rebase",
             ("no upstream source root was supplied",),
         )
     try:
-        known_good = rebase.require_fresh_report(context.rebase_report, context.source_root)
+        if context.expected_selector is not None:
+            known_good = rebase.require_fresh_report(
+                context.rebase_report,
+                context.source_root,
+                expected_selector=context.expected_selector,
+            )
+        else:
+            # PA34 (dev-gpt-agent req_41a3133e657340c7 Q1): the no-source
+            # validate/promote path has no named selector to bind an exact
+            # identity against, so G2 binds by the composition's exact
+            # (patch_id, content_hash) pairs instead of a 5th selector kind.
+            known_good = rebase.require_fresh_report(
+                context.rebase_report,
+                context.source_root,
+                required_module_hashes=tuple(
+                    (module.patch_id, module.content_hash)
+                    for module in context.composition.modules
+                ),
+            )
     except (OSError, TypeError, ValueError, rebase.StaleRebaseReportError) as exc:
-        return GateResult(GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase", (str(exc),))
+        return GateResult(
+            GateId.G2, GateStatus.BLOCKED, "rebase", "patch.rebase", (str(exc),)
+        )
     if context.descriptor.patch_id not in known_good:
         return GateResult(
-            GateId.G2, GateStatus.FAIL, "rebase", "patch.rebase",
+            GateId.G2,
+            GateStatus.FAIL,
+            "rebase",
+            "patch.rebase",
             (f"focal patch {context.descriptor.patch_id!r} is not known-good",),
         )
     return GateResult(GateId.G2, GateStatus.PASS, "rebase", "patch.rebase")
@@ -304,22 +392,54 @@ def evaluate_package_gate(context: GateContext) -> GateResult:
             baseline_path=context.validation_baseline_path,
         )
     except (OSError, TypeError, ValueError, validation_policy.PolicyError) as exc:
-        return GateResult(GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy", (str(exc),))
-    status = next((item for item in report.statuses if item.patch_id == context.descriptor.patch_id), None)
+        return GateResult(
+            GateId.G3,
+            GateStatus.BLOCKED,
+            "package",
+            "patch.validation_policy",
+            (str(exc),),
+        )
+    status = next(
+        (
+            item
+            for item in report.statuses
+            if item.patch_id == context.descriptor.patch_id
+        ),
+        None,
+    )
     if status is None:
         return GateResult(
-            GateId.G3, GateStatus.BLOCKED, "package", "patch.validation_policy",
+            GateId.G3,
+            GateStatus.BLOCKED,
+            "package",
+            "patch.validation_policy",
             (f"no package-policy result for {context.descriptor.patch_id!r}",),
         )
     if status.status == "invalid":
-        return GateResult(GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy", status.problems)
+        return GateResult(
+            GateId.G3,
+            GateStatus.FAIL,
+            "package",
+            "patch.validation_policy",
+            status.problems,
+        )
     if status.status == "not-required":
-        return GateResult(GateId.G3, GateStatus.NA, "package", "patch.validation_policy")
+        return GateResult(
+            GateId.G3, GateStatus.NA, "package", "patch.validation_policy"
+        )
     if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
         try:
-            validation_policy.require_execution_package(context.descriptor, root=context.patches_dir)
+            validation_policy.require_execution_package(
+                context.descriptor, root=context.patches_dir
+            )
         except (OSError, TypeError, ValueError, validation_policy.PolicyError) as exc:
-            return GateResult(GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy", (str(exc),))
+            return GateResult(
+                GateId.G3,
+                GateStatus.FAIL,
+                "package",
+                "patch.validation_policy",
+                (str(exc),),
+            )
     performance_problems = validation_policy.check_performance_evidence_for_patch(
         context.descriptor,
         root=context.patches_dir,
@@ -327,10 +447,19 @@ def evaluate_package_gate(context: GateContext) -> GateResult:
     )
     if performance_problems:
         return GateResult(
-            GateId.G3, GateStatus.FAIL, "package", "patch.validation_policy",
+            GateId.G3,
+            GateStatus.FAIL,
+            "package",
+            "patch.validation_policy",
             (*status.problems, *performance_problems),
         )
-    return GateResult(GateId.G3, GateStatus.PASS, "package", "patch.validation_policy", status.problems)
+    return GateResult(
+        GateId.G3,
+        GateStatus.PASS,
+        "package",
+        "patch.validation_policy",
+        status.problems,
+    )
 
 
 def evaluate_evidence_gate(context: GateContext) -> GateResult:
@@ -342,12 +471,17 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
     actual evidence result.
     """
     try:
-        framework_configuration = validation_policy.is_framework_configuration_patch(context.descriptor)
+        framework_configuration = validation_policy.is_framework_configuration_patch(
+            context.descriptor
+        )
     except AttributeError:
         framework_configuration = False
     if context.intent is GateIntent.PROMOTE and framework_configuration:
         return GateResult(
-            GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+            GateId.G4,
+            GateStatus.BLOCKED,
+            "evidence",
+            "patch.catalog",
             ("framework PROMOTE requires the prospective canonical-composition seam",),
         )
     try:
@@ -361,45 +495,90 @@ def evaluate_evidence_gate(context: GateContext) -> GateResult:
             resolved_base_revision=context.resolved_base_revision,
             assume_validated=(
                 frozenset((context.descriptor.patch_id,))
-                if context.intent is GateIntent.PROMOTE else frozenset()
+                if context.intent is GateIntent.PROMOTE
+                else frozenset()
             ),
+            # Building may use pin-stale qualification (revalidate on
+            # request); promotion always needs current evidence.
+            carry_forward=context.intent is GateIntent.BUILD,
         )
-    except (OSError, TypeError, ValueError, patch_catalog.patch_validation_evidence.ValidationEvidenceError) as exc:
-        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog", (str(exc),))
+    except (
+        OSError,
+        TypeError,
+        ValueError,
+        patch_catalog.patch_validation_evidence.ValidationEvidenceError,
+    ) as exc:
+        return GateResult(
+            GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog", (str(exc),)
+        )
 
     status = statuses.get(context.descriptor.patch_id)
     if status is None:
         return GateResult(
-            GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
+            GateId.G4,
+            GateStatus.BLOCKED,
+            "evidence",
+            "patch.catalog",
             (f"no evidence result for {context.descriptor.patch_id!r}",),
         )
     evidence_status = getattr(status, "status", None)
     evidence_ok = getattr(status, "ok", None)
-    recognized_ok_statuses = frozenset({
-        "not-required", "validated-evidence", "legacy-grandfathered",
-        "ported-benched-evidence", "deferred-hardware-evidence",
-        "framework-configuration-evidence",
-    })
+    recognized_ok_statuses = frozenset(
+        {
+            "not-required",
+            "validated-evidence",
+            "legacy-grandfathered",
+            "ported-benched-evidence",
+            "deferred-hardware-evidence",
+            "framework-configuration-evidence",
+            # Build-only (carry_forward=True): qualified at an earlier pin;
+            # PASS with the revalidate-on-request note as its problem text.
+            "carried-forward",
+        }
+    )
     recognized_statuses = recognized_ok_statuses | {"missing-or-stale"}
     expected_ok = evidence_status in recognized_ok_statuses
-    if (not isinstance(evidence_status, str) or evidence_status not in recognized_statuses
-            or not isinstance(evidence_ok, bool) or evidence_ok is not expected_ok):
-        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
-                          ("evidence returned a malformed result",))
+    if (
+        not isinstance(evidence_status, str)
+        or evidence_status not in recognized_statuses
+        or not isinstance(evidence_ok, bool)
+        or evidence_ok is not expected_ok
+    ):
+        return GateResult(
+            GateId.G4,
+            GateStatus.BLOCKED,
+            "evidence",
+            "patch.catalog",
+            ("evidence returned a malformed result",),
+        )
     problems = getattr(status, "problems", None)
-    if not isinstance(problems, (tuple, list)) or not all(isinstance(item, str) for item in problems):
-        return GateResult(GateId.G4, GateStatus.BLOCKED, "evidence", "patch.catalog",
-                          ("evidence returned malformed problems",))
+    if not isinstance(problems, (tuple, list)) or not all(
+        isinstance(item, str) for item in problems
+    ):
+        return GateResult(
+            GateId.G4,
+            GateStatus.BLOCKED,
+            "evidence",
+            "patch.catalog",
+            ("evidence returned malformed problems",),
+        )
     if evidence_status == "not-required":
         if context.intent in (GateIntent.VALIDATE, GateIntent.PROMOTE):
             return GateResult(
-                GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog",
+                GateId.G4,
+                GateStatus.FAIL,
+                "evidence",
+                "patch.catalog",
                 ("validation or promotion requires an evidence obligation",),
             )
         return GateResult(GateId.G4, GateStatus.NA, "evidence", "patch.catalog")
     if not evidence_ok:
-        return GateResult(GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", tuple(problems))
-    return GateResult(GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", tuple(problems))
+        return GateResult(
+            GateId.G4, GateStatus.FAIL, "evidence", "patch.catalog", tuple(problems)
+        )
+    return GateResult(
+        GateId.G4, GateStatus.PASS, "evidence", "patch.catalog", tuple(problems)
+    )
 
 
 def evaluate_admission_gate(context: GateContext) -> GateResult:
@@ -421,60 +600,108 @@ def evaluate_admission_gate(context: GateContext) -> GateResult:
             allow_legacy_grandfather=context.allow_legacy_grandfather,
         )
     except (OSError, TypeError, ValueError, AttributeError) as exc:
-        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", (str(exc),))
+        return GateResult(
+            GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", (str(exc),)
+        )
 
     status = getattr(result, "status", None)
     admissible = getattr(result, "admissible", None)
     gate_active = getattr(result, "gate_active", None)
     raw_failures = getattr(result, "failures", None)
     raw_warnings = getattr(result, "warnings", None)
-    if (not isinstance(raw_failures, (tuple, list)) or not isinstance(raw_warnings, (tuple, list))
-            or not all(isinstance(item, str) for item in (*raw_failures, *raw_warnings))):
-        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
-                          ("admission returned malformed failures or warnings",))
+    if (
+        not isinstance(raw_failures, (tuple, list))
+        or not isinstance(raw_warnings, (tuple, list))
+        or not all(isinstance(item, str) for item in (*raw_failures, *raw_warnings))
+    ):
+        return GateResult(
+            GateId.G7,
+            GateStatus.BLOCKED,
+            "admission",
+            "patch_admission",
+            ("admission returned malformed failures or warnings",),
+        )
     failures = tuple(raw_failures)
     warnings = tuple(raw_warnings)
-    if not isinstance(status, str) or not isinstance(admissible, bool) or not isinstance(gate_active, bool):
+    if (
+        not isinstance(status, str)
+        or not isinstance(admissible, bool)
+        or not isinstance(gate_active, bool)
+    ):
         return GateResult(
-            GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
+            GateId.G7,
+            GateStatus.BLOCKED,
+            "admission",
+            "patch_admission",
             ("admission returned a malformed result",),
         )
     # An inactive admission gate is not an approval, regardless of any
     # provisional status/admissible fields carried beside it.
     if not gate_active:
-        return GateResult(GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", warnings)
+        return GateResult(
+            GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission", warnings
+        )
     if status == "admitted" and admissible and not failures:
-        return GateResult(GateId.G7, GateStatus.PASS, "admission", "patch_admission", warnings)
+        return GateResult(
+            GateId.G7, GateStatus.PASS, "admission", "patch_admission", warnings
+        )
     if status == "rejected" and not admissible:
-        return GateResult(GateId.G7, GateStatus.FAIL, "admission", "patch_admission", failures or warnings)
+        return GateResult(
+            GateId.G7,
+            GateStatus.FAIL,
+            "admission",
+            "patch_admission",
+            failures or warnings,
+        )
     return GateResult(
-        GateId.G7, GateStatus.BLOCKED, "admission", "patch_admission",
+        GateId.G7,
+        GateStatus.BLOCKED,
+        "admission",
+        "patch_admission",
         (f"inconsistent or unrecognized admission result status {status!r}",),
     )
 
 
 def evaluate_disposition_gate(context: GateContext) -> GateResult:
     """Evaluate G6 through the revision-bound disposition coverage authority."""
-    if (context.catalog_states is None or context.coverage_report is None
-            or context.recipe_patch_ids is None or context.target_revision is None):
+    if (
+        context.catalog_states is None
+        or context.coverage_report is None
+        or context.recipe_patch_ids is None
+        or context.target_revision is None
+    ):
         return GateResult(
-            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            GateId.G6,
+            GateStatus.BLOCKED,
+            "disposition",
+            "patch.disposition",
             ("complete disposition coverage inputs were not supplied",),
         )
     if context.source_root is None:
         return GateResult(
-            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            GateId.G6,
+            GateStatus.BLOCKED,
+            "disposition",
+            "patch.disposition",
             ("no upstream source root was supplied",),
         )
-    selection = context.coverage_report.get("selection")
-    if not isinstance(selection, Mapping) or selection.get("all_patches") is not True:
+    selector = context.coverage_report.get("selector")
+    if not isinstance(selector, Mapping) or selector.get("selector_kind") != (
+        campaign_resolution.SELECTOR_KIND_ALL_PATCHES
+    ):
         return GateResult(
-            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            GateId.G6,
+            GateStatus.BLOCKED,
+            "disposition",
+            "patch.disposition",
             ("coverage report is not an all-patches report",),
         )
     if context.coverage_report.get("upstream_revision") != context.target_revision:
         return GateResult(
-            GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition",
+            GateId.G6,
+            GateStatus.BLOCKED,
+            "disposition",
+            "patch.disposition",
             ("coverage report upstream revision does not match target revision",),
         )
     try:
@@ -488,15 +715,29 @@ def evaluate_disposition_gate(context: GateContext) -> GateResult:
         )
         complete = getattr(coverage, "complete", None)
         uncovered = getattr(coverage, "uncovered_patch_ids", None)
-        if (not isinstance(complete, bool) or not isinstance(uncovered, (tuple, list))
-                or not all(isinstance(item, str) for item in uncovered)):
+        if (
+            not isinstance(complete, bool)
+            or not isinstance(uncovered, (tuple, list))
+            or not all(isinstance(item, str) for item in uncovered)
+        ):
             raise TypeError("disposition coverage returned malformed fields")
     except (OSError, TypeError, ValueError, AttributeError) as exc:
-        return GateResult(GateId.G6, GateStatus.BLOCKED, "disposition", "patch.disposition", (str(exc),))
+        return GateResult(
+            GateId.G6,
+            GateStatus.BLOCKED,
+            "disposition",
+            "patch.disposition",
+            (str(exc),),
+        )
     if complete:
-        return GateResult(GateId.G6, GateStatus.PASS, "disposition", "patch.disposition")
+        return GateResult(
+            GateId.G6, GateStatus.PASS, "disposition", "patch.disposition"
+        )
     return GateResult(
-        GateId.G6, GateStatus.FAIL, "disposition", "patch.disposition",
+        GateId.G6,
+        GateStatus.FAIL,
+        "disposition",
+        "patch.disposition",
         tuple(uncovered),
     )
 
@@ -528,7 +769,10 @@ def evaluate_patch_gates(context: GateContext) -> tuple[GateResult, ...]:
                 evaluate_lifecycle_gate(context, results_by_id)
                 if gate_id is GateId.G5
                 else GateResult(
-                    gate_id, GateStatus.BLOCKED, "lifecycle", "patch.gates",
+                    gate_id,
+                    GateStatus.BLOCKED,
+                    "lifecycle",
+                    "patch.gates",
                     ("applicable gate is not implemented",),
                 )
             )
@@ -547,24 +791,34 @@ def evaluate_lifecycle_gate(
     if context.intent is not GateIntent.PROMOTE:
         return GateResult(GateId.G5, GateStatus.NA, "lifecycle", "patch.catalog")
     module = next(
-        (item for item in context.composition.modules
-         if item.patch_id == context.descriptor.patch_id),
+        (
+            item
+            for item in context.composition.modules
+            if item.patch_id == context.descriptor.patch_id
+        ),
         None,
     )
     if module is None:
         return GateResult(
-            GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.catalog",
+            GateId.G5,
+            GateStatus.BLOCKED,
+            "lifecycle",
+            "patch.catalog",
             ("focal patch is absent from the resolved composition",),
         )
     if getattr(module, "state", None) != "untested":
         return GateResult(GateId.G5, GateStatus.NA, "lifecycle", "patch.catalog")
     missing = tuple(
-        gate_id.value for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
+        gate_id.value
+        for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
         if gate_id not in prior_results
     )
     if missing:
         return GateResult(
-            GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates",
+            GateId.G5,
+            GateStatus.BLOCKED,
+            "lifecycle",
+            "patch.gates",
             ("missing prerequisite gate results: " + ", ".join(missing),),
         )
     blocked = tuple(
@@ -573,12 +827,16 @@ def evaluate_lifecycle_gate(
         if prior_results[gate_id].status is GateStatus.BLOCKED
     )
     if blocked:
-        return GateResult(GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates", blocked)
+        return GateResult(
+            GateId.G5, GateStatus.BLOCKED, "lifecycle", "patch.gates", blocked
+        )
     failures = tuple(
         f"{gate_id.value}={prior_results[gate_id].status.value}"
         for gate_id in (GateId.G0, GateId.G1, GateId.G2, GateId.G3, GateId.G4)
         if prior_results[gate_id].status is not GateStatus.PASS
     )
     if failures:
-        return GateResult(GateId.G5, GateStatus.FAIL, "lifecycle", "patch.gates", failures)
+        return GateResult(
+            GateId.G5, GateStatus.FAIL, "lifecycle", "patch.gates", failures
+        )
     return GateResult(GateId.G5, GateStatus.PASS, "lifecycle", "patch.gates")

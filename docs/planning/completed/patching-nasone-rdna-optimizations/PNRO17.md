@@ -33,31 +33,17 @@ Remaining, if ever revisited (low priority, does not block anything -- the worki
 
 ## Detailed Solution & Technical Design
 
-
-
 ## Code Samples & Guidance
-
-
 
 ## Files
 
-
-
 ## Validation
-
-
 
 ## Effort & Risk
 
-
-
 ## Standards
 
-
-
 ## Acceptance Criteria
-
-
 
 ## Notes
 
@@ -71,3 +57,7 @@ Filed from PVPS02's real-hardware merge-gate run (2026-09-11); root-caused and f
 - 2026-09-11T10:33:24.107336+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-11T10:59:58.433341+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:notes
 - 2026-09-11T11:00:03.922226+00:00 (state-transition): State: pending → completed
+
+## Ledger-events
+
+- 2026-09-11T11:00:03+00:00 (state-transition): State: pending → completed

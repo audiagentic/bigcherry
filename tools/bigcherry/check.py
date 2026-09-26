@@ -94,6 +94,95 @@ _PROTECTED_DOMAINS = frozenset(
     }
 )
 _PATH_AUTHORITY_FILES = frozenset({"tools/bigcherry/core/paths.py"})
+# Structural artifacts/ subdirectories that are code-owned (not one run's raw
+# evidence) and therefore exempt from the run-id/docs-evidence traceability
+# check below; see docs/reference/tooling/TOOLING.md's "Evidence and
+# acceptance boundaries" section.
+_ARTIFACTS_STRUCTURAL_ALLOWLIST = frozenset(
+    {
+        "logs",
+        "lab",
+        "pin-bump",
+        "patch-validation",
+        "release-runs",
+        "release-validation",
+    }
+)
+_ARTIFACTS_REVISION_DIR_RE = re.compile(r"^[0-9a-f]{12}$")
+# Host-specific values (machine mount points, user home directories, drive
+# roots, private addresses) must never be committed in config or production
+# tooling; they come from config/environment.local.toml or the environment.
+_HOST_SPECIFIC_RE = re.compile(
+    r"/mnt/[A-Za-z0-9]"
+    r"|/home/[a-z][a-z0-9_-]*/"
+    r"|\b[A-Za-z]:[\\/](?:Users|Program Files|development|[a-z]+-)"
+    r"|\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"
+)
+# Production tooling must never default its output into the user profile or
+# an ad hoc drive root; output belongs under the project (artifacts/, work/
+# via bigcherry.core.context.ProjectContext / core.paths).
+_USER_FOLDER_DEFAULT_RE = re.compile(
+    r"Path\.home\(\)"
+    r"|expanduser\(\s*[\"']~"
+    r"|Path\(\s*[\"']~"
+    r"|[\"'](?:LOCAL)?APPDATA[\"']"
+    r"|[\"']XDG_(?:CACHE|DATA|STATE)_HOME[\"']"
+    r"|[\"']USERPROFILE[\"']"
+    r"|tempfile\.gettempdir\(\)"
+    r"|r?[\"'][A-Za-z]:[\\/]"
+)
+_ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _referenced_artifact_names(root: Path) -> frozenset[str]:
+    """Names cited as ``artifacts/<name>`` anywhere under docs/ or patches/.
+
+    The project's real evidence convention pairs a short ``artifacts/<name>``
+    raw-data directory with a date-prefixed ``docs/evidence/YYYY-MM-DD-<name
+    or a related slug>/`` write-up that cross-references it by text, not by
+    identical directory name (e.g. ``docs/evidence/2026-09-08-HI168-e2e/``
+    citing ``artifacts/hi168-e2e-results/``). An exact-name-only check
+    against ``docs/evidence/`` produces false positives for every dir named
+    this way, so traceability is real if the name is cited anywhere in
+    tracked prose, not only when the two directory names match verbatim.
+    """
+    names: set[str] = set()
+    for base in (root / "docs", root / "patches"):
+        if not base.is_dir():
+            continue
+        for md_path in base.rglob("*.md"):
+            try:
+                text = md_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            for match in _ARTIFACTS_REFERENCE_RE.finditer(text):
+                names.add(match.group(1).rstrip("/").rstrip("`").rstrip("'\"").lower())
+    return frozenset(names)
+
+
+_EVIDENCE_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def _evidence_slugs(root: Path) -> frozenset[str]:
+    """``docs/evidence/<dir>`` names, date-prefix stripped and lowercased.
+
+    Pairs with ``_referenced_artifact_names``: some ``docs/evidence/YYYY-MM-DD-
+    <slug>/`` write-ups cite their raw ``artifacts/<name>/`` counterpart by
+    name in prose (caught there); others are simply the curated copy of the
+    same run and never spell the artifacts path out, but the two directory
+    names agree once the date prefix is stripped (e.g.
+    ``docs/evidence/2026-09-08-TO02-HI16-gpu0/`` <-> ``artifacts/
+    to02-hi16-gpu0/``).
+    """
+    evidence_root = root / "docs" / "evidence"
+    if not evidence_root.is_dir():
+        return frozenset()
+    slugs: set[str] = set()
+    for entry in evidence_root.iterdir():
+        if not entry.is_dir():
+            continue
+        slugs.add(_EVIDENCE_DATE_PREFIX_RE.sub("", entry.name).lower())
+    return frozenset(slugs)
 _DISPOSITION_ROW = re.compile(
     r"^\|\s*`(?P<path>[^`]+)`\s*\|\s*\*\*(?P<disposition>[A-Z-]+)\*\*\s*\|"
 )
@@ -697,6 +786,94 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                     path,
                     "disposition map marks this path DELETE but it still exists",
                     "complete caller/reference proof, then remove it in the owning migration slice",
+                )
+            )
+
+    if product_root.is_dir():
+        for path in sorted(product_root.rglob("*.py")):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            for number, line in enumerate(lines, start=1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if _USER_FOLDER_DEFAULT_RE.search(line):
+                    findings.append(
+                        _diagnostic(
+                            root,
+                            "TR14.USER_FOLDER_DEFAULT",
+                            "error",
+                            path,
+                            f"line {number} defaults output outside the project "
+                            "(user profile, temp dir, or hardcoded drive root)",
+                            "derive the location from bigcherry.core.context."
+                            "ProjectContext (work_root/artifacts_root) or "
+                            "bigcherry.core.paths; external locations must be "
+                            "explicit arguments or BIGCHERRY_* environment overrides",
+                        )
+                    )
+
+    host_scan: list[Path] = []
+    config_root = root / "config"
+    if config_root.is_dir():
+        host_scan += [
+            p for p in sorted(config_root.glob("*.toml"))
+            if not p.name.endswith((".example.toml", ".local.toml"))
+        ]
+    for sub in (tools_root / "env", product_root):
+        if sub.is_dir():
+            host_scan += sorted(p for p in sub.rglob("*") if p.is_file() and p.suffix in {".py", ".sh", ".ps1", ".toml"})
+    for path in host_scan:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for number, line in enumerate(lines, start=1):
+            if _HOST_SPECIFIC_RE.search(line):
+                findings.append(
+                    _diagnostic(
+                        root,
+                        "TR14.HOST_SPECIFIC_VALUE",
+                        "error",
+                        path,
+                        f"line {number} commits a host-specific location or address",
+                        "use a project-relative path, a ${VAR} reference, "
+                        "config/environment.local.toml (untracked), or a "
+                        "BIGCHERRY_* environment variable",
+                    )
+                )
+
+    artifacts_root = root / "artifacts"
+    evidence_root = root / "docs" / "evidence"
+    if artifacts_root.is_dir():
+        referenced_names = _referenced_artifact_names(root)
+        evidence_slugs = _evidence_slugs(root)
+        for path in sorted(artifacts_root.iterdir(), key=lambda item: item.name):
+            name = path.name
+            if not path.is_dir():
+                continue
+            if name in _ARTIFACTS_STRUCTURAL_ALLOWLIST:
+                continue
+            if _ARTIFACTS_REVISION_DIR_RE.match(name):
+                continue
+            if (evidence_root / name).is_dir():
+                continue
+            if name.lower() in referenced_names:
+                continue
+            if name.lower() in evidence_slugs:
+                continue
+            findings.append(
+                _diagnostic(
+                    root,
+                    "TR14.ARTIFACT_UNTRACEABLE_RUN",
+                    "warning",
+                    path,
+                    "artifacts/ run directory has no plan-item-traceable name and "
+                    "no matching docs/evidence/ counterpart",
+                    "name it after the owning plan-item ID via "
+                    "bigcherry.core.paths.evidence_dir(), or add a "
+                    "docs/evidence/<name>/ record if it holds curated proof",
                 )
             )
 

@@ -1,0 +1,110 @@
+{
+  "campaign_run_id": "pa30-g4-tuning-smoke-v2",
+  "correctness": {
+    "build_plan_id": "4f8ecfcb00c70b73b4d2e7595333ddaa",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-correctness-b91ce188ac82/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-correctness-b91ce188ac82",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/aaf075f01d85b65d17187c440e571192",
+    "source_slice_id": "ad2a79273efa72f5ef60cab089110d4f"
+  },
+  "devices": "0",
+  "dispatch_cache_path": "/home/audumla/pa30-artifacts/pa30-g4/workdir-v2/dispatch.cache",
+  "effective_tune_context": 4096,
+  "finished_at": "2026-09-15T11:20:50Z",
+  "model_path": "/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf",
+  "platform_name": "linux-multi",
+  "promoted_after_evidence": 19,
+  "promoted_before_evidence": 0,
+  "quarantined_unsupported_winners": 5,
+  "record": {
+    "build_plan_id": "d159ba55b9937b8a5b7cc71995c8a7d6",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-record-8f2b61da2203/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-record-8f2b61da2203",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/1064dcc0152398d3b6b530ec24b2d8f6",
+    "source_slice_id": "247df25be36052bec0527e84c2babc94"
+  },
+  "replay": {
+    "build_plan_id": "fa79df41d0d9f83d28c0b8b15d275a92",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-replay-8d75a6524a96/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-replay-8d75a6524a96",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/1064dcc0152398d3b6b530ec24b2d8f6",
+    "source_slice_id": "247df25be36052bec0527e84c2babc94"
+  },
+  "replay_coverage": {
+    "behavioral_gate_contract_version": "hi143-v1",
+    "behavioral_gate_report_digest": "7d3d82a812fe8987b1b36c33875de36c6af787b169147f0d67a8e9770fb53ed9",
+    "behavioral_gate_report_path": "/home/audumla/pa30-artifacts/pa30-g4/workdir-v2/behavioral-gate.json",
+    "corpus_content_digest": "45e88870533191789d0e1753a703620924933ae78ad5bc97b5e03316d8ac56f1",
+    "corpus_edition_id": "single-card-dense-v1",
+    "families": {
+      "blas": {
+        "dispatched": 1512,
+        "executed": 1512
+      },
+      "mmf": {
+        "dispatched": 360,
+        "executed": 360
+      },
+      "mmq": {
+        "dispatched": 720,
+        "executed": 720
+      },
+      "mmvf": {
+        "dispatched": 792,
+        "executed": 792
+      },
+      "mmvq": {
+        "dispatched": 2511,
+        "executed": 2511
+      }
+    },
+    "hit_log": {
+      "exists": true,
+      "path": "hip-dispatch-hit-log.jsonl",
+      "records": 67
+    },
+    "observation_role": "diagnostic-companion",
+    "production_build_plan_id": "fa79df41d0d9f83d28c0b8b15d275a92",
+    "replay": {
+      "candidate_unavailable": 0,
+      "entries": 62,
+      "exact": 40,
+      "incompatible": 0,
+      "miss_log_calls": 0,
+      "misses": 27,
+      "rerun_required": 0,
+      "schema_version": 2,
+      "stale": false
+    },
+    "runtime_profile_digest": "8e0d6cf0c9e76d91ec9742d994d920e81a1a024f8a083933337550b8ce879b58",
+    "total_dispatched": 5895,
+    "total_executed": 5895,
+    "validated_cache_digest": "ca2bf9b30f2e2eee54ed1cd7af2b31d6221a31398efc3f39063c2e1c10303c68",
+    "validation_build_plan_id": "b293e9a9ac658f03f37048698c1166ae"
+  },
+  "replay_validation": {
+    "build_plan_id": "b293e9a9ac658f03f37048698c1166ae",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-replay-diagnostic-835b0d413f9d/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-replay-diagnostic-835b0d413f9d",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/1064dcc0152398d3b6b530ec24b2d8f6",
+    "source_slice_id": "247df25be36052bec0527e84c2babc94"
+  },
+  "runtime_profile_name": "production-safe-single",
+  "schema_version": 4,
+  "signature_verifier": {
+    "build_plan_id": "eaa96327fb440c8738af865f86abf8ff",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-signature-verifier-c5fa2f154192/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-signature-verifier-c5fa2f154192",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/aaf075f01d85b65d17187c440e571192",
+    "source_slice_id": "ad2a79273efa72f5ef60cab089110d4f"
+  },
+  "started_at": "2026-09-15T11:14:48Z",
+  "tune": {
+    "build_plan_id": "4749591016645cb2227e0495141fffb6",
+    "manifest_path": "/home/audumla/.cache/bigcherry/artifacts-store/runs/pa30-g4-tuning-smoke-v2-tune-43014b6cee62/generate/hip-autotune-manifest.json",
+    "run_id": "pa30-g4-tuning-smoke-v2-tune-43014b6cee62",
+    "source_root": "/home/audumla/.cache/bigcherry/sources/1064dcc0152398d3b6b530ec24b2d8f6",
+    "source_slice_id": "247df25be36052bec0527e84c2babc94"
+  },
+  "verified_winners": 62
+}

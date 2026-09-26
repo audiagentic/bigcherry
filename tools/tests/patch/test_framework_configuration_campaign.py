@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 
 class FrameworkConfigurationCampaignTests(unittest.TestCase):
@@ -72,7 +73,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
                  mock.patch.object(evidence, "write_record", side_effect=lambda record: records.append(record) or work / "record.json"):
                 result = vc._run_framework_configuration(args, descriptor, SimpleNamespace(pinned="pin"))
             self.assertEqual(result, 0)
-            self.assertEqual(set(records[0]["check_results"]), {"apply", "build", "coverage-source-selection"})
+            self.assertEqual(set(records[0]["check_results"]), {"apply", "build", "serving-source-selection"})
             self.assertTrue(records[0]["eligible_for_validated_state"])
             self.assertFalse(records[0]["hardware_execution_qualified"])
 
@@ -96,7 +97,7 @@ class FrameworkConfigurationCampaignTests(unittest.TestCase):
             root = Path(d)
             source = root / "source"
             source.mkdir()
-            vc.build_tree(
+            campaign_build.build_tree(
                 name="production", extra_cmake_args=[], hip_path=root / "rocm",
                 amdgpu_targets="gfx1201", workdir=root / "build", targets=["llama-server"],
                 source=source, generated_proof_callback=lambda phase, _: phases.append(phase),

@@ -2,7 +2,7 @@
 id: PRBE35
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: in_progress
 created-at: '2026-09-09T10:55:53.286868+00:00'
 breadth: ''
 skill: advanced
@@ -15,35 +15,42 @@ priority: null
 
 ## Description
 
-Protect the concurrent-region join node from graph fusion after PRBE34 shared-expert overlap; this is a mandatory prerequisite for graph-opt defaulting.
+IMPLEMENTED-AS-PATCH. Patch 1216_rd43_concurrent_join_fusion_guard (state=untested) lowers cgraph->n_nodes around ggml_cuda_try_fuse while a concurrent region (from patch 1215) is active, so op-fusion cannot absorb the join node. This item already has extensive real hardware evidence recorded in its own notes: PASS on gfx1201 capture/replay, byte-exact full-vocab backend_reference match (0/15,892,480 differ) vs baseline+1215, and a fully-scoped, GPT-approved design (req_3e42043eb71a4a92) for the one remaining formal step: wiring run_rd43_contract_qualification() into validation_campaign.py. No further design work or GPT session is needed for this item -- the remaining work is mechanical implementation of an already-approved design.
 
 ## Steps
 
-- Require PRBE34 exact shared-expert concurrency identity.
-- Guard graph fusion so the concurrent-region join remains present and aux stream rejoin semantics are preserved.
-- Run repeated graph capture/replay on MoE decode with graph-opt on, plus graph-opt-off and dense controls.
-- Verify no capture abort, output parity and no material ordinary regression.
-- Do not enable PRBE36 default-on until this protection passes.
+1. Author run_rd43_contract_qualification() in tools/bigcherry/patch/validation_campaign.py following the RD08/RD73 pattern already used in that file: control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, reuse the existing PPL-equality primitive (tools/bigcherry/experiment/perplexity.py) but emit CorrectnessResult(check_id="backend_reference", ...) explicitly per the design in this item's 2026-09-12 notes.
+2. Correct the [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model binding in config/experiment-contracts.toml to tierM-qwen35b-a3b-moe-mtp (the model the real evidence was actually gathered on), matching the same fix already applied to RD39-42's contract per the VA24 migration note below.
+3. Author validation.toml for 1216 binding the corrected contract and the new qualification function.
+4. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216; this requires real hardware (Brutus) and is not run from this planning session.
+5. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
+
+1. Author run_rd43_contract_qualification() in tools/bigcherry/patch/validation_campaign.py -- verified: no such central runner currently exists (only run_rd08_contract_qualification()-style single-op patterns exist; there is no generic contract-qualification dispatcher). Follow the RD08 pattern: control=baseline+1215, subject=baseline+1215+1216, GGML_CUDA_GRAPH_OPT=1 both arms, emit CorrectnessResult(check="backend_reference", ...) explicitly -- do NOT reuse the existing patch-local producer's current check="ppl_equality" output as-is; it must be relabeled/re-emitted under check="backend_reference" per the RD43-CONCURRENT-JOIN-FUSION-GUARD contract's actual requirement.
+2. Confirm the [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model binding in config/experiment-contracts.toml already correctly names tierM-qwen35b-a3b-moe-mtp (the VA24 migration note below already fixed this) -- do not re-apply a now-stale 'correct the binding' step; verify only.
+3. Add `experiment-contract = "RD43-CONCURRENT-JOIN-FUSION-GUARD"` to patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (verified: currently no experiment-contract binding field present).
+4. Author patches/1216_rd43_concurrent_join_fusion_guard/validation.toml binding the corrected contract and the new qualification function; a validation/ directory already exists for this patch (has a prior rd43_correctness.py-style producer per notes) -- update/extend it in place rather than creating a duplicate.
+5. Run patch-verify-evidence to confirm eligible_for_validated_state for 1216 (hardware, Brutus, not run here).
+6. Do not enable PRBE36 (default-on) until this item's contract-qualification verdict is formally recorded.
 
 ## Detailed Solution & Technical Design
 
-Capability owner: patching
-
-Split assessment: One independent boundary; Build/Run support is a dependency.
-
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+See this item's own 2026-09-12 notes entries ("full GPT design for the formal qualification runners", req_3e42043eb71a4a92) for the complete, already-approved design: a shared _run_decode_logit_reference_pair() primitive plus two contract-specific runner functions (run_rd39_42_contract_qualification for 1215's bit_identical leg, run_rd43_contract_qualification for 1216's backend_reference leg, reusing the PPL-equality primitive). Only run_rd43_contract_qualification() plus the contract model-binding fix remain unimplemented for this item specifically; 1215's own bit_identical work is tracked under PRBE34.
 
 ## Code Samples & Guidance
 
-
+Follow the exact pattern of the existing run_rd08_contract_qualification()/run_rd73_contract_qualification() functions in tools/bigcherry/patch/validation_campaign.py (read one of these first for the real function signature/CorrectnessResult/EvidenceRecord conventions before authoring run_rd43_contract_qualification()). No new patch package needed -- 1216 already exists (patch.py/patch.toml/README.md); this item's remaining work is validation-campaign wiring plus contract-file correction, not patch edits.
 
 ## Files
 
-Graph fusion eligibility around concurrent-region join; PRBE34 scheduler; capture/replay fixtures; MoE/dense controls; trace and output evidence.
+tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD] model-binding fix); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/README.md (already documents the real evidence).
+
+tools/bigcherry/patch/validation_campaign.py (add run_rd43_contract_qualification); patches/1216_rd43_concurrent_join_fusion_guard/patch.toml (add experiment-contract binding); config/experiment-contracts.toml ([contract.RD43-CONCURRENT-JOIN-FUSION-GUARD], verify model binding, already tierM-qwen35b-a3b-moe-mtp per notes); patches/1216_rd43_concurrent_join_fusion_guard/validation.toml (new); patches/1216_rd43_concurrent_join_fusion_guard/validation/ (existing directory, extend producer to emit check="backend_reference").
 
 ## Validation
 
-Repeated capture/replay; no abort; output parity; graph-opt off/dense controls; no material regression; join/rejoin trace.
+Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for the new qualification function following the RD08/RD73 test pattern. Hardware (on Brutus, not run here): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses evidence-gathering methodology already proven real in this item's notes.
+
+Offline: PYTHONPATH=tools python -m bigcherry patch-lint patches/1216_rd43_concurrent_join_fusion_guard; patch-rebase-check --focal-overlay 1216_rd43_concurrent_join_fusion_guard --source bigcherry-tuning; unit test for run_rd43_contract_qualification() following the RD08 test pattern, asserting the emitted CorrectnessResult uses check="backend_reference". Hardware (Brutus, gfx1100/gfx1201 -- this item's contract targets those architectures, not gfx1151; Brutus is a correct host): execute run_rd43_contract_qualification() once authored, on tierM-qwen35b-a3b-moe-mtp with GGML_CUDA_GRAPH_OPT=1, to obtain the formal eligible_for_validated_state verdict -- reuses the byte-exact backend_reference evidence already gathered per notes.
 
 ## Effort & Risk
 
@@ -170,13 +177,18 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 
 **What remains is purely mechanical**: emitting this real evidence through BigCherry's canonical paired/geometric bootstrap producer function (run_rd39_42_contract_qualification(), fully designed above) so patch-verify-evidence can compute eligible_for_validated_state -- and the equivalent for RD43's backend_reference (already exact-match evidence gathered on the same corrected model). The substantive scientific work (activation proof, correctness proof at raw-logit byte level, statistically powered performance evidence for both gain and regression legs) is done. Patches 1215/1216 stay state=untested pending only that formal producer-function wiring, not further investigation.
 
+2026-09-24 relevance at b11126: IMPLEMENTED-AS-PATCH (1216_rd43_concurrent_join_fusion_guard, state=untested). This item's own prior notes already contain a complete GPT-approved design for the remaining formal qualification wiring (req_3e42043eb71a4a92) and real byte-exact backend_reference evidence -- no new GPT session was needed this batch; the structured plan sections above were written directly from that existing scoped design. GPT gateway was also unavailable this session for unrelated items (4 rejected attempts on PRBE32-34, see PRBE32 notes).
+
+2026-09-24 GPT review req_c18183e0a9034c94 applied: NOT-READY fixes applied -- added experiment-contract binding to patch.toml requirement, corrected producer to emit check="backend_reference" (not ppl_equality), removed stale central-runner-exists assumption.
+
+2026-09-25: implemented as a patch-local producer (not a central runner -- PA36 moved all producers patch-local). 1216: WARN activation marker when the fusion horizon is capped; experiment-contract bound; validation.toml; producer: control=bigcherry+1215, subject=+1216, GRAPH_OPT=1, full-vocab backend_reference (tol 5e-4) via shared tools/bigcherry/experiment/full_vocab.py, server-log activation, 10-round tg128 controls. Old PPL-only rd43_correctness.py removed. GPT review req_997c7ff3ed5944bf: tolerance appropriate; noted limits -- marker proves the cap engaged, not that graph capture succeeded; evidence shows guard harmless, not reproduction of the abort. Hardware run pending a free 24GB GPU (model tierM-qwen35b-a3b-moe-mtp).
+
 ## Change Log
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 
 - chg_20260909_115759_created-and-populated-the-192_2958
@@ -215,3 +227,13 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 - 2026-09-12T13:58:07.808223+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260912_141111_patches-1215-amd-stream-moe-o_6030
 - 2026-09-12T14:11:11.710754+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:29:56.168794+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation
+- 2026-09-24T02:30:01.847594+00:00 (updated-by): Updated: section:notes
+- chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
+- 2026-09-24T02:36:10.506291+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T04:39:07.154381+00:00 (updated-by): Updated: section:steps, section:files, section:validation
+- 2026-09-24T04:39:50.878577+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T14:09:54.966168+00:00 (state-transition): State: pending → in_progress
+- 2026-09-24T14:09:57.889202+00:00 (updated-by): Updated: section:notes
+- chg_20260924_141016_five-experimental-rdna-patches_5706
+- 2026-09-24T14:10:27.645383+00:00 (updated-by): Updated: section:ledger-events

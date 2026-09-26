@@ -1,0 +1,84 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 34,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "47b4795ca6086c9a5885ea55fa2f5d3f9598e13b",
+  "first_seen": "2026-09-23T13:53:28.104708+00:00",
+  "manifest_hash": "",
+  "notes": "pin-status --complete --all-remotes (2026-09-24, real completion gate):\n\npin-status: local\n  pin           b11126 -> b1ff4ca23630\n  vendor HEAD   b1ff4ca23630 (tag b11126)  [10 modified, 39 untracked]\n  releases      0adcc3bb5710 broken, 22dc605c4ead patched, 2578138397d7 generated, 28ff0958291c patched, 370cb12e8bb7 patched, 434ddbbc0e30 patched, 50182a53fa2c generated, 6ea215d171fd patched, 91f6a6cf3613 patched, abc123 validated, b1ff4ca23630 patched, c841aeeb8bb2 patched, d7bd3bfcad3e patched\n  descriptors   0adcc3bb5710, 2578138397d7, 28ff0958291c, 370cb12e8bb7, 4801e3c567d5, c841aeeb8bb2, d59d455fd8ea, d7bd3bfcad3e\n  bigcherry     d3ea6df13f0f\n  marker        28ff0958291c -> b1ff4ca23630 (b11126) [committed-clean]\n  VERDICT       consistent  (content-unverified: 10 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\npin-status: brutus (remote)\n  vendor HEAD   b1ff4ca23630\n  pin           b11126 -> b1ff4ca23630\n  bigcherry     d3ea6df13f0f\n  VERDICT       consistent\n\nAGGREGATE  converged\n\nCOMPLETION  PASS\n\nPin bump b10901 -> b11126 via the pin-bump orchestrator (local, then Brutus workspaces/main). Rebase coverage 60/60 clean after reconciliation: 1001_hip_internal_allreduce superseded (upstream now contains all three edits verbatim), 1215/1224/1238/1240/1258 re-anchored, 1260/1261 path prefix fixed. Admission: validated evidence carried forward from b10901 (performance revalidation on request, per policy). Post-bump real-hardware smoke: bigcherry:native:linux-multi on Brutus RX 7900 XTX (gfx1100), Qwen3.5-4B Q6_K, ngl 99 -- pp512 3428.6 t/s, tg128 85.8 t/s (smoke/result.json sha256 0118e8210f426dc550deec585be730bc9ac5bc8ac262e2f5b96d82a06c2dd480). Functional PASS; single-run throughput is below the b10901 smoke (4174.5 / 100.2 t/s) -- not a benchmark, flagged for an on-request performance check.\n\n2026-09-24 follow-up: the smoke throughput flag above is WITHDRAWN. A balanced 4-arm llama-bench comparison (8 rounds, rotated order, same GPU/model) found no regression: pp512 +2.3% upstream / +4.0% BigCherry (p<0.01), tg128 unchanged; BigCherry vs upstream not different at either pin. See docs/evidence/2026-09-24-bump-b11126-throughput/.\n",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "applied",
+        "hip-autotune-validation": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "blas-coverage-count": "applied",
+        "blas-coverage-include": "applied",
+        "ggml_hip_family_blas-diagnostics-only-count": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "mmq-case-forward": "applied",
+        "mmq-case-signature": "applied",
+        "mmq-helpers-and-switch": "applied",
+        "mmq-instantiation-macro": "applied",
+        "mmq-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "ggml_hip_family_mmvq-diagnostics-only-count": "applied",
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "b11126",
+  "revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-09-23T14:13:05.259832+00:00"
+}

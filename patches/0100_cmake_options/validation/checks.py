@@ -23,7 +23,7 @@ from bigcherry.patch.validation import (
 )
 
 
-_CHECK_ID = "coverage-source-selection"
+_CHECK_ID = "serving-source-selection"
 _CAPABILITY = "configuration"
 
 
@@ -89,17 +89,27 @@ def _load_patch(package_root: Path) -> Any:
     return module
 
 
+_ANCHOR_TEXT = (
+    'file(GLOB   SRCS "../ggml-cuda/template-instances/mmf*.cu")\n'
+    'list(APPEND GGML_SOURCES_ROCM ${SRCS})\n'
+)
+
+
 def _source_list(module: Any, root: Path) -> tuple[str, bool, bool]:
-    """Materialize the real package edit and return (list, first, second)."""
+    """Materialize the real package edit against its actual anchor text
+    (not the already-applied _HIP_DEFINITIONS -- writing that as the
+    starting file would make the edit's own guard match immediately,
+    reporting "already-applied" rather than exercising the real anchored
+    insert) and return (list, first, second)."""
     source = root / "CMakeLists.txt"
-    source.write_text(module._HIP_DEFINITIONS, encoding="utf-8", newline="")
-    patch = FilePatch("CMakeLists.txt", module.HIP_BACKEND_PATCH.edits[1:])
+    source.write_text(_ANCHOR_TEXT, encoding="utf-8", newline="")
+    patch = FilePatch("CMakeLists.txt", module.HIP_BACKEND_PATCH.edits)
     first = apply_patch(patch, root)
     if not first.ok or not first.changed:
-        raise RuntimeError(f"coverage source patch did not apply: {first.results!r}")
+        raise RuntimeError(f"serving source patch did not apply: {first.results!r}")
     second = apply_patch(patch, root)
     if not second.ok or second.changed:
-        raise RuntimeError(f"coverage source patch is not idempotent: {second.results!r}")
+        raise RuntimeError(f"serving source patch is not idempotent: {second.results!r}")
     text = source.read_text(encoding="utf-8")
     start = text.index("    set(_BC_DISPATCH_SOURCES")
     end = text.index("    list(APPEND GGML_SOURCES_ROCM ${_BC_DISPATCH_SOURCES})", start)
@@ -122,33 +132,65 @@ def check(ctx: Any) -> ValidationResult:
         run_dir = Path(run_dir).resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
         module = _load_patch(package_root)
-        with tempfile.TemporaryDirectory(prefix="coverage-selection-", dir=run_dir) as temp:
+        with tempfile.TemporaryDirectory(prefix="serving-selection-", dir=run_dir) as temp:
             work = Path(temp)
             source_list, first_changed, second_changed = _source_list(module, work)
+            # Prove the serving/shared package's own source selection: the
+            # common dispatch/transform/telemetry/signature/blake2b sources
+            # are always present when this package's outer guard fires, the
+            # replay-only source is present iff GGML_HIP_DISPATCH_REPLAY, and
+            # none of 0110_campaign_tune_record_build's tuner/record/coverage
+            # sources ever appear here -- this package does not declare or
+            # reference GGML_HIP_AUTOTUNE_RECORD/DIAGNOSTICS/AUTOTUNE at all
+            # in its own source list (moved entirely to 0110 by PA27).
             script = "cmake_minimum_required(VERSION 3.18)\n" + source_list + """
-if ("../ggml-cuda/hip-autotune-coverage.cpp" IN_LIST _BC_DISPATCH_SOURCES)
+foreach(_forbidden IN ITEMS
+        "../ggml-cuda/hip-autotune-coverage.cpp"
+        "../ggml-cuda/hip-autotune-record.cpp"
+        "../ggml-cuda/hip-autotune-tuner.cu")
+    if (_forbidden IN_LIST _BC_DISPATCH_SOURCES)
+        message(FATAL_ERROR "serving source list must never include ${_forbidden}")
+    endif()
+endforeach()
+foreach(_common IN ITEMS
+        "../ggml-cuda/hip-autotune-dispatch.cu"
+        "../ggml-cuda/hip-autotune-transform.cu"
+        "../ggml-cuda/hip-autotune-reduce-telemetry.cpp"
+        "../ggml-cuda/hip-autotune-signature.cpp"
+        "../ggml-cuda/hip-autotune-blake2b.cpp")
+    if (NOT _common IN_LIST _BC_DISPATCH_SOURCES)
+        message(FATAL_ERROR "serving source list is missing common source ${_common}")
+    endif()
+endforeach()
+if ("../ggml-cuda/hip-autotune-replay.cpp" IN_LIST _BC_DISPATCH_SOURCES)
     set(actual ON)
 else()
     set(actual OFF)
 endif()
 if (NOT actual STREQUAL expected)
-    message(FATAL_ERROR "Coverage selection ${actual}; expected ${expected}")
+    message(FATAL_ERROR "replay.cpp selection ${actual}; expected ${expected}")
 endif()
 """
-            script_path = work / "coverage-selection.cmake"
+            script_path = work / "serving-selection.cmake"
             script_path.write_text(script, encoding="utf-8", newline="")
             version = subprocess.run([cmake, "--version"], capture_output=True, text=True,
                                      check=False, timeout=30)
             cases = (
-                ("production-diagnostics-OFF", (), "OFF"),
-                ("diagnosticON", ("GGML_HIP_DISPATCH_DIAGNOSTICS",), "ON"),
-                ("AUTOTUNE_RECORDON", ("GGML_HIP_AUTOTUNE_RECORD",), "ON"),
-                ("AUTOTUNEON", ("GGML_HIP_AUTOTUNE",), "ON"),
+                ("autotune-only-no-replay", (), "OFF"),
+                ("replay-only", ("GGML_HIP_DISPATCH_REPLAY",), "ON"),
             )
             observations: list[dict[str, Any]] = []
             for name, enabled, expected in cases:
-                command = [cmake, "-DGGML_HIP_DISPATCH_REPLAY=ON", f"-Dexpected={expected}"]
+                # "autotune-only-no-replay" exercises this package's outer
+                # `if (GGML_HIP_AUTOTUNE OR GGML_HIP_DISPATCH_REPLAY)` guard
+                # via the foreign, 0110-owned GGML_HIP_AUTOTUNE variable
+                # (simulating 0110 applied alongside this package) without
+                # GGML_HIP_DISPATCH_REPLAY -- this package's own source list
+                # must still be the common set, with no replay.cpp.
+                command = [cmake, f"-Dexpected={expected}"]
                 command.extend(f"-D{option}=ON" for option in enabled)
+                if not enabled:
+                    command.append("-DGGML_HIP_AUTOTUNE=ON")
                 command.extend(["-P", str(script_path)])
                 result = subprocess.run(command, capture_output=True, text=True,
                                         check=False, timeout=30)
@@ -171,10 +213,10 @@ endif()
                 "patch_second_changed": second_changed,
                 "observations": observations,
             }
-            report_path = work / "coverage-selection.json"
+            report_path = work / "serving-selection.json"
             report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-            script_ref = register("coverage-selection.cmake", script_path)
-            report_ref = register("coverage-selection.json", report_path)
+            script_ref = register("serving-selection.cmake", script_path)
+            report_ref = register("serving-selection.json", report_path)
             if (not isinstance(script_ref, ArtifactRef)
                     or not isinstance(report_ref, ArtifactRef)
                     or not _artifact_is_bound(asdict(script_ref), run_dir)

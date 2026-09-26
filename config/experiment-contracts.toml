@@ -116,8 +116,20 @@ workloads = ["prefill"]
 bit_identical = "required"
 
 [contract.RD12-PAIRED-MMVQ-DUAL.acceptance]
-target_kernel_gain_pct = 0.3
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD]
 title = "RD17: fold MoE top-k routing weights into the down-projection MMVQ epilogue"
@@ -130,26 +142,47 @@ atomic_part = "1207_rd17_moe_topk_down_fold"
 [contract.RD17-MOE-TOPK-DOWN-FOLD.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "Folds the MoE top-k routing-weight MUL into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
+rationale = "Folds the MoE top-k routing weights into the down-projection MMVQ epilogue, removing a separate elementwise kernel per expert per token. KNOWN COMPOSITION CONFLICT: this patch (1207) and RD12 (1205) share a struct anchor in ggml-cuda.cu's fusion-detection block (documented PIN_REBASE_REVIEW_B10502.md section 2.2) -- selecting both experiments together fails to apply, by design (exp-vs-exp composition deferred, not silently merged)."
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.scope]
 backend = "hip"
 architectures = ["gfx1100", "gfx1201", "gfx1030"]
 
+# PRBE14 (2026-09-25): the fold only fires on single-column MUL_MAT_ID
+# decode (the d6e3e46e fix), so moe_prefill was never a lane it could move,
+# and the MoE-model "decode" control was the same measurement as the positive
+# lane. Positive = MoE decode; control = a dense model with no MoE.
+# 2026-09-25: four gfx1100 sessions on gpt-oss-20B never logged the fold's
+# marker (its routing never reaches the single-column MUL_MAT_ID+MUL shape);
+# activation was previously proven on Qwen3.6-35B-A3B, so that is the lane.
 [contract.RD17-MOE-TOPK-DOWN-FOLD.positive]
-models = ["tierM-gptoss20b-q6k"]
-workloads = ["moe_decode", "moe_prefill"]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.controls]
-models = ["tierM-gptoss20b-q6k"]
+models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
 
+# The epilogue scale changes FP rounding, so PPL-only equality is replaced by
+# the full-vocabulary backend reference.
 [contract.RD17-MOE-TOPK-DOWN-FOLD.correctness]
-ppl_equality = "required"
+backend_reference = "required"
 
 [contract.RD17-MOE-TOPK-DOWN-FOLD.acceptance]
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
 
 [contract.RD21-GFX1151-MMVQ-NWARPS]
 title = "RD21: gfx1151 (RDNA3_5) mmvq nwarps=2 table for Q8_0 decode"
@@ -459,13 +492,19 @@ workloads = ["decode"]
 backend_reference = "required"
 
 [contract.RD13-MUL-MAT-ADD-VIEW-FUSION.acceptance]
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-# VA24 migration (2026-09-13): the model-binding fix above already changed
-# this contract's hash, voiding config/experiment-contract-legacy.toml's
-# RD13-MUL-MAT-ADD-VIEW-FUSION point-estimate waiver. Migrated in the same
-# change, per the RD08/RD21/RD39-42/RD73 precedent.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD22-IGPU-HOST-BUFFER-BACKOUT]
@@ -503,19 +542,23 @@ ppl_equality = "required"
 max_control_regression_pct = 1
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY]
-title = "RD26a: decode vs speculative-verify bit-identity (base-standalone hunks)"
+title = "RD26: decode vs speculative-verify bit-identity (MMVF, CPU sgemm, flash-attention, RDNA MMVQ)"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.source]
 source_id = "stew675-rdna-boosts"
-commits = ["b2655d381b9575d644ebef794869165ede14b3a3", "d152888fc34419c69fb946581f29f927a475b5fa"]
-atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (base-standalone subset of a 5-commit determinism cluster -- fattn-tile/RDNA4-mmvq/fused-SSM pieces remain composition-gated on 1202/1203, not covered by this contract)"
+commits = [
+  "b2655d381b9575d644ebef794869165ede14b3a3",
+  "d152888fc34419c69fb946581f29f927a475b5fa",
+  "5efcd85fb4cd8845c6c7dd47c50e2666264aa4eb",
+]
+atomic_part = "1210_rd26_bitidentical_decode_verify_standalone (PRBE20, 2026-09-25: the base-standalone MMVF/sgemm hunks plus wave 1 flash-attention and wave 2 RDNA3/RDNA4 MMVQ nwarps, the latter two taken from the rebased fork's block 08; fused-SSM decode and the Q6_K nwarps retune are out of scope)"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.target]
 kind = "determinism"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.hypothesis]
 expected_effect = "correctness"
-rationale = "CORRECTNESS/DETERMINISM ONLY, no performance claim (EC02 Appendix-B rule). Makes decode (n_q=1) and speculative-verify (n_q=n_draft+1) batches produce bit-identical logits -- a soundness precondition for speculative acceptance checks. This contract covers only the base-standalone (non-FA, CPU sgemm.cpp) hunks; do not claim RD26 complete from this contract alone -- the fattn-tile/RDNA4-mmvq/fused-SSM pieces need 1202 (RD04) and 1203 (RD05/06) landed and retained first."
+rationale = "CORRECTNESS/DETERMINISM ONLY, no performance claim (EC02 Appendix-B rule). Makes decode (n_q=1) and speculative-verify (n_q=n_draft+1 <= 8) batches produce bit-identical logits -- a soundness precondition for speculative acceptance checks: MMVF decision, CPU sgemm gate, flash-attention kernel/tile config, and RDNA3/RDNA4 MMVQ nwarps are all made independent of the batch width. Identity is claimed for F16/BF16 KV only: with a quantized KV cache n_q 1..2 take the vector kernel and 3..8 the tile kernel."
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.scope]
 backend = "hip"
@@ -534,6 +577,9 @@ bit_identical = "required"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.acceptance]
 max_control_regression_pct = 1
+# 2026-09-26: controls-lane rounds declared here; producers read them from the
+# contract instead of a local constant.
+min_paired_rounds = 10
 
 [contract.RD39-42-STREAM-MOE-OVERLAP]
 title = "RD39+RD40+RD41+RD42: stream-honoring cuBLAS handles, concurrent-branch scratch, and MoE shared-expert overlap"
@@ -573,20 +619,29 @@ models = ["tierM-qwen35b-a3b-moe-mtp"]
 workloads = ["moe_decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.controls]
-models = ["tierM-qwen35b-a3b-moe-mtp"]
+# PRBE34 (2026-09-24): the control lane was the same MoE model and workload
+# as the positive lane, i.e. the same measurement twice. A dense model with
+# no shared expert never forks the aux stream, so it is the real control.
+models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.correctness]
 bit_identical = "required"
 
 [contract.RD39-42-STREAM-MOE-OVERLAP.acceptance]
-target_kernel_gain_pct = 1
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
-# 2026-09-12: model-binding fix changed the hash, so the legacy waiver is
-# void -- same real-hardware-driven situation as RD21 above. Migrated to
-# ci95_threshold_bound_v1 per VA24's stated migration path rather than
-# leaving a stale point-estimate waiver in place.
-effect_evidence_policy = "ci95_threshold_bound_v1"
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD]
@@ -628,6 +683,9 @@ backend_reference = "required"
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.acceptance]
 max_control_regression_pct = 1
+# 2026-09-26: controls-lane rounds declared here; producers read them from the
+# contract instead of a local constant.
+min_paired_rounds = 10
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35]
 title = "RD44: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5"
@@ -636,7 +694,10 @@ title = "RD44: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5"
 source_id = "amd-ecosystem-llama-cpp"
 commits = ["6e9f948a0d8b99db2bce0a83fc021efc2064ef9b"]
 atomic_part = "1217_rd44_graph_opt_default_rdna35"
-prerequisites = ["RD39-42-STREAM-MOE-OVERLAP", "RD43-CONCURRENT-JOIN-FUSION-GUARD"]
+prerequisites = [
+  "RD39-42-STREAM-MOE-OVERLAP",
+  "RD43-CONCURRENT-JOIN-FUSION-GUARD",
+]
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35.target]
 kind = "orchestration"
@@ -922,10 +983,732 @@ workloads = ["moe_decode"]
 bit_identical = "required"
 
 [contract.RD30-MOE-MMQ-COMPACT-GRID.acceptance]
-# This contract is being authored after RD30's informal/manual measurements;
-# this threshold is therefore not a preregistration of those old results.
-# Qualification must use fresh formal campaign evidence.
-target_kernel_gain_pct = 0.5
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2]
+title = "RD30B: 1237's compact MoE MMQ launch grid on gfx1201 and gfx1030"
+prerequisites = []
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = ["f8864197a4e2d07321bfb85466e3ba071e020aa9"]
+atomic_part = "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 (gate extension of 1237 to RDNA4/RDNA2)"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.target]
+kind = "kernel_family"
+family = "mmq"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.hypothesis]
+family = "mmq"
+expected_effect = "performance"
+rationale = "1237's compact MoE MMQ grid is host-side launch geometry only (no change to kernel arithmetic, accumulation order or routing) and measured +7.3..7.4% pp512 on gfx1100. The same empty per-expert tile launches exist on RDNA4 and RDNA2, so admitting them should reduce launch/dispatch work during MoE prefill with byte-identical output. Control = validated BC (includes 1237, gated off on these archs); subject = + 1265. MoE decode is the negative control (never takes the MMQ compact path)."
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.scope]
+backend = "hip"
+architectures = ["gfx1201", "gfx1030"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_prefill"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.correctness]
+bit_identical = "required"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+bench_invocation = "combined"
+
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO03-ALLREDUCE-P2P]
+title = "NRO03: opt-in P2P internal AllReduce on dual gfx1100 (source-current push)"
+prerequisites = []
+
+[contract.NRO03-ALLREDUCE-P2P.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7c5bb5cb991670676b89cddc5077c9456c5cf70e"]
+atomic_part = "1252_nro03_allreduce_p2p_provider (P2P half of 7c5bb5cb, adapted: per-direction source-device streams + byte-verified startup probe)"
+
+[contract.NRO03-ALLREDUCE-P2P.target]
+kind = "orchestration"
+
+[contract.NRO03-ALLREDUCE-P2P.hypothesis]
+expected_effect = "performance"
+rationale = "With GGML_CUDA_AR_P2P=1 the two-GPU internal AllReduce copies partial sums directly GPU-to-GPU (one PCIe crossing) instead of staging through pinned host memory (two crossings), shortening each tensor-parallel reduction during -sm tensor decode. P2P moves the same bytes, so output must be bit-identical to host staging. The startup probe must pass on this hardware for the path to engage (activation marker)."
+
+[contract.NRO03-ALLREDUCE-P2P.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.NRO03-ALLREDUCE-P2P.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+[contract.NRO03-ALLREDUCE-P2P.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO03-ALLREDUCE-P2P.correctness]
+bit_identical = "required"
+
+[contract.NRO03-ALLREDUCE-P2P.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+server_requests_per_start = 5
+
+[contract.NRO03-ALLREDUCE-P2P.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PNRO09-META-VIEW-HEADROOM]
+title = "PNRO09: Meta compute-container view headroom"
+prerequisites = []
+
+[contract.PNRO09-META-VIEW-HEADROOM.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["91de35039a1a2a366fde0bc6c5b515bbf7e3cabb"]
+atomic_part = "Meta compute-container view headroom"
+
+[contract.PNRO09-META-VIEW-HEADROOM.target]
+kind = "orchestration"
+
+[contract.PNRO09-META-VIEW-HEADROOM.hypothesis]
+expected_effect = "correctness"
+rationale = "Headroom 16 is insufficient for supported recurrent/MTP Meta graphs."
+
+[contract.PNRO09-META-VIEW-HEADROOM.scope]
+# The Meta-backend change is backend-agnostic (matches patch.toml backend);
+# its evidence is gathered on HIP devices.
+backend = "agnostic"
+architectures = ["gfx1100"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.scope.gpu_count]
+minimum = 2
+maximum = 2
+
+[contract.PNRO09-META-VIEW-HEADROOM.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["state_restore"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PNRO09-META-VIEW-HEADROOM.correctness]
+state_restore_integrity = "required"
+
+[contract.PNRO09-META-VIEW-HEADROOM.acceptance]
 max_control_regression_pct = 1
 effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES]
+title = "PNRO10: add ctx_other devices to speculative scheduler backends"
+prerequisites = []
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["84b31d4cdb696cd09f04219de5f9a9b8d5ec6ac7"]
+atomic_part = "ctx_other scheduler backend completion"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.target]
+kind = "orchestration"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.hypothesis]
+expected_effect = "correctness"
+rationale = "Draft contexts require backends for shared tensors owned by ctx_other devices."
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.scope.gpu_count]
+minimum = 2
+maximum = 2
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["mtp_verify"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.correctness]
+greedy_parity = "required"
+
+[contract.PNRO10-SPEC-CTX-OTHER-DEVICES.acceptance]
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE]
+title = "RD33: dense Q8_0 MMVQ without Q8_1 activation quantization (ncols_dst 1..8, gfx1100)"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.source]
+# AMD-MMV-001 from the AMD PR set; 1241 is a local implementation of the
+# idea, not a port of a specific commit.
+source_id = "amd-ecosystem-llama-cpp"
+commits = []
+atomic_part = "1241_rd33_mmvq_q8_0_f32_decode"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Dense Q8_0 weights x F32 activations at ncols_dst 1..8 skip the per-matmul Q8_1 quantize kernel and read F32 activations directly (PRBE26). The ncols_dst==1-only form measured null; MTP verification batches (ncols_dst 5/6 with draft-n-max 4) dominate production Qwen3.8-27B Q8_0 dual-gfx1100 decode, so the claim is measured on the real MTP server path. Output is not bit-identical (no activation quantization), so correctness is the backend reference tolerance."
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+# Q6_K never takes the Q8_0 path: a dense non-target model isolates any
+# collateral cost of the widened gate and extra template instantiations.
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.correctness]
+backend_reference = "required"
+
+[contract.RD33-MMVQ-Q8_0-F32-DECODE.acceptance]
+# POLICY FREEZE 2026-09-25 (GPT req_304422c6419846ab, owner policy "small
+# wins count, no materiality bar"): migrated uniformly with the other RDNA
+# plan contracts before sessions 2-4 were collected. An improvement must be
+# ESTABLISHED over >= 4 independent same-architecture sessions (session
+# bootstrap ci95_low > 0.0); the control lane stays interval-bounded at 1%.
+# Earlier ci95_threshold_bound_v1 records (e.g. 1206 +0.55%/+1.14% failing a
+# 0.5 bar) are kept as historical FAILs under that contract hash. No optional
+# stopping: exactly the declared sessions, no "run until the CI clears zero".
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE]
+title = "PNRO15: dequant-float matvec (mmvdq) for Q4_K/Q5_K/Q6_K decode"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["670512936d83d12dd41d27c8b30e4bb416a47f31"]
+atomic_part = "1262_nro15_mmvdq (plain matvec only; fused SwiGLU route and RDNA3.5 graph-opt default excluded)"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "For single-token K-quant decode, dequantizing weights to float and dotting against the F32 activation removes the per-matvec Q8_1 activation quantize launch. Measured opt-in (GGML_CUDA_DQ_MMV=1 on both arms) on gfx1100/gfx1201, where the patch's arch default is off. Output is not bit-identical (float dot vs Q8_1 dot), so correctness is the backend reference tolerance."
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+# Prefill (ne11 > 1) never takes mmvdq.
+[contract.NRO15-MMVDQ-KQUANT-DECODE.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.NRO15-MMVDQ-KQUANT-DECODE.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25: owner policy, as the other RDNA plan contracts.
+[contract.NRO15-MMVDQ-KQUANT-DECODE.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO04-GDN-CHUNKED-BF16]
+title = "PNRO04: BF16/WMMA chunked GatedDeltaNet prefill on RDNA3/RDNA4"
+
+[contract.NRO04-GDN-CHUNKED-BF16.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["4169fbbf50d24beb6d269a2350e7f780b85369e6"]
+atomic_part = "1253_nro04_gfx1100_bf16_chunked_gdn (BF16 kernels + K==1 prefill dispatch; fp32 chunked kernel excluded)"
+
+[contract.NRO04-GDN-CHUNKED-BF16.target]
+kind = "ssm_gdn"
+
+[contract.NRO04-GDN-CHUNKED-BF16.hypothesis]
+expected_effect = "both"
+rationale = "K==1 GatedDeltaNet prefill (S_v=128) on RDNA3/RDNA4 runs as a BF16/WMMA chunked recurrence instead of the sequential kernel. Near-lossless, not bit-exact: correctness is the test-backend-ops GATED_DELTA_NET backend reference; prefill of a hybrid GDN model is the positive lane, decode (n_tokens=1, never chunked) the control."
+
+[contract.NRO04-GDN-CHUNKED-BF16.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+# Prefill of the hybrid GDN model is the GDN-prefill lane (the paired
+# harness maps "prefill" to pp512).
+[contract.NRO04-GDN-CHUNKED-BF16.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.NRO04-GDN-CHUNKED-BF16.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO04-GDN-CHUNKED-BF16.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO04-GDN-CHUNKED-BF16.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO05-GDN-MTP-PREFIX]
+title = "PNRO05: chunked GDN on the MTP prefill prefix, sequential snapshot tail"
+prerequisites = ["NRO04-GDN-CHUNKED-BF16"]
+
+[contract.NRO05-GDN-MTP-PREFIX.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["4169fbbf50d24beb6d269a2350e7f780b85369e6"]
+atomic_part = "1254_nro05_gdn_mtp_prefix_tail (MTP prefix dispatch on top of 1253)"
+
+[contract.NRO05-GDN-MTP-PREFIX.target]
+kind = "ssm_gdn"
+
+[contract.NRO05-GDN-MTP-PREFIX.hypothesis]
+expected_effect = "both"
+rationale = "With MTP (K>1) a long single-sequence prefill runs chunked BF16 GDN on the first n_tokens-K tokens and the sequential kernel on the last K, keeping snapshot slots exact. Measured as MTP server throughput on the MTP model; correctness is the backend reference of the MTP path."
+
+[contract.NRO05-GDN-MTP-PREFIX.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO05-GDN-MTP-PREFIX.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.NRO05-GDN-MTP-PREFIX.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.NRO05-GDN-MTP-PREFIX.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO05-GDN-MTP-PREFIX.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+server_requests_per_start = 5
+
+[contract.NRO05-GDN-MTP-PREFIX.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO07-TOPK-HYBRID]
+title = "PNRO06: hybrid HIP TOP_K kernels"
+
+[contract.NRO07-TOPK-HYBRID.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7f3e1e4d0b166cb681b2c01503370e610a5b423d"]
+atomic_part = "1256_nro07_topk_hybrid"
+
+[contract.NRO07-TOPK-HYBRID.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO07-TOPK-HYBRID.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort. Series 2: backend sampling (--backend-sampling) runs the request top-k as ggml_top_k over the full ~151k-logit vocabulary every token (pre-flight 2026-09-26: 1256 topk_small route); MoE routing does not use TOP_K (fused topk_moe). Measured with the ROCm 10.x toolchain on both arms."
+
+[contract.NRO07-TOPK-HYBRID.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO07-TOPK-HYBRID.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.NRO07-TOPK-HYBRID.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO07-TOPK-HYBRID.correctness]
+backend_reference = "required"
+
+# SERIES 2 declared 2026-09-26 (owner-approved: "test properly"), BEFORE any series-2
+# data. Series 1 measured llama-bench decode on the MoE model, but the PVPS10 decode
+# profile shows that workload never runs TOP_K (routing uses the fused topk_moe
+# kernel; identical call counts in both arms), so series 1 could not test the claim.
+# Series 2 positive lane: llama-server MTP decode with --backend-sampling (top_k=20
+# over the full vocabulary every token). Series 1 stays on record under the old hash.
+[contract.NRO07-TOPK-HYBRID.measurement]
+server_requests_per_start = 5
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO07-TOPK-HYBRID.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO08-TOPK-WAVE32]
+title = "PNRO07: wave32-native HIP TOP_K kernels"
+prerequisites = ["NRO07-TOPK-HYBRID"]
+
+[contract.NRO08-TOPK-WAVE32.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7f1d25f7e05cb34053d317a0f72f601d846c8662"]
+atomic_part = "1257_nro08_topk_wave32"
+
+[contract.NRO08-TOPK-WAVE32.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.NRO08-TOPK-WAVE32.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Wave32 shuffles replace LDS/barrier reductions in 1256's kernels; measured as an increment on 1256 (both arms carry 1256). Series 2: exercised by backend-sampling top-k over the full vocabulary (see NRO07-TOPK-HYBRID)."
+
+[contract.NRO08-TOPK-WAVE32.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.NRO08-TOPK-WAVE32.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["moe_decode"]
+
+[contract.NRO08-TOPK-WAVE32.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO08-TOPK-WAVE32.correctness]
+backend_reference = "required"
+
+# SERIES 2 declared 2026-09-26 (owner-approved: "test properly"), BEFORE any series-2
+# data. Series 1 measured llama-bench decode on the MoE model, but the PVPS10 decode
+# profile shows that workload never runs TOP_K (routing uses the fused topk_moe
+# kernel; identical call counts in both arms), so series 1 could not test the claim.
+# Series 2 positive lane: llama-server MTP decode with --backend-sampling (top_k=20
+# over the full vocabulary every token). Series 1 stays on record under the old hash.
+[contract.NRO08-TOPK-WAVE32.measurement]
+server_requests_per_start = 5
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO08-TOPK-WAVE32.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR]
+title = "PRBE41: channels-major SSM_CONV input for the delta-net graph"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["33611a98a53af8a327f4a0e01a42631eb5fcd576"]
+atomic_part = "1263_prbe41_ssm_conv_channels_major"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.target]
+kind = "ssm_gdn"
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.hypothesis]
+expected_effect = "both"
+rationale = "Feeding SSM_CONV channels-major removes the physical transpose (CONT) of the conv input in qwen35/qwen35moe/qwen3next; the fork measured CONT 221->10 ms at pp4096 ub=4096. Same arithmetic, so output should match within float reordering."
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.correctness]
+backend_reference = "required"
+
+# POLICY FREEZE 2026-09-25 (owner policy).
+[contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.acceptance]
+# SERIES 2 pre-declared 2026-09-26 (owner-approved), BEFORE any series-2 data:
+# 20 paired rounds per lane (was 10), 4 sessions per architecture, both gfx1100
+# and gfx1201. Reason: series 1 gfx1100 failed on one transient -30%/-16% round
+# (noise triage, tools/lab/plan-qualification/noise.py); its per-session median
+# ratios matched the passing sessions. This amendment changes the contract hash,
+# so series 1 (10 rounds: gfx1100 FAIL, gfx1201 PASS) stays on record under the
+# old hash and is never pooled with series 2. No further extension of series 2.
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 20
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC]
+title = "PRBE110/RD05: WMMA flash-attention tile_Q reuse synchronization"
+prerequisites = []
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1266_rd05_wmma_fa_tileq_sync (RD05-only extraction; fresh identity after rejected 1203)"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.target]
+kind = "attention"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.hypothesis]
+expected_effect = "both"
+rationale = "Extract RD05's two tile_Q reuse barriers without RD06's expanded configuration envelope. The barriers repair cross-warp scratch reuse in the existing WMMA-F16 path; the fresh package must preserve full-vocabulary correctness and, per owner policy for new experiments, establish a positive decode effect with no material prefill regression rather than inheriting any result from rejected bundle 1203."
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.correctness]
+backend_reference = "required"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.measurement]
+bench_invocation = "combined"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD]
+title = "PRBE110/RD07: Q6_K MMQ base/sub-scale hoist and fold"
+prerequisites = []
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1267_rd07_q6k_mmq_scale_fold (RD07-only extraction; fresh identity after rejected 1203)"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.target]
+kind = "kernel_family"
+family = "mmq"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Hoist Q6_K MMQ row base scales and fold them with per-k01 sub-scales before the inner j0 accumulation, removing repeated scale loads/conversion/multiply work from the hot loop. The fresh extraction excludes RD05/RD06 and diagnostic timing, uses the current no-forced_J dispatch shape, and must establish prefill gain with bounded decode regression independently of rejected bundle 1203."
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.correctness]
+backend_reference = "required"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.measurement]
+bench_invocation = "combined"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING]
+title = "PRBE52: adaptive MTP draft-depth runtime wiring"
+prerequisites = []
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["10579a7365a3bc86c4f8e41aaab20e73e1571e5e"]
+atomic_part = "1268_prbe52_adaptive_mtp_wiring (runtime wiring on 1255 controller)"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.target]
+kind = "orchestration"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.hypothesis]
+expected_effect = "both"
+rationale = "Wire the pure adaptive MTP controller into per-sequence draft limits so sustained full acceptance climbs depth and miss pressure backs off, reducing rejected speculative work without changing target-token semantics; fixed behavior remains the control."
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.correctness]
+backend_reference = "required"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.measurement]
+server_requests_per_start = 5
+bench_invocation = "combined"
+
+[contract.PRBE52-ADAPTIVE-MTP-WIRING.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PRBE55-VK-SMALLN-DMMV]
+title = "PRBE55: opt-in Vulkan small-N DMMV routing on AMD RDNA"
+prerequisites = []
+
+[contract.PRBE55-VK-SMALLN-DMMV.source]
+# Local implementation of an upstream-Vulkan routing hypothesis; no immutable source commit is claimed.
+source_id = "amd-ecosystem-llama-cpp"
+commits = []
+atomic_part = "1269_prbe55_vk_smalln_dmmv"
+
+[contract.PRBE55-VK-SMALLN-DMMV.target]
+kind = "orchestration"
+
+[contract.PRBE55-VK-SMALLN-DMMV.hypothesis]
+expected_effect = "both"
+rationale = "When the existing Vulkan selector would quantize F32 activations and use MMVQ, an explicit AMD/RDNA N=2..8 experiment reuses the existing DMMV fallback to avoid Q8_1 activation quantization; default routing, N=1, wider batches, non-AMD devices, and baseline non-MMVQ choices remain unchanged."
+
+[contract.PRBE55-VK-SMALLN-DMMV.scope]
+backend = "vulkan"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.positive]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["mtp_verify"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.controls]
+models = ["tierM-qwen35b-a3b-moe-mtp"]
+workloads = ["decode"]
+
+[contract.PRBE55-VK-SMALLN-DMMV.correctness]
+greedy_parity = "required"
+
+[contract.PRBE55-VK-SMALLN-DMMV.measurement]
+server_requests_per_start = 5
+bench_invocation = "combined"
+
+[contract.PRBE55-VK-SMALLN-DMMV.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PNRO14-RDNA35-FA-TILE-D256]
+title = "PNRO14: gfx1151 D=256 tile FlashAttention occupancy row"
+prerequisites = []
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.source]
+source_id = "nasone-rdna-optimizations"
+commits = []
+atomic_part = "1270_pnro14_rdna35_fa_tile_d256"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.target]
+kind = "attention"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.hypothesis]
+expected_effect = "both"
+rationale = "For gfx1151 only, the D=256/cols=32 tile FlashAttention shape uses a dedicated 256-thread occupancy-4 row with 64x64 batching instead of the generic RDNA occupancy-3/64x128 row. Every other shape and architecture falls through unchanged. Promotion remains hardware-deferred until real gfx1151 evidence exists."
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.scope]
+backend = "hip"
+architectures = ["gfx1151"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.positive]
+models = ["tierM-ministral14b-q4km"]
+workloads = ["prefill"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.controls]
+models = ["tierM-ministral14b-q4km"]
+workloads = ["decode"]
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.correctness]
+backend_reference = "required"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.measurement]
+bench_invocation = "combined"
+
+[contract.PNRO14-RDNA35-FA-TILE-D256.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
