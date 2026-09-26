@@ -12,7 +12,9 @@ export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends slurm-wlm munge jq
 
-SLURM_VERSION="$(scontrol --version | awk '{print $2}')"
+# Client binaries may try configless-controller discovery before slurm.conf
+# exists, so derive the installed version from dpkg during bootstrap.
+SLURM_VERSION="$(dpkg-query -W -f='${Version}' slurm-wlm | cut -d- -f1)"
 log "installed Slurm ${SLURM_VERSION}"
 case "$SLURM_VERSION" in
   23.11.*) ;;
@@ -79,16 +81,12 @@ NodeName=${HOST} NodeAddr=127.0.0.1 CPUs=${CPUS} RealMemory=${REALMEM} State=UNK
 PartitionName=bc-build Nodes=${HOST} PriorityTier=10 Default=NO State=UP MaxTime=00:10:00
 PartitionName=bc-measure Nodes=${HOST} PriorityTier=100 Default=YES State=UP MaxTime=00:10:00
 EOF
+export SLURM_CONF=/etc/slurm/slurm.conf
 
-# Validate controller config before daemon start.
-sudo slurmctld -t
-log "slurmctld config test ok"
-
+# Start real daemons; successful registration is the config validation.
 sudo slurmctld -Dvv > /tmp/bc-slurmctld.stdout 2>&1 &
-CTLD_PID=$!
 sleep 1
 sudo slurmd -Dvv > /tmp/bc-slurmd.stdout 2>&1 &
-SLURMD_PID=$!
 
 for _ in $(seq 1 40); do
   if scontrol ping 2>/dev/null | grep -q 'UP'; then
@@ -99,6 +97,11 @@ for _ in $(seq 1 40); do
   sleep 0.5
 done
 scontrol ping | grep -q 'UP' || { cat /tmp/bc-slurmctld.stdout >&2; die "slurmctld not UP"; }
+sinfo -h -N -o '%T' | grep -Eq 'idle|mix|alloc' || {
+  cat /tmp/bc-slurmd.stdout >&2 || true
+  scontrol show node >&2 || true
+  die "slurmd did not register usable node"
+}
 sinfo -N -l
 log "single-node Slurm service is live"
 
