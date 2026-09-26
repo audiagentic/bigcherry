@@ -58,6 +58,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Protocol
 
+from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp  # type: ignore[import-not-found]
 
 # One contract architecture per run (the historical RD13 rule): the
@@ -90,7 +91,7 @@ _MARKER_REGEX = (
     "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)"
 )
 _CONTROL_MODEL_REF = "tierM-gptoss20b-q6k"
-_MIN_PAIRED_ROUNDS = 10
+_MIN_PAIRED_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 
 def _content_identity(

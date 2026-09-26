@@ -577,6 +577,9 @@ bit_identical = "required"
 
 [contract.RD26-DECODE-VERIFY-BIT-IDENTITY.acceptance]
 max_control_regression_pct = 1
+# 2026-09-26: controls-lane rounds declared here; producers read them from the
+# contract instead of a local constant.
+min_paired_rounds = 10
 
 [contract.RD39-42-STREAM-MOE-OVERLAP]
 title = "RD39+RD40+RD41+RD42: stream-honoring cuBLAS handles, concurrent-branch scratch, and MoE shared-expert overlap"
@@ -680,6 +683,9 @@ backend_reference = "required"
 
 [contract.RD43-CONCURRENT-JOIN-FUSION-GUARD.acceptance]
 max_control_regression_pct = 1
+# 2026-09-26: controls-lane rounds declared here; producers read them from the
+# contract instead of a local constant.
+min_paired_rounds = 10
 
 [contract.RD44-GRAPH-OPT-DEFAULT-RDNA35]
 title = "RD44: default GGML_CUDA_GRAPH_OPT to enabled on RDNA3.5"
@@ -1026,6 +1032,45 @@ workloads = ["moe_decode"]
 bit_identical = "required"
 
 [contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.NRO03-ALLREDUCE-P2P]
+title = "NRO03: opt-in P2P internal AllReduce on dual gfx1100 (source-current push)"
+prerequisites = []
+
+[contract.NRO03-ALLREDUCE-P2P.source]
+source_id = "nasone-rdna-optimizations"
+commits = ["7c5bb5cb991670676b89cddc5077c9456c5cf70e"]
+atomic_part = "1252_nro03_allreduce_p2p_provider (P2P half of 7c5bb5cb, adapted: per-direction source-device streams + byte-verified startup probe)"
+
+[contract.NRO03-ALLREDUCE-P2P.target]
+kind = "orchestration"
+
+[contract.NRO03-ALLREDUCE-P2P.hypothesis]
+expected_effect = "performance"
+rationale = "With GGML_CUDA_AR_P2P=1 the two-GPU internal AllReduce copies partial sums directly GPU-to-GPU (one PCIe crossing) instead of staging through pinned host memory (two crossings), shortening each tensor-parallel reduction during -sm tensor decode. P2P moves the same bytes, so output must be bit-identical to host staging. The startup probe must pass on this hardware for the path to engage (activation marker)."
+
+[contract.NRO03-ALLREDUCE-P2P.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.NRO03-ALLREDUCE-P2P.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+[contract.NRO03-ALLREDUCE-P2P.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.NRO03-ALLREDUCE-P2P.correctness]
+bit_identical = "required"
+
+[contract.NRO03-ALLREDUCE-P2P.acceptance]
 target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
 effect_evidence_policy = "improvement_no_regression_v1"

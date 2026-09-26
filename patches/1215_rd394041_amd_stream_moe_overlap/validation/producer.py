@@ -44,7 +44,7 @@ _PROMPT = (
     "Explain in one concise sentence why a mixture-of-experts layer can run its "
     "shared expert on a second stream."
 )
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _ARTIFACT_NAME = "rd3942-bit-identical.json"
 _PERFORMANCE_ARTIFACT_NAME = "rd3942-performance.json"

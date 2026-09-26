@@ -42,7 +42,18 @@ EXPECTED = {
 # every contract-scope architecture (1253/NRO04: 2026-09-26).
 PROMOTED = {"1253_nro04_gfx1100_bf16_chunked_gdn"}
 
-EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 19)}  # PNRO18 (2026-09-26): 1252 P2P probe hardening
+
+def _pnro_numbers() -> list[int]:
+    """Every PNRO<nn> plan document, active or completed. The set is derived
+    from the files; the test requires it to be contiguous from PNRO01 (a gap
+    means a deleted or misfiled item) rather than pinning a hand-kept count."""
+    found = set()
+    for root in (PLANS, Path("docs/planning/completed/patching-nasone-rdna-optimizations")):
+        found.update(int(m.group(1)) for f in root.glob("PNRO*.md") if (m := re.fullmatch(r"PNRO(\d+)", f.stem)))
+    return sorted(found)
+
+
+EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in _pnro_numbers()}
 
 
 def _manifest(patch_id: str) -> dict:
@@ -66,7 +77,9 @@ def _load_patch_module(patch_id):
 
 class NroPackageShapeTests(unittest.TestCase):
     def test_prefix_is_dedicated_and_plan_items_are_complete(self):
-        for i in range(1, 19):
+        numbers = _pnro_numbers()
+        self.assertEqual(numbers, list(range(1, len(numbers) + 1)), "PNRO numbering has a gap")
+        for i in numbers:
             item = PLANS / f"PNRO{i:02d}.md"
             if not item.is_file():
                 item = Path("docs/planning/completed/patching-nasone-rdna-optimizations") / f"PNRO{i:02d}.md"

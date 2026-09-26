@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject dual-gfx1100 -sm tensor server (P2P requested) logs the P2P path.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1252_nro03 path=allreduce_p2p_source_push"
+
+# bit_identical: full-vocab logprobs on dual-gfx1100 -sm tensor, P2P on, both arms.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# MTP mtp_wall_tps on tierL-qwen27b-q8, dual gfx1100, P2P requested (10 pairs).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 on a dense model, one gfx1100 (no AllReduce; max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

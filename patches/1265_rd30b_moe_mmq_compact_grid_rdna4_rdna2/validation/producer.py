@@ -45,7 +45,7 @@ _SEEDS = (1, 2, 3)
 # 32 routed tokens is deliberately > MMVQ_MAX_BATCH_SIZE (8), so MMQ runs.
 _SHAPES = (("q4_k-moe-prefill32", "Q4_K"), ("q8_0-moe-prefill32", "Q8_0"))
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1237_rd30 path=moe_mmq_compact_grid"
-_MIN_PAIRED_ROUNDS = 10
+_MIN_PAIRED_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = "rd30b-correctness.json"
 _PERFORMANCE_ARTIFACT = "rd30b-performance.json"

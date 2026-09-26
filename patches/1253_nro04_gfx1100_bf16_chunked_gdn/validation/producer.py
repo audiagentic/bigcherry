@@ -30,7 +30,7 @@ _CONTRACT_ID = "NRO04-GDN-CHUNKED-BF16"
 _MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=1253_nro04 path=gdn_chunked_bf16")
 _TBO_ARGS = ("-o", "GATED_DELTA_NET", "-b", "ROCm0")
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = "nro04-correctness.json"
 _PERFORMANCE_ARTIFACT = "nro04-performance.json"

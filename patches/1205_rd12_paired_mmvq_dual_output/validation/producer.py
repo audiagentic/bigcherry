@@ -51,11 +51,12 @@ import os
 import subprocess
 from pathlib import Path
 
+from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
 
 _CONTRACT_ID = "RD12-PAIRED-MMVQ-DUAL"
 _MODEL_REF = "tierA-qwen4b-q6k"
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 # One contract architecture per run (the historical RD12 rule): the
 # operator names it via --amdgpu-targets; the binary itself is built ONCE

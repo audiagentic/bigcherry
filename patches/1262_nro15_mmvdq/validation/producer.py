@@ -33,7 +33,7 @@ _MODEL_REF = "tierA-qwen4b-q6k"
 _DQ_ENV = {"GGML_CUDA_DQ_MMV": "1", "GGML_CUDA_DQ_Q6K": "1"}
 _MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=1262_nro15 path=mmvdq")
 _TBO_ARGS = ("-o", "MUL_MAT", "-p", "type_a=q[456]_K,type_b=f32", "-b", "ROCm0")
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = "nro15-correctness.json"
 _PERFORMANCE_ARTIFACT = "nro15-performance.json"
