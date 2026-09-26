@@ -26,7 +26,7 @@ from typing import Callable
 from bigcherry.patch.campaign.benchmark import (
     _PAIRED_BENCH_METRIC_NAME,
     _PAIRED_BENCH_METRIC_PATTERN,
-    _paired_llama_bench_command,
+    _PAIRED_BENCH_WORKLOAD_FLAGS,
 )
 
 LADDER_ARTIFACT = "reference-ladder.json"
@@ -59,21 +59,32 @@ def run_reference_ladder(
     model: Path,
     runner: Runner,
     workloads: tuple[str, ...] = ("decode", "prefill"),
-    rounds_per_arm: int = 2,
+    rounds_per_arm: int = 1,
     exe: str = "",
 ) -> dict[str, object]:
-    """Measure every distinct arm binary, rotated, and summarise per arm."""
+    """Measure every distinct arm binary, rotated, and summarise per arm.
+
+    One llama-bench invocation per (round, arm) measures every workload
+    together (-p 512 -n 128 in one process), so the model loads once per
+    invocation rather than once per workload; the ladder is reference-only,
+    so one rotation per arm is the default."""
     groups = list(_distinct_arms(arms).items())
     n = len(groups)
     rounds = n * rounds_per_arm
+    flags: list[str] = []
+    for workload in ("prefill", "decode"):
+        if workload in workloads:
+            flags += list(_PAIRED_BENCH_WORKLOAD_FLAGS[workload])
+    prompt = next((flags[i + 1] for i, f in enumerate(flags) if f == "-p" and flags[i + 1] != "0"), "0")
+    gen = next((flags[i + 1] for i, f in enumerate(flags) if f == "-n" and flags[i + 1] != "0"), "0")
     runs: list[LadderRun] = []
-    for workload in workloads:
-        pattern = _PAIRED_BENCH_METRIC_PATTERN[workload]
-        for r in range(rounds):
-            order = groups[r % n:] + groups[: r % n]
-            for position, (binary_dir, names) in enumerate(order):
-                command = _paired_llama_bench_command(binary_dir / f"llama-bench{exe}", model, workload)
-                completed = runner(command)
+    for r in range(rounds):
+        order = groups[r % n:] + groups[: r % n]
+        for position, (binary_dir, names) in enumerate(order):
+            command = [str(binary_dir / f"llama-bench{exe}"), "-m", str(model), "-p", prompt, "-n", gen, "-ngl", "99"]
+            completed = runner(command)
+            for workload in workloads:
+                pattern = _PAIRED_BENCH_METRIC_PATTERN[workload]
                 match = pattern.search(completed.stdout or "") if completed.returncode == 0 else None
                 runs.append(LadderRun(
                     arm=names[0], workload=workload, round=r, position=position,
