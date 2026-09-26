@@ -84,13 +84,20 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
 
 class Patch1268Mechanics(unittest.TestCase):
-    def _tree(self):
+    def _tree(self, *, cosmetic_noise=False):
         td = tempfile.TemporaryDirectory()
         root = Path(td.name)
         (root / "common").mkdir(parents=True)
-        (root / "common/common.h").write_text(_COMMON_H, encoding="utf-8")
-        (root / "common/arg.cpp").write_text(_ARG, encoding="utf-8")
-        (root / "common/speculative.cpp").write_text(_SPEC, encoding="utf-8")
+        common_h = _COMMON_H
+        arg = _ARG
+        spec = _SPEC
+        if cosmetic_noise:
+            common_h = common_h.replace("minimum number of draft tokens", "wording changed upstream")
+            arg = arg.replace("--spec-draft-n-min", "--string-is-noise").replace("minimum number of draft tokens to use for speculative decoding (default: %d)", "string literal changed")
+            spec = spec.replace("[n_seq][n_embd]", "comment changed").replace("/*is_other*/", "/* renamed comment */")
+        (root / "common/common.h").write_text(common_h, encoding="utf-8")
+        (root / "common/arg.cpp").write_text(arg, encoding="utf-8")
+        (root / "common/speculative.cpp").write_text(spec, encoding="utf-8")
         return td, root
 
     def test_apply_and_idempotent(self):
@@ -109,6 +116,12 @@ class Patch1268Mechanics(unittest.TestCase):
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second))
             self.assertEqual(before, {p: (root / p).read_text() for p in before})
+
+    def test_noise_stripped_comments_and_strings_do_not_define_anchors(self):
+        td, root = self._tree(cosmetic_noise=True)
+        with td:
+            results = apply_all(_module.PATCHES, root)
+            self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
 
     def test_missing_depth_anchor_fails_closed(self):
         td, root = self._tree()
