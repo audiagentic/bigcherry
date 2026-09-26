@@ -10,8 +10,14 @@ scaffold).
   reference check on both arms.
 - activation: the subject test-backend-ops output carries at least one
   1256 route marker (small / parallel_radix); the control none.
-- performance: tg128 decode on the 256-expert MoE model (routing TOP_K every
-  token, positive) and on a dense model (control), 10 paired rounds each.
+- performance (series 2): MoE routing does NOT run TOP_K -- it uses the fused
+  ``topk_moe`` kernel (PVPS10 profile, 2026-09-26) -- so the positive lane is
+  llama-server MTP decode with ``--backend-sampling``: the top-k sampler runs
+  ``ggml_top_k`` over the full ~151k-logit vocabulary every token (1256's
+  parallel-radix route). Metric: client wall-clock tokens/s. Control: dense
+  llama-bench tg128 (sampling-free, so TOP_K-free).
+- activation (series 2): the subject's backend-sampling server log carries
+  the radix route marker; the control's none.
 """
 
 from __future__ import annotations
@@ -34,6 +40,10 @@ _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(rf"BIGCHERRY_PATCH_HIT patch={_PATCH_TAG} path=topk_(\w+)")
 _TBO_ARGS = ("-o", "TOP_K", "-b", "ROCm0")
+# Single-GPU MTP server with backend sampling on: the request's top_k=20 then
+# runs as ggml_top_k on the device over the full vocabulary.
+_SERVER_ARGS = ("--parallel", "1", "--metrics", "-ngl", "99", "--fit", "off",
+                "--spec-type", "draft-mtp", "--spec-draft-n-max", "4", "--backend-sampling")
 _ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = f"{_LABEL}-correctness.json"
@@ -69,40 +79,58 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         f"subject {arms['subject'][2]}/{arms['subject'][3]} passed"
     )
     backend_reference = experiment_contract.CorrectnessResult(check="backend_reference", passed=passed, detail=detail)
-    subject_routes = sorted(set(_MARKER.findall(arms["subject"][0])))
-    control_routes = sorted(set(_MARKER.findall(arms["control"][0])))
-    trigger_hit = bool(subject_routes) and not control_routes
-    activation = ActivationEvidence(
-        status="executed" if trigger_hit else "not_executed",
-        mechanism="trace_marker",
-        detail=f"subject routes={subject_routes} control routes={control_routes}",
-    )
-    subject_trace_ref = ctx.runtime.write_text_artifact(
-        name=_SUBJECT_TRACE_ARTIFACT, text=support.compact_log(arms["subject"][0]))
-    control_trace_ref = ctx.runtime.write_text_artifact(
-        name=_CONTROL_TRACE_ARTIFACT, text=support.compact_log(arms["control"][0]))
     ctx.runtime.write_artifact(
         name=_CORRECTNESS_ARTIFACT,
         payload={
             "schema_version": 1, "contract_id": _CONTRACT_ID, "check": "backend_reference",
-            "passed": passed, "detail": detail, "subject_routes": subject_routes,
+            "passed": passed, "detail": detail,
+            "subject_tbo_routes": sorted(set(_MARKER.findall(arms["subject"][0]))),
             "arms": {role: {"returncode": rc, "passed": ok, "total": total} for role, (_, rc, ok, total) in arms.items()},
             "build_identities": {r: dict(i) for r, i in pair.validation_build_identities.items()},
         },
     )
 
-    benches = {role: ctx.validation_binaries.get(role, {}).get("llama-bench") for role in ("control", "subject")}
-    if not all(isinstance(b, Path) and b.is_file() for b in benches.values()):
-        raise vp.ValidationProducerError(f"{_LABEL}: standard scaffold llama-bench pair is missing")
-    lanes = {}
-    for role, lane_model in (("positive", ctx.model), ("control", control_model)):
-        outcome = ctx.runtime.run_paired_llama_benchmark(
-            control_binary=benches["control"], subject_binary=benches["subject"], model=lane_model,
-            workloads=("decode",), pairs=_ROUNDS, log_context=f"{_LABEL}-{role}", device=device,
-        )
-        lanes[role] = support.lane_effect(
-            outcome, workload="decode", metric="tg128", role=role, rounds=_ROUNDS, label=_LABEL)
-    (positive_effect, positive_run), (control_effect, control_run) = lanes["positive"], lanes["control"]
+    binaries = {
+        role: {tool: ctx.validation_binaries.get(role, {}).get(tool) for tool in ("llama-bench", "llama-server")}
+        for role in ("control", "subject")
+    }
+    if not all(isinstance(b, Path) and b.is_file() for tools in binaries.values() for b in tools.values()):
+        raise vp.ValidationProducerError(f"{_LABEL}: standard scaffold llama-server/llama-bench pair is missing")
+    positive_effect, records, server_logs = support.mtp_server_lane(
+        ctx,
+        control_binary=binaries["control"]["llama-server"],
+        subject_binary=binaries["subject"]["llama-server"],
+        # The server attestation names the device only by PCI locator.
+        expected=dataclasses.replace(device.execution_identity, locators=(device.locator,))
+        if device.locator is not None else device.execution_identity,
+        env={**dict(device.env_overrides), "BIGCHERRY_PATCH_TRACE": "1"},
+        label=_LABEL,
+        server_args=_SERVER_ARGS,
+        measured_pairs=_ROUNDS,
+        requests_per_start=support.contract_measurement(_CONTRACT_ID).server_requests_per_start,
+    )
+    control_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=binaries["control"]["llama-bench"], subject_binary=binaries["subject"]["llama-bench"],
+        model=control_model, workloads=("decode",), pairs=_ROUNDS, log_context=f"{_LABEL}-control", device=device,
+    )
+    control_effect, control_run = support.lane_effect(
+        control_outcome, workload="decode", metric="tg128", role="control", rounds=_ROUNDS, label=_LABEL)
+
+    server_text = {arm: path.read_text(encoding="utf-8", errors="replace") for arm, path in server_logs.items()}
+    subject_routes = sorted(set(_MARKER.findall(arms["subject"][0] + server_text["subject"])))
+    control_routes = sorted(set(_MARKER.findall(arms["control"][0] + server_text["control"])))
+    served_radix = "parallel_radix" in set(_MARKER.findall(server_text["subject"]))
+    trigger_hit = served_radix and not control_routes
+    activation = ActivationEvidence(
+        status="executed" if trigger_hit else "not_executed",
+        mechanism="trace_marker",
+        detail=(f"subject routes={subject_routes} (backend-sampling server radix={served_radix}) "
+                f"control routes={control_routes}"),
+    )
+    subject_trace_ref = ctx.runtime.write_text_artifact(
+        name=_SUBJECT_TRACE_ARTIFACT, text=support.compact_log(arms["subject"][0] + server_text["subject"]))
+    control_trace_ref = ctx.runtime.write_text_artifact(
+        name=_CONTROL_TRACE_ARTIFACT, text=support.compact_log(arms["control"][0] + server_text["control"]))
     performance_ref = ctx.runtime.write_artifact(
         name=_PERFORMANCE_ARTIFACT,
         payload={
@@ -111,14 +139,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "schema_version": 1, "contract_id": _CONTRACT_ID, "architecture": architecture,
             "positive_model_identity": identity, "control_model_identity": control_identity,
             "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
-            "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
-                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
+            "positive": {"metric": "mtp_wall_tps", "effect": dataclasses.asdict(positive_effect),
+                         "requests": records},
             "control": {"metric": "tg128", "effect": dataclasses.asdict(control_effect),
                         "runs": list(control_run.runs), "stats": dict(control_run.stats)},
         },
     )
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
-        lane_id=f"{_LABEL}-test-backend-ops-subject", role="positive", positive_hit=trigger_hit)
+        lane_id=f"{_LABEL}-backend-sampling-server-subject", role="positive", positive_hit=trigger_hit)
     return vp.ProducerResult(
         correctness={"disposition": "passed" if passed else "failed",
                      "mechanism": f"{_LABEL}-topk-backend-reference", "detail": detail},
@@ -133,7 +161,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         lane_effects=(),
         contract_correctness_results=(backend_reference,),
         promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
-        promotion_target_metric={_CONTRACT_ID: "tg128"},
+        promotion_target_metric={_CONTRACT_ID: "mtp_wall_tps"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         emitted_artifacts=frozenset(
             {_CORRECTNESS_ARTIFACT, _PERFORMANCE_ARTIFACT, _SUBJECT_TRACE_ARTIFACT, _CONTROL_TRACE_ARTIFACT}),
