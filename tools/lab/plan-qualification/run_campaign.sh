@@ -32,5 +32,12 @@ args=(--patch "$patch" --baseline-source bigcherry-tuning --amdgpu-targets "$arc
       --workdir "$work/runs/$run" --worktree-root "$work/worktrees"
       --build-root "$work/builds/$arch-$toolchain")
 [ "$producer" != "-" ] && args+=(--validation-producer "$producer")
+# A checkout whose patch catalog does not load (e.g. a patch naming a contract
+# that was never added) fails every job in seconds and drains the whole queue.
+# Wait for a loadable catalog instead, so the lane pauses until it is fixed.
+until python3 -c "from bigcherry.patch import patchset; patchset.catalog()" 2>/dev/null; do
+    echo "patch catalog does not load; waiting for a fixed checkout ($(date -Is))"
+    sleep 300
+done
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
 echo "CAMPAIGN_EXIT=$?"
