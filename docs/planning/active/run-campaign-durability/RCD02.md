@@ -27,9 +27,9 @@ This item is a design freeze, not a Slurm installation task. Later RCD items may
    - BigCherry: JobSpec/series/run/attempt identity, contract/composition freeze, commit pinning, capability resolution, production gate, retry classification, evidence/harvest/report/events.
 3. Freeze executor abstraction: domain modules depend only on `Executor`; only `jobs/slurm.py` may know `sbatch`, `squeue`, GRES, licenses, `SLURM_*` or Slurm state spellings.
 4. Freeze rollout:
-   - v1: monolithic `validation_campaign` Slurm job; retire shell queue only after hardware acceptance.
+   - v1: monolithic `validation_campaign` Slurm job with RCD06 M1 service-safety seams (external evidence, frozen composition, preflights/progress); retire shell queue only after hardware acceptance.
    - v1.5: prepare/execute split with verified prepared manifest.
-   - v2: external evidence sink + RCD01 durable operation/result protocol.
+   - v2: RCD01 durable operation/result protocol over already-externalized evidence.
    - v3: full stage DAG.
    - v4: timed-measure overlap only after `scheduler-isolation-v1`.
 5. Freeze execution order/dependencies:
@@ -110,7 +110,7 @@ Completed during planning:
 
 ```bash
 python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
-# {"checks": 16, "ok": true}
+# {"checks": 25, "ok": true}
 ```
 
 Required static review before closing RCD02:
