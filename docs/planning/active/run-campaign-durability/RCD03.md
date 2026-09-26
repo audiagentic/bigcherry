@@ -15,103 +15,99 @@ work: L
 
 ## Description
 
-Install and qualify the single-node Slurm service used by `SlurmExecutor`: MUNGE, loopback-only MariaDB, `slurmdbd`, `slurmctld`, and `slurmd`. No `slurmrestd` in v1. The accounting layer is minimal scheduler state, not a second BigCherry authority: BigCherry still owns run/series/attempt identity, commit pinning, retry legality, evidence and reporting.
+Install the minimal single-node Slurm execution substrate used by `SlurmExecutor`: **MUNGE + `slurmctld` + `slurmd`**. v1 does **not** require MariaDB, slurmdbd or slurmrestd. BigCherry remains the durable domain authority; Slurm provides queue/process/resource ownership plus controller state and `jobcomp/filetxt` completion history.
 
-This requirement is empirically derived. The real Ubuntu 24.04/Slurm 23.11.4 CI smoke successfully started MUNGE/slurmctld/slurmd, registered the node, exposed `squeue --json`, and completed hold/release, then reproduced `PENDING Reason=InvalidAccount` on later submissions when no accounting association existed. v1 therefore provisions exactly one local cluster/account and explicit user association through slurmdbd rather than relying on no-accounting behavior.
+This is now empirically validated, not a paper design. GitHub Actions run `36219538263` on Ubuntu 24.04.5 installed Noble `slurm-wlm 23.11.4-1.2ubuntu5`, started real MUNGE/slurmctld/slurmd, scheduled real jobs without accounts/slurmdbd, ran the current BigCherry process harness inside a Slurm allocation, proved license priority/dependencies/requeue/cancel/controller recovery/jobcomp, then restarted using the production cgroup plugins with `ConstrainDevices=no` and completed a job. AMD device filtering remains Brutus-only.
 
-GPU inventory/GRES come from RCD12 discovered state. Production coexistence remains RCD11 BigCherry policy, not static Slurm GPU partitions.
+## Dependencies
 
-## Steps
+- RCD02 architecture freeze.
+- RCD12 accepted hardware inventory + deterministic architecture-typed GRES render.
+- RCD04 Executor protocol for production adapter implementation.
+- RCD11 production coexistence is orthogonal; Slurm does not own llama-swap.
 
-1. Maintain tracked config templates plus `docs/reference/jobs/SLURM_BRUTUS.md`; rendered host files and DB secrets remain untracked.
-2. Install Noble packages `slurm-wlm slurmdbd munge mariadb-server`.
-3. Bind MariaDB to loopback only; create `slurm_acct_db` + least-purpose `slurm` DB user.
-4. Configure/start MUNGE, slurmdbd, cluster `bigcherry`, account `bigcherry`, service-user association, then slurmctld/slurmd in that order.
-5. Configure `bc-build`/`bc-measure`, `bf_licenses`, priority tiers, licenses, `AccountingStorageEnforce=associations`, `RequeueExit=75`, jobcomp and cgroup accounting.
-6. Generate architecture-typed `gres.conf` and node `Gres=` from accepted RCD12 inventory; `slurmd -G` is mandatory before node resume.
-7. Implement `SlurmExecutor` behind RCD04 `Executor`; command runner is injectable and Slurm syntax stays adapter-local.
-8. Run real CPU/service validation in GitHub `ubuntu-24.04` on every RCD/config change.
-9. On Brutus run the AMD GRES/cgroup/ROCm falsification matrix; fallback to `ConstrainDevices=no` if any supported cell fails.
-10. Record Slurm/config/accounting/inventory/cgroup hashes/modes in normalized status and acceptance evidence.
-
-## Detailed Solution & Technical Design
-
-### Service topology
+## Tested v1 service topology
 
 ```text
-MariaDB 127.0.0.1:3306
-  ^
-  | accounting_storage/mysql
-slurmdbd 127.0.0.1:6819
-  ^
-  | accounting_storage/slurmdbd
-slurmctld
-  ^       ^
-  |       |
-sbatch   slurmd
+MUNGE
+  |
+slurmctld  <---- sbatch/squeue/scontrol/scancel
+  |
+slurmd
+
+BigCherry run store + jobcomp/filetxt = durable/history evidence
 ```
 
-Only SSH is agent-facing. MariaDB/slurmdbd are never LAN APIs. MUNGE authenticates Slurm components. BigCherry uses CLI adapter calls (`sbatch`, `squeue --json`, `scontrol`, `scancel`, `sacct`) and never connects to MariaDB directly.
+No LAN Slurm REST/API. Agents use BigCherry over SSH. Native Slurm IDs are execution metadata only.
 
-### Accounting bootstrap
-
-Tracked `/etc/slurm/slurmdbd.conf` template:
+## Exact tested scheduler policy
 
 ```ini
 AuthType=auth/munge
-DbdHost=@NODE_NAME@
-DbdAddr=127.0.0.1
-DbdPort=6819
-SlurmUser=slurm
-StorageType=accounting_storage/mysql
-StorageHost=127.0.0.1
-StoragePort=3306
-StorageLoc=slurm_acct_db
-StorageUser=slurm
-StoragePass=@HOST_SECRET@
-```
+AuthInfo=cred_expire=30
+CredType=cred/munge
 
-Host bootstrap:
-
-```bash
-sacctmgr -i add cluster bigcherry
-sacctmgr -i add account bigcherry Cluster=bigcherry Description=BigCherry Organization=BigCherry
-sacctmgr -i add user bigcherry Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry
-```
-
-Every managed `sbatch` explicitly includes `--account=bigcherry`. Human users get explicit associations only if they submit directly.
-
-### Scheduler policy
-
-```ini
 SchedulerType=sched/backfill
-SchedulerParameters=bf_licenses
-PriorityType=priority/multifactor
+SchedulerParameters=bf_licenses,bf_interval=2,sched_interval=2
+PriorityType=priority/basic
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+
 Licenses=host_activity:2,build_slot:1
-
-AccountingStorageType=accounting_storage/slurmdbd
-AccountingStorageHost=127.0.0.1
-AccountingStoragePort=6819
-AccountingStorageEnforce=associations
-
+AccountingStorageType=accounting_storage/none
 JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
-JobAcctGatherType=jobacct_gather/cgroup
-JobAcctGatherFrequency=30
+RequeueExit=75
 
 ProctrackType=proctrack/cgroup
 TaskPlugin=task/cgroup,task/affinity
-RequeueExit=75
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency=30
 
 PartitionName=bc-build   Nodes=brutus PriorityTier=10  State=UP MaxTime=00:45:00
 PartitionName=bc-measure Nodes=brutus PriorityTier=100 State=UP MaxTime=00:45:00
 ```
 
-`host_activity=2` is the host-quiet token. v1 monolithic measure consumes both; build consumes one. `bf_licenses` + higher measurement tier are tested against real Slurm, not assumed.
+### Why these settings
 
-### GRES
+- `priority/basic`: one host does not need fair-share/account association machinery.
+- `PriorityTier`: measurement outranks future build work.
+- `bf_licenses`: backfill accounts for licenses rather than allowing build churn to starve measurement.
+- `host_activity:2`: build consumes one token; timed measurement consumes both.
+- `build_slot:1`: one build initially; increase only after isolation qualification.
+- `AuthInfo=cred_expire=30`: Noble 23.11 uses credential expiry as automatic requeue eligibility delay. Default 120s was measured and rejected as operationally slow. `SchedulerParameters=requeue_delay` is not a Noble 23.11 option.
+- `AccountingStorageType=none`: real jobs execute without an association DB. `Reason=InvalidAccount` can appear transiently in no-association mode and is therefore diagnostic text, not a BigCherry permanent-failure classifier.
+- `jobcomp/filetxt`: lightweight Slurm-native completion trail; BigCherry store remains authoritative for attempts/results/events.
 
-RCD12 generates one line per current render node:
+## Resource classes
+
+```text
+build / v1.5 prepare:
+  partition=bc-build
+  licenses=build_slot:1,host_activity:1
+  finite time
+
+monolithic v1 / timed execute:
+  partition=bc-measure
+  licenses=host_activity:2
+  architecture GRES when GPU required
+  finite time
+
+v1.5 execute:
+  dependency=afterok:<prepare-job>
+```
+
+Run `36219538263` produced actual order:
+
+```text
+build1 -> measure -> build2
+```
+
+where build1 was confirmed RUNNING before measure/build2 submission. This is the starvation/progress acceptance test.
+
+## GRES model
+
+RCD12 generates architecture-only types from accepted discovery:
 
 ```text
 Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
@@ -119,18 +115,60 @@ Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
 Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
 ```
 
-Node summary groups architecture counts only:
+Node summary:
 
 ```text
-Gres=gpu:gfx1100:2,gpu:gfx1201:1
+Gres=gpu:gfx1100:2,gpu:gfx1201:1,...
 ```
 
-Never encode ordinal/stable UUID in `Type`. Slurm owns allocation and `ROCR_VISIBLE_DEVICES`; BigCherry maps allocation back to RCD12 stable IDs and preserves visibility. A series-bound proper subset reserves all accepted GPUs of that architecture in v1, then narrows to the pre-bound stable IDs inside the exclusive allocation.
+Rules:
 
-### SlurmExecutor contract
+1. no per-slot/per-UUID `Type`;
+2. `File=` is regenerated from current accepted inventory;
+3. `Flags=amd_gpu_env` owns Slurm `ROCR_VISIBLE_DEVICES`;
+4. BigCherry maps allocated resources back to stable RCD12 IDs;
+5. if a series-bound cohort is a proper subset of one architecture, reserve all accepted GPUs of that architecture, then narrow to the pre-bound stable IDs inside the exclusive allocation;
+6. inventory drift drains the node before GRES mutation.
+
+`slurmd -G` is mandatory on Brutus before resuming the node after every generated GRES change. Do not prescribe `slurmctld -t`: Noble 23.11.4 has no such config-test option. Controller startup + `scontrol show config` validates scheduler config; `slurmd -G` validates GRES.
+
+## cgroup policy
+
+Initial Brutus mode:
+
+```ini
+# slurm.conf
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency=30
+
+# cgroup.conf
+CgroupPlugin=autodetect
+ConstrainCores=yes
+ConstrainDevices=no
+ConstrainRAMSpace=no
+ConstrainSwapSpace=no
+```
+
+Real Noble CI proved this fallback stack launches jobs in Slurm cgroups. Only switch to `ConstrainDevices=yes` after Brutus proves, for every accepted ROCm/toolchain/cohort:
+
+- `/dev/kfd` usable;
+- allocated render nodes usable;
+- unallocated render nodes inaccessible;
+- Slurm visibility resolves exactly to bound stable IDs;
+- no conflicting HIP/CUDA selector;
+- 100 timeout-bounded HIP init/property cycles;
+- llama-bench/server smoke;
+- peer/`-sm tensor` + 4096-context preflight where required.
+
+Failure of any supported cell keeps `ConstrainDevices=no`; GRES then provides scheduling isolation, not a device security boundary.
+
+## SlurmExecutor contract
+
+Planned module:
 
 ```python
-# tools/bigcherry/jobs/slurm.py
 class SlurmExecutor(Executor):
     def __init__(self, *, runner: CommandRunner, policy: SlurmPolicy): ...
     def submit(self, request: ExecutionRequest) -> ExecutionHandle: ...
@@ -141,16 +179,15 @@ class SlurmExecutor(Executor):
     def events(self, handle: ExecutionHandle, *, after: int | None = None) -> Iterable[ExecutorEvent]: ...
 ```
 
-Submission argv includes at least:
+Exact submission shape:
 
 ```text
 sbatch --parsable
-  --account bigcherry
   --job-name bc:<run_id>:a<attempt>
   --comment bigcherry:<execution_id>
   --partition <bc-build|bc-measure>
-  --licenses ...
-  --gres gpu:<arch>:<reserved_count>     # when GPU stage
+  --licenses <...>
+  --gres gpu:<arch>:<reserved-count>        # GPU jobs only
   --time <finite>
   --output <attempt>/slurm-%j.out
   --error <attempt>/slurm-%j.err
@@ -158,57 +195,93 @@ sbatch --parsable
   <attempt>/launch.sh
 ```
 
-`submission-intent.json` is durable before `sbatch`. The returned job ID is opaque execution metadata. Recovery searches by `--comment=bigcherry:<execution_id>` plus sentinels/accounting; ambiguous acceptance never causes blind duplicate submission.
+No `--account` in v1. Production code builds argv arrays, never shell command strings.
 
-Machine parsers consume `squeue --json`/structured fields; never human column output. `sacct` is historical executor evidence, not scientific authority.
+Status/control interfaces:
 
-### cgroups
-
-Candidate:
-
-```ini
-CgroupPlugin=autodetect
-ConstrainDevices=yes
-ConstrainCores=yes
+```text
+squeue --json                 current queue/running state
+scontrol show job -o <id>     targeted diagnostic/allocation detail
+scontrol hold/release <id>
+scancel <id>
+jobcomp/filetxt               lightweight terminal history
 ```
 
-Brutus acceptance per toolchain/cohort:
+Do not depend on `sacct` in v1 because no accounting DB is configured. Pending `reason` is diagnostic; BigCherry derives execution state from Slurm state/resource behavior plus bounded timeouts, never from one reason string alone.
 
-- `/dev/kfd` works;
-- allocated render nodes work, unallocated nodes blocked;
-- Slurm visibility maps exactly to stable IDs;
-- no conflicting HIP/CUDA visibility selectors;
-- 100 timeout-bounded HIP init/property loops;
-- llama-bench/server smoke;
-- peer/`-sm tensor` + 4096-context producer preflight where required.
+## Submission crash/idempotency
 
-Fallback: `ConstrainDevices=no`, while retaining GRES scheduling, Slurm visibility and BigCherry attestation. Record fallback explicitly; do not call it device isolation.
+Before `sbatch`:
 
-## Code Samples & Guidance
-
-Deterministic adapter/config functions:
-
-```python
-def render_slurm_gres(inventory: HardwareInventory) -> str: ...
-def render_slurm_node_gres(inventory: HardwareInventory) -> str: ...
-def build_sbatch_argv(request: ExecutionRequest, policy: SlurmPolicy) -> tuple[str, ...]: ...
-def parse_squeue_json(payload: str) -> tuple[ExecutionStatus, ...]: ...
-def parse_slurm_allocation(env: Mapping[str, str], inventory: HardwareInventory) -> Allocation: ...
+```text
+persist submission-intent.json
+execution_id is stable
+--comment=bigcherry:<execution_id>
 ```
 
-No shell command construction in production adapter code.
+After acceptance persist returned native job ID. On restart:
+
+- one correlated execution -> bind it;
+- zero correlated executions + acceptance disproved -> submit once;
+- multiple correlated executions/uncertain acceptance -> block + wake; never blind duplicate.
+
+The file-backed service recovery smoke already proves these state-machine rules offline. Production Slurm recovery combines `squeue --json`, BigCherry start/result sentinels and jobcomp because a very short completed job can leave `squeue` before handle persistence.
+
+## Retry semantics proven on Noble
+
+```text
+0   execution completed; scientific verdict is separate
+75  RequeueExit: same native job, same attempt, same commit
+76  terminate; BigCherry creates attempt+1/new job and may resolve newer commit
+77  invalid/drift; block
+```
+
+Real run observed the same job restart with:
+
+```text
+SLURM_RESTART_COUNT: 0 -> 1
+Restarts=1
+```
+
+Scientific FAIL remains exit 0 and cannot trigger scheduler requeue.
+
+## Real CI evidence
+
+GitHub Actions run `36219538263` / head `4b53e9df3cb89b6cb62feb68c381f178d571f4dd` passed both jobs.
+
+Real Noble/Slurm assertions:
+
+```text
+Ubuntu 24.04.5
+slurm-wlm 23.11.4-1.2ubuntu5
+MUNGE round-trip
+slurmctld + slurmd node registration
+squeue --json
+no-account job completion
+real current-branch BigCherry process harness inside Slurm job
+hold/release
+running-build license blocking
+build1 -> measure -> build2 priority/progress
+afterok dependency
+RequeueExit=75; SLURM_RESTART_COUNT 0 -> 1
+cancel
+slurmctld restart retaining queued + running ownership
+jobcomp/filetxt completion history
+proctrack/task/jobacct cgroup stack with ConstrainDevices=no
+```
+
+Separate BigCherry CI job on the same run passed planning/process/failure/recovery/race/submission-event tests.
 
 ## Files
 
-Tracked/implemented during plan validation:
+Tracked:
 
 - `config/slurm/slurm.conf.example`
-- `config/slurm/slurmdbd.conf.example`
 - `config/slurm/cgroup.conf.example`
 - `config/slurm/gres.conf.example`
 - `docs/reference/jobs/SLURM_BRUTUS.md`
 - `.github/workflows/rcd-slurm-validation.yml`
-- `tools/lab/run-campaign-durability/slurm_noble_smoke.sh`
+- canonical lab validation under `tools/lab/run-campaign-durability/`
 
 Planned production:
 
@@ -220,78 +293,41 @@ Planned production:
 Generated host state:
 
 - `/etc/slurm/slurm.conf`
-- `/etc/slurm/slurmdbd.conf` mode 0600
 - `/etc/slurm/gres.conf`
 - `/etc/slurm/cgroup.conf`
-- MariaDB `slurm_acct_db`
+- `/var/spool/slurmctld`
+- `/var/spool/slurmd`
 - `/var/log/slurm/bigcherry-jobcomp.log`
 
-## Validation
+## Brutus install/acceptance sequence
 
-### Already executed on real GitHub Ubuntu 24.04
-
-The CI installs the actual Noble packages, not mocks. Observed/passed so far:
-
-- exact `slurm-wlm 23.11.4-1.2ubuntu5` installation;
-- MUNGE round-trip;
-- real `slurmctld` + `slurmd` launch;
-- node registration into `bc-build`/`bc-measure`;
-- `squeue --json` schema availability;
-- real hold/release job;
-- no-accounting configuration reproduced `InvalidAccount`, driving the slurmdbd correction.
-
-Current CI additionally must pass with the corrected accounting stack:
-
-- loopback MariaDB + real `slurmdbd`;
-- cluster/account/user association;
-- build/license/measurement ordering;
-- `afterok` dependency;
-- `RequeueExit=75` and `SLURM_RESTART_COUNT=0,1`;
-- cancellation;
-- jobcomp and `sacct` history.
-
-### Offline permanent tests before implementation completion
-
-- golden GRES/node renders for synthetic inventories;
-- exact `sbatch` argv snapshots including `--account=bigcherry`;
-- `squeue --json` fixture mappings including unknown states;
-- allocation -> RCD12 stable-ID mapping and stale-inventory rejection;
-- import guard: domain modules do not import Slurm adapter;
-- submission ambiguity/recovery correlation fixtures.
-
-### Brutus-only gates
-
-- `slurmd -G` against generated real GPU config;
-- single/multi-GPU stable-ID attestation;
-- complete ROCm/cgroup matrix or explicit fallback;
-- production gate/window integration;
-- controller restart/recovery with real queued/running work;
-- dynamic hardware drift drain/reconfigure/resume.
-
-## Effort & Risk
-
-Medium-high. Real CI has already falsified one simplifying assumption, validating the approach. Remaining high-risk area is AMD ROCm/cgroup behavior and dynamic production coexistence, both Brutus-only.
-
-## Standards
-
-RCD02 architecture; RCD12 inventory; tested Ubuntu Noble Slurm 23.11.4 behavior; `docs/reference/jobs/SLURM_BRUTUS.md` is the installation procedure.
+1. install `slurm-wlm munge jq` only;
+2. configure/start MUNGE; require round-trip;
+3. discover/accept RCD12 hardware inventory;
+4. render `slurm.conf`, `gres.conf`, `cgroup.conf` from accepted state;
+5. `slurmd -C` host CPU/memory sanity;
+6. `slurmd -G` generated GRES validation;
+7. start/enable `slurmctld`, then `slurmd`;
+8. require `scontrol ping`, `sinfo -Nel`, `squeue --json`, `scontrol show lic`;
+9. run CPU scheduler smoke equivalent to CI;
+10. run AMD cgroup/GRES matrix while `ConstrainDevices=no` is known fallback;
+11. switch to `ConstrainDevices=yes` only on full matrix pass;
+12. run RCD11 production coexistence and scheduler-isolation gates;
+13. record version/config/inventory/cgroup hashes before RCD10 cutover.
 
 ## Acceptance Criteria
 
-- Real Noble CI passes complete MUNGE/MariaDB/slurmdbd/slurmctld/slurmd smoke.
-- Explicit BigCherry account association eliminates `InvalidAccount`.
-- Real license/priority/dependency/requeue/cancel tests pass.
-- Generated AMD GRES passes `slurmd -G` on Brutus.
-- Slurm allocation maps to stable RCD12 device identities.
-- cgroup mode is empirically qualified or fallback selected.
-- No BigCherry domain module depends on Slurm types.
-
-## Notes
-
-GitHub CI validates real Slurm service/scheduler semantics without GPUs. It does not qualify AMD GRES/cgroups/ROCm or production interference; those remain Brutus gates.
+- real Noble CI remains green;
+- Brutus generated GRES passes `slurmd -G`;
+- allocation maps to stable RCD12 identities;
+- AMD cgroup mode either passes or recorded fallback stays active;
+- production Slurm adapter has command/render/parser/idempotency tests;
+- no BigCherry domain module imports Slurm adapter/types;
+- no slurmdbd/MariaDB dependency in v1.
 
 ## Change Log
 
-- 2026-09-26T00:51:56.813138+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Replaced static four-card assumptions with dynamic RCD12 inventory and generic partitions.
-- 2026-09-26 (dev-gpt-agent): Real Noble 23.11.4 CI added; no-accounting design falsified by `InvalidAccount`, so v1 now includes minimal loopback MariaDB/slurmdbd associations.
+- 2026-09-26T00:51:56.813138+00:00: created.
+- 2026-09-26: dynamic inventory/GRES design added.
+- 2026-09-26: real Noble validation added; several assumptions falsified during iteration.
+- 2026-09-26: final real Noble run proved minimal no-DB stack, BigCherry-under-Slurm, license priority, requeue, controller recovery and cgroup fallback; removed slurmdbd/MariaDB from v1.
