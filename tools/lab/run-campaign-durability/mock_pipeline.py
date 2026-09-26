@@ -83,6 +83,13 @@ class RetryAction(str, Enum):
     BLOCK = "block"
 
 
+class DriftKind(str, Enum):
+    SAME = "same"
+    LOCATOR_ONLY = "locator-only"
+    TOPOLOGY_CHANGE = "topology-change"
+    DEVICE_SET_CHANGE = "device-set-change"
+
+
 @dataclass
 class FakeExecution:
     native_id: str
@@ -186,6 +193,77 @@ def requires_all_of_arch_reservation(
     return False
 
 
+def parse_production_claim(
+    claim: str | None, devices: Iterable[DeviceRecord]
+) -> frozenset[str] | None:
+    """Resolve the design's claim grammar. None return means ALL/fail-closed."""
+    if claim is None or not claim.strip():
+        return None
+    text = claim.strip()
+    if text == "all":
+        return None
+    by_id = {device.device_id: device for device in devices}
+    if text.startswith("uuid:"):
+        parts = tuple(part.strip() for part in text.split(","))
+        ids: list[str] = []
+        for part in parts:
+            if not part.startswith("uuid:") or not part[5:]:
+                return None
+            device_id = part[5:]
+            if device_id not in by_id:
+                return None
+            ids.append(device_id)
+        return frozenset(ids)
+    if text.startswith("arch:"):
+        fields = [part.strip() for part in text.split(",")]
+        arch = fields[0][5:]
+        count = None
+        for part in fields[1:]:
+            key, sep, value = part.partition("=")
+            if key == "count" and sep and value.isdigit():
+                count = int(value)
+            else:
+                return None
+        candidates = sorted(
+            device.device_id for device in by_id.values() if device.arch == arch
+        )
+        if not arch or count is None or count < 1 or len(candidates) < count:
+            return None
+        # Potential means every device satisfying the selector, not one chosen subset.
+        return frozenset(candidates)
+    return None
+
+
+def classify_inventory_drift(
+    accepted: Iterable[DeviceRecord],
+    observed: Iterable[DeviceRecord],
+    *,
+    accepted_topology: str,
+    observed_topology: str,
+) -> DriftKind:
+    old = {device.device_id: device for device in accepted}
+    new = {device.device_id: device for device in observed}
+    if set(old) != set(new):
+        return DriftKind.DEVICE_SET_CHANGE
+    if accepted_topology != observed_topology:
+        return DriftKind.TOPOLOGY_CHANGE
+    locator_fields = ("pci_bdf", "render_node", "numa_node")
+    if any(
+        any(getattr(old[key], field) != getattr(new[key], field) for field in locator_fields)
+        for key in old
+    ):
+        return DriftKind.LOCATOR_ONLY
+    return DriftKind.SAME
+
+
+def narrow_allocation(allocation: Allocation, selected_ids: Iterable[str]) -> tuple[str, ...]:
+    """Subset-overallocation may narrow visibility but never broaden allocation."""
+    selected = tuple(selected_ids)
+    if not selected or not set(selected) <= set(allocation.device_ids):
+        raise ValueError("selected devices must be a non-empty subset of allocation")
+    return selected
+
+
 def production_gate(snapshot: ProductionSnapshot, allocation: Allocation) -> GateMode:
     if snapshot.potential_devices is None:
         return GateMode.EXCLUSIVE_WINDOW
@@ -277,6 +355,18 @@ def self_test() -> None:
         == GateMode.EXCLUSIVE_WINDOW
     )
 
+    assert parse_production_claim("uuid:gpu-A,uuid:gpu-B", devices) == frozenset({"gpu-A", "gpu-B"})
+    assert parse_production_claim("arch:gfx1100,count=2", devices) == frozenset({"gpu-A", "gpu-B"})
+    assert parse_production_claim("uuid:missing", devices) is None
+    assert parse_production_claim(None, devices) is None
+    assert narrow_allocation(Allocation(("gpu-A", "gpu-B")), ("gpu-B",)) == ("gpu-B",)
+    try:
+        narrow_allocation(Allocation(("gpu-A",)), ("gpu-C",))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("allocation broadening was accepted")
+
     linux = ExecutionEnvironment("linux", "ubuntu-24.04", "6.x", "rocm-linux", "7.2", "7.2", "clang", "drv")
     windows = ExecutionEnvironment("windows", "11", "26100", "hip-sdk-windows", "7.2", "7.2", "clang-cl", "drv")
     assert platform_environment_hash(linux) != platform_environment_hash(windows)
@@ -290,12 +380,21 @@ def self_test() -> None:
     assert inventory_material_hash(moved, topology_fingerprint="peer:A-B") != inventory_material_hash(
         devices[:2], topology_fingerprint="peer:A-B"
     )
+    assert classify_inventory_drift(
+        devices[:2], moved, accepted_topology="peer:A-B", observed_topology="peer:A-B"
+    ) == DriftKind.LOCATOR_ONLY
+    assert classify_inventory_drift(
+        devices[:2], moved, accepted_topology="peer:A-B", observed_topology="peer:A-B:numa1"
+    ) == DriftKind.TOPOLOGY_CHANGE
     assert hardware_cohort_hash(moved, topology_fingerprint="peer:A-B:numa1") != cohort
     replacement = (
         DeviceRecord("gpu-X", "amd_uuid", "gfx1100", "XTX", 24 * gib, "0000:01:00.0", "/dev/dri/renderD128", 0, "drv"),
         devices[1],
     )
     assert hardware_cohort_hash(replacement, topology_fingerprint="peer:A-B") != cohort
+    assert classify_inventory_drift(
+        devices[:2], replacement, accepted_topology="peer:A-B", observed_topology="peer:A-B"
+    ) == DriftKind.DEVICE_SET_CHANGE
 
     assert retry_action(75) == RetryAction.SAME_COMMIT_REQUEUE
     assert retry_action(76) == RetryAction.NEW_ATTEMPT
@@ -318,7 +417,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.self_test:
         self_test()
-        print(json.dumps({"ok": True, "checks": 16}, sort_keys=True))
+        print(json.dumps({"ok": True, "checks": 25}, sort_keys=True))
         return 0
     parser.error("--self-test is required for this planning harness")
     return 2
