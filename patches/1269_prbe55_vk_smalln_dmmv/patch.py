@@ -78,11 +78,11 @@ PATCHES = [
         description="PRBE55 opt-in AMD/RDNA small-N DMMV selection",
         edits=(
             Edit(id="prbe55-atomic-include", anchor=re.escape(_INCLUDE_OLD), mode="replace", text=_INCLUDE_NEW,
-                 guard=r"#include <atomic>", rationale="Thread-safe once-per-process activation marker.", expect_matches=1, max_span_lines=1),
+                 guard=r"#include <atomic>", rationale="Thread-safe once-per-process activation marker.", expect_matches=1, max_span_lines=2),
             Edit(id="prbe55-helper", anchor=re.escape(_HELPER_ANCHOR), mode="replace", text=_HELPER_TEXT,
-                 guard=r"bigcherry_prbe55_force_dmmv_smalln", rationale="Gate the experiment by env, AMD vendor, RDNA architecture, and N=2..8.", expect_matches=1, max_span_lines=1),
+                 guard=r"bigcherry_prbe55_force_dmmv_smalln", rationale="Gate the experiment by env, AMD vendor, RDNA architecture, and N=2..8.", expect_matches=1, max_span_lines=2),
             Edit(id="prbe55-selector", anchor=re.escape(_SELECTOR_OLD), mode="replace", text=_SELECTOR_NEW,
-                 guard=re.escape("PRBE55-VK-SMALLN-DMMV"), rationale="Force only an already-eligible MMVQ vector call onto the existing DMMV fallback path.", expect_matches=1, max_span_lines=4),
+                 guard=re.escape("PRBE55-VK-SMALLN-DMMV"), rationale="Force only an already-eligible MMVQ vector call onto the existing DMMV fallback path.", expect_matches=1, max_span_lines=5),
         ),
     ),
     FilePatch(

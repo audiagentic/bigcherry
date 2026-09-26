@@ -33,12 +33,12 @@ class TestPatchCatalogLoads(unittest.TestCase):
             entries["1000_rdna4_mmq_q2k_q6k_fix"].kind, "upstream-backport"
         )
 
-    def test_no_vulkan_patches_exist_yet(self):
+    def test_vulkan_patches_declare_the_vulkan_backend(self):
+        # The first Vulkan patch (1269 PRBE55) landed 2026-09-26; every patch
+        # that edits the Vulkan backend declares backend = "vulkan".
         entries = patch_catalog.build_snapshot().metadata
-        vulkan = [e for e in entries.values() if e.backend == "vulkan"]
-        self.assertEqual(
-            vulkan, [], "no Vulkan patches should exist before RE30 phase 2+"
-        )
+        vulkan = sorted(pid for pid, e in entries.items() if e.backend == "vulkan")
+        self.assertIn("1269_prbe55_vk_smalln_dmmv", vulkan)
 
 
 class TestPatchCatalogCrossCheck(unittest.TestCase):
@@ -262,7 +262,7 @@ class TestPatchContext(unittest.TestCase):
             self.assertEqual(mocked.call_args.kwargs.get("resolved_base_revision"), "deadbeef" * 5)
             self.assertEqual(mocked.call_args.kwargs.get("patches_dir"), catalog_path.parent)
 
-    def test_patches_for_backend_on_the_real_catalog_only_matches_agnostic_patches_for_vulkan(self):
+    def test_patches_for_backend_on_the_real_catalog_matches_vulkan_and_agnostic_patches(self):
         """CO01 closure audit (2026-09-08): this used to assert an empty
         result ('no Vulkan patches exist yet, RE30 phases 2+ need real
         Vulkan hardware evidence first') -- that stopped being literally
@@ -272,7 +272,7 @@ class TestPatchContext(unittest.TestCase):
         genuinely backend-agnostic patches match."""
         result = patch_catalog.patches_for_backend("vulkan")
         entries = patch_catalog.build_snapshot().metadata
-        expected = tuple(sorted(pid for pid, e in entries.items() if e.backend == "agnostic"))
+        expected = tuple(sorted(pid for pid, e in entries.items() if e.backend in ("vulkan", "agnostic")))
         self.assertEqual(result, expected)
 
     def test_patches_for_backend_on_the_real_catalog_returns_all_hip_patches(self):
