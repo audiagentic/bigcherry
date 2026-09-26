@@ -55,6 +55,9 @@ Design doc states the decision, rejected alternatives with reasons, and an expli
 
 Owner leaning Slurm (2026-09-26).
 
+2026-09-26 DECIDED, no open objections (3 adversarial rounds, ses_4019cfc56e774dd2: req_27c6e52d2ffa4904, req_714f0d248f364ce6, req_b2e5be0c112047b0). Slurm (single node, munge+slurmctld+slurmd, no slurmdbd in v1) behind a platform-neutral Executor (Slurm/Local/Fake); GPU-class production policy (gfx1100 windows, GPU2/3 idle attestation); v1 monolithic job per run, v1.5 prepare/execute split; per-attempt commit pinning; exit protocol 0/75/76/77; Windows HIP a separate series environment. Final design: docs/design/JOBS_ORCHESTRATOR.md. Remaining gates are empirical (cgroup ROCm matrix, loaded-idle isolation).
+
 ## Change Log
 
 - 2026-09-26T00:51:52.243021+00:00 (created-by): Created by agent
+- 2026-09-26T01:20:17.311421+00:00 (updated-by): Updated: section:notes
