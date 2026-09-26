@@ -11,15 +11,19 @@ PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --sel
 Expected:
 
 ```json
-{"checks": 25, "ok": true}
+{"checks": 32, "ok": true}
 ```
 
 Covered without hardware:
 
-- capability-based GPU resolution by architecture/count/VRAM;
+- capability-based GPU resolution by architecture/count/VRAM/model;
+- deterministic stable-device selection independent of discovery order;
+- one exact hardware cohort bound for a series rather than allocation-time card selection;
+- a series-bound proper subset of one architecture reserves that whole architecture pool in v1 before narrowing to stable IDs;
+- mixed same-architecture model ambiguity fails closed unless model/exact IDs are specified;
 - peer-pair and exact-device selection;
-- detection that subset/topology constraints require Slurm over-allocation rather than per-slot GRES types;
-- allocation visibility may narrow an already-exclusive allocation but cannot broaden it;
+- a series-bound device set must be contained in the executor allocation and cannot silently rebind;
+- subset/topology constraints require safe all-of-architecture Slurm over-allocation rather than per-slot GRES types;
 - `BIGCHERRY_GPU_CLAIM` UUID/architecture grammar and fail-closed malformed/unknown claims;
 - dynamic production conflict policy and fail-closed unknown claims;
 - Linux ROCm vs Windows HIP environment-hash separation;
@@ -39,4 +43,4 @@ Not covered and must remain hardware acceptance gates:
 - scheduler isolation/noise equivalence;
 - systemd/sudoers/Slurm behavior on Brutus.
 
-The simulator intentionally contains no Slurm, ROCm, Windows HIP, llama-swap, repository, or evidence-writing imports; it validates domain boundaries rather than pretending to validate hardware integration.
+The simulator intentionally contains no Slurm, ROCm, Windows HIP, llama-swap, repository, or evidence-writing imports; it validates domain boundaries rather than pretending to validate hardware integration. Permanent RCD12 tests must replace this lab model before production acceptance.
