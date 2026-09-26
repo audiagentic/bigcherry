@@ -1,5 +1,5 @@
-# BigCherry Brutus Slurm policy template (Ubuntu 24.04 / Slurm 23.11.x)
-# Render placeholders from accepted hardware inventory before installation.
+# BigCherry Brutus Slurm v1 policy (Ubuntu 24.04 / Slurm 23.11.x)
+# Render placeholders from accepted RCD12 hardware inventory.
 # Generated host file: /etc/slurm/slurm.conf
 
 ClusterName=bigcherry
@@ -8,45 +8,46 @@ SlurmUser=slurm
 SlurmdUser=root
 
 AuthType=auth/munge
+# Noble 23.11 uses cred_expire as the automatic-requeue eligibility delay.
+# Default is 120s. 30s is the BigCherry single-host v1 policy; change only
+# after a real launch/requeue test on Brutus.
+AuthInfo=cred_expire=30
 CredType=cred/munge
+
 StateSaveLocation=/var/spool/slurmctld
 SlurmdSpoolDir=/var/spool/slurmd
 SlurmctldLogFile=/var/log/slurm/slurmctld.log
 SlurmdLogFile=/var/log/slurm/slurmd.log
-
 ReturnToService=2
 SwitchType=switch/none
 MpiDefault=none
 
+# One host, externally managed scientific policy: FIFO within a partition and
+# PriorityTier across partitions. No fair-share/account association DB needed.
 SchedulerType=sched/backfill
-SchedulerParameters=bf_licenses
-PriorityType=priority/multifactor
+SchedulerParameters=bf_licenses,bf_interval=2,sched_interval=2
+PriorityType=priority/basic
 SelectType=select/cons_tres
 SelectTypeParameters=CR_Core_Memory
 
-# One build slot initially. host_activity=2 implements a host-wide quiet token:
-# build consumes 1; timed measurement consumes both 2.
+# build consumes host_activity:1 + build_slot:1; timed measurement consumes all
+# host_activity:2. bf_licenses + PriorityTier prevents a stream of new builds
+# from passing an already-pending measurement after the current build releases.
 Licenses=host_activity:2,build_slot:1
 
-# Noble Slurm 23.11 validation reproduced InvalidAccount without durable
-# associations. v1 therefore uses one loopback-only slurmdbd/MariaDB and one
-# BigCherry account; this is scheduler correctness, not optional analytics.
-AccountingStorageType=accounting_storage/slurmdbd
-AccountingStorageHost=127.0.0.1
-AccountingStoragePort=6819
-AccountingStorageEnforce=associations
-
-# Keep a lightweight text completion trail in addition to slurmdbd/sacct.
+# v1 deliberately has no slurmdbd/MariaDB. BigCherry is the durable domain
+# authority; Slurm keeps controller state and a lightweight completion trail.
+AccountingStorageType=accounting_storage/none
 JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
 MinJobAge=600
 
-# Same-commit transient retry only. BigCherry exit 76 creates a new attempt/job.
+# Exit 75 is SAME-COMMIT automatic requeue only. Exit 76 terminates and BigCherry
+# creates attempt+1/new Slurm job at the newly resolved BigCherry commit.
 RequeueExit=75
 
-# Production setting after RCD03 cgroup qualification. If ROCm fails the device
-# matrix, retain these process/accounting plugins but set ConstrainDevices=no in
-# cgroup.conf; GRES then schedules devices without being a security boundary.
+# Production process/accounting containment. RCD03 CI proves these plugins with
+# ConstrainDevices=no; Brutus must separately qualify AMD device filtering.
 ProctrackType=proctrack/cgroup
 TaskPlugin=task/cgroup,task/affinity
 JobAcctGatherType=jobacct_gather/cgroup
@@ -54,8 +55,8 @@ JobAcctGatherFrequency=30
 
 GresTypes=gpu
 
-# CPU/RAM are rendered from the current host, not hard-coded. GPU counts are
-# rendered from RCD12 accepted inventory and are architecture typed only.
+# CPU/RAM and GPU architecture counts are rendered from current accepted RCD12
+# inventory; no slot/device ordinal is scientific identity.
 NodeName=@NODE_NAME@ CPUs=@CPUS@ RealMemory=@REAL_MEMORY_MIB@ Gres=@NODE_GRES@ State=UNKNOWN
 
 PartitionName=bc-build Nodes=@NODE_NAME@ PriorityTier=10 Default=NO State=UP MaxTime=00:45:00
