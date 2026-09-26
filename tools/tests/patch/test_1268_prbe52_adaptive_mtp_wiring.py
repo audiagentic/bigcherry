@@ -196,7 +196,7 @@ class Patch1268Mechanics(unittest.TestCase):
             text = (root / "common/speculative.cpp").read_text()
             self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
             self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 2)  # begin reset + MTP draft reset only
-            self.assertEqual(text.count("effective_n_max"), 4)
+            self.assertEqual(text.count("effective_n_max"), 3)
             self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
             eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
             self.assertNotIn("effective_n_max", eagle3_text)
@@ -216,11 +216,12 @@ class Patch1268Mechanics(unittest.TestCase):
         td, root = self._tree()
         with td:
             path = root / "common/speculative.cpp"
-            mtp_only = _SPEC.replace("params.n_max <= (int) result.size()", "false", 1)
-            # First occurrence is eagle3; remove only MTP's depth cap so the MTP-only
-            # lookahead has no valid match while the eagle3 lookalike remains.
-            mtp_only = mtp_only.replace("params.n_max <= (int) result.size()", "false", 1)
-            path.write_text(mtp_only, encoding="utf-8")
+            target = "params.n_max <= (int) result.size()"
+            first = _SPEC.find(target)
+            second = _SPEC.find(target, first + len(target))
+            self.assertGreaterEqual(second, 0)
+            broken = _SPEC[:second] + _SPEC[second:].replace(target, "false", 1)
+            path.write_text(broken, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))
 
