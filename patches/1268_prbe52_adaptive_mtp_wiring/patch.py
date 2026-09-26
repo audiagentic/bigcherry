@@ -131,6 +131,11 @@ _BEGIN_ANCHOR = (
     r"        if \(N <= 0\) \{\n"
     r"            return;\n"
     r"        \}\n"
+    # The eagle3 draft class opens begin() identically; only the MTP class
+    # follows it with the shared-memory position check.
+    r"(?=\n        auto \* ctx_dft = this->params\.ctx_dft;\n"
+    r"        const llama_pos pos_max = [^\n]*\n\n"
+    r"        if \(pos_max < N - 1 && !is_mem_shared\))"
 )
 _DRAFT_START_ANCHOR = (
     r"            n_drafting\+\+;\n"
