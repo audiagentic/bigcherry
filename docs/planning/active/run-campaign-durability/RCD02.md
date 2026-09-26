@@ -78,9 +78,9 @@ Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attemp
 
 ### Non-hardware falsification
 
-`tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
+`tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, deterministic series hardware binding, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
 
-The lab mock is intentionally simpler than final RCD12 binding. Permanent tests must additionally prove discovery-order-independent exact cohort selection, mixed-model ambiguity handling, and identical selected IDs across every session in one series.
+Permanent tests must still replace the lab model before production acceptance.
 
 ## Code Samples & Guidance
 
@@ -115,7 +115,7 @@ Completed during planning:
 
 ```bash
 PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
-# {"checks": 25, "ok": true}
+# {"checks": 30, "ok": true}
 ```
 
 Required static review before closing RCD02:
@@ -144,7 +144,7 @@ Low implementation effort; high leverage. Primary risks are later plans drifting
 
 - Architecture/ownership/rollout/dependency graph above is explicit.
 - RCD03-RCD12 contain implementation-ready modules/signatures/tests and cite hardware-only gates separately.
-- Planning simulator reports 25 checks passing.
+- Planning simulator reports 30 checks passing.
 - Final series identity is bound to one deterministic hardware cohort before session submission.
 - Static contradiction scan above passes.
 - Lab harness/README are classified in TOOL_DISPOSITION.
@@ -159,3 +159,4 @@ Decision: Slurm + thin BigCherry domain layer + platform-neutral Executor. The R
 - 2026-09-26T00:51:52.243021+00:00 (created-by): Created by agent
 - 2026-09-26 (dev-gpt-agent): Fully specified final architecture, dependency order, invariants and offline falsification.
 - 2026-09-26 (dev-gpt-agent): Adversarial follow-up added deterministic pre-series hardware binding and lab-tool disposition acceptance gate.
+- 2026-09-26 (dev-gpt-agent): Planning harness extended to 30 checks; validation contract updated.
