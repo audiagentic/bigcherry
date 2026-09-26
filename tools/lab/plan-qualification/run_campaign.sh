@@ -21,10 +21,16 @@ export CCACHE_DIR=${CCACHE_DIR:-$work/ccache} CCACHE_BASEDIR=$work CCACHE_NOHASH
 export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100G}
 mkdir -p "$CCACHE_DIR"
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
+# One build root per architecture, shared by every patch: the scaffold keys
+# each tree by its content-addressed source name (stock, base, validated
+# control, and each subject's own trees), so trees that do not depend on the
+# patch (stock/base/control) are built once per arch and reused by every job.
+# Keyed by toolchain too, so alternating ROCm versions do not force reconfigures.
+toolchain=$(printf '%s' "$BC_HIP_PATH" | sha256sum | cut -c1-8)
 args=(--patch "$patch" --baseline-source bigcherry-tuning --amdgpu-targets "$arch"
       --device-map "$arch=$dev" --model "$BC_MODEL" --hip-path "$BC_HIP_PATH"
       --workdir "$work/runs/$run" --worktree-root "$work/worktrees"
-      --build-root "$work/builds/$patch-$arch")
+      --build-root "$work/builds/$arch-$toolchain")
 [ "$producer" != "-" ] && args+=(--validation-producer "$producer")
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
 echo "CAMPAIGN_EXIT=$?"
