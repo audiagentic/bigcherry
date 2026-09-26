@@ -1,0 +1,54 @@
+# BigCherry Brutus Slurm policy template (Ubuntu 24.04 / Slurm 23.11.x)
+# Render placeholders from accepted hardware inventory before installation.
+# Generated host file: /etc/slurm/slurm.conf
+
+ClusterName=bigcherry
+SlurmctldHost=@NODE_NAME@
+SlurmUser=slurm
+SlurmdUser=root
+
+AuthType=auth/munge
+CredType=cred/munge
+StateSaveLocation=/var/spool/slurmctld
+SlurmdSpoolDir=/var/spool/slurmd
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdLogFile=/var/log/slurm/slurmd.log
+
+ReturnToService=2
+SwitchType=switch/none
+MpiDefault=none
+
+SchedulerType=sched/backfill
+SchedulerParameters=bf_licenses
+PriorityType=priority/multifactor
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+
+# One build slot initially. host_activity=2 implements a host-wide quiet token:
+# build consumes 1; timed measurement consumes both 2.
+Licenses=host_activity:2,build_slot:1
+
+# v1 completion history without MariaDB/slurmdbd.
+JobCompType=jobcomp/filetxt
+JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
+MinJobAge=600
+
+# Same-commit transient retry only. BigCherry exit 76 creates a new attempt/job.
+RequeueExit=75
+
+# Production setting after RCD03 cgroup qualification. If ROCm fails the device
+# matrix, retain these process/accounting plugins but set ConstrainDevices=no in
+# cgroup.conf; GRES then schedules devices without being a security boundary.
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup,task/affinity
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency=30
+
+GresTypes=gpu
+
+# CPU/RAM are rendered from the current host, not hard-coded. GPU counts are
+# rendered from RCD12 accepted inventory and are architecture typed only.
+NodeName=@NODE_NAME@ CPUs=@CPUS@ RealMemory=@REAL_MEMORY_MIB@ Gres=@NODE_GRES@ State=UNKNOWN
+
+PartitionName=bc-build Nodes=@NODE_NAME@ PriorityTier=10 Default=NO State=UP MaxTime=00:45:00
+PartitionName=bc-measure Nodes=@NODE_NAME@ PriorityTier=100 Default=YES State=UP MaxTime=00:45:00
