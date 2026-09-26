@@ -1,7 +1,7 @@
 """RCD planning simulator.
 
-Pure-Python falsification harness for the JOBS_ORCHESTRATOR design. Lab-only:
-no Slurm/ROCm/llama-swap imports and no hardware claims.
+Pure-Python falsification harness for JOBS_ORCHESTRATOR. Lab-only: no Slurm,
+ROCm, llama-swap, repository, or evidence authority imports.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class SeriesGpuBinding:
 @dataclass(frozen=True)
 class ProductionSnapshot:
     config_hash: str
-    potential_devices: frozenset[str] | None
+    potential_devices: frozenset[str] | None  # None == ALL/fail-closed
     running_devices: frozenset[str]
     observed_devices: frozenset[str]
 
@@ -117,7 +117,7 @@ class FakeExecutor:
         return native_id
 
     def start_ready(self) -> list[str]:
-        complete = {r.execution_id for r in self._runs.values() if r.state == "completed"}
+        complete = {run.execution_id for run in self._runs.values() if run.state == "completed"}
         started: list[str] = []
         for run in self._runs.values():
             if run.state == "queued" and set(run.dependencies) <= complete:
@@ -134,35 +134,35 @@ class FakeExecutor:
 
 
 def _eligible(req: GpuRequirement, devices: Iterable[DeviceRecord]) -> tuple[DeviceRecord, ...]:
-    by_id = {d.device_id: d for d in devices}
+    by_id = {device.device_id: device for device in devices}
     if req.exact_device_ids:
         try:
-            candidates = tuple(by_id[x] for x in req.exact_device_ids)
+            candidates = tuple(by_id[item] for item in req.exact_device_ids)
         except KeyError as exc:
             raise ValueError(f"exact device missing: {exc.args[0]}") from exc
     else:
         candidates = tuple(
-            d for d in devices
-            if d.arch == req.architecture
-            and d.vram_bytes >= req.min_vram_bytes
-            and (req.model is None or d.model == req.model)
+            device for device in by_id.values()
+            if device.arch == req.architecture
+            and device.vram_bytes >= req.min_vram_bytes
+            and (req.model is None or device.model == req.model)
         )
-    candidates = tuple(sorted(candidates, key=lambda d: d.device_id))
-    if any(d.arch != req.architecture for d in candidates):
+    candidates = tuple(sorted(candidates, key=lambda device: device.device_id))
+    if any(device.arch != req.architecture for device in candidates):
         raise ValueError("exact device violates architecture")
-    if any(d.vram_bytes < req.min_vram_bytes for d in candidates):
+    if any(device.vram_bytes < req.min_vram_bytes for device in candidates):
         raise ValueError("device violates minimum VRAM")
-    if req.model is not None and any(d.model != req.model for d in candidates):
+    if req.model is not None and any(device.model != req.model for device in candidates):
         raise ValueError("device violates model requirement")
     if req.homogeneous_model and req.model is None and not req.exact_device_ids:
         groups: dict[str, list[DeviceRecord]] = {}
-        for d in candidates:
-            groups.setdefault(d.model, []).append(d)
-        viable = [tuple(v) for _, v in sorted(groups.items()) if len(v) >= req.count]
+        for device in candidates:
+            groups.setdefault(device.model, []).append(device)
+        viable = [tuple(group) for _, group in sorted(groups.items()) if len(group) >= req.count]
         if len(viable) > 1:
             raise ValueError("ambiguous homogeneous model; specify model or exact ids")
         if viable:
-            candidates = tuple(sorted(viable[0], key=lambda d: d.device_id))
+            candidates = tuple(sorted(viable[0], key=lambda device: device.device_id))
     if len(candidates) < req.count:
         raise ValueError("insufficient matching GPUs")
     return candidates
@@ -175,29 +175,29 @@ def resolve_requirement(
     peer_pairs: set[frozenset[str]] | None = None,
 ) -> tuple[DeviceRecord, ...]:
     candidates = _eligible(req, devices)
-    if req.require_peer_access:
-        peers = peer_pairs or set()
-        options: list[tuple[DeviceRecord, ...]] = []
-        for choice in combinations(candidates, req.count):
-            ids = [d.device_id for d in choice]
-            if all(frozenset(p) in peers for p in combinations(ids, 2)):
-                options.append(choice)
-        if not options:
-            raise ValueError("no peer-capable cohort satisfies requirement")
-        return min(options, key=lambda xs: tuple(d.device_id for d in xs))
-    return candidates[: req.count]
+    if not req.require_peer_access:
+        return candidates[: req.count]
+    peers = peer_pairs or set()
+    options: list[tuple[DeviceRecord, ...]] = []
+    for choice in combinations(candidates, req.count):
+        ids = [device.device_id for device in choice]
+        if all(frozenset(pair) in peers for pair in combinations(ids, 2)):
+            options.append(choice)
+    if not options:
+        raise ValueError("no peer-capable cohort satisfies requirement")
+    return min(options, key=lambda choice: tuple(device.device_id for device in choice))
 
 
 def hardware_cohort_hash(devices: Iterable[DeviceRecord], *, topology_fingerprint: str) -> str:
     identity = [
         {
-            "device_id": d.device_id,
-            "identity_source": d.identity_source,
-            "arch": d.arch,
-            "model": d.model,
-            "vram_bytes": d.vram_bytes,
+            "device_id": device.device_id,
+            "identity_source": device.identity_source,
+            "arch": device.arch,
+            "model": device.model,
+            "vram_bytes": device.vram_bytes,
         }
-        for d in sorted(devices, key=lambda x: x.device_id)
+        for device in sorted(devices, key=lambda item: item.device_id)
     ]
     return _digest({"devices": identity, "topology_fingerprint": topology_fingerprint})
 
@@ -211,15 +211,15 @@ def bind_series_gpu(
 ) -> SeriesGpuBinding:
     all_devices = tuple(devices)
     selected = resolve_requirement(req, all_devices, peer_pairs=peer_pairs)
-    reserve_all = (
-        bool(req.exact_device_ids)
-        or req.require_peer_access
-        or any(d.vram_bytes < req.min_vram_bytes for d in all_devices if d.arch == req.architecture)
-        or (req.model is not None and any(d.model != req.model for d in all_devices if d.arch == req.architecture))
-        or (req.homogeneous_model and len({d.model for d in all_devices if d.arch == req.architecture}) > 1)
-    )
+    all_arch_ids = {device.device_id for device in all_devices if device.arch == req.architecture}
+    selected_ids = tuple(device.device_id for device in selected)
+    # Architecture/count GRES cannot guarantee which card is returned. Once a
+    # scientific series is bound to exact stable IDs, any proper subset of an
+    # architecture must reserve the whole architecture pool in v1 and narrow
+    # visibility inside that exclusive allocation.
+    reserve_all = set(selected_ids) != all_arch_ids
     return SeriesGpuBinding(
-        tuple(d.device_id for d in selected),
+        selected_ids,
         reserve_all,
         hardware_cohort_hash(selected, topology_fingerprint=topology_fingerprint),
     )
@@ -236,16 +236,16 @@ def parse_production_claim(claim: str | None, devices: Iterable[DeviceRecord]) -
     if claim is None or not claim.strip() or claim.strip() == "all":
         return None
     text = claim.strip()
-    by_id = {d.device_id: d for d in devices}
+    by_id = {device.device_id: device for device in devices}
     if text.startswith("uuid:"):
         ids: list[str] = []
-        for part in (p.strip() for p in text.split(",")):
+        for part in (part.strip() for part in text.split(",")):
             if not part.startswith("uuid:") or not part[5:] or part[5:] not in by_id:
                 return None
             ids.append(part[5:])
         return frozenset(ids)
     if text.startswith("arch:"):
-        fields = [p.strip() for p in text.split(",")]
+        fields = [part.strip() for part in text.split(",")]
         arch = fields[0][5:]
         count = None
         for part in fields[1:]:
@@ -254,7 +254,7 @@ def parse_production_claim(claim: str | None, devices: Iterable[DeviceRecord]) -
                 count = int(value)
             else:
                 return None
-        candidates = sorted(d.device_id for d in by_id.values() if d.arch == arch)
+        candidates = sorted(device.device_id for device in by_id.values() if device.arch == arch)
         if not arch or count is None or count < 1 or len(candidates) < count:
             return None
         return frozenset(candidates)
@@ -270,24 +270,30 @@ def production_gate(snapshot: ProductionSnapshot, allocation: Allocation) -> Gat
 
 
 def classify_inventory_drift(
-    accepted: Iterable[DeviceRecord], observed: Iterable[DeviceRecord], *,
-    accepted_topology: str, observed_topology: str,
+    accepted: Iterable[DeviceRecord],
+    observed: Iterable[DeviceRecord],
+    *,
+    accepted_topology: str,
+    observed_topology: str,
 ) -> DriftKind:
-    old = {d.device_id: d for d in accepted}
-    new = {d.device_id: d for d in observed}
+    old = {device.device_id: device for device in accepted}
+    new = {device.device_id: device for device in observed}
     if set(old) != set(new):
         return DriftKind.DEVICE_SET_CHANGE
     if accepted_topology != observed_topology:
         return DriftKind.TOPOLOGY_CHANGE
     locator_fields = ("pci_bdf", "render_node", "numa_node")
-    if any(any(getattr(old[k], f) != getattr(new[k], f) for f in locator_fields) for k in old):
+    if any(
+        any(getattr(old[key], field) != getattr(new[key], field) for field in locator_fields)
+        for key in old
+    ):
         return DriftKind.LOCATOR_ONLY
     return DriftKind.SAME
 
 
 def inventory_material_hash(devices: Iterable[DeviceRecord], *, topology_fingerprint: str) -> str:
     return _digest({
-        "devices": [asdict(d) for d in sorted(devices, key=lambda x: x.device_id)],
+        "devices": [asdict(device) for device in sorted(devices, key=lambda item: item.device_id)],
         "topology_fingerprint": topology_fingerprint,
     })
 
@@ -317,23 +323,28 @@ def _fixture_devices() -> tuple[DeviceRecord, ...]:
 
 def self_test() -> int:
     checks = 0
+
     def check(value: bool) -> None:
         nonlocal checks
         assert value
         checks += 1
 
-    devices = _fixture_devices(); gib = 1024**3
+    devices = _fixture_devices()
+    gib = 1024**3
     one = resolve_requirement(GpuRequirement("gfx1201", min_vram_bytes=30*gib), devices)
-    check(tuple(d.device_id for d in one) == ("gpu-C",))
+    check(tuple(device.device_id for device in one) == ("gpu-C",))
 
     peers = {frozenset(("gpu-A", "gpu-B"))}
-    pair = resolve_requirement(GpuRequirement("gfx1100", count=2, require_peer_access=True), devices, peer_pairs=peers)
-    check(tuple(d.device_id for d in pair) == ("gpu-A", "gpu-B"))
+    pair = resolve_requirement(
+        GpuRequirement("gfx1100", count=2, require_peer_access=True), devices, peer_pairs=peers
+    )
+    check(tuple(device.device_id for device in pair) == ("gpu-A", "gpu-B"))
 
     b1 = bind_series_gpu(GpuRequirement("gfx1100"), devices[:2], topology_fingerprint="peer:A-B")
     b2 = bind_series_gpu(GpuRequirement("gfx1100"), reversed(devices[:2]), topology_fingerprint="peer:A-B")
     check(b1 == b2)
     check(b1.selected_device_ids == ("gpu-A",))
+    check(b1.reserve_all_of_arch is True)
     check(verify_series_allocation(b1, Allocation(("gpu-A", "gpu-B"))) == ("gpu-A",))
     try:
         verify_series_allocation(b1, Allocation(("gpu-B",)))
@@ -342,19 +353,33 @@ def self_test() -> int:
     else:
         raise AssertionError("series rebound to different card")
 
-    mixed = devices + (DeviceRecord("gpu-E", "amd_uuid", "gfx1100", "Other", 24*gib, None, None, None, "drv"),)
+    whole = bind_series_gpu(
+        GpuRequirement("gfx1100", count=2, require_peer_access=True),
+        devices[:2], topology_fingerprint="peer:A-B", peer_pairs=peers,
+    )
+    check(whole.reserve_all_of_arch is False)
+
+    mixed = devices + (
+        DeviceRecord("gpu-E", "amd_uuid", "gfx1100", "Other", 24*gib, None, None, None, "drv"),
+    )
     try:
         bind_series_gpu(GpuRequirement("gfx1100"), mixed, topology_fingerprint="t")
     except ValueError as exc:
         check("ambiguous" in str(exc))
     else:
         raise AssertionError("mixed-model ambiguity silently selected a model")
-    check(bind_series_gpu(GpuRequirement("gfx1100", model="XTX"), mixed, topology_fingerprint="t").selected_device_ids == ("gpu-A",))
+    check(
+        bind_series_gpu(GpuRequirement("gfx1100", model="XTX"), mixed, topology_fingerprint="t")
+        .selected_device_ids == ("gpu-A",)
+    )
 
-    snap = ProductionSnapshot("cfg", frozenset({"gpu-A"}), frozenset(), frozenset())
-    check(production_gate(snap, Allocation(("gpu-C",))) == GateMode.IDLE_ATTESTATION)
-    check(production_gate(snap, Allocation(("gpu-A",))) == GateMode.EXCLUSIVE_WINDOW)
-    check(production_gate(ProductionSnapshot("cfg", None, frozenset(), frozenset()), Allocation(("gpu-C",))) == GateMode.EXCLUSIVE_WINDOW)
+    snapshot = ProductionSnapshot("cfg", frozenset({"gpu-A"}), frozenset(), frozenset())
+    check(production_gate(snapshot, Allocation(("gpu-C",))) == GateMode.IDLE_ATTESTATION)
+    check(production_gate(snapshot, Allocation(("gpu-A",))) == GateMode.EXCLUSIVE_WINDOW)
+    check(
+        production_gate(ProductionSnapshot("cfg", None, frozenset(), frozenset()), Allocation(("gpu-C",)))
+        == GateMode.EXCLUSIVE_WINDOW
+    )
     check(parse_production_claim("uuid:gpu-A,uuid:gpu-B", devices) == frozenset({"gpu-A", "gpu-B"}))
     check(parse_production_claim("arch:gfx1100,count=2", devices) == frozenset({"gpu-A", "gpu-B"}))
     check(parse_production_claim("uuid:missing", devices) is None)
@@ -364,27 +389,43 @@ def self_test() -> int:
     windows = ExecutionEnvironment("windows", "11", "26100", "hip-sdk-windows", "7.2", "7.2", "clang-cl", "drv")
     check(platform_environment_hash(linux) != platform_environment_hash(windows))
 
-    original = tuple(sorted(devices[:2], key=lambda d:d.device_id))
+    original = tuple(sorted(devices[:2], key=lambda device: device.device_id))
     moved = (
         DeviceRecord("gpu-A", "amd_uuid", "gfx1100", "XTX", 24*gib, "0000:09:00.0", "/dev/dri/renderD140", 1, "drv"),
-        next(d for d in devices if d.device_id == "gpu-B"),
+        next(device for device in devices if device.device_id == "gpu-B"),
     )
     cohort = hardware_cohort_hash(original, topology_fingerprint="peer:A-B")
     check(hardware_cohort_hash(moved, topology_fingerprint="peer:A-B") == cohort)
-    check(inventory_material_hash(moved, topology_fingerprint="peer:A-B") != inventory_material_hash(original, topology_fingerprint="peer:A-B"))
-    check(classify_inventory_drift(original, moved, accepted_topology="peer:A-B", observed_topology="peer:A-B") == DriftKind.LOCATOR_ONLY)
-    check(classify_inventory_drift(original, moved, accepted_topology="peer:A-B", observed_topology="peer:A-B:numa1") == DriftKind.TOPOLOGY_CHANGE)
+    check(
+        inventory_material_hash(moved, topology_fingerprint="peer:A-B")
+        != inventory_material_hash(original, topology_fingerprint="peer:A-B")
+    )
+    check(
+        classify_inventory_drift(original, moved, accepted_topology="peer:A-B", observed_topology="peer:A-B")
+        == DriftKind.LOCATOR_ONLY
+    )
+    check(
+        classify_inventory_drift(original, moved, accepted_topology="peer:A-B", observed_topology="peer:A-B:numa1")
+        == DriftKind.TOPOLOGY_CHANGE
+    )
     check(hardware_cohort_hash(moved, topology_fingerprint="peer:A-B:numa1") != cohort)
-    replacement = (DeviceRecord("gpu-X", "amd_uuid", "gfx1100", "XTX", 24*gib, "0000:01:00.0", "/dev/dri/renderD128", 0, "drv"), original[1])
+    replacement = (
+        DeviceRecord("gpu-X", "amd_uuid", "gfx1100", "XTX", 24*gib, "0000:01:00.0", "/dev/dri/renderD128", 0, "drv"),
+        original[1],
+    )
     check(hardware_cohort_hash(replacement, topology_fingerprint="peer:A-B") != cohort)
-    check(classify_inventory_drift(original, replacement, accepted_topology="peer:A-B", observed_topology="peer:A-B") == DriftKind.DEVICE_SET_CHANGE)
+    check(
+        classify_inventory_drift(original, replacement, accepted_topology="peer:A-B", observed_topology="peer:A-B")
+        == DriftKind.DEVICE_SET_CHANGE
+    )
 
     check(retry_action(75) == RetryAction.SAME_COMMIT_REQUEUE)
     check(retry_action(76) == RetryAction.NEW_ATTEMPT)
     check(retry_action(77) == RetryAction.BLOCK)
 
     executor = FakeExecutor()
-    prepare = executor.submit("prepare"); execute = executor.submit("execute", ("prepare",))
+    prepare = executor.submit("prepare")
+    execute = executor.submit("execute", ("prepare",))
     check(executor.start_ready() == [prepare])
     check(executor.status(execute) == "queued")
     executor.complete(prepare)
