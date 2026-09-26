@@ -1478,3 +1478,90 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 20
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC]
+title = "PRBE110/RD05: WMMA flash-attention tile_Q reuse synchronization"
+prerequisites = []
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1266_rd05_wmma_fa_tileq_sync (RD05-only extraction; fresh identity after rejected 1203)"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.target]
+kind = "attention"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.hypothesis]
+expected_effect = "both"
+rationale = "Extract RD05's two tile_Q reuse barriers without RD06's expanded configuration envelope. The barriers repair cross-warp scratch reuse in the existing WMMA-F16 path; the fresh package must preserve full-vocabulary correctness and, per owner policy for new experiments, establish a positive decode effect with no material prefill regression rather than inheriting any result from rejected bundle 1203."
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.correctness]
+backend_reference = "required"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.measurement]
+bench_invocation = "combined"
+
+[contract.PRBE110-RD05-WMMA-TILEQ-SYNC.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD]
+title = "PRBE110/RD07: Q6_K MMQ base/sub-scale hoist and fold"
+prerequisites = []
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.source]
+source_id = "stew675-rdna-boosts"
+commits = ["1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff"]
+atomic_part = "1267_rd07_q6k_mmq_scale_fold (RD07-only extraction; fresh identity after rejected 1203)"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.target]
+kind = "kernel_family"
+family = "mmq"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Hoist Q6_K MMQ row base scales and fold them with per-k01 sub-scales before the inner j0 accumulation, removing repeated scale loads/conversion/multiply work from the hot loop. The fresh extraction excludes RD05/RD06 and diagnostic timing, uses the current no-forced_J dispatch shape, and must establish prefill gain with bounded decode regression independently of rejected bundle 1203."
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201", "gfx1030"]
+weight_types = ["q6_k"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.positive]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.controls]
+models = ["tierM-gptoss20b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.correctness]
+backend_reference = "required"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.measurement]
+bench_invocation = "combined"
+
+[contract.PRBE110-RD07-Q6K-MMQ-SCALE-FOLD.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
