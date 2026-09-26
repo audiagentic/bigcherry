@@ -12,10 +12,17 @@ set is empty) are measured once and reported under every name. The arm
 order rotates every round (rounds are a multiple of the distinct-arm count)
 and per-position means are recorded, so drift cannot masquerade as an arm
 effect.
+
+Shared arms (stock / base / validated) do not depend on the patch: their
+binaries live in content-addressed build dirs shared by every patch, so a
+shared arm is measured once per (binary, model, device, workloads) and every
+later session reuses those samples from ``cache_dir``; only arms without a
+cached measurement (normally just the subject) are run.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import statistics
 import subprocess
@@ -53,31 +60,65 @@ def _distinct_arms(arms: dict[str, Path]) -> dict[Path, list[str]]:
     return by_binary
 
 
+def _cache_path(
+    cache_dir: Path, binary_dir: Path, model: Path, device_key: str,
+    workloads: tuple[str, ...], rounds_per_arm: int,
+) -> Path:
+    stat = model.stat()
+    key = json.dumps({
+        "binary_dir": str(binary_dir), "model": str(model.resolve()), "model_size": stat.st_size,
+        "model_mtime_ns": stat.st_mtime_ns, "device": device_key, "workloads": sorted(workloads),
+        "rounds_per_arm": rounds_per_arm,
+    }, sort_keys=True)
+    return cache_dir / f"{hashlib.sha256(key.encode()).hexdigest()[:32]}.json"
+
+
 def run_reference_ladder(
     *,
     arms: dict[str, Path],
     model: Path,
     runner: Runner,
+    cache_dir: Path,
+    shared_arms: frozenset[str],
+    device_key: str,
     workloads: tuple[str, ...] = ("decode", "prefill"),
     rounds_per_arm: int = 2,
     exe: str = "",
 ) -> dict[str, object]:
-    """Measure every distinct arm binary, rotated, and summarise per arm.
+    """Measure every distinct arm binary without a cached measurement,
+    rotated, and summarise per arm.
 
     One llama-bench invocation per (round, arm) measures every workload
     together (-p 512 -n 128 in one process), so the model loads once per
-    invocation rather than once per workload (same samples, fewer loads)."""
-    groups = list(_distinct_arms(arms).items())
+    invocation rather than once per workload (same samples, fewer loads).
+    Arms named in ``shared_arms`` are read from / written to ``cache_dir``."""
+    runs: list[LadderRun] = []
+    cached: list[str] = []
+    to_measure: list[tuple[Path, list[str]]] = []
+    distinct = _distinct_arms(arms)
+    # Every arm keeps the same sample count whether or not the others were
+    # cached: one sample per rotation round, len(distinct) x rounds_per_arm.
+    rounds = len(distinct) * rounds_per_arm
+    for binary_dir, names in distinct.items():
+        path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm)
+        entry = json.loads(path.read_text(encoding="utf-8")) if set(names) & shared_arms and path.is_file() else None
+        if entry is not None and all(entry["samples"].get(w) for w in workloads):
+            cached.extend(names)
+            for workload in workloads:
+                for i, value in enumerate(entry["samples"][workload]):
+                    runs.append(LadderRun(arm=names[0], workload=workload, round=i, position=-1,
+                                          value=value, returncode=0))
+        else:
+            to_measure.append((binary_dir, names))
+    groups = to_measure
     n = len(groups)
-    rounds = n * rounds_per_arm
     flags: list[str] = []
     for workload in ("prefill", "decode"):
         if workload in workloads:
             flags += list(_PAIRED_BENCH_WORKLOAD_FLAGS[workload])
     prompt = next((flags[i + 1] for i, f in enumerate(flags) if f == "-p" and flags[i + 1] != "0"), "0")
     gen = next((flags[i + 1] for i, f in enumerate(flags) if f == "-n" and flags[i + 1] != "0"), "0")
-    runs: list[LadderRun] = []
-    for r in range(rounds):
+    for r in range(rounds if n else 0):
         order = groups[r % n:] + groups[: r % n]
         for position, (binary_dir, names) in enumerate(order):
             command = [str(binary_dir / f"llama-bench{exe}"), "-m", str(model), "-p", prompt, "-n", gen, "-ngl", "99"]
@@ -89,7 +130,21 @@ def run_reference_ladder(
                     arm=names[0], workload=workload, round=r, position=position,
                     value=float(match.group(1)) if match else None, returncode=completed.returncode,
                 ))
-    return summarise_ladder(arms=arms, runs=runs, workloads=workloads)
+    for binary_dir, names in groups:
+        if not set(names) & shared_arms:
+            continue
+        samples = {
+            w: [x.value for x in runs if x.arm == names[0] and x.workload == w and x.value is not None]
+            for w in workloads
+        }
+        if all(len(samples[w]) == rounds for w in workloads):
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm)
+            path.write_text(json.dumps({"binary_dir": str(binary_dir), "arms": names, "samples": samples},
+                                       indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload = summarise_ladder(arms=arms, runs=runs, workloads=workloads)
+    payload["cached_arms"] = sorted(cached)
+    return payload
 
 
 def summarise_ladder(
@@ -110,7 +165,8 @@ def summarise_ladder(
                 failed += 1
                 continue
             per_arm.setdefault(run.arm, []).append(run.value)
-            per_position.setdefault(run.position, []).append(run.value)
+            if run.position >= 0:
+                per_position.setdefault(run.position, []).append(run.value)
         means = {name: statistics.fmean(per_arm[alias[name]]) for name in arms if per_arm.get(alias[name])}
         stock = means.get("stock")
         metrics[metric] = {
