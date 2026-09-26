@@ -14,7 +14,7 @@ experiment-contracts = [
 ]
 plan-ids = []
 requires = []
-conflicts = []
+conflicts = ["1266_rd05_wmma_fa_tileq_sync"]
 requires-options = []
 forbids-options = []
 subsystems = []
