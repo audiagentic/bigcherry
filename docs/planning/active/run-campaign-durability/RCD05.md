@@ -28,7 +28,7 @@ GPU resources are capability requests resolved by RCD12/Executor allocations. Th
    - Slurm: preserve scheduler `ROCR_VISIBLE_DEVICES`, map allocation to stable RCD12 IDs, normally leave `HIP_VISIBLE_DEVICES` unset.
    - Local: RCD11 resolves launch-local device selector.
 5. Implement preflight/continuous root+work disk guards, streaming logs, stall progress fingerprint and bounded log retention.
-6. Integrate `core.tree_activity.Lease`; fix the start race so `Lease.__enter__` refuses while `MaintenanceLock` is held.
+6. Integrate `core.tree_activity.Lease`; close the existing check/create race between leases and `MaintenanceLock` with a shared host-local OS lock around protocol transitions.
 7. Implement attempt result/failure classification and retention cleanup.
 8. Test entirely with temporary git repos, fake process handles and FakeExecutor before hardware.
 
@@ -76,6 +76,7 @@ Layout:
   stdout.log
   stderr.log
   attempt.json
+  submission-intent.json
   submission.json
   result.json
 ```
@@ -131,9 +132,37 @@ server_log_retain_mib = 20
 
 A hard breach terminates process group, writes failure `disk-pressure`, retains failed attempt. Completed oversized server logs may be tail/truncated only after byte count + full-content hash are recorded; evidence-required logs are never destructively truncated.
 
-### Tree activity
+### Tree activity protocol
 
-Modify `Lease.__enter__` to atomically/fail-closed check `maintenance.lock` immediately before lease publication. Maintenance still refuses while live leases exist. Offline concurrency test must prove either lease or maintenance wins, never both.
+Current HI151 semantics are retained but transition races are closed with one local kernel-held file lock:
+
+```text
+<tree-activity-root>/protocol.lock
+```
+
+`HostFileLock` is an OS advisory lock (`flock` on Linux; equivalent local primitive where supported), automatically released on process exit. It is **not** a distributed lock and the tree-activity root must be local storage.
+
+Lease acquisition:
+
+```text
+lock protocol.lock
+  prune only confirmed-dead local leases
+  if maintenance.lock exists: refuse
+  atomically publish lease file
+unlock
+```
+
+Maintenance acquisition:
+
+```text
+lock protocol.lock
+  prune only confirmed-dead local leases
+  if any live/remote-unknown lease: refuse
+  mkdir maintenance.lock + owner record
+unlock
+```
+
+Release operations remain idempotent. A remote-host lease remains fail-closed/live as HI151 specifies. This proves maintenance and a new managed run cannot both cross the admission boundary through a check-then-create race.
 
 ### Retention
 
@@ -167,10 +196,12 @@ Planned:
 - `tools/bigcherry/jobs/monitor.py`
 - `tools/bigcherry/jobs/retention.py`
 - `tools/bigcherry/experiment/bundle.py`
+- `tools/bigcherry/core/host_lock.py`
 - `tools/bigcherry/core/tree_activity.py`
 - `tools/tests/jobs/test_attempt.py`
 - `tools/tests/jobs/test_runner.py`
 - `tools/tests/jobs/test_monitor.py`
+- `tools/tests/core/test_host_lock.py`
 - `tools/tests/core/test_tree_activity.py`
 
 ## Validation
@@ -188,7 +219,9 @@ Offline:
 - compiler-like quiet output + CPU activity does not stall;
 - all channels idle does stall;
 - 1.5GB-size simulation uses sparse/mock file metadata and verifies retention policy without allocating 1.5GB;
-- tree lease vs maintenance race falsification;
+- concurrent lease-vs-maintenance admission loop proves never both acquire across the transition;
+- stale local lease may be pruned only after PID-death proof; remote lease remains blocking;
+- host lock releases automatically after process death;
 - cleanup never removes unharvested attempts.
 
 Hardware:
@@ -211,7 +244,7 @@ Existing build code already handles stale foreign CMake cache/configure-request 
 - attempt commit immutable after submission;
 - runner requires no dirty/stashed canonical checkout;
 - disk/log/stall incident classes are handled durably;
-- tree maintenance and job lease cannot overlap;
+- tree maintenance and job lease admission are serialized and cannot overlap through a race;
 - no physical GPU ordinal is scientific identity;
 - all offline tests pass.
 
@@ -222,4 +255,4 @@ Per-attempt runner worktrees remain necessary while current campaign evidence wr
 ## Change Log
 
 - 2026-09-26T00:52:05.135167+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Specified pinned attempt/worktree/monitoring lifecycle and removed physical-device assumptions.
+- 2026-09-26 (dev-gpt-agent): Specified pinned attempt/worktree/monitoring lifecycle, host-lock tree-activity protocol, and removed physical-device assumptions.

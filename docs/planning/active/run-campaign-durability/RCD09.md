@@ -17,7 +17,7 @@ work: M
 
 Expose the job service as an observable service without adding a custom web daemon. BigCherry normalizes Slurm/Local execution state, durable run-store identity, hardware inventory, production-window state, disk/ccache and GPU telemetry into stable JSON/JSONL. Agents reconnect by event sequence; a gateway/client disconnect never owns process lifetime. Record scientific outcomes normally; wake only on operational conditions requiring action.
 
-Use RCD04 checksummed append-only event storage and existing `telemetry.py` as the console integration point. GPU telemetry is evidence/context only until PVPS09 defines a result-independent health replacement rule.
+Use RCD04's single checksummed append-only host event stream and existing `telemetry.py` as the console integration point. GPU telemetry is evidence/context only until PVPS09 defines a result-independent health replacement rule.
 
 ## Steps
 
@@ -28,7 +28,7 @@ Use RCD04 checksummed append-only event storage and existing `telemetry.py` as t
 5. Add host/GPU snapshot collector keyed by RCD12 stable `device_id`.
 6. Add `bigcherry-observe.timer`/oneshot writer for `status.json`, `status.md`, `bigcherry.prom`; no bespoke HTTP service.
 7. Add service-health/window/inventory-drift events from RCD03/RCD11/RCD12.
-8. Test event resume/torn-tail/status rendering/telemetry redaction entirely offline.
+8. Test event resume/torn-tail/concurrent-writer/status rendering/telemetry redaction entirely offline.
 
 ## Detailed Solution & Technical Design
 
@@ -51,9 +51,21 @@ class JobEvent:
     data: Mapping[str, object]
 ```
 
-`seq` is host BigCherry-event sequence, monotonic within one run-store event log scope. For simple reconnect semantics use one host event journal under `<work>/jobs/events.jsonl` referencing per-run records; per-run journals may also exist for portable bundles. `event_id` is globally unique and events are immutable/checksummed.
+`seq` is a host BigCherry-event sequence, monotonic in the single canonical `<work>/jobs/events.jsonl`. `event_id` is globally unique and events are immutable/checksummed. Do not dual-write a second authoritative per-run event journal; run IDs in the host stream provide filtering, while portable run summaries may reference/copy events as derived artifacts later.
 
-Event persistence occurs before best-effort console/gateway notification. Failure to notify does not lose the event.
+Multiprocess append is serialized with `core.host_lock.HostFileLock(<work>/jobs/events.lock)`:
+
+```text
+lock
+  recover/validate complete tail
+  read last durable sequence
+  assign seq + 1
+  append one complete checksummed JSON line
+  flush + fsync
+unlock
+```
+
+The event/run-store root must be local filesystem for this v1 lock/durability claim. A process crash releases the kernel lock; a torn final line is recovered under lock before the next sequence is allocated. Event persistence occurs before best-effort console/gateway notification. Failure to notify does not lose the event.
 
 ### Severity policy
 
@@ -171,6 +183,7 @@ Planned:
 - `tools/bigcherry/jobs/status.py`
 - `tools/bigcherry/jobs/metrics.py`
 - `tools/bigcherry/jobs/telemetry.py`
+- `tools/bigcherry/core/host_lock.py`
 - `tools/bigcherry/telemetry.py` (sink extension)
 - `tools/bigcherry/cli/jobs.py`
 - `config/systemd/bigcherry-observe.service`
@@ -184,8 +197,9 @@ Planned:
 Offline:
 
 - append 100 events, reconnect at sequence N, receive exactly N+1...;
-- torn final event recovery retains complete prefix;
-- duplicate/corrupt sequence rejected;
+- spawn concurrent writer processes; no duplicate/gap sequences and all checksums validate;
+- kill a writer while appending; torn-tail recovery under lock preserves complete prefix and next sequence is correct;
+- duplicate/corrupt non-tail sequence rejected;
 - `--wake-only` filters severity, not event kind hard-coded in CLI;
 - scientific FAIL remains record-only;
 - raw native Slurm state fixture maps deterministically or `unknown`;
@@ -202,16 +216,17 @@ Hardware acceptance: forced harness failure wakes a remote `events --follow`; li
 
 ## Effort & Risk
 
-Medium. Main risk is making observability another authority. Status/metrics are projections only; run-store/executor/evidence remain authoritative.
+Medium. Main risk is making observability another authority or corrupting event sequence under multiprocess writers. Status/metrics are projections only; run-store/executor/evidence remain authoritative.
 
 ## Standards
 
-RQW01 console telemetry semantics; HI48 durable sequence/checksum semantics; RCD04 domain schema.
+RQW01 console telemetry semantics; HI48 durable sequence/checksum semantics; RCD04 domain schema and host-lock primitive.
 
 ## Acceptance Criteria
 
 - agents need no hand-written watcher loops;
 - reconnect from `--after` loses no durable event;
+- concurrent writers cannot duplicate event sequence;
 - normalized status is executor-independent;
 - wake policy does not confuse scientific FAIL with harness failure;
 - telemetry cannot trigger result-driven retry;
@@ -224,4 +239,4 @@ AudiAgentic gateway consumes this protocol over SSH and remembers sequence; it i
 ## Change Log
 
 - 2026-09-26T00:52:20.106874+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Specified durable event/status/telemetry projections and gateway-safe wake semantics.
+- 2026-09-26 (dev-gpt-agent): Specified multiprocess-safe durable event/status/telemetry projections and gateway-safe wake semantics.

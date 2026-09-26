@@ -15,20 +15,26 @@ work: L
 
 ## Description
 
-Refactor `bigcherry.patch.validation_campaign` only at explicit orchestration seams needed by the job service, preserving direct CLI behavior by default. Current campaign execution is monolithic, `_prepare_standard_campaign()` builds/materializes in-process, producer paths own their own build pairs, and `patch.evidence.write_record()` writes to repository-relative evidence unless given a root. This item adds explicit external evidence output, exact frozen validated composition, typed producer preflights/progress, and the v1.5 `prepare-only` / `execute-only` split without yet implementing the generalized RCD01 DAG.
+Refactor `bigcherry.patch.validation_campaign` only at explicit orchestration seams needed by the job service, preserving direct CLI behavior by default. Current campaign execution is monolithic, `_prepare_standard_campaign()` builds/materializes in-process, producer paths own their own build pairs, and `patch.evidence.write_record()` writes to repository-relative evidence unless given a root.
 
-The prepared manifest is cryptographically bound to the attempt commit, semantic campaign inputs, source/composition/build identities and artifacts. `execute-only` must fail closed before measurement if any bound fact changed.
+This item has two independently shippable milestones. **M1 is a v1 safety/cutover prerequisite**: external evidence output, exact frozen validated composition, typed producer preflights and structured progress. **M2 is v1.5**: the verified `prepare-only` / `execute-only` split that reduces production downtime/build overlap pressure without yet implementing the generalized RCD01 DAG.
 
 ## Steps
+
+### Milestone M1 — v1 service safety seam
 
 1. Add external evidence destination while preserving existing `write_record(record)` callers.
 2. Add frozen validated-composition input to scaffold resolution and verify every ID+implementation digest before materialization.
 3. Add `ProducerPreflightResult`/`run_preflight()` contract and move known MTP/full-vocab and tensor-topology/4096-ctx checks into producer-owned preflights.
 4. Add structured campaign progress event sink; stderr human telemetry remains unchanged.
-5. Add `--prepare-only --prepared-output PATH`.
-6. Add `--execute-only --prepared PATH`; rehydrate/verify prepared artifacts, then run correctness/activation/performance/ladder/production/evidence.
-7. Refactor producer runtime sufficiently to expose prepare vs execute, but do not create arbitrary independently resumable operations yet.
-8. Build offline fake campaign fixtures that never invoke HIP binaries but exercise manifest binding/tamper/frozen-drift/preflight classifications.
+5. Integrate these seams into the existing monolithic `run()`/producer path and test direct compatibility.
+
+### Milestone M2 — v1.5 prepare/execute
+
+6. Add `--prepare-only --prepared-output PATH`.
+7. Add `--execute-only --prepared PATH`; rehydrate/verify prepared artifacts, then run correctness/activation/performance/ladder/production/evidence.
+8. Refactor producer runtime sufficiently to expose prepare vs execute, but do not create arbitrary independently resumable operations yet.
+9. Build offline fake campaign fixtures that never invoke HIP binaries but exercise manifest binding/tamper/frozen-drift/preflight classifications.
 
 ## Detailed Solution & Technical Design
 
@@ -212,32 +218,36 @@ Add:
 
 ## Validation
 
-Offline required:
+M1 offline required before v1 retirement:
 
 - default monolithic invocation argv/behavior remains compatible;
 - evidence `output=` writes only specified external path; default still writes canonical package path;
 - frozen set is unaffected by later recipe promotion;
 - changed frozen implementation digest fails before any build mock is called;
+- MTP missing rows parser-bug fixture -> retryable; genuinely invalid source fixture -> invalid;
+- tensor topology mismatch -> invalid/preflight, not late scientific FAIL;
+- event sink receives phase order but Null sink yields identical result.
+
+M2 offline:
+
 - prepared manifest canonical hash deterministic;
 - modify any behavior-affecting field -> execute refuses;
 - modify build binary/runtime bundle/source artifact bytes -> execute refuses;
 - path move with same verified descriptor/content may rehydrate if locator policy allows;
 - execute-only never invokes build mock;
 - prepare-only never invokes benchmark/performance mock;
-- MTP missing rows parser-bug fixture -> retryable; genuinely invalid source fixture -> invalid;
-- tensor topology mismatch -> invalid/preflight, not late scientific FAIL;
-- event sink receives phase order but Null sink yields identical result;
 - producer and standard fake paths both round-trip prepare->execute.
 
 Hardware gates:
 
-- one representative standard producer and one dual-GPU producer prepare/execute pair produce evidence identical in scientific meaning to monolithic execution;
+- M1: one representative standard and producer monolithic job writes external evidence with frozen composition/preflight records;
+- M2: one representative standard producer and one dual-GPU producer prepare/execute pair produce evidence identical in scientific meaning to monolithic execution;
 - content-addressed build directories are actually reused;
 - prepared binary attestation remains valid after process boundary.
 
 ## Effort & Risk
 
-Large. Biggest risk is accidentally changing scientific campaign behavior while splitting orchestration. Keep old monolithic integration path as composition of the same extracted functions and compare records in tests.
+Large overall but M1 is intentionally smaller and independently shippable. Biggest M2 risk is accidentally changing scientific campaign behavior while splitting orchestration. Keep old monolithic integration path as composition of the same extracted functions and compare records in tests.
 
 ## Standards
 
@@ -245,18 +255,23 @@ Use existing `CompletedBuildEvidence`, source identity, evidence validation and 
 
 ## Acceptance Criteria
 
+M1:
 - job service can write evidence outside runner checkout;
 - frozen composition is exact and enforced before build;
 - producer semantic preflights are typed;
-- prepare/execute works for standard and producer campaigns without rebuilding in execute;
-- fake/tamper tests pass;
+- structured progress exists without affecting results;
 - direct monolithic CLI remains supported.
+
+M2:
+- prepare/execute works for standard and producer campaigns without rebuilding in execute;
+- prepared-manifest fake/tamper tests pass;
+- hardware parity against monolithic campaign is recorded.
 
 ## Notes
 
-This is v1.5. Full stage durability/resume belongs to RCD07/RCD01 activation; do not grow `PreparedCampaign` into a generic workflow engine.
+M1 is a v1 safety seam. M2 is v1.5. Full stage durability/resume belongs to RCD07/RCD01 activation; do not grow `PreparedCampaign` into a generic workflow engine.
 
 ## Change Log
 
 - 2026-09-26T00:52:08.757524+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Grounded service seams in current `validation_campaign`, `scaffold.validated_enhancement_patches` and `evidence.write_record`.
+- 2026-09-26 (dev-gpt-agent): Grounded service seams in current `validation_campaign`, `scaffold.validated_enhancement_patches` and `evidence.write_record`; split v1 M1 from v1.5 M2.
