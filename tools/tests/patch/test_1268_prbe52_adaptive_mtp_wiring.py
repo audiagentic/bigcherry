@@ -195,7 +195,8 @@ class Patch1268Mechanics(unittest.TestCase):
             self.assertIn("LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE", (root / "common/arg.cpp").read_text())
             text = (root / "common/speculative.cpp").read_text()
             self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
-            self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 2)  # begin reset + MTP draft reset only
+            self.assertEqual(text.count("last_n_draft.at(seq_id) = 0"), 1)  # begin reset (MTP only)
+            self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 1)  # MTP draft reset only
             self.assertEqual(text.count("effective_n_max"), 3)
             self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
             eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
