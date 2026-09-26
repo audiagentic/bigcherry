@@ -13,11 +13,11 @@ scaffold).
 - performance (series 2): MoE routing does NOT run TOP_K -- it uses the fused
   ``topk_moe`` kernel (PVPS10 profile, 2026-09-26) -- so the positive lane is
   llama-server MTP decode with ``--backend-sampling``: the top-k sampler runs
-  ``ggml_top_k`` over the full ~151k-logit vocabulary every token (1256's
-  parallel-radix route, wave32 in 1257). Metric: client wall-clock tokens/s. Control: dense
+  ``ggml_top_k`` over the full ~151k-logit vocabulary every token (pre-flight
+  2026-09-26: served by 1256's ``topk_small`` route , wave32 in 1257). Metric: client wall-clock tokens/s. Control: dense
   llama-bench tg128 (sampling-free, so TOP_K-free).
 - activation (series 2): the subject's backend-sampling server log carries
-  the radix route marker; the control's none.
+  a 1256 route marker (any route); the control's none.
 """
 
 from __future__ import annotations
@@ -120,12 +120,12 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     server_text = {arm: path.read_text(encoding="utf-8", errors="replace") for arm, path in server_logs.items()}
     subject_routes = sorted(set(_MARKER.findall(arms["subject"][0] + server_text["subject"])))
     control_routes = sorted(set(_MARKER.findall(arms["control"][0] + server_text["control"])))
-    served_radix = "parallel_radix" in set(_MARKER.findall(server_text["subject"]))
-    trigger_hit = served_radix and not control_routes
+    served_routes = sorted(set(_MARKER.findall(server_text["subject"])))
+    trigger_hit = bool(served_routes) and not control_routes
     activation = ActivationEvidence(
         status="executed" if trigger_hit else "not_executed",
         mechanism="trace_marker",
-        detail=(f"subject routes={subject_routes} (backend-sampling server radix={served_radix}) "
+        detail=(f"subject routes={subject_routes} (backend-sampling server routes={served_routes}) "
                 f"control routes={control_routes}"),
     )
     subject_trace_ref = ctx.runtime.write_text_artifact(
