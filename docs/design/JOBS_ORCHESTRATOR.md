@@ -1,47 +1,82 @@
-# BigCherry job service — agreed design
+# BigCherry job service — normative design
 
-Status: **agreed, no open objections** (2026-09-26). Adversarial review with
-dev-gpt-agent session `ses_4019cfc56e774dd2`: first pass `req_c70aecafc33e4b59`,
-deep review `req_fb219ca02c184706`, build-vs-buy `req_27c6e52d2ffa4904`, round 2
-`req_714f0d248f364ce6` (O1-O8), round 3 `req_b2e5be0c112047b0` (O9-O11).
-Replaces the lab queue in `tools/lab/plan-qualification/`. Plan items:
-`docs/planning/active/run-campaign-durability/RCD02`-`RCD11`.
+Status: **architecture agreed; implementation/hardware acceptance pending** (2026-09-26).
 
-Remaining gates are empirical acceptance tests, not design questions:
-ROCm under cgroup device constraints (O3 matrix) and production-loaded-idle
-isolation on GPU2/GPU3 (scheduler-isolation-v1).
+This file supersedes the earlier round-by-round text. RCD02-RCD12 implement this design. `docs/reference/jobs/SLURM_BRUTUS.md` is the concrete host-install runbook.
 
-## 1. Architecture
+## 1. Goal and boundary
 
-Adopt free, open-source **Slurm** (GPL, Ubuntu Noble 23.11.4) as the durable
-queue, process lifetime, GPU and host-resource scheduler on Brutus. BigCherry
-builds only a thin domain layer behind a **platform-neutral Executor**; no
-BigCherry domain module imports Slurm types, job IDs, GRES syntax, partitions or
-`squeue`.
+Replace `tools/lab/plan-qualification/{queue.sh,run_campaign.sh,make-serial-2.sh}` and hand-written watcher/switch loops with a service path where operators/agents submit durable job records and execution proceeds independently of the submitting SSH/gateway request.
 
-| Slurm owns | BigCherry owns |
-|---|---|
-| queued/running/held/cancelled state, dependencies, priority | run_id / series_id / session ordinal, JobSpec + batch expansion |
-| CPU slots, GPU allocation (static GRES), licenses | contract hash, planned N, frozen validated patch IDs + digests |
-| process containment (cgroups, if qualified), requeue mechanics | commit selection/pinning per attempt, toolchain logical name -> path/digest |
-| basic completion history (`jobcomp/filetxt`), `squeue --json` | model/corpus identity, producer preflights, failure classification |
-| | legality of retries (no optional stopping), evidence harvest + git commit, reports, events |
+**Buy scheduling; keep scientific policy in BigCherry.**
 
-Rejected: custom SQLite scheduler daemon (rebuilds what Slurm provides); pueue
-(no GPU/device model, not a system service by design); HTCondor as primary (viable
-AMD HIP discovery incl. Windows, but more pool complexity than one Linux box
-needs); Prefect/Dagster (still need a GPU allocator); Nomad (Business Source
-License, NVIDIA-only official GPU plugin); Docker for Slurm (see BRVP02 for
-toolchain images).
+| Slurm/slurmdbd owns | BigCherry owns |
+| --- | --- |
+| queued/running/held/cancelled execution state | run/series/session/attempt identity |
+| CPU/GPU allocation, dependencies, priorities, licenses | planned N, contract/composition freeze |
+| scheduler process lifetime and same-commit requeue | commit resolution/pinning and retry legality |
+| minimal account associations/executor accounting | model/corpus/producer/toolchain identity |
+| cgroup process/device containment when qualified | stable hardware identity/cohort binding |
+| basic execution history | production coexistence policy |
+| | scientific verdict/evidence/harvest/report/events |
 
-### Executor interface
+Rejected as primary: custom SQLite scheduler daemon, pueue, HTCondor migration solely for one Windows host, Prefect/Dagster layered over another resource allocator, Nomad.
+
+## 2. Brutus service topology
+
+Ubuntu 24.04 / distro Slurm 23.11.4 target:
+
+```text
+MariaDB 127.0.0.1:3306   # Slurm association/accounting DB only
+  ^
+slurmdbd 127.0.0.1:6819
+  ^
+slurmctld ---- slurmd
+  ^
+  |
+BigCherry SlurmExecutor (sbatch/squeue/scontrol/scancel/sacct CLI)
+```
+
+Also: `munge`, BigCherry systemd ingestion/observation/window helpers. No `slurmrestd` in v1.
+
+### Why MariaDB/slurmdbd is v1-required
+
+Real GitHub Ubuntu 24.04 validation installed Slurm 23.11.4, started MUNGE/slurmctld/slurmd, registered the node and exercised `squeue --json` and hold/release. Without an association store, subsequent jobs reproduced `PENDING Reason=InvalidAccount`. Therefore the earlier "jobcomp only, no slurmdbd" design is rejected.
+
+Use exactly one local cluster/account for managed work:
+
+```text
+cluster: bigcherry
+account: bigcherry
+service user default account: bigcherry
+```
+
+Every managed `sbatch` passes `--account=bigcherry`. MariaDB binds loopback only. BigCherry never queries the database directly.
+
+Tracked templates:
+
+```text
+config/slurm/slurm.conf.example
+config/slurm/slurmdbd.conf.example
+config/slurm/cgroup.conf.example
+config/slurm/gres.conf.example
+```
+
+## 3. Executor abstraction
+
+BigCherry domain modules never import Slurm types/syntax.
 
 ```python
 @dataclass(frozen=True)
+class SchedulerGpuRequest:
+    architecture: str
+    reserved_count: int
+
+@dataclass(frozen=True)
 class ResourceRequest:
     cpu_slots: int
-    gpu_devices: tuple[str, ...]      # logical BigCherry device IDs
-    activity_class: str               # build | correctness | timed-measure
+    gpu: SchedulerGpuRequest | None
+    activity_class: Literal["build", "correctness", "timed-measure", "harvest"]
     memory_bytes: int | None
     timeout_seconds: int
 
@@ -58,260 +93,402 @@ class ExecutionRequest:
 
 @dataclass(frozen=True)
 class ExecutionHandle:
-    executor: str                     # "slurm" | "local" | "fake"
+    executor: str
     native_id: str
     execution_id: str
 
-@dataclass(frozen=True)
-class AllocatedDevice:
-    logical_id: str
-    architecture: str
-    physical_id: str
-    locator: str | None
-
-@dataclass(frozen=True)
-class Allocation:
-    devices: tuple[AllocatedDevice, ...]
-    env: tuple[tuple[str, str], ...]
+class Executor(Protocol):
+    def submit(self, request: ExecutionRequest) -> ExecutionHandle: ...
+    def status(self, handle: ExecutionHandle) -> ExecutionStatus: ...
+    def cancel(self, handle: ExecutionHandle) -> None: ...
+    def control(self, handle: ExecutionHandle, action: ExecutorControl) -> None: ...
+    def allocation(self, handle: ExecutionHandle) -> Allocation | None: ...
+    def events(self, handle: ExecutionHandle, *, after: int | None = None) -> Iterable[ExecutorEvent]: ...
 ```
 
-Adapters: `SlurmExecutor` (Brutus; the only code that knows sbatch/squeue/
-scancel/GRES/licenses/partitions/`SLURM_JOB_GPUS`/`ROCR_VISIBLE_DEVICES`),
-`LocalExecutor` (Windows workstation, tests, emergencies; host device mapping +
-ResourceLock/tree leases), `FakeExecutor` (offline tests).
+Important split: scientific `GpuRequirement` (arch/count/min VRAM/model/peer/exact IDs) is resolved by RCD12/series binding **before** execution. The Executor receives only the resulting scheduler reservation (`architecture + reserved_count`). Slurm must not implement scientific capability policy.
 
-## 2. Brutus services (v1)
+Adapters:
 
-`munge`, `slurmctld`, `slurmd`, plus BigCherry systemd units. **No MariaDB/slurmdbd
-in v1**: `JobCompType=jobcomp/filetxt` + the BigCherry run store; add slurmdbd only
-for TRES/gpuutil accounting, QOS/fairshare or multi-user policy. No `slurmrestd`.
+- `SlurmExecutor`: Brutus; only adapter that knows `sbatch`, `squeue`, `scontrol`, GRES, licenses, partitions, `SLURM_*`.
+- `LocalExecutor`: Windows workstation/direct emergency execution.
+- `FakeExecutor`: deterministic offline service tests.
+
+## 4. Hardware discovery and series binding
+
+Hardware is discovered state, not static `environment.local.toml` truth.
+
+`DeviceRecord` contains at least:
+
+```text
+stable device_id + identity_source
+arch
+model
+VRAM
+current PCI BDF
+current /dev/dri/renderD*
+NUMA / relevant topology
+AMD driver
+```
+
+Stable ID preference: AMD UUID -> RSMI unique ID -> serial -> explicit weak hardware epoch. Ordinal/BDF/render node are locators only.
+
+Persist:
+
+```text
+/var/lib/bigcherry/hardware/observed.json
+/var/lib/bigcherry/hardware/accepted.json
+```
+
+Material inventory drift drains Brutus and wakes the operator before new work. Add/remove/replacement/topology change requires explicit acceptance and regenerated GRES config.
+
+### Capability request
+
+```python
+@dataclass(frozen=True)
+class GpuRequirement:
+    architecture: str
+    count: int = 1
+    min_vram_bytes: int = 0
+    homogeneous_model: bool = True
+    model: str | None = None
+    require_peer_access: bool = False
+    exact_device_ids: tuple[str, ...] = ()
+```
+
+### Deterministic series binding
+
+A scientific series binds one exact hardware cohort **before any session is submitted**:
+
+1. sort accepted candidates by stable `device_id`, never discovery order;
+2. filter arch/VRAM/model;
+3. reject ambiguous homogeneous model groups;
+4. validate exact IDs;
+5. for peer work choose canonical valid stable-ID tuple;
+6. compute `hardware_cohort_hash` from selected stable IDs + relevant topology;
+7. persist selected IDs and accepted inventory hash in immutable series record;
+8. every session/attempt in that series uses that same binding.
+
+Same-model replacement card or relevant topology move starts a new hardware cohort/series unless equivalence was pre-qualified. Windows-HIP gfx1100 and Linux-ROCm gfx1100 are separate platform environments/series.
+
+### Architecture-only GRES and exact cohort safety
+
+Slurm GRES types are architecture only:
+
+```text
+Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
+Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
+Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
+```
+
+Never `gfx1100_0`.
+
+Architecture/count GRES cannot promise which same-arch card is returned. Therefore if a bound series cohort is a **proper subset** of accepted GPUs of that architecture, v1 reserves **all GPUs of that architecture**, verifies the external allocation contains the pre-bound stable IDs, then narrows visibility to those IDs inside the already-exclusive allocation. Correctness/scientific comparability beats utilization.
+
+## 5. Slurm scheduler policy
 
 ```ini
 SchedulerType=sched/backfill
-SchedulerParameters=bf_licenses          # license-aware backfill: no starvation
+SchedulerParameters=bf_licenses
 PriorityType=priority/multifactor
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+
 Licenses=host_activity:2,build_slot:1
-JobCompType=jobcomp/filetxt
-JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
-JobAcctGatherType=jobacct_gather/cgroup
-JobAcctGatherFrequency=30
-ProctrackType=proctrack/cgroup
-TaskPlugin=task/cgroup,task/affinity
+
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=127.0.0.1
+AccountingStoragePort=6819
+AccountingStorageEnforce=associations
+
 RequeueExit=75
 
-PartitionName=bc-build         Nodes=brutus PriorityTier=10  State=UP   MaxTime=00:45:00
-PartitionName=bc-measure-other Nodes=brutus PriorityTier=100 State=UP   MaxTime=00:45:00   # gfx1201/gfx1030
-PartitionName=bc-measure-xtx   Nodes=brutus PriorityTier=100 State=DOWN MaxTime=00:45:00   # gfx1100, window only
+PartitionName=bc-build   Nodes=brutus PriorityTier=10  State=UP MaxTime=00:45:00
+PartitionName=bc-measure Nodes=brutus PriorityTier=100 State=UP MaxTime=00:45:00
 ```
 
-`gres.conf`: static per-device GRES generated from verified PCI-BDF ->
-`/dev/dri/renderD*` mapping (from the untracked environment.local inventory), e.g.
-`Name=gpu Type=gfx1100_0 File=/dev/dri/renderD128 Flags=amd_gpu_env`.
-`Flags=amd_gpu_env` sets only `ROCR_VISIBLE_DEVICES`. Under Slurm, BigCherry reads
-`SLURM_JOB_GPUS` (global IDs), asserts them against the inventory, preserves
-Slurm's `ROCR_VISIBLE_DEVICES` and leaves `HIP_VISIBLE_DEVICES` unset.
-`bigcherry jobs doctor --gpu-map` verifies index/arch/PCI/renderD/GRES.
+One generic build partition and one generic measurement partition. No static per-card or production-GPU partitions.
 
-`cgroup.conf`: `CgroupPlugin=autodetect`, `ConstrainDevices=yes`, `ConstrainCores=yes`
-— **provisional**: hardware falsification matrix per toolchain over
-{GPU0}, {GPU1}, {GPU2}, {GPU3}, {GPU0+GPU1}: `/dev/kfd` usable, allocated render
-nodes usable, unallocated blocked, visibility env exact, `hipGetDeviceCount` exact,
-properties readable, rocminfo/amd-smi terminate, 100 init cycles without hang or
-EACCES, llama-bench + llama-server attestation succeed, dual `-sm tensor` +
-4096-ctx preflight succeed, direct use of an unallocated GPU fails (hard timeouts
-everywhere). Fallback on any failure: `ConstrainDevices=no` + GRES scheduling +
-`ROCR_VISIBLE_DEVICES` + BigCherry attestation.
+Resource policy:
 
-Resource classes: build `bc-build --licenses=build_slot:1,host_activity:1`;
-timed measurement `--licenses=host_activity:2` + GRES. Build + correctness may
-overlap; build + timed measurement, correctness + timed, and two timed
-measurements cannot. All jobs carry finite `--time`.
+```text
+build:            build_slot:1 + host_activity:1
+monolithic v1:    host_activity:2 + required GRES
+v1.5 execute:     host_activity:2 + required GRES
+```
 
-## 3. Production coexistence (llama-swap on gfx1100 GPU0/1)
+`bf_licenses` + higher measurement `PriorityTier` must be real-service tested so a stream of builds cannot indefinitely delay a pending measurement. Every job has finite time.
 
-| Job target | Production policy |
-|---|---|
-| gfx1100 GPU0/1 (incl. dual-XTX) | exclusive measurement window: drain, stop/unload production, run queued gfx1100 jobs contiguously (nightly/maintenance), restore |
-| gfx1201 GPU2, gfx1030 GPU3 | production stays loaded; campaign starts after a retryable production-idle attestation |
-| contract requiring host-global isolation | exclusive window regardless of GPU |
+## 6. Submission contract and crash boundary
 
-Idle attestation (GPU2/3): llama-swap `/running`; every backend `/slots`
-`is_processing=false`; `/metrics` `requests_processing==0` and
-`requests_deferred==0`; stable idle >= 10 s; GPU2/3 idle and host-noise limits;
-then start immediately.
+Before external submission BigCherry durably writes:
 
-Measurement window: root-owned `bigcherry-measure-window.service`
-(`Type=simple`, `ExecStart=... hold`, `ExecStop`/`ExecStopPost=... exit`,
-`RuntimeMaxSec=4h`, `KillMode=control-group`, `Restart=no`). `hold`: flock, drain
-`bc-measure-xtx`, wait zero measurement jobs, drain production, stop/unload
-backend, prove GPU0/1 + host quiet, `bc-measure-xtx` UP, stay foreground. `exit`
-(idempotent): drain/DOWN partition, clear marker/lock, start llama-swap, verify
-`/health`. Boot recovery unit `bigcherry-measure-window-recover.service`
-(`Before=llama-swap.service`). Alerts: window over expected duration, llama-swap
-restart/health failure, cleanup failure, unit failed. Production unit gets
-`ExecStartPre=bc-assert-no-measure-window`. Ad-hoc agent work goes through
-`bigcherry host-run --class build|bench -- ...` (shared activity lock; refuses
-during a window).
+```text
+submission-intent.json
+  execution_id
+  request hash
+  run_id / attempt
+  exact pinned commit
+```
 
-Privilege: `/etc/sudoers.d/bigcherry-measure-window` allows the `bigcherry` user
-exactly `systemctl start|stop bigcherry-measure-window.service`; nothing else.
-GPU2/3 jobs need no privilege.
+Slurm argv shape:
 
-## 4. Identity, attempts, retries
+```bash
+sbatch --parsable \
+  --account bigcherry \
+  --job-name 'bc:<run_id>:a<attempt>' \
+  --comment 'bigcherry:<execution_id>' \
+  --partition '<bc-build|bc-measure>' \
+  --licenses '<resolved>' \
+  [--gres 'gpu:<arch>:<reserved-count>'] \
+  --time '<finite>' \
+  --output '<attempt>/slurm-%j.out' \
+  --error '<attempt>/slurm-%j.err' \
+  --export 'ALL,BIGCHERRY_RUN_ID=...,BIGCHERRY_ATTEMPT=...,BIGCHERRY_ATTEMPT_ROOT=...' \
+  '<attempt>/launch.sh'
+```
 
-- Series key: patch + arch + `execution_environment_hash` + contract hash; freezes
-  planned N, base revision, focal/common/validated patch IDs + implementation
-  digests (`composition_policy = freeze` default). A 5th session in a 4-session
-  series is refused; a new series needs a new contract version.
-- `execution_environment_hash` = hash(OS family/version, kernel or Windows build,
-  runtime family (rocm-linux | hip-sdk-windows) and version, HIP runtime,
-  compiler, AMD driver, device model/PCI identity). **Windows HIP gfx1100 and
-  Linux ROCm gfx1100 are separate series**; Windows gives portability evidence,
-  never fills a Linux session.
-- Commit frozen **per attempt** (resolved at attempt creation, pinned runner
-  worktree, `BIGCHERRY_ATTEMPT_ROOT`); no stage resolves the branch itself.
-- Exit protocol: `0` pipeline completed (including scientific FAIL);
-  `75` transient same-commit failure -> Slurm `RequeueExit` (`SLURM_RESTART_COUNT`);
-  `76` harness failure needing a code/config fix -> terminate, wake, then
-  `bigcherry jobs retry RUN --latest` = new attempt, new Slurm job, same run_id;
-  `77` invalid input / contract or composition drift.
-- A reused build from an earlier attempt is allowed only when the new attempt's
-  build OperationSpec and execution hash match and artifacts re-verify (RCD01).
-- No result-driven re-measure (a -30% round is not a retry predicate) until PVPS09.
+Then persist `submission.json` with returned native handle.
 
-## 5. Phasing
+Recovery of intent-without-handle:
 
-| Version | Content |
-|---|---|
-| v1 (this week) | one Slurm job per validation run (monolithic `validation_campaign`), GPU class policy above, retire queue.sh/run_campaign.sh |
-| v1.5 | `validation_campaign --prepare-only` (materialize + build all trees, write `prepared-campaign.json`, no verdicts) and `--execute-only --prepared <manifest>` (verify commit/contract/composition/source/binary hashes, run producer, ladder, production lane, persist evidence); build job in `bc-build` (production keeps serving), execute job `--dependency=afterok` |
-| v2 | external evidence sink + RCD01 activation (OperationSpec, running/result records, rehydration) |
-| v3 | extracted build/correctness/measure operations as a stage DAG |
-| v4 | build overlap with timed measurement, only after scheduler-isolation-v1 passes |
+1. query Slurm by correlation comment/name and active state;
+2. inspect `sacct`/jobcomp and attempt-local start/result sentinels;
+3. exactly one match -> bind it;
+4. proven no execution -> resubmit immutable request;
+5. ambiguous -> wake `recovery.ambiguous`; **never blind duplicate**.
 
-scheduler-isolation-v1 (pre-declared, non-patch evidence): identical binaries A/A;
-conditions idle vs one representative HIP compile, and for GPU2/GPU3 also gfx1100
-production unloaded vs loaded-idle vs active inference; >= 32 randomized paired
-blocks per condition; accept iff condition effect 95% CI within +-0.10%,
-variance-ratio upper bound <= 1.15, no clock/power/thermal shift. Until loaded-idle
-qualifies, GPU2/3 require production idle (not stopped).
+Gateway/SSH lifetime is irrelevant after durable local submission.
 
-## 6. Consolidation
+## 7. Commit pinning and worktrees
 
-| Component | Action |
-|---|---|
-| `core/tree_activity.py` (HI151) | keep/extend: repository maintenance fencing; new stages refuse while the maintenance lock exists; `jobs pause` = hold pending jobs, wait running, take the lock |
-| `experiment/bundle.run_managed()` | extend into the per-operation executor: streamed stdout/stderr files (never buffered), event sink, heartbeats, stall policy |
-| `telemetry.py` (RQW01) | keep; add `JsonEventSink` / `CompositeSink` |
-| `tuning/journal.py` (HI48) | extract `core/durable.py` (canonical JSON, atomic write, checksummed JSONL, torn-tail recovery); tuning and jobs share it |
-| campaign `ResourceLock` | `resource_policy` = local or external; under Slurm GPU/build/quiet claims are external (no double scheduler) |
-| RCD01 | activate the durable operation/result semantics only; scheduler ownership, distributed locks and generic workflow engine de-scoped (Slurm) |
-| AudiAgentic gateway | standalone service with a gateway-neutral event envelope; the gateway is a client adapter (SSH submit / events --after), never the execution authority |
+`run_id` is scientific session identity; `attempt_no` is execution/harness attempt.
 
-## 7. Observability and agent interface
+At new attempt creation:
 
-Authorities: `squeue --json` (current scheduler state), `jobcomp/filetxt` (completed
-Slurm jobs), BigCherry run store (domain identity, attempts, failure class,
-verdicts, artifact hashes, telemetry, events), journald (service health).
+1. resolve requested code ref immediately before attempt start;
+2. create detached per-attempt BigCherry worktree at exact SHA;
+3. link canonical gitignored `vendor/llama.cpp` and export absolute `BIGCHERRY_ENVIRONMENT`;
+4. persist SHA before spawn;
+5. all stages in attempt use that worktree.
 
-Run layout: `/mnt/data/bigcherry-jobs/runs/<run_id>/{intent.json, submission.json,
-events.jsonl, stages/<stage>/attempt-NNN/{operation.json, running.json, result.json,
-stdout.log, stderr.log}, telemetry/{gpu,host}.jsonl, evidence/, reports/}`.
+Branch changes after spawn never alter a running attempt. A harness fix uses `jobs retry --latest`: same `run_id`, `attempt+1`, new commit/new Slurm job. Same-commit transient requeue remains same attempt/native job.
 
-CLI (all `--json`, JSON-only stdout, diagnostics on stderr): `bigcherry jobs
-submit|submit-batch|list|show|retry|disable|enable|cancel|hold|release|pause|resume|
-status|events --after <seq> --jsonl --follow|doctor|harvest|report`. Windows
-Claude Code uses SSH as transport (`ssh bigcherry@brutus "... jobs submit - --json"`).
-Optional inbox: `bigcherry-jobs-ingest.path` watching `/mnt/data/bigcherry-jobs/inbox`
-(validate -> processing/ -> persist intent -> submit -> accepted/ or rejected/).
-`bigcherry-observe.timer` writes `status.json`, `status.md`, `bigcherry.prom` every
-15-30 s (node_exporter textfile collector if present; no custom web service yet).
+Per-attempt worktree is required in v1 because current evidence persistence writes under `REPO_ROOT`; external evidence sink later allows shared/read-only code worktrees.
 
-`jobs status --json` is BigCherry-normalized (never raw Slurm JSON): service health,
-queue counts by state/stage, host disk + ccache, per-GPU allocation + telemetry,
-per-job identity/stage/attempt/Slurm state/progress/result.
+Real temporary-Git CI verifies branch advance does not mutate an existing detached attempt worktree.
 
-Event envelope: `{schema, seq, event_id, ts, run_id, series_id, stage, attempt,
-slurm_job_id, kind, severity, data}`.
+## 8. Retry/failure semantics
 
-| Wake | Record only |
-|---|---|
-| harness non-zero exit, retry exhausted, stall, disk hard threshold, GPU unhealthy/reset/missing, contract/composition drift, Slurm node DOWN/DRAIN, harvest/git failure, RCD01 recovery ambiguity, service degraded, measurement window overrun or production restart failure | submitted/queued, stage started/completed, telemetry, scientific PASS, scientific FAIL, ladder/noise results; series complete = notify |
+```text
+exit 0   execution completed; scientific verdict may PASS or FAIL
+exit 75  predeclared same-commit transient -> Slurm RequeueExit, same attempt
+exit 76  harness/code/config correction required -> terminal; explicit new attempt
+exit 77  invalid input / contract / composition drift -> block
+```
 
-Security (LAN test server): dedicated `bigcherry` Unix account, Ed25519 SSH key,
-no password or root SSH, SSH restricted to the LAN, no MariaDB/Slurm ports exposed,
-MUNGE local; individual accounts for multiple humans.
+Record `SLURM_RESTART_COUNT` on requeue. Scientific FAIL, small effect, or a one-off `-30%` result is not a retry predicate. PVPS09 must define any future result-independent health replacement rule before automatic remeasurement.
 
-## 8. Tests
+Failure taxonomy remains separate from scientific verdict: harness/parser/preflight/build/disk/process/stall/host failures can be retried only by predeclared policy; real correctness/performance FAIL is pipeline completion.
 
-Offline (FakeExecutor): batch expansion/overrides, canonical hashes, series N+1
-refusal, retry = same run_id + new attempt, scientific FAIL != harness failure,
-disable/enable preserving slots, commit frozen per attempt, contract/composition
-drift blocks, freeze vs restart-on-promotion, GPU allocation parsing
-(`SLURM_JOB_GPUS` -> inventory), env hash separation (Windows vs Linux), exit-code
-protocol, idle-attestation parsing, measurement-window state machine, events
-append-only + resume after seq, domain layer imports no Slurm module.
+## 9. Production coexistence
 
-Hardware acceptance before retiring the lab scripts: gfx1100 job (in a window),
-gfx1201 alternate-ROCm job (idle attestation), gfx1030 alternate-model job, dual
-gfx1100 job; forced harness failure + `retry --latest`, client disconnect,
-hold/release, disk guard, promotion between sessions, window overrun auto-close.
+llama-swap may use any GPU/card combination and may change over time. Slurm cannot see processes outside Slurm; production conflict is a BigCherry cross-world gate.
 
-## 9. Round 4 amendments (supersede conflicting text above)
+Before measurement derive:
 
-Owner objections 2026-09-26: production may use any GPU; hardware on Brutus changes.
-GPT `req_e22e2f08be3d49e4`: resolved, **no open design objections**.
+```python
+@dataclass(frozen=True)
+class ProductionSnapshot:
+    config_hash: str
+    potential_devices: frozenset[str] | None   # None == all/unknown/fail closed
+    running_devices: frozenset[str]
+    observed_devices: frozenset[str]
+```
 
-**Production on any GPU (O12).**
-- One measurement partition `bc-measure` (PriorityTier=100); `bc-measure-xtx` /
-  `bc-measure-other` and every GPU-class production rule are deleted.
-- Per dispatch, after Slurm allocates GPUs and before validation starts, BigCherry
-  builds a `ProductionSnapshot{config_hash, potential_devices | "all",
-  running_devices, observed_devices}` from the llama-swap config, `/running`, each
-  model's cmd/env selectors, live backend process environments and AMD-SMI process/VRAM
-  attribution. Production models declare `env: BIGCHERRY_GPU_CLAIM:
-  "uuid:<id>[,...]" | "arch:<gfx>,count=N" | "all"`; missing, unparsable or
-  contradictory claims mean `all` (fail closed).
-- Allocated GPUs intersect potential production GPUs -> exclusive window (drain, stop
-  llama-swap, verify no production GPU processes, measure, restart). The root window
-  service reads a validated `/run/bigcherry/measure-window-request.json`
-  (`slurm_job_id`, `target_device_ids`, `inventory_hash`, `production_config_hash`); it
-  no longer toggles partitions. Otherwise production stays up behind the idle
-  attestation.
-- Contamination watchdog every ~2 s during measurement: config hash unchanged, potential
-  set still disjoint, no unexpected process on target GPUs, telemetry sane. Any violation
-  terminates the measurement, discards the sample and classifies a retryable
-  environment contamination (wake).
+Sources: llama-swap configuration, `/running`, backend command/env selectors, live process environments, AMD process/VRAM attribution. Production models should declare a stable-device claim; missing/contradictory claim => potential `all`.
 
-**Dynamic hardware (O13).**
-- `tools/bigcherry/hardware/{model,linux_amd,windows_hip,inventory,topology}.py`;
-  `DeviceRecord{device_id, identity_source (amd_uuid | rsmi_unique_id | serial |
-  hip_uuid | luid | weak), arch, model, vram_bytes, pci_bdf, render_node, numa_node,
-  driver_version}`. BDF, render node and index are observations, never identity.
-- `bigcherry-hardware-discovery.service` (Before=slurmd) discovers GPUs, writes
-  `/var/lib/bigcherry/hardware/observed.json`, compares `accepted.json`, generates an
-  **architecture-typed** `gres.conf` (`Type=gfx1100`, not `gfx1100_0`) and node
-  `Gres=gpu:gfx1100:2,...`; material drift starts the node DRAINED and wakes the
-  operator. Runtime drift (udev/timer) drains immediately; reconfigure only with no
-  active jobs; operator acknowledges the new inventory hash, then RESUME.
-  AutoDetect=rsmi is not the authority; `slurmd -G` remains a validation step.
-- Jobs request `GpuRequirement{architecture, count, min_vram_bytes,
-  homogeneous_model, require_peer_access, exact_device_ids}`. Rare subset/exact
-  constraints over-allocate all GPUs of that architecture and select UUIDs inside the
-  allocation (`ROCR_VISIBLE_DEVICES=<UUIDs>`); peer pairs come from the discovered
-  topology and are re-attested.
-- Series key: patch, contract hash, architecture, `platform_environment_hash` (OS,
-  kernel/Windows build, ROCm/HIP SDK, HIP runtime, compiler, driver) and
-  `hardware_cohort_hash` (sorted stable device IDs, arch, model, VRAM, PCIe/NUMA/peer
-  topology fingerprint). A replacement card of the same model, or a card moved to another
-  slot, starts a new series unless equivalence was pre-qualified. `weak` identity never
-  continues a series automatically; the operator declares a new hardware epoch.
-- `environment.local.toml` keeps host policy (toolchains, models, allowed architectures,
-  device aliases); it is no longer GPU inventory truth.
-- Windows LocalExecutor discovers via a small HIP probe (count, properties, UUID/LUID,
-  PCI fields, VRAM, driver/runtime versions, peer matrix); the ordinal is launch-local
-  only.
+After Slurm allocation:
 
-Remaining gates (implementation/acceptance, not design): real UUID availability on these
-RDNA cards, generated-GRES/reconfigure tests, ROCm cgroup falsification, production-claim
-parser and process attestation, the cross-GPU isolation experiment.
+```text
+if target stable IDs intersect production potential set:
+    exclusive production window
+else:
+    production may remain loaded, subject to qualified idle/noise attestation
+```
+
+### Exclusive window
+
+Root-owned `bigcherry-measure-window.service`:
+
+- drain in-flight production requests;
+- stop/unload llama-swap/backend;
+- prove target/host quiet;
+- run measurement while reload is blocked;
+- watchdog config/process/inventory drift;
+- idempotent cleanup/restart production;
+- hard `RuntimeMaxSec` and boot recovery.
+
+Agent `bigcherry` user may only `systemctl start|stop` that exact unit via narrow sudoers/polkit rule; no general root/scontrol permission.
+
+Non-conflicting production remains up only under the currently qualified idle/noise policy. Active non-conflicting inference coexistence is not allowed until `scheduler-isolation-v1` proves it harmless.
+
+## 10. Tree maintenance and other direct users
+
+HI151 `core/tree_activity.py` remains repository maintenance fencing. Validation found and fixed a real admission gap.
+
+Race-safe protocol:
+
+```text
+runner:      check maintenance -> publish lease -> recheck maintenance
+maintenance: publish maintenance lock -> scan live leases
+```
+
+Thus pin-bump/maintenance and a supported long-running campaign cannot both be admitted even when they race.
+
+Ad-hoc build/bench activity that can perturb timed measurement must use supported BigCherry wrappers/activity policy. A privileged raw shell can always bypass a cooperative scheduler; that is an operator-policy violation and cannot be solved by Slurm.
+
+## 11. Phasing
+
+### v1 — queue replacement
+
+One monolithic Slurm job per existing `validation_campaign` run. It holds measurement resources throughout build+producer+ladder+production lane. Lower throughput/longer production exclusion is accepted only for initial cutover.
+
+Required before retirement: RCD06 M1 service safety (external evidence target/frozen composition/typed preflight/progress as defined there), dynamic production gate, hardware identity, monitoring, real Brutus acceptance.
+
+### v1.5 — cheap downtime reduction
+
+Add:
+
+```text
+validation_campaign --prepare-only
+validation_campaign --execute-only --prepared <manifest>
+```
+
+Prepare materializes/builds stock/base/control/subject/producer artifacts and emits an immutable prepared manifest. Execute re-verifies attempt commit, contract/composition/source/build identities before correctness/performance/ladder/production/evidence.
+
+Slurm `afterok:<prepare>` dependency; production remains available during build.
+
+### v2+
+
+Activate RCD01 durable operation/result semantics, then full build/correctness/measure DAG, harvest/report and only later overlap timed measurement with builds after isolation qualification.
+
+## 12. Existing component consolidation
+
+| Component | Decision |
+| --- | --- |
+| `core/tree_activity.py` HI151 | keep/extend; race-safe lease/maintenance admission |
+| `experiment/bundle.run_managed()` | extend to streamed files, heartbeat/event sink; current `capture_output=True` is not acceptable for 1.5 GB logs |
+| `telemetry.py` RQW01 | keep; add JSON/composite sinks |
+| `tuning/journal.py` HI48 | extract reusable canonical/atomic/checksummed durability primitives without changing existing wire format |
+| campaign/build resource locks | local fallback/cache integrity only; Slurm owns managed GPU/build/quiet resources |
+| RCD01 | activate operation/result durability; do not recreate scheduler/distributed lock engine |
+| AudiAgentic gateway | client/provider adapter only; never execution authority |
+
+## 13. Observability
+
+Authorities:
+
+```text
+squeue --json     current Slurm state
+sacct/slurmdbd    native historical executor state
+jobcomp/filetxt   lightweight independent Slurm completion trail
+BigCherry store   domain/scientific history/events/artifacts
+journald          service diagnostics
+```
+
+Normalized `bigcherry jobs status --json` never exposes raw Slurm schema as public API. Include service health, queue/stage counts, disk/ccache, accepted inventory/drift, stable-ID GPU allocation/telemetry, run/series/session/stage/attempt/identity/progress/result.
+
+Host event stream is immutable checksummed JSONL with monotonic sequence; agents reconnect with `events --after N --jsonl [--follow] [--wake-only]`.
+
+Wake: harness failure/retry exhaustion/stall/disk hard/GPU unhealthy/inventory drift/contract or composition drift/node unavailable/harvest failure/recovery ambiguity/service degradation/production contamination/window overrun/restart failure.
+
+Record only: submit/queue/start/completion, telemetry, scientific PASS/FAIL, ladder/noise, same-commit automatic requeue. Series complete = notify.
+
+## 14. Logs/disk/cache
+
+- work/build/tmp/attempt logs on `/mnt/data`;
+- global ccache under work root, `CCACHE_BASEDIR` common root, `CCACHE_NOHASHDIR=1`, bounded ~100 GiB policy;
+- root and work filesystem preflight + runtime hard-reserve watchdog;
+- current `run_managed(capture_output=True)` must be replaced with streaming before production job service; never buffer server logs in memory;
+- completed server logs may be truncated/rotated according to evidence policy; full required structured artifacts must be preserved separately;
+- disk-pressure abort is harness/environment failure, never scientific FAIL.
+
+## 15. Real validation already in repository
+
+### Planning falsifier
+
+```bash
+PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
+# 32 checks
+```
+
+### Real BigCherry process smoke
+
+`real_bigcherry_process_smoke.py` imports current production modules and uses real subprocesses. It verifies `run_managed`, module CLI, child return codes 0/76/127, stdout/stderr, 8 MiB output, HI48 torn-tail recovery, and actual `validation_campaign.main()` producer-dispatch parsing with only hardware/build producer body mocked.
+
+### Real recovery smoke
+
+`real_recovery_smoke.py` uses production HI151 plus real Git repositories/worktrees to verify maintenance/lease exclusion, crashed stale lease pruning, detached attempt pinning across branch advance, dirty attempt isolation and worktree cleanup.
+
+### Real Noble Slurm CI
+
+`.github/workflows/rcd-slurm-validation.yml` installs actual Ubuntu Noble Slurm/MUNGE/MariaDB/slurmdbd and exercises real daemons/commands. It is required to prove:
+
+```text
+MUNGE
+slurmdbd association
+slurmctld/slurmd registration
+squeue --json
+hold/release/cancel
+afterok
+license priority/progress
+RequeueExit=75 / SLURM_RESTART_COUNT
+jobcomp + sacct
+```
+
+Failures in this test are design/config findings, not waived as mocks.
+
+## 16. Brutus-only acceptance gates
+
+GitHub CPU/service CI cannot establish:
+
+- actual AMD stable UUID/RSMI ID availability;
+- generated real `gres.conf` accepted by `slurmd -G`;
+- `/dev/kfd` + render node behavior under `ConstrainDevices=yes`;
+- HIP enumeration/order with cgroups for both toolchains;
+- peer access and `-sm tensor` topology/4096-context preflight;
+- llama-swap process attribution/window behavior;
+- real disk/ccache/root-pressure behavior under builds;
+- production-loaded-idle/active noise equivalence;
+- monolithic evidence parity on real GPUs.
+
+These remain explicit RCD10 hardware acceptance requirements. If cgroup device filtering fails any supported cell, set `ConstrainDevices=no` and record that GRES is scheduling/isolation-by-cooperation, not a security boundary.
+
+## 17. Security
+
+- dedicated `bigcherry` Unix account for managed submission;
+- SSH Ed25519, no password/root SSH, LAN firewall;
+- MariaDB loopback only;
+- slurmdbd local only;
+- no slurmrestd;
+- root measurement-window helper callable only through exact unit start/stop permission;
+- no secrets in JobSpec/events/argv telemetry; host DB password lives in root-readable untracked config.
+
+## 18. Retirement gate
+
+Do not retire shell queue until:
+
+1. real Noble CI passes;
+2. RCD03/RCD04/RCD05/RCD06-M1/RCD09/RCD11/RCD12 implementation is complete;
+3. all currently required Brutus capability classes pass real hardware acceptance or are explicitly unsupported;
+4. forced incident matrix passes;
+5. one complete planned series runs without shell watcher intervention;
+6. evidence/report parity is confirmed;
+7. rollback path is documented/tested.
+
+Retire queue/switch/watch wrappers first. Keep `summarize.py`/`noise.py` until RCD08 parity.
+
+## 19. Remaining empirical gates
+
+No unresolved platform-choice objection remains. Open **acceptance** gates are the Brutus-only items above plus completion of real Noble Slurm CI and production implementation modules. Those are not assumed passed by planning mocks.
