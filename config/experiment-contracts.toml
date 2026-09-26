@@ -1365,7 +1365,7 @@ family = "mmvq"
 [contract.NRO07-TOPK-HYBRID.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort; MoE routing (256 experts, top-8) runs it every token. Measured with the ROCm 10.x toolchain on both arms."
+rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort. Series 2: backend sampling (--backend-sampling) runs the request top-k as ggml_top_k over the full ~151k-logit vocabulary every token (parallel-radix route); MoE routing does not use TOP_K (fused topk_moe). Measured with the ROCm 10.x toolchain on both arms."
 
 [contract.NRO07-TOPK-HYBRID.scope]
 backend = "hip"
@@ -1381,6 +1381,15 @@ workloads = ["decode"]
 
 [contract.NRO07-TOPK-HYBRID.correctness]
 backend_reference = "required"
+
+# SERIES 2 declared 2026-09-26 (owner-approved: "test properly"), BEFORE any series-2
+# data. Series 1 measured llama-bench decode on the MoE model, but the PVPS10 decode
+# profile shows that workload never runs TOP_K (routing uses the fused topk_moe
+# kernel; identical call counts in both arms), so series 1 could not test the claim.
+# Series 2 positive lane: llama-server MTP decode with --backend-sampling (top_k=20
+# over the full vocabulary every token). Series 1 stays on record under the old hash.
+[contract.NRO07-TOPK-HYBRID.measurement]
+server_requests_per_start = 5
 
 # POLICY FREEZE 2026-09-25 (owner policy).
 [contract.NRO07-TOPK-HYBRID.acceptance]
@@ -1407,7 +1416,7 @@ family = "mmvq"
 [contract.NRO08-TOPK-WAVE32.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "Wave32 shuffles replace LDS/barrier reductions in 1256's kernels; measured as an increment on 1256 (both arms carry 1256)."
+rationale = "Wave32 shuffles replace LDS/barrier reductions in 1256's kernels; measured as an increment on 1256 (both arms carry 1256). Series 2: exercised by backend-sampling top-k over the full vocabulary (see NRO07-TOPK-HYBRID)."
 
 [contract.NRO08-TOPK-WAVE32.scope]
 backend = "hip"
@@ -1423,6 +1432,15 @@ workloads = ["decode"]
 
 [contract.NRO08-TOPK-WAVE32.correctness]
 backend_reference = "required"
+
+# SERIES 2 declared 2026-09-26 (owner-approved: "test properly"), BEFORE any series-2
+# data. Series 1 measured llama-bench decode on the MoE model, but the PVPS10 decode
+# profile shows that workload never runs TOP_K (routing uses the fused topk_moe
+# kernel; identical call counts in both arms), so series 1 could not test the claim.
+# Series 2 positive lane: llama-server MTP decode with --backend-sampling (top_k=20
+# over the full vocabulary every token). Series 1 stays on record under the old hash.
+[contract.NRO08-TOPK-WAVE32.measurement]
+server_requests_per_start = 5
 
 # POLICY FREEZE 2026-09-25 (owner policy).
 [contract.NRO08-TOPK-WAVE32.acceptance]
