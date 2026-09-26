@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Real Ubuntu 24.04 / Slurm 23.11 service smoke.
-# Validates scheduler/accounting semantics only; AMD GRES/cgroups remain Brutus-only.
+# Real Ubuntu 24.04 / Slurm 23.11 service smoke for the agreed BigCherry v1
+# execution substrate. This intentionally excludes slurmdbd/MariaDB and GPUs.
+# AMD GRES/cgroup/ROCm qualification remains Brutus-only.
 log() { printf '[rcd-slurm-smoke] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends \
-  slurm-wlm slurmdbd munge mariadb-server jq
+sudo apt-get install -y --no-install-recommends slurm-wlm munge jq
 
 SLURM_VERSION="$(dpkg-query -W -f='${Version}' slurm-wlm | cut -d- -f1)"
 case "$SLURM_VERSION" in 23.11.*) ;; *) die "expected Noble Slurm 23.11.x; got $SLURM_VERSION";; esac
@@ -18,15 +18,12 @@ log "installed Slurm $SLURM_VERSION"
 HOST="$(hostname -s)"
 CPUS="$(nproc)"
 REALMEM="$(awk '/MemTotal:/ {m=int($2/1024)-1024; if (m<1024) m=int($2/1024*0.8); print m}' /proc/meminfo)"
-USER_NAME="$(id -un)"
 
 cleanup() {
   set +e
   sudo pkill -TERM -x slurmd >/dev/null 2>&1 || true
   sudo pkill -TERM -x slurmctld >/dev/null 2>&1 || true
-  sudo pkill -TERM -x slurmdbd >/dev/null 2>&1 || true
   sudo pkill -TERM -x munged >/dev/null 2>&1 || true
-  sudo pkill -TERM -x mariadbd >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 cleanup
@@ -42,58 +39,10 @@ sudo -u munge /usr/sbin/munged --force
 munge -n | unmunge >/dev/null
 log "MUNGE round-trip ok"
 
-# Local accounting DB. Runtime socket directory must be traversable by local
-# client probes; database files remain private to mysql.
-sudo rm -rf /tmp/bc-mysql-data
-sudo install -d -o mysql -g mysql -m 0750 /tmp/bc-mysql-data
-sudo install -d -o mysql -g mysql -m 0755 /run/mysqld
-sudo mariadb-install-db --user=mysql --datadir=/tmp/bc-mysql-data \
-  --auth-root-authentication-method=normal >/tmp/bc-mariadb-init.log 2>&1
-sudo -u mysql mariadbd \
-  --datadir=/tmp/bc-mysql-data \
-  --socket=/run/mysqld/mysqld.sock \
-  --pid-file=/run/mysqld/mysqld.pid \
-  --bind-address=127.0.0.1 --port=3306 --skip-name-resolve \
-  --log-error=/tmp/bc-mariadb.log >/tmp/bc-mariadb.stdout 2>&1 &
-for _ in $(seq 1 40); do
-  sudo mariadb-admin --protocol=socket --socket=/run/mysqld/mysqld.sock ping >/dev/null 2>&1 && break
-  sleep 0.5
-done
-sudo mariadb-admin --protocol=socket --socket=/run/mysqld/mysqld.sock ping >/dev/null || {
-  sudo cat /tmp/bc-mariadb.log >&2 || true
-  die "MariaDB did not start"
-}
-sudo mariadb --protocol=socket --socket=/run/mysqld/mysqld.sock <<'SQL'
-CREATE DATABASE IF NOT EXISTS slurm_acct_db;
-CREATE USER IF NOT EXISTS 'slurm'@'localhost' IDENTIFIED BY 'slurm-ci';
-CREATE USER IF NOT EXISTS 'slurm'@'127.0.0.1' IDENTIFIED BY 'slurm-ci';
-GRANT ALL PRIVILEGES ON slurm_acct_db.* TO 'slurm'@'localhost';
-GRANT ALL PRIVILEGES ON slurm_acct_db.* TO 'slurm'@'127.0.0.1';
-FLUSH PRIVILEGES;
-SQL
-log "loopback MariaDB ok"
-
+sudo rm -rf /tmp/bc-slurm-state /tmp/bc-slurmd-spool
 sudo install -d -o slurm -g slurm -m 0755 /tmp/bc-slurm-state
 sudo install -d -o root -g root -m 0755 /tmp/bc-slurmd-spool /etc/slurm
-
-sudo tee /etc/slurm/slurmdbd.conf >/dev/null <<EOF
-AuthType=auth/munge
-DbdHost=${HOST}
-DbdAddr=127.0.0.1
-DbdPort=6819
-SlurmUser=slurm
-DebugLevel=info
-LogFile=/tmp/bc-slurmdbd.log
-PidFile=/tmp/bc-slurmdbd.pid
-StorageType=accounting_storage/mysql
-StorageHost=127.0.0.1
-StoragePort=3306
-StorageLoc=slurm_acct_db
-StorageUser=slurm
-StoragePass=slurm-ci
-EOF
-sudo chown slurm:slurm /etc/slurm/slurmdbd.conf
-sudo chmod 0600 /etc/slurm/slurmdbd.conf
+sudo rm -f /tmp/bc-slurm-jobcomp.log /tmp/bc-slurmctld.log /tmp/bc-slurmd.log
 
 sudo tee /etc/slurm/slurm.conf >/dev/null <<EOF
 ClusterName=bigcherry-ci
@@ -119,10 +68,7 @@ SelectType=select/cons_tres
 SelectTypeParameters=CR_CPU
 PriorityType=priority/multifactor
 Licenses=host_activity:2,build_slot:1
-AccountingStorageType=accounting_storage/slurmdbd
-AccountingStorageHost=127.0.0.1
-AccountingStoragePort=6819
-AccountingStorageEnforce=associations
+AccountingStorageType=accounting_storage/none
 JobCompType=jobcomp/filetxt
 JobCompLoc=/tmp/bc-slurm-jobcomp.log
 RequeueExit=75
@@ -133,29 +79,17 @@ PartitionName=bc-measure Nodes=${HOST} PriorityTier=100 Default=YES State=UP Max
 EOF
 export SLURM_CONF=/etc/slurm/slurm.conf
 
-# Accounting service and associations precede controller acceptance.
-sudo slurmdbd -Dvv >/tmp/bc-slurmdbd.stdout 2>&1 &
-for _ in $(seq 1 40); do
-  sacctmgr ping 2>/dev/null | grep -qi 'UP' && break
-  sleep 0.5
-done
-sacctmgr ping | grep -qi 'UP' || {
-  cat /tmp/bc-slurmdbd.stdout >&2 || true
-  sudo cat /tmp/bc-slurmdbd.log >&2 || true
-  die "slurmdbd not UP"
+# Parse/config validation before daemon startup.
+sudo slurmctld -t >/tmp/bc-slurmctld-config-test.txt 2>&1 || {
+  cat /tmp/bc-slurmctld-config-test.txt >&2 || true
+  die "slurmctld config validation failed"
 }
-sacctmgr -i add cluster bigcherry-ci >/dev/null
-sacctmgr -i add account bigcherry Cluster=bigcherry-ci Description=BigCherry Organization=BigCherry >/dev/null
-sacctmgr -i add user "$USER_NAME" Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry-ci >/dev/null
-sacctmgr -i add user root Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry-ci >/dev/null
-sacctmgr -nP show assoc where cluster=bigcherry-ci account=bigcherry format=Cluster,Account,User \
-  | grep -q '^bigcherry-ci|bigcherry|' || die "BigCherry association missing"
-log "slurmdbd association ok"
+log "slurmctld config syntax ok"
 
 sudo slurmctld -Dvv >/tmp/bc-slurmctld.stdout 2>&1 &
 sleep 1
 sudo slurmd -Dvv >/tmp/bc-slurmd.stdout 2>&1 &
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   if scontrol ping 2>/dev/null | grep -q UP && sinfo -h -N -o '%T' 2>/dev/null | grep -Eq 'idle|mix|alloc'; then
     break
   fi
@@ -168,8 +102,16 @@ sinfo -h -N -o '%T' | grep -Eq 'idle|mix|alloc' || {
   die "slurmd did not register usable node"
 }
 sinfo -N -l
-log "single-node Slurm service live"
+scontrol show config >/tmp/bc-scontrol-config.txt
+# v1 deliberately has no durable Slurm accounting DB/associations.
+grep -Eq 'AccountingStorageType[[:space:]]*=[[:space:]]*accounting_storage/none' /tmp/bc-scontrol-config.txt \
+  || die "unexpected accounting backend"
+grep -Eq 'SchedulerParameters[[:space:]]*=[[:space:]].*bf_licenses' /tmp/bc-scontrol-config.txt \
+  || die "bf_licenses not active"
+scontrol show lic | grep -q host_activity || die "host_activity license missing"
+log "single-node minimal Slurm service live"
 
+# Machine-readable status is the production adapter contract.
 squeue --json >/tmp/bc-squeue.json
 jq -e '.jobs | type == "array"' /tmp/bc-squeue.json >/dev/null
 log "squeue --json ok"
@@ -184,7 +126,12 @@ wait_state() {
   scontrol show job "$job" >&2 || true
   return 1
 }
-SBATCH=(--parsable --account=bigcherry)
+SBATCH=(--parsable)
+
+# Prove jobs work without --account/slurmdbd. This is the v1 contract.
+BASIC="$(sbatch "${SBATCH[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='true')"
+wait_state "$BASIC" COMPLETED 30 >/dev/null
+log "no-account v1 submission ok"
 
 # Hold/release.
 HOLD="$(sbatch "${SBATCH[@]}" --hold --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='sleep 1')"
@@ -212,7 +159,7 @@ for i in "${!ORDER[@]}"; do [[ "${ORDER[$i]}" == measure ]] && MI="$i"; [[ "${OR
 (( MI >= 0 && BI >= 0 && MI < BI )) || die "measurement did not precede later build: ${ORDER[*]}"
 log "license/priority progress ok: ${ORDER[*]}"
 
-# afterok dependency.
+# afterok dependency: v1.5 prepare -> execute.
 rm -f /tmp/bc-prepare /tmp/bc-execute
 P="$(sbatch "${SBATCH[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo prepared > /tmp/bc-prepare')"
 E="$(sbatch "${SBATCH[@]}" --partition=bc-measure --licenses=host_activity:2 --dependency=afterok:${P} --time=00:01:00 --wrap='test -s /tmp/bc-prepare && echo executed > /tmp/bc-execute')"
@@ -243,20 +190,29 @@ scancel "$C"
 wait_state "$C" CANCELLED 30 >/dev/null
 log "cancel ok"
 
-# Completion/accounting histories.
+# Controller state survives restart. Test both queued ownership and a running job.
+Q="$(sbatch "${SBATCH[@]}" --hold --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='true')"
+LONG="$(sbatch "${SBATCH[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='sleep 5')"
+wait_state "$LONG" RUNNING 20 >/dev/null
+sudo pkill -TERM -x slurmctld
+for _ in $(seq 1 20); do ! pgrep -x slurmctld >/dev/null && break; sleep 0.25; done
+sudo slurmctld -Dvv >>/tmp/bc-slurmctld.stdout 2>&1 &
+for _ in $(seq 1 40); do scontrol ping 2>/dev/null | grep -q UP && break; sleep 0.5; done
+scontrol ping | grep -q UP || die "slurmctld did not recover"
+wait_state "$Q" PENDING 10 >/dev/null
+scontrol release "$Q"
+wait_state "$Q" COMPLETED 30 >/dev/null
+wait_state "$LONG" COMPLETED 30 >/dev/null
+log "controller restart preserves queued/running ownership"
+
+# Lightweight completion history with no slurmdbd.
 for _ in $(seq 1 20); do [[ -s /tmp/bc-slurm-jobcomp.log ]] && break; sleep 0.5; done
 test -s /tmp/bc-slurm-jobcomp.log || die "jobcomp empty"
-for _ in $(seq 1 20); do
-  sacct -nX -j "$R" -o JobIDRaw,State >/tmp/bc-sacct.txt 2>/dev/null || true
-  grep -q "$R" /tmp/bc-sacct.txt && break
-  sleep 0.5
-done
-grep -q "$R" /tmp/bc-sacct.txt || die "sacct record missing"
-log "jobcomp+sacct ok"
+log "jobcomp/filetxt ok"
 
 jq -n \
   --arg slurm_version "$SLURM_VERSION" \
   --arg pending_reason "$PENDING_REASON" \
   --arg schedule_order "${ORDER[*]}" \
   --arg restart_counts "${RESTARTS[*]}" \
-  '{ok:true,scope:"real-noble-slurm-services-no-gpu",slurm_version:$slurm_version,accounting:"slurmdbd+mariadb-loopback",pending_reason:$pending_reason,schedule_order:$schedule_order,restart_counts:$restart_counts}'
+  '{ok:true,scope:"real-noble-slurm-minimal-v1-no-gpu",slurm_version:$slurm_version,accounting:"none+jobcomp/filetxt",pending_reason:$pending_reason,schedule_order:$schedule_order,restart_counts:$restart_counts}'
