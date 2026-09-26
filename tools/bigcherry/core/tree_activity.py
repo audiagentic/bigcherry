@@ -2,26 +2,16 @@
 
 A maintenance operation (the pin-bump orchestrator, HI153) must refuse to
 touch a tree that some other long-running process is actively using --
-``git status`` alone does not catch this: a real b10502->b10680 bump this
-project ran found a configured campaign tree with a clean-enough-looking
-git state but two active experiment log tails from a concurrent session.
+``git status`` alone does not catch this.
 
-Two pieces, both under ``ProjectContext.work_root`` (host-local, never
-committed):
+Both admission directions are enforced here:
 
-- a **lease** (``leases/<uuid>.json``) that a long-running runner (build,
-  campaign-build, tune-campaign, profile-campaign, an experiment/validation
-  run) holds for its own duration -- new maintenance work refuses to start
-  while any lease is live;
-- a **maintenance lock** (``maintenance.lock/``) that a maintenance
-  operation holds for ITS duration -- new long-running work should refuse
-  to start while it is held (that refusal is the caller's job: this module
-  only exposes ``list_active_leases`` for it to check).
+- runners publish a lease and refuse/remove it if maintenance is active;
+- maintenance publishes its lock before scanning leases and removes the lock
+  if any live lease exists.
 
-Staleness is decided ONLY by real PID liveness on the lease's own host
-(never on a different host -- this process cannot know if a remote PID is
-alive, so a lease recorded from another hostname is always treated as
-live). A lease is never silently broken just because it looks old.
+That two-phase handshake closes the TOCTOU where a runner and maintenance
+operation could otherwise both observe an empty state and enter concurrently.
 """
 
 from __future__ import annotations
@@ -46,6 +36,15 @@ def _tree_activity_root(work_root: Path, project_root: Path) -> Path:
     return work_root / "tree-activity" / key
 
 
+def maintenance_lock_path(work_root: Path, project_root: Path) -> Path:
+    """Canonical maintenance marker for runner admission/status."""
+    return _tree_activity_root(work_root, project_root) / "maintenance.lock"
+
+
+def maintenance_is_held(work_root: Path, project_root: Path) -> bool:
+    return maintenance_lock_path(work_root, project_root).is_dir()
+
+
 @dataclass(frozen=True)
 class LeaseInfo:
     lease_id: str
@@ -59,9 +58,6 @@ class LeaseInfo:
 
     def is_live(self) -> bool:
         if self.hostname != socket.gethostname():
-            # Cannot check a remote PID's liveness -- fail closed (treat as
-            # live) rather than guess. An operator can break_stale() this
-            # explicitly once they've confirmed the remote host is idle.
             return True
         return _pid_alive(self.pid)
 
@@ -74,7 +70,6 @@ def _pid_alive(pid: int) -> bool:
     except ProcessLookupError:
         return False
     except PermissionError:
-        # Exists, just owned by someone else -- still alive.
         return True
     except OSError:
         return False
@@ -109,10 +104,7 @@ def list_live_leases(work_root: Path, project_root: Path) -> list[LeaseInfo]:
 
 
 def prune_stale_leases(work_root: Path, project_root: Path) -> list[str]:
-    """Remove leases whose owning PID is confirmed dead on THIS host.
-
-    Never touches a lease recorded from a different hostname -- those are
-    always treated as live (see LeaseInfo.is_live)."""
+    """Remove leases whose owning PID is confirmed dead on THIS host."""
     removed = []
     for lease in list_active_leases(work_root, project_root):
         if lease.hostname == socket.gethostname() and not _pid_alive(lease.pid):
@@ -124,9 +116,15 @@ def prune_stale_leases(work_root: Path, project_root: Path) -> list[str]:
 class Lease:
     """Held by a long-running runner for its own duration.
 
-    Use as a context manager so the lease is removed even on an exception;
-    a crash that kills the process outright leaves the file behind, which
-    is exactly what PID-liveness pruning is for.
+    Admission protocol:
+
+    1. refuse if maintenance is already published;
+    2. publish this lease;
+    3. recheck maintenance; if it appeared between 1 and 2, withdraw the lease
+       and refuse admission.
+
+    Maintenance performs the complementary order (publish lock, then scan
+    leases), so both sides cannot be admitted even under the race.
     """
 
     def __init__(self, work_root: Path, project_root: Path, *, command: str, run_id: str):
@@ -138,15 +136,33 @@ class Lease:
         self._path: Path | None = None
 
     def __enter__(self) -> "Lease":
-        root = _tree_activity_root(self.work_root, self.project_root) / "leases"
-        root.mkdir(parents=True, exist_ok=True)
-        path = root / f"{self._lease_id}.json"
+        activity_root = _tree_activity_root(self.work_root, self.project_root)
+        maintenance = activity_root / "maintenance.lock"
+        if maintenance.is_dir():
+            raise TreeActivityError(
+                f"refusing to start {self.command}({self.run_id}): maintenance lock held "
+                f"for {self.project_root}: {maintenance}"
+            )
+
+        leases = activity_root / "leases"
+        leases.mkdir(parents=True, exist_ok=True)
+        path = leases / f"{self._lease_id}.json"
         payload = {
             "pid": os.getpid(), "hostname": socket.gethostname(), "command": self.command,
             "run_id": self.run_id, "project_root": str(self.project_root.resolve()),
             "started_at": time.time(),
         }
         path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+        # Complementary second check closes check-then-create race against
+        # MaintenanceLock.acquire() publishing its directory first.
+        if maintenance.is_dir():
+            path.unlink(missing_ok=True)
+            raise TreeActivityError(
+                f"refusing to start {self.command}({self.run_id}): maintenance began "
+                f"during lease admission for {self.project_root}"
+            )
+
         self._path = path
         return self
 
@@ -157,27 +173,20 @@ class Lease:
 
 
 class MaintenanceLock:
-    """Held by a maintenance operation (e.g. pin-bump) for its duration.
+    """Held by maintenance (for example pin-bump) for its duration.
 
-    Directory-based mkdir() claim, same atomicity pattern as
-    core.resources.ResourceLock. Refuses to acquire while any lease for
-    this project_root is live.
+    Publish the maintenance directory BEFORE scanning leases. Any runner that
+    races with this acquire either has already published a lease (so acquire
+    fails), or sees/rechecks the maintenance directory and refuses itself.
     """
 
     def __init__(self, work_root: Path, project_root: Path):
         self.work_root = work_root
         self.project_root = project_root
-        self.path = _tree_activity_root(work_root, project_root) / "maintenance.lock"
+        self.path = maintenance_lock_path(work_root, project_root)
         self._acquired = False
 
     def acquire(self) -> None:
-        live = list_live_leases(self.work_root, self.project_root)
-        if live:
-            names = ", ".join(f"{lease.command}({lease.run_id})" for lease in live)
-            raise TreeActivityError(
-                f"refusing to acquire maintenance lock: {len(live)} live lease(s) "
-                f"still active for {self.project_root}: {names}"
-            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             self.path.mkdir()
@@ -185,13 +194,29 @@ class MaintenanceLock:
             raise TreeActivityError(
                 f"maintenance lock already held for {self.project_root}: {self.path}"
             ) from exc
-        owner = {
-            "pid": os.getpid(), "hostname": socket.gethostname(), "started_at": time.time(),
-        }
-        (self.path / "owner.json").write_text(
-            json.dumps(owner, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        self._acquired = True
+
+        try:
+            live = list_live_leases(self.work_root, self.project_root)
+            if live:
+                names = ", ".join(f"{lease.command}({lease.run_id})" for lease in live)
+                raise TreeActivityError(
+                    f"refusing to acquire maintenance lock: {len(live)} live lease(s) "
+                    f"still active for {self.project_root}: {names}"
+                )
+            owner = {
+                "pid": os.getpid(), "hostname": socket.gethostname(), "started_at": time.time(),
+            }
+            (self.path / "owner.json").write_text(
+                json.dumps(owner, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            self._acquired = True
+        except BaseException:
+            (self.path / "owner.json").unlink(missing_ok=True)
+            try:
+                self.path.rmdir()
+            except OSError:
+                pass
+            raise
 
     def release(self) -> None:
         if not self._acquired:
@@ -212,15 +237,7 @@ class MaintenanceLock:
 
 
 def scan_proc_for_tree_usage(project_root: Path) -> list[str]:
-    """Linux-only, DIAGNOSTIC ONLY -- never authoritative, never a gate.
-
-    Scans /proc/*/cwd and /proc/*/cmdline for other processes whose
-    working directory or command line references project_root, excluding
-    this process's own ancestry. A transition-period aid for runners that
-    are not yet Lease-aware; callers must surface this as a warning, not a
-    hard stop, per HI150/HI151's design (git-status-only liveness checks
-    already proved insufficient once, but an unverifiable heuristic must
-    not become a NEW silent source of false confidence either way)."""
+    """Linux-only, DIAGNOSTIC ONLY -- never authoritative, never a gate."""
     proc = Path("/proc")
     if not proc.is_dir():
         return []
