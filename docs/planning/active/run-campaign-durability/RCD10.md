@@ -23,14 +23,15 @@ Archive/retire only queue/scheduling wrappers made obsolete. Do not remove lab a
 
 1. Generate acceptance matrix from accepted RCD12 inventory + current active job specs; no hard-coded GPU indices.
 2. Run offline full suite and lab planning simulator; require clean status.
-3. Install/qualify RCD03 Slurm and RCD11 production gate.
-4. Submit representative monolithic v1 jobs through `bigcherry jobs`, including active variations.
-5. Force incident/recovery scenarios.
-6. Compare evidence identity/verdict outputs with direct campaign invocation where safe.
-7. Migrate queued work by creating canonical JobSpecs; do not import shell logs as completed service attempts.
-8. Disable old queue entrypoints for a soak period while keeping documented rollback.
-9. After acceptance/soak, archive shell queue/watch/switch wrappers; update docs/skills/references.
-10. Produce an acceptance record with branch commit, Slurm config/inventory hashes, tests, hardware gates and known fallback mode.
+3. Require RCD04/RCD05 plus RCD06 **M1** (external evidence, frozen composition, typed preflights/progress); RCD06 M2 prepare/execute is v1.5 and may follow cutover.
+4. Install/qualify RCD03 Slurm and RCD11 production gate.
+5. Submit representative monolithic v1 jobs through `bigcherry jobs`, including active variations.
+6. Force incident/recovery scenarios.
+7. Compare evidence identity/verdict outputs with direct campaign invocation where safe.
+8. Migrate queued work by creating canonical JobSpecs; do not import shell logs as completed service attempts.
+9. Disable old queue entrypoints for a soak period while keeping documented rollback.
+10. After acceptance/soak, archive shell queue/watch/switch wrappers; update docs/skills/references.
+11. Produce an acceptance record with branch commit, Slurm config/inventory hashes, tests, hardware gates and known fallback mode.
 
 ## Detailed Solution & Technical Design
 
@@ -68,7 +69,10 @@ Force safely:
 12. hardware inventory drift fixture -> node drains/wakes and new work blocked;
 13. measurement-window overrun -> automatic cleanup/production health recovery;
 14. slurmctld restart -> queued ownership/status preserved;
-15. cgroup acceptance or explicit fallback recorded.
+15. crash after submission intent but before native-handle persistence -> recovery rebinds exactly one correlated execution or wakes ambiguous; no duplicate submission;
+16. concurrent event writers -> no duplicate/gap sequence;
+17. tree lease and maintenance race -> never both admitted;
+18. cgroup acceptance or explicit fallback recorded.
 
 Historical compiler/disk/parser/attestation/OOM cases should map to explicit FailureKind/exit behavior, never scientific FAIL.
 
@@ -159,6 +163,7 @@ No optional stopping; planned N remains fixed. Scientific result equality/parity
 
 ## Acceptance Criteria
 
+- RCD06 M1 is complete before v1 cutover; M2 is explicitly not required for queue retirement;
 - all currently required Brutus capability classes have real acceptance or are explicitly unsupported;
 - all incident scenarios recover/classify as designed;
 - client/gateway lifetime does not own execution;
@@ -168,9 +173,9 @@ No optional stopping; planned N remains fixed. Scientific result equality/parity
 
 ## Notes
 
-This is the v1 retirement gate. RCD07/RCD08 can remain later-phase unless their functionality is required to replace an operational script safely; `summarize.py`/`noise.py` therefore stay until RCD08.
+This is the v1 retirement gate. RCD06 M2 and RCD07/RCD08 can remain later-phase unless their functionality is required to replace an operational script safely; `summarize.py`/`noise.py` therefore stay until RCD08.
 
 ## Change Log
 
 - 2026-09-26T00:52:23.945064+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Replaced slot-specific acceptance with dynamic capability matrix, incident/soak/rollback and conditional tool retirement.
+- 2026-09-26 (dev-gpt-agent): Replaced slot-specific acceptance with dynamic capability matrix, incident/soak/rollback, explicit RCD06 M1 cutover gate and conditional tool retirement.
