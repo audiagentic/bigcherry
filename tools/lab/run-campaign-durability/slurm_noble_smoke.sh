@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Real Slurm/MUNGE smoke for an Ubuntu 24.04 disposable host (GitHub Actions).
-# This validates scheduler/service semantics only. It intentionally does not
-# claim AMD GRES/cgroup/ROCm hardware qualification.
+# Real Slurm/MUNGE/slurmdbd smoke for an Ubuntu 24.04 disposable host.
+# Validates real Noble 23.11 service/scheduler semantics without claiming AMD
+# GRES/cgroup/ROCm hardware qualification.
 
 log() { printf '[rcd-slurm-smoke] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends slurm-wlm munge jq
+sudo apt-get install -y --no-install-recommends \
+  slurm-wlm slurmdbd munge mariadb-server jq
 
-# Client binaries may try configless-controller discovery before slurm.conf
-# exists, so derive the installed version from dpkg during bootstrap.
 SLURM_VERSION="$(dpkg-query -W -f='${Version}' slurm-wlm | cut -d- -f1)"
 log "installed Slurm ${SLURM_VERSION}"
 case "$SLURM_VERSION" in
@@ -24,17 +23,20 @@ esac
 HOST="$(hostname -s)"
 CPUS="$(nproc)"
 REALMEM="$(awk '/MemTotal:/ {m=int($2/1024)-1024; if (m < 1024) m=int($2/1024*0.8); print m}' /proc/meminfo)"
+USER_NAME="$(id -un)"
 
 cleanup() {
   set +e
   sudo pkill -TERM -x slurmd >/dev/null 2>&1 || true
   sudo pkill -TERM -x slurmctld >/dev/null 2>&1 || true
+  sudo pkill -TERM -x slurmdbd >/dev/null 2>&1 || true
   sudo pkill -TERM -x munged >/dev/null 2>&1 || true
+  sudo pkill -TERM -x mariadbd >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 cleanup
 
-# MUNGE, started manually because GitHub-hosted runners do not rely on systemd.
+# MUNGE
 sudo install -d -o munge -g munge -m 0755 /run/munge /var/log/munge
 if [[ ! -s /etc/munge/munge.key ]]; then
   sudo sh -c 'umask 077; dd if=/dev/urandom of=/etc/munge/munge.key bs=1024 count=1 status=none'
@@ -45,9 +47,65 @@ sudo -u munge /usr/sbin/munged --force
 munge -n | unmunge >/dev/null
 log "MUNGE round-trip ok"
 
-sudo install -d -o slurm -g slurm -m 0755 /tmp/bc-slurm-state
+# Minimal local accounting database. GitHub runners have no usable systemd, so
+# start MariaDB manually, bound only to loopback. Brutus uses the packaged
+# systemd service with the same loopback-only policy.
+sudo rm -rf /tmp/bc-mysql-data
+sudo install -d -o mysql -g mysql -m 0750 /tmp/bc-mysql-data /run/mysqld
+sudo mariadb-install-db \
+  --user=mysql \
+  --datadir=/tmp/bc-mysql-data \
+  --auth-root-authentication-method=normal \
+  >/tmp/bc-mariadb-init.log 2>&1
+sudo -u mysql mariadbd \
+  --datadir=/tmp/bc-mysql-data \
+  --socket=/run/mysqld/mysqld.sock \
+  --pid-file=/run/mysqld/mysqld.pid \
+  --bind-address=127.0.0.1 \
+  --port=3306 \
+  --skip-name-resolve \
+  --log-error=/tmp/bc-mariadb.log \
+  >/tmp/bc-mariadb.stdout 2>&1 &
+for _ in $(seq 1 40); do
+  mariadb-admin --protocol=socket --socket=/run/mysqld/mysqld.sock ping >/dev/null 2>&1 && break
+  sleep 0.5
+done
+mariadb-admin --protocol=socket --socket=/run/mysqld/mysqld.sock ping >/dev/null || {
+  cat /tmp/bc-mariadb.log >&2 || true
+  die "MariaDB did not start"
+}
+sudo mariadb --protocol=socket --socket=/run/mysqld/mysqld.sock <<'SQL'
+CREATE DATABASE IF NOT EXISTS slurm_acct_db;
+CREATE USER IF NOT EXISTS 'slurm'@'localhost' IDENTIFIED BY 'slurm-ci';
+CREATE USER IF NOT EXISTS 'slurm'@'127.0.0.1' IDENTIFIED BY 'slurm-ci';
+GRANT ALL PRIVILEGES ON slurm_acct_db.* TO 'slurm'@'localhost';
+GRANT ALL PRIVILEGES ON slurm_acct_db.* TO 'slurm'@'127.0.0.1';
+FLUSH PRIVILEGES;
+SQL
+log "loopback MariaDB accounting database ok"
+
+sudo install -d -o slurm -g slurm -m 0755 /tmp/bc-slurm-state /tmp/bc-slurmdbd-state
 sudo install -d -o root -g root -m 0755 /tmp/bc-slurmd-spool
 sudo install -d -o root -g root -m 0755 /etc/slurm
+
+sudo tee /etc/slurm/slurmdbd.conf >/dev/null <<EOF
+AuthType=auth/munge
+DbdHost=${HOST}
+DbdAddr=127.0.0.1
+DbdPort=6819
+SlurmUser=slurm
+DebugLevel=info
+LogFile=/tmp/bc-slurmdbd.log
+PidFile=/tmp/bc-slurmdbd.pid
+StorageType=accounting_storage/mysql
+StorageHost=127.0.0.1
+StoragePort=3306
+StorageLoc=slurm_acct_db
+StorageUser=slurm
+StoragePass=slurm-ci
+EOF
+sudo chown slurm:slurm /etc/slurm/slurmdbd.conf
+sudo chmod 0600 /etc/slurm/slurmdbd.conf
 
 sudo tee /etc/slurm/slurm.conf >/dev/null <<EOF
 ClusterName=bigcherry-ci
@@ -73,6 +131,10 @@ SelectType=select/cons_tres
 SelectTypeParameters=CR_CPU
 PriorityType=priority/multifactor
 Licenses=host_activity:2,build_slot:1
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=127.0.0.1
+AccountingStoragePort=6819
+AccountingStorageEnforce=associations
 JobCompType=jobcomp/filetxt
 JobCompLoc=/tmp/bc-slurm-jobcomp.log
 RequeueExit=75
@@ -83,10 +145,28 @@ PartitionName=bc-measure Nodes=${HOST} PriorityTier=100 Default=YES State=UP Max
 EOF
 export SLURM_CONF=/etc/slurm/slurm.conf
 
-# Start real daemons; successful registration is the config validation.
-sudo slurmctld -Dvv > /tmp/bc-slurmctld.stdout 2>&1 &
+# slurmdbd must precede slurmctld. Register the cluster/account/user association
+# before accepting jobs; this is required for reliable 23.11 scheduling.
+sudo slurmdbd -Dvv >/tmp/bc-slurmdbd.stdout 2>&1 &
+for _ in $(seq 1 40); do
+  sacctmgr ping 2>/dev/null | grep -qi 'UP' && break
+  sleep 0.5
+done
+sacctmgr ping | grep -qi 'UP' || {
+  cat /tmp/bc-slurmdbd.stdout >&2 || true
+  cat /tmp/bc-slurmdbd.log >&2 || true
+  die "slurmdbd not UP"
+}
+sacctmgr -i add cluster bigcherry-ci >/dev/null
+sacctmgr -i add account bigcherry Cluster=bigcherry-ci Description=BigCherry Organization=BigCherry >/dev/null
+sacctmgr -i add user "$USER_NAME" Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry-ci >/dev/null
+sacctmgr -i add user root Account=bigcherry DefaultAccount=bigcherry Cluster=bigcherry-ci >/dev/null
+sacctmgr -nP show assoc cluster=bigcherry-ci account=bigcherry | grep -q '^bigcherry-ci|bigcherry|' || die "BigCherry association missing"
+log "slurmdbd account/association ok"
+
+sudo slurmctld -Dvv >/tmp/bc-slurmctld.stdout 2>&1 &
 sleep 1
-sudo slurmd -Dvv > /tmp/bc-slurmd.stdout 2>&1 &
+sudo slurmd -Dvv >/tmp/bc-slurmd.stdout 2>&1 &
 
 for _ in $(seq 1 40); do
   if scontrol ping 2>/dev/null | grep -q 'UP'; then
@@ -105,7 +185,6 @@ sinfo -h -N -o '%T' | grep -Eq 'idle|mix|alloc' || {
 sinfo -N -l
 log "single-node Slurm service is live"
 
-# Machine-readable status is a hard adapter contract.
 squeue --json >/tmp/bc-squeue.json
 jq -e '.jobs | type == "array"' /tmp/bc-squeue.json >/dev/null
 log "squeue --json contract ok"
@@ -124,8 +203,9 @@ wait_state() {
   return 1
 }
 
-# Hold/release maps cleanly to Executor.control().
-HOLD_JOB="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='sleep 1')"
+SBATCH_COMMON=(--parsable --account=bigcherry)
+
+HOLD_JOB="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='sleep 1')"
 scontrol hold "$HOLD_JOB"
 wait_state "$HOLD_JOB" 'PENDING' 10 >/dev/null
 scontrol show job -o "$HOLD_JOB" | grep -q 'Reason=JobHeldUser' || die "hold reason not visible"
@@ -133,13 +213,11 @@ scontrol release "$HOLD_JOB"
 wait_state "$HOLD_JOB" 'COMPLETED' 30 >/dev/null
 log "hold/release contract ok"
 
-# PriorityTier + bf_licenses must prevent queued build stream from jumping a
-# pending host_activity:2 measurement once the currently-running build exits.
 rm -f /tmp/bc-order
-BUILD1="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo build1 >> /tmp/bc-order; sleep 4')"
+BUILD1="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo build1 >> /tmp/bc-order; sleep 4')"
 wait_state "$BUILD1" 'RUNNING' 20 >/dev/null
-MEASURE="$(sbatch --parsable --partition=bc-measure --licenses=host_activity:2 --time=00:01:00 --wrap='echo measure >> /tmp/bc-order; sleep 2')"
-BUILD2="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo build2 >> /tmp/bc-order; sleep 1')"
+MEASURE="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-measure --licenses=host_activity:2 --time=00:01:00 --wrap='echo measure >> /tmp/bc-order; sleep 2')"
+BUILD2="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo build2 >> /tmp/bc-order; sleep 1')"
 wait_state "$MEASURE" 'PENDING' 10 >/dev/null
 PENDING_REASON="$(squeue -h -j "$MEASURE" -o '%R')"
 [[ "$PENDING_REASON" == *License* || "$PENDING_REASON" == *Priority* || "$PENDING_REASON" == *Resources* ]] || die "unexpected measurement pending reason: ${PENDING_REASON}"
@@ -155,15 +233,13 @@ done
 (( MEASURE_IDX >= 0 && BUILD2_IDX >= 0 && MEASURE_IDX < BUILD2_IDX )) || die "measurement did not run before later build"
 log "license/priority progress contract ok"
 
-# afterok dependency is the v1.5 prepare -> execute mechanism.
 rm -f /tmp/bc-prepare /tmp/bc-execute
-PREP="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo prepared > /tmp/bc-prepare')"
-EXEC="$(sbatch --parsable --partition=bc-measure --licenses=host_activity:2 --dependency=afterok:${PREP} --time=00:01:00 --wrap='test -s /tmp/bc-prepare && echo executed > /tmp/bc-execute')"
+PREP="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 --wrap='echo prepared > /tmp/bc-prepare')"
+EXEC="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-measure --licenses=host_activity:2 --dependency=afterok:${PREP} --time=00:01:00 --wrap='test -s /tmp/bc-prepare && echo executed > /tmp/bc-execute')"
 wait_state "$EXEC" 'COMPLETED' 60 >/dev/null
 test -s /tmp/bc-execute || die "afterok dependent did not execute"
 log "dependency contract ok"
 
-# RequeueExit=75 must restart the same native job and increment restart count.
 cat >/tmp/bc-requeue.sh <<'EOS'
 #!/usr/bin/env bash
 set -eu
@@ -175,27 +251,32 @@ exit 0
 EOS
 chmod +x /tmp/bc-requeue.sh
 rm -f /tmp/bc-restarts
-REQUEUE="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 /tmp/bc-requeue.sh)"
+REQUEUE="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:01:00 /tmp/bc-requeue.sh)"
 wait_state "$REQUEUE" 'COMPLETED' 60 >/dev/null
 mapfile -t RESTARTS </tmp/bc-restarts
 printf 'restart-counts=%s\n' "${RESTARTS[*]}"
 [[ "${RESTARTS[*]}" == "0 1" ]] || die "expected restart counts '0 1'"
 log "RequeueExit/SLURM_RESTART_COUNT contract ok"
 
-# Cancellation semantics.
-CANCEL="$(sbatch --parsable --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:02:00 --wrap='sleep 60')"
+CANCEL="$(sbatch "${SBATCH_COMMON[@]}" --partition=bc-build --licenses=build_slot:1,host_activity:1 --time=00:02:00 --wrap='sleep 60')"
 wait_state "$CANCEL" 'RUNNING' 20 >/dev/null
 scancel "$CANCEL"
 wait_state "$CANCEL" 'CANCELLED' 30 >/dev/null
 log "cancel contract ok"
 
-# Basic completion history without slurmdbd.
+# Verify both lightweight completion log and slurmdbd accounting history.
 for _ in $(seq 1 20); do
   [[ -s /tmp/bc-slurm-jobcomp.log ]] && break
   sleep 0.5
 done
 test -s /tmp/bc-slurm-jobcomp.log || die "jobcomp/filetxt stayed empty"
-log "jobcomp/filetxt contract ok"
+for _ in $(seq 1 20); do
+  sacct -nX -j "$REQUEUE" -o JobIDRaw,State >/tmp/bc-sacct.txt 2>/dev/null || true
+  grep -q "$REQUEUE" /tmp/bc-sacct.txt && break
+  sleep 0.5
+done
+grep -q "$REQUEUE" /tmp/bc-sacct.txt || die "slurmdbd accounting record missing"
+log "jobcomp + slurmdbd accounting contracts ok"
 
 jq -n \
   --arg slurm_version "$SLURM_VERSION" \
@@ -203,4 +284,4 @@ jq -n \
   --arg pending_reason "$PENDING_REASON" \
   --arg schedule_order "${ORDER[*]}" \
   --arg restart_counts "${RESTARTS[*]}" \
-  '{ok:true, scope:"real-slurm-services-no-gpu", slurm_version:$slurm_version, host:$host, pending_reason:$pending_reason, schedule_order:$schedule_order, restart_counts:$restart_counts}'
+  '{ok:true, scope:"real-noble-slurm-services-no-gpu", slurm_version:$slurm_version, host:$host, accounting:"slurmdbd+mariadb-loopback", pending_reason:$pending_reason, schedule_order:$schedule_order, restart_counts:$restart_counts}'
