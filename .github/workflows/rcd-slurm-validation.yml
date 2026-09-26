@@ -1,0 +1,62 @@
+name: RCD Slurm validation
+
+on:
+  push:
+    branches: [patch-refactor]
+    paths:
+      - '.github/workflows/rcd-slurm-validation.yml'
+      - 'tools/lab/run-campaign-durability/**'
+      - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/tuning/journal.py'
+      - 'tools/bigcherry/telemetry.py'
+      - 'config/slurm/**'
+      - 'docs/planning/active/run-campaign-durability/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bigcherry-process:
+    name: Real BigCherry process semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile RCD validation tools
+        run: python -m compileall -q tools/lab/run-campaign-durability
+      - name: Planning falsifier
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
+      - name: Real BigCherry modules and child processes
+        env:
+          PYTHONPATH: tools
+        run: python tools/lab/run-campaign-durability/real_bigcherry_process_smoke.py
+
+  slurm-service:
+    name: Real Noble Slurm service semantics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and exercise Slurm/MUNGE
+        run: bash tools/lab/run-campaign-durability/slurm_noble_smoke.sh
+      - name: Preserve Slurm diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcd-slurm-diagnostics
+          if-no-files-found: ignore
+          path: |
+            /tmp/bc-slurmctld.log
+            /tmp/bc-slurmd.log
+            /tmp/bc-slurmctld.stdout
+            /tmp/bc-slurmd.stdout
+            /tmp/bc-slurm-jobcomp.log
+            /tmp/bc-squeue.json
+            /tmp/bc-order
+            /tmp/bc-restarts
