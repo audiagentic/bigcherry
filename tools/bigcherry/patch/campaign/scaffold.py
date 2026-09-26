@@ -128,6 +128,7 @@ def _materialize_scaffold_sources(
     baseline_source: str,
     common_patches: tuple[str, ...],
     worktree_root: Path,
+    allow_rejected: bool = False,
 ) -> _ScaffoldSources:
     """Resolve, materialize and idempotence-check the control/subject/stock
     sources (PVPS03: control = validated BC, subject = control + focal, plus
@@ -139,6 +140,7 @@ def _materialize_scaffold_sources(
         baseline_source,
         focal=None,
         extra_patches=common_patches + validated,
+        allow_rejected=allow_rejected,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
@@ -146,6 +148,7 @@ def _materialize_scaffold_sources(
         baseline_source,
         focal=patch_id,
         extra_patches=common_patches + validated,
+        allow_rejected=allow_rejected,
         base_ref=base_ref,
         base_repo=LLAMA_CPP_SRC,
     )
@@ -204,6 +207,7 @@ def _materialize_scaffold_sources(
             extra_patches=common_patches,
             base_ref=base_ref,
             base_repo=LLAMA_CPP_SRC,
+            allow_rejected=allow_rejected,
         )
         base_src = psi.materialize_composition(
             base_repo=LLAMA_CPP_SRC,
@@ -480,6 +484,7 @@ def _build_standard_campaign_scaffold(
     workdir: Path,
     worktree_root: Path,
     build_root: Path | None,
+    allow_rejected: bool = False,
 ) -> StandardCampaignScaffold:
     """Materialize control/subject/stock sources and build the five
     standard campaign trees in the historical order, capturing per-build
@@ -493,6 +498,7 @@ def _build_standard_campaign_scaffold(
         baseline_source=baseline_source,
         common_patches=common_patches,
         worktree_root=worktree_root,
+        allow_rejected=allow_rejected,
     )
     base_revision = sources.base_revision
     control_composition = sources.control_composition

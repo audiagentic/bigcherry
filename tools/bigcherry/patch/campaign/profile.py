@@ -39,14 +39,15 @@ WORKLOADS = {
 
 
 def build_pair(*, patch_id: str, arch: str, hip_path: Path, worktree_root: Path, build_root: Path,
-               common_patches: tuple[str, ...], baseline_source: str) -> dict[str, Path]:
+               common_patches: tuple[str, ...], baseline_source: str,
+               allow_rejected: bool = False) -> dict[str, Path]:
     from bigcherry.core import config as campaign_config
     from bigcherry.core import paths as bc_paths
 
     cfg = campaign_config.load(bc_paths.RECIPES)
     sources = _materialize_scaffold_sources(
         patch_id=patch_id, base_ref=cfg.pinned, baseline_source=baseline_source,
-        common_patches=common_patches, worktree_root=worktree_root,
+        common_patches=common_patches, worktree_root=worktree_root, allow_rejected=allow_rejected,
     )
     exe = ".exe" if sys.platform == "win32" else ""
     bins = {}
@@ -92,25 +93,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baseline-source", default="bigcherry-tuning")
     parser.add_argument("--common-patches", type=lambda raw: tuple(p for p in raw.split(",") if p), default=())
     parser.add_argument("--env", action="append", default=[], help="K=V for both arms (e.g. a patch opt-in)")
-    args = parser.parse_args(argv)
+    parser.add_argument("--allow-rejected", action="store_true",
+                        help="admit an explicitly named rejected/superseded patch (re-examination)")
+    opts = parser.parse_args(argv)
 
-    bins = build_pair(patch_id=args.patch, arch=args.arch, hip_path=args.hip_path,
-                      worktree_root=args.worktree_root, build_root=args.build_root,
-                      common_patches=args.common_patches, baseline_source=args.baseline_source)
+    bins = build_pair(patch_id=opts.patch, arch=opts.arch, hip_path=opts.hip_path,
+                      worktree_root=opts.worktree_root, build_root=opts.build_root,
+                      common_patches=opts.common_patches, baseline_source=opts.baseline_source,
+                      allow_rejected=opts.allow_rejected)
     env = dict(os.environ)
     env.pop("ROCR_VISIBLE_DEVICES", None)
-    env["HIP_VISIBLE_DEVICES"] = args.device
+    env["HIP_VISIBLE_DEVICES"] = opts.device
     env["BIGCHERRY_PATCH_TRACE"] = "1"
-    for item in args.env:
+    for item in opts.env:
         key, _, value = item.partition("=")
         env[key] = value
-    result = {"patch": args.patch, "arch": args.arch, "workload": args.workload, "model": str(args.model),
-              "env": args.env, "binaries": {r: str(b) for r, b in bins.items()}, "arms": {}}
+    result = {"patch": opts.patch, "arch": opts.arch, "workload": opts.workload, "model": str(opts.model),
+              "env": opts.env, "binaries": {r: str(b) for r, b in bins.items()}, "arms": {}}
     for role, binary in bins.items():
         _print(f"profiling {role}: {binary}")
-        result["arms"][role] = profile_arm(binary=binary, model=args.model, workload=args.workload,
-                                           out=args.out / role, env=env)
-    (args.out / "profile.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        result["arms"][role] = profile_arm(binary=binary, model=opts.model, workload=opts.workload,
+                                           out=opts.out / role, env=env)
+    (opts.out / "profile.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     ok = all(a["returncode"] == 0 and a["report"] for a in result["arms"].values())
     return 0 if ok else 1
 
