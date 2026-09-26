@@ -1041,7 +1041,10 @@ def resolve_source_composition(
         extras.append(focal)
     if len(set(extras)) != len(extras):
         raise PatchSourceIsolationError("explicit composition contains duplicates")
-    ids = [*ids, *extras]
+    # An extra that the named composition already carries (e.g. a common
+    # patch later promoted into validated-enhancements) is already present:
+    # the resolved composition is the same, so it is not added twice.
+    ids = [*ids, *(extra for extra in extras if extra not in ids)]
     resolved = patchset.resolve_exact(tuple(ids), directory=patches_root, allow_rejected=allow_rejected)
     if allow_rejected:
         unexpected = [
