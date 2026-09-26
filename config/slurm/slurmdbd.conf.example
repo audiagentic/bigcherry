@@ -1,0 +1,20 @@
+# BigCherry Brutus slurmdbd policy (Ubuntu 24.04 / Slurm 23.11.x)
+# Generated host file: /etc/slurm/slurmdbd.conf
+# chmod 0600, owner slurm:slurm. Storage password is host-secret state and must
+# not be committed; substitute @SLURMDBD_DB_PASSWORD@ from root-readable config.
+
+AuthType=auth/munge
+DbdHost=@NODE_NAME@
+DbdAddr=127.0.0.1
+DbdPort=6819
+SlurmUser=slurm
+DebugLevel=info
+LogFile=/var/log/slurm/slurmdbd.log
+PidFile=/run/slurmdbd.pid
+
+StorageType=accounting_storage/mysql
+StorageHost=127.0.0.1
+StoragePort=3306
+StorageLoc=slurm_acct_db
+StorageUser=slurm
+StoragePass=@SLURMDBD_DB_PASSWORD@
