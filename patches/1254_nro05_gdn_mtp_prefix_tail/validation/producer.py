@@ -127,7 +127,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         ctx,
         control_binary=binaries["control"]["llama-server"],
         subject_binary=binaries["subject"]["llama-server"],
-        expected=device.execution_identity,
+        # The server attestation names the device only by PCI locator, so the
+        # expected identity must carry it (device.execution_identity omits it).
+        expected=dataclasses.replace(device.execution_identity, locators=(device.locator,))
+        if device.locator is not None else device.execution_identity,
         env=dict(device.env_overrides),
         label=_LABEL,
         server_args=_MTP_LANE_ARGS,
