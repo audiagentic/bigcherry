@@ -132,6 +132,17 @@ MTP_SERVER_ARGS = (
 _PREFLIGHT_CTX = 4096
 
 
+def contract_measurement(contract_id: str) -> Any:
+    """The contract's declared measurement procedure (defaults when absent)."""
+    from bigcherry.core import paths as core_paths
+    from bigcherry.experiment import contract as experiment_contract
+
+    contract = _contract_registry(core_paths.EXPERIMENT_CONTRACTS).contracts.get(contract_id)
+    if contract is None:
+        raise vp.ValidationProducerError(f"unknown experiment contract {contract_id!r}")
+    return contract.measurement or experiment_contract.Measurement()
+
+
 def contract_paired_rounds(contract_id: str) -> int:
     """Paired rounds per lane, from the contract's acceptance.min_paired_rounds.
 
@@ -239,6 +250,7 @@ def mtp_server_lane(
     warmup_pairs: int = 2,
     measured_pairs: int = 10,
     n_predict: int = 128,
+    requests_per_start: int = 1,
 ) -> tuple[Any, dict[str, list[dict[str, Any]]], dict[str, Path]]:
     """Paired MTP speculative-decode lane on llama-server (metric mtp_wall_tps).
 
@@ -260,6 +272,7 @@ def mtp_server_lane(
     per_request_logs: dict[str, list[Path]] = {"control": [], "subject": []}
     records: dict[str, list[dict[str, Any]]] = {"control": [], "subject": []}
     counters = {"control": 0, "subject": 0}
+    starts = {"control": 0, "subject": 0}
     session_kwargs = dict(
         corpus_id=ctx.corpus.stem,
         corpus_sha256=corpus_sha256,
@@ -314,17 +327,74 @@ def mtp_server_lane(
             returncode=0, stdout=f"BIGCHERRY_MTP_LANE wall_tps={record['wall_tps']}\n", stderr=""
         )
 
-    for _ in range(warmup_pairs):
-        _runner(["mtp-lane", "control"])
-        _runner(["mtp-lane", "subject"])
-    paired = experiment_execution.run_paired_lane(
-        metric="mtp_wall_tps",
-        control_command=["mtp-lane", "control"],
-        subject_command=["mtp-lane", "subject"],
-        pattern=re.compile(r"BIGCHERRY_MTP_LANE wall_tps=([0-9.]+)"),
-        pairs=measured_pairs,
-        runner=_runner,
-    )
+    def _serve_block(arm: str, count: int) -> list[str]:
+        """One server start: a warm-up request, then `count` measured requests."""
+        start = starts[arm]
+        starts[arm] += 1
+        log_path = logs_dir / f"{label}-mtp-{arm}-server-block-{start}.log"
+        per_request_logs[arm].append(log_path)
+        session = AttestedServerSession(
+            binary=binaries[arm], model=ctx.model, expected=expected, extra_args=server_args,
+            log_path=log_path, env_overrides=server_env, env_unset=("ROCR_VISIBLE_DEVICES",),
+            tensor_split_preflight=preflights[arm],
+        )
+        outputs: list[str] = []
+        with session:
+            transport = sc.HttpTransport(session.base_url)
+            sc.validate_server(transport)
+            warm = counters[arm]
+            sc.run_request(transport, prompts[warm % len(prompts)], configs[arm], pass_number=0, order_index=warm)
+            for _ in range(count):
+                index = counters[arm]
+                counters[arm] += 1
+                record = sc.run_request(
+                    transport, prompts[index % len(prompts)], configs[arm], pass_number=1, order_index=index
+                )
+                records[arm].append(record)
+                if not isinstance(record.get("wall_tps"), (int, float)):
+                    raise vp.ValidationProducerError(f"{label} MTP lane ({arm}, request {index}): no usable wall_tps")
+                outputs.append(f"BIGCHERRY_MTP_LANE wall_tps={record['wall_tps']}\n")
+        return outputs
+
+    pattern = re.compile(r"BIGCHERRY_MTP_LANE wall_tps=([0-9.]+)")
+    if requests_per_start == 1:
+        for _ in range(warmup_pairs):
+            _runner(["mtp-lane", "control"])
+            _runner(["mtp-lane", "subject"])
+        paired = experiment_execution.run_paired_lane(
+            metric="mtp_wall_tps",
+            control_command=["mtp-lane", "control"],
+            subject_command=["mtp-lane", "subject"],
+            pattern=pattern,
+            pairs=measured_pairs,
+            runner=_runner,
+        )
+    else:
+        # Batched: one server start per arm per block serves one unmeasured
+        # warm-up request plus up to `requests_per_start` measured requests;
+        # every measured request stays its own sample (same pair count, far
+        # fewer model loads). Blocks alternate which arm runs first.
+        samples: dict[str, list[str]] = {"control": [], "subject": []}
+        block = 0
+        while len(samples["control"]) < measured_pairs:
+            count = min(requests_per_start, measured_pairs - len(samples["control"]))
+            order = ("control", "subject") if block % 2 == 0 else ("subject", "control")
+            for arm in order:
+                samples[arm].extend(_serve_block(arm, count))
+            block += 1
+        replay = {arm: iter(values) for arm, values in samples.items()}
+
+        def _replay(command: list[str]) -> experiment_execution.RunnerOutput:
+            return experiment_execution.RunnerOutput(returncode=0, stdout=next(replay[command[-1]]), stderr="")
+
+        paired = experiment_execution.run_paired_lane(
+            metric="mtp_wall_tps",
+            control_command=["mtp-lane", "control"],
+            subject_command=["mtp-lane", "subject"],
+            pattern=pattern,
+            pairs=measured_pairs,
+            runner=_replay,
+        )
     combined: dict[str, Path] = {}
     for arm, paths in per_request_logs.items():
         combined[arm] = ctx.workdir / f"{label}-mtp-{arm}.log"

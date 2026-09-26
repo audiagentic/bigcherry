@@ -77,8 +77,8 @@ def _scaffold_bench(ctx: vp.ProducerContext, role: str) -> Path:
 
 def _lane_effect(outcome, *, workload: str, metric: str, role: str):
     execution = importlib.import_module("bigcherry.experiment.execution")
-    if set(outcome.runs) != {workload}:
-        raise _fail(f"{role} lane must produce exactly one {workload} lane; got {sorted(outcome.runs)!r}")
+    if workload not in outcome.runs:
+        raise _fail(f"{role} lane is missing its {workload} lane; got {sorted(outcome.runs)!r}")
     run = outcome.runs[workload]
     if dict(run.stats).get("paired_rounds") != _MIN_PAIRED_ROUNDS:
         raise _fail(f"{role} lane has {run.stats.get('paired_rounds')!r} paired rounds; expected {_MIN_PAIRED_ROUNDS}")
@@ -263,14 +263,24 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT, text=subject_trace)
     control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT, text=control_trace)
 
-    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=bench_control, subject_binary=bench_subject, model=model,
-        workloads=("prefill",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30b-positive-prefill", device=device,
-    )
-    control_outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=bench_control, subject_binary=bench_subject, model=model,
-        workloads=("decode",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30b-control-decode", device=device,
-    )
+    # Both lanes use the same builds and model: with the contract's
+    # bench_invocation = "combined" one llama-bench process per arm per paired
+    # round measures pp512 and tg128 (one model load, same sample count).
+    if support.contract_measurement(_CONTRACT_ID).bench_invocation == "combined":
+        positive_outcome = control_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_control, subject_binary=bench_subject, model=model,
+            workloads=("prefill", "decode"), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30b-lanes",
+            device=device, combined=True,
+        )
+    else:
+        positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_control, subject_binary=bench_subject, model=model,
+            workloads=("prefill",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30b-positive-prefill", device=device,
+        )
+        control_outcome = ctx.runtime.run_paired_llama_benchmark(
+            control_binary=bench_control, subject_binary=bench_subject, model=model,
+            workloads=("decode",), pairs=_MIN_PAIRED_ROUNDS, log_context="rd30b-control-decode", device=device,
+        )
     positive_effect, positive_run = _lane_effect(positive_outcome, workload="prefill", metric="pp512", role="positive")
     control_effect, control_run = _lane_effect(control_outcome, workload="decode", metric="tg128", role="control")
 

@@ -253,6 +253,7 @@ class ProducerRuntime(Protocol):
         device: ProducerDeviceContext | None = None,
         env_overrides: Mapping[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
+        combined: bool = False,
     ) -> ProducerPairedBenchmarkOutcome: ...
 
     def build_materialized_pair(

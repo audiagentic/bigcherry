@@ -132,6 +132,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         label=_LABEL,
         server_args=_MTP_LANE_ARGS,
         measured_pairs=_ROUNDS,
+        requests_per_start=support.contract_measurement(_CONTRACT_ID).server_requests_per_start,
     )
     control_outcome = ctx.runtime.run_paired_llama_benchmark(
         control_binary=binaries["control"]["llama-bench"], subject_binary=binaries["subject"]["llama-bench"],

@@ -59,15 +59,14 @@ def run_reference_ladder(
     model: Path,
     runner: Runner,
     workloads: tuple[str, ...] = ("decode", "prefill"),
-    rounds_per_arm: int = 1,
+    rounds_per_arm: int = 2,
     exe: str = "",
 ) -> dict[str, object]:
     """Measure every distinct arm binary, rotated, and summarise per arm.
 
     One llama-bench invocation per (round, arm) measures every workload
     together (-p 512 -n 128 in one process), so the model loads once per
-    invocation rather than once per workload; the ladder is reference-only,
-    so one rotation per arm is the default."""
+    invocation rather than once per workload (same samples, fewer loads)."""
     groups = list(_distinct_arms(arms).items())
     n = len(groups)
     rounds = n * rounds_per_arm

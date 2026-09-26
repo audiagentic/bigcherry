@@ -129,6 +129,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         env={"HIP_VISIBLE_DEVICES": ",".join(str(d) for d in visibility.device_ids)},
         label=_LABEL,
         measured_pairs=_ROUNDS,
+        requests_per_start=support.contract_measurement(_CONTRACT_ID).server_requests_per_start,
     )
     control_outcome = ctx.runtime.run_paired_llama_benchmark(
         control_binary=benches["control"], subject_binary=benches["subject"], model=control_model,

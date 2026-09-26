@@ -668,6 +668,23 @@ class CorrectnessRequirements:
     required_checks: tuple[str, ...]
 
 
+BENCH_INVOCATIONS: tuple[str, ...] = ("per-workload", "combined")
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """How samples are taken (declared per contract so a series never changes
+    procedure mid-way). ``bench_invocation``: ``per-workload`` runs one
+    llama-bench process per workload lane; ``combined`` runs every workload of a
+    paired round in ONE process per arm (one model load) and reads each metric
+    from the same output. ``server_requests_per_start``: MTP server lanes serve
+    this many measured requests per llama-server start; the sample is their mean
+    wall-clock tokens/s. Absent section = per-workload, 1."""
+
+    bench_invocation: str = "per-workload"
+    server_requests_per_start: int = 1
+
+
 @dataclass(frozen=True)
 class SourceEvidence:
     """EC17: what the EXTERNAL source actually reported -- kept structurally
@@ -765,6 +782,7 @@ class ExperimentContract:
     correctness: CorrectnessRequirements
     acceptance: Acceptance
     source_evidence: SourceEvidence | None = None
+    measurement: Measurement | None = None
 
     @property
     def contract_hash(self) -> str:
@@ -909,6 +927,16 @@ def _identity_payload(contract: ExperimentContract) -> dict[str, object]:
             }
             if contract.source_evidence is not None
             else None
+        ),
+        # Present only when declared, so contracts without the section keep
+        # their existing hash.
+        **(
+            {"measurement": {
+                "bench_invocation": contract.measurement.bench_invocation,
+                "server_requests_per_start": contract.measurement.server_requests_per_start,
+            }}
+            if contract.measurement is not None
+            else {}
         ),
     }
 
@@ -1380,6 +1408,22 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             workload=se_workload,
         )
 
+    measurement: Measurement | None = None
+    measurement_raw = data.get("measurement")
+    if measurement_raw is not None:
+        m_where = f"{where}.measurement"
+        m_data = _table(measurement_raw, m_where)
+        unknown_m = sorted(set(m_data) - {"bench_invocation", "server_requests_per_start"})
+        if unknown_m:
+            raise ExperimentContractError(f"{m_where} names unknown field(s): {', '.join(unknown_m)}")
+        invocation = m_data.get("bench_invocation", "per-workload")
+        if invocation not in BENCH_INVOCATIONS:
+            raise ExperimentContractError(f"{m_where}.bench_invocation must be one of {BENCH_INVOCATIONS}")
+        per_start = m_data.get("server_requests_per_start", 1)
+        if isinstance(per_start, bool) or not isinstance(per_start, int) or per_start < 1:
+            raise ExperimentContractError(f"{m_where}.server_requests_per_start must be an integer >= 1")
+        measurement = Measurement(bench_invocation=invocation, server_requests_per_start=per_start)
+
     unknown_top = sorted(
         set(data)
         - {
@@ -1395,6 +1439,7 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
             "correctness",
             "acceptance",
             "source-evidence",
+            "measurement",
         }
     )
     if unknown_top:
@@ -1416,6 +1461,7 @@ def parse_contract(document: object, *, contract_id: str) -> ExperimentContract:
         correctness=CorrectnessRequirements(required_checks),
         acceptance=acceptance,
         source_evidence=source_evidence,
+        measurement=measurement,
     )
 
 
