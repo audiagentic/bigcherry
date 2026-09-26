@@ -75,6 +75,26 @@ def _paired_llama_bench_command(
     ]
 
 
+def _combined_llama_bench_command(
+    binary: Path,
+    model: Path,
+    workloads: tuple[str, ...],
+    *,
+    patch_args: tuple[str, ...] = (),
+    runtime_args: tuple[str, ...] = (),
+) -> list[str]:
+    """One llama-bench command covering several workloads (e.g. -p 512 -n 128)."""
+    prompt, gen = "0", "0"
+    for workload in workloads:
+        flags = _PAIRED_BENCH_WORKLOAD_FLAGS.get(workload)
+        if flags is None:
+            raise PatchCampaignError(f"paired llama-bench: no flag mapping for workload {workload!r}")
+        values = dict(zip(flags[::2], flags[1::2]))
+        prompt = values["-p"] if values["-p"] != "0" else prompt
+        gen = values["-n"] if values["-n"] != "0" else gen
+    return [str(binary), "-m", str(model), "-p", prompt, "-n", gen, *patch_args, "-ngl", "99", *runtime_args]
+
+
 @dataclass(frozen=True)
 class PairedBenchmarkOutcome:
     """PVPS02 step 2: the result of running one or more paired llama-bench
@@ -354,6 +374,7 @@ def run_paired_llama_benchmark(
     env_overrides: dict[str, str] | None = None,
     env_unset: tuple[str, ...] = (),
     execution_identity: "object | None" = None,
+    combined: bool = False,
 ) -> PairedBenchmarkOutcome:
     """PVPS02 step 2/4: the shared execution shape behind the patch-local
     producers' paired benchmarks (1202/RD04 and 1204/RD08, via
@@ -445,6 +466,44 @@ def run_paired_llama_benchmark(
 
     runs: dict[str, "experiment_execution.PairedLaneRun"] = {}
     commands: dict[str, dict[str, list[str]]] = {}
+    if combined and len(workloads) > 1:
+        # One llama-bench process per arm per paired round measures every
+        # workload (one model load); each workload lane replays the same
+        # outputs in the same deterministic round order.
+        control_cmd = _combined_llama_bench_command(
+            control_binary, model, workloads, patch_args=patch_args, runtime_args=runtime_args)
+        subject_cmd = _combined_llama_bench_command(
+            subject_binary, model, workloads, patch_args=patch_args, runtime_args=runtime_args)
+        recorded: list[tuple[list[str], "experiment_execution.RunnerOutput"]] = []
+        first = _make_runner("+".join(workloads))
+
+        def _recording(command: list[str]):
+            output = first(command)
+            recorded.append((list(command), output))
+            return output
+
+        for index, workload in enumerate(workloads):
+            if index == 0:
+                runner = _recording
+            else:
+                replay = iter(recorded)
+
+                def runner(command: list[str], _replay=replay):
+                    expected, output = next(_replay)
+                    if expected != list(command):
+                        raise PatchCampaignError("combined llama-bench replay order diverged")
+                    return output
+            runs[workload] = experiment_execution.run_paired_lane(
+                metric=_PAIRED_BENCH_METRIC_NAME[workload],
+                control_command=control_cmd,
+                subject_command=subject_cmd,
+                pattern=_PAIRED_BENCH_METRIC_PATTERN[workload],
+                pairs=pairs,
+                runner=runner,
+                execution_identity=execution_identity if index == 0 else None,
+            )
+            commands[workload] = {"control": control_cmd, "subject": subject_cmd}
+        return PairedBenchmarkOutcome(runs=runs, commands=commands, raw_logs=raw_logs)
     for workload in workloads:
         control_cmd = _paired_llama_bench_command(
             control_binary,

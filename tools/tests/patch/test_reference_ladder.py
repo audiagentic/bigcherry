@@ -40,8 +40,8 @@ class ReferenceLadderTests(unittest.TestCase):
         payload = ladder.run_reference_ladder(
             arms=_arms(self.root), model=Path("m.gguf"), runner=self._runner, workloads=("decode", "prefill")
         )
-        # 3 distinct binaries x 1 rotation = 3 rounds x 3 arms; ONE call measures both workloads.
-        self.assertEqual(len(self.calls), 9)
+        # 3 distinct binaries x 2 rotations = 6 rounds x 3 arms; ONE call measures both workloads.
+        self.assertEqual(len(self.calls), 18)
         self.assertAlmostEqual(payload["metrics"]["pp512"]["pct_vs_stock"]["validated+patch"], 10.0)
         self.assertEqual(set(self.calls), {"stock", "base", "subject"})
         tg = payload["metrics"]["tg128"]
@@ -65,7 +65,7 @@ class ReferenceLadderTests(unittest.TestCase):
         payload = ladder.run_reference_ladder(
             arms=_arms(self.root), model=Path("m.gguf"), runner=failing, workloads=("decode",)
         )
-        self.assertEqual(payload["metrics"]["tg128"]["failed_runs"], 9)  # 3 rounds x 3 distinct binaries
+        self.assertEqual(payload["metrics"]["tg128"]["failed_runs"], 18)  # 6 rounds x 3 distinct binaries
         self.assertEqual(payload["metrics"]["tg128"]["mean"], {})
 
 

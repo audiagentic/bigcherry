@@ -1031,6 +1031,11 @@ workloads = ["moe_decode"]
 [contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.correctness]
 bit_identical = "required"
 
+[contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+bench_invocation = "combined"
+
 [contract.RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2.acceptance]
 target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
@@ -1069,6 +1074,11 @@ workloads = ["decode"]
 
 [contract.NRO03-ALLREDUCE-P2P.correctness]
 bit_identical = "required"
+
+[contract.NRO03-ALLREDUCE-P2P.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+server_requests_per_start = 5
 
 [contract.NRO03-ALLREDUCE-P2P.acceptance]
 target_kernel_gain_pct = 0.0
@@ -1327,6 +1337,11 @@ workloads = ["decode"]
 backend_reference = "required"
 
 # POLICY FREEZE 2026-09-25 (owner policy).
+[contract.NRO05-GDN-MTP-PREFIX.measurement]
+# 2026-09-26, before any valid session of this series: batch work on the same
+# build+model to avoid model reloads; sample counts are unchanged.
+server_requests_per_start = 5
+
 [contract.NRO05-GDN-MTP-PREFIX.acceptance]
 target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1

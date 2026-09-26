@@ -414,6 +414,7 @@ class CampaignProducerRuntime:
         device: ProducerDeviceContext | None = None,
         env_overrides: Mapping[str, str] | None = None,
         env_unset: tuple[str, ...] = (),
+        combined: bool = False,
     ) -> ProducerPairedBenchmarkOutcome:
         # RD58 (PA36 migration #4, dev-gpt-agent
         # req_ecb4b77a4c4e4bdd MAJOR #2): the env selector authority
@@ -497,6 +498,7 @@ class CampaignProducerRuntime:
             env_overrides=merged_overrides or None,
             env_unset=env_unset,
             execution_identity=execution_identity,
+            combined=combined,
         )
         return ProducerPairedBenchmarkOutcome(
             runs=outcome.runs,
