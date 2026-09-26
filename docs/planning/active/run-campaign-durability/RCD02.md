@@ -71,6 +71,7 @@ Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attemp
 - BigCherry commit is frozen per attempt; stages never resolve branches independently.
 - final series identity freezes planned N, contract/base/focal/common/validated implementation identity, platform environment, and one deterministic exact RCD12 hardware cohort selected from accepted stable device IDs before any session is submitted.
 - every session in a series uses that same stable-device cohort; Slurm may allocate a wider set only for safe all-of-architecture reservation and BigCherry then narrows to the pre-bound IDs.
+- because architecture/count GRES cannot promise which same-arch card it returns, any bound cohort that is a proper subset of the accepted devices for that architecture reserves the whole architecture pool in v1.
 - slots/ordinals/BDF/render node are operational observations, never scientific card identity.
 - same-model replacement card starts a new hardware cohort; topology change starts a new cohort unless equivalence was prequalified.
 - exit 0 includes scientific PASS or FAIL; 75 is same-commit transient requeue; 76 requests new attempt; 77 blocks as invalid/drift.
@@ -78,7 +79,7 @@ Adapters: `SlurmExecutor`, `LocalExecutor`, `FakeExecutor`. A Windows HIP attemp
 
 ### Non-hardware falsification
 
-`tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, deterministic series hardware binding, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
+`tools/lab/run-campaign-durability/mock_pipeline.py --self-test` is the executable planning model. It covers capability resolution, peer/exact-device constraints, deterministic series hardware binding and whole-architecture reservation for stable subsets, production conflict fail-closed behavior, environment/cohort identity, retry actions and FakeExecutor dependency ordering. It is not production code and cannot satisfy any hardware acceptance criterion.
 
 Permanent tests must still replace the lab model before production acceptance.
 
@@ -115,7 +116,7 @@ Completed during planning:
 
 ```bash
 PYTHONPATH=tools python tools/lab/run-campaign-durability/mock_pipeline.py --self-test
-# {"checks": 30, "ok": true}
+# {"checks": 32, "ok": true}
 ```
 
 Required static review before closing RCD02:
@@ -126,6 +127,7 @@ Required static review before closing RCD02:
 - no custom SQLite scheduler is execution authority;
 - no stage in one attempt may select a different BigCherry commit;
 - no series may silently select a different stable GPU cohort between sessions;
+- no architecture-only Slurm allocation may silently substitute a different card for a series-bound subset;
 - no scientific FAIL/non-material result is auto-retried;
 - every hardware-dependent claim is an explicit acceptance gate;
 - both RCD lab files are classified in the current TOOL_DISPOSITION registry.
@@ -144,8 +146,9 @@ Low implementation effort; high leverage. Primary risks are later plans drifting
 
 - Architecture/ownership/rollout/dependency graph above is explicit.
 - RCD03-RCD12 contain implementation-ready modules/signatures/tests and cite hardware-only gates separately.
-- Planning simulator reports 30 checks passing.
+- Planning simulator reports 32 checks passing.
 - Final series identity is bound to one deterministic hardware cohort before session submission.
+- Any proper-subset cohort uses safe whole-architecture reservation until an exact-device scheduler mechanism is deliberately qualified.
 - Static contradiction scan above passes.
 - Lab harness/README are classified in TOOL_DISPOSITION.
 - No unresolved platform choice remains.
@@ -159,4 +162,4 @@ Decision: Slurm + thin BigCherry domain layer + platform-neutral Executor. The R
 - 2026-09-26T00:51:52.243021+00:00 (created-by): Created by agent
 - 2026-09-26 (dev-gpt-agent): Fully specified final architecture, dependency order, invariants and offline falsification.
 - 2026-09-26 (dev-gpt-agent): Adversarial follow-up added deterministic pre-series hardware binding and lab-tool disposition acceptance gate.
-- 2026-09-26 (dev-gpt-agent): Planning harness extended to 30 checks; validation contract updated.
+- 2026-09-26 (dev-gpt-agent): Planning harness extended to 32 checks; proper-subset cohort now requires whole-architecture reservation in v1.
