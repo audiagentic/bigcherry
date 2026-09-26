@@ -1405,9 +1405,16 @@ backend_reference = "required"
 
 # POLICY FREEZE 2026-09-25 (owner policy).
 [contract.PRBE41-SSM-CONV-CHANNELS-MAJOR.acceptance]
+# SERIES 2 pre-declared 2026-09-26 (owner-approved), BEFORE any series-2 data:
+# 20 paired rounds per lane (was 10), 4 sessions per architecture, both gfx1100
+# and gfx1201. Reason: series 1 gfx1100 failed on one transient -30%/-16% round
+# (noise triage, tools/lab/plan-qualification/noise.py); its per-session median
+# ratios matched the passing sessions. This amendment changes the contract hash,
+# so series 1 (10 rounds: gfx1100 FAIL, gfx1201 PASS) stays on record under the
+# old hash and is never pooled with series 2. No further extension of series 2.
 target_kernel_gain_pct = 0.0
 max_control_regression_pct = 1
 effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
-min_paired_rounds = 10
+min_paired_rounds = 20
