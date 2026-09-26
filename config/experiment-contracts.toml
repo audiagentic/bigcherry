@@ -1365,7 +1365,7 @@ family = "mmvq"
 [contract.NRO07-TOPK-HYBRID.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort. Series 2: backend sampling (--backend-sampling) runs the request top-k as ggml_top_k over the full ~151k-logit vocabulary every token (parallel-radix route); MoE routing does not use TOP_K (fused topk_moe). Measured with the ROCm 10.x toolchain on both arms."
+rationale = "HIP TOP_K selects with a small-row kernel (HIP >= 7.15) or parallel radix instead of a full bitonic sort. Series 2: backend sampling (--backend-sampling) runs the request top-k as ggml_top_k over the full ~151k-logit vocabulary every token (pre-flight 2026-09-26: 1256 topk_small route); MoE routing does not use TOP_K (fused topk_moe). Measured with the ROCm 10.x toolchain on both arms."
 
 [contract.NRO07-TOPK-HYBRID.scope]
 backend = "hip"
