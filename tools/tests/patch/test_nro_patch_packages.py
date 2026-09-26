@@ -38,6 +38,10 @@ EXPECTED = {
 # merge-gate run, root-caused and fixed the same day, then marked
 # completed -- it now lives under docs/planning/completed/ rather than
 # this PLANS (active) directory, so it is correctly absent from this glob.
+# Promoted into [patch-set.validated-enhancements] on a 4-session PASS on
+# every contract-scope architecture (1253/NRO04: 2026-09-26).
+PROMOTED = {"1253_nro04_gfx1100_bf16_chunked_gdn"}
+
 EXPECTED_PLAN_DOCS = {f"PNRO{i:02d}" for i in range(1, 19)}  # PNRO18 (2026-09-26): 1252 P2P probe hardening
 
 
@@ -98,7 +102,7 @@ class NroPackageShapeTests(unittest.TestCase):
             manifest = _manifest(patch_id)
             self.assertEqual(manifest["id"], patch_id)
             self.assertEqual(manifest["order"], int(patch_id.split("_", 1)[0]))
-            self.assertEqual(manifest["state"], "untested")
+            self.assertEqual(manifest["state"], "validated" if patch_id in PROMOTED else "untested")
             self.assertEqual(manifest["plan-ids"], plan_id if isinstance(plan_id, list) else [plan_id])
             self.assertEqual(manifest["requires"], requires)
 
@@ -106,7 +110,7 @@ class NroPackageShapeTests(unittest.TestCase):
         for patch_id, (plan_id, _) in EXPECTED.items():
             text = (PATCHES / patch_id / "SUMMARY.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith(f"# {patch_id}\n\n"))
-            self.assertIn("**Status:** untested", text)
+            self.assertIn(f"**Status:** {'validated' if patch_id in PROMOTED else 'untested'}", text)
             self.assertIn(f"**Plan item:** {'/'.join(plan_id) if isinstance(plan_id, list) else plan_id}", text)
 
     def test_patch_modules_are_valid_python_and_export_patches(self):
@@ -125,7 +129,7 @@ class NroPackageShapeTests(unittest.TestCase):
         production = set()
         for patch_set in recipes.get("patch-set", {}).values():
             production.update(patch_set.get("patches", []))
-        leaked = production.intersection(EXPECTED)
+        leaked = production.intersection(EXPECTED) - PROMOTED
         self.assertFalse(leaked, f"NRO drafts leaked into production: {leaked}")
 
 

@@ -144,7 +144,17 @@ required-state = "validated"
 # GPT review req_4d131e8b7c1c452d concurred. NOT covered: gfx1201 (not
 # measured; the patch is runtime-gated to cc == GGML_CUDA_CC_RDNA3 exactly,
 # so it is inert elsewhere), the dual-XTX production lane (PVPS05, not yet run).
-patches = ["1237_rd30_moe_mmq_compact_grid"]
+#
+# PROMOTED 2026-09-26 (auto-promotion of a clear winner, owner-authorized):
+# 1253_nro04_gfx1100_bf16_chunked_gdn (NRO04), gfx1100 + gfx1201 (its contract
+# scope). Contract NRO04-GDN-CHUNKED-BF16 PASS over 4 sessions on EACH arch at
+# pin b11126: pp512 +8.2/+8.8/+7.7/+9.3% (gfx1100) and +10.4/+11.8/+10.6/+11.0%
+# (gfx1201) on the hybrid GDN model, control tg128 flat; GATED_DELTA_NET
+# test-backend-ops within the CPU reference both arms, every session. NOT
+# covered: RDNA3.5 (the runtime gate GGML_CUDA_CC_IS_RDNA3 also admits
+# gfx1151, never measured here); dual-XTX production lane (PVPS05, not run).
+# Near-lossless, not bit-exact (bf16 operands, fp32 accumulation).
+patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn"]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
