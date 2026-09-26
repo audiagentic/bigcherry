@@ -35,6 +35,9 @@ _SPEC = """#include <algorithm>
 #include <cassert>
 
 struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
+    std::vector<std::vector<float>> pending_g_last;
+    std::vector<int32_t> verify_g_rows;
+
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -43,11 +46,42 @@ struct common_speculative_impl_draft_eagle3 : public common_speculative_impl {
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            auto & dp = dparams[seq_id];
             n_drafting++;
             drafting[seq_id] = true;
             common_sampler_reset(smpls[seq_id].get());
 
             other_batch_add(seq_id);
+
+                result.push_back(id);
+
+                if (params.n_max <= (int) result.size()) {
+                    drafting[seq_id] = false;
+                    n_drafting--;
+                    continue;
+                }
+
+                common_batch_add(batch, id, pending_pos_last[seq_id] + (i + 1), { seq_id }, true);
+
+            if (dp.result->size() < (size_t) params.n_min) {
+                dp.result->clear();
+            }
+        }
+    }
+
+    void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
+            return;
+        }
+
+        const int32_t n_rows = verify_g_rows[seq_id];
+        if (n_rows <= 0) {
+            return;
+        }
+
+        const int32_t i_g = std::min<int32_t>(n_accepted, n_rows - 1);
+        pending_g_last[seq_id][0] = (float) i_g;
     }
 };
 
@@ -105,6 +139,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     continue;
                 }
 
+                if (chain_heads) {
+                    chain_h[seq_id].push_back(0.0f);
+                }
+
             if (dp.result->size() < (size_t) params.n_min) {
                 dp.result->clear();
             }
@@ -112,6 +150,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
+            return;
+        }
+
+        const int32_t n_rows = verify_h_rows[seq_id];
+        if (n_rows <= 0) {
+            return;
+        }
+
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
@@ -149,8 +196,11 @@ class Patch1268Mechanics(unittest.TestCase):
             text = (root / "common/speculative.cpp").read_text()
             self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
             self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 2)  # begin reset + MTP draft reset only
-            self.assertIn("effective_n_max", text)
-            self.assertIn("adaptive_state[seq_id].update", text)
+            self.assertEqual(text.count("effective_n_max"), 4)
+            self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
+            eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
+            self.assertNotIn("effective_n_max", eagle3_text)
+            self.assertNotIn("last_n_draft", eagle3_text)
             before = {p: (root / p).read_text() for p in ("common/common.h", "common/arg.cpp", "common/speculative.cpp")}
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second))
@@ -166,7 +216,11 @@ class Patch1268Mechanics(unittest.TestCase):
         td, root = self._tree()
         with td:
             path = root / "common/speculative.cpp"
-            path.write_text(_SPEC.replace("params.n_max <= (int) result.size()", "false"), encoding="utf-8")
+            mtp_only = _SPEC.replace("params.n_max <= (int) result.size()", "false", 1)
+            # First occurrence is eagle3; remove only MTP's depth cap so the MTP-only
+            # lookahead has no valid match while the eagle3 lookalike remains.
+            mtp_only = mtp_only.replace("params.n_max <= (int) result.size()", "false", 1)
+            path.write_text(mtp_only, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))
 
