@@ -54,6 +54,9 @@ Offline tests; hardware: window overrun auto-closes and production /health recov
 
 ## Notes
 
+2026-09-26 round 4 (req_e22e2f08be3d49e4): production gate is now generic -- ProductionSnapshot per dispatch (llama-swap config + /running + BIGCHERRY_GPU_CLAIM env per model + process/VRAM attribution; ambiguity = all), exclusive window only when allocated GPUs intersect potential production GPUs, contamination watchdog every ~2 s; window service reads measure-window-request.json instead of toggling per-GPU partitions.
+
 ## Change Log
 
 - 2026-09-26T01:20:22.304212+00:00 (created-by): Created by agent
+- 2026-09-26T01:39:27.166365+00:00 (updated-by): Updated: section:notes

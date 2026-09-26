@@ -256,3 +256,62 @@ Hardware acceptance before retiring the lab scripts: gfx1100 job (in a window),
 gfx1201 alternate-ROCm job (idle attestation), gfx1030 alternate-model job, dual
 gfx1100 job; forced harness failure + `retry --latest`, client disconnect,
 hold/release, disk guard, promotion between sessions, window overrun auto-close.
+
+## 9. Round 4 amendments (supersede conflicting text above)
+
+Owner objections 2026-09-26: production may use any GPU; hardware on Brutus changes.
+GPT `req_e22e2f08be3d49e4`: resolved, **no open design objections**.
+
+**Production on any GPU (O12).**
+- One measurement partition `bc-measure` (PriorityTier=100); `bc-measure-xtx` /
+  `bc-measure-other` and every GPU-class production rule are deleted.
+- Per dispatch, after Slurm allocates GPUs and before validation starts, BigCherry
+  builds a `ProductionSnapshot{config_hash, potential_devices | "all",
+  running_devices, observed_devices}` from the llama-swap config, `/running`, each
+  model's cmd/env selectors, live backend process environments and AMD-SMI process/VRAM
+  attribution. Production models declare `env: BIGCHERRY_GPU_CLAIM:
+  "uuid:<id>[,...]" | "arch:<gfx>,count=N" | "all"`; missing, unparsable or
+  contradictory claims mean `all` (fail closed).
+- Allocated GPUs intersect potential production GPUs -> exclusive window (drain, stop
+  llama-swap, verify no production GPU processes, measure, restart). The root window
+  service reads a validated `/run/bigcherry/measure-window-request.json`
+  (`slurm_job_id`, `target_device_ids`, `inventory_hash`, `production_config_hash`); it
+  no longer toggles partitions. Otherwise production stays up behind the idle
+  attestation.
+- Contamination watchdog every ~2 s during measurement: config hash unchanged, potential
+  set still disjoint, no unexpected process on target GPUs, telemetry sane. Any violation
+  terminates the measurement, discards the sample and classifies a retryable
+  environment contamination (wake).
+
+**Dynamic hardware (O13).**
+- `tools/bigcherry/hardware/{model,linux_amd,windows_hip,inventory,topology}.py`;
+  `DeviceRecord{device_id, identity_source (amd_uuid | rsmi_unique_id | serial |
+  hip_uuid | luid | weak), arch, model, vram_bytes, pci_bdf, render_node, numa_node,
+  driver_version}`. BDF, render node and index are observations, never identity.
+- `bigcherry-hardware-discovery.service` (Before=slurmd) discovers GPUs, writes
+  `/var/lib/bigcherry/hardware/observed.json`, compares `accepted.json`, generates an
+  **architecture-typed** `gres.conf` (`Type=gfx1100`, not `gfx1100_0`) and node
+  `Gres=gpu:gfx1100:2,...`; material drift starts the node DRAINED and wakes the
+  operator. Runtime drift (udev/timer) drains immediately; reconfigure only with no
+  active jobs; operator acknowledges the new inventory hash, then RESUME.
+  AutoDetect=rsmi is not the authority; `slurmd -G` remains a validation step.
+- Jobs request `GpuRequirement{architecture, count, min_vram_bytes,
+  homogeneous_model, require_peer_access, exact_device_ids}`. Rare subset/exact
+  constraints over-allocate all GPUs of that architecture and select UUIDs inside the
+  allocation (`ROCR_VISIBLE_DEVICES=<UUIDs>`); peer pairs come from the discovered
+  topology and are re-attested.
+- Series key: patch, contract hash, architecture, `platform_environment_hash` (OS,
+  kernel/Windows build, ROCm/HIP SDK, HIP runtime, compiler, driver) and
+  `hardware_cohort_hash` (sorted stable device IDs, arch, model, VRAM, PCIe/NUMA/peer
+  topology fingerprint). A replacement card of the same model, or a card moved to another
+  slot, starts a new series unless equivalence was pre-qualified. `weak` identity never
+  continues a series automatically; the operator declares a new hardware epoch.
+- `environment.local.toml` keeps host policy (toolchains, models, allowed architectures,
+  device aliases); it is no longer GPU inventory truth.
+- Windows LocalExecutor discovers via a small HIP probe (count, properties, UUID/LUID,
+  PCI fields, VRAM, driver/runtime versions, peer matrix); the ordinal is launch-local
+  only.
+
+Remaining gates (implementation/acceptance, not design): real UUID availability on these
+RDNA cards, generated-GRES/reconfigure tests, ROCm cgroup falsification, production-claim
+parser and process attestation, the cross-GPU isolation experiment.
