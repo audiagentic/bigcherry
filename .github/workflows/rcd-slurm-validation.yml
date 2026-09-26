@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install and exercise Slurm/MUNGE + BigCherry integration
-        run: bash tools/lab/run-campaign-durability/slurm_noble_v2_smoke.sh
+        run: bash tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh
       - name: Collect privileged Slurm diagnostics
         if: always()
         shell: bash
