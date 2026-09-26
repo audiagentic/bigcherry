@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install and exercise minimal Slurm/MUNGE stack
-        run: bash tools/lab/run-campaign-durability/slurm_noble_smoke.sh
+        run: bash tools/lab/run-campaign-durability/slurm_noble_v1_smoke.sh
       - name: Collect privileged Slurm diagnostics
         if: always()
         shell: bash
