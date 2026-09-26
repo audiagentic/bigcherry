@@ -292,6 +292,13 @@ def mtp_server_lane(
     configs = {arm: sc.SessionConfig(session_id=f"{label}-mtp-{arm}", **session_kwargs) for arm in binaries}
     server_env = dict(env)
     server_env.pop("ROCR_VISIBLE_DEVICES", None)
+    # Server logs name the device by PCI locator only; the expected identity
+    # supplies which architecture that locator is (as benchmark.py does).
+    by_locator = (
+        dict(zip(expected.locators, expected.architectures))
+        if expected.locators and len(expected.locators) == len(expected.architectures)
+        else None
+    )
     preflights = (
         tensor_split_preflights(binaries, model=ctx.model, server_args=server_args, env=server_env,
                                 workdir=logs_dir, label=label)
@@ -313,6 +320,7 @@ def mtp_server_lane(
             env_overrides=server_env,
             env_unset=("ROCR_VISIBLE_DEVICES",),
             tensor_split_preflight=preflights[arm],
+            architecture_by_locator=by_locator,
         )
         with session:
             transport = sc.HttpTransport(session.base_url)
@@ -336,7 +344,7 @@ def mtp_server_lane(
         session = AttestedServerSession(
             binary=binaries[arm], model=ctx.model, expected=expected, extra_args=server_args,
             log_path=log_path, env_overrides=server_env, env_unset=("ROCR_VISIBLE_DEVICES",),
-            tensor_split_preflight=preflights[arm],
+            tensor_split_preflight=preflights[arm], architecture_by_locator=by_locator,
         )
         outputs: list[str] = []
         with session:
