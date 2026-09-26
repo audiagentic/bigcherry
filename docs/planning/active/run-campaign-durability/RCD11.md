@@ -17,18 +17,20 @@ work: L
 
 Implement the non-Slurm `LocalExecutor` for Windows/Linux direct/testing/emergency use and the Brutus production coexistence layer for llama-swap. Production may use any GPU or combination and configuration changes over time; therefore no card class/slot is hard-coded. At each timed execution BigCherry derives a fail-closed `ProductionSnapshot`, compares potential production devices with the actual stable-ID allocation, and chooses exclusive window vs idle-attestation. A runtime watchdog invalidates a sample on production/inventory drift.
 
+`LocalExecutor` is an execution adapter, not a scientific allocator: RCD04/RCD12 have already frozen an exact stable-device cohort in the series. Local execution must map and attest those IDs on the current host and **must never silently select a replacement GPU/cohort**.
+
 The privileged production-window helper is a narrow root-owned systemd service; agents may only start/stop that exact service, never arbitrary `scontrol`/systemctl commands.
 
 ## Steps
 
-1. Implement `LocalExecutor` against RCD04 Executor using injected process runner and RCD12 platform discovery.
+1. Implement `LocalExecutor` against RCD04 `Executor`; consume immutable `SeriesGpuBinding`/attempt-bound stable IDs from RCD12 and map them to current platform launch selectors. Reject missing/drifted binding; never rerun scientific capability selection inside the executor.
 2. Define/parse production GPU claim grammar; add llama-swap config + `/running` + backend/process/GPU observation providers.
 3. Implement `ProductionSnapshot` reconciliation with fail-closed ambiguity.
 4. Implement pre-dispatch gate after allocation: intersection -> exclusive window; disjoint -> production idle attestation.
 5. Implement contamination watchdog over config hash, potential set, observed target usage, inventory hash and host noise.
 6. Implement root measurement-window helper/unit, request schema, max-duration cleanup, boot recovery and restricted sudoers.
 7. Add `bigcherry host-run --class build|bench -- ...` for supported ad-hoc direct work so it participates in activity/window locks.
-8. Test snapshot/gate/window state machine with fakes; hardware/service tests remain explicit.
+8. Test binding/attestation, snapshot/gate/window state machines with fakes; hardware/service tests remain explicit.
 
 ## Detailed Solution & Technical Design
 
@@ -45,18 +47,31 @@ class LocalExecutor(Executor):
     ): ...
 ```
 
-It:
+Input `ExecutionRequest` carries the scheduler/execution projection of the already-frozen series binding. Before spawn the adapter receives/loads the immutable attempt identity containing:
 
-- resolves `GpuRequirement` through RCD12;
-- claims host-local `ResourceLock`s by stable device ID + activity class;
-- launches process without shell;
-- stores process/native handle metadata durably enough for status/cancel during process lifetime;
-- maps allocated stable IDs to platform launch selectors at launch time;
-- emits normalized Executor events/status.
+```text
+series_id
+hardware_cohort_hash
+accepted_inventory_hash
+bound stable device IDs
+platform_environment_hash
+```
 
-On Windows, ordinals are launch-local observations only. RCD12 HIP discovery supplies UUID/LUID stable identity and current ordinal. Windows HIP gfx1100 remains a separate platform environment/series from Linux ROCm.
+LocalExecutor then:
 
-LocalExecutor is not a multi-host service and provides no queued background scheduler; if resources are unavailable it may return/raise `resource-busy` for caller retry rather than invent a queue daemon.
+1. loads current platform inventory;
+2. requires every bound stable device ID to exist exactly once;
+3. verifies arch/model/VRAM and relevant peer/topology fingerprint still satisfy the frozen cohort;
+4. rejects accepted-inventory or topology drift that invalidates the series binding;
+5. acquires host-local `ResourceLock`s for **those exact stable IDs** plus activity class;
+6. maps those IDs to launch-local selector values immediately before spawn;
+7. launches without shell and emits normalized status/events.
+
+It does **not** call the RCD12 cohort selector to choose another card. If the frozen device is unavailable, the attempt is blocked/invalid for that series; operator creates/resumes a compatible series according to RCD12 policy.
+
+On Windows, ordinal is a launch-local observation only. RCD12 HIP discovery supplies UUID/LUID stable identity and current ordinal. A Windows ordinal change with stable UUID/LUID is remapped safely; a different stable ID is never substituted. Windows HIP gfx1100 remains a separate platform environment/series from Linux ROCm.
+
+LocalExecutor is not a multi-host background scheduler. If exact bound resources are busy it returns/raises `resource-busy` for caller/service policy rather than inventing another queue daemon.
 
 ### Production claim grammar
 
@@ -92,7 +107,7 @@ Sources, highest-level intent plus runtime verification:
 
 ### Gate
 
-After Executor has an actual `Allocation`:
+After Executor has an actual `Allocation` containing stable IDs:
 
 ```python
 def decide_production_gate(
@@ -107,6 +122,7 @@ def decide_production_gate(
 - otherwise -> idle attestation until isolation qualification allows stronger coexistence.
 
 Idle attestation:
+
 - `/running` captured;
 - all active backend `/slots` report `is_processing=false`;
 - `/metrics` processing/deferred counts zero when supported;
@@ -123,9 +139,11 @@ Every ~2s during timed measurement verify:
 - fresh potential set remains disjoint for non-window execution;
 - no production process/VRAM observation appears on target stable IDs;
 - accepted hardware inventory hash unchanged;
+- allocation still resolves to the frozen series stable IDs;
 - production idle condition remains valid until `scheduler-isolation-v1` permits active disjoint inference.
 
 Violation:
+
 - terminate timed measurement/process group;
 - mark result invalid environment contamination;
 - do not persist scientific round as valid;
@@ -172,15 +190,18 @@ exit (idempotent):
 ```
 
 Systemd:
+
 - `Type=simple`;
 - `RuntimeMaxSec=4h`;
 - `ExecStop` and `ExecStopPost` both call idempotent cleanup;
 - boot recovery before llama-swap ensures stale state closes and production health restored.
 
 Sudoers grants `bigcherry` exactly:
-`systemctl start bigcherry-measure-window.service`
-and
-`systemctl stop bigcherry-measure-window.service`.
+
+```text
+systemctl start bigcherry-measure-window.service
+systemctl stop bigcherry-measure-window.service
+```
 
 No generic sudo `scontrol`, `systemctl`, shell or helper arguments.
 
@@ -199,6 +220,17 @@ class ProductionInspector(Protocol):
 class WindowController(Protocol):
     def enter(self, request: WindowRequest) -> None: ...
     def exit(self) -> None: ...
+```
+
+Binding helper must be attestation-only:
+
+```python
+def map_bound_devices(
+    binding: SeriesGpuBinding,
+    current: HardwareInventory,
+) -> tuple[AllocatedDevice, ...]:
+    """Return current locators for exactly binding.device_ids or fail."""
+    ...
 ```
 
 Offline tests use fake HTTP/process/GPU observations, not real llama-swap.
@@ -222,18 +254,21 @@ Planned:
 
 Offline:
 
+- frozen stable-ID cohort maps to current locator/ordinal without identity change;
+- missing frozen device blocks; no fallback/substitution;
+- different same-arch/same-model card is rejected for existing series;
+- accepted inventory/topology mismatch blocks until RCD12 policy resolves it;
+- Windows ordinal changes while UUID/LUID stable are safely remapped;
 - claim UUID list/arch-count/all parsing;
 - absent/malformed/contradictory claim -> ALL/exclusive;
 - currently idle but potential intersects target -> exclusive;
 - disjoint potential -> idle attestation;
 - config hash changes during measurement -> contamination;
 - observed production process appears on target -> contamination;
-- target card BDF moves but stable ID mapping updates -> decision still identity-correct after inventory acceptance;
+- target card BDF moves but stable ID mapping updates -> decision remains identity-correct only after accepted inventory/topology validation;
 - FakeWindow enter/exit idempotent;
 - timeout invokes cleanup in state-machine simulation;
-- helper request rejects unknown device/stale inventory/stale production config;
-- LocalExecutor cannot allocate nonmatching VRAM/arch/peer requirement;
-- Windows ordinal changes while UUID/LUID stable do not change series hardware identity.
+- helper request rejects unknown device/stale inventory/stale production config.
 
 Hardware/service:
 
@@ -243,15 +278,16 @@ Hardware/service:
 - sudo user cannot execute unrelated root command;
 - production claim matches real backend device use;
 - disjoint idle campaign survives watchdog;
-- intentional production config drift invalidates sample.
+- intentional production config drift invalidates sample;
+- LocalExecutor Windows HIP selector maps the exact frozen stable ID.
 
 ## Effort & Risk
 
-Large. Production protection is safety-critical operationally; ambiguity always chooses exclusive window. Root helper input surface must remain declarative and tightly validated.
+Large. Production protection is safety-critical operationally; ambiguity always chooses exclusive window. Root helper input surface must remain declarative and tightly validated. Hardware substitution is fail-closed because the scientific effect policy admits small wins where card-to-card variance matters.
 
 ## Standards
 
-RCD12 stable IDs are the only device identity. RCD07 isolation evidence controls future relaxation; no hard-coded GPU classes/slots.
+RCD12 stable IDs and frozen `SeriesGpuBinding` are the only device identity. RCD07 isolation evidence controls future relaxation; no hard-coded GPU classes/slots.
 
 ## Acceptance Criteria
 
@@ -260,7 +296,8 @@ RCD12 stable IDs are the only device identity. RCD07 isolation evidence controls
 - non-conflict execution is continuously contamination-checked;
 - root permission is limited to exact service lifecycle;
 - stuck window automatically restores production or emits hard wake on failure;
-- LocalExecutor/domain remain Slurm-independent.
+- LocalExecutor/domain remain Slurm-independent;
+- LocalExecutor never reselects or substitutes a GPU outside the series-bound stable cohort.
 
 ## Notes
 
@@ -271,3 +308,4 @@ The design intentionally does not move llama-swap under Slurm in v1.
 - 2026-09-26T01:20:22.304212+00:00 (created-by): Created by agent
 - 2026-09-26T01:39:27.166365+00:00 (updated-by): Updated: section:notes
 - 2026-09-26 (dev-gpt-agent): Fully specified generic production snapshot/gate/watchdog, LocalExecutor and privilege boundary.
+- 2026-09-26 (dev-gpt-agent): Corrected LocalExecutor boundary: it attests/maps the frozen series cohort and never reruns scientific GPU selection.
