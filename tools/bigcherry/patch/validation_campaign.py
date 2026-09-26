@@ -530,6 +530,7 @@ def _prepare_standard_campaign(args: argparse.Namespace, st: SimpleNamespace) ->
         workdir=workdir,
         worktree_root=worktree_root,
         build_root=args.build_root,
+        allow_rejected=args.allow_rejected,
     )
     base_revision = scaffold.base_revision
     control_composition = scaffold.control_composition
@@ -1225,6 +1226,13 @@ def _add_core_arguments(parser: argparse.ArgumentParser) -> None:
         help="comma-separated patches added to BOTH scaffold arms on top of "
         "--baseline-source (e.g. a focal patch's hard prerequisite). Named "
         "explicitly, never inferred; recorded in both compositions.",
+    )
+    parser.add_argument(
+        "--allow-rejected",
+        action="store_true",
+        help="admit an explicitly named rejected/superseded patch (the focal "
+        "--patch or a --common-patches entry) to re-examine it; any other "
+        "retired patch still fails closed and lifecycle state is unchanged.",
     )
     parser.add_argument(
         "--production-lane",

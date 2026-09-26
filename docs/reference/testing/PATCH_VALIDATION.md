@@ -309,6 +309,13 @@ and code disagree:
   tg128/pp512 on all four arms in rotated order and writes
   `campaign/reference-ladder.json`. The ladder is reference evidence only and
   never changes the verdict.
+- **Re-examining a retired patch (`--allow-rejected`).** `validation_campaign`
+  and `bigcherry.patch.campaign.profile` accept `--allow-rejected` to build and
+  measure a rejected/superseded patch that is named explicitly (the focal
+  `--patch` or a `--common-patches` entry), e.g. to profile why it failed or to
+  test a reworked variant. Any retired patch reaching the composition another way
+  still fails closed. The run is exploratory evidence: the patch's lifecycle
+  state stays `rejected` until a deliberate lifecycle decision changes it.
 - **Production dual-GPU lane (PVPS05, `--production-lane`).** Runs validated
   BC vs validated BC + patch on the production serving shape (two gfx1100,
   `-sm tensor`, MTP draft decode, fresh llama-server per request, paired and

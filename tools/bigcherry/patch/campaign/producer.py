@@ -1611,6 +1611,7 @@ def _prepare_standard_producer_campaign(
         workdir=workdir,
         worktree_root=args.worktree_root,
         build_root=args.build_root,
+        allow_rejected=args.allow_rejected,
     )
 
     base_revision = scaffold.base_revision

@@ -396,6 +396,7 @@ def _args(tmp: Path, **overrides) -> argparse.Namespace:
         "producer_corpus": tmp / "corpus" / "c.txt",
         "baseline_source": "bigcherry",
         "common_patches": (),
+        "allow_rejected": False,
         "bench_prompt": 512,
         "bench_gen": 128,
     }
