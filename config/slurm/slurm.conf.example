@@ -28,7 +28,15 @@ SelectTypeParameters=CR_Core_Memory
 # build consumes 1; timed measurement consumes both 2.
 Licenses=host_activity:2,build_slot:1
 
-# v1 completion history without MariaDB/slurmdbd.
+# Noble Slurm 23.11 validation reproduced InvalidAccount without durable
+# associations. v1 therefore uses one loopback-only slurmdbd/MariaDB and one
+# BigCherry account; this is scheduler correctness, not optional analytics.
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=127.0.0.1
+AccountingStoragePort=6819
+AccountingStorageEnforce=associations
+
+# Keep a lightweight text completion trail in addition to slurmdbd/sacct.
 JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
 MinJobAge=600
