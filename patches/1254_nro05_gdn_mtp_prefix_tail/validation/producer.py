@@ -45,7 +45,7 @@ _COMMON = ("1253_nro04_gfx1100_bf16_chunked_gdn",)
 _TBO_ARGS = ("-o", "GATED_DELTA_NET", "-b", "ROCm0")
 # Long enough that n_tokens > K + 64 for the prefill batch.
 _PROMPT = " ".join(["The recurrent state of a gated delta network carries information across tokens."] * 24)
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _ARTIFACT_NAME = "nro05-backend-reference.json"
 _PERFORMANCE_ARTIFACT_NAME = "nro05-performance.json"

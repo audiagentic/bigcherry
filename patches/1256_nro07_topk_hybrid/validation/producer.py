@@ -34,7 +34,7 @@ _MODEL_REF = "tierM-qwen35b-a3b-moe-mtp"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(rf"BIGCHERRY_PATCH_HIT patch={_PATCH_TAG} path=topk_(\w+)")
 _TBO_ARGS = ("-o", "TOP_K", "-b", "ROCm0")
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = f"{_LABEL}-correctness.json"
 _PERFORMANCE_ARTIFACT = f"{_LABEL}-performance.json"

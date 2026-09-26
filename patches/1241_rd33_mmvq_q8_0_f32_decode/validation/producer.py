@@ -40,7 +40,7 @@ _MODEL_REF = "tierL-qwen27b-q8"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=(\d+)")
 _REQUIRED_NCOLS = frozenset(range(1, 9))
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = "rd33-correctness.json"
 _PERFORMANCE_ARTIFACT = "rd33-performance.json"

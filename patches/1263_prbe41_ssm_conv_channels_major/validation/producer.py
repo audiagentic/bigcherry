@@ -33,7 +33,7 @@ _CONTROL_MODEL_REF = "tierM-gptoss20b-q6k"
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major"
 _N_PREDICT = 64
 _PROMPT = " ".join(["A gated delta network mixes a short causal convolution with a recurrent state."] * 8)
-_ROUNDS = 20  # contract series 2 (min_paired_rounds = 20)
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _ARTIFACT_NAME = "prbe41-backend-reference.json"
 _PERFORMANCE_ARTIFACT_NAME = "prbe41-performance.json"

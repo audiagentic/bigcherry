@@ -64,7 +64,7 @@ _CONTRACT_ARCHITECTURES: tuple[str, ...] = ("gfx1100", "gfx1201", "gfx1030")
 
 _CONTRACT_ID = "RD26-DECODE-VERIFY-BIT-IDENTITY"
 _CONTROLS_ARTIFACT_NAME = "rd26-controls.json"
-_CONTROL_ROUNDS = 10
+_CONTROL_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 _SUBJECT_PATCH = "1210_rd26_bitidentical_decode_verify_standalone"
 
 # Keep verify width n_draft+1 inside RD26's <=8 scope (n_max in [1,7]).

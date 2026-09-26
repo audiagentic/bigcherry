@@ -48,7 +48,7 @@ _PROMPT = (
     "Explain in one concise sentence why a shared expert can run beside the "
     "routed experts without changing the layer's output."
 )
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _ARTIFACT_NAME = "rd43-backend-reference.json"
 _PERFORMANCE_ARTIFACT_NAME = "rd43-controls.json"

@@ -39,7 +39,7 @@ _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER_REGEX = r"BIGCHERRY_PATCH_HIT patch=1207_rd17 path=moe_topk_down_fold"
 _N_PREDICT = 64
 _PROMPT = "Explain in one concise sentence how a router picks experts for each token."
-_ROUNDS = 10
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _ARTIFACT_NAME = "rd17-backend-reference.json"
 _PERFORMANCE_ARTIFACT_NAME = "rd17-performance.json"

@@ -132,6 +132,35 @@ MTP_SERVER_ARGS = (
 _PREFLIGHT_CTX = 4096
 
 
+def contract_paired_rounds(contract_id: str) -> int:
+    """Paired rounds per lane, from the contract's acceptance.min_paired_rounds.
+
+    Producers take the round count from the contract they are bound to rather
+    than a local constant, so a pre-declared contract amendment (e.g. a new
+    series with more rounds) is the single place the design changes."""
+    from bigcherry.core import paths as core_paths
+
+    registry = _contract_registry(core_paths.EXPERIMENT_CONTRACTS)
+    contract = registry.contracts.get(contract_id)
+    if contract is None:
+        raise vp.ValidationProducerError(f"unknown experiment contract {contract_id!r}")
+    rounds = contract.acceptance.min_paired_rounds
+    if not isinstance(rounds, int) or rounds < 1:
+        raise vp.ValidationProducerError(f"{contract_id}: acceptance.min_paired_rounds is not declared")
+    return rounds
+
+
+_REGISTRY_CACHE: dict[Path, Any] = {}
+
+
+def _contract_registry(path: Path) -> Any:
+    from bigcherry.experiment import contract as experiment_contract
+
+    if path not in _REGISTRY_CACHE:
+        _REGISTRY_CACHE[path] = experiment_contract.load_contracts(path)
+    return _REGISTRY_CACHE[path]
+
+
 def _is_tensor_split(server_args: tuple[str, ...]) -> bool:
     return any(a in ("-sm", "--split-mode") and b == "tensor" for a, b in zip(server_args, server_args[1:]))
 
