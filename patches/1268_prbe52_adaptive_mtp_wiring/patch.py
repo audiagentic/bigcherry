@@ -41,6 +41,16 @@ _CTOR_NEW = """        }
         if (this->params.n_min_adaptive < 0 || this->params.n_min_adaptive > this->params.n_max) {
             throw std::invalid_argument(\"adaptive MTP floor must be 0 (disabled) or <= --spec-draft-n-max\");
         }
+        if (this->params.n_min_adaptive > 0 && this->params.n_min_adaptive < this->params.n_min) {
+            // GPT code review 2026-09-27 (req_6c90e1ebba83464a): an adaptive
+            // floor BELOW n_min is a stuck state, not just a suboptimal one --
+            // finalize() clears any draft shorter than n_min regardless of why
+            // it stopped, so a controller capped at n_min_adaptive < n_min
+            // would have every one of its drafts discarded forever, with the
+            // acceptance signal that is supposed to grow n_cur back up never
+            // arriving (dp.result was cleared, so accept() never even runs).
+            throw std::invalid_argument(\"adaptive MTP floor must be 0 (disabled) or >= --spec-draft-n-min\");
+        }
         this->n_max = this->params.n_max;
 
         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
