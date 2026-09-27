@@ -1,6 +1,6 @@
 # 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RD30
 
 ## What it does

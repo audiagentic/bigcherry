@@ -1,7 +1,7 @@
 schema = 1
 id = "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2"
 order = 1265
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
