@@ -2,7 +2,7 @@
 id: PNRO06
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:52:38.138969+00:00'
 breadth: ''
 skill: advanced
@@ -66,6 +66,8 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 
 2026-09-25 (ef49e4e5): the scaffold is replaced by an EXACT port of nasone 7f3e1e4d + 10fdba9a. The fork's pre-change top-k.cu is byte-identical to b11126's, so no rebase design was needed: new tools/bigcherry/patch/port_diff.py generated 19 anchored edits (+1 CMake wave64 edit) and verified they reproduce the fork file byte-for-byte and are idempotent. Per-route activation markers (patch=1256_nro07 path=topk_small/topk_parallel_radix). TOOLCHAIN BLOCKER: the fork's small-row route is compiled only for HIP >= 7.15; Brutus has ROCm 7.2.4 and 7.14, so only k==1 and ncols>1024 radix routes can activate on the fleet. Next: validation package (test-backend-ops TOP_K correctness both arms + markers; kernel perf via test-backend-ops perf mode; decode control).
 
+OUTCOME 2026-09-27 (1256_nro07_topk_hybrid): series 1 (llama-bench MoE decode) never exercised TOP_K - PVPS10 profile showed MoE routing uses the fused topk_moe kernel (identical call counts both arms). Series 2 (contract amended before data): llama-server MTP decode with --backend-sampling, where request top-k runs ggml_top_k over the full vocabulary (pre-flight showed 1256's topk_small route). Activation passed all 8 sessions. Contract NRO07-TOPK-HYBRID: FAIL (not established) - point +1.18% gfx1100 (ci95_low -0.67), +1.45% gfx1201 (ci95_low -1.79); MTP lane too noisy at 10 rounds. Owner: move on (no series 3). Left untested, not rejected.
+
 ## Change Log
 
 - 2026-09-09T10:52:38.138969+00:00 (created-by): Created by capability-rebaseline-v3
@@ -84,3 +86,5 @@ Successor key: patching-nasone-rdna-optimizations-nro07
 - 2026-09-24T04:49:23.947783+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-24T15:40:54.324559+00:00 (state-transition): State: pending → in_progress
 - 2026-09-24T15:40:57.228620+00:00 (updated-by): Updated: section:notes
+- 2026-09-27T02:47:42.509365+00:00 (updated-by): Updated: section:notes
+- 2026-09-27T02:47:57.300249+00:00 (state-transition): State: in_progress → pending
