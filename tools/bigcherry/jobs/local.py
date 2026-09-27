@@ -50,7 +50,10 @@ class LocalExecutor:
 
     def _write(self, execution_id: str, value: dict[str, object]) -> None:
         path = self._path(execution_id)
-        atomic_write(path, json.dumps(value, sort_keys=True, indent=2).encode("utf-8") + b"\n")
+        atomic_write(
+            path,
+            json.dumps(value, sort_keys=True, indent=2).encode("utf-8") + b"\n",
+        )
 
     def submit(self, request: ExecutionRequest) -> ExecutionHandle:
         matches = self.correlate(request.execution_id)
@@ -65,25 +68,44 @@ class LocalExecutor:
         creationflags = 0
         kwargs: dict[str, object] = {}
         if os.name == "nt":
-            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+            creationflags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
         else:
             kwargs["start_new_session"] = True
         try:
-            with stdout_path.open("ab", buffering=0) as stdout, stderr_path.open("ab", buffering=0) as stderr:
+            with stdout_path.open("ab", buffering=0) as stdout, stderr_path.open(
+                "ab", buffering=0
+            ) as stderr:
                 process = subprocess.Popen(
-                    list(request.command), cwd=request.cwd, env=env,
-                    stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
-                    creationflags=creationflags, **kwargs,
+                    list(request.command),
+                    cwd=request.cwd,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=stderr,
+                    creationflags=creationflags,
+                    **kwargs,
                 )
         except OSError as exc:
             raise ExecutorError(f"local process launch failed: {exc}") from exc
-        self._write(request.execution_id, {
-            "execution_id": request.execution_id,
-            "pid": process.pid,
-            "attempt_root": env.get("BIGCHERRY_ATTEMPT_ROOT"),
-            "stdout_path": request.stdout_path,
-            "stderr_path": request.stderr_path,
-        })
+        selected = tuple(
+            item
+            for item in env.get("BIGCHERRY_SELECTED_DEVICE_IDS", "").split(",")
+            if item
+        )
+        self._write(
+            request.execution_id,
+            {
+                "execution_id": request.execution_id,
+                "pid": process.pid,
+                "attempt_root": env.get("BIGCHERRY_ATTEMPT_ROOT"),
+                "stdout_path": request.stdout_path,
+                "stderr_path": request.stderr_path,
+                "selected_device_ids": list(selected),
+            },
+        )
         return ExecutionHandle(self.name, str(process.pid), request.execution_id)
 
     def correlate(self, execution_id: str) -> tuple[ExecutionHandle, ...]:
@@ -108,18 +130,31 @@ class LocalExecutor:
                     payload = json.loads(result.read_text(encoding="utf-8"))
                     code = int(payload.get("returncode", 1))
                 except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                    return ExecutionStatus(ExecutionState.UNKNOWN, "invalid executor-result.json")
-                return ExecutionStatus(ExecutionState.COMPLETED if code == 0 else ExecutionState.FAILED, f"exit={code}", "terminal")
-        return ExecutionStatus(ExecutionState.RUNNING if _pid_alive(int(handle.native_id)) else ExecutionState.UNKNOWN,
-                               None if _pid_alive(int(handle.native_id)) else "process exited without terminal sentinel",
-                               "running" if _pid_alive(int(handle.native_id)) else None)
+                    return ExecutionStatus(
+                        ExecutionState.UNKNOWN, "invalid executor-result.json"
+                    )
+                return ExecutionStatus(
+                    ExecutionState.COMPLETED if code == 0 else ExecutionState.FAILED,
+                    f"exit={code}",
+                    "terminal",
+                )
+        alive = _pid_alive(int(handle.native_id))
+        return ExecutionStatus(
+            ExecutionState.RUNNING if alive else ExecutionState.UNKNOWN,
+            None if alive else "process exited without terminal sentinel",
+            "running" if alive else None,
+        )
 
     def cancel(self, handle: ExecutionHandle) -> None:
         self._check(handle)
         pid = int(handle.native_id)
         try:
             if os.name == "nt":
-                completed = subprocess.run(("taskkill", "/PID", str(pid), "/T", "/F"), capture_output=True, text=True)
+                completed = subprocess.run(
+                    ("taskkill", "/PID", str(pid), "/T", "/F"),
+                    capture_output=True,
+                    text=True,
+                )
                 if completed.returncode not in (0, 128):
                     raise ExecutorError(completed.stderr.strip() or "taskkill failed")
             else:
@@ -139,7 +174,9 @@ class LocalExecutor:
             return Allocation(tuple(str(item) for item in selected))
         return None
 
-    def events(self, handle: ExecutionHandle, *, after: int | None = None) -> Iterable[ExecutorEvent]:
+    def events(
+        self, handle: ExecutionHandle, *, after: int | None = None
+    ) -> Iterable[ExecutorEvent]:
         self._check(handle)
         return ()
 
@@ -151,7 +188,11 @@ class LocalExecutor:
 def _pid_alive(pid: int) -> bool:
     try:
         if os.name == "nt":
-            completed = subprocess.run(("tasklist", "/FI", f"PID eq {pid}", "/NH"), capture_output=True, text=True)
+            completed = subprocess.run(
+                ("tasklist", "/FI", f"PID eq {pid}", "/NH"),
+                capture_output=True,
+                text=True,
+            )
             return completed.returncode == 0 and str(pid) in completed.stdout
         os.kill(pid, 0)
         return True
