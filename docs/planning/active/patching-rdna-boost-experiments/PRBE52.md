@@ -63,6 +63,22 @@ Offline: patch lint/rebase-check and mechanics tests for apply, idempotence, mis
 
 L / medium-high. Main risks are sequence-boundary state leakage, stale draft-count feedback, and accidentally changing fixed-depth behavior. All are contained by per-sequence vectors, reset-before-use, zero-disabled gating, and deterministic token identity.
 
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
 ## Notes
 
 Source audit against b11126 confirmed the concrete hooks: `pending_h`, `begin()`, `result.push_back(id)` followed by `params.n_max <= result.size()`, the final `params.n_min` filter, and `accept(seq_id, n_accepted, ...)`. The previous placeholder package id 1256 is obsolete because that order is already occupied; materialized id is 1268. Keep plan state `pending` until hardware evidence promotes/rejects the patch.
+
+Source audit against b11126 confirmed the concrete hooks: `pending_h`, `begin()`, `result.push_back(id)` followed by `params.n_max <= result.size()`, the final `params.n_min` filter, and `accept(seq_id, n_accepted, ...)`. The previous placeholder package id 1256 is obsolete because that order is already occupied; materialized id is 1268. Keep plan state `pending` until hardware evidence promotes/rejects the patch.
+
+FINDING 2026-09-27 (hardware, gfx1100, 3/3 real sessions): backend_reference correctness FAILS -- greedy 64-token MTP output diverges between control and subject at token index 36, identically across all 3 sessions run so far (not noise; deterministic). This directly violates this item's own stated invariant ('the optimization only changes speculative work, never target-token semantics' / 'deterministic greedy token identity'). Speculative decoding's acceptance test is supposed to guarantee the accepted stream always matches the target model's own greedy output regardless of draft depth/dynamics -- a divergence here means the adaptive-depth controller (n_cur tracking, or its interaction with accept()'s last_n_draft update) is corrupting generation, not just its speed. The GPT code-review-confirmed floor invariant (n_min_adaptive >= n_min, fixed 2026-09-27) did not fix this -- it prevents a stuck-drafting state, not this semantic divergence. Remaining 6 hardware sessions (gfx1100 s3/s4, all 4 gfx1201) paused in the queue (perf-only.txt) rather than burning further GPU time reproducing the same deterministic failure. Needs an author-level re-look at the adaptive controller's interaction with the accept-loop hidden-state selection (pending_h/verify_h indexing) before more hardware time is spent -- correctness gate already blocks promotion so nothing unsafe reached production, this is purely about not implementing/testing efficiency.
+
+## Change Log
+
+- 2026-09-27T11:18:43.972819+00:00 (updated-by): Updated: section:notes
