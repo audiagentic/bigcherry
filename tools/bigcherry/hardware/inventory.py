@@ -1,11 +1,14 @@
-"""Accepted-inventory persistence and deterministic GPU capability binding."""
+"""Accepted/observed inventory persistence and deterministic GPU binding."""
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 
 from bigcherry.jobs.executor import Allocation
 from bigcherry.jobs.model import GpuRequirement, digest
+from bigcherry.tuning.journal import atomic_write
+from .drift import DriftReport, classify_drift
 from .model import HardwareInventory, SeriesGpuBinding, inventory_from_mapping
 
 
@@ -13,24 +16,82 @@ class HardwareBindingError(RuntimeError):
     pass
 
 
+def _inventory_bytes(inventory: HardwareInventory) -> bytes:
+    value = dataclasses.asdict(inventory)
+    value["material_hash"] = inventory.material_hash
+    return json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True).encode("ascii") + b"\n"
+
+
+def _load_inventory(path: Path, *, label: str) -> HardwareInventory:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HardwareBindingError(f"{label} hardware inventory unavailable: {exc}") from exc
+    if not isinstance(value, dict):
+        raise HardwareBindingError(f"{label} hardware inventory must be an object")
+    stored_hash = value.pop("material_hash", None)
+    inventory = inventory_from_mapping(value)
+    if stored_hash is not None and stored_hash != inventory.material_hash:
+        raise HardwareBindingError(f"{label} hardware inventory material_hash mismatch")
+    return inventory
+
+
 class InventoryCatalog:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
+    def executor_root(self, executor_id: str) -> Path:
+        if not executor_id.strip() or any(part in {".", ".."} for part in Path(executor_id).parts):
+            raise ValueError("invalid executor_id")
+        return self.root / executor_id
+
     def accepted_path(self, executor_id: str) -> Path:
-        return self.root / executor_id / "accepted.json"
+        return self.executor_root(executor_id) / "accepted.json"
+
+    def observed_path(self, executor_id: str) -> Path:
+        return self.executor_root(executor_id) / "observed.json"
 
     def load(self, executor_id: str) -> HardwareInventory:
-        path = self.accepted_path(executor_id)
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        return _load_inventory(self.accepted_path(executor_id), label="accepted")
+
+    def load_observed(self, executor_id: str) -> HardwareInventory:
+        return _load_inventory(self.observed_path(executor_id), label="observed")
+
+    def record_observed(self, executor_id: str, inventory: HardwareInventory) -> Path:
+        root = self.executor_root(executor_id)
+        root.mkdir(parents=True, exist_ok=True)
+        if inventory.host_id.strip() == "":
+            raise HardwareBindingError("observed inventory host_id is empty")
+        path = self.observed_path(executor_id)
+        atomic_write(path, _inventory_bytes(inventory))
+        return path
+
+    def drift(self, executor_id: str) -> DriftReport:
+        return classify_drift(self.load(executor_id), self.load_observed(executor_id))
+
+    def accept_observed(
+        self,
+        executor_id: str,
+        *,
+        expected_material_hash: str,
+        allow_material_change: bool = False,
+    ) -> HardwareInventory:
+        observed = self.load_observed(executor_id)
+        if observed.material_hash != expected_material_hash:
             raise HardwareBindingError(
-                f"accepted hardware inventory unavailable for {executor_id}: {exc}"
-            ) from exc
-        if not isinstance(value, dict):
-            raise HardwareBindingError("accepted hardware inventory must be an object")
-        return inventory_from_mapping(value)
+                "observed inventory changed since review; expected hash does not match"
+            )
+        accepted_path = self.accepted_path(executor_id)
+        if accepted_path.exists() and not allow_material_change:
+            accepted = self.load(executor_id)
+            report = classify_drift(accepted, observed)
+            if report.material:
+                raise HardwareBindingError(
+                    f"material hardware drift {report.kind!r} requires explicit allow_material_change"
+                )
+        accepted_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(accepted_path, _inventory_bytes(observed))
+        return observed
 
 
 def _peer_ok(inventory: HardwareInventory, ids: tuple[str, ...]) -> bool:
@@ -153,13 +214,7 @@ def verify_series_allocation(
     allocation: Allocation,
     inventory: HardwareInventory,
 ) -> tuple[str, ...]:
-    """Verify executor allocation evidence against an immutable series binding.
-
-    Executors that cannot yet attest stable IDs must fail closed here; native
-    GPU ordinals are not sufficient scientific evidence. Wider allocations are
-    legal only when the series explicitly reserved all GPUs of the architecture
-    to isolate a proper-subset cohort.
-    """
+    """Verify executor allocation evidence against an immutable series binding."""
     if inventory.material_hash != binding.accepted_inventory_hash:
         raise HardwareBindingError(
             "accepted hardware inventory changed after series binding"
