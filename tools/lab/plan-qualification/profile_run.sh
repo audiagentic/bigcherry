@@ -14,29 +14,33 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
 work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
-# Profiles are non-verdict diagnostics: they may run in parallel on different
-# GPUs, but cross-GPU activity measurably perturbs the timed performance lane.
-# Per-GPU locking prevents collisions; the SHARED host activity gate permits
-# profile/profile overlap while blocking whenever a performance campaign owns
-# the EXCLUSIVE side of the gate.
-source "$root/tools/lab/plan-qualification/gpu-lock.sh"
-source "$root/tools/lab/plan-qualification/activity-lock.sh"
-gpu_lock_acquire "$work" "$dev"
-activity_lock_shared_acquire "$work"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
 export CCACHE_DIR=${CCACHE_DIR:-$work/ccache} CCACHE_BASEDIR=$work CCACHE_NOHASHDIR=1
 export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100G}
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
 toolchain=$(printf '%s' "$BC_HIP_PATH" | sha256sum | cut -c1-8)
+
 # profile.py currently combines build preparation and profiling in one process.
 # The build root is intentionally shared, so two same-arch/toolchain profiles
 # must not run CMake/Ninja against the same tree concurrently. Until RCD07 splits
-# prepare from GPU execution, serialize that build key. Different architecture
-# or toolchain keys still profile concurrently.
+# prepare from GPU execution, serialize that build key. Crucially this lock is
+# acquired BEFORE host/GPU resources, so queued same-build profiles do not
+# delay a pending performance writer or reserve idle GPUs.
 mkdir -p "$work/queue/build-locks"
 exec {build_fd}>"$work/queue/build-locks/$arch-$toolchain.lock"
 flock "$build_fd"
+
+# Profiles are non-verdict diagnostics: they may run in parallel on different
+# GPUs/build keys, but cross-GPU activity measurably perturbs the timed lane.
+# Lock order is build-key -> shared host activity -> GPU; campaigns use
+# exclusive host activity -> GPU. The common host-before-GPU ordering prevents
+# deadlock and writer intent stops new profiles from barging ahead of perf.
+source "$root/tools/lab/plan-qualification/gpu-lock.sh"
+source "$root/tools/lab/plan-qualification/activity-lock.sh"
+activity_lock_shared_acquire "$work"
+gpu_lock_acquire "$work" "$dev"
+
 python3 -m bigcherry.patch.campaign.profile --patch "$patch" --arch "$arch" --device "$dev" \
   --model "$BC_MODEL" --workload "$workload" --hip-path "$BC_HIP_PATH" \
   --worktree-root "$work/worktrees" --build-root "$work/builds/$arch-$toolchain" \
