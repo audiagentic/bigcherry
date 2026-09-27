@@ -11,7 +11,9 @@
 #   2. after profiles finish, campaign jobs run serially. run_campaign.sh also
 #      takes the host-exclusive activity gate, so multiple queue.sh processes
 #      cannot accidentally overlap timed campaigns.
-# Finished run logs are skipped, so the queue is restartable.
+# Finished run logs are skipped, so the queue is restartable. Independent jobs
+# continue after a failure, but the queue itself exits nonzero when any launched
+# job failed so humans/agents/systemd can detect an unhealthy batch.
 set -u
 jobs=$1
 here=$(cd "$(dirname "$0")" && pwd)
@@ -65,9 +67,10 @@ run_line() {
     # startup/device/activation head and cap the remainder after each run.
     find "$work/runs/$run" -name '*server*.log' -size +20M -exec truncate -s 20M {} + 2>/dev/null || true
     echo "done  $kind $run $(date -Is) rc=$rc $(tail -1 "$log" 2>/dev/null || true)"
-    return 0
+    return "$rc"
 }
 
+failures=0
 if ((${#profiles[@]})); then
     echo "profile phase: ${#profiles[@]} job(s), parallel across GPU locks"
     pids=()
@@ -75,10 +78,20 @@ if ((${#profiles[@]})); then
         run_line "$line" &
         pids+=("$!")
     done
-    for pid in "${pids[@]}"; do wait "$pid" || true; done
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then failures=$((failures + 1)); fi
+    done
 fi
 
 if ((${#campaigns[@]})); then
     echo "campaign phase: ${#campaigns[@]} host-isolated job(s)"
-    for line in "${campaigns[@]}"; do run_line "$line"; done
+    for line in "${campaigns[@]}"; do
+        if ! run_line "$line"; then failures=$((failures + 1)); fi
+    done
 fi
+
+if ((failures)); then
+    echo "queue completed with $failures failed job(s)"
+    exit 1
+fi
+echo "queue completed successfully"
