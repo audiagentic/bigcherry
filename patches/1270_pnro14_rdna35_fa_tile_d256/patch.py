@@ -2,7 +2,11 @@
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+# Packaged patch.py may import only the stdlib and bigcherry.patcher (see
+# registry._validate_packaged_imports) -- bigcherry.patcher is a true module
+# alias for bigcherry.patch.apply, which itself imports core.csource, so
+# `csource` is reachable through it without a disallowed bigcherry.core import.
+from bigcherry.patcher import Edit, FilePatch, csource as _csource
 
 _INCLUDES_OLD = """#include \"common.cuh\"\n#include \"fattn-common.cuh\"\n"""
 _INCLUDES_NEW = """#include \"common.cuh\"\n#include \"fattn-common.cuh\"\n\n#include <atomic>\n#include <cstdlib>\n"""
@@ -97,7 +101,9 @@ PATCHES = [
                 guard=r"#include <atomic>\n#include <cstdlib>",
                 rationale="Support the env-gated once-per-process activation marker.",
                 expect_matches=1,
-                max_span_lines=2,
+                # Anchor text has 2 embedded newlines; apply.py's span_lines is
+                # newline-count + 1, so the match spans 3 lines, not 2.
+                max_span_lines=3,
             ),
             Edit(
                 id="pnro14-rdna35-table",
@@ -121,7 +127,13 @@ PATCHES = [
             ),
             Edit(
                 id="pnro14-device-select",
-                anchor=_re.escape(_DEVICE_OLD),
+                # Anchors match against noise-stripped source (comments are
+                # blanked before matching, per core/csource.py) -- _DEVICE_OLD
+                # contains trailing "// RDNA" / "// FAST_FP16_AVAILABLE" /
+                # "// GGML_USE_HIP" line comments that a literal re.escape()
+                # anchor can never match post-strip. Strip the anchor text the
+                # same way the runtime strips the real file so the two agree.
+                anchor=_re.escape(_csource.strip_noise(_DEVICE_OLD, "c")),
                 mode="replace",
                 text=_DEVICE_NEW,
                 guard=r"#if defined\(RDNA3_5\)",
