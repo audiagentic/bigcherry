@@ -46,7 +46,15 @@ class SlurmRenderInstallTests(unittest.TestCase):
             self.assertIn("Gres=gpu:gfx1100:1,gpu:gfx1201:1", files["slurm.conf"])
             self.assertIn("CPUs=32", files["slurm.conf"])
             self.assertIn("RealMemory=64000", files["slurm.conf"])
-            self.assertNotIn("RequeueExit", files["slurm.conf"])
+            active = [
+                line.strip()
+                for line in files["slurm.conf"].splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+            self.assertFalse(
+                any(line.startswith("RequeueExit") for line in active),
+                "monolithic validation jobs must not configure native RequeueExit",
+            )
             self.assertIn("Type=gfx1100", files["gres.conf"])
             self.assertIn("Type=gfx1201", files["gres.conf"])
             self.assertNotIn("uuid-a", "\n".join(files.values()))
