@@ -62,12 +62,24 @@ def _distinct_arms(arms: dict[str, Path]) -> dict[Path, list[str]]:
 
 def _cache_path(
     cache_dir: Path, binary_dir: Path, model: Path, device_key: str,
-    workloads: tuple[str, ...], rounds_per_arm: int,
+    workloads: tuple[str, ...], rounds_per_arm: int, exe: str = "",
 ) -> Path:
-    stat = model.stat()
+    """A build root is content-addressed by SOURCE, not by binary bytes: a
+    build in place (e.g. a ccache rebuild that changes generated code without
+    changing the tree's identity) leaves ``binary_dir`` unchanged while the
+    llama-bench binary underneath it is now different. GPT review
+    req_6c90e1ebba83464a: the cache key must therefore include the actual
+    binary's own mtime/size, exactly as it already does for the model, or a
+    stale cache entry can be served forever under the old key."""
+    model_stat = model.stat()
+    binary = binary_dir / f"llama-bench{exe}"
+    binary_stat = binary.stat() if binary.is_file() else None
     key = json.dumps({
-        "binary_dir": str(binary_dir), "model": str(model.resolve()), "model_size": stat.st_size,
-        "model_mtime_ns": stat.st_mtime_ns, "device": device_key, "workloads": sorted(workloads),
+        "binary_dir": str(binary_dir),
+        "binary_size": binary_stat.st_size if binary_stat else None,
+        "binary_mtime_ns": binary_stat.st_mtime_ns if binary_stat else None,
+        "model": str(model.resolve()), "model_size": model_stat.st_size,
+        "model_mtime_ns": model_stat.st_mtime_ns, "device": device_key, "workloads": sorted(workloads),
         "rounds_per_arm": rounds_per_arm,
     }, sort_keys=True)
     return cache_dir / f"{hashlib.sha256(key.encode()).hexdigest()[:32]}.json"
@@ -100,7 +112,7 @@ def run_reference_ladder(
     # cached: one sample per rotation round, len(distinct) x rounds_per_arm.
     rounds = len(distinct) * rounds_per_arm
     for binary_dir, names in distinct.items():
-        path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm)
+        path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, exe)
         entry = json.loads(path.read_text(encoding="utf-8")) if set(names) & shared_arms and path.is_file() else None
         if entry is not None and all(entry["samples"].get(w) for w in workloads):
             cached.extend(names)
@@ -139,7 +151,7 @@ def run_reference_ladder(
         }
         if all(len(samples[w]) == rounds for w in workloads):
             cache_dir.mkdir(parents=True, exist_ok=True)
-            path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm)
+            path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, exe)
             path.write_text(json.dumps({"binary_dir": str(binary_dir), "arms": names, "samples": samples},
                                        indent=2, sort_keys=True) + "\n", encoding="utf-8")
     payload = summarise_ladder(arms=arms, runs=runs, workloads=workloads)

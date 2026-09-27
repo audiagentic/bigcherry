@@ -94,6 +94,34 @@ class ReferenceLadderTests(unittest.TestCase):
         self._ladder(workloads=("decode",))
         self.assertEqual(set(self.calls), {"stock", "base", "subject"})
 
+    def test_in_place_binary_rebuild_invalidates_the_cache(self) -> None:
+        # GPT review req_6c90e1ebba83464a: a build root is content-addressed
+        # by SOURCE, not by binary bytes -- an in-place rebuild at the same
+        # binary_dir (e.g. ccache regenerating different code without the
+        # tree's identity changing) must not serve the old cached numbers.
+        real_root = self.tmp / "real-arms"
+        for name in ("stock", "subject"):
+            (real_root / name).mkdir(parents=True)
+            (real_root / name / "llama-bench").write_bytes(b"v1")
+        arms = {"stock": real_root / "stock", "base": real_root / "stock",
+                "validated": real_root / "stock", "validated+patch": real_root / "subject"}
+        first = ladder.run_reference_ladder(
+            arms=arms, model=self.model, runner=self._runner, cache_dir=self.tmp / "cache",
+            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0",
+            workloads=("decode",),
+        )
+        self.assertEqual(first["cached_arms"], [])
+        self.calls.clear()
+        # Simulate an in-place rebuild: same path, new content/mtime.
+        (real_root / "stock" / "llama-bench").write_bytes(b"v2-different-build")
+        second = ladder.run_reference_ladder(
+            arms=arms, model=self.model, runner=self._runner, cache_dir=self.tmp / "cache",
+            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0",
+            workloads=("decode",),
+        )
+        self.assertEqual(second["cached_arms"], [], "a rebuilt binary must be a cache miss, not stale-served")
+        self.assertIn("stock", self.calls)
+
 
 if __name__ == "__main__":
     unittest.main()
