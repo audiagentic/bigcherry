@@ -155,7 +155,9 @@ required-state = "validated"
 # gfx1151, never measured here); dual-XTX production lane (PVPS05, not run).
 # Near-lossless, not bit-exact (bf16 operands, fp32 accumulation).
 #
-# PROMOTED 2026-09-27 (auto-promotion of a clear winner, owner-authorized):
+# PROMOTED 2026-09-27 (auto-promotion of a clear winner, owner-authorized),
+# DEMOTED 2026-09-27 (implementation changed after promotion, pending
+# re-verification -- not a new scientific finding):
 # 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 (RD30B), gfx1201 + gfx1030 (its
 # contract scope). Contract RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2 PASS over 4
 # ISOLATED sessions on EACH arch at pin b11126: pp512 +8.42/+8.46/+8.51/+9.10%
@@ -163,8 +165,19 @@ required-state = "validated"
 # flat; bit-identical test-backend-ops correctness every session. Sessions measured
 # while another GPU job ran concurrently are withdrawn (evidence/withdrawn.json).
 # NOT covered: dual-XTX production lane (gate is RDNA4/RDNA2; gfx1100 keeps 1237).
-patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn",
-           "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2"]
+# This original promotion evidence is PRESERVED (patches/1265.../evidence/), not
+# erased. Later the same day the patch's runtime gate was narrowed from open
+# RDNA4/RDNA2 family ranges to exact cc==gfx1201||cc==gfx1030, changing 1265's
+# implementation digest -- a changed implementation invalidates prior evidence
+# (project re-promotion doctrine) and the new digest has no qualifying evidence
+# yet. Concretely, keeping 1265 in this set also made it impossible for 1265's
+# own validation producer to build a control/subject pair at all: baseline_source
+# "bigcherry" (this patch-set) already contained it as a named member, so
+# resolve_source_composition's focal-uniqueness check failed closed with "focal
+# patch already in source's named composition" (t-1265b-gfx1201-s1, 2026-09-27).
+# Demoted pending 8 fresh isolated sessions (t-1265b-*, gfx1201 x4 + gfx1030 x4)
+# against the narrowed-gate digest; re-promote only if they pass.
+patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn"]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
