@@ -56,14 +56,21 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
         campaign = (LAB / "run_campaign.sh").read_text(encoding="utf-8")
         queue = (LAB / "queue.sh").read_text(encoding="utf-8")
         build_lock = 'flock "$build_fd"'
+        prepare = '--prepare-only --prepared-manifest "$prepared"'
+        release_build = 'eval "exec $build_fd>&-"'
         profile_activity = 'activity_lock_shared_acquire "$work"'
         profile_gpu = 'gpu_lock_acquire "$work" "$dev"'
         campaign_activity = 'activity_lock_exclusive_acquire "$work"'
         campaign_gpu = 'gpu_lock_acquire "$work" "$dev"'
         self.assertIn('build-locks/$arch-$toolchain.lock', profile)
-        self.assertLess(profile.index(build_lock), profile.index(profile_activity))
+        self.assertLess(profile.index(build_lock), profile.index(prepare))
+        self.assertLess(profile.index(prepare), profile.index(release_build))
+        self.assertLess(profile.index(release_build), profile.index(profile_activity))
         self.assertLess(profile.index(profile_activity), profile.index(profile_gpu))
+        self.assertIn('--prepared-manifest "$prepared"', profile)
+        self.assertIn('echo "PROFILE_EXIT=$rc"\nexit "$rc"', profile)
         self.assertLess(campaign.index(campaign_activity), campaign.index(campaign_gpu))
+        self.assertIn('echo "CAMPAIGN_EXIT=$rc"\nexit "$rc"', campaign)
         self.assertIn('run_line "$line" &', queue)
         self.assertIn('for pid in "${pids[@]}"; do wait "$pid"', queue)
         self.assertLess(queue.index("profile phase:"), queue.index("campaign phase:"))
