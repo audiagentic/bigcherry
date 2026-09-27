@@ -33,6 +33,28 @@ def _write_json(path: Path, value: dict[str, Any], *, replace: bool = False) -> 
     atomic_write(path, payload)
 
 
+def _write_idempotent_record(
+    path: Path,
+    value: dict[str, Any],
+    *,
+    volatile_keys: frozenset[str] = frozenset({"created_ns"}),
+) -> None:
+    """Persist an immutable record while permitting replay-only metadata to differ.
+
+    Client retry after a lost response must not fail just because a fresh local
+    timestamp was produced. All non-volatile scientific/domain fields still
+    compare exactly and fail closed on any mismatch.
+    """
+    if path.exists():
+        existing = _read_json(path)
+        left = {k: v for k, v in existing.items() if k not in volatile_keys}
+        right = {k: v for k, v in value.items() if k not in volatile_keys}
+        if left != right:
+            raise StoreError(f"immutable record already exists with different content: {path}")
+        return
+    _write_json(path, value)
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="ascii"))
@@ -99,7 +121,7 @@ class RunStore:
         return record
 
     def create_batch(self, batch_id: str, record: dict[str, Any]) -> None:
-        _write_json(self.root / "batches" / batch_id / "batch.json", record)
+        _write_idempotent_record(self.root / "batches" / batch_id / "batch.json", record)
 
     def batch(self, batch_id: str) -> dict[str, Any]:
         return _read_json(self.root / "batches" / batch_id / "batch.json")
@@ -114,7 +136,7 @@ class RunStore:
         return tuple(_read_json(path) for path in sorted((self.root / "series").glob("*/series.json")))
 
     def create_run(self, run_id: str, record: dict[str, Any]) -> None:
-        _write_json(self.root / "runs" / run_id / "intent.json", record)
+        _write_idempotent_record(self.root / "runs" / run_id / "intent.json", record)
 
     def run(self, run_id: str) -> dict[str, Any]:
         return _read_json(self.root / "runs" / run_id / "intent.json")
@@ -172,7 +194,11 @@ class RunStore:
         _write_json(self.attempt_root(run_id, attempt) / "submission-intent.json", record)
 
     def write_submission(self, run_id: str, attempt: int, record: dict[str, Any]) -> None:
-        _write_json(self.attempt_root(run_id, attempt) / "submission.json", record)
+        _write_idempotent_record(
+            self.attempt_root(run_id, attempt) / "submission.json",
+            record,
+            volatile_keys=frozenset({"submitted_ns"}),
+        )
 
     def write_result(self, run_id: str, attempt: int, record: dict[str, Any]) -> None:
         _write_json(self.attempt_root(run_id, attempt) / "result.json", record)
@@ -181,20 +207,35 @@ class RunStore:
         return _read_json(path) if path.is_file() else None
 
     def enqueue(self, batch_id: str, run_id: str, *, reason: str = "submit") -> Path:
-        receipt = {"batch_id": batch_id, "run_id": run_id, "reason": reason}
-        path = self.root / "inbox" / "pending" / f"{run_id}.json"
+        receipt = {"batch_id": batch_id, "run_id": run_id, "reason": reason, "created_ns": time.time_ns()}
+        nonce = digest(receipt, person=b"bc-inbox-receipt")[:16]
+        path = self.root / "inbox" / "pending" / f"{run_id}.{reason}.{nonce}.json"
         _write_json(path, receipt)
         return path
 
     def pending(self) -> tuple[Path, ...]:
         return tuple(sorted((self.root / "inbox" / "pending").glob("*.json")))
 
+    def processing(self) -> tuple[Path, ...]:
+        return tuple(sorted((self.root / "inbox" / "processing").glob("*.json")))
+
+    def claimable(self) -> tuple[Path, ...]:
+        """Processing receipts come first so a service crash resumes before new work."""
+        return self.processing() + self.pending()
+
     def claim_pending(self, path: Path) -> Path:
+        if path.parent.name == "processing":
+            return path
         target = self.root / "inbox" / "processing" / path.name
         try:
             os.replace(path, target)
         except FileNotFoundError as exc:
             raise StoreError(f"pending receipt was already claimed: {path}") from exc
+        return target
+
+    def requeue_receipt(self, processing: Path) -> Path:
+        target = self.root / "inbox" / "pending" / processing.name
+        os.replace(processing, target)
         return target
 
     def finish_receipt(self, processing: Path, *, accepted: bool) -> None:
