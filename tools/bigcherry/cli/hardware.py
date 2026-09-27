@@ -10,6 +10,7 @@ from pathlib import Path
 from ..core.context import ProjectContext
 from ..hardware.drift import classify_drift
 from ..hardware.inventory import InventoryCatalog
+from ..hardware.linux_amd import discover_linux_amd
 from ..hardware.model import inventory_from_mapping
 from ..hardware.slurm import render_gres_conf, render_node_gres
 
@@ -36,6 +37,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bigcherry hardware")
     sub = parser.add_subparsers(dest="action", required=True)
 
+    discover = sub.add_parser("discover")
+    discover.add_argument("executor_id")
+    discover.add_argument("--amd-smi", default="amd-smi")
+    discover.add_argument("--host-id", default=None)
+    discover.add_argument("--hardware-epoch", default=None)
+    discover.add_argument("--record", action="store_true", help="atomically write observed.json")
+
     show = sub.add_parser("show")
     show.add_argument("executor_id")
     show.add_argument("--kind", choices=("accepted", "observed"), default="accepted")
@@ -59,6 +67,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         catalog = _catalog()
+        if args.action == "discover":
+            inventory = discover_linux_amd(
+                amd_smi=args.amd_smi,
+                host_id=args.host_id,
+                hardware_epoch=args.hardware_epoch,
+            )
+            observed_path = None
+            if args.record:
+                observed_path = str(catalog.record_observed(args.executor_id, inventory))
+            _emit({
+                "executor_id": args.executor_id,
+                "recorded": bool(args.record),
+                "observed_path": observed_path,
+                "inventory": _inventory_dict(inventory),
+            })
+            return 0
         if args.action == "show":
             inventory = (
                 catalog.load(args.executor_id)
