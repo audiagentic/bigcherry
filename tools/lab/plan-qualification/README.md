@@ -29,30 +29,34 @@ The legacy queue now matches the evidence policy conservatively:
   across patches/sessions for the same architecture+toolchain;
 - PROFILE/kernel-trace diagnostics use a two-phase handoff: CMake/Ninja
   preparation is serialized only for a shared architecture+toolchain build
-  root, writes a SHA-256-bound prepared manifest, then releases that build lock;
-- the GPU trace phase re-verifies the prepared binary bytes and may run in
-  parallel with other PROFILE jobs on different GPUs, including same-arch cards;
+  root, writes a SHA-256-bound prepared manifest, then releases that exclusive
+  build lock;
+- `queue.sh` completes the PROFILE preparation fan-out first, then launches the
+  successfully prepared trace fan-out; same-build traces hold shared build-key
+  locks, so they may overlap on different GPUs while a concurrent preparer is
+  prevented from changing their executable or shared build tree;
 - every GPU has an exclusive `flock`, so two jobs can never touch one card;
-- PROFILE jobs take a shared host-activity lock;
+- PROFILE preparation and trace jobs take a shared host-activity lock;
 - monolithic validation campaigns take the exclusive host-activity lock, so
   no profile, build/test campaign, or second performance campaign can overlap
   their timed evidence;
 - writer intent prevents a continuous stream of new profiles from starving a
   pending performance campaign and stale intent is crash-repaired;
 - shell wrappers preserve the child exit status as well as writing
-  `PROFILE_EXIT=` / `CAMPAIGN_EXIT=` restart markers.
+  `PROFILE_EXIT=` / `CAMPAIGN_EXIT=` restart markers;
+- independent queue jobs continue after a failure, but `queue.sh` exits nonzero
+  if any launched job failed.
 
-`queue.sh` launches all PROFILE rows first. Shared-build preparation naturally
-serializes only conflicting build keys; after each preparation completes its
-GPU phase is free to overlap compatible profiles. The queue waits for all
-PROFILE rows, then runs campaign rows serially. Multiple queue processes remain
-safe because host/per-GPU/build-key locks are cross-process.
+The queue order is therefore `PROFILE prepare -> PROFILE trace -> campaign`.
+Multiple queue processes remain safe because host/per-GPU/build-key locks are
+cross-process.
 
 The remaining conservative boundary is the monolithic validation campaign:
 build, correctness and timed measurement still live in one process, so it holds
-the host-exclusive gate for longer than the timed lane strictly needs. RCD07 /
-the jobs stage scheduler is the path to parallel CPU/functional stages while
-retaining host-exclusive timed measurement only.
+the host-exclusive gate for longer than the timed lane strictly needs. The
+current `bigcherry.patch.validation_campaign` has no prepare/execute-only seam;
+RCD06/RCD07 and the jobs stage scheduler are the path to parallel deterministic
+build/functional stages while retaining host-exclusive timed measurement only.
 
 ## Outputs
 
