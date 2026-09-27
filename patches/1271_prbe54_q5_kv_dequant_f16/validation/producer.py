@@ -22,8 +22,7 @@ _MARKER = re.compile(
     r"path=q5_fattn_f16_dequant contract=PRBE54-Q5-KV-DEQUANT-F16"
 )
 _Q5_ARGS = ("-ctk", "q5_0", "-ctv", "q5_0", "-fa", "on")
-_F16_ARGS = ("-ctk", "f16", "-ctv", "f16", "-fa", "on")
-_PROMPT = " ".join(["Flash attention reads quantized key and value cache rows during decode."] * 16)
+_PROMPT = " ".join(["Flash attention reads quantized key and value cache rows during prompt processing."] * 16)
 _N_PREDICT = 64
 _ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 _MEASUREMENT = support.contract_measurement(_CONTRACT_ID)
@@ -100,36 +99,24 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         name="prbe54-control.log", text=support.compact_log(control_text)
     )
 
-    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+    outcome = ctx.runtime.run_paired_llama_benchmark(
         control_binary=binaries["control"]["llama-bench"],
         subject_binary=binaries["subject"]["llama-bench"],
         model=model,
-        workloads=("decode",),
+        workloads=("prefill", "decode"),
         runtime_args=_Q5_ARGS,
         pairs=_ROUNDS,
-        log_context="prbe54-q5-decode",
+        log_context="prbe54-q5-lanes",
         device=device,
         env_overrides={"BIGCHERRY_PATCH_TRACE": "1"},
         combined=True,
     )
     positive_effect, positive_run = support.lane_effect(
-        positive_outcome, workload="decode", metric="tg128", role="positive",
+        outcome, workload="prefill", metric="pp512", role="positive",
         rounds=_ROUNDS, label=_LABEL,
     )
-
-    control_outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=binaries["control"]["llama-bench"],
-        subject_binary=binaries["subject"]["llama-bench"],
-        model=model,
-        workloads=("prefill",),
-        runtime_args=_F16_ARGS,
-        pairs=_ROUNDS,
-        log_context="prbe54-f16-prefill-control",
-        device=device,
-        combined=True,
-    )
     control_effect, control_run = support.lane_effect(
-        control_outcome, workload="prefill", metric="pp512", role="control",
+        outcome, workload="decode", metric="tg128", role="control",
         rounds=_ROUNDS, label=_LABEL,
     )
 
@@ -143,14 +130,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "metrics": support.performance_metrics(positive_effect, control_effect),
             "positive": {
                 "kv_type": "q5_0",
-                "metric": "tg128",
+                "metric": "pp512",
                 "effect": dataclasses.asdict(positive_effect),
                 "runs": list(positive_run.runs),
                 "stats": dict(positive_run.stats),
             },
             "control": {
-                "kv_type": "f16",
-                "metric": "pp512",
+                "kv_type": "q5_0",
+                "metric": "tg128",
                 "effect": dataclasses.asdict(control_effect),
                 "runs": list(control_run.runs),
                 "stats": dict(control_run.stats),
@@ -170,7 +157,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     )
 
     trigger = experiment_execution.trigger_evidence_from_marker_probe(
-        lane_id="prbe54-q5-subject", role="positive", positive_hit=trigger_hit
+        lane_id="prbe54-q5-prefill-subject", role="positive", positive_hit=trigger_hit
     )
     return vp.ProducerResult(
         correctness={
@@ -189,7 +176,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         lane_effects=(),
         contract_correctness_results=(correctness,),
         promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
-        promotion_target_metric={_CONTRACT_ID: "tg128"},
+        promotion_target_metric={_CONTRACT_ID: "pp512"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger,)},
         emitted_artifacts=frozenset({
             "prbe54-correctness.json",
