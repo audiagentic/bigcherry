@@ -55,9 +55,15 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
         profile = (LAB / "profile_run.sh").read_text(encoding="utf-8")
         campaign = (LAB / "run_campaign.sh").read_text(encoding="utf-8")
         queue = (LAB / "queue.sh").read_text(encoding="utf-8")
-        self.assertIn('activity_lock_shared_acquire "$work"', profile)
+        build_lock = 'flock "$build_fd"'
+        profile_activity = 'activity_lock_shared_acquire "$work"'
+        profile_gpu = 'gpu_lock_acquire "$work" "$dev"'
+        campaign_activity = 'activity_lock_exclusive_acquire "$work"'
+        campaign_gpu = 'gpu_lock_acquire "$work" "$dev"'
         self.assertIn('build-locks/$arch-$toolchain.lock', profile)
-        self.assertIn('activity_lock_exclusive_acquire "$work"', campaign)
+        self.assertLess(profile.index(build_lock), profile.index(profile_activity))
+        self.assertLess(profile.index(profile_activity), profile.index(profile_gpu))
+        self.assertLess(campaign.index(campaign_activity), campaign.index(campaign_gpu))
         self.assertIn('run_line "$line" &', queue)
         self.assertIn('for pid in "${pids[@]}"; do wait "$pid"', queue)
         self.assertLess(queue.index("profile phase:"), queue.index("campaign phase:"))
