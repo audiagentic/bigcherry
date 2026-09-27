@@ -13,40 +13,26 @@ work: L
 
 # Local/remote execution and dynamic production coexistence
 
-## Objective
+## Status — 2026-09-28
 
-Support scheduler-neutral exact-cohort execution while protecting timed Brutus measurements from llama-swap regardless of which GPUs production currently uses.
-
-## Implementation status — 2026-09-27
+**Scheduler-neutral local/remote protocol and dynamic production policy are implemented; live llama-swap/root-window integration and Windows remote staging remain real-host/service gates.**
 
 Implemented/offline-tested:
 
-- durable detached `LocalExecutor` with reconnectable metadata/result, cancellation and stable-device allocation reporting;
-- local exact-cohort mapping from accepted stable IDs to current launch ordinals and OS-held per-device locks;
-- restricted JSON `RemoteExecutor` + worker protocol with submit/correlate/status/cancel/control/allocation/events and stable execution IDs;
-- registry support for local/remote targets; Windows example remains disabled;
-- `tools/bigcherry/jobs/production.py` pure production policy:
-  - declarative `all`, `uuid:<id>...`, and conservative `arch:<gfx>,count=N` claims;
-  - malformed/missing/contradictory ownership fails closed to all-device potential;
-  - dynamic conflict decision after exact target stable IDs are known;
-  - continuous snapshot contamination detection for config/claim changes and target GPU process/VRAM use;
-  - exclusive-window state model/recovery tests.
+- durable LocalExecutor with reconnectable metadata/result, cancellation and stable-device reporting;
+- local frozen-cohort mapping to current accepted launch ordinals plus OS-held per-device locks;
+- attempt runner re-loads accepted inventory, rebinds/re-attests the exact frozen cohort immediately before scientific child spawn; drift fails closed;
+- restricted JSON RemoteExecutor/worker protocol with stable execution correlation and normalized status/control/allocation/events;
+- production pure policy for `all`, exact UUID and conservative architecture/count claims;
+- malformed/missing/contradictory production ownership fails closed to all-device potential;
+- dynamic conflict after exact target allocation, not static card classes;
+- production config/claim/target-use contamination detection;
+- crash-safe exclusive-window state model/recovery logic;
+- monitored attempt execution with stable-ID attestation before child launch.
 
-Not production-ready/hardware-service gated:
+## Production decision
 
-1. live llama-swap config `/running` + backend argv/env + AMD process/VRAM snapshot adapter;
-2. root-owned measurement-window service/sudoers admission barrier and boot recovery;
-3. real prevention of conflicting production reload during an active exclusive window;
-4. qualification of any non-conflicting loaded-idle production mode before it can contribute gating evidence;
-5. target-local source/model/corpus/artifact staging for remote scientific execution;
-6. Windows HIP UUID/LUID discovery + stable-ID-to-current-ordinal attestation;
-7. LocalExecutor target-local hardware re-attestation immediately before scientific spawn.
-
-Remote Windows therefore remains a protocol extension scaffold, not an enabled scientific executor.
-
-## Production policy
-
-At each timed Brutus execution construct:
+For each timed Brutus run derive:
 
 ```text
 config_hash
@@ -56,47 +42,45 @@ observed process/VRAM stable devices
 ambiguities
 ```
 
-Potential means every device production could choose under unchanged configuration, not only what it happens to use now. `arch:gfx...,count=N` expands to every accepted candidate of that architecture unless the production launcher itself has deterministic reserved placement.
-
-Decision:
+Potential means every device production could select under unchanged configuration. `arch:gfx...,count=N` therefore expands to all accepted candidates unless the production launcher has an independently enforced deterministic reservation.
 
 ```text
 target intersects potential OR ownership ambiguous -> exclusive window
-disjoint                                      -> loaded-idle only after isolation qualification
+proven disjoint                                      -> loaded-idle only after isolation qualification
 ```
 
-Until loaded-idle is scientifically qualified, timed gating measurement should quiesce production rather than treating disjointness as proof of no host-level interference.
+Until loaded-idle is qualified, timed gating measurement must quiesce production even on disjoint GPUs because host-level interference remains unproven.
 
-During measurement, config hash/potential-set changes, new ambiguity, or production use of a target GPU invalidates the sample as environment contamination. It is not a scientific regression result.
+Any config hash/potential/ambiguity change or production process/VRAM use on a target GPU during measurement is environment contamination; discard/retry the sample, never classify it as scientific regression.
 
-## Exclusive window target
+## Remaining Brutus service work
 
-Root-owned state machine:
+1. live adapter for llama-swap config + `/running` + backend argv/env + accepted-stable-ID AMD process/VRAM attribution;
+2. root-owned admission/window helper and minimal sudoers/systemd surface with boot/crash recovery;
+3. prove conflicting production cannot reload while a window is active;
+4. qualify loaded-idle/noise before enabling non-conflicting production during gating measurements.
 
-```text
-CLOSED -> REQUESTED -> DRAINING -> ACTIVE -> CLOSING -> CLOSED
-```
+llama-swap model `env` is the intended declarative place for per-model BigCherry GPU claims; ambiguous or missing claims remain fail-closed. The host adapter must verify configured claims against observed process use rather than trust them blindly.
 
-Request contains only execution/native ID, exact target stable IDs, accepted inventory hash, production config hash and bounded deadline. No caller-provided root shell command. Entry blocks new supported production/ad-hoc starts before drain; exit/recovery is idempotent and must restore production health or emit a hard wake.
+## Remaining remote/Windows work
 
-## Remote target requirement
+- target-local source/model/corpus/artifact staging and exact content verification;
+- Windows HIP UUID/LUID discovery and stable-ID -> current launch selector attestation;
+- hardware acceptance of process-tree cancellation and remote reconnect/recovery.
 
-Before enabling remote scientific work, central submission must send portable identity, not controller absolute paths. Target worker must materialize/verify exact BigCherry commit, source identity, model/corpus/input hashes, target-local workspace/cache/log paths and accepted hardware hash before constructing its local `ExecutionRequest`. Network uncertainty reconciles by `execution_id`; never blind duplicate submit.
+Controller absolute paths are never portable scientific authority. Windows evidence remains a separate platform series from Linux ROCm.
 
 ## Acceptance criteria
 
-- LocalExecutor never substitutes outside the frozen cohort;
-- real local spawn independently re-attests the frozen stable devices;
-- remote worker can execute a target-local staged campaign without controller filesystem assumptions;
-- network ambiguity cannot duplicate execution;
-- production conflict policy is independent of static card placement;
-- conflicting production cannot load onto target GPUs during a window;
-- non-conflicting co-residency is gating-enabled only after isolation qualification;
-- production drift contaminates/discards the sample;
-- root privilege surface is exact/minimal and crash/boot recovery is proven.
+- no local execution substitutes outside the frozen cohort;
+- network ambiguity cannot duplicate remote execution;
+- production conflict policy is independent of card slot/placement;
+- conflicting production cannot load onto target GPUs in an exclusive window;
+- loaded-idle is gating-enabled only after isolation evidence passes;
+- root privilege surface is exact/minimal and recovery restores safe production state;
+- remote scientific work remains disabled until target staging + Windows stable identity are proven.
 
 ## Change log
 
-- 2026-09-26: LocalExecutor/production-coexistence design.
-- 2026-09-27: LocalExecutor, remote protocol/worker and fake remote acceptance implemented.
-- 2026-09-27: production claim/snapshot/conflict/contamination/window pure policy implemented and tested; live llama-swap/root-window and remote staging remain hardware/service gates.
+- 2026-09-27: Local/Remote executors and production pure policy implemented.
+- 2026-09-28: reconciled runner-time local stable-ID re-attestation as implemented; remaining work narrowed to live production/root service and remote Windows staging/acceptance.
