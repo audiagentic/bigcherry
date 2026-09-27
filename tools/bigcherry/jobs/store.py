@@ -7,7 +7,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ..core.host_lock import HostFileLock
 from ..tuning.journal import atomic_write
@@ -73,7 +73,10 @@ class RunStore:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
         self.root.mkdir(parents=True, exist_ok=True)
-        for name in ("requests", "batches", "runs", "inbox/pending", "inbox/processing", "inbox/accepted", "inbox/rejected"):
+        for name in (
+            "requests", "batches", "series", "runs",
+            "inbox/pending", "inbox/processing", "inbox/accepted", "inbox/rejected",
+        ):
             (self.root / name).mkdir(parents=True, exist_ok=True)
 
     @property
@@ -101,6 +104,15 @@ class RunStore:
     def batch(self, batch_id: str) -> dict[str, Any]:
         return _read_json(self.root / "batches" / batch_id / "batch.json")
 
+    def create_series(self, series_id: str, record: dict[str, Any]) -> None:
+        _write_json(self.root / "series" / series_id / "series.json", record)
+
+    def series(self, series_id: str) -> dict[str, Any]:
+        return _read_json(self.root / "series" / series_id / "series.json")
+
+    def list_series(self) -> tuple[dict[str, Any], ...]:
+        return tuple(_read_json(path) for path in sorted((self.root / "series").glob("*/series.json")))
+
     def create_run(self, run_id: str, record: dict[str, Any]) -> None:
         _write_json(self.root / "runs" / run_id / "intent.json", record)
 
@@ -108,10 +120,31 @@ class RunStore:
         return _read_json(self.root / "runs" / run_id / "intent.json")
 
     def list_runs(self) -> tuple[dict[str, Any], ...]:
-        values: list[dict[str, Any]] = []
-        for path in sorted((self.root / "runs").glob("*/intent.json")):
-            values.append(_read_json(path))
-        return tuple(values)
+        return tuple(_read_json(path) for path in sorted((self.root / "runs").glob("*/intent.json")))
+
+    def control(self, run_id: str) -> dict[str, Any]:
+        path = self.root / "runs" / run_id / "control.json"
+        return _read_json(path) if path.exists() else {"disabled": False, "cancelled": False}
+
+    def set_control(self, run_id: str, **changes: object) -> dict[str, Any]:
+        path = self.root / "runs" / run_id / "control.json"
+        with HostFileLock(self.root / "runs" / run_id / "control.lock"):
+            value = self.control(run_id)
+            value.update(changes)
+            _write_json(path, value, replace=True)
+        return value
+
+    def service_control(self) -> dict[str, Any]:
+        path = self.root / "service-control.json"
+        return _read_json(path) if path.exists() else {"paused": False}
+
+    def set_service_control(self, **changes: object) -> dict[str, Any]:
+        path = self.root / "service-control.json"
+        with HostFileLock(self.root / "service-control.lock"):
+            value = self.service_control()
+            value.update(changes)
+            _write_json(path, value, replace=True)
+        return value
 
     def next_attempt(self, run_id: str) -> int:
         attempts = self.root / "runs" / run_id / "attempts"
@@ -119,6 +152,10 @@ class RunStore:
             return 1
         numbers = [int(path.name) for path in attempts.iterdir() if path.is_dir() and path.name.isdigit()]
         return max(numbers, default=0) + 1
+
+    def latest_attempt(self, run_id: str) -> int | None:
+        value = self.next_attempt(run_id) - 1
+        return value if value > 0 else None
 
     def attempt_root(self, run_id: str, attempt: int) -> Path:
         return self.root / "runs" / run_id / "attempts" / f"{attempt:03d}"
@@ -143,8 +180,8 @@ class RunStore:
     def read_optional(self, path: Path) -> dict[str, Any] | None:
         return _read_json(path) if path.is_file() else None
 
-    def enqueue(self, batch_id: str, run_id: str) -> Path:
-        receipt = {"batch_id": batch_id, "run_id": run_id}
+    def enqueue(self, batch_id: str, run_id: str, *, reason: str = "submit") -> Path:
+        receipt = {"batch_id": batch_id, "run_id": run_id, "reason": reason}
         path = self.root / "inbox" / "pending" / f"{run_id}.json"
         _write_json(path, receipt)
         return path
@@ -176,8 +213,7 @@ class RunStore:
 
         if severity not in {"record", "notify", "wake"}:
             raise ValueError("invalid event severity")
-        lock = HostFileLock(self.root / "events.lock")
-        with lock:
+        with HostFileLock(self.root / "events.lock"):
             events, valid_bytes = self._read_events_with_offset()
             if self.event_path.exists() and self.event_path.stat().st_size != valid_bytes:
                 with self.event_path.open("r+b") as handle:
@@ -188,7 +224,6 @@ class RunStore:
             record = EventRecord(seq, str(uuid.uuid4()), time.time_ns(), kind, severity, run_id, data or {})
             body = record.to_dict()
             envelope = dict(body, checksum=_checksum(body))
-            self.event_path.parent.mkdir(parents=True, exist_ok=True)
             with self.event_path.open("ab") as handle:
                 handle.write(canonical_bytes(envelope) + b"\n")
                 handle.flush()
@@ -204,8 +239,7 @@ class RunStore:
             return [], 0
         events: list[EventRecord] = []
         valid_bytes = 0
-        raw = self.event_path.read_bytes()
-        lines = raw.splitlines(keepends=True)
+        lines = self.event_path.read_bytes().splitlines(keepends=True)
         for index, line in enumerate(lines):
             if not line.endswith(b"\n"):
                 break
@@ -226,10 +260,8 @@ class RunStore:
             if envelope.get("seq") != expected:
                 raise StoreError(f"event sequence mismatch: expected {expected}, got {envelope.get('seq')}")
             events.append(EventRecord(
-                seq=int(envelope["seq"]),
-                event_id=str(envelope["event_id"]),
-                ts_ns=int(envelope["ts_ns"]),
-                kind=str(envelope["kind"]),
+                seq=int(envelope["seq"]), event_id=str(envelope["event_id"]),
+                ts_ns=int(envelope["ts_ns"]), kind=str(envelope["kind"]),
                 severity=str(envelope["severity"]),
                 run_id=None if envelope.get("run_id") is None else str(envelope["run_id"]),
                 data=dict(envelope.get("data") or {}),
