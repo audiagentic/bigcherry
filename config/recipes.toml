@@ -177,7 +177,25 @@ required-state = "validated"
 # patch already in source's named composition" (t-1265b-gfx1201-s1, 2026-09-27).
 # Demoted pending 8 fresh isolated sessions (t-1265b-*, gfx1201 x4 + gfx1030 x4)
 # against the narrowed-gate digest; re-promote only if they pass.
-patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn"]
+#
+# RE-PROMOTED 2026-09-28 (owner-authorized): all 8 pending sessions passed
+# against the narrowed-gate digest (t-1265b-gfx1030-s3/s4, t-1265b-gfx1201-s3/s4,
+# t-1265c-gfx1030-s1/s2, t-1265c-gfx1201-s1/s2; CAMPAIGN_EXIT=0 throughout).
+# pp512 CI95 stayed entirely above zero on every session; tg128 control flat
+# (-0.07%..+0.02%): gfx1030 +1.02/+1.04/+1.06/+1.08% (CI lows 1.00-1.03, matches
+# the original gfx1030 promotion evidence of +1.03-1.24%); gfx1201 +1.17/+1.18/
+# +1.19/+1.24% (CI lows 1.00-1.09). NOTE: these gfx1201 sessions ran gpt-oss-20B,
+# not the Qwen3.6-35B-A3B used for the original gfx1201 evidence (+8.42-9.10%) --
+# this re-promotion is supported by the +1.17-1.24% gpt-oss-20B gfx1201 result
+# actually measured against the current digest, not a reconfirmation of the
+# larger original-digest number on the original model. If the +8-9% gfx1201
+# claim needs reconfirming against this digest, that requires a further
+# Qwen3.6-35B-A3B gfx1201 session, not yet run.
+patches = [
+    "1237_rd30_moe_mmq_compact_grid",
+    "1253_nro04_gfx1100_bf16_chunked_gdn",
+    "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
