@@ -91,6 +91,8 @@ def run_bundle_cases(root: Path) -> int:
     check(completed.returncode == 0, f"module CLI success: {completed.stderr}"); checks += 1
     check(validate(cli)["state"] == "completed", "CLI-generated bundle validates"); checks += 1
 
+    # File-backed streaming is the production contract: multi-MiB output is
+    # persisted without being returned in a capture buffer.
     large = root / "large-output"
     bytes_expected = 8 * 1024 * 1024
     rc = run_managed(
@@ -128,9 +130,9 @@ def run_journal_cases(root: Path) -> int:
 
 
 def run_validation_campaign_dispatch_cases(root: Path) -> int:
-    """Exercise the real campaign argparse/producer dispatch seam while mocking
-    only the hardware/build producer body. This verifies the future jobs layer
-    can render the current CLI without a second parser implementation."""
+    """Exercise real campaign argparse/producer dispatch while mocking only
+    the hardware/build producer body. The jobs renderer therefore targets the
+    existing CLI rather than maintaining a second campaign parser."""
     import bigcherry.patch.validation_campaign as campaign
 
     checks = 0
@@ -170,7 +172,6 @@ def run_validation_campaign_dispatch_cases(root: Path) -> int:
     check(args.workdir == workdir.resolve() and args.worktree_root == worktrees.resolve(), "work paths canonicalized"); checks += 1
     check(args.producer_corpus == corpus, "producer corpus preserved"); checks += 1
 
-    # Selector and --patch may never diverge.
     try:
         with patch.object(campaign, "_run_validation_producer", side_effect=fake_producer):
             campaign.main([
@@ -183,8 +184,6 @@ def run_validation_campaign_dispatch_cases(root: Path) -> int:
     else:
         raise AssertionError("validation producer selector mismatch was accepted")
 
-    # Legacy runtime mode remains fail-closed when mandatory scientific inputs
-    # are absent; the jobs renderer must not depend on implicit defaults.
     try:
         campaign.main([
             "--patch", "mock-patch", "--hip-path", str(root / "hip"),
@@ -209,7 +208,7 @@ def main() -> int:
         "checks": checks,
         "ok": True,
         "scope": "real-bigcherry-modules-cli-and-child-processes",
-        "known_gap": "experiment.bundle.run_managed currently buffers child output; RCD requires streaming before 1.5GB-log production use",
+        "managed_output": "file-backed-streaming",
     }, sort_keys=True))
     return 0
 
