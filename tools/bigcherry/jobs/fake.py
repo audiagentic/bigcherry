@@ -46,6 +46,10 @@ class FakeExecutor:
         self._emit(run, "submitted", {})
         return handle
 
+    def correlate(self, execution_id: str) -> tuple[ExecutionHandle, ...]:
+        native = self._native_by_execution.get(execution_id)
+        return () if native is None else (self._by_native[native].handle,)
+
     def status(self, handle: ExecutionHandle) -> ExecutionStatus:
         run = self._run(handle)
         return ExecutionStatus(run.state, run.reason, run.state.value)
@@ -90,7 +94,8 @@ class FakeExecutor:
             if run.state == ExecutionState.COMPLETED
         }
         started: list[ExecutionHandle] = []
-        for run in self._by_native.values():
+        for native in sorted(self._by_native):
+            run = self._by_native[native]
             if run.state != ExecutionState.QUEUED:
                 continue
             if not set(run.request.dependencies) <= complete:
