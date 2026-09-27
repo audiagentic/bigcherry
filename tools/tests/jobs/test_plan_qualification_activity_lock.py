@@ -55,27 +55,41 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
         profile = (LAB / "profile_run.sh").read_text(encoding="utf-8")
         campaign = (LAB / "run_campaign.sh").read_text(encoding="utf-8")
         queue = (LAB / "queue.sh").read_text(encoding="utf-8")
-        build_lock = 'flock "$build_fd"'
-        prepare = '--prepare-only --prepared-manifest "$prepared"'
-        release_build = 'eval "exec $build_fd>&-"'
-        profile_activity = 'activity_lock_shared_acquire "$work"'
-        profile_gpu = 'gpu_lock_acquire "$work" "$dev"'
+
+        self.assertIn('build-locks/$arch-$toolchain.lock', profile)
+        self.assertIn('flock -x "$build_fd"', profile)
+        self.assertIn('flock -s "$build_fd"', profile)
+        self.assertIn('--prepare-only --prepared-manifest "$prepared"', profile)
+        self.assertIn('--prepared-manifest "$prepared"', profile)
+        self.assertLess(
+            profile.index('flock -x "$build_fd"'),
+            profile.index('activity_lock_shared_acquire "$work"'),
+        )
+        run_fn = profile.index("run_profile()")
+        self.assertLess(
+            profile.index('flock -s "$build_fd"', run_fn),
+            profile.index('activity_lock_shared_acquire "$work"', run_fn),
+        )
+        self.assertLess(
+            profile.index('activity_lock_shared_acquire "$work"', run_fn),
+            profile.index('gpu_lock_acquire "$work" "$dev"', run_fn),
+        )
+        self.assertIn('echo "PROFILE_EXIT=$rc"', profile)
+        self.assertIn('run_profile "$@"\nexit $?', profile)
+
         campaign_activity = 'activity_lock_exclusive_acquire "$work"'
         campaign_gpu = 'gpu_lock_acquire "$work" "$dev"'
-        self.assertIn('build-locks/$arch-$toolchain.lock', profile)
-        self.assertLess(profile.index(build_lock), profile.index(prepare))
-        self.assertLess(profile.index(prepare), profile.index(release_build))
-        self.assertLess(profile.index(release_build), profile.index(profile_activity))
-        self.assertLess(profile.index(profile_activity), profile.index(profile_gpu))
-        self.assertIn('--prepared-manifest "$prepared"', profile)
-        self.assertIn('echo "PROFILE_EXIT=$rc"\nexit "$rc"', profile)
         self.assertLess(campaign.index(campaign_activity), campaign.index(campaign_gpu))
         self.assertIn('echo "CAMPAIGN_EXIT=$rc"\nexit "$rc"', campaign)
-        self.assertIn('run_line "$line" &', queue)
+
+        self.assertIn('BC_PROFILE_PHASE=prepare', queue)
+        self.assertIn('BC_PROFILE_PHASE=run', queue)
+        self.assertIn('ready_profiles+=("${profiles[$i]}")', queue)
         self.assertIn('if ! wait "$pid"; then failures=$((failures + 1)); fi', queue)
         self.assertIn('return "$rc"', queue)
         self.assertIn('if ((failures)); then', queue)
-        self.assertLess(queue.index("profile phase:"), queue.index("campaign phase:"))
+        self.assertLess(queue.index("profile prepare phase:"), queue.index("profile trace phase:"))
+        self.assertLess(queue.index("profile trace phase:"), queue.index("campaign phase:"))
 
     def test_shared_profile_holders_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
