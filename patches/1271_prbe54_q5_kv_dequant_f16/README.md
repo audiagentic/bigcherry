@@ -11,4 +11,4 @@ Activation marker:
 
 ## Validation
 
-Contract `PRBE54-Q5-KV-DEQUANT-F16`: gfx1100/gfx1201, full-vocabulary backend-reference correctness with Q5_0 KV + FlashAttention, Q5_0 decode positive lane, F16 prefill control, `improvement_no_regression_v1`, 4 sessions, 10 paired rounds. State remains `untested` until fresh hardware evidence exists.
+Contract `PRBE54-Q5-KV-DEQUANT-F16`: gfx1100/gfx1201, full-vocabulary backend-reference correctness with Q5_0 KV + FlashAttention, Q5_0 pp512 prefill positive lane (tile/MMA staging path), Q5_0 tg128 decode control (direct vector path), `improvement_no_regression_v1`, 4 sessions, 10 paired rounds. State remains `untested` until fresh hardware evidence exists.
