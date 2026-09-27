@@ -717,7 +717,7 @@ def verify_framework_configuration_patch(
         descriptor = patch_registry.load_registry(module.catalog_root or paths.PATCHES).get(module.patch_id)
     except Exception as exc:
         return EvidenceCheck("missing-or-stale", (f"cannot load packaged descriptor: {exc}",))
-    records = load_records(module.patch_id, root=root)
+    records = poolable_records(module.patch_id, root=root)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
     try:
@@ -1094,6 +1094,38 @@ def load_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, 
     ):
         raise ValidationEvidenceError(f"{path}: invalid evidence file")
     return tuple(document["records"])
+
+
+WITHDRAWALS_FILE = "withdrawn.json"
+
+
+def withdrawn_digests(patch_id: str, *, root: Path | None = None) -> frozenset[str]:
+    """Record digests withdrawn from session pooling.
+
+    Evidence stays append-only: a withdrawn record is kept in the evidence
+    file as history, and ``withdrawn.json`` beside it names its
+    ``record_digest`` with the reason (e.g. measured while another GPU job ran
+    concurrently). Only session aggregation skips it."""
+    path = evidence_path(patch_id, root=root).parent / WITHDRAWALS_FILE
+    if not path.is_file():
+        return frozenset()
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValidationEvidenceError(f"cannot read {path}: {exc}") from exc
+    rows = document.get("withdrawn") if isinstance(document, dict) else None
+    if not isinstance(rows, list) or not all(
+        isinstance(row, dict) and isinstance(row.get("record_digest"), str) and row.get("reason")
+        for row in rows
+    ):
+        raise ValidationEvidenceError(f"{path}: invalid withdrawals file")
+    return frozenset(row["record_digest"] for row in rows)
+
+
+def poolable_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, object], ...]:
+    """Evidence records eligible for session pooling (withdrawn ones excluded)."""
+    withdrawn = withdrawn_digests(patch_id, root=root)
+    return tuple(r for r in load_records(patch_id, root=root) if r.get("record_digest") not in withdrawn)
 
 
 def _record_qualifies(
@@ -1567,7 +1599,7 @@ def verify_validated_patch(
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
 
-    for record in load_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, root=root):
         ok, why = _record_qualifies(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,
@@ -1626,7 +1658,7 @@ def verify_ported_benched_patch(
     validation_digest, contracts = _resolve_contract_identities(module)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
-    for record in load_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, root=root):
         ok, why = _record_qualifies_for_benched(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision, validation_digest=validation_digest,
@@ -1661,7 +1693,7 @@ def verify_deferred_hardware_patch(
     subject_digest = patch_validation_subject_digest(module.path)
     qualifying: list[dict[str, object]] = []
     stale: list[str] = []
-    for record in load_records(module.patch_id, root=root):
+    for record in poolable_records(module.patch_id, root=root):
         ok, why = _record_qualifies_for_deferred_hardware(
             record, module=module, pinned_ref=pinned_ref, subject_digest=subject_digest,
             resolved_base_revision=resolved_base_revision,

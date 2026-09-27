@@ -42,7 +42,7 @@ class SessionAggregationTests(unittest.TestCase):
 
     def _aggregate(self, policy, prior):
         contract = self._contract(policy)
-        with mock.patch.object(patch_evidence, "load_records", lambda patch: prior(contract)):
+        with mock.patch.object(patch_evidence, "poolable_records", lambda patch: prior(contract)):
             return campaign_producer._aggregate_producer_session_effects(
                 Namespace(patch="p"),
                 contract=contract,
