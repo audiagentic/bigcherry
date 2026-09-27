@@ -29,6 +29,14 @@ export CCACHE_DIR=${CCACHE_DIR:-$work/ccache} CCACHE_BASEDIR=$work CCACHE_NOHASH
 export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-100G}
 export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HIP_PATH/bin:$PATH
 toolchain=$(printf '%s' "$BC_HIP_PATH" | sha256sum | cut -c1-8)
+# profile.py currently combines build preparation and profiling in one process.
+# The build root is intentionally shared, so two same-arch/toolchain profiles
+# must not run CMake/Ninja against the same tree concurrently. Until RCD07 splits
+# prepare from GPU execution, serialize that build key. Different architecture
+# or toolchain keys still profile concurrently.
+mkdir -p "$work/queue/build-locks"
+exec {build_fd}>"$work/queue/build-locks/$arch-$toolchain.lock"
+flock "$build_fd"
 python3 -m bigcherry.patch.campaign.profile --patch "$patch" --arch "$arch" --device "$dev" \
   --model "$BC_MODEL" --workload "$workload" --hip-path "$BC_HIP_PATH" \
   --worktree-root "$work/worktrees" --build-root "$work/builds/$arch-$toolchain" \
