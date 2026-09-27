@@ -21,15 +21,21 @@ class MonitorError(RuntimeError):
     pass
 
 
+_GIB = 1024**3
+
+
 @dataclass(frozen=True)
 class DiskGuard:
     name: str
     path: Path
     min_free_bytes: int
+    min_free_fraction: float = 0.0
 
     def __post_init__(self) -> None:
         if self.min_free_bytes < 0:
             raise ValueError("min_free_bytes cannot be negative")
+        if not 0.0 <= self.min_free_fraction < 1.0:
+            raise ValueError("min_free_fraction must be in [0, 1)")
 
 
 @dataclass(frozen=True)
@@ -102,18 +108,73 @@ class StallDetector:
         return sample.monotonic - self._last_progress >= self.stall_seconds
 
 
+def _float_env(environment: Mapping[str, str], key: str, default: float) -> float:
+    try:
+        return float(environment.get(key, str(default)))
+    except ValueError as exc:
+        raise MonitorError(f"{key} must be numeric") from exc
+
+
+def disk_guards_from_environment(
+    *,
+    project_root: Path,
+    work_root: Path,
+    environment: Mapping[str, str],
+) -> tuple[DiskGuard, ...]:
+    """Build the two host guards used by managed campaigns.
+
+    Defaults encode the real lab failure mode (compiler instability on an
+    almost-full root filesystem) while remaining overridable per host. Setting
+    either GiB/fraction value to zero disables that component of the floor.
+    """
+    root_gib = _float_env(environment, "BIGCHERRY_ROOT_MIN_FREE_GIB", 50.0)
+    work_gib = _float_env(environment, "BIGCHERRY_WORK_MIN_FREE_GIB", 200.0)
+    root_fraction = _float_env(
+        environment, "BIGCHERRY_ROOT_MIN_FREE_FRACTION", 0.05
+    )
+    work_fraction = _float_env(
+        environment, "BIGCHERRY_WORK_MIN_FREE_FRACTION", 0.02
+    )
+    if min(root_gib, work_gib, root_fraction, work_fraction) < 0:
+        raise MonitorError("disk guard floors cannot be negative")
+    return (
+        DiskGuard(
+            "project-root",
+            project_root,
+            int(root_gib * _GIB),
+            root_fraction,
+        ),
+        DiskGuard(
+            "work-root",
+            work_root,
+            int(work_gib * _GIB),
+            work_fraction,
+        ),
+    )
+
+
 def check_disk_guards(guards: Iterable[DiskGuard]) -> None:
     for guard in guards:
-        if guard.min_free_bytes <= 0:
+        if guard.min_free_bytes <= 0 and guard.min_free_fraction <= 0:
             continue
         try:
-            free = shutil.disk_usage(guard.path).free
+            usage = shutil.disk_usage(guard.path)
         except OSError as exc:
-            raise MonitorError(f"disk guard {guard.name} cannot inspect {guard.path}: {exc}") from exc
-        if free < guard.min_free_bytes:
             raise MonitorError(
-                f"disk guard {guard.name} below hard free-space floor: "
-                f"{free} < {guard.min_free_bytes} bytes at {guard.path}"
+                f"disk guard {guard.name} cannot inspect {guard.path}: {exc}"
+            ) from exc
+        failures: list[str] = []
+        if usage.free < guard.min_free_bytes:
+            failures.append(f"free_bytes={usage.free} < {guard.min_free_bytes}")
+        free_fraction = usage.free / usage.total if usage.total > 0 else 0.0
+        if free_fraction < guard.min_free_fraction:
+            failures.append(
+                f"free_fraction={free_fraction:.4f} < {guard.min_free_fraction:.4f}"
+            )
+        if failures:
+            raise MonitorError(
+                f"disk guard {guard.name} below hard free-space floor at "
+                f"{guard.path}: {'; '.join(failures)}"
             )
 
 
@@ -231,19 +292,27 @@ def run_monitored(
     policy: MonitorPolicy,
 ) -> MonitorResult:
     """Run a child with bounded disk/stall monitoring and process-tree kill."""
-    check_disk_guards(guards)
+    try:
+        check_disk_guards(guards)
+    except MonitorError as exc:
+        return MonitorResult(75, "disk_pressure", str(exc))
+
     creationflags = 0
     kwargs: dict[str, object] = {}
     if os.name == "nt":
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         kwargs["start_new_session"] = True
-    process = subprocess.Popen(
-        command,
-        env=dict(environment),
-        creationflags=creationflags,
-        **kwargs,
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            env=dict(environment),
+            creationflags=creationflags,
+            **kwargs,
+        )
+    except OSError as exc:
+        return MonitorResult(76, "launch_error", f"process launch failed: {exc}")
+
     detector = StallDetector(policy.stall_seconds)
     try:
         while True:
@@ -253,13 +322,16 @@ def run_monitored(
             try:
                 check_disk_guards(guards)
             except MonitorError as exc:
-                terminate_process_tree(process, grace_seconds=policy.terminate_grace_seconds)
+                terminate_process_tree(
+                    process, grace_seconds=policy.terminate_grace_seconds
+                )
                 return MonitorResult(75, "disk_pressure", str(exc))
             sample = progress_sample(process.pid, progress_paths)
-            # No trustworthy CPU sampler + no output progress is insufficient
-            # evidence of stall. Disable stall classification on that sample.
+            # No trustworthy CPU sampler is insufficient evidence of stall.
             if sample.cpu_ticks is not None and detector.observe(sample):
-                terminate_process_tree(process, grace_seconds=policy.terminate_grace_seconds)
+                terminate_process_tree(
+                    process, grace_seconds=policy.terminate_grace_seconds
+                )
                 return MonitorResult(
                     75,
                     "stalled",
