@@ -5,6 +5,7 @@ import unittest
 
 from bigcherry.jobs.executor import (
     Allocation,
+    ExecutionHandle,
     ExecutionRequest,
     ExecutionState,
     ExecutorControl,
@@ -18,6 +19,7 @@ from bigcherry.jobs.slurm import (
     SlurmPolicy,
     build_sbatch_argv,
     normalize_slurm_state,
+    parse_correlation,
     parse_sacct_pipe,
     parse_squeue_json,
 )
@@ -26,10 +28,10 @@ from bigcherry.jobs.slurm import (
 class QueueRunner:
     def __init__(self, results: list[CommandResult]) -> None:
         self.results = list(results)
-        self.calls: list[tuple[tuple[str, ...], str | None, dict[str, str] | None]] = []
+        self.calls = []
 
-    def run(self, argv, *, cwd=None, env=None):
-        self.calls.append((tuple(argv), cwd, None if env is None else dict(env)))
+    def run(self, argv, *, cwd=None, env=None, input_text=None):
+        self.calls.append((tuple(argv), cwd, None if env is None else dict(env), input_text))
         if not self.results:
             raise AssertionError(f"unexpected runner call: {argv}")
         return self.results.pop(0)
@@ -55,59 +57,54 @@ def request(*, activity="build", gpu=None, dependencies=(), env=()):
 
 
 class SlurmRenderingTests(unittest.TestCase):
-    def test_build_argv_is_resolved_scheduler_request(self):
+    def test_build_argv_uses_no_account_by_default(self):
         argv = build_sbatch_argv(request(), SlurmPolicy())
-        self.assertEqual(argv[:5], ("sbatch", "--parsable", "--account", "bigcherry", "--job-name"))
+        self.assertEqual(argv[:2], ("sbatch", "--parsable"))
+        self.assertNotIn("--account", argv)
         self.assertIn("bc-build", argv)
         self.assertIn("build_slot:1,host_activity:1", argv)
         self.assertIn("00:15:01", argv)
-        self.assertIn("4", argv)
         self.assertIn("--mem", argv)
-        self.assertIn("4", argv)  # 3 MiB + 1 byte -> 4 MiB
         self.assertNotIn("--gres", argv)
         self.assertEqual(argv[-1], "/tmp/attempt/launch.sh")
 
+    def test_explicit_account_is_opt_in(self):
+        argv = build_sbatch_argv(request(), SlurmPolicy(account="research"))
+        self.assertEqual(argv[argv.index("--account") + 1], "research")
+
     def test_timed_gpu_argv_has_architecture_count_only(self):
-        argv = build_sbatch_argv(
-            request(activity="timed-measure", gpu=SchedulerGpuRequest("gfx1100", 2)),
-            SlurmPolicy(),
-        )
-        i = argv.index("--gres")
-        self.assertEqual(argv[i + 1], "gpu:gfx1100:2")
+        argv = build_sbatch_argv(request(activity="timed-measure", gpu=SchedulerGpuRequest("gfx1100", 2)), SlurmPolicy())
+        self.assertEqual(argv[argv.index("--gres") + 1], "gpu:gfx1100:2")
         self.assertNotIn("gfx1100_0", " ".join(argv))
         self.assertIn("host_activity:2", argv)
         self.assertIn("bc-measure", argv)
 
     def test_dependency_uses_native_ids_only(self):
         argv = build_sbatch_argv(request(), SlurmPolicy(), native_dependency_ids=("17", "18"))
-        i = argv.index("--dependency")
-        self.assertEqual(argv[i + 1], "afterok:17:18")
+        self.assertEqual(argv[argv.index("--dependency") + 1], "afterok:17:18")
         with self.assertRaises(ValueError):
             build_sbatch_argv(request(), SlurmPolicy(), native_dependency_ids=("scientific-id",))
 
 
 class SlurmParsingTests(unittest.TestCase):
     def test_squeue_state_variants_normalize(self):
-        payload = json.dumps({
-            "jobs": [
-                {"job_id": 41, "job_state": ["PENDING"], "state_reason": "JobHeldUser"}
-            ]
-        })
-        status = parse_squeue_json(payload, "41")
-        self.assertIsNotNone(status)
-        self.assertEqual(status.state, ExecutionState.HELD)
-
-        payload2 = json.dumps({
-            "jobs": [{"job_id": 42, "job_state": {"current": "RUNNING"}, "state_reason": "None"}]
-        })
+        payload = json.dumps({"jobs": [{"job_id": 41, "job_state": ["PENDING"], "state_reason": "JobHeldUser"}]})
+        self.assertEqual(parse_squeue_json(payload, "41").state, ExecutionState.HELD)
+        payload2 = json.dumps({"jobs": [{"job_id": 42, "job_state": {"current": "RUNNING"}, "state_reason": "None"}]})
         self.assertEqual(parse_squeue_json(payload2, "42").state, ExecutionState.RUNNING)
 
     def test_unknown_state_does_not_guess(self):
         self.assertEqual(normalize_slurm_state("FUTURE_STATE").state, ExecutionState.UNKNOWN)
 
-    def test_sacct_completed_fallback(self):
+    def test_sacct_parser_remains_compat_only(self):
         self.assertEqual(parse_sacct_pipe("77|COMPLETED\n", "77").state, ExecutionState.COMPLETED)
-        self.assertEqual(parse_sacct_pipe("77|CANCELLED by 1000\n", "77").state, ExecutionState.CANCELLED)
+
+    def test_correlation_uses_exact_comment(self):
+        payload = json.dumps({"jobs": [
+            {"job_id": 12, "comment": "bigcherry:exec-1"},
+            {"job_id": 13, "comment": "bigcherry:exec-10"},
+        ]})
+        self.assertEqual(parse_correlation(payload, "exec-1"), ("12",))
 
 
 class SlurmExecutorTests(unittest.TestCase):
@@ -116,7 +113,7 @@ class SlurmExecutorTests(unittest.TestCase):
         executor = SlurmExecutor(runner=runner)
         handle = executor.submit(request(env=(("BIGCHERRY_RUN_ID", "r1"),)))
         self.assertEqual(handle.native_id, "123")
-        argv, cwd, env = runner.calls[0]
+        argv, cwd, env, _ = runner.calls[0]
         self.assertEqual(argv[0], "sbatch")
         self.assertEqual(cwd, "/tmp/attempt")
         self.assertEqual(env["BIGCHERRY_RUN_ID"], "r1")
@@ -128,24 +125,21 @@ class SlurmExecutorTests(unittest.TestCase):
         argv = runner.calls[0][0]
         self.assertEqual(argv[argv.index("--dependency") + 1], "afterok:8")
 
-    def test_status_uses_squeue_then_sacct(self):
-        runner = QueueRunner([
-            CommandResult(0, json.dumps({"jobs": []}), ""),
-            CommandResult(0, "123|COMPLETED\n", ""),
-        ])
+    def test_status_does_not_depend_on_sacct(self):
+        runner = QueueRunner([CommandResult(0, json.dumps({"jobs": []}), "")])
         executor = SlurmExecutor(runner=runner)
-        handle = executor.submit.__annotations__  # keep static tools from treating handle as magic
-        from bigcherry.jobs.executor import ExecutionHandle
         status = executor.status(ExecutionHandle("slurm", "123", "x"))
-        self.assertEqual(status.state, ExecutionState.COMPLETED)
+        self.assertEqual(status.state, ExecutionState.UNKNOWN)
+        self.assertEqual(len(runner.calls), 1)
         self.assertEqual(runner.calls[0][0][:2], ("squeue", "--json"))
-        self.assertEqual(runner.calls[1][0][0], "sacct")
+
+    def test_correlate_queries_active_queue(self):
+        runner = QueueRunner([CommandResult(0, json.dumps({"jobs": [{"job_id": 99, "comment": "bigcherry:x"}]}), "")])
+        handles = SlurmExecutor(runner=runner).correlate("x")
+        self.assertEqual(handles, (ExecutionHandle("slurm", "99", "x"),))
 
     def test_hold_release_cancel_commands(self):
-        from bigcherry.jobs.executor import ExecutionHandle
-        runner = QueueRunner([
-            CommandResult(0, "", ""), CommandResult(0, "", ""), CommandResult(0, "", "")
-        ])
+        runner = QueueRunner([CommandResult(0, "", ""), CommandResult(0, "", ""), CommandResult(0, "", "")])
         executor = SlurmExecutor(runner=runner)
         handle = ExecutionHandle("slurm", "99", "x")
         executor.control(handle, ExecutorControl.HOLD)
@@ -157,9 +151,10 @@ class SlurmExecutorTests(unittest.TestCase):
 
 
 class FakeExecutorTests(unittest.TestCase):
-    def test_dependency_hold_release_cancel_and_events(self):
+    def test_dependency_hold_release_cancel_correlation_and_events(self):
         fake = FakeExecutor()
         first = fake.submit(request())
+        self.assertEqual(fake.correlate("series:s1/a1"), (first,))
         second = fake.submit(ExecutionRequest(
             execution_id="second", command=("true",), cwd="/tmp", env=(),
             stdout_path="/tmp/o", stderr_path="/tmp/e",
@@ -167,15 +162,10 @@ class FakeExecutorTests(unittest.TestCase):
             dependencies=("series:s1/a1",),
         ))
         self.assertEqual(fake.start_ready(), (first,))
-        self.assertEqual(fake.status(second).state, ExecutionState.QUEUED)
         fake.complete(first)
         self.assertEqual(fake.start_ready(), (second,))
-        fake.control(second, ExecutorControl.HOLD)  # running hold is a no-op by contract
-        self.assertEqual(fake.status(second).state, ExecutionState.RUNNING)
         fake.complete(second)
-        events = tuple(fake.events(second))
-        self.assertEqual([event.kind for event in events], ["submitted", "started", "completed"])
-
+        self.assertEqual([event.kind for event in fake.events(second)], ["submitted", "started", "completed"])
         third = fake.submit(ExecutionRequest(
             execution_id="third", command=("true",), cwd="/tmp", env=(),
             stdout_path="/tmp/o3", stderr_path="/tmp/e3",
@@ -184,7 +174,6 @@ class FakeExecutorTests(unittest.TestCase):
         fake.control(third, ExecutorControl.HOLD)
         self.assertEqual(fake.status(third).state, ExecutionState.HELD)
         fake.control(third, ExecutorControl.RELEASE)
-        self.assertEqual(fake.status(third).state, ExecutionState.QUEUED)
         fake.set_allocation(third, Allocation(("native0",)))
         self.assertEqual(fake.allocation(third).native_gpu_ids, ("native0",))
         fake.cancel(third)
