@@ -1,9 +1,9 @@
 """Verified, explicit-path evidence harvest from attempt worktrees.
 
-A validation attempt writes patch evidence inside its detached worktree.  This
+A validation attempt writes patch evidence inside its detached worktree. This
 module identifies only records added by that attempt relative to its frozen
-commit, verifies them against the durable run identity, then merges them into
-the canonical append-only evidence file under a maintenance fence.
+commit, verifies them against durable run identity, then merges them into the
+canonical append-only evidence file under a maintenance fence.
 """
 from __future__ import annotations
 
@@ -43,8 +43,6 @@ def _record_digest(record: dict[str, Any]) -> str:
     value = record.get("record_digest")
     if not isinstance(value, str) or not value:
         raise HarvestError("validation evidence record has no record_digest")
-    # patch.evidence owns this digest format; using its canonical helper avoids
-    # inventing a second evidence identity in the jobs layer.
     expected = patch_evidence._record_digest(record)  # type: ignore[attr-defined]
     if value != expected:
         raise HarvestError("validation evidence record_digest does not match payload")
@@ -114,6 +112,33 @@ def _verify_record_for_run(record: dict[str, Any], run: dict[str, Any]) -> str:
         raise HarvestError("run scientific identity has no focal implementation digest")
     if record.get("patch_implementation_digest") != implementation:
         raise HarvestError("evidence patch bytes do not match frozen run scientific identity")
+
+    # Scientific identity v2 additionally freezes validation-adapter bytes and
+    # resolved experiment-contract hashes. Older mock/legacy identities remain
+    # readable, but newly planned managed work must match these stronger fields.
+    if isinstance(science, dict) and science.get("schema") == "bigcherry.scientific-identity.v2":
+        validation_digest = focal.get("validation_digest") if isinstance(focal, dict) else None
+        if record.get("validation_implementation_digest") != validation_digest:
+            raise HarvestError(
+                "evidence validation adapter bytes do not match frozen run identity"
+            )
+        expected_contracts = focal.get("contract_bindings") if isinstance(focal, dict) else None
+        actual_contracts = record.get("contracts")
+        if not isinstance(expected_contracts, list) or not isinstance(actual_contracts, list):
+            raise HarvestError("evidence/frozen contract binding is malformed")
+        canonical_expected = sorted(
+            ({"id": str(row["id"]), "hash": str(row["hash"])} for row in expected_contracts),
+            key=lambda row: row["id"],
+        )
+        canonical_actual = sorted(
+            ({"id": str(row["id"]), "hash": str(row["hash"])} for row in actual_contracts),
+            key=lambda row: row["id"],
+        )
+        if canonical_actual != canonical_expected:
+            raise HarvestError(
+                "evidence experiment-contract hashes do not match frozen series identity"
+            )
+
     architecture = str(run["job"]["architecture"])
     archs = record.get("gpu_architectures")
     if not isinstance(archs, list) or architecture not in {str(item) for item in archs}:
@@ -134,18 +159,14 @@ def harvest_series(
     """Harvest one complete series into the canonical repository.
 
     ``commit=False`` stages only the exact evidence destination and records a
-    non-verified harvest result.  Review readiness requires ``commit=True``.
+    non-verified harvest result. Review readiness requires ``commit=True``.
     """
     project_root = project_root.resolve()
     work_root = work_root.resolve()
     series = store.series(series_id)
     runs = tuple(
         sorted(
-            (
-                dict(run)
-                for run in store.list_runs()
-                if run.get("series_id") == series_id
-            ),
+            (dict(run) for run in store.list_runs() if run.get("series_id") == series_id),
             key=lambda run: int(run["session"]),
         )
     )
@@ -166,10 +187,10 @@ def harvest_series(
         attempt_no, added = _attempt_added_records(store, run)
         digests: list[str] = []
         for record in added:
-            digest = _verify_record_for_run(record, run)
-            digests.append(digest)
-            if digest not in seen_digests:
-                seen_digests.add(digest)
+            record_digest = _verify_record_for_run(record, run)
+            digests.append(record_digest)
+            if record_digest not in seen_digests:
+                seen_digests.add(record_digest)
                 records_to_merge.append(record)
         by_run.append(
             {
