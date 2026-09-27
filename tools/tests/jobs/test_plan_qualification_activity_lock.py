@@ -51,6 +51,17 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_live_queue_scripts_wire_expected_resource_policy(self) -> None:
+        profile = (LAB / "profile_run.sh").read_text(encoding="utf-8")
+        campaign = (LAB / "run_campaign.sh").read_text(encoding="utf-8")
+        queue = (LAB / "queue.sh").read_text(encoding="utf-8")
+        self.assertIn('activity_lock_shared_acquire "$work"', profile)
+        self.assertIn('build-locks/$arch-$toolchain.lock', profile)
+        self.assertIn('activity_lock_exclusive_acquire "$work"', campaign)
+        self.assertIn('run_line "$line" &', queue)
+        self.assertIn('for pid in "${pids[@]}"; do wait "$pid"', queue)
+        self.assertLess(queue.index("profile phase:"), queue.index("campaign phase:"))
+
     def test_shared_profile_holders_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             work = Path(temp)
