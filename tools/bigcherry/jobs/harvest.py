@@ -16,7 +16,13 @@ from bigcherry.core.tree_activity import MaintenanceLock
 from bigcherry.patch import evidence as patch_evidence
 from bigcherry.tuning.journal import atomic_write
 
-from .gitops import commit_staged, require_clean_index, show_text, stage_exact
+from .gitops import (
+    commit_staged,
+    require_clean_index,
+    require_paths_clean,
+    show_text,
+    stage_exact,
+)
 from .store import RunStore
 
 
@@ -99,7 +105,7 @@ def _attempt_added_records(
 
 
 def _verify_record_for_run(record: dict[str, Any], run: dict[str, Any]) -> str:
-    digest = _record_digest(record)
+    record_digest = _record_digest(record)
     patch_id = str(run["job"]["patch"])
     if record.get("patch_id") != patch_id:
         raise HarvestError(
@@ -113,9 +119,6 @@ def _verify_record_for_run(record: dict[str, Any], run: dict[str, Any]) -> str:
     if record.get("patch_implementation_digest") != implementation:
         raise HarvestError("evidence patch bytes do not match frozen run scientific identity")
 
-    # Scientific identity v2 additionally freezes validation-adapter bytes and
-    # resolved experiment-contract hashes. Older mock/legacy identities remain
-    # readable, but newly planned managed work must match these stronger fields.
     if isinstance(science, dict) and science.get("schema") == "bigcherry.scientific-identity.v2":
         validation_digest = focal.get("validation_digest") if isinstance(focal, dict) else None
         if record.get("validation_implementation_digest") != validation_digest:
@@ -145,7 +148,7 @@ def _verify_record_for_run(record: dict[str, Any], run: dict[str, Any]) -> str:
         raise HarvestError(
             f"evidence does not bind the run architecture {architecture!r}"
         )
-    return digest
+    return record_digest
 
 
 def harvest_series(
@@ -235,6 +238,7 @@ def harvest_series(
 
     with MaintenanceLock(work_root, project_root):
         require_clean_index(project_root)
+        require_paths_clean(project_root, (destination_rel,))
         for record in records_to_merge:
             patch_evidence.write_record(record, root=canonical_root)
         stage_exact(project_root, (destination_rel,))
