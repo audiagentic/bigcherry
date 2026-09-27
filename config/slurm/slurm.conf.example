@@ -8,9 +8,6 @@ SlurmUser=slurm
 SlurmdUser=root
 
 AuthType=auth/munge
-# Noble 23.11 uses cred_expire as the automatic-requeue eligibility delay.
-# Default is 120s. 30s is the BigCherry single-host v1 policy; change only
-# after a real launch/requeue test on Brutus.
 AuthInfo=cred_expire=30
 CredType=cred/munge
 
@@ -42,9 +39,12 @@ JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
 MinJobAge=600
 
-# Exit 75 is SAME-COMMIT automatic requeue only. Exit 76 terminates and BigCherry
-# creates attempt+1/new Slurm job at the newly resolved BigCherry commit.
-RequeueExit=75
+# IMPORTANT: production v1 does NOT configure RequeueExit for monolithic
+# validation_campaign jobs. Real Noble CI proves Slurm native requeue works,
+# but current campaign/workspace paths are not yet all restart-idempotent.
+# BigCherry therefore retries by creating attempt+1/new Slurm job, optionally
+# pinned to the same commit. RCD07 may opt individual proven restart-safe stages
+# into native requeue later.
 
 # Production process/accounting containment. RCD03 CI proves these plugins with
 # ConstrainDevices=no; Brutus must separately qualify AMD device filtering.
