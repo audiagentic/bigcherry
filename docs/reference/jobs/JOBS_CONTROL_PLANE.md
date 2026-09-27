@@ -75,19 +75,25 @@ Retry always creates a new attempt/native job. Monolithic production does not us
 
 ## Monitored execution
 
-The real attempt runner executes `validation_campaign` through bounded process monitoring after GPU attestation.
+The attempt runner executes `validation_campaign` through bounded process monitoring after GPU attestation. It guards the **system root**, work volume and temp filesystem independently, so a detached worktree on a large data volume cannot mask a nearly-full `/` or temp filesystem.
 
-Defaults (override in host service environment as qualified):
+Portable defaults:
 
 ```text
-BIGCHERRY_ROOT_MIN_FREE_GIB=50
-BIGCHERRY_WORK_MIN_FREE_GIB=200
+BIGCHERRY_ROOT_MIN_FREE_GIB=0
+BIGCHERRY_WORK_MIN_FREE_GIB=0
+BIGCHERRY_TMP_MIN_FREE_GIB=0
 BIGCHERRY_ROOT_MIN_FREE_FRACTION=0.05
 BIGCHERRY_WORK_MIN_FREE_FRACTION=0.02
+BIGCHERRY_TMP_MIN_FREE_FRACTION=0.05
+BIGCHERRY_PROJECT_MIN_FREE_GIB=0
+BIGCHERRY_PROJECT_MIN_FREE_FRACTION=0
 BIGCHERRY_MONITOR_POLL_SECONDS=15
 BIGCHERRY_STALL_SECONDS=0
 BIGCHERRY_TERM_GRACE_SECONDS=5
 ```
+
+Absolute GiB floors are host policy; Brutus should set qualified reserves (candidate 50 GiB root, 200 GiB work, 20 GiB tmp). Percentage defaults remain portable to smaller LocalExecutor hosts.
 
 Disk pressure before or during execution is retryable environment failure (75), not scientific FAIL. The liveness detector treats process-tree CPU ticks or output/artifact byte growth as progress. `BIGCHERRY_STALL_SECONDS=0` disables automatic stall termination until a host-specific threshold is qualified. Termination is process-tree TERM -> bounded grace -> KILL; launch/configuration failures are harness errors.
 
@@ -142,6 +148,6 @@ Use `--apply --enable` only after reviewing rendered units. Brutus Slurm has a s
 - allocation -> stable-ID and ROCm cgroup/peer/tensor-split matrix;
 - live llama-swap snapshot + root exclusive-window admission/recovery;
 - loaded-idle/noise qualification;
-- nonzero stall threshold + representative disk/process-tree/large-log acceptance;
+- nonzero stall threshold + absolute disk reserves + representative disk/process-tree/large-log acceptance;
 - one complete planned managed series through committed harvest/report;
 - Windows HIP discovery + target-local remote staging before Windows scientific enablement.
