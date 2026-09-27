@@ -51,10 +51,35 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 """
+    observe_service = f"""[Unit]
+Description=BigCherry derived job status and metrics snapshot
+After=bigcherry-jobs-ingest.service
+
+[Service]
+Type=oneshot
+User={user}
+WorkingDirectory={project_root}
+EnvironmentFile=-/etc/bigcherry/jobs.env
+ExecStart={python} {project_root / 'tools' / 'admin' / 'snapshot_bigcherry_jobs.py'}
+"""
+    observe_timer = """[Unit]
+Description=Refresh BigCherry derived job status and metrics
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=15s
+Unit=bigcherry-jobs-observe.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
     return {
         "bigcherry-jobs-ingest.service": service,
         "bigcherry-jobs-ingest.path": path,
         "bigcherry-jobs-ingest.timer": timer,
+        "bigcherry-jobs-observe.service": observe_service,
+        "bigcherry-jobs-observe.timer": observe_timer,
     }
 
 
@@ -106,12 +131,26 @@ def install(args: argparse.Namespace) -> dict[str, object]:
     for name, text in units.items():
         (systemd / name).write_text(text, encoding="utf-8")
     (envdir / "jobs.env").write_text(env_text(project_root=project, work_root=work), encoding="utf-8")
-    for path in (work / "jobs" / "inbox" / "pending", work / "hardware"):
+    for path in (
+        work / "jobs" / "inbox" / "pending",
+        work / "jobs" / "status",
+        work / "hardware",
+    ):
         path.mkdir(parents=True, exist_ok=True)
     if args.dest_root is None and args.apply:
         subprocess.run(("systemctl", "daemon-reload"), check=True)
         if args.enable:
-            subprocess.run(("systemctl", "enable", "--now", "bigcherry-jobs-ingest.path", "bigcherry-jobs-ingest.timer"), check=True)
+            subprocess.run(
+                (
+                    "systemctl",
+                    "enable",
+                    "--now",
+                    "bigcherry-jobs-ingest.path",
+                    "bigcherry-jobs-ingest.timer",
+                    "bigcherry-jobs-observe.timer",
+                ),
+                check=True,
+            )
     return {"apply": True, "systemd_root": str(systemd), "environment_file": str(envdir / "jobs.env"), "units": sorted(units), "doctor": doctor(project)}
 
 
