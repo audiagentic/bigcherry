@@ -59,8 +59,9 @@ def _lock(handle) -> None:
     if os.name == "nt":
         import msvcrt
 
-        handle.seek(0)
-        # Ensure one byte exists for msvcrt.locking().
+        # msvcrt.locking() locks bytes from the current file position. Ensure
+        # a single lock byte exists without appending a byte on every acquire.
+        handle.seek(0, os.SEEK_END)
         if handle.tell() == 0:
             handle.write(b"\0")
             handle.flush()
