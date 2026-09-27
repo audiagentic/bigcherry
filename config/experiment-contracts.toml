@@ -1712,3 +1712,45 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16]
+title = "PRBE54: FA-specific half2 F16 dequant for Q5_0/Q5_1 KV"
+prerequisites = []
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.source]
+source_id = "amd-ecosystem-llama-cpp"
+commits = []
+atomic_part = "1271_prbe54_q5_kv_dequant_f16"
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.target]
+kind = "attention"
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.hypothesis]
+expected_effect = "both"
+rationale = "Legacy Q5_0/Q5_1 FlashAttention F16 staging uses the generic scalar-callback conversion path at b11126. A dedicated HIP half2 dequant path reduces KV conversion work while an FA-only selector leaves every non-FA caller of ggml_get_to_fp16_cuda unchanged."
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.scope]
+backend = "hip"
+architectures = ["gfx1100", "gfx1201"]
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.correctness]
+backend_reference = "required"
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.measurement]
+bench_invocation = "combined"
+
+[contract.PRBE54-Q5-KV-DEQUANT-F16.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
