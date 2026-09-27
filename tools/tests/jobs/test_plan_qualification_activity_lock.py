@@ -72,7 +72,9 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
         self.assertLess(campaign.index(campaign_activity), campaign.index(campaign_gpu))
         self.assertIn('echo "CAMPAIGN_EXIT=$rc"\nexit "$rc"', campaign)
         self.assertIn('run_line "$line" &', queue)
-        self.assertIn('for pid in "${pids[@]}"; do wait "$pid"', queue)
+        self.assertIn('if ! wait "$pid"; then failures=$((failures + 1)); fi', queue)
+        self.assertIn('return "$rc"', queue)
+        self.assertIn('if ((failures)); then', queue)
         self.assertLess(queue.index("profile phase:"), queue.index("campaign phase:"))
 
     def test_shared_profile_holders_overlap(self) -> None:
