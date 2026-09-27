@@ -301,7 +301,7 @@ def mtp_server_lane(
     )
     preflights = (
         tensor_split_preflights(binaries, model=ctx.model, server_args=server_args, env=server_env,
-                                workdir=logs_dir, label=label)
+                                workdir=logs_dir, label=f"{label}-mtp")
         if _is_tensor_split(server_args) else {arm: None for arm in binaries}
     )
 
