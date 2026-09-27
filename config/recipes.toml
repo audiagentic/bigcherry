@@ -154,7 +154,17 @@ required-state = "validated"
 # covered: RDNA3.5 (the runtime gate GGML_CUDA_CC_IS_RDNA3 also admits
 # gfx1151, never measured here); dual-XTX production lane (PVPS05, not run).
 # Near-lossless, not bit-exact (bf16 operands, fp32 accumulation).
-patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn"]
+#
+# PROMOTED 2026-09-27 (auto-promotion of a clear winner, owner-authorized):
+# 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 (RD30B), gfx1201 + gfx1030 (its
+# contract scope). Contract RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2 PASS over 4
+# ISOLATED sessions on EACH arch at pin b11126: pp512 +8.42/+8.46/+8.51/+9.10%
+# (gfx1201) and +1.24/+1.03/+1.03/+1.03% (gfx1030, gpt-oss-20B), control tg128
+# flat; bit-identical test-backend-ops correctness every session. Sessions measured
+# while another GPU job ran concurrently are withdrawn (evidence/withdrawn.json).
+# NOT covered: dual-XTX production lane (gate is RDNA4/RDNA2; gfx1100 keeps 1237).
+patches = ["1237_rd30_moe_mmq_compact_grid", "1253_nro04_gfx1100_bf16_chunked_gdn",
+           "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2"]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets

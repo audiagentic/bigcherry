@@ -1,0 +1,34 @@
+{
+  "withdrawn": [
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "545a50e6b62ac25994b22ba379c3a64e39d961ed6a7ba7dc52cb21c66e8aed64",
+      "run": "t-1265-gfx1030-s4.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "66395f6290df6973e5efb52219d4ea85666f3145129b714b81fe851860419a25",
+      "run": "t-1265-gfx1030-s3.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "90f1df45fbcdd6d66ff253c34b9d2367a0fc2a361c03defb2ee171533f98ae7a",
+      "run": "t-1265-gfx1030-s2.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "ae4e0e2aa15fb96153799e147bf018ea7d9cb676ab6d576637a4499815ccbbf3",
+      "run": "t-1265-gfx1201-s3.parallel"
+    },
+    {
+      "reason": "a pre-flight check overlapped the measurement",
+      "record_digest": "c8c270c5b06c9741303d094ba370d76ee1a327c11aa646123828526114e20b5e",
+      "run": "t-1265-gfx1201-s2.overlap-check"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "cc1af7221dc15ff2f2038dede619160a2fc66c3c02eb27a4ebae9f145b5d5216",
+      "run": "t-1265-gfx1201-s4.parallel"
+    }
+  ]
+}
