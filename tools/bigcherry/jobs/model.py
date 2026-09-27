@@ -11,14 +11,28 @@ SCHEMA_VERSION = "bigcherry.jobs.v1"
 
 
 def canonical_bytes(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
 
 
 def digest(value: object, *, person: bytes = b"bc-jobs-v1") -> str:
-    return hashlib.blake2b(canonical_bytes(value), digest_size=20, person=person[:16]).hexdigest()
+    return hashlib.blake2b(
+        canonical_bytes(value), digest_size=20, person=person[:16]
+    ).hexdigest()
 
 
-def _pairs(value: Mapping[str, str] | tuple[tuple[str, str], ...] | list[list[str]] | None) -> tuple[tuple[str, str], ...]:
+def _pairs(
+    value: Mapping[str, str]
+    | tuple[tuple[str, str], ...]
+    | list[list[str]]
+    | list[tuple[str, str]]
+    | None,
+) -> tuple[tuple[str, str], ...]:
     if value is None:
         return ()
     items = value.items() if isinstance(value, Mapping) else value
@@ -89,13 +103,19 @@ class JobSpec:
             raise ValueError("architecture is required")
         if not self.model.strip():
             raise ValueError("model is required")
-        if self.session < 1 or self.planned_sessions < 1 or self.session > self.planned_sessions:
+        if (
+            self.session < 1
+            or self.planned_sessions < 1
+            or self.session > self.planned_sessions
+        ):
             raise ValueError("session must be in 1..planned_sessions")
         if self.timeout_seconds < 1:
             raise ValueError("timeout_seconds must be >= 1")
         if self.gpu is not None and self.gpu.architecture != self.architecture:
             raise ValueError("gpu architecture must match job architecture")
-        object.__setattr__(self, "common_patches", tuple(sorted(set(self.common_patches))))
+        object.__setattr__(
+            self, "common_patches", tuple(sorted(set(self.common_patches)))
+        )
         object.__setattr__(self, "producer_inputs", _pairs(self.producer_inputs))
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,7 +158,9 @@ class BatchSpec:
         if self.gpu_count < 1:
             raise ValueError("gpu_count must be >= 1")
         object.__setattr__(self, "architectures", architectures)
-        object.__setattr__(self, "common_patches", tuple(sorted(set(self.common_patches))))
+        object.__setattr__(
+            self, "common_patches", tuple(sorted(set(self.common_patches)))
+        )
         object.__setattr__(self, "producer_inputs", _pairs(self.producer_inputs))
 
     def expand(self) -> tuple[JobSpec, ...]:
@@ -151,25 +173,27 @@ class BatchSpec:
                 require_peer_access=self.require_peer_access,
             )
             for session in range(1, self.planned_sessions + 1):
-                jobs.append(JobSpec(
-                    patch=self.patch,
-                    architecture=architecture,
-                    model=self.model,
-                    session=session,
-                    planned_sessions=self.planned_sessions,
-                    producer=self.producer,
-                    hip_path=self.hip_path,
-                    baseline_source=self.baseline_source,
-                    common_patches=self.common_patches,
-                    producer_inputs=self.producer_inputs,
-                    producer_corpus=self.producer_corpus,
-                    production_lane=self.production_lane,
-                    code_ref=self.code_ref,
-                    gpu=gpu,
-                    target=self.target,
-                    timeout_seconds=self.timeout_seconds,
-                    priority=self.priority,
-                ))
+                jobs.append(
+                    JobSpec(
+                        patch=self.patch,
+                        architecture=architecture,
+                        model=self.model,
+                        session=session,
+                        planned_sessions=self.planned_sessions,
+                        producer=self.producer,
+                        hip_path=self.hip_path,
+                        baseline_source=self.baseline_source,
+                        common_patches=self.common_patches,
+                        producer_inputs=self.producer_inputs,
+                        producer_corpus=self.producer_corpus,
+                        production_lane=self.production_lane,
+                        code_ref=self.code_ref,
+                        gpu=gpu,
+                        target=self.target,
+                        timeout_seconds=self.timeout_seconds,
+                        priority=self.priority,
+                    )
+                )
         return tuple(jobs)
 
     def to_dict(self) -> dict[str, Any]:
@@ -187,7 +211,54 @@ def target_from_mapping(value: Mapping[str, Any] | None) -> TargetPolicy:
     return TargetPolicy(
         executor_id=str(value.get("executor_id", "brutus")),
         host_id=None if value.get("host_id") is None else str(value["host_id"]),
-        platform_family=None if value.get("platform_family") is None else str(value["platform_family"]),
+        platform_family=(
+            None
+            if value.get("platform_family") is None
+            else str(value["platform_family"])
+        ),
+    )
+
+
+def gpu_from_mapping(value: Mapping[str, Any] | None) -> GpuRequirement | None:
+    if value is None:
+        return None
+    return GpuRequirement(
+        architecture=str(value["architecture"]),
+        count=int(value.get("count", 1)),
+        min_vram_bytes=int(value.get("min_vram_bytes", 0)),
+        homogeneous_model=bool(value.get("homogeneous_model", True)),
+        model=None if value.get("model") is None else str(value["model"]),
+        require_peer_access=bool(value.get("require_peer_access", False)),
+        exact_device_ids=tuple(str(item) for item in value.get("exact_device_ids", [])),
+    )
+
+
+def job_from_mapping(value: Mapping[str, Any]) -> JobSpec:
+    schema = value.get("schema", SCHEMA_VERSION)
+    if schema != SCHEMA_VERSION:
+        raise ValueError(f"unsupported jobs schema: {schema!r}")
+    return JobSpec(
+        patch=str(value["patch"]),
+        architecture=str(value["architecture"]),
+        model=str(value["model"]),
+        session=int(value["session"]),
+        planned_sessions=int(value["planned_sessions"]),
+        producer=None if value.get("producer") is None else str(value["producer"]),
+        hip_path=None if value.get("hip_path") is None else str(value["hip_path"]),
+        baseline_source=str(value.get("baseline_source", "bigcherry-tuning")),
+        common_patches=tuple(str(item) for item in value.get("common_patches", [])),
+        producer_inputs=_pairs(value.get("producer_inputs")),
+        producer_corpus=(
+            None
+            if value.get("producer_corpus") is None
+            else str(value["producer_corpus"])
+        ),
+        production_lane=bool(value.get("production_lane", False)),
+        code_ref=str(value.get("code_ref", "patch-refactor")),
+        gpu=gpu_from_mapping(value.get("gpu")),
+        target=target_from_mapping(value.get("target")),
+        timeout_seconds=int(value.get("timeout_seconds", 2700)),
+        priority=int(value.get("priority", 0)),
     )
 
 
@@ -212,7 +283,11 @@ def batch_from_mapping(value: Mapping[str, Any]) -> BatchSpec:
         baseline_source=str(value.get("baseline_source", "bigcherry-tuning")),
         common_patches=tuple(str(item) for item in common),
         producer_inputs=_pairs(inputs),
-        producer_corpus=None if value.get("producer_corpus") is None else str(value["producer_corpus"]),
+        producer_corpus=(
+            None
+            if value.get("producer_corpus") is None
+            else str(value["producer_corpus"])
+        ),
         production_lane=bool(value.get("production_lane", False)),
         code_ref=str(value.get("code_ref", "patch-refactor")),
         gpu_count=int(value.get("gpu_count", 1)),
