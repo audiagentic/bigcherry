@@ -49,6 +49,59 @@ class ProfileWiringTests(unittest.TestCase):
             doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
             self.assertEqual(set(doc["arms"]), {"control", "subject"})
 
+    def test_wrapper_crash_after_measurement_does_not_discard_a_real_trace(self) -> None:
+        # Reproduced 2026-09-27 (fully isolated): rocprofv3 can SIGSEGV in its
+        # own __cxa_finalize AFTER writing a complete, valid trace -- the
+        # measurement is real even though the wrapper process's exit code is
+        # not 0. Discarding it lost good evidence to a benign post-hoc crash.
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            if command[0] == "rocprofv3":
+                trace_dir = Path(command[command.index("-d") + 1])
+                (trace_dir / "host").mkdir(parents=True, exist_ok=True)
+                (trace_dir / "host" / "trace_kernel_trace.csv").write_text("x\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, -11)  # SIGSEGV at exit, trace already written
+            Path(command[command.index("--output") + 1]).write_text("{}", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins), \
+                 mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 0, "a real trace + report must not be discarded over the wrapper's exit code")
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertEqual(arm["returncode"], -11)
+                self.assertTrue(arm["report"])
+                self.assertTrue(arm["wrapper_crashed_after_measurement"])
+
+    def test_crash_before_any_trace_is_still_a_real_failure(self) -> None:
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            # rocprofv3 fails outright: no trace directory is ever populated.
+            return subprocess.CompletedProcess(command, 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins), \
+                 mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 1)
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertFalse(arm["traces"])
+                self.assertFalse(arm["report"])
+                self.assertFalse(arm["wrapper_crashed_after_measurement"])
+
 
 if __name__ == "__main__":
     unittest.main()
