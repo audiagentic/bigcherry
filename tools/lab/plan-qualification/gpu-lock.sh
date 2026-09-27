@@ -1,9 +1,12 @@
 #!/bin/bash
-# Per-GPU-device exclusive locking, shared by run_campaign.sh (the isolated
-# performance lane) and profile_run.sh (the parallel profile lane) so the two
-# lanes can run concurrently without ever colliding on the same physical card
-# -- a profile job and a timed perf session sharing a GPU would not just add
-# noise, they would OOM/crash each other.
+# Per-GPU-device exclusive locking for the legacy plan-qualification queue.
+# This prevents two jobs from ever touching the same physical card and supports
+# multi-device jobs by locking all requested devices in a deterministic order.
+#
+# Host-wide performance isolation is a SEPARATE layer in activity-lock.sh:
+# PROFILE jobs use its shared mode and monolithic timed campaigns use exclusive
+# mode. Therefore profiles may overlap one another on different GPUs, but no
+# profile is permitted to overlap a timed campaign anywhere on the host.
 #
 # Meant to be SOURCED, not executed, so the flock file descriptors it opens
 # stay held for the rest of the caller's process (released automatically on
