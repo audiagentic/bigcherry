@@ -8,8 +8,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Mapping, Protocol
 
+from bigcherry.experiment import contract as experiment_contract
 from bigcherry.patch import registry as patch_registry
 from bigcherry.patch import validation_policy
 from bigcherry.patch.campaign.scaffold import validated_enhancement_patches
@@ -40,12 +41,37 @@ def file_identity(path: Path) -> dict[str, object]:
     }
 
 
-def _patch_identity(descriptor: patch_registry.PatchDescriptor) -> dict[str, object]:
+def _project_file_identity(root: Path, relative: str) -> dict[str, object]:
+    """Content identity stable across detached worktree absolute paths."""
+    path = (root / relative).resolve()
+    if not path.is_file():
+        raise ScientificIdentityError(f"required framework input is missing: {relative}")
+    state = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(8 * 1024 * 1024):
+            state.update(chunk)
+    return {"path": relative, "bytes": path.stat().st_size, "sha256": state.hexdigest()}
+
+
+def _patch_identity(
+    descriptor: patch_registry.PatchDescriptor,
+    contracts: experiment_contract.ContractRegistry,
+) -> dict[str, object]:
+    bindings: list[dict[str, str]] = []
+    for contract_id in descriptor.experiment_contracts:
+        try:
+            contract = contracts[contract_id]
+        except KeyError as exc:
+            raise ScientificIdentityError(
+                f"patch {descriptor.patch_id} references unknown contract {contract_id}"
+            ) from exc
+        bindings.append({"id": contract_id, "hash": contract.contract_hash})
     return {
         "patch_id": descriptor.patch_id,
         "implementation_digest": descriptor.implementation_digest,
         "validation_digest": descriptor.validation_digest,
         "experiment_contracts": list(descriptor.experiment_contracts),
+        "contract_bindings": bindings,
     }
 
 
@@ -56,7 +82,9 @@ class ProjectScientificIdentityResolver:
     def resolve(self, job: JobSpec) -> Mapping[str, object]:
         root = self.project_root.resolve()
         patches = root / "patches"
+        config = root / "config"
         registry = patch_registry.load_registry(patches)
+        contracts = experiment_contract.load_contracts(config / "experiment-contracts.toml")
         by_id = {descriptor.patch_id: descriptor for descriptor in registry.descriptors}
         try:
             focal = by_id[job.patch]
@@ -69,19 +97,19 @@ class ProjectScientificIdentityResolver:
         common: list[dict[str, object]] = []
         for patch_id in job.common_patches:
             try:
-                common.append(_patch_identity(by_id[patch_id]))
+                common.append(_patch_identity(by_id[patch_id], contracts))
             except KeyError as exc:
                 raise ScientificIdentityError(f"unknown common patch: {patch_id}") from exc
 
         validated_ids = validated_enhancement_patches(
             patch_id=job.patch,
             common_patches=job.common_patches,
-            recipes=root / "config" / "recipes.toml",
+            recipes=config / "recipes.toml",
         )
         validated: list[dict[str, object]] = []
         for patch_id in validated_ids:
             try:
-                validated.append(_patch_identity(by_id[patch_id]))
+                validated.append(_patch_identity(by_id[patch_id], contracts))
             except KeyError as exc:
                 raise ScientificIdentityError(
                     f"validated-enhancements references missing patch: {patch_id}"
@@ -96,10 +124,20 @@ class ProjectScientificIdentityResolver:
             producer_inputs.append(item)
 
         result: dict[str, object] = {
-            "schema": "bigcherry.scientific-identity.v1",
-            "focal": _patch_identity(focal),
+            "schema": "bigcherry.scientific-identity.v2",
+            "focal": _patch_identity(focal, contracts),
             "common": common,
             "validated": validated,
+            # These framework registries influence composition/contract meaning
+            # but are not part of a patch implementation digest. Freeze their
+            # bytes with repository-relative paths so later sessions cannot
+            # silently reinterpret the same series after a config-only commit.
+            "framework_inputs": {
+                "recipes": _project_file_identity(root, "config/recipes.toml"),
+                "experiment_contracts": _project_file_identity(
+                    root, "config/experiment-contracts.toml"
+                ),
+            },
             "model": file_identity(Path(job.model)),
             "producer": job.producer,
             "producer_inputs": producer_inputs,
