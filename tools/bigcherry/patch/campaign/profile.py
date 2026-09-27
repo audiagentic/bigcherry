@@ -77,15 +77,25 @@ def profile_arm(*, binary: Path, model: Path, workload: str, out: Path, env: dic
     # kernel-fraction summary) and the wrapped benchmark itself printed a real
     # result row. Gating on the wrapper process's exit code alone discarded
     # good evidence over a crash in code that runs strictly after measurement.
-    # Trust the trace files, not the wrapper's exit status.
+    # Trust the trace files, not the wrapper's exit status -- but GPT review
+    # req_5c9284ea25b04ddd is right that "a report file exists" alone is not
+    # enough: a crash mid-write (not just post-write) can leave a parseable
+    # partial CSV, and a STALE report from a previous run of this same out/
+    # dir would otherwise be indistinguishable from a fresh success. Remove
+    # any old report first, and require kernel-fraction's OWN exit code to be
+    # 0 -- it is the thing that actually parses the trace and can fail
+    # closed on a truncated/malformed one.
+    report.unlink(missing_ok=True)
+    kf_rc: int | None = None
     if traces:
         with (out / "kernel-fraction.txt").open("w", encoding="utf-8") as summary:
-            subprocess.run([sys.executable, "-m", "bigcherry", "kernel-fraction", "--phase", workload,
-                            "--output", str(report), *map(str, traces)],
-                           stdout=summary, stderr=subprocess.STDOUT, env=env, check=False)
+            kf_rc = subprocess.run([sys.executable, "-m", "bigcherry", "kernel-fraction", "--phase", workload,
+                                    "--output", str(report), *map(str, traces)],
+                                   stdout=summary, stderr=subprocess.STDOUT, env=env, check=False).returncode
+    report_ok = kf_rc == 0 and report.is_file()
     return {"returncode": rc, "traces": [str(t) for t in traces],
-            "report": str(report) if report.is_file() else None,
-            "wrapper_crashed_after_measurement": rc != 0 and bool(traces) and report.is_file()}
+            "report": str(report) if report_ok else None,
+            "wrapper_crashed_after_measurement": rc != 0 and bool(traces) and report_ok}
 
 
 def main(argv: list[str] | None = None) -> int:

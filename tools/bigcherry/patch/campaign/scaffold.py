@@ -39,6 +39,14 @@ def validated_enhancement_patches(
     1265 requires 1237; profiling/re-validating 1237 alone must also drop
     1265, or resolve_exact() fails closed with a confusing "requires
     explicitly selected module" error instead of a clean composition).
+
+    GPT review req_5c9284ea25b04ddd: the transitive closure must seed from
+    ONLY the focal patch, not from common_patches too. A common patch is
+    unconditionally composed (the caller passes it as its own extra,
+    alongside this function's return value) -- it is never actually absent,
+    so a declared member requiring one is not weakened by anything and must
+    NOT be excluded on that basis. common_patches are stripped from the
+    RETURNED list separately, purely to avoid listing them twice.
     """
     from bigcherry.core import config as campaign_config
     from bigcherry.core import paths as bc_paths
@@ -46,7 +54,7 @@ def validated_enhancement_patches(
 
     cfg = campaign_config.load(recipes or bc_paths.RECIPES)
     declared = cfg.patch_sets[VALIDATED_PATCH_SET].patches
-    excluded = {patch_id, *common_patches}
+    excluded = {patch_id}
     modules = {m.patch_id: m for m in patchset.catalog(directory=catalog_root)}
     changed = True
     while changed:
@@ -58,7 +66,7 @@ def validated_enhancement_patches(
             if module is not None and set(module.requires) & excluded:
                 excluded.add(candidate)
                 changed = True
-    return tuple(p for p in declared if p not in excluded)
+    return tuple(p for p in declared if p not in excluded and p not in common_patches)
 
 
 @dataclass(frozen=True)

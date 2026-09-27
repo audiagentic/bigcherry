@@ -30,6 +30,24 @@ class TransitiveExclusionTests(unittest.TestCase):
         self.assertIn("1237_rd30_moe_mmq_compact_grid", result)
         self.assertIn("1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2", result)
 
+    def test_a_common_patch_does_not_trigger_exclusion_of_its_dependents(self) -> None:
+        # GPT review req_5c9284ea25b04ddd: a common patch is unconditionally
+        # composed (the caller adds it separately, alongside this function's
+        # return value) -- it is never actually absent, so a declared member
+        # requiring one must NOT be excluded on that basis. 1265 requires
+        # 1237; naming 1237 as a COMMON patch for an unrelated focal (1253)
+        # must not exclude 1265 (only strip 1237 itself from the list, since
+        # the caller already has it via common_patches).
+        result = validated_enhancement_patches(
+            patch_id="1253_nro04_gfx1100_bf16_chunked_gdn",
+            common_patches=("1237_rd30_moe_mmq_compact_grid",),
+        )
+        self.assertNotIn("1237_rd30_moe_mmq_compact_grid", result)  # stripped: already a common patch
+        self.assertIn(
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2", result,
+            "1237 (1265's dependency) is present via common_patches, so 1265 is not weakened",
+        )
+
     def test_profiling_1265_itself_only_excludes_1265(self) -> None:
         # 1265 depends ON 1237, not the other way around -- nothing else in
         # the declared set requires 1265, so only 1265 itself is excluded.
