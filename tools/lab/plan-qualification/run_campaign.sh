@@ -9,7 +9,8 @@ set -u
 patch=$1; producer=$2; arch=$3; dev=$4; run=$5; shift 5
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
-work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
+source "$root/tools/lab/plan-qualification/work-root.sh"
+work=$(work_root_resolve "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
 # Legacy monolithic campaigns contain timed performance lanes. The measured
 # effect is small enough that cross-GPU host activity is material, so this
@@ -21,8 +22,6 @@ work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 # Lock order is host activity -> GPU. Profiles use build-key -> shared host ->
 # GPU. Keeping host before GPU prevents a writer/readers lock-order deadlock and
 # means a performance campaign never reserves a GPU while waiting for readers.
-source "$root/tools/lab/plan-qualification/gpu-lock.sh"
-source "$root/tools/lab/plan-qualification/activity-lock.sh"
 activity_lock_exclusive_acquire "$work"
 gpu_lock_acquire "$work" "$dev"
 mkdir -p "$work/tmp"
