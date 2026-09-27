@@ -2,7 +2,7 @@
 
 This module is the only job-service layer that encodes Slurm CLI syntax. It
 receives already-resolved scheduler resources; scientific GPU capability and
-stable-device selection remain RCD12/domain responsibilities.
+stable-device selection remain domain/RCD12 responsibilities.
 """
 from __future__ import annotations
 
@@ -40,6 +40,7 @@ class CommandRunner(Protocol):
         *,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult: ...
 
 
@@ -50,17 +51,24 @@ class SubprocessRunner:
         *,
         cwd: str | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult:
         completed = subprocess.run(
             list(argv), cwd=cwd, env=None if env is None else dict(env),
-            text=True, capture_output=True,
+            text=True, capture_output=True, input=input_text,
         )
         return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
 @dataclass(frozen=True)
 class SlurmPolicy:
-    account: str = "bigcherry"
+    """Single-host v1 scheduler mapping proven by Noble CI.
+
+    account=None is intentional: v1 uses AccountingStorageType=none and must
+    not manufacture an association requirement.
+    """
+
+    account: str | None = None
     build_partition: str = "bc-build"
     measure_partition: str = "bc-measure"
     build_licenses: tuple[str, ...] = ("build_slot:1", "host_activity:1")
@@ -101,10 +109,10 @@ def build_sbatch_argv(
     native_dependency_ids: Sequence[str] = (),
 ) -> tuple[str, ...]:
     partition, licenses = policy.placement(request.resources.activity_class)
-    argv: list[str] = [
-        "sbatch",
-        "--parsable",
-        "--account", policy.account,
+    argv: list[str] = ["sbatch", "--parsable"]
+    if policy.account:
+        argv.extend(("--account", policy.account))
+    argv.extend((
         "--job-name", _job_name(request.execution_id),
         "--comment", f"bigcherry:{request.execution_id}",
         "--partition", partition,
@@ -113,10 +121,8 @@ def build_sbatch_argv(
         "--chdir", request.cwd,
         "--output", request.stdout_path,
         "--error", request.stderr_path,
-        # request.env is overlaid on the sbatch process environment by submit();
-        # --export=ALL causes Slurm to capture that exact environment.
         "--export", "ALL",
-    ]
+    ))
     if licenses:
         argv.extend(("--licenses", ",".join(licenses)))
     if request.resources.memory_bytes is not None:
@@ -176,7 +182,7 @@ def _state_text(value: object) -> str:
     return "UNKNOWN"
 
 
-def parse_squeue_json(payload: str, native_id: str) -> ExecutionStatus | None:
+def _squeue_jobs(payload: str) -> list[dict[str, object]]:
     try:
         document = json.loads(payload)
     except json.JSONDecodeError as exc:
@@ -184,9 +190,11 @@ def parse_squeue_json(payload: str, native_id: str) -> ExecutionStatus | None:
     jobs = document.get("jobs")
     if not isinstance(jobs, list):
         raise ExecutorError("squeue JSON missing jobs array")
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
+    return [job for job in jobs if isinstance(job, dict)]
+
+
+def parse_squeue_json(payload: str, native_id: str) -> ExecutionStatus | None:
+    for job in _squeue_jobs(payload):
         job_id = job.get("job_id", job.get("job_id_raw"))
         if str(job_id) != str(native_id):
             continue
@@ -200,6 +208,7 @@ def parse_squeue_json(payload: str, native_id: str) -> ExecutionStatus | None:
 
 
 def parse_sacct_pipe(payload: str, native_id: str) -> ExecutionStatus | None:
+    """Compatibility parser retained for old fixtures; v1 status does not call sacct."""
     for line in payload.splitlines():
         if not line.strip():
             continue
@@ -209,6 +218,19 @@ def parse_sacct_pipe(payload: str, native_id: str) -> ExecutionStatus | None:
         native = fields[1].strip().split()[0]
         return normalize_slurm_state(native)
     return None
+
+
+def parse_correlation(payload: str, execution_id: str) -> tuple[str, ...]:
+    marker = f"bigcherry:{execution_id}"
+    matches: list[str] = []
+    for job in _squeue_jobs(payload):
+        comment = job.get("comment", job.get("admin_comment"))
+        if comment != marker:
+            continue
+        native = job.get("job_id", job.get("job_id_raw"))
+        if str(native).isdigit():
+            matches.append(str(native))
+    return tuple(sorted(set(matches), key=int))
 
 
 class SlurmExecutor:
@@ -243,6 +265,12 @@ class SlurmExecutor:
             raise ExecutorError(f"sbatch --parsable returned invalid job id: {token!r}")
         return ExecutionHandle(self.name, native_id, request.execution_id)
 
+    def correlate(self, execution_id: str) -> tuple[ExecutionHandle, ...]:
+        result = self.runner.run(("squeue", "--json"))
+        if result.returncode != 0:
+            raise ExecutorError(f"squeue correlation failed: {result.stderr.strip()}")
+        return tuple(ExecutionHandle(self.name, native, execution_id) for native in parse_correlation(result.stdout, execution_id))
+
     def status(self, handle: ExecutionHandle) -> ExecutionStatus:
         self._check(handle)
         queued = self.runner.run(("squeue", "--json", "--jobs", handle.native_id))
@@ -250,14 +278,10 @@ class SlurmExecutor:
             status = parse_squeue_json(queued.stdout, handle.native_id)
             if status is not None:
                 return status
-        history = self.runner.run((
-            "sacct", "-nX", "-P", "-j", handle.native_id, "-o", "JobIDRaw,State"
-        ))
-        if history.returncode == 0:
-            status = parse_sacct_pipe(history.stdout, handle.native_id)
-            if status is not None:
-                return status
-        return ExecutionStatus(ExecutionState.UNKNOWN, "not found in squeue/sacct", None)
+        # With AccountingStorageType=none there is deliberately no sacct
+        # dependency.  BigCherry's attempt-local result/start sentinels and
+        # jobcomp/filetxt reconcile terminal history in the service layer.
+        return ExecutionStatus(ExecutionState.UNKNOWN, "not present in active Slurm queue", None)
 
     def cancel(self, handle: ExecutionHandle) -> None:
         self._check(handle)
@@ -273,9 +297,6 @@ class SlurmExecutor:
             raise ExecutorError(f"scontrol {verb} failed: {result.stderr.strip()}")
 
     def allocation(self, handle: ExecutionHandle) -> Allocation | None:
-        # Stable AMD identity is attested by the in-allocation wrapper/RCD12.
-        # Controller metadata alone is not treated as sufficient evidence of
-        # the exact visible GPU UUID set.
         self._check(handle)
         return None
 
