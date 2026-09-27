@@ -82,3 +82,27 @@ def inventory_from_mapping(value: dict[str, Any]) -> HardwareInventory:
         platform_environment_hash=str(value.get("platform_environment_hash", "")),
         hardware_epoch=None if value.get("hardware_epoch") is None else str(value["hardware_epoch"]),
     )
+
+
+def binding_from_mapping(value: dict[str, Any]) -> SeriesGpuBinding:
+    req = value.get("requirement")
+    if not isinstance(req, dict):
+        raise ValueError("series GPU binding is missing requirement")
+    requirement = GpuRequirement(
+        architecture=str(req["architecture"]),
+        count=int(req.get("count", 1)),
+        min_vram_bytes=int(req.get("min_vram_bytes", 0)),
+        homogeneous_model=bool(req.get("homogeneous_model", True)),
+        model=None if req.get("model") is None else str(req["model"]),
+        require_peer_access=bool(req.get("require_peer_access", False)),
+        exact_device_ids=tuple(str(item) for item in req.get("exact_device_ids", [])),
+    )
+    return SeriesGpuBinding(
+        requirement=requirement,
+        selected_device_ids=tuple(str(item) for item in value["selected_device_ids"]),
+        hardware_cohort_hash=str(value["hardware_cohort_hash"]),
+        accepted_inventory_hash=str(value["accepted_inventory_hash"]),
+        reserve_all_of_arch=bool(value["reserve_all_of_arch"]),
+        scheduler_architecture=str(value["scheduler_architecture"]),
+        scheduler_count=int(value["scheduler_count"]),
+    )

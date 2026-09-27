@@ -8,10 +8,11 @@ from admin.install_bigcherry_jobs import unit_texts
 from bigcherry.hardware.inventory import HardwareBindingError, bind_gpu_requirement
 from bigcherry.hardware.model import DeviceRecord, HardwareInventory
 from bigcherry.jobs.fake import FakeExecutor
+from bigcherry.jobs.identity import StaticScientificIdentityResolver
 from bigcherry.jobs.model import BatchSpec, GpuRequirement, TargetPolicy
 from bigcherry.jobs.remote import FakeRemoteTransport, RemoteExecutor
 from bigcherry.jobs.runner import campaign_argv
-from bigcherry.jobs.service import JobService
+from bigcherry.jobs.service import JobService, JobServiceError
 from bigcherry.jobs.store import IdempotencyConflict, RunStore
 from bigcherry.jobs.workspace import PassthroughWorkspaceManager
 
@@ -77,6 +78,7 @@ class StoreAndServiceTests(unittest.TestCase):
         (self.project / "tools").mkdir(parents=True)
         self.fake = FakeExecutor()
         self.store = RunStore(self.root / "jobs")
+        self.identity = StaticScientificIdentityResolver()
         self.service = JobService(
             store=self.store,
             executors={"brutus": self.fake},
@@ -84,6 +86,8 @@ class StoreAndServiceTests(unittest.TestCase):
                 self.project, commit="a" * 40
             ),
             inventory_loader=lambda executor_id: inventory(),
+            identity_resolver=self.identity,
+            attempt_identity_resolver_factory=lambda root: self.identity,
             shared_root=self.root / "shared",
         )
 
@@ -154,8 +158,6 @@ class StoreAndServiceTests(unittest.TestCase):
         self.service.submit_batch(self.batch(sessions=1), idempotency_key="crash")
         run_id = self.store.list_runs()[0]["run_id"]
         processing = self.store.claim_pending(self.store.pending()[0])
-        # Simulate a crash after native submission but before the processing
-        # receipt is moved to accepted.
         first_handle = self.service._start_or_recover(run_id)
         self.assertTrue(processing.is_file())
         self.assertEqual(self.store.latest_attempt(run_id), 1)
@@ -166,6 +168,8 @@ class StoreAndServiceTests(unittest.TestCase):
                 self.project, commit="a" * 40
             ),
             inventory_loader=lambda executor_id: inventory(),
+            identity_resolver=self.identity,
+            attempt_identity_resolver_factory=lambda root: self.identity,
             shared_root=self.root / "shared",
         )
         result = restarted.ingest_once()
@@ -186,6 +190,27 @@ class StoreAndServiceTests(unittest.TestCase):
             self.store.attempt(run_id, 1)["commit"],
             self.store.attempt(run_id, 2)["commit"],
         )
+
+    def test_scientific_identity_drift_blocks_new_attempt(self):
+        self.service.submit_batch(self.batch(sessions=1), idempotency_key="drift")
+        run_id = self.store.list_runs()[0]["run_id"]
+        drifted = StaticScientificIdentityResolver(
+            {"schema": "mock", "identity_hash": "different"}
+        )
+        service = JobService(
+            store=self.store,
+            executors={"brutus": self.fake},
+            workspace_manager=PassthroughWorkspaceManager(
+                self.project, commit="a" * 40
+            ),
+            inventory_loader=lambda executor_id: inventory(),
+            identity_resolver=self.identity,
+            attempt_identity_resolver_factory=lambda root: drifted,
+            shared_root=self.root / "shared",
+        )
+        self.assertEqual(service.ingest_once()["rejected"], 1)
+        events = self.store.read_events()
+        self.assertTrue(any("scientific identity drifted" in str(e.data) for e in events))
 
     def test_events_recover_torn_tail(self):
         self.store.append_event(kind="one")
