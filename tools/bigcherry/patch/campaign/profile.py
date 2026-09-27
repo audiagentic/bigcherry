@@ -1,41 +1,52 @@
 """PVPS10: kernel-coverage profile of a patch (control vs subject).
 
 Validation evidence proves a patch path ran once (activation marker). This
-profiles what actually executes: which kernels, how many calls and what
-share of GPU time, on the control (validated BC) and the subject (validated
-BC + patch) for one workload, so a verdict can be checked against what the
-patch changed and a neutral result on a rarely-exercised path is visible as
-such.
+profiles what actually executes: which kernels, how many calls and what share
+of GPU time, on the control (validated BC) and the subject (validated BC +
+patch) for one workload.
 
-Sources and builds are the standard scaffold's own (``campaign.scaffold``):
-control/subject are materialized by content hash under the worktree root and
-built under ``<build-root>/<source-hash>/{control,validation-subject}``, so a
-shared per-arch build root makes the control a no-op build and only the
-patch's own tree compiles. The benchmark runs under rocprofv3 kernel tracing
-and each trace is summarized with ``bigcherry kernel-fraction``.
+The CLI supports a two-phase form for queue schedulers:
 
-    python -m bigcherry.patch.campaign.profile --patch <id> --arch gfx1100 \\
-        --device 0 --model m.gguf --workload prefill --hip-path <rocm> \\
-        --worktree-root W --build-root B --out O [--common-patches a,b] \\
-        [--env K=V ...]
+    # CPU/build preparation under a shared-build lock
+    python -m bigcherry.patch.campaign.profile ... \
+        --prepare-only --prepared-manifest prepared.json
+
+    # GPU profiling later, with no CMake/Ninja mutation
+    python -m bigcherry.patch.campaign.profile ... \
+        --prepared-manifest prepared.json
+
+The prepared manifest binds the exact control/subject binary bytes and all
+build-affecting selector inputs.  The second phase re-hashes both binaries and
+fails closed on drift.  Invocations without --prepared-manifest retain the
+legacy build+profile behavior.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from bigcherry.patch.campaign.build import _print, build_tree
+from bigcherry.patch.campaign.build import _atomic_write_json, _print, build_tree
 from bigcherry.patch.campaign.scaffold import _materialize_scaffold_sources
 
 WORKLOADS = {
     "prefill": ("-p", "512", "-n", "0", "-r", "3"),
     "decode": ("-p", "0", "-n", "128", "-r", "3"),
 }
+_PREPARED_SCHEMA = "bigcherry.profile-prepared.v1"
+
+
+def _sha256(path: Path) -> str:
+    state = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(8 * 1024 * 1024):
+            state.update(chunk)
+    return state.hexdigest()
 
 
 def build_pair(*, patch_id: str, arch: str, hip_path: Path, worktree_root: Path, build_root: Path,
@@ -61,6 +72,85 @@ def build_pair(*, patch_id: str, arch: str, hip_path: Path, worktree_root: Path,
     return bins
 
 
+def _prepared_identity(opts: argparse.Namespace) -> dict[str, object]:
+    return {
+        "patch": opts.patch,
+        "arch": opts.arch,
+        "hip_path": str(opts.hip_path.resolve()),
+        "build_root": str(opts.build_root.resolve()),
+        "baseline_source": opts.baseline_source,
+        "common_patches": list(opts.common_patches),
+        "allow_rejected": bool(opts.allow_rejected),
+    }
+
+
+def _write_prepared_manifest(path: Path, opts: argparse.Namespace, bins: dict[str, Path]) -> None:
+    root = opts.build_root.resolve()
+    binary_rows: dict[str, dict[str, object]] = {}
+    for role in ("control", "subject"):
+        binary = bins.get(role)
+        if binary is None or not binary.is_file():
+            raise RuntimeError(f"prepared profile {role} binary is missing: {binary}")
+        resolved = binary.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"prepared profile {role} binary escapes build root: {resolved}"
+            ) from exc
+        binary_rows[role] = {
+            "path": str(resolved),
+            "size": resolved.stat().st_size,
+            "sha256": _sha256(resolved),
+        }
+    document = {
+        "schema": _PREPARED_SCHEMA,
+        **_prepared_identity(opts),
+        "binaries": binary_rows,
+    }
+    _atomic_write_json(path, document)
+
+
+def _load_prepared_manifest(path: Path, opts: argparse.Namespace) -> dict[str, Path]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"prepared profile manifest unavailable/invalid: {path}: {exc}") from exc
+    if not isinstance(document, dict) or document.get("schema") != _PREPARED_SCHEMA:
+        raise RuntimeError(f"unsupported prepared profile manifest: {path}")
+    expected = _prepared_identity(opts)
+    for key, value in expected.items():
+        if document.get(key) != value:
+            raise RuntimeError(
+                f"prepared profile identity mismatch for {key}: "
+                f"{document.get(key)!r} != {value!r}"
+            )
+    rows = document.get("binaries")
+    if not isinstance(rows, dict):
+        raise RuntimeError("prepared profile manifest has no binaries object")
+    root = opts.build_root.resolve()
+    bins: dict[str, Path] = {}
+    for role in ("control", "subject"):
+        row = rows.get(role)
+        if not isinstance(row, dict):
+            raise RuntimeError(f"prepared profile manifest missing {role} binary")
+        binary = Path(str(row.get("path", ""))).resolve()
+        try:
+            binary.relative_to(root)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"prepared profile {role} binary escapes build root: {binary}"
+            ) from exc
+        if not binary.is_file():
+            raise RuntimeError(f"prepared profile {role} binary no longer exists: {binary}")
+        if binary.stat().st_size != int(row.get("size", -1)):
+            raise RuntimeError(f"prepared profile {role} binary size drifted: {binary}")
+        if _sha256(binary) != row.get("sha256"):
+            raise RuntimeError(f"prepared profile {role} binary bytes drifted: {binary}")
+        bins[role] = binary
+    return bins
+
+
 def profile_arm(*, binary: Path, model: Path, workload: str, out: Path, env: dict[str, str]) -> dict[str, object]:
     out.mkdir(parents=True, exist_ok=True)
     trace_dir = out / "trace"
@@ -70,21 +160,9 @@ def profile_arm(*, binary: Path, model: Path, workload: str, out: Path, env: dic
         rc = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=env, check=False).returncode
     traces = sorted(trace_dir.rglob("*kernel_trace.csv"))
     report = out / "kernel-fraction.json"
-    # Reproduced 2026-09-27 (fully isolated, no other job on the box): rocprofv3
-    # can SIGSEGV inside its own __cxa_finalize/atexit cleanup AFTER "output
-    # generation" has already completed -- the trace CSVs are fully written and
-    # valid at that point (confirmed: 1.3M+ real kernel rows, a coherent
-    # kernel-fraction summary) and the wrapped benchmark itself printed a real
-    # result row. Gating on the wrapper process's exit code alone discarded
-    # good evidence over a crash in code that runs strictly after measurement.
-    # Trust the trace files, not the wrapper's exit status -- but GPT review
-    # req_5c9284ea25b04ddd is right that "a report file exists" alone is not
-    # enough: a crash mid-write (not just post-write) can leave a parseable
-    # partial CSV, and a STALE report from a previous run of this same out/
-    # dir would otherwise be indistinguishable from a fresh success. Remove
-    # any old report first, and require kernel-fraction's OWN exit code to be
-    # 0 -- it is the thing that actually parses the trace and can fail
-    # closed on a truncated/malformed one.
+    # rocprofv3 can crash during atexit after valid trace generation. Remove a
+    # stale report first and let kernel-fraction's own successful parse prove a
+    # complete usable trace rather than trusting the wrapper exit status.
     report.unlink(missing_ok=True)
     kf_rc: int | None = None
     if traces:
@@ -98,7 +176,7 @@ def profile_arm(*, binary: Path, model: Path, workload: str, out: Path, env: dic
             "wrapper_crashed_after_measurement": rc != 0 and bool(traces) and report_ok}
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bigcherry.patch.campaign.profile", description=__doc__.splitlines()[0])
     parser.add_argument("--patch", required=True)
     parser.add_argument("--arch", required=True)
@@ -114,29 +192,52 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--env", action="append", default=[], help="K=V for both arms (e.g. a patch opt-in)")
     parser.add_argument("--allow-rejected", action="store_true",
                         help="admit an explicitly named rejected/superseded patch (re-examination)")
-    opts = parser.parse_args(argv)
+    parser.add_argument("--prepare-only", action="store_true",
+                        help="build and bind binaries, write --prepared-manifest, then exit")
+    parser.add_argument("--prepared-manifest", type=Path,
+                        help="immutable build handoff used to separate shared build prep from GPU profiling")
+    return parser
 
-    bins = build_pair(patch_id=opts.patch, arch=opts.arch, hip_path=opts.hip_path,
-                      worktree_root=opts.worktree_root, build_root=opts.build_root,
-                      common_patches=opts.common_patches, baseline_source=opts.baseline_source,
-                      allow_rejected=opts.allow_rejected)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _parser()
+    opts = parser.parse_args(argv)
+    if opts.prepare_only and opts.prepared_manifest is None:
+        parser.error("--prepare-only requires --prepared-manifest")
+
+    if opts.prepared_manifest is not None and opts.prepared_manifest.is_file() and not opts.prepare_only:
+        bins = _load_prepared_manifest(opts.prepared_manifest, opts)
+        _print(f"reusing verified prepared profile binaries: {opts.prepared_manifest}")
+    else:
+        bins = build_pair(patch_id=opts.patch, arch=opts.arch, hip_path=opts.hip_path,
+                          worktree_root=opts.worktree_root, build_root=opts.build_root,
+                          common_patches=opts.common_patches, baseline_source=opts.baseline_source,
+                          allow_rejected=opts.allow_rejected)
+        if opts.prepared_manifest is not None:
+            _write_prepared_manifest(opts.prepared_manifest, opts, bins)
+            _print(f"prepared profile binaries: {opts.prepared_manifest}")
+
+    if opts.prepare_only:
+        return 0
+
     env = dict(os.environ)
     env.pop("ROCR_VISIBLE_DEVICES", None)
     env["HIP_VISIBLE_DEVICES"] = opts.device
     env["BIGCHERRY_PATCH_TRACE"] = "1"
     for item in opts.env:
-        key, _, value = item.partition("=")
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            raise RuntimeError(f"--env must be K=V, got {item!r}")
         env[key] = value
     result = {"patch": opts.patch, "arch": opts.arch, "workload": opts.workload, "model": str(opts.model),
-              "env": opts.env, "binaries": {r: str(b) for r, b in bins.items()}, "arms": {}}
+              "env": opts.env, "prepared_manifest": str(opts.prepared_manifest) if opts.prepared_manifest else None,
+              "binaries": {r: str(b) for r, b in bins.items()}, "arms": {}}
     for role, binary in bins.items():
         _print(f"profiling {role}: {binary}")
         result["arms"][role] = profile_arm(binary=binary, model=opts.model, workload=opts.workload,
                                            out=opts.out / role, env=env)
+    opts.out.mkdir(parents=True, exist_ok=True)
     (opts.out / "profile.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    # A real kernel-fraction report (produced from real trace files) is what
-    # this evidence actually needs; the wrapper's own exit code is not
-    # authoritative once it has already emitted the traces it was measuring.
     ok = all(a["report"] for a in result["arms"].values())
     return 0 if ok else 1
 
