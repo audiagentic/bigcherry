@@ -17,10 +17,14 @@ work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 # shared side of the same gate and may run concurrently with each other, but
 # never with this campaign. RCD07 stage execution will eventually narrow the
 # exclusive window to timed stages only.
+#
+# Lock order is host activity -> GPU. Profiles use build-key -> shared host ->
+# GPU. Keeping host before GPU prevents a writer/readers lock-order deadlock and
+# means a performance campaign never reserves a GPU while waiting for readers.
 source "$root/tools/lab/plan-qualification/gpu-lock.sh"
 source "$root/tools/lab/plan-qualification/activity-lock.sh"
-gpu_lock_acquire "$work" "$dev"
 activity_lock_exclusive_acquire "$work"
+gpu_lock_acquire "$work" "$dev"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
 # Shared compiler cache for every campaign tree. Worktrees and build dirs have
