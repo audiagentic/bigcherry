@@ -21,7 +21,8 @@ from .executor import (
     ResourceRequest,
     SchedulerGpuRequest,
 )
-from .model import BatchSpec, JobSpec, digest
+from .identity import ScientificIdentityResolver
+from .model import BatchSpec, JobSpec, digest, job_from_mapping
 from .store import RunStore
 from .workspace import WorkspaceManager
 
@@ -52,12 +53,18 @@ class JobService:
         executors: Mapping[str, Executor],
         workspace_manager: WorkspaceManager,
         inventory_loader: Callable[[str], HardwareInventory],
+        identity_resolver: ScientificIdentityResolver,
         shared_root: Path,
+        attempt_identity_resolver_factory: (
+            Callable[[Path], ScientificIdentityResolver] | None
+        ) = None,
     ) -> None:
         self.store = store
         self.executors = dict(executors)
         self.workspace_manager = workspace_manager
         self.inventory_loader = inventory_loader
+        self.identity_resolver = identity_resolver
+        self.attempt_identity_resolver_factory = attempt_identity_resolver_factory
         self.shared_root = shared_root.resolve()
         self.shared_root.mkdir(parents=True, exist_ok=True)
 
@@ -70,18 +77,29 @@ class JobService:
             raise JobServiceError(
                 f"target host mismatch: requested {batch.target.host_id}, inventory is {inventory.host_id}"
             )
-        if batch.target.platform_family and batch.target.platform_family != inventory.platform_family:
+        if (
+            batch.target.platform_family
+            and batch.target.platform_family != inventory.platform_family
+        ):
             raise JobServiceError("target platform family does not match accepted inventory")
         by_arch: dict[str, dict[str, object]] = {}
         for job in batch.expand():
             if job.architecture in by_arch:
                 continue
             if job.gpu is None:
-                raise JobServiceError("validation batch requires an explicit GPU requirement")
+                raise JobServiceError(
+                    "validation batch requires an explicit GPU requirement"
+                )
             try:
                 binding = bind_gpu_requirement(job.gpu, inventory)
             except HardwareBindingError as exc:
                 raise JobServiceError(str(exc)) from exc
+            scientific_identity = dict(self.identity_resolver.resolve(job))
+            identity_hash = scientific_identity.get("identity_hash")
+            if not isinstance(identity_hash, str) or not identity_hash:
+                raise JobServiceError(
+                    "scientific identity resolver did not provide identity_hash"
+                )
             series_material = {
                 "patch": job.patch,
                 "architecture": job.architecture,
@@ -95,6 +113,7 @@ class JobService:
                 "production_lane": job.production_lane,
                 "planned_sessions": job.planned_sessions,
                 "code_ref": job.code_ref,
+                "scientific_identity_hash": identity_hash,
                 "executor_id": executor_id,
                 "host_id": inventory.host_id,
                 "platform_environment_hash": inventory.platform_environment_hash,
@@ -103,8 +122,10 @@ class JobService:
             series_id = "s-" + digest(series_material, person=b"bc-series-v1")
             runs = [
                 {
-                    "run_id": "r-" + digest(
-                        {"series_id": series_id, "session": session}, person=b"bc-run-v1"
+                    "run_id": "r-"
+                    + digest(
+                        {"series_id": series_id, "session": session},
+                        person=b"bc-run-v1",
                     ),
                     "session": session,
                 }
@@ -113,6 +134,7 @@ class JobService:
             by_arch[job.architecture] = {
                 "series_id": series_id,
                 "series_material": series_material,
+                "scientific_identity": scientific_identity,
                 "binding": _binding_dict(binding),
                 "accepted_inventory_hash": inventory.material_hash,
                 "runs": runs,
@@ -135,13 +157,19 @@ class JobService:
     ) -> dict[str, object]:
         plan = self.plan_batch(batch)
         batch_id = "b-" + digest(
-            {"key": idempotency_key, "request_hash": batch.request_hash}, person=b"bc-batch-id"
+            {"key": idempotency_key, "request_hash": batch.request_hash},
+            person=b"bc-batch-id",
         )
-        accepted = self.store.accept_idempotency(idempotency_key, batch.request_hash, batch_id)
-        existing_batch = self.store.root / "batches" / str(accepted["batch_id"]) / "batch.json"
+        accepted = self.store.accept_idempotency(
+            idempotency_key, batch.request_hash, batch_id
+        )
+        existing_batch = (
+            self.store.root
+            / "batches"
+            / str(accepted["batch_id"])
+            / "batch.json"
+        )
         if existing_batch.is_file():
-            # Lost-response/client retry: return the original durable response.
-            # Never regenerate events/inbox receipts/timestamps.
             return self.store.batch(str(accepted["batch_id"]))
         record = {
             "schema": "bigcherry.jobs.batch-record.v1",
@@ -177,6 +205,7 @@ class JobService:
                     "batch_id": batch_id,
                     "session": session,
                     "job": _job_dict(job),
+                    "scientific_identity": series["scientific_identity"],
                     "binding": series["binding"],
                     "executor_id": batch.target.executor_id,
                     "created_ns": time.time_ns(),
@@ -237,7 +266,9 @@ class JobService:
         if latest is not None and not force_new_attempt:
             latest_root = self.store.attempt_root(run_id, latest)
             existing_attempt = self.store.read_optional(latest_root / "attempt.json")
-            existing_submission = self.store.read_optional(latest_root / "submission.json")
+            existing_submission = self.store.read_optional(
+                latest_root / "submission.json"
+            )
             if existing_submission is not None:
                 return ExecutionHandle(
                     str(existing_submission["executor"]),
@@ -245,9 +276,9 @@ class JobService:
                     str(existing_submission["execution_id"]),
                 )
             if existing_attempt is not None:
-                # Service died after durable attempt/intent creation but before
-                # handle persistence. Reuse this exact attempt/commit/request.
-                return self._submit_attempt(run, existing_attempt, latest_root, executor)
+                return self._submit_attempt(
+                    run, existing_attempt, latest_root, executor
+                )
 
         attempt_no = self.store.next_attempt(run_id)
         control = self.store.control(run_id)
@@ -255,6 +286,23 @@ class JobService:
         workspace = self.workspace_manager.create(run_id, attempt_no, code_ref)
         if control.get("retry_code_ref") is not None:
             self.store.set_control(run_id, retry_code_ref=None)
+
+        frozen_identity = run.get("scientific_identity")
+        if not isinstance(frozen_identity, dict):
+            raise JobServiceError("run lacks frozen scientific identity")
+        if self.attempt_identity_resolver_factory is not None:
+            current_identity = dict(
+                self.attempt_identity_resolver_factory(workspace.project_root).resolve(
+                    job_from_mapping(run["job"])
+                )
+            )
+            if current_identity.get("identity_hash") != frozen_identity.get(
+                "identity_hash"
+            ):
+                raise JobServiceError(
+                    "scientific identity drifted before attempt start; create a new series"
+                )
+
         execution_id = f"{run_id}:a{attempt_no}"
         attempt_root = self.store.attempt_root(run_id, attempt_no)
         attempt_record = {
@@ -266,6 +314,7 @@ class JobService:
             "project_root": str(workspace.project_root),
             "shared_root": str(self.shared_root),
             "job": run["job"],
+            "scientific_identity": frozen_identity,
             "binding": run["binding"],
             "created_ns": time.time_ns(),
         }
@@ -282,23 +331,33 @@ class JobService:
         run_id = str(run["run_id"])
         attempt_no = int(attempt_record["attempt"])
         execution_id = str(attempt_record["execution_id"])
-        request = self._execution_request(run, attempt_record, attempt_root, executor)
+        request = self._execution_request(
+            run, attempt_record, attempt_root, executor
+        )
         self.store.write_submission_intent(
             run_id,
             attempt_no,
             {
                 "execution_id": execution_id,
-                "request_hash": digest(dataclasses.asdict(request), person=b"bc-exec-request"),
+                "request_hash": digest(
+                    dataclasses.asdict(request), person=b"bc-exec-request"
+                ),
                 "commit": str(attempt_record["commit"]),
             },
         )
         start = self.store.read_optional(attempt_root / "executor-start.json")
         if start and start.get("slurm_job_id") and executor.name == "slurm":
-            matches = (ExecutionHandle("slurm", str(start["slurm_job_id"]), execution_id),)
+            matches = (
+                ExecutionHandle(
+                    "slurm", str(start["slurm_job_id"]), execution_id
+                ),
+            )
         else:
             matches = executor.correlate(execution_id)
         if len(matches) > 1:
-            raise AmbiguousSubmission(f"multiple native executions correlate to {execution_id}")
+            raise AmbiguousSubmission(
+                f"multiple native executions correlate to {execution_id}"
+            )
         handle = matches[0] if matches else executor.submit(request)
         self.store.write_submission(
             run_id,
@@ -314,7 +373,11 @@ class JobService:
         self.store.append_event(
             kind="attempt.submitted",
             run_id=run_id,
-            data={"attempt": attempt_no, "execution_id": execution_id, "native_id": handle.native_id},
+            data={
+                "attempt": attempt_no,
+                "execution_id": execution_id,
+                "native_id": handle.native_id,
+            },
         )
         return handle
 
@@ -338,7 +401,9 @@ class JobService:
             "BIGCHERRY_SELECTED_DEVICE_IDS": ",".join(
                 str(item) for item in binding["selected_device_ids"]
             ),
-            "BIGCHERRY_RESOURCE_POLICY": "external" if executor.name == "slurm" else "local",
+            "BIGCHERRY_RESOURCE_POLICY": (
+                "external" if executor.name == "slurm" else "local"
+            ),
             "PYTHONPATH": str(Path(str(attempt["project_root"])) / "tools"),
         }
         if executor.name == "slurm":
@@ -372,11 +437,15 @@ class JobService:
                 gpu=scheduler_gpu,
                 activity_class="timed-measure",
                 memory_bytes=None,
-                timeout_seconds=int(run["job"].get("timeout_seconds", 2700)),
+                timeout_seconds=int(
+                    run["job"].get("timeout_seconds", 2700)
+                ),
             ),
         )
 
-    def _handle_for_run(self, run_id: str) -> tuple[Executor, ExecutionHandle, int]:
+    def _handle_for_run(
+        self, run_id: str
+    ) -> tuple[Executor, ExecutionHandle, int]:
         run = self.store.run(run_id)
         attempt_no = self.store.latest_attempt(run_id)
         if attempt_no is None:
@@ -408,10 +477,15 @@ class JobService:
         else:
             executor, handle, _ = self._handle_for_run(run_id)
             terminal = self.store.read_optional(
-                self.store.attempt_root(run_id, attempt_no) / "executor-result.json"
+                self.store.attempt_root(run_id, attempt_no)
+                / "executor-result.json"
             )
             if terminal:
-                state = "completed" if int(terminal.get("returncode", 1)) == 0 else "failed"
+                state = (
+                    "completed"
+                    if int(terminal.get("returncode", 1)) == 0
+                    else "failed"
+                )
             else:
                 state = executor.status(handle).state.value
         return {
@@ -424,7 +498,9 @@ class JobService:
         }
 
     def list_status(self) -> tuple[dict[str, object], ...]:
-        return tuple(self.status(str(run["run_id"])) for run in self.store.list_runs())
+        return tuple(
+            self.status(str(run["run_id"])) for run in self.store.list_runs()
+        )
 
     def control_run(self, run_id: str, action: str) -> dict[str, object]:
         if action == "disable":
@@ -439,7 +515,9 @@ class JobService:
             executor, handle, _ = self._handle_for_run(run_id)
             executor.control(
                 handle,
-                ExecutorControl.HOLD if action == "hold" else ExecutorControl.RELEASE,
+                ExecutorControl.HOLD
+                if action == "hold"
+                else ExecutorControl.RELEASE,
             )
         else:
             raise ValueError(f"unknown control action: {action}")
@@ -448,7 +526,9 @@ class JobService:
 
     def pause(self, paused: bool) -> dict[str, object]:
         value = self.store.set_service_control(paused=paused)
-        self.store.append_event(kind="service.paused" if paused else "service.resumed")
+        self.store.append_event(
+            kind="service.paused" if paused else "service.resumed"
+        )
         return value
 
     def retry(self, run_id: str, *, latest: bool) -> None:
@@ -456,14 +536,22 @@ class JobService:
         if not latest:
             previous = self.store.latest_attempt(run_id)
             if previous is None:
-                raise JobServiceError("cannot retry same commit before first attempt")
+                raise JobServiceError(
+                    "cannot retry same commit before first attempt"
+                )
             commit = str(self.store.attempt(run_id, previous)["commit"])
-            self.store.set_control(run_id, retry_code_ref=commit, cancelled=False)
+            self.store.set_control(
+                run_id, retry_code_ref=commit, cancelled=False
+            )
         else:
-            self.store.set_control(run_id, retry_code_ref=None, cancelled=False)
+            self.store.set_control(
+                run_id, retry_code_ref=None, cancelled=False
+            )
         self.store.enqueue(str(run["batch_id"]), run_id, reason="retry")
         self.store.append_event(
-            kind="job.retry-requested", run_id=run_id, data={"latest": latest}
+            kind="job.retry-requested",
+            run_id=run_id,
+            data={"latest": latest},
         )
 
     def logs(
@@ -518,31 +606,39 @@ class JobService:
         values: list[dict[str, object]] = []
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
             values.append(
-                {"path": path.relative_to(root).as_posix(), "bytes": path.stat().st_size}
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "bytes": path.stat().st_size,
+                }
             )
         return tuple(values)
 
     def review(self, series_id: str) -> dict[str, object]:
         series = self.store.series(series_id)
-        runs = [run for run in self.store.list_runs() if run.get("series_id") == series_id]
+        runs = [
+            run
+            for run in self.store.list_runs()
+            if run.get("series_id") == series_id
+        ]
         statuses = [
             self.status(str(run["run_id"]))
             for run in sorted(runs, key=lambda item: int(item["session"]))
         ]
         planned = int(series["series_material"]["planned_sessions"])
-        completed = sum(1 for status in statuses if status["state"] == "completed")
+        completed = sum(
+            1 for status in statuses if status["state"] == "completed"
+        )
         execution_complete = completed == planned
         return {
             "series_id": series_id,
             "planned_sessions": planned,
             "completed_sessions": completed,
             "missing_sessions": [
-                status["session"] for status in statuses if status["state"] != "completed"
+                status["session"]
+                for status in statuses
+                if status["state"] != "completed"
             ],
             "execution_complete": execution_complete,
-            # RCD08 evidence verification/harvest is intentionally a stronger
-            # gate than mere process completion. Do not claim scientific review
-            # readiness until verified evidence is wired into this projection.
             "review_ready": False,
             "review_blocker": (
                 "verified evidence harvest/report not yet recorded"
