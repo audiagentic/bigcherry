@@ -13,7 +13,8 @@ phase=${BC_PROFILE_PHASE:-both}
 case "$phase" in prepare|run|both) ;; *) echo "invalid BC_PROFILE_PHASE=$phase" >&2; exit 2 ;; esac
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
-work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
+source "$root/tools/lab/plan-qualification/work-root.sh"
+work=$(work_root_resolve "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
 mkdir -p "$work/tmp" "$work/runs/$run" "$work/queue/build-locks"
 export TMPDIR=$work/tmp
@@ -23,8 +24,6 @@ export PYTHONPATH=tools ROCM_PATH=$BC_HIP_PATH HIP_PATH=$BC_HIP_PATH PATH=$BC_HI
 toolchain=$(printf '%s' "$BC_HIP_PATH" | sha256sum | cut -c1-8)
 prepared="$work/runs/$run/prepared-profile.json"
 build_lock="$work/queue/build-locks/$arch-$toolchain.lock"
-source "$root/tools/lab/plan-qualification/gpu-lock.sh"
-source "$root/tools/lab/plan-qualification/activity-lock.sh"
 
 prepare_profile() {
     local build_fd rc
