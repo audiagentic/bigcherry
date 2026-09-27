@@ -54,4 +54,6 @@ until python3 -c "from bigcherry.patch import patchset; patchset.catalog()" 2>/d
     sleep 300
 done
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
-echo "CAMPAIGN_EXIT=$?"
+rc=$?
+echo "CAMPAIGN_EXIT=$rc"
+exit "$rc"
