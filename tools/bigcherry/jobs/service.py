@@ -39,6 +39,31 @@ def _binding_dict(binding: SeriesGpuBinding) -> dict[str, object]:
     return dataclasses.asdict(binding)
 
 
+def _binding_from_dict(value: dict[str, object]) -> SeriesGpuBinding:
+    from .model import GpuRequirement
+
+    requirement = value["requirement"]
+    if not isinstance(requirement, dict):
+        raise JobServiceError("persisted hardware binding requirement is invalid")
+    return SeriesGpuBinding(
+        requirement=GpuRequirement(
+            architecture=str(requirement["architecture"]),
+            count=int(requirement.get("count", 1)),
+            min_vram_bytes=int(requirement.get("min_vram_bytes", 0)),
+            homogeneous_model=bool(requirement.get("homogeneous_model", True)),
+            model=None if requirement.get("model") is None else str(requirement["model"]),
+            require_peer_access=bool(requirement.get("require_peer_access", False)),
+            exact_device_ids=tuple(str(item) for item in requirement.get("exact_device_ids", [])),
+        ),
+        selected_device_ids=tuple(str(item) for item in value["selected_device_ids"]),
+        hardware_cohort_hash=str(value["hardware_cohort_hash"]),
+        accepted_inventory_hash=str(value["accepted_inventory_hash"]),
+        reserve_all_of_arch=bool(value["reserve_all_of_arch"]),
+        scheduler_architecture=str(value["scheduler_architecture"]),
+        scheduler_count=int(value["scheduler_count"]),
+    )
+
+
 def _job_dict(job: JobSpec) -> dict[str, object]:
     return job.to_dict()
 
@@ -55,9 +80,7 @@ class JobService:
         inventory_loader: Callable[[str], HardwareInventory],
         identity_resolver: ScientificIdentityResolver,
         shared_root: Path,
-        attempt_identity_resolver_factory: (
-            Callable[[Path], ScientificIdentityResolver] | None
-        ) = None,
+        attempt_identity_resolver_factory: Callable[[Path], ScientificIdentityResolver] | None = None,
     ) -> None:
         self.store = store
         self.executors = dict(executors)
@@ -81,7 +104,9 @@ class JobService:
             batch.target.platform_family
             and batch.target.platform_family != inventory.platform_family
         ):
-            raise JobServiceError("target platform family does not match accepted inventory")
+            raise JobServiceError(
+                "target platform family does not match accepted inventory"
+            )
         by_arch: dict[str, dict[str, object]] = {}
         for job in batch.expand():
             if job.architecture in by_arch:
@@ -94,7 +119,7 @@ class JobService:
                 binding = bind_gpu_requirement(job.gpu, inventory)
             except HardwareBindingError as exc:
                 raise JobServiceError(str(exc)) from exc
-            scientific_identity = dict(self.identity_resolver.resolve(job))
+            scientific_identity = self.identity_resolver.resolve(job)
             identity_hash = scientific_identity.get("identity_hash")
             if not isinstance(identity_hash, str) or not identity_hash:
                 raise JobServiceError(
@@ -217,7 +242,10 @@ class JobService:
                     run_id=run_id,
                     data={"batch_id": batch_id, "series_id": series_id},
                 )
-        return record
+        # Always return the canonical durable JSON representation. This makes
+        # first submit and idempotent replay byte/API equivalent (tuple/list
+        # normalization included) and avoids leaking pre-persistence types.
+        return self.store.batch(batch_id)
 
     def ingest_once(self) -> dict[str, int]:
         claimable = self.store.claimable()
@@ -261,24 +289,17 @@ class JobService:
         run = self.store.run(run_id)
         executor_id = str(run["executor_id"])
         executor = self.executors[executor_id]
-
         latest = self.store.latest_attempt(run_id)
         if latest is not None and not force_new_attempt:
-            latest_root = self.store.attempt_root(run_id, latest)
-            existing_attempt = self.store.read_optional(latest_root / "attempt.json")
-            existing_submission = self.store.read_optional(
-                latest_root / "submission.json"
-            )
-            if existing_submission is not None:
+            attempt_root = self.store.attempt_root(run_id, latest)
+            submission = self.store.read_optional(attempt_root / "submission.json")
+            if submission:
                 return ExecutionHandle(
-                    str(existing_submission["executor"]),
-                    str(existing_submission["native_id"]),
-                    str(existing_submission["execution_id"]),
+                    str(submission["executor"]),
+                    str(submission["native_id"]),
+                    str(submission["execution_id"]),
                 )
-            if existing_attempt is not None:
-                return self._submit_attempt(
-                    run, existing_attempt, latest_root, executor
-                )
+            return self._submit_attempt(run, latest, executor)
 
         attempt_no = self.store.next_attempt(run_id)
         control = self.store.control(run_id)
@@ -286,25 +307,19 @@ class JobService:
         workspace = self.workspace_manager.create(run_id, attempt_no, code_ref)
         if control.get("retry_code_ref") is not None:
             self.store.set_control(run_id, retry_code_ref=None)
-
-        frozen_identity = run.get("scientific_identity")
-        if not isinstance(frozen_identity, dict):
-            raise JobServiceError("run lacks frozen scientific identity")
+        job = job_from_mapping(dict(run["job"]))
+        expected_identity = dict(run.get("scientific_identity") or {})
         if self.attempt_identity_resolver_factory is not None:
-            current_identity = dict(
-                self.attempt_identity_resolver_factory(workspace.project_root).resolve(
-                    job_from_mapping(run["job"])
-                )
-            )
-            if current_identity.get("identity_hash") != frozen_identity.get(
+            actual_identity = self.attempt_identity_resolver_factory(
+                workspace.project_root
+            ).resolve(job)
+            if actual_identity.get("identity_hash") != expected_identity.get(
                 "identity_hash"
             ):
                 raise JobServiceError(
                     "scientific identity drifted before attempt start; create a new series"
                 )
-
         execution_id = f"{run_id}:a{attempt_no}"
-        attempt_root = self.store.attempt_root(run_id, attempt_no)
         attempt_record = {
             "schema": "bigcherry.jobs.attempt.v1",
             "run_id": run_id,
@@ -314,71 +329,75 @@ class JobService:
             "project_root": str(workspace.project_root),
             "shared_root": str(self.shared_root),
             "job": run["job"],
-            "scientific_identity": frozen_identity,
+            "scientific_identity": expected_identity,
             "binding": run["binding"],
             "created_ns": time.time_ns(),
         }
         self.store.create_attempt(run_id, attempt_no, attempt_record)
-        return self._submit_attempt(run, attempt_record, attempt_root, executor)
+        return self._submit_attempt(run, attempt_no, executor)
 
     def _submit_attempt(
         self,
         run: dict[str, object],
-        attempt_record: dict[str, object],
-        attempt_root: Path,
+        attempt_no: int,
         executor: Executor,
     ) -> ExecutionHandle:
         run_id = str(run["run_id"])
-        attempt_no = int(attempt_record["attempt"])
-        execution_id = str(attempt_record["execution_id"])
-        request = self._execution_request(
-            run, attempt_record, attempt_root, executor
-        )
-        self.store.write_submission_intent(
-            run_id,
-            attempt_no,
-            {
-                "execution_id": execution_id,
-                "request_hash": digest(
-                    dataclasses.asdict(request), person=b"bc-exec-request"
-                ),
-                "commit": str(attempt_record["commit"]),
-            },
-        )
+        attempt = self.store.attempt(run_id, attempt_no)
+        attempt_root = self.store.attempt_root(run_id, attempt_no)
+        request = self._execution_request(run, attempt, attempt_root, executor)
+        intent = self.store.read_optional(attempt_root / "submission-intent.json")
+        if intent is None:
+            self.store.write_submission_intent(
+                run_id,
+                attempt_no,
+                {
+                    "execution_id": str(attempt["execution_id"]),
+                    "request_hash": digest(
+                        dataclasses.asdict(request), person=b"bc-exec-request"
+                    ),
+                    "commit": str(attempt["commit"]),
+                },
+            )
         start = self.store.read_optional(attempt_root / "executor-start.json")
-        if start and start.get("slurm_job_id") and executor.name == "slurm":
+        matches: tuple[ExecutionHandle, ...]
+        if start and start.get("slurm_job_id"):
             matches = (
                 ExecutionHandle(
-                    "slurm", str(start["slurm_job_id"]), execution_id
+                    "slurm",
+                    str(start["slurm_job_id"]),
+                    str(attempt["execution_id"]),
                 ),
             )
         else:
-            matches = executor.correlate(execution_id)
+            matches = executor.correlate(str(attempt["execution_id"]))
         if len(matches) > 1:
             raise AmbiguousSubmission(
-                f"multiple native executions correlate to {execution_id}"
+                f"multiple native executions correlate to {attempt['execution_id']}"
             )
         handle = matches[0] if matches else executor.submit(request)
-        self.store.write_submission(
-            run_id,
-            attempt_no,
-            {
-                "execution_id": execution_id,
-                "executor_id": str(run["executor_id"]),
-                "executor": handle.executor,
-                "native_id": handle.native_id,
-                "submitted_ns": time.time_ns(),
-            },
-        )
-        self.store.append_event(
-            kind="attempt.submitted",
-            run_id=run_id,
-            data={
-                "attempt": attempt_no,
-                "execution_id": execution_id,
-                "native_id": handle.native_id,
-            },
-        )
+        submission_path = attempt_root / "submission.json"
+        if not submission_path.exists():
+            self.store.write_submission(
+                run_id,
+                attempt_no,
+                {
+                    "execution_id": str(attempt["execution_id"]),
+                    "executor_id": str(run["executor_id"]),
+                    "executor": handle.executor,
+                    "native_id": handle.native_id,
+                    "submitted_ns": time.time_ns(),
+                },
+            )
+            self.store.append_event(
+                kind="attempt.submitted",
+                run_id=run_id,
+                data={
+                    "attempt": attempt_no,
+                    "execution_id": str(attempt["execution_id"]),
+                    "native_id": handle.native_id,
+                },
+            )
         return handle
 
     def _execution_request(
@@ -437,9 +456,7 @@ class JobService:
                 gpu=scheduler_gpu,
                 activity_class="timed-measure",
                 memory_bytes=None,
-                timeout_seconds=int(
-                    run["job"].get("timeout_seconds", 2700)
-                ),
+                timeout_seconds=int(run["job"].get("timeout_seconds", 2700)),
             ),
         )
 
@@ -477,15 +494,10 @@ class JobService:
         else:
             executor, handle, _ = self._handle_for_run(run_id)
             terminal = self.store.read_optional(
-                self.store.attempt_root(run_id, attempt_no)
-                / "executor-result.json"
+                self.store.attempt_root(run_id, attempt_no) / "executor-result.json"
             )
             if terminal:
-                state = (
-                    "completed"
-                    if int(terminal.get("returncode", 1)) == 0
-                    else "failed"
-                )
+                state = "completed" if int(terminal.get("returncode", 1)) == 0 else "failed"
             else:
                 state = executor.status(handle).state.value
         return {
@@ -515,9 +527,7 @@ class JobService:
             executor, handle, _ = self._handle_for_run(run_id)
             executor.control(
                 handle,
-                ExecutorControl.HOLD
-                if action == "hold"
-                else ExecutorControl.RELEASE,
+                ExecutorControl.HOLD if action == "hold" else ExecutorControl.RELEASE,
             )
         else:
             raise ValueError(f"unknown control action: {action}")
@@ -526,9 +536,7 @@ class JobService:
 
     def pause(self, paused: bool) -> dict[str, object]:
         value = self.store.set_service_control(paused=paused)
-        self.store.append_event(
-            kind="service.paused" if paused else "service.resumed"
-        )
+        self.store.append_event(kind="service.paused" if paused else "service.resumed")
         return value
 
     def retry(self, run_id: str, *, latest: bool) -> None:
@@ -536,9 +544,7 @@ class JobService:
         if not latest:
             previous = self.store.latest_attempt(run_id)
             if previous is None:
-                raise JobServiceError(
-                    "cannot retry same commit before first attempt"
-                )
+                raise JobServiceError("cannot retry same commit before first attempt")
             commit = str(self.store.attempt(run_id, previous)["commit"])
             self.store.set_control(
                 run_id, retry_code_ref=commit, cancelled=False
@@ -549,9 +555,7 @@ class JobService:
             )
         self.store.enqueue(str(run["batch_id"]), run_id, reason="retry")
         self.store.append_event(
-            kind="job.retry-requested",
-            run_id=run_id,
-            data={"latest": latest},
+            kind="job.retry-requested", run_id=run_id, data={"latest": latest}
         )
 
     def logs(
@@ -606,44 +610,35 @@ class JobService:
         values: list[dict[str, object]] = []
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
             values.append(
-                {
-                    "path": path.relative_to(root).as_posix(),
-                    "bytes": path.stat().st_size,
-                }
+                {"path": path.relative_to(root).as_posix(), "bytes": path.stat().st_size}
             )
         return tuple(values)
 
     def review(self, series_id: str) -> dict[str, object]:
         series = self.store.series(series_id)
         runs = [
-            run
-            for run in self.store.list_runs()
-            if run.get("series_id") == series_id
+            run for run in self.store.list_runs() if run.get("series_id") == series_id
         ]
         statuses = [
             self.status(str(run["run_id"]))
             for run in sorted(runs, key=lambda item: int(item["session"]))
         ]
         planned = int(series["series_material"]["planned_sessions"])
-        completed = sum(
-            1 for status in statuses if status["state"] == "completed"
-        )
+        completed = sum(1 for status in statuses if status["state"] == "completed")
         execution_complete = completed == planned
+        evidence = self.store.read_optional(
+            self.store.root / "series" / series_id / "verified-evidence.json"
+        )
+        evidence_ready = bool(evidence and evidence.get("verified") is True)
         return {
             "series_id": series_id,
             "planned_sessions": planned,
             "completed_sessions": completed,
             "missing_sessions": [
-                status["session"]
-                for status in statuses
-                if status["state"] != "completed"
+                status["session"] for status in statuses if status["state"] != "completed"
             ],
             "execution_complete": execution_complete,
-            "review_ready": False,
-            "review_blocker": (
-                "verified evidence harvest/report not yet recorded"
-                if execution_complete
-                else "planned sessions incomplete"
-            ),
+            "evidence_ready": evidence_ready,
+            "review_ready": execution_complete and evidence_ready,
             "runs": statuses,
         }

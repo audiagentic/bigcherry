@@ -69,7 +69,7 @@ class ResourceRequest:
 class ExecutionRequest:
     """Executor-local launch specification.
 
-    This is deliberately not the portable scientific JobSpec.  cwd/command and
+    This is deliberately not the portable scientific JobSpec. cwd/command and
     log paths are resolved after target placement for the selected host.
     """
 
@@ -112,10 +112,17 @@ class ExecutionStatus:
 
 @dataclass(frozen=True)
 class Allocation:
-    """Executor-native allocation before stable-ID verification."""
+    """Normalized allocation evidence.
+
+    ``native_gpu_ids`` are scheduler/process-local identifiers and are never
+    scientific identity. ``stable_gpu_ids`` are optional RCD12 identities
+    supplied only after an executor/worker has actually attested the mapping.
+    The field is additive so existing native-only adapters remain valid.
+    """
 
     native_gpu_ids: tuple[str, ...]
     environment: tuple[tuple[str, str], ...] = ()
+    stable_gpu_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

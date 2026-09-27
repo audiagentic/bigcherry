@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import Iterator
 
 from ..core.host_lock import HostFileLock
+from ..hardware.inventory import InventoryCatalog, bind_gpu_requirement, HardwareBindingError, verify_series_allocation
+from ..hardware.model import binding_from_mapping
+from ..hardware.runtime import (
+    allocation_from_visible_tokens,
+    selected_launch_ordinals,
+    selected_local_positions,
+)
 from ..tuning.journal import atomic_write
 
 
@@ -28,14 +35,23 @@ def _pairs(value) -> list[tuple[str, str]]:
 
 
 def campaign_argv(
-    job: dict[str, object], *, attempt_root: Path, shared_root: Path
+    job: dict[str, object],
+    *,
+    attempt_root: Path,
+    shared_root: Path,
+    local_device_indices: tuple[int, ...] | None = None,
 ) -> tuple[str, ...]:
     arch = str(job["architecture"])
     gpu = job.get("gpu") or {}
     count = int(gpu.get("count", 1)) if isinstance(gpu, dict) else 1
-    # validation_campaign sees allocation-local positions only. Slurm/remote
-    # visibility owns the mapping to physical devices.
-    local_devices = ",".join(str(index) for index in range(count))
+    indices = local_device_indices if local_device_indices is not None else tuple(range(count))
+    if len(indices) != count or len(set(indices)) != len(indices):
+        raise RuntimeError(
+            f"resolved device-map positions {indices} do not match requested GPU count {count}"
+        )
+    if any(index < 0 for index in indices):
+        raise RuntimeError("device-map positions must be non-negative")
+    local_devices = ",".join(str(index) for index in indices)
     toolchain = str(job.get("hip_path") or "default")
     import hashlib
 
@@ -106,22 +122,98 @@ def _safe(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value)
 
 
+def _runtime_gpu_preflight(
+    attempt: dict[str, object],
+    *,
+    shared_root: Path,
+    env: dict[str, str],
+) -> tuple[tuple[int, ...], dict[str, object]]:
+    binding_value = attempt.get("binding")
+    if not isinstance(binding_value, dict):
+        raise HardwareBindingError("attempt has no persisted GPU binding")
+    binding = binding_from_mapping(binding_value)
+    job_value = attempt.get("job")
+    target_value = job_value.get("target") if isinstance(job_value, dict) else None
+    target_executor = (
+        target_value.get("executor_id") if isinstance(target_value, dict) else None
+    )
+    executor_id = str(
+        attempt.get("executor_id")
+        or env.get("BIGCHERRY_EXECUTOR_ID")
+        or target_executor
+        or ""
+    )
+    if not executor_id:
+        raise HardwareBindingError("executor_id is unavailable for hardware attestation")
+    hardware_root = Path(
+        env.get("BIGCHERRY_HARDWARE_ROOT", str(shared_root / "hardware"))
+    ).resolve()
+    inventory = InventoryCatalog(hardware_root).load(executor_id)
+    policy = env.get("BIGCHERRY_RESOURCE_POLICY", "external")
+
+    if policy == "external":
+        raw_visible = env.get("ROCR_VISIBLE_DEVICES", "")
+        allocation = allocation_from_visible_tokens(raw_visible, inventory)
+        verify_series_allocation(binding, allocation, inventory)
+        positions = selected_local_positions(binding, allocation)
+        return positions, {
+            "policy": "external",
+            "executor_id": executor_id,
+            "native_gpu_ids": allocation.native_gpu_ids,
+            "stable_gpu_ids": allocation.stable_gpu_ids,
+            "selected_local_positions": positions,
+            "accepted_inventory_hash": inventory.material_hash,
+        }
+
+    if policy != "local":
+        raise HardwareBindingError(f"unknown BIGCHERRY_RESOURCE_POLICY={policy!r}")
+    if inventory.material_hash != binding.accepted_inventory_hash:
+        raise HardwareBindingError("accepted inventory changed after series binding")
+    current = bind_gpu_requirement(binding.requirement, inventory)
+    if (
+        current.selected_device_ids != binding.selected_device_ids
+        or current.hardware_cohort_hash != binding.hardware_cohort_hash
+    ):
+        raise HardwareBindingError("local hardware cohort drifted")
+    ordinals = selected_launch_ordinals(binding, inventory)
+    platform = inventory.platform_family.lower()
+    if platform.startswith("windows"):
+        env["HIP_VISIBLE_DEVICES"] = ",".join(str(item) for item in ordinals)
+        visibility_key = "HIP_VISIBLE_DEVICES"
+    else:
+        env["ROCR_VISIBLE_DEVICES"] = ",".join(str(item) for item in ordinals)
+        visibility_key = "ROCR_VISIBLE_DEVICES"
+    positions = tuple(range(len(binding.selected_device_ids)))
+    return positions, {
+        "policy": "local",
+        "executor_id": executor_id,
+        "stable_gpu_ids": binding.selected_device_ids,
+        "launch_ordinals": ordinals,
+        "selected_local_positions": positions,
+        "visibility_key": visibility_key,
+        "accepted_inventory_hash": inventory.material_hash,
+    }
+
+
+def _failure_class(returncode: int) -> str | None:
+    if returncode == 0:
+        return None
+    if returncode == 75:
+        return "transient_environment"
+    if returncode == 76:
+        return "harness_error"
+    if returncode == 77:
+        return "invalid_contract"
+    if returncode in {130, 143}:
+        return "cancelled_or_interrupted"
+    return "execution_error"
+
+
 def run_attempt(attempt_root: Path) -> int:
     attempt = json.loads((attempt_root / "attempt.json").read_text(encoding="utf-8"))
     if not isinstance(attempt, dict) or not isinstance(attempt.get("job"), dict):
         raise RuntimeError("attempt.json missing job")
     shared_root = Path(str(attempt["shared_root"])).resolve()
-    start = {
-        "execution_id": attempt["execution_id"],
-        "pid": os.getpid(),
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-        "started_ns": time.time_ns(),
-        "restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
-    }
-    _write(attempt_root / "executor-start.json", start)
-    argv = campaign_argv(
-        attempt["job"], attempt_root=attempt_root, shared_root=shared_root
-    )
     env = os.environ.copy()
     project_root = str(attempt["project_root"])
     tools = str(Path(project_root) / "tools")
@@ -135,17 +227,46 @@ def run_attempt(attempt_root: Path) -> int:
         env["HIP_PATH"] = hip
         env["ROCM_PATH"] = hip
         env["PATH"] = str(Path(hip) / "bin") + os.pathsep + env.get("PATH", "")
-    started = time.monotonic_ns()
-    with _device_locks():
-        completed = subprocess.run(argv, env=env)
-    result = {
+
+    start = {
         "execution_id": attempt["execution_id"],
-        "returncode": completed.returncode,
+        "pid": os.getpid(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "started_ns": time.time_ns(),
+        "restart_count": int(os.environ.get("SLURM_RESTART_COUNT", "0")),
+    }
+    _write(attempt_root / "executor-start.json", start)
+    started = time.monotonic_ns()
+    try:
+        positions, attestation = _runtime_gpu_preflight(
+            attempt, shared_root=shared_root, env=env
+        )
+        _write(attempt_root / "allocation-attestation.json", attestation)
+        argv = campaign_argv(
+            attempt["job"],
+            attempt_root=attempt_root,
+            shared_root=shared_root,
+            local_device_indices=positions,
+        )
+        with _device_locks():
+            completed = subprocess.run(argv, env=env)
+        returncode = int(completed.returncode)
+        error = None
+    except HardwareBindingError as exc:
+        print(f"hardware allocation preflight failed: {exc}", file=sys.stderr)
+        returncode = 75
+        error = str(exc)
+    result: dict[str, object] = {
+        "execution_id": attempt["execution_id"],
+        "returncode": returncode,
+        "failure_class": _failure_class(returncode),
         "finished_ns": time.time_ns(),
         "duration_ns": time.monotonic_ns() - started,
     }
+    if error is not None:
+        result["error"] = error
     _write(attempt_root / "executor-result.json", result)
-    return int(completed.returncode)
+    return returncode
 
 
 def main(argv: list[str] | None = None) -> int:

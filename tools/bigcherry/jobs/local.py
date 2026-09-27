@@ -171,7 +171,8 @@ class LocalExecutor:
         record = self._read(handle.execution_id) or {}
         selected = record.get("selected_device_ids")
         if isinstance(selected, list):
-            return Allocation(tuple(str(item) for item in selected))
+            stable = tuple(str(item) for item in selected)
+            return Allocation(native_gpu_ids=(), stable_gpu_ids=stable)
         return None
 
     def events(
