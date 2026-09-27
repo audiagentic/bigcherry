@@ -51,8 +51,6 @@ def campaign_argv(
         )
     if any(index < 0 for index in indices):
         raise RuntimeError("device-map positions must be non-negative")
-    # validation_campaign sees allocation-local positions only. Stable device
-    # identity is attested separately and never persisted as a host ordinal.
     local_devices = ",".join(str(index) for index in indices)
     toolchain = str(job.get("hip_path") or "default")
     import hashlib
@@ -134,9 +132,15 @@ def _runtime_gpu_preflight(
     if not isinstance(binding_value, dict):
         raise HardwareBindingError("attempt has no persisted GPU binding")
     binding = binding_from_mapping(binding_value)
+    job_value = attempt.get("job")
+    target_value = job_value.get("target") if isinstance(job_value, dict) else None
+    target_executor = (
+        target_value.get("executor_id") if isinstance(target_value, dict) else None
+    )
     executor_id = str(
         attempt.get("executor_id")
         or env.get("BIGCHERRY_EXECUTOR_ID")
+        or target_executor
         or ""
     )
     if not executor_id:
@@ -154,6 +158,7 @@ def _runtime_gpu_preflight(
         positions = selected_local_positions(binding, allocation)
         return positions, {
             "policy": "external",
+            "executor_id": executor_id,
             "native_gpu_ids": allocation.native_gpu_ids,
             "stable_gpu_ids": allocation.stable_gpu_ids,
             "selected_local_positions": positions,
@@ -181,6 +186,7 @@ def _runtime_gpu_preflight(
     positions = tuple(range(len(binding.selected_device_ids)))
     return positions, {
         "policy": "local",
+        "executor_id": executor_id,
         "stable_gpu_ids": binding.selected_device_ids,
         "launch_ordinals": ordinals,
         "selected_local_positions": positions,
