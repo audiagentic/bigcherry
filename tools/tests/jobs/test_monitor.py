@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -34,29 +35,45 @@ class MonitorPolicyTests(unittest.TestCase):
         self.assertIn("free_bytes=40 < 100", str(ctx.exception))
         self.assertIn("free_fraction=0.0400 < 0.0500", str(ctx.exception))
 
-    def test_environment_disk_policy_has_safe_defaults_and_overrides(self):
-        guards = monitor.disk_guards_from_environment(
-            project_root=Path("/project"),
-            work_root=Path("/work"),
-            environment={},
-        )
+    def test_environment_disk_policy_guards_system_work_and_temp(self):
+        with patch.object(monitor.tempfile, "gettempdir", return_value="/tmp-for-test"):
+            guards = monitor.disk_guards_from_environment(
+                project_root=Path("/project"),
+                work_root=Path("/work"),
+                environment={},
+            )
+        self.assertEqual([guard.name for guard in guards], ["system-root", "work-root", "temp-root"])
+        self.assertEqual(guards[0].path, Path(os.path.abspath(os.sep)))
+        self.assertEqual(guards[0].min_free_bytes, 0)
+        self.assertEqual(guards[0].min_free_fraction, 0.05)
+        self.assertEqual(guards[1].min_free_bytes, 0)
+        self.assertEqual(guards[1].min_free_fraction, 0.02)
+        self.assertEqual(guards[2].path, Path("/tmp-for-test"))
+        self.assertEqual(guards[2].min_free_fraction, 0.05)
+
+    def test_environment_disk_policy_absolute_overrides_and_project_guard(self):
+        with patch.object(monitor.tempfile, "gettempdir", return_value="/tmp-for-test"):
+            guards = monitor.disk_guards_from_environment(
+                project_root=Path("/project"),
+                work_root=Path("/work"),
+                environment={
+                    "BIGCHERRY_ROOT_MIN_FREE_GIB": "50",
+                    "BIGCHERRY_WORK_MIN_FREE_GIB": "200",
+                    "BIGCHERRY_TMP_MIN_FREE_GIB": "20",
+                    "BIGCHERRY_PROJECT_MIN_FREE_GIB": "1.5",
+                    "BIGCHERRY_ROOT_MIN_FREE_FRACTION": "0",
+                    "BIGCHERRY_WORK_MIN_FREE_FRACTION": "0.1",
+                    "BIGCHERRY_TMP_MIN_FREE_FRACTION": "0",
+                    "BIGCHERRY_PROJECT_MIN_FREE_FRACTION": "0.03",
+                },
+            )
+        self.assertEqual([guard.name for guard in guards], ["system-root", "work-root", "temp-root", "project-root"])
         self.assertEqual(guards[0].min_free_bytes, 50 * 1024**3)
         self.assertEqual(guards[1].min_free_bytes, 200 * 1024**3)
-        self.assertEqual(guards[0].min_free_fraction, 0.05)
-        self.assertEqual(guards[1].min_free_fraction, 0.02)
-
-        guards = monitor.disk_guards_from_environment(
-            project_root=Path("/project"),
-            work_root=Path("/work"),
-            environment={
-                "BIGCHERRY_ROOT_MIN_FREE_GIB": "1.5",
-                "BIGCHERRY_WORK_MIN_FREE_GIB": "2",
-                "BIGCHERRY_ROOT_MIN_FREE_FRACTION": "0",
-                "BIGCHERRY_WORK_MIN_FREE_FRACTION": "0.1",
-            },
-        )
-        self.assertEqual(guards[0].min_free_bytes, int(1.5 * 1024**3))
         self.assertEqual(guards[1].min_free_fraction, 0.1)
+        self.assertEqual(guards[2].min_free_bytes, 20 * 1024**3)
+        self.assertEqual(guards[3].min_free_bytes, int(1.5 * 1024**3))
+        self.assertEqual(guards[3].min_free_fraction, 0.03)
 
     def test_pre_spawn_disk_pressure_returns_retryable_without_launch(self):
         policy = monitor.MonitorPolicy(poll_seconds=0.01)
