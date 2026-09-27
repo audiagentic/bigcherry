@@ -13,172 +13,139 @@ work: M
 
 # Implement verified evidence harvest, explicit git commit and canonical reports
 
-## Description
+## Status
 
-Replace manual evidence copying plus `summarize.py`/`noise.py` with an idempotent BigCherry harvest/report path. Harvest consumes only job-service evidence whose run/series/attempt/contract/composition/build/hardware identity verifies, copies explicit known files into canonical package evidence locations, stages only explicit paths, checks the staged diff, commits it, and records the resulting commit SHA. It never stashes, `git add -A`, silently edits unrelated files or marks a result review-ready before evidence is committed.
+**Production implementation complete for the non-hardware path; Brutus end-to-end acceptance remains pending.**
 
-Reporting remains separate from scheduler success: scientific PASS/FAIL is read from verified evidence; ladder is reference-only; anomalous rounds are surfaced but not automatically replaced.
+Implemented:
 
-## Steps
-
-1. Inventory current `tools/lab/plan-qualification/summarize.py` and `noise.py` calculations/fields; extract reusable logic without changing evidence policy.
-2. Add harvest manifest/schema and identity verifier.
-3. Add canonical destination resolver using patch package/evidence APIs.
-4. Implement explicit-copy + explicit-stage git transaction and idempotency.
-5. Add session/series/patch report models and JSON/Markdown renderers.
-6. Add review-readiness rule requiring planned N valid sessions and recorded evidence commit(s).
-7. Add offline temp-git tests for dirty trees, conflicts, duplicate harvest, tampering and report aggregation.
-8. Integrate as RCD07 operation later; v1/v1.5 may invoke `bigcherry jobs harvest` manually/after completion.
-
-## Detailed Solution & Technical Design
-
-### Harvest input
-
-```python
-@dataclass(frozen=True)
-class HarvestItem:
-    run_id: str
-    series_id: str
-    attempt_no: int
-    source_path: Path
-    source_sha256: str
-    destination_relpath: str
-    record_digest: str
-
-@dataclass(frozen=True)
-class HarvestManifest:
-    schema: str
-    series_identity_hash: str
-    items: tuple[HarvestItem, ...]
-```
-
-Before git mutation verify:
-
-- run/series/attempt exists and terminal;
-- evidence record validates through existing `patch.evidence`;
-- run_id/session/contract/base/focal/common/frozen composition match series intent;
-- platform environment + hardware cohort match series;
-- source byte hash equals manifest;
-- destination is inside allowed patch evidence/report roots and contains no path traversal;
-- scientific record is not from an interrupted/invalid attempt.
-
-### Git transaction
-
-```python
-def harvest(
-    manifest: HarvestManifest,
-    *,
-    repo: Path,
-    commit: bool,
-) -> HarvestResult: ...
-```
-
-Algorithm:
-
-1. acquire HI151 maintenance lock or a dedicated harvest tree lease compatible with maintenance policy; no campaign runner may be using canonical tree;
-2. refuse if any destination has unrelated staged changes;
-3. unrelated unstaged files may exist only if they are outside destinations and commit pathspecs; record them, never stash/touch;
-4. copy to same-directory temp + fsync + atomic replace;
-5. `git add -- <explicit destination ...>`;
-6. `git diff --cached --check`;
-7. inspect staged name list equals exact intended destinations;
-8. commit with deterministic message containing series/run IDs, or in `--no-commit` mode return staged state for explicit operator workflow;
-9. record commit SHA in run-store harvest result/event.
-
-If commit fails, leave explicit staged changes and report exact recovery; never reset unrelated user work.
-
-Idempotency:
-- if destination bytes and recorded harvest commit already match, return `already-harvested`;
-- same destination with different identity/content is a conflict, never overwrite silently.
-
-### Reporting
-
-Library models:
-
-```python
-def session_report(record: ValidationRecord) -> SessionReport: ...
-def series_report(series: SeriesRecord, sessions: tuple[SessionReport, ...]) -> SeriesReport: ...
-def render_report_json(report: SeriesReport) -> dict[str, object]: ...
-def render_report_markdown(report: SeriesReport) -> str: ...
-```
-
-Series report includes:
-
-- planned/valid/missing session count;
-- per-session target/control effects and CI inputs;
-- aggregate session-bootstrap result under contract policy;
-- control-lane regression bound;
-- reference ladder table clearly `reference_only`;
-- production-lane result if present;
-- noise/round diagnostics and telemetry flags;
-- harness failures/retries excluded from scientific sample count but linked;
-- evidence commit SHA(s);
-- `review_ready` only when planned N is complete, all required evidence validates/committed and no identity drift/block remains.
-
-No materiality threshold is added beyond the contract; small positive wins remain eligible under `improvement_no_regression_v1`.
-
-## Code Samples & Guidance
-
-Git must be invoked as argv with `--` path separator. Never infer harvest destinations from arbitrary source filenames; destination resolver owns allowed mapping.
-
-Reporting functions are pure over verified records so they are testable without Slurm/GPU.
-
-## Files
-
-Planned:
-
-- `tools/bigcherry/jobs/harvest.py`
 - `tools/bigcherry/jobs/gitops.py`
+- `tools/bigcherry/jobs/harvest.py`
 - `tools/bigcherry/jobs/report.py`
 - `tools/tests/jobs/test_harvest.py`
 - `tools/tests/jobs/test_report.py`
-- migrate reusable computations from:
-  - `tools/lab/plan-qualification/summarize.py`
-  - `tools/lab/plan-qualification/noise.py`
+- CLI: `jobs evidence`, `jobs harvest --commit|--stage-only`, `jobs report --format json|markdown`, `jobs review`
 
-## Validation
+The implementation deliberately does **not** copy arbitrary campaign files. `validation_campaign` already writes append-only patch evidence inside each attempt's detached worktree. Harvest identifies only records added relative to that attempt's frozen BigCherry commit, verifies them, and merges them through the existing `bigcherry.patch.evidence` API.
 
-Offline temp-repo tests:
+RCD08 remains `pending` only because a complete real Brutus series still has to be harvested/reported and compared with existing qualification output before queue cutover.
 
-- harvest exact one session and commit;
-- repeat exact harvest -> idempotent/no new commit;
-- different bytes same destination -> conflict;
-- tampered source hash -> refuse before git mutation;
-- unrelated unstaged file preserved byte-for-byte;
-- unrelated staged file -> refuse rather than mix commit;
-- staged destination set exactly equals manifest;
-- `git diff --cached --check` failure aborts commit;
-- path traversal/outside evidence root rejected;
-- missing planned session => `review_ready=false`;
-- four valid sessions aggregate deterministically;
-- harness retry attempts do not count as extra scientific sessions;
-- scientific FAIL reports normally and is not process failure;
-- ladder cannot gate final verdict;
-- uncommitted evidence => `review_ready=false`.
+## Implemented contract
 
-Hardware acceptance: complete one real series, harvest without manual copy, compare new report with legacy summarize/noise values for equivalent inputs.
+### Harvest input and identity
 
-## Effort & Risk
+For every planned run in one series:
 
-Medium. Git mutation is high consequence; keep pathspecs explicit and fail closed around preexisting staged state.
+1. latest attempt must have `executor-result.json` with return code 0;
+2. attempt worktree evidence must exist at the canonical path resolved by `patch.evidence.evidence_path()`;
+3. baseline evidence at the attempt's frozen commit is read with `git show <commit>:<path>`;
+4. only record digests added relative to that baseline are candidates;
+5. every record digest is recomputed and verified;
+6. `patch_id`, focal implementation digest and architecture must match the durable run;
+7. scientific identity v2 additionally requires exact validation-adapter digest and resolved `{contract id, contract hash}` bindings to match;
+8. the series must contain exactly its predeclared planned session count and one focal patch.
 
-## Standards
+Scientific identity itself now freezes:
 
-Existing patch evidence validation is authoritative. Owner evidence policy remains improvement CI lower bound >0, control regression CI upper <=1%, >=4 planned sessions unless a contract explicitly differs.
+- focal/common/promoted implementation + validation digests;
+- resolved experiment-contract IDs and hashes;
+- `config/recipes.toml` bytes;
+- `config/experiment-contracts.toml` bytes;
+- model/corpus/file-backed producer input bytes;
+- platform environment and stable hardware cohort through RCD04/RCD12.
 
-## Acceptance Criteria
+Attempt start re-resolves that identity from the pinned worktree; drift creates no implicit mutation of an existing series.
 
-- harvest is deterministic/idempotent and cannot include unrelated paths;
-- every review-ready record is traceable to evidence commit SHA;
-- reports reproduce contract/statistical semantics and mark ladder reference-only;
-- no stash/add-A/reset of unrelated work;
-- offline git/report tests pass.
+### Git transaction
 
-## Notes
+Harvest runs under HI151 `MaintenanceLock` and is fail-closed:
 
-Do not auto-promote patch lifecycle state from harvest. Promotion/rejection remains a deliberate lifecycle operation after evidence review.
+```text
+acquire maintenance fence
+  -> require empty pre-existing git index
+  -> require canonical evidence destination has no tracked/untracked operator changes
+  -> verify prior committed harvest for idempotent replay
+  -> merge records with patch.evidence.write_record()
+  -> git add -- <exact canonical evidence path>
+  -> git diff --cached --check
+  -> verify staged path set is exactly the harvest path set
+  -> optional exact-path commit
+  -> record harvest/verified-evidence result + durable event
+release fence
+```
 
-## Change Log
+Never used:
 
-- 2026-09-26T00:52:15.711845+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Specified verified harvest/git transaction and report readiness/statistical invariants.
+- stash;
+- reset of unrelated work;
+- `git add -A`;
+- implicit path discovery;
+- lifecycle promotion.
+
+`--stage-only` is explicitly non-review-ready. `--commit` writes `verified-evidence.json` containing the committed SHA and exact run/session/attempt/record-digest manifest. Repeating the same committed harvest returns `already_harvested` without a second commit.
+
+Unrelated staged changes block harvest. Unrelated unstaged files outside the destination are left untouched. A dirty canonical evidence destination blocks before it is parsed or modified.
+
+## Reporting
+
+`tools/bigcherry/jobs/report.py` reads **only** records named by the committed verified-evidence manifest.
+
+It does not create a second evidence policy. It uses the existing `experiment.contract.bootstrap_session_effect()` implementation, preserving session as the replication unit and the existing >=4-session bootstrap semantics.
+
+Report output contains:
+
+- series/patch/scientific identity/hardware cohort;
+- planned and harvested session coverage;
+- exact evidence record digests and evidence commit;
+- persisted per-contract verdict rollup;
+- `(role, metric)` session-bootstrap aggregate effect, CI95 and between-session SD from retained `pair_ratios`;
+- record-level eligibility;
+- explicit review readiness.
+
+A duplicate `(role, metric)` lane within one session is rejected rather than accidentally double-weighting a session.
+
+Contract verdicts remain authoritative for contract-specific pass/fail interpretation. RCD08 does not add a materiality threshold, alter `improvement_no_regression_v1`, or make reference ladder data gating.
+
+## Offline validation already implemented
+
+The jobs-service CI uses temporary real git repositories to prove:
+
+- exact explicit-path evidence commit;
+- idempotent replay/no second commit;
+- unrelated staged files are refused and preserved;
+- dirty canonical destination is refused before merge;
+- contract-hash drift fails closed;
+- report requires a committed verified harvest;
+- four-session lane aggregation uses the existing session-bootstrap estimator;
+- report JSON/Markdown is deterministic for fixed evidence.
+
+The broader jobs suite also covers retry/session identity, scientific-identity drift, torn event tails, hardware cohort binding and executor recovery so failed/retried attempts do not become extra scientific sessions.
+
+## Remaining Brutus acceptance
+
+Before marking RCD08 complete:
+
+1. run one real planned >=4-session series through `bigcherry jobs`;
+2. harvest it with `bigcherry jobs harvest <series> --commit` with no manual evidence copying;
+3. run JSON and Markdown reports;
+4. independently recompute representative target/control intervals from committed `pair_ratios` and compare with the report/legacy qualification tooling;
+5. prove harness retries remain linked but do not increase scientific session N;
+6. prove a scientific FAIL harvests/reports normally without becoming an operational process failure;
+7. confirm no unrelated repository path enters the harvest commit.
+
+## Acceptance criteria
+
+- deterministic/idempotent explicit-path harvest;
+- committed evidence is traceable to exact run/session/attempt/record digest;
+- validation/contract drift cannot be silently harvested;
+- review-ready requires committed verified evidence and planned-session completeness;
+- statistical aggregation reuses existing contract estimator/policy;
+- no stash/add-A/reset or auto-promotion;
+- offline tests green;
+- Brutus real-series parity complete.
+
+## Change log
+
+- 2026-09-26: initial design.
+- 2026-09-26: specified verified harvest/git transaction and report invariants.
+- 2026-09-27: implemented verified record-delta harvest, exact git transaction, scientific identity v2 contract/config freezing, JSON/Markdown reports and temp-git/statistical mocks; hardware acceptance remains.

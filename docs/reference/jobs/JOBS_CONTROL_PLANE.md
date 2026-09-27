@@ -1,16 +1,25 @@
 # BigCherry jobs control plane
 
-Status: implementation in progress; offline control-plane CI is mandatory; Brutus GPU/production acceptance remains hardware-gated.
+Status: **operational implementation present and offline/real-Slurm validated; Brutus GPU/production acceptance remains hardware-gated.**
+
+Normative architecture: `docs/design/JOBS_ORCHESTRATOR.md`. Brutus setup: `docs/reference/jobs/SLURM_BRUTUS.md`.
 
 ## Authority
 
-`bigcherry jobs` is the human/agent entry point. The scheduler-neutral `JobService` is the application API; CLI, future HTTP/UI adapters and automation must call the same domain service rather than parse Slurm output directly.
+`python -m bigcherry jobs ...` is the human/agent interface. The scheduler-neutral `JobService` is the application API; future HTTP/UI adapters must call the same service/schema rather than parse Slurm or CLI presentation output.
 
-Durable state defaults to `<work>/jobs`; accepted hardware inventories default to `<work>/hardware/<executor>/accepted.json`. Filesystem records are authoritative for BigCherry scientific/run history. Slurm is execution/resource authority on Brutus.
+BigCherry owns durable scientific/run identity, events, evidence and review state. Slurm owns Brutus execution/resource scheduling. Rebuildable `status.json`/metrics are projections, never authority.
 
-## Batch specification
+Default state roots:
 
-JSON or TOML is accepted. Example JSON:
+```text
+<work>/jobs/       durable batches/series/runs/attempts/events/status
+<work>/hardware/   observed/accepted inventory by executor
+```
+
+## Job specification
+
+JSON or TOML is accepted. Example:
 
 ```json
 {
@@ -31,126 +40,213 @@ JSON or TOML is accepted. Example JSON:
 }
 ```
 
-`plan` resolves accepted hardware and freezes scientific content identities without mutating the queue:
+Dry planning validates target inventory/capability and freezes scientific content without queue mutation:
 
-```text
+```bash
 python -m bigcherry jobs plan batch.json
 python -m bigcherry jobs validate batch.json
 ```
 
-Submission is idempotent at the client boundary:
+Submission is client-idempotent:
 
-```text
+```bash
 python -m bigcherry jobs submit batch.json \
   --idempotency-key wave-2026-09-27-01 \
   --actor agent:qualification
 ```
 
-Reusing the same key with identical canonical request returns the existing durable batch without adding receipts/events. Reusing it with different content is an error.
+Same key + same canonical request returns the existing batch. Same key + different request is a hard conflict.
 
-## Management
-
-Current implemented commands:
+## Complete operator/agent CLI
 
 ```text
 jobs plan SPEC
 jobs validate SPEC
 jobs submit SPEC --idempotency-key KEY [--actor ACTOR]
 jobs ingest --once
+
 jobs list
+jobs queue
 jobs show RUN_ID
 jobs status [RUN_ID]
+
 jobs events [--after N] [--run-id RUN] [--wake-only] [--follow]
-jobs logs RUN_ID [--stream stdout|stderr] [--offset N] [--limit N]
+jobs logs RUN_ID [--stream stdout|stderr] [--offset N] [--limit N] [--follow]
 jobs artifacts RUN_ID
+
+jobs series list
+jobs series show SERIES_ID
 jobs review SERIES_ID
+jobs evidence SERIES_ID
+jobs harvest SERIES_ID --commit|--stage-only
+jobs report SERIES_ID [--format json|markdown]
+
 jobs disable|enable|cancel|hold|release RUN_ID
 jobs retry RUN_ID --same-commit|--latest
 jobs pause|resume
+
 jobs executors list
+jobs executors show EXECUTOR_ID
+jobs executors doctor
+jobs metrics
 ```
 
-Machine output is JSON; `events --follow` is reconnectable JSONL using the durable monotonic event sequence.
+Machine-oriented commands emit canonical JSON/JSONL except explicitly requested Markdown or Prometheus text. `events --follow` resumes from durable monotonic sequence; `logs --follow` resumes by byte offset.
 
-`review_ready` is deliberately stricter than process completion. A series whose attempts have all exited successfully is `execution_complete`, but remains not review-ready until RCD08 verified evidence/harvest state is present.
+## Deterministic scientific identity
 
-## Deterministic identities
+Series creation (`bigcherry.scientific-identity.v2`) freezes:
 
-Series creation freezes:
-
-- focal/common/promoted patch implementation/validation identities;
-- execution-package validity;
-- model and corpus content identity;
-- producer inputs when file-backed;
+- focal/common/validated-enhancement patch implementation and validation digests;
+- resolved experiment-contract IDs + contract hashes;
+- `config/recipes.toml` and `config/experiment-contracts.toml` content identities;
+- model SHA256/size;
+- corpus and file-backed producer-input identities;
+- producer/baseline identity;
 - accepted platform environment hash;
-- deterministic exact GPU stable-ID cohort and cohort hash.
+- deterministic exact stable-GPU cohort/hash.
 
-At attempt start the pinned runner worktree re-resolves scientific identity and must match the frozen series identity. Drift blocks the attempt; it never silently changes an existing series.
+The attempt-start detached worktree re-resolves identity. Any mismatch blocks the attempt and requires a new series rather than silently mixing sessions across scientific definitions.
 
-Runs are deterministic session slots under a series. Retry creates a new attempt under the same run. `--same-commit` reuses the prior attempt commit; `--latest` resolves the configured ref for the new attempt.
+Retry creates a new attempt under the same run. `--same-commit` deliberately reuses the prior commit; `--latest` resolves the configured ref for the new attempt. Monolithic campaigns do not use Slurm native requeue.
+
+## Durable execution/recovery
+
+Filesystem state includes:
+
+```text
+jobs/
+  requests/
+  batches/<batch>/batch.json
+  series/<series>/series.json
+  runs/<run>/intent.json
+  runs/<run>/control.json
+  runs/<run>/attempts/NNN/
+    attempt.json
+    submission-intent.json
+    submission.json
+    executor-start.json
+    executor-result.json
+    stdout.log / stderr.log
+  inbox/{pending,processing,accepted,rejected}/
+  events.jsonl
+  status/{status.json,status.md,bigcherry.prom}
+```
+
+Submission persists `submission-intent.json` before the executor call. Stable `execution_id` is carried into scheduler/worker correlation metadata. Recovery behavior:
+
+```text
+recorded submission        -> rebind
+intent + exactly one match -> rebind
+intent + proven zero match -> submit immutable request once
+multiple matches           -> block/wake; never duplicate blindly
+```
+
+Receipts already in `processing/` are recovered before new pending work.
 
 ## GPU resources
 
-Scientific `GpuRequirement` is resolved before submission. Slurm receives architecture/count only.
+Scientific `GpuRequirement` resolves against accepted stable-device inventory. Slurm sees architecture/count, not scientific physical IDs.
 
-When a frozen cohort is a proper subset of all GPUs of an architecture, BigCherry requests the complete architecture pool and later narrows within the exclusive allocation. The series never silently substitutes another same-model card.
+If a frozen cohort is a proper subset of all GPUs of one architecture, BigCherry reserves the complete accepted architecture pool and narrows only inside that already-exclusive allocation. Runtime visibility order is attested and converted to allocation-local positions; the runner never assumes the selected card is local index 0.
 
-`Allocation.native_gpu_ids` are launch/scheduler-local only. `Allocation.stable_gpu_ids` is the normalized attestation used for scientific verification. `verify_series_allocation()` fails if the accepted inventory changed, selected stable IDs are absent, topology/cohort changed, or safe over-allocation did not receive the complete architecture pool.
+`Allocation.native_gpu_ids` are transient scheduler/launch identifiers. `Allocation.stable_gpu_ids` is scientific attestation. Accepted-inventory/cohort/topology drift fails closed.
 
-Local/direct execution uses OS-held device locks keyed by stable ID; process death releases locks automatically. Timed scientific measurement is whole-GPU exclusive. GPU sharding is not part of v1 scientific measurement.
+Direct/local execution uses OS-held locks keyed by stable ID. Timed scientific work is whole-GPU exclusive; GPU sharding is not a v1 gating mode.
+
+## Evidence harvest and reports
+
+Successful attempts leave patch evidence in detached worktrees. `jobs harvest`:
+
+1. identifies only records added relative to the attempt's frozen commit;
+2. verifies record digests, patch bytes, validation bytes, contract hashes and architecture;
+3. acquires HI151 maintenance fencing;
+4. refuses pre-existing staged changes or dirty canonical evidence destination;
+5. merges using existing append-only `patch.evidence.write_record()`;
+6. stages only the exact canonical evidence path;
+7. optionally commits that exact path;
+8. records a verified evidence manifest + commit SHA.
+
+No stash, reset, `git add -A`, arbitrary source copy or lifecycle promotion occurs.
+
+`jobs report` reads only records named by committed verified evidence and uses the existing session-bootstrap estimator. Contract verdicts remain the policy authority; reports do not introduce a materiality threshold.
+
+`review_ready` is stricter than process completion: all planned sessions must complete and committed verified evidence must exist.
+
+## Observability / future UI API
+
+`jobs status` emits schema `bigcherry.jobs.status.v1` from the same `JobService` state used by the CLI. A future API/UI can expose this directly plus event/log cursors without changing the domain model.
+
+The installed observe timer atomically refreshes every 15 seconds:
+
+```text
+<jobs>/status/status.json
+<jobs>/status/status.md
+<jobs>/status/bigcherry.prom
+```
+
+Prometheus output currently covers pause state, event sequence, durable inbox counts, runs by normalized state and review-ready series. Provider-specific host/GPU metrics can extend this projection later.
 
 ## Executors
 
-`config/jobs/executors.toml` defines targets. Exactly one target is default.
+`config/jobs/executors.toml` defines targets; exactly one may be default.
 
-- `slurm`: Brutus; Slurm CLI/GRES/licenses exist only in `jobs/slurm.py`.
-- `local`: direct Linux/Windows execution and emergency/testing path.
-- `remote`: restricted SSH JSON worker protocol, intended for Windows/non-Slurm hosts.
-- `fake`: tests only, instantiated directly rather than host config.
+- `slurm`: Brutus production Linux path.
+- `local`: direct Linux/Windows/testing/emergency path.
+- `remote`: restricted SSH JSON worker transport for future Windows/non-Slurm hosts.
+- `fake`: deterministic tests.
 
-Remote execution is currently protocol/mocking scaffolding, not yet production-ready for arbitrary campaign payloads. The remote host must own target-local workspaces/artifacts; controller-local absolute paths cannot be treated as portable. Do not enable a remote target for scientific campaigns until the RCD11 remote staging/worker acceptance tests are complete.
+The remote protocol/correlation semantics are mocked and implemented, but **remote scientific campaigns remain disabled until target-local source/model/artifact staging and Windows HIP stable-device discovery pass RCD11**. Controller absolute paths are not portable and are never treated as such.
 
-## Install/service integration
+## Install
 
-Render or install systemd ingestion:
+Render/doctor without mutation:
 
-```text
+```bash
 python tools/admin/install_bigcherry_jobs.py \
   --project-root /srv/bigcherry \
   --work-root /mnt/data/bigcherry-jobs \
   --python /srv/bigcherry-venv/bin/python
 ```
 
-Without `--apply` this is a dry render/doctor. Sandbox install tests use `--dest-root` and never require root/systemd.
+Apply/enable after review:
 
-Production install adds:
-
-```text
-/etc/bigcherry/jobs.env
-/etc/systemd/system/bigcherry-jobs-ingest.service
-/etc/systemd/system/bigcherry-jobs-ingest.path
-/etc/systemd/system/bigcherry-jobs-ingest.timer
+```bash
+sudo /srv/bigcherry-venv/bin/python tools/admin/install_bigcherry_jobs.py \
+  --project-root /srv/bigcherry \
+  --work-root /mnt/data/bigcherry-jobs \
+  --python /srv/bigcherry-venv/bin/python \
+  --apply --enable
 ```
 
-The path unit reacts to durable pending receipts; the timer is only a missed-notification safety net. There is no custom scheduler polling daemon.
+Generated units:
 
-Brutus Slurm installation/qualification is separately defined by `SLURM_BRUTUS.md`. v1 is MUNGE + slurmctld + slurmd, no slurmdbd/MariaDB requirement.
+```text
+bigcherry-jobs-ingest.service
+bigcherry-jobs-ingest.path
+bigcherry-jobs-ingest.timer
+bigcherry-jobs-observe.service
+bigcherry-jobs-observe.timer
+```
 
-## Recovery model
+The path unit reacts to durable pending receipts; the ingest timer is only notification-loss protection. There is no custom scheduler daemon.
 
-Submission writes `submission-intent.json` before calling the executor. Stable `execution_id` is carried into scheduler/worker correlation metadata. After acceptance, `submission.json` records the native handle.
+## Validation status
 
-On service restart:
+Jobs-service CI on Ubuntu 24.04 covers the production modules, including:
 
-- receipts already under `processing/` are recovered before new pending work;
-- an attempt with a recorded submission is rebound;
-- an attempt with intent but no handle calls executor correlation;
-- one match is rebound;
-- multiple matches are recovery ambiguity and no duplicate is submitted;
-- a proven zero-match can submit the same immutable request.
+- submission idempotency + crash recovery;
+- Slurm adapter rendering/parsing;
+- hardware cohort binding/drift/runtime visibility mapping;
+- production coexistence/window pure state machine;
+- 16 MiB stdout + 3 MiB stderr file-backed managed streaming;
+- remote protocol mock;
+- systemd/Slurm config rendering;
+- exact/idempotent temp-git evidence harvest;
+- dirty/staged path refusal and contract-drift rejection;
+- existing session-bootstrap report aggregation;
+- status/Markdown/Prometheus projection.
 
-## Offline validation
+Separate real Noble Slurm CI has run actual MUNGE/slurmctld/slurmd/sbatch/squeue and a BigCherry process inside a Slurm job.
 
-`.github/workflows/jobs-service-validation.yml` compiles the production modules and runs `tools/tests/jobs` on Ubuntu 24.04. Tests cover scheduler rendering/parsing, idempotency, durable inbox recovery, hardware cohort binding, torn event-tail recovery, retry identity, CLI/service models, fake remote protocol, installer rendering and allocation-local device mapping.
-
-RCD Slurm CI remains a separate real-Slurm gate. Brutus-only gates remain AMD stable identity, generated GRES `slurmd -G`, ROCm/cgroup mapping, peer/tensor split, llama-swap coexistence and real scientific evidence parity.
+Brutus-only gates remain real AMD stable identity/GRES, ROCm/cgroup device behavior, peer/tensor-split preflight, llama-swap production isolation, scheduler-noise qualification and one complete real planned series through submit -> execute -> harvest -> report.
