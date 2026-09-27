@@ -23,7 +23,7 @@ Materialized as `1271_prbe54_q5_kv_dequant_f16`. b11126 already has dedicated Q4
 2. Add Q5_0/Q5_1 launch wrappers and `ggml_get_to_fp16_fattn_cuda()`. On HIP it selects the new wrappers only for Q5_0/Q5_1; every other type delegates to `ggml_get_to_fp16_cuda()`.
 3. Replace exactly the contiguous K and V F16-staging selector calls in `fattn-common.cuh`; no global selector table entry changes.
 4. Add package-local activation/correctness/performance producer, contract, README/SUMMARY, and fail-closed mechanics tests.
-5. Qualify on gfx1100 and gfx1201. Keep `untested` until >=4 sessions/architecture establish positive Q5 decode effect and <=1% F16-prefill control regression.
+5. Qualify on gfx1100 and gfx1201. Keep `untested` until >=4 sessions/architecture establish positive Q5 prefill effect and <=1% Q5 decode control regression.
 
 ## Detailed Solution & Technical Design
 
@@ -54,7 +54,7 @@ No Q4 changes. No edits to global `ggml_get_to_fp16_cuda()` cases. No change to 
 
 Offline: patch catalog load, contract registry load, mechanics apply/idempotence, missing-anchor/cardinality failures, patch lint/rebase check.
 
-Hardware: gfx1100 + gfx1201; Q5_0 KV with FlashAttention for full-vocabulary backend-reference and tg128 positive lane; F16 KV pp512 control. Marker must be subject-only. Policy: `improvement_no_regression_v1`, 10 paired rounds/session, >=4 sessions/architecture.
+Hardware: gfx1100 + gfx1201; Q5_0 KV with FlashAttention for full-vocabulary backend-reference. Positive lane is pp512 prefill, which selects tile/MMA and therefore the F16 staging path; Q5_0 tg128 decode is the control because quantized decode selects the direct vector kernel and bypasses staging. Marker must be subject-only during the prompt/correctness path. Policy: `improvement_no_regression_v1`, 10 paired rounds/session, >=4 sessions/architecture.
 
 ## Effort & Risk
 
@@ -66,7 +66,7 @@ Architecture-scoped evidence; no extrapolation. Small wins count only when estab
 
 ## Acceptance Criteria
 
-Q5 FA staging selector activates only in subject, full-vocabulary backend reference passes, session-bootstrap Q5 decode CI95 low > 0, F16 control CI95 high <=1%, minimum four sessions on each declared architecture.
+Q5 FA staging selector activates only in subject, full-vocabulary backend reference passes, session-bootstrap Q5 pp512 CI95 low > 0, Q5 tg128 control CI95 high <=1%, minimum four sessions on each declared architecture.
 
 ## Notes
 
@@ -76,4 +76,4 @@ Successor key: patching-rdna-boost-experiments-rd64
 
 2026-09-24 review corrected the original premise: Q4_0/Q4_1 are already specialized at b11126; Q5_0/Q5_1 are the remaining legacy generic converter cases. The global type selector has non-FA callers, so the implementation is FA-specific rather than globally replacing Q5 conversion.
 
-2026-09-27: materialized as fresh `untested` package `1271_prbe54_q5_kv_dequant_f16` with contract `PRBE54-Q5-KV-DEQUANT-F16`; no hardware evidence is inherited.
+2026-09-27: materialized as fresh `untested` package `1271_prbe54_q5_kv_dequant_f16` with contract `PRBE54-Q5-KV-DEQUANT-F16`; no hardware evidence is inherited. The positive lane is prefill because b11126's quantized decode path chooses the direct vector FA kernel and does not execute the F16 staging selector.
