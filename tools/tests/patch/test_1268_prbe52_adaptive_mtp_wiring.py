@@ -197,6 +197,11 @@ class Patch1268Mechanics(unittest.TestCase):
             self.assertEqual(text.count("adaptive_state.at(seq_id).reset"), 1)
             self.assertEqual(text.count("last_n_draft.at(seq_id) = 0"), 1)  # begin reset (MTP only)
             self.assertEqual(text.count("last_n_draft[seq_id] = 0"), 1)  # MTP draft reset only
+            # GPT code review 2026-09-27 (req_6c90e1ebba83464a): an adaptive
+            # floor below n_min is a stuck state (finalize() clears every
+            # draft shorter than n_min, so accept() -- the only thing that
+            # grows n_cur back up -- would never run). The ctor must reject it.
+            self.assertIn("this->params.n_min_adaptive < this->params.n_min", text)
             self.assertEqual(text.count("effective_n_max"), 3)
             self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
             eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
