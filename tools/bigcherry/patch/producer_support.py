@@ -110,10 +110,19 @@ def server_session_factory(
 
 def lane_effect(outcome: vp.ProducerPairedBenchmarkOutcome, *, workload: str, metric: str, role: str,
                 rounds: int, label: str):
-    """(LaneEffect, run) for a single-workload paired outcome with exactly ``rounds`` rounds."""
-    if set(outcome.runs) != {workload}:
+    """(LaneEffect, run) for the given workload's lane, with exactly ``rounds`` rounds.
+
+    ``outcome`` may carry other workloads too (a combined-invocation measurement
+    -- bench_invocation="combined" -- runs several workloads in one process/
+    model-load and returns every one of them; a caller extracts each lane it
+    needs with its own call to this function). Only ``workload``'s presence is
+    required, not that it is the outcome's sole lane -- an exact-equality check
+    here made every combined-mode caller with more than one lane (e.g. 1266's
+    decode+prefill single measurement) fail with 'must produce exactly one
+    lane', even though the requested lane was right there (t-1266-gfx1201-s2)."""
+    if workload not in outcome.runs:
         raise vp.ValidationProducerError(
-            f"{label}: {role} lane must produce exactly one {workload} lane; got {sorted(outcome.runs)!r}"
+            f"{label}: {role} lane is missing its {workload} lane; got {sorted(outcome.runs)!r}"
         )
     run = outcome.runs[workload]
     if dict(run.stats).get("paired_rounds") != rounds:
