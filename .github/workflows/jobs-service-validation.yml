@@ -8,9 +8,11 @@ on:
       - 'tools/bigcherry/hardware/**'
       - 'tools/bigcherry/core/host_lock.py'
       - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/patch/campaign/profile.py'
       - 'tools/bigcherry/cli/jobs.py'
       - 'tools/bigcherry/cli/hardware.py'
       - 'tools/bigcherry/__main__.py'
+      - 'tools/lab/plan-qualification/**'
       - 'tools/admin/**'
       - 'tools/tests/jobs/**'
       - 'config/jobs/**'
@@ -33,7 +35,7 @@ jobs:
       - name: Compile implementation
         env:
           PYTHONPATH: tools
-        run: python -m compileall -q tools/bigcherry/jobs tools/bigcherry/hardware tools/bigcherry/experiment/bundle.py tools/bigcherry/cli/jobs.py tools/bigcherry/cli/hardware.py tools/admin
+        run: python -m compileall -q tools/bigcherry/jobs tools/bigcherry/hardware tools/bigcherry/experiment/bundle.py tools/bigcherry/patch/campaign/profile.py tools/bigcherry/cli/jobs.py tools/bigcherry/cli/hardware.py tools/admin
       - name: Job service unit and integration mocks
         env:
           PYTHONPATH: tools
