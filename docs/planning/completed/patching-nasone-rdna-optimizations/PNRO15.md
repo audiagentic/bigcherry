@@ -2,7 +2,7 @@
 id: PNRO15
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: in_progress
+state: deprecated
 created-at: '2026-09-09T10:53:17.647208+00:00'
 breadth: ''
 skill: advanced
@@ -76,6 +76,8 @@ Successor key: patching-nasone-rdna-optimizations-nro16
 
 2026-09-25 (10b172eb): new patch 1262_nro15_mmvdq ports nasone/AMD 67051293 with port_diff: mmvdq.cu/.cuh folded into mmvq.cu/.cuh, plain ne11==1 Q4_K/Q5_K/Q6_K routing in ggml_cuda_mul_mat before MMVQ; fused SwiGLU route and RDNA3.5 graph-opt default excluded (per plan). Default on RDNA3.5 only; opt-in GGML_CUDA_DQ_MMV=1 elsewhere. Contract NRO15-MMVDQ-KQUANT-DECODE + producer (K-quant test-backend-ops backend_reference, tg128 positive / pp512 control with mmvdq enabled on both arms). Queued in Brutus serial lane (r-1262-*).
 
+OUTCOME 2026-09-26: 1262_nro15_mmvdq REJECTED (owner decision, commit fe17f333). gfx1201: -3.8..-4.3% end to end; PVPS10 decode profile shows mul_mat_vec_dq_q6_K ~57 us/call vs ~35 us for the mul_mat_vec_q calls it replaces (GPU kernel time +4.6%). gfx1100: 4-session FAIL, kernel time -0.9% (mostly skipped quantize_q8_1), invisible end to end. Default-on target RDNA3.5 (gfx115x) is not available to validate.
+
 ## Change Log
 
 - 2026-09-09T10:53:17.647208+00:00 (created-by): Created by capability-rebaseline-v3
@@ -95,3 +97,5 @@ Successor key: patching-nasone-rdna-optimizations-nro16
 - 2026-09-24T04:51:41.710365+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
 - 2026-09-25T04:23:48.292344+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T04:23:51.206471+00:00 (state-transition): State: pending → in_progress
+- 2026-09-27T02:47:39.492948+00:00 (updated-by): Updated: section:notes
+- 2026-09-27T02:47:54.183471+00:00 (state-transition): State: in_progress → deprecated

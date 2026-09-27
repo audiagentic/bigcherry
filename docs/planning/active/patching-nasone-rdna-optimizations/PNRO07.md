@@ -2,7 +2,7 @@
 id: PNRO07
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:52:42.526873+00:00'
 breadth: ''
 skill: advanced
@@ -68,6 +68,8 @@ Successor key: patching-nasone-rdna-optimizations-nro08
 
 2026-09-25 (ef49e4e5): 1257 is now an exact port of nasone 7f1d25f7 (wave32-native TOP_K) on top of 1256, port_diff-generated (16 edits + CMake flag removal), verified byte-exact; markers tagged patch=1257_nro08. No longer blocked on a PNRO06 'rebase' -- 1256 is the exact pre-image. Same HIP >= 7.15 toolchain caveat as PNRO06.
 
+OUTCOME 2026-09-27 (1257_nro08_topk_wave32, on top of 1256): series 2 backend-sampling MTP decode, activation passed all 8 sessions. Contract NRO08-TOPK-WAVE32: FAIL (not established) - point +0.87% gfx1100 (ci95_low -1.17), +0.51% gfx1201 (ci95_low -3.09). Owner: move on. Left untested, not rejected.
+
 ## Change Log
 
 - 2026-09-09T10:52:42.526873+00:00 (created-by): Created by capability-rebaseline-v3
@@ -86,3 +88,5 @@ Successor key: patching-nasone-rdna-optimizations-nro08
 - 2026-09-24T04:49:31.554021+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-24T15:41:00.121413+00:00 (state-transition): State: pending → in_progress
 - 2026-09-24T15:41:03.007035+00:00 (updated-by): Updated: section:notes
+- 2026-09-27T02:47:45.532222+00:00 (updated-by): Updated: section:notes
+- 2026-09-27T02:48:00.326472+00:00 (state-transition): State: in_progress → pending
