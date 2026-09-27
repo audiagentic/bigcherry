@@ -10,7 +10,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 LAB = REPO / "tools" / "lab" / "plan-qualification"
-HELPER = LAB / "activity-lock.sh"
+HELPER = LAB / "work-root.sh"
 
 
 def _wait(path: Path, timeout: float = 3.0) -> None:
@@ -37,13 +37,7 @@ def _proc(script: str, work: Path) -> subprocess.Popen[str]:
 
 class PlanQualificationActivityLockTests(unittest.TestCase):
     def test_shell_scripts_parse(self) -> None:
-        for name in (
-            "activity-lock.sh",
-            "gpu-lock.sh",
-            "profile_run.sh",
-            "run_campaign.sh",
-            "queue.sh",
-        ):
+        for name in ("work-root.sh", "profile_run.sh", "run_campaign.sh", "queue.sh"):
             completed = subprocess.run(
                 ["bash", "-n", str(LAB / name)],
                 text=True,
@@ -51,11 +45,26 @@ class PlanQualificationActivityLockTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_work_root_entrypoint_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            completed = subprocess.run(
+                ["bash", str(HELPER), str(REPO)],
+                env={**os.environ, "BIGCHERRY_WORK_ROOT": temp},
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout.strip(), temp)
+
     def test_live_queue_scripts_wire_expected_resource_policy(self) -> None:
+        helper = HELPER.read_text(encoding="utf-8")
         profile = (LAB / "profile_run.sh").read_text(encoding="utf-8")
         campaign = (LAB / "run_campaign.sh").read_text(encoding="utf-8")
         queue = (LAB / "queue.sh").read_text(encoding="utf-8")
 
+        self.assertIn("gpu_lock_acquire()", helper)
+        self.assertIn("activity_lock_shared_acquire()", helper)
+        self.assertIn("activity_lock_exclusive_acquire()", helper)
         self.assertIn('build-locks/$arch-$toolchain.lock', profile)
         self.assertIn('flock -x "$build_fd"', profile)
         self.assertIn('flock -s "$build_fd"', profile)
