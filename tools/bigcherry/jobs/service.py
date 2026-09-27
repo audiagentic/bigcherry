@@ -16,14 +16,13 @@ from bigcherry.hardware.model import HardwareInventory, SeriesGpuBinding
 from .executor import (
     ExecutionHandle,
     ExecutionRequest,
-    ExecutionState,
     Executor,
     ExecutorControl,
     ResourceRequest,
     SchedulerGpuRequest,
 )
 from .model import BatchSpec, JobSpec, digest
-from .store import RunStore, StoreError
+from .store import RunStore
 from .workspace import WorkspaceManager
 
 
@@ -68,7 +67,9 @@ class JobService:
             raise JobServiceError(f"unknown executor: {executor_id}")
         inventory = self.inventory_loader(executor_id)
         if batch.target.host_id and batch.target.host_id != inventory.host_id:
-            raise JobServiceError(f"target host mismatch: requested {batch.target.host_id}, inventory is {inventory.host_id}")
+            raise JobServiceError(
+                f"target host mismatch: requested {batch.target.host_id}, inventory is {inventory.host_id}"
+            )
         if batch.target.platform_family and batch.target.platform_family != inventory.platform_family:
             raise JobServiceError("target platform family does not match accepted inventory")
         by_arch: dict[str, dict[str, object]] = {}
@@ -102,7 +103,9 @@ class JobService:
             series_id = "s-" + digest(series_material, person=b"bc-series-v1")
             runs = [
                 {
-                    "run_id": "r-" + digest({"series_id": series_id, "session": session}, person=b"bc-run-v1"),
+                    "run_id": "r-" + digest(
+                        {"series_id": series_id, "session": session}, person=b"bc-run-v1"
+                    ),
                     "session": session,
                 }
                 for session in range(1, job.planned_sessions + 1)
@@ -123,11 +126,22 @@ class JobService:
             "series": [by_arch[key] for key in sorted(by_arch)],
         }
 
-    def submit_batch(self, batch: BatchSpec, *, idempotency_key: str, actor: str = "unknown") -> dict[str, object]:
+    def submit_batch(
+        self,
+        batch: BatchSpec,
+        *,
+        idempotency_key: str,
+        actor: str = "unknown",
+    ) -> dict[str, object]:
         plan = self.plan_batch(batch)
-        batch_id = "b-" + digest({"key": idempotency_key, "request_hash": batch.request_hash}, person=b"bc-batch-id")
+        batch_id = "b-" + digest(
+            {"key": idempotency_key, "request_hash": batch.request_hash}, person=b"bc-batch-id"
+        )
         accepted = self.store.accept_idempotency(idempotency_key, batch.request_hash, batch_id)
-        if accepted["batch_id"] != batch_id:
+        existing_batch = self.store.root / "batches" / str(accepted["batch_id"]) / "batch.json"
+        if existing_batch.is_file():
+            # Lost-response/client retry: return the original durable response.
+            # Never regenerate events/inbox receipts/timestamps.
             return self.store.batch(str(accepted["batch_id"]))
         record = {
             "schema": "bigcherry.jobs.batch-record.v1",
@@ -169,26 +183,39 @@ class JobService:
                 }
                 self.store.create_run(run_id, run_record)
                 self.store.enqueue(batch_id, run_id)
-                self.store.append_event(kind="job.submitted", run_id=run_id, data={"batch_id": batch_id, "series_id": series_id})
+                self.store.append_event(
+                    kind="job.submitted",
+                    run_id=run_id,
+                    data={"batch_id": batch_id, "series_id": series_id},
+                )
         return record
 
     def ingest_once(self) -> dict[str, int]:
+        claimable = self.store.claimable()
         if bool(self.store.service_control().get("paused")):
-            return {"accepted": 0, "rejected": 0, "deferred": len(self.store.pending())}
+            return {"accepted": 0, "rejected": 0, "deferred": len(claimable)}
         accepted = rejected = deferred = 0
-        for pending in self.store.pending():
-            processing = self.store.claim_pending(pending)
+        for receipt_path in claimable:
+            processing = self.store.claim_pending(receipt_path)
             receipt = json.loads(processing.read_text(encoding="ascii"))
             run_id = str(receipt["run_id"])
             control = self.store.control(run_id)
             if control.get("disabled"):
-                os.replace(processing, self.store.root / "inbox" / "pending" / processing.name)
+                self.store.requeue_receipt(processing)
                 deferred += 1
                 continue
             try:
-                self._start_or_recover(run_id)
+                self._start_or_recover(
+                    run_id,
+                    force_new_attempt=str(receipt.get("reason", "submit")) == "retry",
+                )
             except Exception as exc:
-                self.store.append_event(kind="attempt.submit-failed", run_id=run_id, severity="wake", data={"error": f"{type(exc).__name__}: {exc}"})
+                self.store.append_event(
+                    kind="attempt.submit-failed",
+                    run_id=run_id,
+                    severity="wake",
+                    data={"error": f"{type(exc).__name__}: {exc}"},
+                )
                 self.store.finish_receipt(processing, accepted=False)
                 rejected += 1
             else:
@@ -196,10 +223,32 @@ class JobService:
                 accepted += 1
         return {"accepted": accepted, "rejected": rejected, "deferred": deferred}
 
-    def _start_or_recover(self, run_id: str) -> ExecutionHandle:
+    def _start_or_recover(
+        self,
+        run_id: str,
+        *,
+        force_new_attempt: bool = False,
+    ) -> ExecutionHandle:
         run = self.store.run(run_id)
         executor_id = str(run["executor_id"])
         executor = self.executors[executor_id]
+
+        latest = self.store.latest_attempt(run_id)
+        if latest is not None and not force_new_attempt:
+            latest_root = self.store.attempt_root(run_id, latest)
+            existing_attempt = self.store.read_optional(latest_root / "attempt.json")
+            existing_submission = self.store.read_optional(latest_root / "submission.json")
+            if existing_submission is not None:
+                return ExecutionHandle(
+                    str(existing_submission["executor"]),
+                    str(existing_submission["native_id"]),
+                    str(existing_submission["execution_id"]),
+                )
+            if existing_attempt is not None:
+                # Service died after durable attempt/intent creation but before
+                # handle persistence. Reuse this exact attempt/commit/request.
+                return self._submit_attempt(run, existing_attempt, latest_root, executor)
+
         attempt_no = self.store.next_attempt(run_id)
         control = self.store.control(run_id)
         code_ref = str(control.get("retry_code_ref") or run["job"]["code_ref"])
@@ -221,40 +270,74 @@ class JobService:
             "created_ns": time.time_ns(),
         }
         self.store.create_attempt(run_id, attempt_no, attempt_record)
+        return self._submit_attempt(run, attempt_record, attempt_root, executor)
+
+    def _submit_attempt(
+        self,
+        run: dict[str, object],
+        attempt_record: dict[str, object],
+        attempt_root: Path,
+        executor: Executor,
+    ) -> ExecutionHandle:
+        run_id = str(run["run_id"])
+        attempt_no = int(attempt_record["attempt"])
+        execution_id = str(attempt_record["execution_id"])
         request = self._execution_request(run, attempt_record, attempt_root, executor)
-        self.store.write_submission_intent(run_id, attempt_no, {
-            "execution_id": execution_id,
-            "request_hash": digest(dataclasses.asdict(request), person=b"bc-exec-request"),
-            "commit": workspace.commit,
-        })
+        self.store.write_submission_intent(
+            run_id,
+            attempt_no,
+            {
+                "execution_id": execution_id,
+                "request_hash": digest(dataclasses.asdict(request), person=b"bc-exec-request"),
+                "commit": str(attempt_record["commit"]),
+            },
+        )
         start = self.store.read_optional(attempt_root / "executor-start.json")
-        matches: tuple[ExecutionHandle, ...]
-        if start and start.get("slurm_job_id"):
+        if start and start.get("slurm_job_id") and executor.name == "slurm":
             matches = (ExecutionHandle("slurm", str(start["slurm_job_id"]), execution_id),)
         else:
             matches = executor.correlate(execution_id)
         if len(matches) > 1:
             raise AmbiguousSubmission(f"multiple native executions correlate to {execution_id}")
         handle = matches[0] if matches else executor.submit(request)
-        self.store.write_submission(run_id, attempt_no, {
-            "execution_id": execution_id,
-            "executor_id": executor_id,
-            "executor": handle.executor,
-            "native_id": handle.native_id,
-            "submitted_ns": time.time_ns(),
-        })
-        self.store.append_event(kind="attempt.submitted", run_id=run_id, data={"attempt": attempt_no, "execution_id": execution_id, "native_id": handle.native_id})
+        self.store.write_submission(
+            run_id,
+            attempt_no,
+            {
+                "execution_id": execution_id,
+                "executor_id": str(run["executor_id"]),
+                "executor": handle.executor,
+                "native_id": handle.native_id,
+                "submitted_ns": time.time_ns(),
+            },
+        )
+        self.store.append_event(
+            kind="attempt.submitted",
+            run_id=run_id,
+            data={"attempt": attempt_no, "execution_id": execution_id, "native_id": handle.native_id},
+        )
         return handle
 
-    def _execution_request(self, run: dict[str, object], attempt: dict[str, object], attempt_root: Path, executor: Executor) -> ExecutionRequest:
+    def _execution_request(
+        self,
+        run: dict[str, object],
+        attempt: dict[str, object],
+        attempt_root: Path,
+        executor: Executor,
+    ) -> ExecutionRequest:
         binding = run["binding"]
         assert isinstance(binding, dict)
-        scheduler_gpu = SchedulerGpuRequest(str(binding["scheduler_architecture"]), int(binding["scheduler_count"]))
+        scheduler_gpu = SchedulerGpuRequest(
+            str(binding["scheduler_architecture"]), int(binding["scheduler_count"])
+        )
         env = {
             "BIGCHERRY_RUN_ID": str(run["run_id"]),
             "BIGCHERRY_ATTEMPT": str(attempt["attempt"]),
             "BIGCHERRY_ATTEMPT_ROOT": str(attempt_root),
-            "BIGCHERRY_SELECTED_DEVICE_IDS": ",".join(str(item) for item in binding["selected_device_ids"]),
+            "BIGCHERRY_JOBS_ROOT": str(self.store.root),
+            "BIGCHERRY_SELECTED_DEVICE_IDS": ",".join(
+                str(item) for item in binding["selected_device_ids"]
+            ),
             "BIGCHERRY_RESOURCE_POLICY": "external" if executor.name == "slurm" else "local",
             "PYTHONPATH": str(Path(str(attempt["project_root"])) / "tools"),
         }
@@ -263,11 +346,20 @@ class JobService:
             launch.parent.mkdir(parents=True, exist_ok=True)
             python = shlex.quote(sys.executable)
             root = shlex.quote(str(attempt_root))
-            launch.write_text(f"#!/bin/bash\nset -euo pipefail\nexec {python} -m bigcherry.jobs.runner --attempt-root {root}\n", encoding="utf-8")
+            launch.write_text(
+                f"#!/bin/bash\nset -euo pipefail\nexec {python} -m bigcherry.jobs.runner --attempt-root {root}\n",
+                encoding="utf-8",
+            )
             launch.chmod(0o755)
             command = (str(launch),)
         else:
-            command = (sys.executable, "-m", "bigcherry.jobs.runner", "--attempt-root", str(attempt_root))
+            command = (
+                sys.executable,
+                "-m",
+                "bigcherry.jobs.runner",
+                "--attempt-root",
+                str(attempt_root),
+            )
         return ExecutionRequest(
             execution_id=str(attempt["execution_id"]),
             command=command,
@@ -289,11 +381,21 @@ class JobService:
         attempt_no = self.store.latest_attempt(run_id)
         if attempt_no is None:
             raise JobServiceError("run has no attempt")
-        submission = self.store.read_optional(self.store.attempt_root(run_id, attempt_no) / "submission.json")
+        submission = self.store.read_optional(
+            self.store.attempt_root(run_id, attempt_no) / "submission.json"
+        )
         if not submission:
             raise JobServiceError("attempt has no submission")
         executor = self.executors[str(run["executor_id"])]
-        return executor, ExecutionHandle(str(submission["executor"]), str(submission["native_id"]), str(submission["execution_id"])), attempt_no
+        return (
+            executor,
+            ExecutionHandle(
+                str(submission["executor"]),
+                str(submission["native_id"]),
+                str(submission["execution_id"]),
+            ),
+            attempt_no,
+        )
 
     def status(self, run_id: str) -> dict[str, object]:
         run = self.store.run(run_id)
@@ -305,12 +407,21 @@ class JobService:
             state = "disabled" if control.get("disabled") else "queued"
         else:
             executor, handle, _ = self._handle_for_run(run_id)
-            terminal = self.store.read_optional(self.store.attempt_root(run_id, attempt_no) / "executor-result.json")
+            terminal = self.store.read_optional(
+                self.store.attempt_root(run_id, attempt_no) / "executor-result.json"
+            )
             if terminal:
                 state = "completed" if int(terminal.get("returncode", 1)) == 0 else "failed"
             else:
                 state = executor.status(handle).state.value
-        return {"run_id": run_id, "series_id": run["series_id"], "session": run["session"], "state": state, "attempt": attempt_no, "disabled": bool(control.get("disabled"))}
+        return {
+            "run_id": run_id,
+            "series_id": run["series_id"],
+            "session": run["session"],
+            "state": state,
+            "attempt": attempt_no,
+            "disabled": bool(control.get("disabled")),
+        }
 
     def list_status(self) -> tuple[dict[str, object], ...]:
         return tuple(self.status(str(run["run_id"])) for run in self.store.list_runs())
@@ -326,7 +437,10 @@ class JobService:
             self.store.set_control(run_id, cancelled=True)
         elif action in {"hold", "release"}:
             executor, handle, _ = self._handle_for_run(run_id)
-            executor.control(handle, ExecutorControl.HOLD if action == "hold" else ExecutorControl.RELEASE)
+            executor.control(
+                handle,
+                ExecutorControl.HOLD if action == "hold" else ExecutorControl.RELEASE,
+            )
         else:
             raise ValueError(f"unknown control action: {action}")
         self.store.append_event(kind=f"job.{action}", run_id=run_id)
@@ -348,23 +462,53 @@ class JobService:
         else:
             self.store.set_control(run_id, retry_code_ref=None, cancelled=False)
         self.store.enqueue(str(run["batch_id"]), run_id, reason="retry")
-        self.store.append_event(kind="job.retry-requested", run_id=run_id, data={"latest": latest})
+        self.store.append_event(
+            kind="job.retry-requested", run_id=run_id, data={"latest": latest}
+        )
 
-    def logs(self, run_id: str, *, stream: str = "stdout", offset: int = 0, limit: int = 1024 * 1024) -> dict[str, object]:
+    def logs(
+        self,
+        run_id: str,
+        *,
+        stream: str = "stdout",
+        offset: int = 0,
+        limit: int = 1024 * 1024,
+    ) -> dict[str, object]:
         if stream not in {"stdout", "stderr"}:
             raise ValueError("stream must be stdout or stderr")
         attempt = self.store.latest_attempt(run_id)
         if attempt is None:
-            return {"run_id": run_id, "stream": stream, "offset": offset, "next_offset": offset, "data": "", "eof": True}
+            return {
+                "run_id": run_id,
+                "stream": stream,
+                "offset": offset,
+                "next_offset": offset,
+                "data": "",
+                "eof": True,
+            }
         path = self.store.attempt_root(run_id, attempt) / f"{stream}.log"
         if not path.exists():
-            return {"run_id": run_id, "stream": stream, "offset": offset, "next_offset": offset, "data": "", "eof": True}
+            return {
+                "run_id": run_id,
+                "stream": stream,
+                "offset": offset,
+                "next_offset": offset,
+                "data": "",
+                "eof": True,
+            }
         with path.open("rb") as handle:
             handle.seek(offset)
             raw = handle.read(limit)
             next_offset = handle.tell()
             eof = next_offset >= path.stat().st_size
-        return {"run_id": run_id, "stream": stream, "offset": offset, "next_offset": next_offset, "data": raw.decode("utf-8", "replace"), "eof": eof}
+        return {
+            "run_id": run_id,
+            "stream": stream,
+            "offset": offset,
+            "next_offset": next_offset,
+            "data": raw.decode("utf-8", "replace"),
+            "eof": eof,
+        }
 
     def artifacts(self, run_id: str) -> tuple[dict[str, object], ...]:
         attempt = self.store.latest_attempt(run_id)
@@ -373,13 +517,37 @@ class JobService:
         root = self.store.attempt_root(run_id, attempt)
         values: list[dict[str, object]] = []
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
-            values.append({"path": path.relative_to(root).as_posix(), "bytes": path.stat().st_size})
+            values.append(
+                {"path": path.relative_to(root).as_posix(), "bytes": path.stat().st_size}
+            )
         return tuple(values)
 
     def review(self, series_id: str) -> dict[str, object]:
         series = self.store.series(series_id)
         runs = [run for run in self.store.list_runs() if run.get("series_id") == series_id]
-        statuses = [self.status(str(run["run_id"])) for run in sorted(runs, key=lambda item: int(item["session"]))]
+        statuses = [
+            self.status(str(run["run_id"]))
+            for run in sorted(runs, key=lambda item: int(item["session"]))
+        ]
         planned = int(series["series_material"]["planned_sessions"])
         completed = sum(1 for status in statuses if status["state"] == "completed")
-        return {"series_id": series_id, "planned_sessions": planned, "completed_sessions": completed, "missing_sessions": [s["session"] for s in statuses if s["state"] != "completed"], "review_ready": completed == planned, "runs": statuses}
+        execution_complete = completed == planned
+        return {
+            "series_id": series_id,
+            "planned_sessions": planned,
+            "completed_sessions": completed,
+            "missing_sessions": [
+                status["session"] for status in statuses if status["state"] != "completed"
+            ],
+            "execution_complete": execution_complete,
+            # RCD08 evidence verification/harvest is intentionally a stronger
+            # gate than mere process completion. Do not claim scientific review
+            # readiness until verified evidence is wired into this projection.
+            "review_ready": False,
+            "review_blocker": (
+                "verified evidence harvest/report not yet recorded"
+                if execution_complete
+                else "planned sessions incomplete"
+            ),
+            "runs": statuses,
+        }
