@@ -23,7 +23,8 @@ set -u
 jobs=$1
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../../.." && pwd)
-work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
+source "$here/work-root.sh"
+work=$(work_root_resolve "$root")
 mkdir -p "$work/runs"
 
 profiles=()
