@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import contextlib
+import dataclasses
+import io
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
+from bigcherry.cli.hardware import main as hardware_main
 from bigcherry.hardware.drift import classify_drift
 from bigcherry.hardware.inventory import (
     HardwareBindingError,
+    InventoryCatalog,
     bind_gpu_requirement,
     verify_series_allocation,
 )
@@ -21,14 +31,22 @@ def inventory(*, moved=False, peer=True, second_id="gpu-b") -> HardwareInventory
         platform_environment_hash="env1",
         devices=(
             DeviceRecord(
-                "gpu-a", "amd_uuid", "gfx1100", "7900XTX", 24 * 1024**3,
+                "gpu-a",
+                "amd_uuid",
+                "gfx1100",
+                "7900XTX",
+                24 * 1024**3,
                 pci_bdf="0000:01:00.0" if not moved else "0000:03:00.0",
                 render_node="/dev/dri/renderD128" if not moved else "/dev/dri/renderD130",
                 numa_node=0,
                 launch_ordinal=0,
             ),
             DeviceRecord(
-                second_id, "amd_uuid", "gfx1100", "7900XTX", 24 * 1024**3,
+                second_id,
+                "amd_uuid",
+                "gfx1100",
+                "7900XTX",
+                24 * 1024**3,
                 pci_bdf="0000:02:00.0",
                 render_node="/dev/dri/renderD129",
                 numa_node=0,
@@ -46,7 +64,10 @@ class InventoryVerificationTests(unittest.TestCase):
         self.assertTrue(binding.reserve_all_of_arch)
         selected = verify_series_allocation(
             binding,
-            Allocation(native_gpu_ids=("0", "1"), stable_gpu_ids=("gpu-a", "gpu-b")),
+            Allocation(
+                native_gpu_ids=("0", "1"),
+                stable_gpu_ids=("gpu-a", "gpu-b"),
+            ),
             inv,
         )
         self.assertEqual(selected, ("gpu-a",))
@@ -73,9 +94,82 @@ class InventoryVerificationTests(unittest.TestCase):
         with self.assertRaises(HardwareBindingError):
             verify_series_allocation(
                 binding,
-                Allocation(native_gpu_ids=("0", "1"), stable_gpu_ids=("gpu-a", "gpu-b")),
+                Allocation(
+                    native_gpu_ids=("0", "1"),
+                    stable_gpu_ids=("gpu-a", "gpu-b"),
+                ),
                 inventory(moved=True),
             )
+
+
+class InventoryCatalogTests(unittest.TestCase):
+    def test_observed_accept_requires_reviewed_hash_and_explicit_material_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            catalog = InventoryCatalog(Path(temp))
+            initial = inventory()
+            catalog.record_observed("brutus", initial)
+            accepted = catalog.accept_observed(
+                "brutus", expected_material_hash=initial.material_hash
+            )
+            self.assertEqual(accepted.material_hash, initial.material_hash)
+            self.assertEqual(catalog.drift("brutus").kind, "same")
+
+            moved = inventory(moved=True)
+            catalog.record_observed("brutus", moved)
+            with self.assertRaises(HardwareBindingError):
+                catalog.accept_observed(
+                    "brutus", expected_material_hash=moved.material_hash
+                )
+            with self.assertRaises(HardwareBindingError):
+                catalog.accept_observed(
+                    "brutus",
+                    expected_material_hash="not-the-observed-hash",
+                    allow_material_change=True,
+                )
+            accepted2 = catalog.accept_observed(
+                "brutus",
+                expected_material_hash=moved.material_hash,
+                allow_material_change=True,
+            )
+            self.assertEqual(accepted2.material_hash, moved.material_hash)
+
+    def test_hardware_cli_records_accepts_and_renders(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "inventory.json"
+            source.write_text(
+                json.dumps(dataclasses.asdict(inventory())), encoding="utf-8"
+            )
+            env = {"BIGCHERRY_HARDWARE_ROOT": str(root / "state")}
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, env, clear=False), contextlib.redirect_stdout(output):
+                self.assertEqual(
+                    hardware_main(["record-observed", "brutus", str(source)]), 0
+                )
+            record = json.loads(output.getvalue())
+            observed_hash = record["material_hash"]
+
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, env, clear=False), contextlib.redirect_stdout(output):
+                self.assertEqual(
+                    hardware_main(
+                        [
+                            "accept",
+                            "brutus",
+                            "--expected-hash",
+                            observed_hash,
+                        ]
+                    ),
+                    0,
+                )
+            self.assertTrue(json.loads(output.getvalue())["accepted"])
+
+            output = io.StringIO()
+            with mock.patch.dict(os.environ, env, clear=False), contextlib.redirect_stdout(output):
+                self.assertEqual(hardware_main(["render-gres", "brutus"]), 0)
+            rendered = json.loads(output.getvalue())
+            self.assertEqual(rendered["node_gres"], "gpu:gfx1100:2")
+            self.assertIn("Type=gfx1100", rendered["gres_conf"])
 
 
 class GresTests(unittest.TestCase):
