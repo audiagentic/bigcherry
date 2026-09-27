@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
+from .executor import ResourceRequest, SchedulerGpuRequest
 from .operations import OperationSpec
 
 
@@ -30,7 +31,7 @@ class CampaignGraph:
                 raise CampaignGraphError(
                     f"operation {operation.operation_id!r} names missing dependencies {missing!r}"
                 )
-        self.topological_order()  # validates cycles immediately
+        self.topological_order()
 
     @property
     def by_id(self) -> Mapping[str, OperationSpec]:
@@ -92,6 +93,143 @@ class CampaignGraph:
             if operation.operation_id not in succeeded_set
             and set(operation.dependencies) <= succeeded_set
         )
+
+
+def compile_validation_graph(
+    *,
+    architecture: str,
+    reserved_gpu_count: int,
+    semantic_request: Mapping[str, object],
+    include_production_lane: bool,
+    cpu_slots: int = 1,
+    build_timeout_seconds: int = 2700,
+    measure_timeout_seconds: int = 2700,
+) -> CampaignGraph:
+    """Compile the fixed RCD07 validation graph.
+
+    ``semantic_request`` is the already-frozen behavior-affecting campaign
+    request (patch/composition/model/producer/toolchain/etc.). Each operation
+    copies it into its command semantics plus a stage token. There is no
+    producer-name branching here; specialized producers later contribute
+    additional typed stages before this compiler is called.
+    """
+    if reserved_gpu_count < 1:
+        raise ValueError("reserved_gpu_count must be >= 1")
+    gpu = SchedulerGpuRequest(architecture, reserved_gpu_count)
+
+    def make(
+        operation_id: str,
+        kind: str,
+        activity_class: str,
+        dependencies: tuple[str, ...],
+        outputs: tuple[str, ...],
+        *,
+        needs_gpu: bool,
+        timeout: int,
+    ) -> OperationSpec:
+        return OperationSpec(
+            operation_id=operation_id,
+            kind=kind,
+            command_semantics={
+                "stage": operation_id,
+                "request": dict(semantic_request),
+            },
+            environment_semantics=(),
+            resources=ResourceRequest(
+                cpu_slots=cpu_slots,
+                gpu=gpu if needs_gpu else None,
+                activity_class=activity_class,
+                memory_bytes=None,
+                timeout_seconds=timeout,
+            ),
+            dependencies=dependencies,
+            declared_outputs=outputs,
+        )
+
+    operations: list[OperationSpec] = [
+        make(
+            "prepare",
+            "prepare",
+            "build",
+            (),
+            ("prepared-manifest",),
+            needs_gpu=False,
+            timeout=build_timeout_seconds,
+        ),
+        make(
+            "correctness-activation",
+            "correctness-activation",
+            "correctness",
+            ("prepare",),
+            ("correctness", "activation"),
+            needs_gpu=True,
+            timeout=measure_timeout_seconds,
+        ),
+        make(
+            "timed-performance",
+            "timed-performance",
+            "timed-measure",
+            ("correctness-activation",),
+            ("performance",),
+            needs_gpu=True,
+            timeout=measure_timeout_seconds,
+        ),
+        make(
+            "reference-ladder",
+            "reference-ladder",
+            "timed-measure",
+            ("timed-performance",),
+            ("reference-ladder",),
+            needs_gpu=True,
+            timeout=measure_timeout_seconds,
+        ),
+    ]
+    final_measure = "reference-ladder"
+    if include_production_lane:
+        operations.append(
+            make(
+                "production-lane",
+                "production-lane",
+                "timed-measure",
+                ("reference-ladder",),
+                ("production-lane",),
+                needs_gpu=True,
+                timeout=measure_timeout_seconds,
+            )
+        )
+        final_measure = "production-lane"
+    operations.extend(
+        (
+            make(
+                "evidence-finalize",
+                "evidence-finalize",
+                "harvest",
+                (final_measure,),
+                ("validation-evidence",),
+                needs_gpu=False,
+                timeout=300,
+            ),
+            make(
+                "harvest",
+                "harvest",
+                "harvest",
+                ("evidence-finalize",),
+                ("harvest-manifest",),
+                needs_gpu=False,
+                timeout=300,
+            ),
+            make(
+                "report",
+                "report",
+                "harvest",
+                ("harvest",),
+                ("series-report",),
+                needs_gpu=False,
+                timeout=300,
+            ),
+        )
+    )
+    return CampaignGraph(tuple(operations))
 
 
 def graph_document(graph: CampaignGraph) -> dict[str, object]:
