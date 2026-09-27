@@ -88,21 +88,19 @@ def main() -> int:
             matches = [(run_dir, reason) for run_dir, reason, vectors in runs if vectors == record_vectors]
             kept_matches = [name for name, vectors in kept.items() if vectors == record_vectors]
             if len(matches) != 1 or kept_matches:
-                if matches or kept_matches:
+                if len(matches) > 1 or (matches and kept_matches):
                     print(f"{patch_id}: SKIP {digest[:16]} ambiguous link: set-aside={[m[0].name for m in matches]} kept={kept_matches}")
                 continue
-            for run_dir, reason in matches:
-                if True:
-                    document["withdrawn"].append({
-                        "record_digest": digest, "run": run_dir.name,
-                        "reason": {"parallel": "measured while another GPU job ran concurrently",
-                                   "overlap-check": "a pre-flight check overlapped the measurement",
-                                   "rerun-dup": "accidental duplicate re-run of a finished session"
-                                   }.get(reason, f"run set aside ({reason})"),
-                    })
-                    added += 1
-                    print(f"{patch_id}: withdraw {digest[:16]} <- {run_dir.name}")
-                    break
+            run_dir, reason = matches[0]
+            document["withdrawn"].append({
+                "record_digest": digest, "run": run_dir.name,
+                "reason": {"parallel": "measured while another GPU job ran concurrently",
+                           "overlap-check": "a pre-flight check overlapped the measurement",
+                           "rerun-dup": "accidental duplicate re-run of a finished session"
+                           }.get(reason, f"run set aside ({reason})"),
+            })
+            added += 1
+            print(f"{patch_id}: withdraw {digest[:16]} <- {run_dir.name}")
         if added and not dry:
             path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
