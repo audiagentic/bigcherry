@@ -100,9 +100,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         ctx,
         control_binary=binaries["control"]["llama-server"],
         subject_binary=binaries["subject"]["llama-server"],
-        # The server attestation names the device only by PCI locator.
-        expected=dataclasses.replace(device.execution_identity, locators=(device.locator,))
-        if device.locator is not None else device.execution_identity,
+        device=device,
         env={**dict(device.env_overrides), "BIGCHERRY_PATCH_TRACE": "1"},
         label=_LABEL,
         server_args=_SERVER_ARGS,

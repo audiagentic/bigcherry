@@ -251,7 +251,8 @@ def mtp_server_lane(
     *,
     control_binary: Path,
     subject_binary: Path,
-    expected: ExecutionIdentity,
+    device: vp.ProducerDeviceContext | None = None,
+    expected: ExecutionIdentity | None = None,
     env: Mapping[str, str],
     label: str,
     role: str = "positive",
@@ -267,11 +268,31 @@ def mtp_server_lane(
     GPU (the large-tier model needs ~13GB/GPU under -sm tensor). Prompts come
     from ``ctx.corpus``; the client-measured wall-clock tokens/s is the
     sample. Returns (LaneEffect, per-arm request records, per-arm combined log).
+
+    Exactly one of ``device``/``expected`` is required. Pass ``device`` for
+    the ordinary single-physical-device lane (the server attestation names
+    the device only by PCI locator, so the locator-aware identity is derived
+    here the same way every call site used to do by hand via
+    ``dataclasses.replace(device.execution_identity, locators=(device.locator,))``
+    -- PVPS13). Pass ``expected`` directly only for a lane that is not one
+    physical device (e.g. a dual-GPU tensor-split pair sharing one
+    architecture repeated, which has no single locator to derive).
     """
+    import dataclasses
     import re
 
     from bigcherry.bench import server_completion as sc
 
+    if (device is None) == (expected is None):
+        raise vp.ValidationProducerError(
+            f"{label}: mtp_server_lane needs exactly one of device= or expected="
+        )
+    if device is not None:
+        expected = (
+            dataclasses.replace(device.execution_identity, locators=(device.locator,))
+            if device.locator is not None
+            else device.execution_identity
+        )
     if ctx.model is None or ctx.corpus is None:
         raise vp.ValidationProducerError(f"{label}: the MTP lane needs --model and --producer-corpus")
     prompts, corpus_sha256 = sc.load_corpus(ctx.corpus)
