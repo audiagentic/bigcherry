@@ -130,8 +130,11 @@ class HarvestTests(unittest.TestCase):
             {row["campaign_identity_digest"] for row in records},
             {"b" * 64, "c" * 64},
         )
+        expected = patch_evidence.evidence_path(
+            "p", root=self.repo / "patches"
+        ).relative_to(self.repo).as_posix()
         changed = git(self.repo, "show", "--pretty=format:", "--name-only", result["commit"])
-        self.assertEqual(changed.strip(), "patches/p/evidence/validation.json")
+        self.assertEqual(changed.strip(), expected)
         replay = harvest_series(
             store=self.store,
             series_id=self.series_id,
@@ -155,7 +158,9 @@ class HarvestTests(unittest.TestCase):
                 commit=True,
             )
         self.assertEqual(git(self.repo, "diff", "--cached", "--name-only"), "unrelated.txt")
-        self.assertFalse((self.repo / "patches" / "p" / "evidence" / "validation.json").exists())
+        self.assertFalse(
+            patch_evidence.evidence_path("p", root=self.repo / "patches").exists()
+        )
 
 
 if __name__ == "__main__":
