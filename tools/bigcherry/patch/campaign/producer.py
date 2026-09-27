@@ -1869,7 +1869,7 @@ def _aggregate_producer_session_effects(
     ):
         from bigcherry.patch import evidence as patch_validation_evidence
 
-        prior_records = patch_validation_evidence.load_records(args.patch)
+        prior_records = patch_validation_evidence.poolable_records(args.patch)
         # GPT round 6 BLOCKER: schema-v4 persists contracts as a
         # list of {"id": ..., "hash": ...}, not a mapping.
         matching_records = [
