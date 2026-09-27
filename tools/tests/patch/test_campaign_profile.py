@@ -80,6 +80,41 @@ class ProfileWiringTests(unittest.TestCase):
                 self.assertTrue(arm["report"])
                 self.assertTrue(arm["wrapper_crashed_after_measurement"])
 
+    def test_kernel_fraction_failure_is_not_masked_by_a_stale_report(self) -> None:
+        # GPT review req_5c9284ea25b04ddd: "a report file exists" alone was
+        # not enough -- a STALE report left over from a PREVIOUS run of the
+        # same out/ dir would be indistinguishable from a fresh success if
+        # kernel-fraction fails (or is never invoked) on THIS run.
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            if command[0] == "rocprofv3":
+                trace_dir = Path(command[command.index("-d") + 1])
+                (trace_dir / "host").mkdir(parents=True, exist_ok=True)
+                (trace_dir / "host" / "trace_kernel_trace.csv").write_text("x\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+            # kernel-fraction fails but (as some real failures do) still
+            # leaves partial content at --output before erroring.
+            Path(command[command.index("--output") + 1]).write_text("{\"partial\": true}", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            (out / "control").mkdir(parents=True)
+            # A stale report from an earlier run of this exact directory.
+            (out / "control" / "kernel-fraction.json").write_text('{"stale": true}', encoding="utf-8")
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins),                  mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 1, "kernel-fraction's own failure must fail the job, stale report or not")
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertFalse(arm["report"])
+            # The stale file itself was removed, not silently kept as "the" report.
+            self.assertEqual((out / "control" / "kernel-fraction.json").read_text(encoding="utf-8"), '{"partial": true}')
+
     def test_crash_before_any_trace_is_still_a_real_failure(self) -> None:
         def fake_run(command, stdout=None, stderr=None, env=None, check=False):
             # rocprofv3 fails outright: no trace directory is ever populated.
