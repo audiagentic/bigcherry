@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from bigcherry.jobs.gitops import GitOpsError
-from bigcherry.jobs.harvest import harvest_series
+from bigcherry.jobs.harvest import HarvestError, _verify_record_for_run, harvest_series
 from bigcherry.jobs.store import RunStore
 from bigcherry.patch import evidence as patch_evidence
 
@@ -161,6 +161,41 @@ class HarvestTests(unittest.TestCase):
         self.assertFalse(
             patch_evidence.evidence_path("p", root=self.repo / "patches").exists()
         )
+
+    def test_dirty_destination_is_refused_before_merge(self):
+        destination = patch_evidence.evidence_path("p", root=self.repo / "patches")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text('{"operator":"uncommitted"}\n', encoding="utf-8")
+        with self.assertRaises(GitOpsError):
+            harvest_series(
+                store=self.store,
+                series_id=self.series_id,
+                project_root=self.repo,
+                work_root=self.root / "work",
+                commit=True,
+            )
+        self.assertEqual(destination.read_text(encoding="utf-8"), '{"operator":"uncommitted"}\n')
+
+    def test_v2_contract_hash_mismatch_fails_closed(self):
+        record = evidence_record(digest_char="d")
+        record.update(
+            validation_implementation_digest="b" * 64,
+            contracts=[{"id": "C", "hash": "c" * 64}],
+        )
+        record["record_digest"] = patch_evidence._record_digest(record)  # type: ignore[attr-defined]
+        run = {
+            "job": {"patch": "p", "architecture": "gfx1100"},
+            "scientific_identity": {
+                "schema": "bigcherry.scientific-identity.v2",
+                "focal": {
+                    "implementation_digest": "a" * 64,
+                    "validation_digest": "b" * 64,
+                    "contract_bindings": [{"id": "C", "hash": "e" * 64}],
+                },
+            },
+        }
+        with self.assertRaises(HarvestError):
+            _verify_record_for_run(record, run)
 
 
 if __name__ == "__main__":
