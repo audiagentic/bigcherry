@@ -11,6 +11,11 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
 work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
+# Exclusive hold on every device this session measures on, for its whole
+# lifetime: a profile job (or another perf session) on the same physical GPU
+# would not just add contention noise to a timed lane, it could crash both.
+source "$root/tools/lab/plan-qualification/gpu-lock.sh"
+gpu_lock_acquire "$work" "$dev"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
 # Shared compiler cache for every campaign tree. Worktrees and build dirs have

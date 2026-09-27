@@ -14,6 +14,13 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
 work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
+# Profiles are relative kernel-time-share diagnostics (PVPS10), not timed
+# verdicts -- they are safe to run alongside another job's timed lane on a
+# DIFFERENT device, but never on the SAME device (that would be a real GPU
+# collision, not just noise). Blocks only if this device is held by a perf
+# session; never blocks on a different device being busy.
+source "$root/tools/lab/plan-qualification/gpu-lock.sh"
+gpu_lock_acquire "$work" "$dev"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
 export CCACHE_DIR=${CCACHE_DIR:-$work/ccache} CCACHE_BASEDIR=$work CCACHE_NOHASHDIR=1
