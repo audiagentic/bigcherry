@@ -40,6 +40,14 @@ class WithdrawalTests(unittest.TestCase):
         with self.assertRaises(evidence.ValidationEvidenceError):
             evidence.poolable_records("p", root=self.root)
 
+    def test_withdrawn_digest_not_in_evidence_is_rejected(self) -> None:
+        # A typo'd/stale digest must fail loudly, not silently withdraw
+        # nothing while the intended record stays poolable.
+        _write(self.root, [{"record_digest": "a"}, {"record_digest": "b"}],
+               [{"record_digest": "bb", "reason": "typo of b"}])
+        with self.assertRaises(evidence.ValidationEvidenceError):
+            evidence.poolable_records("p", root=self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

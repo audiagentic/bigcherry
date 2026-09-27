@@ -1123,9 +1123,23 @@ def withdrawn_digests(patch_id: str, *, root: Path | None = None) -> frozenset[s
 
 
 def poolable_records(patch_id: str, *, root: Path | None = None) -> tuple[dict[str, object], ...]:
-    """Evidence records eligible for session pooling (withdrawn ones excluded)."""
+    """Evidence records eligible for session pooling (withdrawn ones excluded).
+
+    GPT review req_6c90e1ebba83464a: a withdrawn digest that names no real
+    record (a typo, or a stale entry left after evidence was pruned) used to
+    be silently accepted -- it withdrew nothing, while the record the caller
+    actually meant to exclude stayed poolable. Every withdrawn digest must
+    name a record that exists in this patch's own evidence file."""
+    records = load_records(patch_id, root=root)
+    present = {r.get("record_digest") for r in records}
     withdrawn = withdrawn_digests(patch_id, root=root)
-    return tuple(r for r in load_records(patch_id, root=root) if r.get("record_digest") not in withdrawn)
+    unknown = withdrawn - present
+    if unknown:
+        path = evidence_path(patch_id, root=root).parent / WITHDRAWALS_FILE
+        raise ValidationEvidenceError(
+            f"{path}: withdraws digest(s) {sorted(unknown)!r} not present in {patch_id}'s evidence"
+        )
+    return tuple(r for r in records if r.get("record_digest") not in withdrawn)
 
 
 def _record_qualifies(
