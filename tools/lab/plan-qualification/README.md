@@ -27,30 +27,32 @@ The legacy queue now matches the evidence policy conservatively:
 
 - shared content-addressed worktrees/build roots and a 100G ccache are reused
   across patches/sessions for the same architecture+toolchain;
-- PROFILE/kernel-trace diagnostics run concurrently on different GPUs when
-  their architecture/toolchain build keys differ;
-- profiles sharing one architecture+toolchain build root are serialized today
-  because `profile.py` still combines CMake/Ninja preparation and GPU profiling
-  in one process; this prevents concurrent mutation of one shared build tree;
+- PROFILE/kernel-trace diagnostics use a two-phase handoff: CMake/Ninja
+  preparation is serialized only for a shared architecture+toolchain build
+  root, writes a SHA-256-bound prepared manifest, then releases that build lock;
+- the GPU trace phase re-verifies the prepared binary bytes and may run in
+  parallel with other PROFILE jobs on different GPUs, including same-arch cards;
 - every GPU has an exclusive `flock`, so two jobs can never touch one card;
 - PROFILE jobs take a shared host-activity lock;
 - monolithic validation campaigns take the exclusive host-activity lock, so
   no profile, build/test campaign, or second performance campaign can overlap
   their timed evidence;
 - writer intent prevents a continuous stream of new profiles from starving a
-  pending performance campaign and stale intent is crash-repaired.
+  pending performance campaign and stale intent is crash-repaired;
+- shell wrappers preserve the child exit status as well as writing
+  `PROFILE_EXIT=` / `CAMPAIGN_EXIT=` restart markers.
 
-`queue.sh` therefore launches all PROFILE rows first; resource/build locks let
-safe profiles overlap and serialize conflicting ones. It waits for them, then
-runs campaign rows serially. Multiple queue processes remain safe because the
-host/per-GPU/build-key locks are cross-process.
+`queue.sh` launches all PROFILE rows first. Shared-build preparation naturally
+serializes only conflicting build keys; after each preparation completes its
+GPU phase is free to overlap compatible profiles. The queue waits for all
+PROFILE rows, then runs campaign rows serially. Multiple queue processes remain
+safe because host/per-GPU/build-key locks are cross-process.
 
-This is intentionally conservative: the legacy campaign contains build,
-correctness and timed measurement in one process, and the profile command
-contains build+trace in one process, so exclusive/build-key windows are larger
-than necessary. RCD07/jobs stage scheduling is the path to prepare once, reuse
-verified deterministic stage outputs, run functional GPU stages concurrently,
-and retain host-exclusive timed stages only.
+The remaining conservative boundary is the monolithic validation campaign:
+build, correctness and timed measurement still live in one process, so it holds
+the host-exclusive gate for longer than the timed lane strictly needs. RCD07 /
+the jobs stage scheduler is the path to parallel CPU/functional stages while
+retaining host-exclusive timed measurement only.
 
 ## Outputs
 
@@ -59,6 +61,10 @@ and retain host-exclusive timed stages only.
 untracked `config/environment.local.toml` `[env]` table, else `work/`; on the
 build server point it at a large scratch volume). Campaign evidence is appended
 to `patches/<id>/evidence/validation.json`.
+
+PROFILE runs also write `prepared-profile.json`, binding the exact control and
+subject binaries used by the GPU phase. A binary/selector change invalidates the
+handoff instead of silently profiling a changed build.
 
 ## Runtime
 
