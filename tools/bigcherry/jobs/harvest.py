@@ -224,21 +224,25 @@ def harvest_series(
     result_path = store.root / "series" / series_id / "harvest.json"
     verified_path = store.root / "series" / series_id / "verified-evidence.json"
 
-    existing_verified = store.read_optional(verified_path)
-    canonical_digests = {
-        str(record.get("record_digest"))
-        for record in patch_evidence.load_records(patch_id, root=canonical_root)
-    }
-    if (
-        existing_verified
-        and existing_verified.get("manifest") == manifest
-        and set(manifest["record_digests"]).issubset(canonical_digests)
-    ):
-        return dict(existing_verified, already_harvested=True)
-
+    # Canonical-tree inspection and mutation are one maintenance-fenced
+    # transaction. In particular, do not parse an operator-modified destination
+    # for idempotence before proving that destination is clean.
     with MaintenanceLock(work_root, project_root):
         require_clean_index(project_root)
         require_paths_clean(project_root, (destination_rel,))
+
+        existing_verified = store.read_optional(verified_path)
+        canonical_digests = {
+            str(record.get("record_digest"))
+            for record in patch_evidence.load_records(patch_id, root=canonical_root)
+        }
+        if (
+            existing_verified
+            and existing_verified.get("manifest") == manifest
+            and set(manifest["record_digests"]).issubset(canonical_digests)
+        ):
+            return dict(existing_verified, already_harvested=True)
+
         for record in records_to_merge:
             patch_evidence.write_record(record, root=canonical_root)
         stage_exact(project_root, (destination_rel,))
