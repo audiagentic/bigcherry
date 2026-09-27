@@ -17,7 +17,7 @@ with `BC_HIP_PATH` and `BC_MODEL` set in the environment.
 
 `queue.sh <jobs-file>` accepts normal campaign rows plus:
 
-`PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args]`
+`PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]`
 
 Optional leading `MODEL=`, `HIP=` and `VIS=` tokens are supported.
 
@@ -27,7 +27,11 @@ The legacy queue now matches the evidence policy conservatively:
 
 - shared content-addressed worktrees/build roots and a 100G ccache are reused
   across patches/sessions for the same architecture+toolchain;
-- PROFILE/kernel-trace diagnostics run concurrently on different GPUs;
+- PROFILE/kernel-trace diagnostics run concurrently on different GPUs when
+  their architecture/toolchain build keys differ;
+- profiles sharing one architecture+toolchain build root are serialized today
+  because `profile.py` still combines CMake/Ninja preparation and GPU profiling
+  in one process; this prevents concurrent mutation of one shared build tree;
 - every GPU has an exclusive `flock`, so two jobs can never touch one card;
 - PROFILE jobs take a shared host-activity lock;
 - monolithic validation campaigns take the exclusive host-activity lock, so
@@ -36,14 +40,17 @@ The legacy queue now matches the evidence policy conservatively:
 - writer intent prevents a continuous stream of new profiles from starving a
   pending performance campaign and stale intent is crash-repaired.
 
-`queue.sh` therefore runs all PROFILE rows first in parallel, waits for them,
-then runs campaign rows serially. Multiple queue processes remain safe because
-the host/per-GPU locks are cross-process.
+`queue.sh` therefore launches all PROFILE rows first; resource/build locks let
+safe profiles overlap and serialize conflicting ones. It waits for them, then
+runs campaign rows serially. Multiple queue processes remain safe because the
+host/per-GPU/build-key locks are cross-process.
 
 This is intentionally conservative: the legacy campaign contains build,
-correctness and timed measurement in one process, so its exclusive window is
-larger than necessary. RCD07/jobs stage scheduling is the path to parallel
-build/correctness/trace stages while retaining host-exclusive timed stages.
+correctness and timed measurement in one process, and the profile command
+contains build+trace in one process, so exclusive/build-key windows are larger
+than necessary. RCD07/jobs stage scheduling is the path to prepare once, reuse
+verified deterministic stage outputs, run functional GPU stages concurrently,
+and retain host-exclusive timed stages only.
 
 ## Outputs
 
