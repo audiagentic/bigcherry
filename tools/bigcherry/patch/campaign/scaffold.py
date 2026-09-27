@@ -27,17 +27,38 @@ VALIDATED_PATCH_SET = "validated-enhancements"
 
 
 def validated_enhancement_patches(
-    *, patch_id: str, common_patches: tuple[str, ...], recipes: Path | None = None
+    *, patch_id: str, common_patches: tuple[str, ...], recipes: Path | None = None,
+    catalog_root: Path | None = None,
 ) -> tuple[str, ...]:
     """The promoted patches composed into control (validated BC), minus the
     focal patch (re-validating a promoted patch measures it against the rest
-    of the set) and minus anything already named as a common patch."""
+    of the set) and minus anything already named as a common patch.
+
+    A declared member that REQUIRES the focal patch cannot be present once
+    the focal patch is removed -- it must be dropped too, transitively (e.g.
+    1265 requires 1237; profiling/re-validating 1237 alone must also drop
+    1265, or resolve_exact() fails closed with a confusing "requires
+    explicitly selected module" error instead of a clean composition).
+    """
     from bigcherry.core import config as campaign_config
     from bigcherry.core import paths as bc_paths
+    from bigcherry.patch import patchset
 
     cfg = campaign_config.load(recipes or bc_paths.RECIPES)
     declared = cfg.patch_sets[VALIDATED_PATCH_SET].patches
-    return tuple(p for p in declared if p != patch_id and p not in common_patches)
+    excluded = {patch_id, *common_patches}
+    modules = {m.patch_id: m for m in patchset.catalog(directory=catalog_root)}
+    changed = True
+    while changed:
+        changed = False
+        for candidate in declared:
+            if candidate in excluded:
+                continue
+            module = modules.get(candidate)
+            if module is not None and set(module.requires) & excluded:
+                excluded.add(candidate)
+                changed = True
+    return tuple(p for p in declared if p not in excluded)
 
 
 @dataclass(frozen=True)
