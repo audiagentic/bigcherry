@@ -67,6 +67,12 @@ class ResourceRequest:
 
 @dataclass(frozen=True)
 class ExecutionRequest:
+    """Executor-local launch specification.
+
+    This is deliberately not the portable scientific JobSpec.  cwd/command and
+    log paths are resolved after target placement for the selected host.
+    """
+
     execution_id: str
     command: tuple[str, ...]
     cwd: str
@@ -106,7 +112,7 @@ class ExecutionStatus:
 
 @dataclass(frozen=True)
 class Allocation:
-    """Executor-native allocation identity before RCD12 stable-ID resolution."""
+    """Executor-native allocation before stable-ID verification."""
 
     native_gpu_ids: tuple[str, ...]
     environment: tuple[tuple[str, str], ...] = ()
@@ -120,7 +126,10 @@ class ExecutorEvent:
 
 
 class Executor(Protocol):
+    name: str
+
     def submit(self, request: ExecutionRequest) -> ExecutionHandle: ...
+    def correlate(self, execution_id: str) -> tuple[ExecutionHandle, ...]: ...
     def status(self, handle: ExecutionHandle) -> ExecutionStatus: ...
     def cancel(self, handle: ExecutionHandle) -> None: ...
     def control(self, handle: ExecutionHandle, action: ExecutorControl) -> None: ...
