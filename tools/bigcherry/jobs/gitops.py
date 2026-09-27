@@ -64,6 +64,33 @@ def require_clean_index(repo: Path) -> None:
         )
 
 
+def require_paths_clean(repo: Path, relpaths: tuple[str, ...]) -> None:
+    """Refuse tracked modifications or untracked destination files.
+
+    Unrelated unstaged files elsewhere are deliberately allowed; only explicit
+    harvest destinations are protected from being absorbed into the evidence
+    commit.
+    """
+    for path in relpaths:
+        candidate = Path(path)
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise GitOpsError(f"unsafe git path: {path}")
+        status = str(
+            _run(
+                repo,
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--",
+                path,
+            ).stdout
+        ).strip()
+        if status:
+            raise GitOpsError(
+                f"refusing evidence harvest because destination is not clean: {path}: {status}"
+            )
+
+
 def stage_exact(repo: Path, relpaths: tuple[str, ...]) -> tuple[str, ...]:
     if not relpaths:
         return ()
