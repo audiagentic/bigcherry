@@ -127,7 +127,24 @@ _JMAX_NEW = """    int ret = std::min(ne11, int64_t(512));
     ret -= ret % 8;
     const char * env = getenv("GGML_CUDA_MMQ_J_MAX");
     if (env != nullptr) {
-        ret = std::min(ret, std::atoi(env));
+        // GPT code review 2026-09-27 (req_6c90e1ebba83464a): plain atoi() on a
+        // qualification-sweep override silently turned garbage/negative/non-
+        // multiple-of-8 input into an out-of-range J (atoi("garbage")==0,
+        // atoi("-1")==-1), which is exactly the tile-width invariant the
+        // preceding `ret -= ret % 8` line exists to enforce. Parse strictly,
+        // reject anything that fails to parse or isn't a positive integer,
+        // and round the accepted value down to a multiple of 8 the same way
+        // the unconditional default above is; an override that rounds to 0
+        // is rejected outright rather than launching a degenerate J=0 tile.
+        char * end = nullptr;
+        const long parsed = std::strtol(env, &end, 10);
+        if (end != env && *end == '\\0' && parsed > 0) {
+            int j = (int) std::min<long>(parsed, ret);
+            j -= j % 8;
+            if (j > 0) {
+                ret = j;
+            }
+        }
     }"""
 
 _PERF_OLD = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));

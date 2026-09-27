@@ -31,6 +31,15 @@ class Patch1267Mechanics(unittest.TestCase):
             first = apply_all(_module.PATCHES, root); self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
             self.assertIn("x_s2_reg", (root / "ggml/src/ggml-cuda/mmq-vec-dot.cuh").read_text())
             self.assertIn("patch=1267_rd07_q6k_mmq_scale_fold", (root / "ggml/src/ggml-cuda/mmq.cu").read_text())
+            # GPT code review 2026-09-27 (req_6c90e1ebba83464a): plain atoi() on
+            # the qualification override accepted garbage/negative/non-8
+            # values as a valid J. Must parse strictly (strtol + full-string
+            # check) and round the accepted value to a multiple of 8.
+            jmax_text = (root / "ggml/src/ggml-cuda/mmq.cuh").read_text()
+            self.assertIn("std::strtol(env, &end, 10)", jmax_text)
+            self.assertIn("end != env && *end == '\\0' && parsed > 0", jmax_text)
+            self.assertIn("j -= j % 8", jmax_text)
+            self.assertNotIn("std::atoi(env)", jmax_text)
             before = {p: (root / p).read_text() for p in ("ggml/src/ggml-cuda/mmq-vec-dot.cuh", "ggml/src/ggml-cuda/mmq.cu", "ggml/src/ggml-cuda/mmq.cuh", "tests/test-backend-ops.cpp")}
             second = apply_all(_module.PATCHES, root); self.assertTrue(all(r.ok for r in second)); self.assertEqual(before, {p: (root / p).read_text() for p in before})
     def test_missing_anchor_fails_closed(self):
