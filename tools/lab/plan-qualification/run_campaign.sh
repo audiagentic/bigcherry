@@ -11,11 +11,16 @@ root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
 work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
-# Exclusive hold on every device this session measures on, for its whole
-# lifetime: a profile job (or another perf session) on the same physical GPU
-# would not just add contention noise to a timed lane, it could crash both.
+# Legacy monolithic campaigns contain timed performance lanes. The measured
+# effect is small enough that cross-GPU host activity is material, so this
+# whole legacy campaign is host-exclusive. PROFILE/trace diagnostics use the
+# shared side of the same gate and may run concurrently with each other, but
+# never with this campaign. RCD07 stage execution will eventually narrow the
+# exclusive window to timed stages only.
 source "$root/tools/lab/plan-qualification/gpu-lock.sh"
+source "$root/tools/lab/plan-qualification/activity-lock.sh"
 gpu_lock_acquire "$work" "$dev"
+activity_lock_exclusive_acquire "$work"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
 # Shared compiler cache for every campaign tree. Worktrees and build dirs have
