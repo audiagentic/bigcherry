@@ -1,8 +1,8 @@
 # Brutus Slurm 23.11 install/integration runbook
 
-Normative architecture: `docs/design/JOBS_ORCHESTRATOR.md`. This is the concrete RCD03 Brutus procedure.
+Normative architecture: `docs/design/JOBS_ORCHESTRATOR.md`. Job-service operator reference: `JOBS_CONTROL_PLANE.md`.
 
-Validated v1 service stack:
+v1 stack:
 
 ```text
 munge
@@ -10,26 +10,70 @@ slurmctld
 slurmd
 ```
 
-No MariaDB, slurmdbd or slurmrestd in v1. BigCherry owns scientific/domain history; Slurm owns execution/resource scheduling and keeps `jobcomp/filetxt` as a lightweight native completion trail.
+No MariaDB, slurmdbd or slurmrestd. BigCherry owns scientific/domain history; Slurm owns execution/resources and keeps `jobcomp/filetxt` as a lightweight native completion trail.
 
-Latest real CPU/service reference: GitHub Actions run `36219793101`, Ubuntu 24.04.5, `slurm-wlm 23.11.4-1.2ubuntu5`.
+## 1. Preferred repeatable installer
 
-## 1. Install packages
+Dry-run/preflight first:
+
+```bash
+python tools/admin/install_brutus_slurm.py \
+  --project-root /srv/bigcherry \
+  --hardware-root /mnt/data/bigcherry-jobs/hardware \
+  --executor-id brutus --node-name brutus \
+  --cpus <N> --real-memory-mib <MiB>
+```
+
+Preflight requires an accepted hardware inventory and renders the exact current templates. It refuses production policy containing monolithic native `RequeueExit` or `ConstrainDevices=yes` before hardware qualification.
+
+After reviewing the plan/config:
+
+```bash
+sudo /srv/bigcherry-venv/bin/python tools/admin/install_brutus_slurm.py \
+  --project-root /srv/bigcherry \
+  --hardware-root /mnt/data/bigcherry-jobs/hardware \
+  --executor-id brutus --node-name brutus \
+  --cpus <N> --real-memory-mib <MiB> --apply
+```
+
+Apply installs only the minimal package stack (`slurm-wlm`, `munge`, `jq`), provisions required directories/MUNGE, writes rendered `/etc/slurm`, validates MUNGE and `slurmd -G`, starts `slurmctld`/`slurmd`, and requires `scontrol ping` success. The action plan is offline-tested.
+
+Manual steps below are the auditable equivalent/fallback.
+
+## 2. Discover and accept hardware first
+
+GPU ordinals are not hardware truth. Discover current Linux AMD state:
+
+```bash
+python -m bigcherry hardware discover brutus --record
+python -m bigcherry hardware diff brutus
+```
+
+Review `observed.json`, especially identity source, architecture/model/VRAM, BDF, render node and HIP ordinal. The Linux provider prefers AMD/HIP UUID, then hardware serial, and fails closed unless an explicit weak hardware epoch is supplied when neither exists.
+
+Accept only the reviewed hash:
+
+```bash
+python -m bigcherry hardware accept brutus \
+  --expected-hash <observed-material-hash> [--allow-material-change]
+python -m bigcherry hardware render-gres brutus
+```
+
+`environment.local.toml` supplies policy/toolchain/model paths, never GPU identity/architecture/VRAM overrides.
+
+Before production cutover, capture real AMD-SMI output and prove the chosen stable identity persists across reboot/toolchain views. Linux discovery currently does not infer peer topology; populate/accept peer facts only after real HIP/topology validation.
+
+## 3. Manual package/service baseline
 
 ```bash
 sudo apt update
 sudo apt install -y slurm-wlm munge jq
-
 slurmctld -V
 slurmd -V
 munge --version
-getent passwd slurm
-getent passwd bigcherry
 ```
 
-Expected Slurm family: 23.11.x. Record exact package versions in acceptance evidence.
-
-## 2. MUNGE
+Provision MUNGE and require a round-trip before Slurm starts:
 
 ```bash
 sudo install -d -o munge -g munge -m 0755 /run/munge /var/log/munge
@@ -42,103 +86,54 @@ sudo systemctl enable --now munge
 munge -n | unmunge >/dev/null
 ```
 
-MUNGE round-trip is a hard gate before Slurm services start.
-
-## 3. Host directories
+Host directories:
 
 ```bash
-sudo install -d -o slurm -g slurm -m 0755 /var/spool/slurmctld
-sudo install -d -o root  -g root  -m 0755 /var/spool/slurmd
-sudo install -d -o slurm -g slurm -m 0755 /var/log/slurm
-sudo install -d -o root  -g root  -m 0755 /etc/slurm
+sudo install -d -o slurm -g slurm -m 0755 /var/spool/slurmctld /var/log/slurm
+sudo install -d -o root  -g root  -m 0755 /var/spool/slurmd /etc/slurm
 sudo touch /var/log/slurm/bigcherry-jobcomp.log
 sudo chown slurm:slurm /var/log/slurm/bigcherry-jobcomp.log
 ```
 
-BigCherry work/build/tmp/log roots remain under `/mnt/data`.
+Capture current CPU/RAM topology (`slurmd -C`, `nproc`, `/proc/meminfo`) and choose conservative `RealMemory`; never copy another host's node line.
 
-## 4. Discover and accept hardware before rendering Slurm GPU config
+## 4. Render exact accepted inventory
 
-RCD12 discovered state is authoritative; do not hand-maintain GPU ordinals.
-
-Required per GPU:
-
-```text
-stable device_id + identity_source
-arch
-model
-VRAM
-PCI BDF
-render node
-NUMA / peer topology
-AMD driver
-```
-
-Target commands once RCD12 production code exists:
-
-```bash
-bigcherry hardware discover --json > /mnt/data/bigcherry-jobs/hardware/observed.json
-bigcherry hardware diff --accepted --json
-bigcherry hardware accept --inventory-hash <sha256>
-```
-
-`environment.local.toml` supplies host policy/toolchain/model paths, not GPU inventory truth.
-
-Capture CPU topology:
-
-```bash
-slurmd -C
-nproc
-awk '/MemTotal:/ {print $2}' /proc/meminfo
-```
-
-Use conservative `RealMemory`; never copy another host's rendered line.
-
-## 5. Render `/etc/slurm`
-
-Tracked policy templates:
+Tracked templates:
 
 ```text
 config/slurm/slurm.conf.example
 config/slurm/cgroup.conf.example
-config/slurm/gres.conf.example
 ```
 
-Render placeholders in `slurm.conf.example`:
+Render using:
 
-```text
-@NODE_NAME@        current Brutus hostname
-@CPUS@             configured CPUs
-@REAL_MEMORY_MIB@  conservative host RAM MiB
-@NODE_GRES@        accepted architecture counts
+```bash
+python tools/admin/render_bigcherry_slurm.py \
+  --project-root /srv/bigcherry \
+  --hardware-root /mnt/data/bigcherry-jobs/hardware \
+  --executor-id brutus --node-name brutus \
+  --cpus <N> --real-memory-mib <MiB> --dest-root /tmp/slurm-review
 ```
 
-Example node GRES summary:
-
-```text
-gpu:gfx1100:2,gpu:gfx1201:1,gpu:gfx1030:1
-```
-
-Generated `/etc/slurm/gres.conf` contains one explicit render-node record per accepted device:
+Generated GRES is architecture-only, one explicit render node per accepted GPU:
 
 ```text
 Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
-Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
 Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
-Name=gpu Type=gfx1030 File=/dev/dri/renderD131 Flags=amd_gpu_env
 ```
 
 Rules:
 
-- `Type` is architecture only; never `gfx1100_0`.
-- stable UUID/device ID stays in BigCherry inventory/series identity, not GRES type.
-- PCI BDF/render node/ordinal are current locators only.
-- `Flags=amd_gpu_env` owns Slurm `ROCR_VISIBLE_DEVICES`; BigCherry must not replace it with host-global ordinals.
-- series-bound proper subset of one architecture reserves all accepted GPUs of that architecture, verifies the bound stable IDs are present, then narrows inside the already-exclusive allocation.
+- never encode slot/UUID in `Type`;
+- stable device ID stays in BigCherry inventory/series identity;
+- BDF/render/ordinal are current locators;
+- Slurm owns its allocation visibility environment;
+- a frozen proper subset of one architecture reserves the complete accepted architecture pool and BigCherry narrows only inside that exclusive allocation.
 
-## 6. cgroup baseline
+## 5. cgroup baseline
 
-Install `/etc/slurm/cgroup.conf` from the tracked template:
+Production v1 starts with:
 
 ```ini
 CgroupPlugin=autodetect
@@ -148,64 +143,13 @@ ConstrainRAMSpace=no
 ConstrainSwapSpace=no
 ```
 
-`ConstrainDevices=no` is the **qualified initial fallback**, not a temporary typo. Real Noble CI proved the cgroup process/task/accounting stack in this mode.
+`ConstrainDevices=no` is the qualified fallback, not an accidental omission. Enable device fencing only after every supported ROCm/toolchain/cohort cell proves `/dev/kfd`, allocated render nodes, unallocated-node denial, visibility mapping and llama/HIP behavior.
 
-Only switch to `ConstrainDevices=yes` after Brutus hardware qualification in §11 passes every supported ROCm/toolchain/cohort cell.
+## 6. Scheduler/resource policy
 
-## 7. Validate generated configuration before service cutover
-
-Noble 23.11.4 has **no** `slurmctld -t` config-test option; do not add one to automation.
-
-GRES validation:
-
-```bash
-sudo slurmd -G
-```
-
-Any GRES error blocks node resume/start of managed GPU work.
-
-Controller config is validated by real daemon startup plus interrogation:
-
-```bash
-sudo slurmctld -Dvv   # foreground diagnostic when qualifying changes
-# or normal systemd start after initial qualification
-```
-
-Then use `scontrol show config`; do not depend on exact human formatting beyond required settings.
-
-## 8. Start services
-
-```bash
-sudo systemctl enable slurmctld slurmd
-sudo systemctl restart slurmctld
-sudo systemctl restart slurmd
-
-scontrol ping
-sinfo -Nel
-squeue --json | jq '.jobs'
-scontrol show lic
-scontrol show config | grep -E 'SchedulerType|SchedulerParameters|PriorityType|RequeueExit|AccountingStorage'
-```
-
-Required v1 services:
-
-```text
-munge
-slurmctld
-slurmd
-```
-
-No `sacctmgr`, account bootstrap or `--account` argument is required.
-
-## 9. Exact scheduler/resource policy
-
-Core policy from `config/slurm/slurm.conf.example`:
+Production template uses:
 
 ```ini
-AuthType=auth/munge
-AuthInfo=cred_expire=30
-CredType=cred/munge
-
 SchedulerType=sched/backfill
 SchedulerParameters=bf_licenses,bf_interval=2,sched_interval=2
 PriorityType=priority/basic
@@ -216,209 +160,119 @@ Licenses=host_activity:2,build_slot:1
 AccountingStorageType=accounting_storage/none
 JobCompType=jobcomp/filetxt
 JobCompLoc=/var/log/slurm/bigcherry-jobcomp.log
-RequeueExit=75
 
-ProctrackType=proctrack/cgroup
-TaskPlugin=task/cgroup,task/affinity
-JobAcctGatherType=jobacct_gather/cgroup
-JobAcctGatherFrequency=30
-
-PartitionName=bc-build   Nodes=brutus PriorityTier=10  State=UP MaxTime=00:45:00
-PartitionName=bc-measure Nodes=brutus PriorityTier=100 State=UP MaxTime=00:45:00
+PartitionName=bc-build   ... PriorityTier=10  State=UP
+PartitionName=bc-measure ... PriorityTier=100 State=UP
 ```
 
 Resource classes:
 
 ```text
-build / prepare:
-  partition=bc-build
-  licenses=build_slot:1,host_activity:1
-
-monolithic v1 / timed execute:
-  partition=bc-measure
-  licenses=host_activity:2
-  required architecture GRES
+build/prepare: build_slot:1 + host_activity:1
+measurement:   host_activity:2 + required architecture GRES
 ```
 
-Real Noble CI proved a running build plus pending measure plus later build executes:
+**No production `RequeueExit`.** Monolithic campaign retries create `attempt+1` and a new Slurm job, optionally pinned to the same BigCherry commit. Native Slurm requeue was exercised only as a scheduler capability reference; it is not the v1 campaign retry mechanism.
 
-```text
-build1 -> measure -> build2
-```
-
-Do not classify jobs solely from `Reason=` text. Pending reasons are diagnostic and were observed to vary while valid jobs still made correct progress.
-
-## 10. BigCherry -> Slurm submission contract
-
-Only `tools/bigcherry/jobs/slurm.py` may know Slurm CLI syntax.
-
-Expected argv shape:
+## 7. Validate/start
 
 ```bash
-sbatch --parsable \
-  --job-name 'bc:<run_id>:a<attempt>' \
-  --comment 'bigcherry:<execution_id>' \
-  --partition bc-measure \
-  --licenses host_activity:2 \
-  --gres 'gpu:<arch>:<reserved-count>' \
-  --time '<bounded>' \
-  --output '<attempt>/slurm-%j.out' \
-  --error '<attempt>/slurm-%j.err' \
-  --export 'ALL,BIGCHERRY_RUN_ID=...,BIGCHERRY_ATTEMPT=...,BIGCHERRY_ATTEMPT_ROOT=...' \
-  '<attempt>/launch.sh'
+sudo slurmd -G
+sudo systemctl enable --now slurmctld slurmd
+scontrol ping
+sinfo -Nel
+squeue --json | jq '.jobs'
+scontrol show lic
+scontrol show config | grep -E 'SchedulerType|SchedulerParameters|PriorityType|AccountingStorage'
 ```
 
-No `--account` in v1.
+Noble Slurm 23.11.4 has no `slurmctld -t` config-test option; do not script one. Any `slurmd -G` error blocks managed GPU work.
 
-Before `sbatch`, persist `submission-intent.json` with stable `execution_id`, exact request hash, run/attempt and pinned commit. Persist `submission.json` only after native acceptance.
+## 8. BigCherry submission contract
 
-Recovery when intent exists but handle is missing:
+Only `tools/bigcherry/jobs/slurm.py` knows Slurm CLI syntax. A measurement request is structurally:
 
 ```text
-one correlated native execution -> bind it
-proven no execution             -> submit immutable request once
-multiple/ambiguous              -> block + wake; never duplicate blindly
+sbatch --parsable
+  --comment bigcherry:<stable-execution-id>
+  --partition bc-measure
+  --licenses host_activity:2
+  --gres gpu:<arch>:<reserved-count>
+  --time <bounded>
+  --output/--error <attempt-local paths>
+  <attempt launch wrapper>
 ```
 
-Use active Slurm state plus `jobcomp/filetxt` and attempt-local start/result sentinels because a very short terminal job may disappear from `squeue` before handle persistence.
+No `--account` requirement. BigCherry persists immutable `submission-intent.json` before `sbatch` and `submission.json` after native acceptance. Recovery correlates stable execution ID:
 
-Machine interfaces:
-
-```bash
-squeue --json
-scontrol show job -o <jobid>
-scontrol hold <jobid>
-scontrol release <jobid>
-scancel <jobid>
+```text
+one match -> rebind
+proven zero -> submit immutable request once
+multiple/ambiguous -> block+wake; never duplicate blindly
 ```
 
 No v1 dependency on `sacct`.
 
-## 11. AMD GRES/cgroup hardware falsification
+## 9. AMD allocation/cgroup falsification
 
-Run for every accepted Linux ROCm toolchain and allocation shape:
+For each accepted architecture/card/toolchain and relevant multi-GPU shape prove, with bounded timeouts:
 
-```text
-single GPU for each accepted architecture/card class
-all relevant same-arch single-card cohorts
-dual/sm-tensor cohort where applicable
-```
+- exact Slurm-visible devices map to accepted stable IDs;
+- `/dev/kfd` and allocated render nodes work;
+- `hipGetDeviceCount/properties` matches request;
+- repeated HIP initialization/enumeration is stable;
+- AMD-SMI/rocminfo inspection terminates;
+- llama-bench and llama-server smoke succeed;
+- peer/tensor split and required producer preflights succeed;
+- 4096-context or other declared workload preflights succeed.
 
-With `ConstrainDevices=yes`, prove:
+If any supported device-cgroup cell fails, retain `ConstrainDevices=no`, GRES scheduling, runtime visibility and BigCherry stable-ID attestation. Record that this is not a device security boundary.
 
-```text
-/dev/kfd usable
-allocated render node(s) usable
-unallocated render node(s) inaccessible
-ROCR_VISIBLE_DEVICES resolves exactly to allocated/bound devices
-HIP_VISIBLE_DEVICES/CUDA_VISIBLE_DEVICES not conflicting
-hipGetDeviceCount == requested count
-hipGetDeviceProperties succeeds for every visible device
-rocminfo/AMD-SMI inspection terminates
-100 timeout-bounded HIP init/enumeration cycles: no hang/error/order drift
-llama-bench smoke succeeds
-llama-server attestation succeeds
-peer access / -sm tensor succeeds where required
-4096-context producer preflight succeeds where required
-```
+## 10. Production coexistence
 
-If **any supported cell fails**, restore:
-
-```ini
-ConstrainDevices=no
-```
-
-Keep GRES scheduling, Slurm visibility and BigCherry stable-ID attestation. Record explicitly that this is not a device security boundary.
-
-## 12. Production coexistence
-
-Slurm does not own llama-swap.
-
-After GPU allocation and before measurement, RCD11 derives production potential/running/observed stable-device sets from llama-swap config, `/running`, backend args/env and process/VRAM observation.
-
-Policy:
+Slurm does not own llama-swap. After allocation and before timed measurement, BigCherry derives production potential/running/observed stable-device sets from reviewed config claims plus live runtime/process facts.
 
 ```text
-campaign target intersects production potential set
-  -> privileged exclusive window; drain/stop production and block reload
-
-disjoint
-  -> production may remain loaded only under qualified idle/noise policy
+target intersects potential OR ownership ambiguous -> exclusive production window
+disjoint -> loaded-idle co-residency only after its isolation experiment qualifies
 ```
 
-Any production config/process/inventory drift during a measurement invalidates the sample as environment contamination.
+Until that isolation gate passes, quiesce production for gating measurements. Config/claim drift or production use of a target GPU during a sample contaminates/discards that sample; it is not a scientific regression result.
 
 No static production-GPU partition exists.
 
-## 13. Hardware drift
+## 11. Hardware drift
 
-On add/remove/replacement/BDF/render/topology change:
+Material inventory/GRES change:
 
 ```bash
 sudo scontrol update NodeName=brutus State=DRAIN Reason='BigCherry inventory drift'
-bigcherry hardware discover --json
-# inspect + explicitly accept new inventory
-# regenerate slurm.conf Gres= and gres.conf
+python -m bigcherry hardware discover brutus --record
+python -m bigcherry hardware diff brutus
+# review + accept exact observed hash
+python -m bigcherry hardware accept brutus --expected-hash <sha> --allow-material-change
+# rerender /etc/slurm, then:
 sudo slurmd -G
-sudo systemctl restart slurmd   # when required by GRES change
+sudo systemctl restart slurmd
 sudo scontrol reconfigure
-bigcherry jobs doctor --json
+python -m bigcherry jobs executors doctor
 # rerun required hardware acceptance
 sudo scontrol update NodeName=brutus State=RESUME
 ```
 
-Same-model replacement or relevant topology change starts a new scientific hardware cohort/series. Existing series never silently rebound.
+Same-model replacement or relevant topology change starts a new scientific cohort. Locator-only changes require scheduler reconciliation but need not change cohort when stable identity/topology are unchanged.
 
-## 14. Real CPU/service smoke to reproduce on Brutus
+## 12. Queue-retirement gate
 
-CI implementation: `tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh`.
+Use `docs/reference/jobs/ACCEPTANCE.md`. Required before old queue retirement:
 
-It currently proves on real Noble Slurm:
+- jobs-service CI green;
+- accepted real AMD identity/GRES and `slurmd -G`;
+- ROCm cgroup matrix or explicit fallback;
+- production conflict/window/watchdog acceptance;
+- inventory drift handling;
+- direct-vs-managed evidence parity;
+- forced incident/recovery matrix;
+- one complete planned series through committed harvest/report with no shell watcher.
 
-```text
-Slurm 23.11.4
-MUNGE round-trip
-minimal no-db scheduler
-no-account job completion
-current-branch BigCherry process harness inside Slurm
-hold/release
-license/priority progress build1 -> measure -> build2
-afterok dependency
-RequeueExit=75 and SLURM_RESTART_COUNT 0 -> 1
-cancel
-controller restart with queued/running ownership retained
-jobcomp/filetxt completion history
-cgroup process/task/jobacct plugins with ConstrainDevices=no
-```
-
-Run the same logical smoke on Brutus before queue cutover.
-
-## 15. Acceptance before queue retirement
-
-GitHub real-service CI must remain green.
-
-Brutus-only gates:
-
-```text
-slurmd -G with real accepted AMD inventory
-real GRES -> stable-ID allocation attestation
-ROCm cgroup matrix or explicit ConstrainDevices=no fallback
-production conflict/non-conflict/window watchdog
-inventory drift drain/reconcile
-monolithic validation_campaign evidence parity on real GPUs
-scheduler-isolation/noise qualification
-forced incident/recovery matrix
-one complete planned series with no shell watcher intervention
-```
-
-Only after RCD10 soak may `queue.sh`/`run_campaign.sh` retire.
-
-## 16. Rollback
-
-```bash
-bigcherry jobs pause
-sudo systemctl stop slurmd slurmctld
-# preserve /var/spool/slurmctld, jobcomp and BigCherry run store
-```
-
-Use direct/manual campaign only after managed jobs are stopped. Never run two resource schedulers against the same GPUs concurrently.
+Rollback: `jobs pause`, stop managed Slurm execution before returning to direct/manual campaigns, and preserve both Slurm/BigCherry durable state. Never run two schedulers against the same GPUs concurrently.

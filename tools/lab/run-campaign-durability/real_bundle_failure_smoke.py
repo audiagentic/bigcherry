@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -31,6 +30,21 @@ def kwargs(model: Path) -> dict[str, object]:
     }
 
 
+class FakeProcess:
+    def __init__(self, *, returncode: int = 0, interrupt: bool = False) -> None:
+        self.pid = 999999
+        self.returncode = returncode
+        self.interrupt = interrupt
+
+    def wait(self, timeout=None):
+        if self.interrupt:
+            raise KeyboardInterrupt
+        return self.returncode
+
+    def poll(self):
+        return None if self.interrupt else self.returncode
+
+
 def main() -> int:
     checks = 0
     with tempfile.TemporaryDirectory(prefix="bigcherry-bundle-failure-") as temp:
@@ -38,16 +52,16 @@ def main() -> int:
         model = root / "model.gguf"
         model.write_bytes(b"model\n")
 
-        # The durable intent must exist before subprocess.run can be invoked.
+        # The durable intent must exist before subprocess.Popen is invoked.
         intent_root = root / "intent-before-spawn"
         observed: dict[str, object] = {}
 
         def inspect_before_spawn(command, **_):
             document = json.loads((intent_root / "experiment.json").read_text())
             observed.update(document)
-            return subprocess.CompletedProcess(command, 0, b"child-ok\n", b"")
+            return FakeProcess(returncode=0)
 
-        with patch.object(bundle.subprocess, "run", side_effect=inspect_before_spawn):
+        with patch.object(bundle.subprocess, "Popen", side_effect=inspect_before_spawn):
             rc = bundle.run_managed(intent_root, ["fake-child"], **kwargs(model))
         checks += check(rc == 0, "intent-before-spawn case failed")
         checks += check(observed.get("state") == "intent", "intent not durable before spawn")
@@ -57,9 +71,14 @@ def main() -> int:
 
         # Host interruption is a durable non-success state, never inferred success.
         interrupted = root / "interrupted"
-        with patch.object(bundle.subprocess, "run", side_effect=KeyboardInterrupt):
+        fake_interrupted = FakeProcess(interrupt=True)
+        with (
+            patch.object(bundle.subprocess, "Popen", return_value=fake_interrupted),
+            patch.object(bundle, "_terminate_process_tree") as terminate,
+        ):
             rc = bundle.run_managed(interrupted, ["fake-child"], **kwargs(model))
         checks += check(rc == 130, "KeyboardInterrupt return code is not 130")
+        checks += check(terminate.call_count == 1, "interrupted child was not terminated")
         interrupted_doc = bundle.validate(interrupted)
         checks += check(interrupted_doc["state"] == "interrupted", "interruption not durable")
         checks += check(not interrupted_doc["promotable"], "interrupted bundle became promotable")

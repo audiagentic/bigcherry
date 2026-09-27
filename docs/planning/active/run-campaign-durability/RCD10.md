@@ -11,86 +11,61 @@ priority: P1
 work: M
 ---
 
-# Accept the v1 service, migrate active qualification work and retire the lab queue
+# Accept v1, migrate active qualification work and retire the lab queue
 
-## Description
+## Objective
 
-Run the final v1 acceptance gate before removing the ad-hoc queue. Acceptance is capability/inventory-driven, not tied to today's slot numbers: cover every architecture/toolchain/model class needed by active qualification, at least one multi-GPU peer requirement when present, production-conflict and non-conflict paths, and the historical incident classes. Compare results with direct `validation_campaign` behavior and preserve rollback until the new path proves durable.
+Retire the shell queue only after the managed service passes capability-derived real-hardware acceptance and soak. Acceptance is based on current accepted inventory and scientific requirements, never hard-coded GPU slots.
 
-Archive/retire only queue/scheduling wrappers made obsolete. Do not remove lab analysis utilities until RCD08 replacements prove parity.
+## Implementation status — 2026-09-27
 
-## Steps
+Implemented/offline-tested:
 
-1. Generate acceptance matrix from accepted RCD12 inventory + current active job specs; no hard-coded GPU indices.
-2. Run offline full suite and lab planning simulator; require clean status.
-3. Require RCD04/RCD05 plus RCD06 **M1** (external evidence, frozen composition, typed preflights/progress); RCD06 M2 prepare/execute is v1.5 and may follow cutover.
-4. Install/qualify RCD03 Slurm and RCD11 production gate.
-5. Submit representative monolithic v1 jobs through `bigcherry jobs`, including active variations.
-6. Force incident/recovery scenarios.
-7. Compare evidence identity/verdict outputs with direct campaign invocation where safe.
-8. Migrate queued work by creating canonical JobSpecs; do not import shell logs as completed service attempts.
-9. Disable old queue entrypoints for a soak period while keeping documented rollback.
-10. After acceptance/soak, archive shell queue/watch/switch wrappers; update docs/skills/references.
-11. Produce an acceptance record with branch commit, Slurm config/inventory hashes, tests, hardware gates and known fallback mode.
+- `tools/bigcherry/jobs/acceptance.py`: deterministic acceptance cases derived from BatchSpecs + accepted inventory; unsupported/missing capabilities remain explicit instead of being dropped.
+- `python -m bigcherry jobs acceptance SPEC...`: emits `bigcherry.jobs.acceptance-matrix.v1`, exits 2 until every requested case is supported.
+- `tools/bigcherry/jobs/migration.py`: fail-closed converter for the exact historical `run_campaign.sh` wrapper shape.
+- `python -m bigcherry jobs migrate-legacy ...`: requires explicit planned N plus original `BC_MODEL`/`BC_HIP_PATH`; legacy GPU ordinal/run-name are metadata only.
+- unknown one-off legacy flags refuse conversion rather than becoming arbitrary passthrough arguments.
+- permanent tests cover capability support/absence/deduplication, slot-independent migration, unknown-flag refusal and no planned-N inference.
+- operational procedures: `docs/reference/jobs/ACCEPTANCE.md` and `MIGRATION.md`.
 
-## Detailed Solution & Technical Design
+Still real-host gated:
 
-### Capability-derived matrix
+1. generate the matrix from the actual pending qualification BatchSpecs;
+2. complete Brutus RCD03/RCD11/RCD12 GPU/production/cgroup gates;
+3. force the incident/recovery matrix on Brutus;
+4. complete at least one full predeclared series through submit -> execute -> committed harvest -> report with no shell watcher;
+5. soak alternate required capability classes;
+6. disable then archive old queue/watch/switch entrypoints only after the soak passes.
 
-At minimum instantiate jobs for each distinct active combination of:
+## Acceptance matrix semantics
 
-- GPU architecture;
-- Linux ROCm/toolchain identity;
-- model class/VRAM threshold;
-- single vs multi-GPU/peer access;
-- producer class requiring special inputs/corpus;
-- common patches/frozen validated composition;
-- production lane enabled where used.
+A case includes target executor/platform, patch, architecture, model, producer, HIP/toolchain path, GPU count/min-VRAM/peer requirement, production-lane flag and common-patch composition. Device index/BDF/render node is not case identity.
 
-If an architecture is not physically present it cannot be accepted for Brutus and must be marked unsupported/pending hardware, not simulated as accepted.
+Missing executor inventory, host/platform mismatch, absent architecture, insufficient VRAM, ambiguous homogeneous model selection or unavailable peer cohort yields `supported=false` + reason. Absent hardware is never simulated as accepted.
 
-Windows LocalExecutor acceptance is separate and never substitutes Linux series evidence.
-
-### Incident matrix
-
-Force safely:
-
-1. harness exits 76 -> attempt fails; fix/new commit; retry same `run_id`, `attempt+1`;
-2. transient exit 75 -> same attempt/commit requeue and restart count;
-3. SSH/gateway client disconnect immediately after submit -> job continues and reconnect status/events work;
-4. disable/re-enable queued run -> same series/session slot;
-5. cancel running attempt -> process group gone/history retained;
-6. root/work disk preflight failure and safe mid-run threshold breach;
-7. stall fixture (not real timed scientific sample);
-8. promotion modifies current validated recipe between sessions -> frozen series composition unchanged;
-9. BigCherry branch advances while queued -> new attempt resolves latest only at attempt start;
-10. production conflict -> exclusive window; no-conflict -> idle attestation/watchdog;
-11. production config/process drift during sample -> sample invalidated as contamination, no scientific result;
-12. hardware inventory drift fixture -> node drains/wakes and new work blocked;
-13. measurement-window overrun -> automatic cleanup/production health recovery;
-14. slurmctld restart -> queued ownership/status preserved;
-15. crash after submission intent but before native-handle persistence -> recovery rebinds exactly one correlated execution or wakes ambiguous; no duplicate submission;
-16. concurrent event writers -> no duplicate/gap sequence;
-17. tree lease and maintenance race -> never both admitted;
-18. cgroup acceptance or explicit fallback recorded.
-
-Historical compiler/disk/parser/attestation/OOM cases should map to explicit FailureKind/exit behavior, never scientific FAIL.
-
-### Migration
+## Migration rules
 
 For each pending shell-queue item:
 
-- parse the human source into a canonical JobSpec using a one-time migration tool/report;
-- re-resolve contract/composition/model/toolchain identities;
-- assign planned series/session explicitly;
-- submit as new service work;
-- retain old logs read-only under original lab location for provenance.
+- preserve legacy logs read-only;
+- translate the human source to a canonical BatchSpec;
+- re-resolve current contracts/composition/model/toolchain/hardware;
+- declare planned sessions explicitly;
+- submit as new managed work with a new idempotency key;
+- never import `CAMPAIGN_EXIT=` or old shell logs as a completed service attempt/evidence record.
 
-Do not infer success from `CAMPAIGN_EXIT=` old logs into new service state.
+Unsupported legacy arguments require an explicit domain-model change or manual JobSpec conversion. JobSpec remains free of arbitrary shell passthrough.
 
-### Retirement
+## Required Brutus acceptance
 
-Candidates after soak:
+At minimum cover every active architecture/toolchain/model class, single/multi-GPU peer shapes in use, producer/input/corpus variations and production-lane behavior. Force harness retry, submission-intent recovery, client disconnect, hold/release/cancel, branch/scientific drift, hardware drift, dirty harvest destination, controller restart, resource/disk preflight failure and production contamination/window recovery.
+
+Scientific FAIL remains a normal completed experiment. No optional stopping or result-driven retry is introduced.
+
+## Retirement/rollback
+
+Retirement candidates after soak:
 
 ```text
 tools/lab/plan-qualification/queue.sh
@@ -99,83 +74,18 @@ tools/lab/plan-qualification/make-serial-2.sh
 hand-written watcher/switch scripts
 ```
 
-`work-root.sh` may be retired only after every supported caller uses core environment/work-root resolution. `summarize.py`/`noise.py` retire only after RCD08 parity.
+`summarize.py`/`noise.py` may retire once the RCD08 report path has been compared on real equivalent evidence. Rollback means pause new managed submissions and stop managed scheduler execution before using the direct/manual campaign path; never run two schedulers against the same GPUs.
 
-Archive per repository TOOL_DISPOSITION rules rather than deleting history when appropriate.
+## Acceptance criteria
 
-### Soak/rollback
+- offline jobs suite and real Noble scheduler reference remain green;
+- every currently required Brutus capability is real-accepted or explicitly unsupported;
+- incident/recovery behavior matches the runbook;
+- one full planned series completes without shell queue/watcher intervention;
+- committed evidence/report parity is confirmed;
+- active operational docs no longer instruct agents to use the old queue before archival.
 
-Minimum soak: complete one full planned series plus representative alternate-architecture/toolchain jobs with no manual scheduler intervention.
+## Change log
 
-Rollback means stop submitting new service jobs and use direct campaign/manual lab path; never run two schedulers against the same resource set concurrently. Preserve new run-store records read-only.
-
-## Code Samples & Guidance
-
-Acceptance generator:
-
-```python
-def acceptance_matrix(
-    inventory: HardwareInventory,
-    active_specs: tuple[JobSpec, ...],
-) -> tuple[AcceptanceCase, ...]: ...
-```
-
-It groups by scientific/resource capability, not device slot.
-
-## Files
-
-Planned:
-
-- `tools/bigcherry/jobs/acceptance.py`
-- `tools/tests/jobs/test_acceptance_matrix.py`
-- `docs/reference/jobs/ACCEPTANCE.md`
-- `docs/reference/jobs/MIGRATION.md`
-- updates to tool disposition/reference docs
-- old lab scripts archived only after gate.
-
-## Validation
-
-Offline prerequisite:
-
-- all jobs/hardware/job-service tests green;
-- acceptance matrix fixture changes correctly when cards are added/removed/swapped;
-- migration parser refuses ambiguous legacy queue lines instead of guessing;
-- mock planning simulator passes;
-- repository search has no active docs instructing agents to use the old queue after retirement.
-
-Hardware acceptance record contains:
-
-- accepted inventory hash/device stable IDs/cohorts;
-- installed Slurm version/config digest/cgroup mode;
-- production config hash/policy;
-- each acceptance run_id/attempt/evidence path;
-- forced incident outcomes;
-- evidence/report parity notes;
-- explicit unsupported capabilities.
-
-## Effort & Risk
-
-Medium operational effort, high consequence. Main risk is premature script retirement; require soak and reversible cutover.
-
-## Standards
-
-No optional stopping; planned N remains fixed. Scientific result equality/parity is judged by existing evidence contracts, not scheduler exit codes.
-
-## Acceptance Criteria
-
-- RCD06 M1 is complete before v1 cutover; M2 is explicitly not required for queue retirement;
-- all currently required Brutus capability classes have real acceptance or are explicitly unsupported;
-- all incident scenarios recover/classify as designed;
-- client/gateway lifetime does not own execution;
-- production is protected in conflict/non-conflict paths;
-- one full series completes without shell queue/watcher intervention;
-- old queue wrappers are no longer referenced by active operational docs before archival.
-
-## Notes
-
-This is the v1 retirement gate. RCD06 M2 and RCD07/RCD08 can remain later-phase unless their functionality is required to replace an operational script safely; `summarize.py`/`noise.py` therefore stay until RCD08.
-
-## Change Log
-
-- 2026-09-26T00:52:23.945064+00:00 (created-by): Created by agent
-- 2026-09-26 (dev-gpt-agent): Replaced slot-specific acceptance with dynamic capability matrix, incident/soak/rollback, explicit RCD06 M1 cutover gate and conditional tool retirement.
+- 2026-09-26: capability-derived acceptance/incident/soak design.
+- 2026-09-27: acceptance-matrix and fail-closed legacy migration tooling implemented and offline-tested; hardware soak/retirement remains pending.

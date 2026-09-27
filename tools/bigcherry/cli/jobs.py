@@ -11,9 +11,11 @@ from pathlib import Path
 
 from ..core.context import ProjectContext
 from ..hardware.inventory import InventoryCatalog
+from ..jobs.acceptance import acceptance_document, acceptance_matrix
 from ..jobs.harvest import harvest_series
 from ..jobs.identity import ProjectScientificIdentityResolver
-from ..jobs.model import batch_from_mapping
+from ..jobs.migration import migrate_run_campaign_command
+from ..jobs.model import TargetPolicy, batch_from_mapping
 from ..jobs.registry import load_executor_registry
 from ..jobs.report import build_series_report, render_markdown as render_report_markdown
 from ..jobs.service import JobService
@@ -122,6 +124,19 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             )
 
+    acceptance = sub.add_parser("acceptance")
+    acceptance.add_argument("spec", type=Path, nargs="+")
+
+    migrate = sub.add_parser("migrate-legacy")
+    migrate.add_argument("--command", required=True)
+    migrate.add_argument("--planned-sessions", type=int, required=True)
+    migrate.add_argument("--executor-id", default="brutus")
+    migrate.add_argument("--host-id", default=None)
+    migrate.add_argument("--platform-family", default=None)
+    migrate.add_argument("--code-ref", default="patch-refactor")
+    migrate.add_argument("--bc-model", default=None)
+    migrate.add_argument("--bc-hip-path", default=None)
+
     sub.add_parser("ingest").add_argument("--once", action="store_true", default=True)
     sub.add_parser("list")
     sub.add_parser("queue")
@@ -200,6 +215,47 @@ def main(argv: list[str] | None = None) -> int:
                     actor=args.actor,
                 )
             )
+            return 0
+        if args.action == "acceptance":
+            batches = tuple(batch_from_mapping(_load_document(path)) for path in args.spec)
+            executor_ids = sorted({batch.target.executor_id for batch in batches})
+            inventories = {}
+            for executor_id in executor_ids:
+                try:
+                    inventories[executor_id] = service.inventory_loader(executor_id)
+                except Exception:
+                    # The matrix records absent inventory as unsupported; do not
+                    # abort and silently lose the missing capability from review.
+                    pass
+            value = acceptance_document(
+                acceptance_matrix(batches, inventories=inventories)
+            )
+            _json(value)
+            return 0 if value["ready"] else 2
+        if args.action == "migrate-legacy":
+            environment = {
+                "BC_MODEL": args.bc_model or os.environ.get("BC_MODEL", ""),
+                "BC_HIP_PATH": args.bc_hip_path or os.environ.get("BC_HIP_PATH", ""),
+            }
+            migrated = migrate_run_campaign_command(
+                args.command,
+                environment=environment,
+                planned_sessions=args.planned_sessions,
+                target=TargetPolicy(
+                    executor_id=args.executor_id,
+                    host_id=args.host_id,
+                    platform_family=args.platform_family,
+                ),
+                code_ref=args.code_ref,
+            )
+            _json({
+                "schema": "bigcherry.jobs.legacy-migration.v1",
+                "batch": migrated.batch.to_dict(),
+                "legacy": {
+                    "device": migrated.legacy_device,
+                    "run_name": migrated.legacy_run_name,
+                },
+            })
             return 0
         if args.action == "ingest":
             _json(service.ingest_once())
