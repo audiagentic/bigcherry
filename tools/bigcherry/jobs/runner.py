@@ -5,7 +5,6 @@ import argparse
 import contextlib
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -20,6 +19,12 @@ from ..hardware.runtime import (
     selected_local_positions,
 )
 from ..tuning.journal import atomic_write
+from .monitor import (
+    MonitorError,
+    MonitorPolicy,
+    disk_guards_from_environment,
+    run_monitored,
+)
 
 
 def _write(path: Path, value: dict[str, object]) -> None:
@@ -215,12 +220,12 @@ def run_attempt(attempt_root: Path) -> int:
         raise RuntimeError("attempt.json missing job")
     shared_root = Path(str(attempt["shared_root"])).resolve()
     env = os.environ.copy()
-    project_root = str(attempt["project_root"])
-    tools = str(Path(project_root) / "tools")
+    project_root = Path(str(attempt["project_root"])).resolve()
+    tools = str(project_root / "tools")
     env["PYTHONPATH"] = tools + (
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
-    env["BIGCHERRY_PROJECT_ROOT"] = project_root
+    env["BIGCHERRY_PROJECT_ROOT"] = str(project_root)
     env["BIGCHERRY_WORK_ROOT"] = str(shared_root)
     if attempt["job"].get("hip_path"):
         hip = str(attempt["job"]["hip_path"])
@@ -237,6 +242,8 @@ def run_attempt(attempt_root: Path) -> int:
     }
     _write(attempt_root / "executor-start.json", start)
     started = time.monotonic_ns()
+    incident: str | None = None
+    error: str | None = None
     try:
         positions, attestation = _runtime_gpu_preflight(
             attempt, shared_root=shared_root, env=env
@@ -248,14 +255,39 @@ def run_attempt(attempt_root: Path) -> int:
             shared_root=shared_root,
             local_device_indices=positions,
         )
+        guards = disk_guards_from_environment(
+            project_root=project_root,
+            work_root=shared_root,
+            environment=env,
+        )
+        policy = MonitorPolicy.from_environment(env)
         with _device_locks():
-            completed = subprocess.run(argv, env=env)
-        returncode = int(completed.returncode)
-        error = None
+            monitored = run_monitored(
+                argv,
+                environment=env,
+                guards=guards,
+                progress_paths=(attempt_root,),
+                policy=policy,
+            )
+        returncode = monitored.returncode
+        incident = monitored.incident
+        error = monitored.detail
     except HardwareBindingError as exc:
         print(f"hardware allocation preflight failed: {exc}", file=sys.stderr)
         returncode = 75
+        incident = "hardware_attestation"
         error = str(exc)
+    except MonitorError as exc:
+        print(f"monitor configuration failed: {exc}", file=sys.stderr)
+        returncode = 76
+        incident = "monitor_configuration"
+        error = str(exc)
+    except ValueError as exc:
+        print(f"runner configuration failed: {exc}", file=sys.stderr)
+        returncode = 76
+        incident = "runner_configuration"
+        error = str(exc)
+
     result: dict[str, object] = {
         "execution_id": attempt["execution_id"],
         "returncode": returncode,
@@ -263,6 +295,8 @@ def run_attempt(attempt_root: Path) -> int:
         "finished_ns": time.time_ns(),
         "duration_ns": time.monotonic_ns() - started,
     }
+    if incident is not None:
+        result["incident"] = incident
     if error is not None:
         result["error"] = error
     _write(attempt_root / "executor-result.json", result)

@@ -9,12 +9,20 @@ set -u
 patch=$1; producer=$2; arch=$3; dev=$4; run=$5; shift 5
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$root"
-work=$("$root/tools/lab/plan-qualification/work-root.sh" "$root")
+source "$root/tools/lab/plan-qualification/work-root.sh"
+work=$(work_root_resolve "$root")
 : "${BC_HIP_PATH:?set BC_HIP_PATH}" "${BC_MODEL:?set BC_MODEL}"
-# Exclusive hold on every device this session measures on, for its whole
-# lifetime: a profile job (or another perf session) on the same physical GPU
-# would not just add contention noise to a timed lane, it could crash both.
-source "$root/tools/lab/plan-qualification/gpu-lock.sh"
+# Legacy monolithic campaigns contain timed performance lanes. The measured
+# effect is small enough that cross-GPU host activity is material, so this
+# whole legacy campaign is host-exclusive. PROFILE/trace diagnostics use the
+# shared side of the same gate and may run concurrently with each other, but
+# never with this campaign. RCD07 stage execution will eventually narrow the
+# exclusive window to timed stages only.
+#
+# Lock order is host activity -> GPU. Profiles use build-key -> shared host ->
+# GPU. Keeping host before GPU prevents a writer/readers lock-order deadlock and
+# means a performance campaign never reserves a GPU while waiting for readers.
+activity_lock_exclusive_acquire "$work"
 gpu_lock_acquire "$work" "$dev"
 mkdir -p "$work/tmp"
 export TMPDIR=$work/tmp
@@ -45,4 +53,6 @@ until python3 -c "from bigcherry.patch import patchset; patchset.catalog()" 2>/d
     sleep 300
 done
 python3 -m bigcherry.patch.validation_campaign "${args[@]}" "$@"
-echo "CAMPAIGN_EXIT=$?"
+rc=$?
+echo "CAMPAIGN_EXIT=$rc"
+exit "$rc"

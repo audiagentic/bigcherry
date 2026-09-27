@@ -39,7 +39,7 @@ class CampaignGraphTests(unittest.TestCase):
         graph = CampaignGraph((op("prepare"), op("build", "prepare"), op("measure", "build"), op("ladder", "measure")))
         self.assertEqual(tuple(x.operation_id for x in graph.ready(())), ("prepare",))
         self.assertEqual(tuple(x.operation_id for x in graph.ready(("prepare",))), ("build",))
-        self.assertEqual(tuple(x.operation_id for x in graph.descendants("build")), ("ladder", "measure"))
+        self.assertEqual(graph.descendants("build"), ("ladder", "measure"))
 
     def test_compiled_graph_keeps_timed_work_host_exclusive_by_activity_class(self):
         graph = compile_validation_graph(
