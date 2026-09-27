@@ -11,229 +11,102 @@ priority: P1
 work: L
 ---
 
-# Implement dynamic GPU discovery, capability resolution, generated GRES and hardware-cohort identity
+# Dynamic GPU discovery, generated GRES and hardware-cohort identity
 
 ## Objective
 
-Make discovered hardware state authoritative. Cards may be added/removed/replaced/moved; Windows ordinals may reorder. Scientific jobs request capabilities, not physical indices, and each series binds one deterministic exact stable-device cohort before its sessions execute.
+Make discovered/accepted hardware authoritative. Jobs request capabilities, not physical indices, and every series binds one deterministic exact stable-device cohort before its sessions execute.
 
 ## Implementation status — 2026-09-27
 
-Implemented:
+Implemented/offline-tested:
 
-- `tools/bigcherry/hardware/model.py`: provider-neutral `DeviceRecord`, `HardwareInventory`, `SeriesGpuBinding` and material hashes.
-- `hardware/inventory.py`: accepted-inventory catalog, deterministic capability binding by stable ID, homogeneous-model ambiguity rejection, peer-pair selection and proper-subset all-of-architecture reservation.
-- `verify_series_allocation()`: executor allocation must attest stable GPU IDs; accepted inventory/cohort/topology drift fails; safe-overallocation must contain the complete architecture pool.
-- `hardware/slurm.py`: deterministic architecture-only explicit `gres.conf` rendering and grouped node `Gres=` rendering. Missing/duplicate render nodes fail closed.
-- `hardware/drift.py`: accepted vs observed classification for same/locator-only/topology/add/remove/replacement/environment changes.
-- RCD04 series planning already includes `platform_environment_hash`, `hardware_cohort_hash`, accepted inventory hash and exact selected stable IDs before run records are created.
-- permanent hardware/cohort/GRES/drift tests were added under `tools/tests/jobs`.
+- provider-neutral `DeviceRecord`, `HardwareInventory`, `SeriesGpuBinding` and material/cohort hashes;
+- observed/accepted inventory catalog with reviewed-hash acceptance and explicit material-change opt-in;
+- `hardware show|diff|record-observed|accept|render-gres` CLI;
+- Linux AMD discovery provider `hardware/linux_amd.py` using machine-readable AMD-SMI list/static data plus sysfs NUMA:
+  - UUID preferred stable identity;
+  - serial fallback;
+  - explicit weak `hardware_epoch` fallback only when no stable UUID/serial exists;
+  - architecture/model/VRAM/BDF/render/HIP ordinal/driver capture;
+  - malformed/ambiguous/missing required data fails closed;
+- `python -m bigcherry hardware discover EXECUTOR_ID [--record]` integration;
+- deterministic capability binding, homogeneous-model ambiguity rejection, peer-pair selection and proper-subset all-of-architecture reservation;
+- exact stable-allocation verification; native scheduler ordinals alone fail;
+- deterministic architecture-only GRES/node rendering with explicit render-node validation;
+- drift classification for same/locator-only/topology/add/remove/replacement/environment changes;
+- runtime visible-token -> stable-ID mapping and allocation-local selected positions;
+- permanent tests for inventory acceptance, binding, drift, GRES, runtime mapping and AMD-SMI fixture parsing.
 
-Still incomplete/hardware-gated:
+Still hardware/Windows gated:
 
-1. Linux AMD discovery provider (`amd-smi`/RSMI/sysfs reconciliation) is not implemented because exact Brutus output/provider stability must be captured first.
-2. Windows HIP UUID/LUID provider is not implemented.
-3. observed/accepted inventory CLI (`hardware discover/diff/accept`) and boot/watch systemd units remain unimplemented.
-4. actual Brutus `gres.conf` generation/application + drain/reconfigure/resume workflow remains untested on hardware.
-5. Slurm native allocation -> stable ID attestation is not yet production-complete; native ordinals alone fail `verify_series_allocation`.
-6. peer topology must be checked against real HIP/tensor-split behavior.
+1. capture sanitized real Brutus AMD-SMI output and prove the parser/field meanings against the installed version;
+2. prove chosen UUID/serial identity persists across reboot/toolchain views; otherwise use a reviewed weak hardware epoch;
+3. discover/verify real peer topology rather than leaving `peer_access` empty in Linux discovery;
+4. generate/apply actual Brutus GRES and pass `slurmd -G`;
+5. attest real Slurm allocation visibility back to stable IDs and run HIP/llama/tensor-split acceptance;
+6. add boot/runtime drift watcher + automatic node drain/reconcile/resume integration;
+7. add Windows HIP UUID/LUID discovery and ordinal-reorder fixtures/acceptance.
 
-## Models
+## Identity rules
 
-```python
-@dataclass(frozen=True)
-class DeviceRecord:
-    device_id: str
-    identity_source: str
-    architecture: str
-    model: str
-    vram_bytes: int
-    pci_bdf: str | None
-    render_node: str | None
-    numa_node: int | None
-    driver_version: str | None
-    launch_ordinal: int | None
+Stable identity preference on Linux:
 
-@dataclass(frozen=True)
-class SeriesGpuBinding:
-    requirement: GpuRequirement
-    selected_device_ids: tuple[str, ...]
-    hardware_cohort_hash: str
-    accepted_inventory_hash: str
-    reserve_all_of_arch: bool
-    scheduler_architecture: str
-    scheduler_count: int
+```text
+AMD/HIP UUID -> confirmed hardware serial -> explicit weak hardware_epoch
 ```
 
-BDF/render node/ordinal are locators only, never scientific identity.
+PCI BDF, render node and launch ordinal are observations/locators only. Locator-only movement drains/reconciles scheduler mapping but need not start a new scientific cohort when stable identity and relevant topology are unchanged. Device replacement or relevant topology change starts a new cohort/series.
 
-## Stable identity discovery policy
+Weak identity is explicit: `weak:<hardware_epoch>:<bdf>`. It never silently establishes continuity across a new epoch.
 
-Linux preference:
+## Capability binding
 
-1. AMD stable UUID if confirmed stable;
-2. RSMI unique ID;
-3. hardware serial if confirmed unique/stable;
-4. explicit weak `hardware_epoch` fallback.
+`GpuRequirement` includes architecture, count, minimum VRAM, homogeneous-model rule, optional model, peer requirement and optional exact stable IDs. Binding is canonical by stable ID. Existing series are never rebound because a different compatible card becomes available later.
 
-Windows preference:
-
-1. HIP UUID;
-2. Windows LUID;
-3. weak epoch.
-
-Do not hard-code a provider parser until raw sanitized outputs from the installed Brutus/Windows runtimes are captured as permanent fixtures. Reconcile stable identity to BDF/render node through sysfs/provider facts, never ordinal ordering.
+For a frozen cohort that is a proper subset of all accepted cards of its architecture, Slurm reserves the complete architecture pool. BigCherry verifies that complete stable pool, then narrows to the frozen cohort inside the exclusive allocation. This is intentionally conservative.
 
 ## Accepted inventory lifecycle
-
-Target state:
 
 ```text
 <work>/hardware/<executor>/observed.json
 <work>/hardware/<executor>/accepted.json
 ```
 
-Boot/runtime flow:
+Operator flow:
 
-1. discover current inventory;
-2. atomically write observed;
-3. compare accepted with `classify_drift()`;
-4. material mismatch drains/blocks new hardware work and emits wake;
-5. operator inspects/accepts exact observed hash;
-6. render GRES/node config from accepted state;
-7. run `slurmd -G` and jobs/hardware doctor;
-8. reconfigure/restart slurmd as required;
-9. resume only after attestation passes.
-
-Drift classes:
-
-```text
-same                    no action
-locator-only            drain/reconcile; cohort may remain same
-topology-change         drain; new cohort
-device-add/remove       drain + acceptance
-device-replacement      drain + new cohort
-environment-change      new platform environment/series
-identity-ambiguous      explicit new hardware epoch
+```bash
+python -m bigcherry hardware discover brutus --record
+python -m bigcherry hardware diff brutus
+python -m bigcherry hardware accept brutus --expected-hash <reviewed-hash> [--allow-material-change]
+python -m bigcherry hardware render-gres brutus
 ```
 
-## Capability binding
+Material drift blocks/requires review before new scientific binding. `environment.local.toml` may configure host/toolchain/model policy but cannot override discovered GPU identity/architecture/VRAM.
 
-`GpuRequirement`:
+## Brutus acceptance
 
-```python
-architecture
-count
-min_vram_bytes
-homogeneous_model
-model
-require_peer_access
-exact_device_ids
-```
+Before production cutover:
 
-Binding rules:
-
-1. canonical sort by stable `device_id`;
-2. filter architecture/VRAM/optional model;
-3. exact IDs must satisfy all constraints;
-4. if multiple same-arch model groups can satisfy a homogeneous request and model is unspecified, fail ambiguous;
-5. peer work chooses the lexicographically canonical valid stable-ID tuple;
-6. otherwise choose canonical first `count` IDs;
-7. compute cohort hash from stable IDs + arch/model/VRAM + relevant peer/topology + platform environment;
-8. persist selected IDs and accepted inventory hash in the series.
-
-Existing series are never rebound because a different card becomes available.
-
-## Architecture-only Slurm reservation
-
-GRES rendering:
-
-```text
-Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
-Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
-Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
-```
-
-No slot/UUID in `Type`.
-
-If the frozen cohort is a proper subset of accepted devices of an architecture, request the full architecture count. Once external allocation is exclusively owned, narrow to the frozen stable IDs. This is inefficient but scientifically deterministic.
-
-`verify_series_allocation()` requires:
-
-- accepted material hash unchanged;
-- non-empty attested `Allocation.stable_gpu_ids`;
-- every frozen selected ID present;
-- capability selection still resolves to exactly the frozen cohort;
-- cohort hash unchanged;
-- no unexpected extra stable GPU unless safe-overallocation was declared;
-- safe-overallocation receives the complete accepted architecture pool.
-
-Native scheduler IDs cannot satisfy this check by themselves.
-
-## GRES renderer
-
-`render_gres_conf()`:
-
-- deterministic independent of discovery order;
-- requires explicit render node per GPU;
-- rejects duplicate render nodes;
-- uses architecture-only `Type`;
-- never emits stable IDs/serials/BDF as resource names.
-
-`render_node_gres()` groups accepted device counts by architecture.
-
-## environment.local.toml role
-
-It may configure host name, toolchain/model roots, allowed architectures and optional human aliases. It cannot override observed GPU architecture/VRAM/stable identity.
-
-## Offline tests required
-
-Implemented/permanent:
-
-- discovery-order-independent binding;
-- mixed-model ambiguity;
-- peer pair canonical selection;
-- subset -> all-of-arch reservation;
-- stable allocation verification;
-- native-only allocation fails attestation;
-- missing selected card fails;
-- inventory drift fails existing allocation;
-- architecture-typed deterministic GRES;
-- missing render node fails closed;
-- locator-only/topology/replacement drift classification.
-
-Still add with provider implementation:
-
-- AMD-SMI/RSMI/sysfs fixtures across installed runtime versions;
-- UUID/unique-ID/serial precedence/fallback;
-- weak epoch behavior;
-- Windows HIP UUID/LUID + ordinal reorder;
-- observed/accepted accept workflow;
-- generated node config/drain decisions;
-- hot-drift watcher behavior.
-
-## Brutus gates
-
-- determine actual stable ID source for every installed GPU;
-- prove identity persists across reboot/toolchain views;
-- generate real GRES and pass `slurmd -G`;
-- map real Slurm allocation to stable IDs;
-- run 100 HIP init/property cycles per single/dual allocation;
-- prove peer matrix matches `-sm tensor` preflight;
-- test safe node drain/reconcile without physically removing live hardware.
+- record real identity source for every GPU and prove reboot/toolchain stability;
+- record real peer matrix and compare to HIP/tensor-split preflight;
+- render accepted `gres.conf`/node GRES and pass `slurmd -G`;
+- for every supported single/dual allocation prove exact stable-ID visibility, HIP properties, repeated initialization, llama-bench/server smoke and required producer preflights;
+- test locator-only and material-drift drain/reconcile without silently rebinding an existing series.
 
 ## Acceptance criteria
 
-- discovered/accepted hardware state is explicit and auditable;
-- material drift blocks new managed work;
-- jobs request capabilities, never physical index;
-- final series identity contains one deterministic exact hardware cohort before execution;
-- allocation attestation prevents substitution;
-- GRES is architecture-only and deterministic;
-- Windows/Linux use the same provider-neutral identity model;
-- all fixture tests green before hardware acceptance.
+- observed/accepted hardware is explicit/auditable;
+- material drift blocks new managed work until reviewed;
+- scientific requests contain capabilities/stable IDs, never slot identity;
+- series identity contains exact deterministic physical cohort before execution;
+- runtime allocation attestation prevents same-model substitution;
+- GRES remains architecture-only;
+- Linux/Windows share the provider-neutral model;
+- real Brutus and Windows provider acceptance completes the remaining platform-specific gates.
 
 ## Change log
 
-- 2026-09-26: original dynamic discovery/cohort design.
-- 2026-09-27: provider-neutral models, deterministic capability binding, allocation verification, GRES renderer and drift classifier implemented with offline tests.
+- 2026-09-26: dynamic discovery/cohort design.
+- 2026-09-27: provider-neutral models, binding, allocation verification, GRES renderer and drift classifier implemented.
+- 2026-09-27: observed/accepted hardware CLI and fail-closed AMD-SMI Linux discovery implemented with offline fixtures; real Brutus identity/peer/GRES acceptance and Windows discovery remain pending.
