@@ -1,9 +1,9 @@
 """Linux AMD GPU discovery from AMD SMI JSON plus sysfs locators.
 
-AMD SMI is asked for machine-readable output; this parser is intentionally
-shape-tolerant across CLI versions but field-strict.  A GPU is not emitted
-unless architecture, model, VRAM and a stable identity can be established.
-PCI BDF/render/HIP ordinal remain locators only.
+AMD SMI is asked for machine-readable output. Parsing is container-tolerant
+but field-strict: a GPU is emitted only when architecture, model, VRAM and a
+stable identity can be established. PCI BDF/render/HIP ordinal are locators,
+never scientific identity.
 """
 from __future__ import annotations
 
@@ -49,8 +49,29 @@ def _find(mapping: Mapping[str, Any], names: Iterable[str]) -> Any | None:
     return None
 
 
+def _container_rows(value: object) -> tuple[dict[str, Any], ...]:
+    if isinstance(value, list):
+        return tuple(dict(row) for row in value if isinstance(row, Mapping))
+    if not isinstance(value, Mapping):
+        return ()
+
+    # Numeric/name keyed AMD-SMI containers also contain BDF recursively.
+    # Inspect child mappings first; only a DIRECT BDF/UUID makes this mapping
+    # itself one GPU row. Recursive detection here collapses all GPUs into the
+    # first row and loses VRAM/model fields for the rest.
+    child_rows = tuple(
+        dict(row) for row in value.values() if isinstance(row, Mapping)
+    )
+    if child_rows and any(
+        _find(row, ("bdf", "uuid")) is not None for row in child_rows
+    ):
+        return child_rows
+    if _direct(value, ("bdf", "uuid")) is not None:
+        return (dict(value),)
+    return ()
+
+
 def _gpu_rows(payload: object) -> tuple[dict[str, Any], ...]:
-    """Extract per-GPU objects from common AMD SMI JSON container shapes."""
     if isinstance(payload, Mapping):
         for key, value in payload.items():
             if _key(key) in {"gpu", "gpus", "devices"}:
@@ -65,30 +86,17 @@ def _gpu_rows(payload: object) -> tuple[dict[str, Any], ...]:
     return ()
 
 
-def _container_rows(value: object) -> tuple[dict[str, Any], ...]:
-    if isinstance(value, list):
-        return tuple(dict(row) for row in value if isinstance(row, Mapping))
-    if not isinstance(value, Mapping):
-        return ()
-    if _find(value, ("bdf", "uuid")) is not None:
-        return (dict(value),)
-    rows = tuple(dict(row) for row in value.values() if isinstance(row, Mapping))
-    if rows and any(_find(row, ("bdf", "uuid")) is not None for row in rows):
-        return rows
-    return ()
-
-
 def _normalize_bdf(raw: object | None) -> str | None:
     if raw is None:
         return None
-    text = str(raw).strip().lower()
-    match = re.search(r"(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", text)
+    match = re.search(
+        r"(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]",
+        str(raw).strip().lower(),
+    )
     if not match:
         return None
     value = match.group(0)
-    if value.count(":") == 1:
-        value = "0000:" + value
-    return value
+    return value if value.count(":") == 2 else "0000:" + value
 
 
 def _render_node(raw: object | None) -> str | None:
@@ -120,12 +128,14 @@ def _bytes(raw: object | None) -> int | None:
         value = int(raw)
         return value if value > 0 else None
     text = str(raw).strip().replace(",", "")
-    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|bytes?)?", text, re.I)
+    match = re.search(
+        r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b|bytes?)?", text, re.I
+    )
     if not match:
         return None
     number = float(match.group(1))
     unit = (match.group(2) or "bytes").lower()
-    factors = {
+    factor = {
         "bytes": 1,
         "byte": 1,
         "b": 1,
@@ -137,8 +147,7 @@ def _bytes(raw: object | None) -> int | None:
         "gib": 1024**3,
         "tb": 1000**4,
         "tib": 1024**4,
-    }
-    factor = factors.get(unit)
+    }.get(unit)
     if factor is None:
         return None
     value = int(number * factor)
@@ -146,11 +155,13 @@ def _bytes(raw: object | None) -> int | None:
 
 
 def _vram(row: Mapping[str, Any]) -> int | None:
-    # Prefer the VRAM subsection to avoid accidentally reading cache/system RAM.
     for key, child in row.items():
-        if _key(key) in {"vram", "memory", "vram_info"} and isinstance(child, Mapping):
-            value = _find(child, ("size", "total", "total_memory", "vram_size"))
-            parsed = _bytes(value)
+        if _key(key) in {"vram", "memory", "vram_info"} and isinstance(
+            child, Mapping
+        ):
+            parsed = _bytes(
+                _find(child, ("size", "total", "total_memory", "vram_size"))
+            )
             if parsed is not None:
                 return parsed
     return _bytes(_find(row, ("vram_size", "vram_total", "total_vram")))
@@ -174,7 +185,9 @@ def _identity(
     bdf: str | None,
     hardware_epoch: str | None,
 ) -> tuple[str, str]:
-    uuid = _find(row, ("uuid", "hip_uuid")) or _find(static, ("uuid", "hip_uuid"))
+    uuid = _find(row, ("uuid", "hip_uuid")) or _find(
+        static, ("uuid", "hip_uuid")
+    )
     if uuid is not None:
         text = str(uuid).strip()
         if text and text.lower() not in {"n/a", "none"}:
@@ -187,7 +200,8 @@ def _identity(
     if hardware_epoch and bdf:
         return f"weak:{hardware_epoch}:{bdf}", "weak-hardware-epoch"
     raise AmdDiscoveryError(
-        f"GPU {bdf or '<unknown>'} has no stable UUID/serial; provide an explicit hardware_epoch to use weak identity"
+        f"GPU {bdf or '<unknown>'} has no stable UUID/serial; provide an explicit "
+        "hardware_epoch to use weak identity"
     )
 
 
@@ -216,16 +230,29 @@ def inventory_from_amdsmi_json(
         static = static_by_bdf.get(bdf or "", row)
         architecture = _find(
             static,
-            ("target_graphics_version", "gfx_version", "gcn_arch_name", "architecture"),
+            (
+                "target_graphics_version",
+                "gfx_version",
+                "gcn_arch_name",
+                "architecture",
+            ),
         )
         model = _find(static, ("market_name", "product_name", "board_name"))
         vram = _vram(static)
-        if architecture is None or not re.fullmatch(r"gfx[0-9a-f]+", str(architecture).strip().lower()):
-            raise AmdDiscoveryError(f"GPU {bdf or '<unknown>'} has no valid gfx architecture")
+        if architecture is None or not re.fullmatch(
+            r"gfx[0-9a-f]+", str(architecture).strip().lower()
+        ):
+            raise AmdDiscoveryError(
+                f"GPU {bdf or '<unknown>'} has no valid gfx architecture"
+            )
         if model is None or not str(model).strip():
-            raise AmdDiscoveryError(f"GPU {bdf or '<unknown>'} has no market/model name")
+            raise AmdDiscoveryError(
+                f"GPU {bdf or '<unknown>'} has no market/model name"
+            )
         if vram is None:
-            raise AmdDiscoveryError(f"GPU {bdf or '<unknown>'} has no parseable VRAM size")
+            raise AmdDiscoveryError(
+                f"GPU {bdf or '<unknown>'} has no parseable VRAM size"
+            )
         device_id, identity_source = _identity(
             row, static, bdf=bdf, hardware_epoch=hardware_epoch
         )
@@ -241,10 +268,13 @@ def inventory_from_amdsmi_json(
                 numa_node=_numa_node(sysfs_root, bdf),
                 driver_version=(
                     None
-                    if (driver := _find(static, ("driver_version", "driver"))) is None
+                    if (driver := _find(static, ("driver_version", "driver")))
+                    is None
                     else str(driver).strip()
                 ),
-                launch_ordinal=_ordinal(_find(row, ("hip_id", "hip_index", "id"))),
+                launch_ordinal=_ordinal(
+                    _find(row, ("hip_id", "hip_index", "id"))
+                ),
             )
         )
     if len({device.device_id for device in devices}) != len(devices):
@@ -273,7 +303,8 @@ def _run_json(binary: str, *args: str, timeout: float = 20.0) -> object:
     )
     if completed.returncode != 0:
         raise AmdDiscoveryError(
-            f"{' '.join((binary, *args))} failed ({completed.returncode}): {completed.stderr.strip()}"
+            f"{' '.join((binary, *args))} failed ({completed.returncode}): "
+            f"{completed.stderr.strip()}"
         )
     try:
         return json.loads(completed.stdout)
@@ -305,13 +336,15 @@ def discover_linux_amd(
         raise AmdDiscoveryError("Linux AMD discovery requires Linux")
     listed = _run_json(amd_smi, "list", "-e", "--json")
     static = _run_json(amd_smi, "static", "-a", "-b", "-v", "-d", "--json")
-    environment_material = {
-        "system": platform.system(),
-        "release": platform.release(),
-        "machine": platform.machine(),
-        "amd_smi_version": _version_text(amd_smi),
-    }
-    environment_hash = digest(environment_material, person=b"bc-platform-env")
+    environment_hash = digest(
+        {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "amd_smi_version": _version_text(amd_smi),
+        },
+        person=b"bc-platform-env",
+    )
     return inventory_from_amdsmi_json(
         listed,
         static,
