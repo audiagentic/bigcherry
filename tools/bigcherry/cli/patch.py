@@ -543,34 +543,36 @@ def cmd_patch_validate(args: Namespace) -> int:
     # PA33: execute through PA36's shared primitives
     from ..patch import validation_campaign as validation_campaign_module
 
-    # Build a minimal args namespace for the validation campaign
-    campaign_args = Namespace(
-        patch=args.patch_id,
-        validation_producer=validation_producer,
-        producer_input=getattr(args, "producer_input", []),
-        producer_corpus=getattr(args, "producer_corpus", None),
-        amdgpu_targets=getattr(args, "amdgpu_targets", None),
-        device_map=getattr(args, "device_map", None),
-        hip_path=getattr(args, "hip_path", None),
-        model=getattr(args, "model", None),
-        workdir=getattr(args, "workdir", None),
-        worktree_root=getattr(args, "worktree_root", None),
-        baseline_source=getattr(args, "baseline_source", None),
-        # PA34 selector arguments
-        source=getattr(args, "source", None),
-        experiment=getattr(args, "experiment", None),
-        focal_overlay=getattr(args, "focal_overlay", False),
-        # Defaults for other required fields (generic, no patch-specific references)
-        run=None,
-        tune=None,
-        replay=None,
-        stock=None,
-        control=None,
-        validation_subject=None,
-    )
+    # validation_campaign.main() always re-parses its argv (it takes
+    # list[str] | None, never a pre-built Namespace), so this must build a
+    # real argv list -- not a Namespace -- using that parser's own flag
+    # names/dests (--producer-input has dest="producer_inputs", not
+    # "producer_input"; --hip-path and --workdir are required there).
+    campaign_argv: list[str] = [
+        "--patch", args.patch_id,
+        "--validation-producer", validation_producer,
+    ]
+    for entry in getattr(args, "producer_input", []) or []:
+        campaign_argv += ["--producer-input", entry]
+    for flag, value in (
+        ("--producer-corpus", getattr(args, "producer_corpus", None)),
+        ("--amdgpu-targets", getattr(args, "amdgpu_targets", None)),
+        ("--device-map", getattr(args, "device_map", None)),
+        ("--hip-path", getattr(args, "hip_path", None)),
+        ("--model", getattr(args, "model", None)),
+        ("--workdir", getattr(args, "workdir", None)),
+        ("--worktree-root", getattr(args, "worktree_root", None)),
+        ("--baseline-source", getattr(args, "baseline_source", None)),
+        ("--source", getattr(args, "source", None)),
+        ("--experiment", getattr(args, "experiment", None)),
+    ):
+        if value is not None:
+            campaign_argv += [flag, str(value)]
+    if getattr(args, "focal_overlay", False):
+        campaign_argv.append("--focal-overlay")
 
-    # Execute through the validation campaign's main()
-    return validation_campaign_module.main(campaign_args)
+    # Execute through the validation campaign's own argv-parsing main()
+    return validation_campaign_module.main(campaign_argv)
 
 
 def cmd_patch_gates(args: Namespace) -> int:
