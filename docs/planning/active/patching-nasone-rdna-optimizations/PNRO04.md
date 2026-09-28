@@ -83,6 +83,7 @@ Migration: capability-rebaseline-v3-2026-09
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.067141+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -94,3 +95,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-24T04:48:19.490128+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-09-25T04:23:36.714622+00:00 (updated-by): Updated: section:notes
 - 2026-09-25T04:23:39.602014+00:00 (state-transition): State: pending → in_progress
+- chg_20260926_012534_qwen3536-hybrid-model-promp_1365
+- 2026-09-26T01:25:37.283467+00:00 (updated-by): Updated: section:ledger-events

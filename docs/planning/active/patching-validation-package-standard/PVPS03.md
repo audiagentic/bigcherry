@@ -61,3 +61,8 @@ validated-enhancements is empty at 2026-09-25 (RD73 demoted), so arm 3 == arm 2 
 ## Change Log
 
 - 2026-09-25T12:03:55.053290+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260925_121417_patch-validation-now-measures_6673
+- 2026-09-25T12:14:20.736304+00:00 (updated-by): Updated: section:ledger-events

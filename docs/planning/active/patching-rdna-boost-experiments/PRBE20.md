@@ -115,6 +115,27 @@ Not yet done: the reviewer-gpt-agent's originally-suggested bisection diagnostic
 
 Honest status: the actual root cause of the RD26 bit-identity gap is still NOT found. Two source-verified hypotheses (Wave1+Wave2 fork port, fusion-gate MMVF call site) have both been tried and both left the exact same byte-480 failure. This needs either a smaller, more surgical diagnostic (compare the two raw output files directly, don't just trust the pass/fail flag) or fresh investigation rather than another guess-and-check patch.
 
+2026-09-28 DECISIVE DIAGNOSTIC RESULT (t-1210diag-gfx1100-s1, commit 00688dee, the new rd26-decode-verify-diagnostic.json raw-byte dump): the GGUF-structural hypothesis from the prior note is RULED OUT. Bytes 416-495 (the tail of the `tokens` tensor: int32 values 911,704,7538,26,635,4107,281,9318,893,463,13,0,0,0,0,0) are byte-identical between the decode and verify runs, confirming the mismatch is not in tokenization or file layout. The divergence begins exactly at the start of the `logits` tensor (offset ~496): the very FIRST float32 logit values already differ -- decode=[3.564, 4.229, 5.191, 4.570, 3.240, 6.146, 5.760, 6.775] vs verify=[3.684, 4.346, 5.143, 4.714, 3.280, 6.132, 5.701, 6.729] -- real ~2-4% relative differences, not rounding noise. This is a genuine numerical divergence present from the very first decoded token's logits (position 0), not something that accumulates over the sequence.
+
+This rules OUT the FFN-fusion-gate hypothesis as well (that fix, already applied and re-verified to have zero effect on the byte-480 failure, targets MoE FFN routing -- a divergence present at token 0's FIRST logits is more consistent with something upstream, e.g. attention or embedding-adjacent, or a batch-width-dependent kernel whose accumulation order depends on total ubatch size regardless of position). Wave1+Wave2 (flash-attn WMMA/tile config, RDNA MMVQ nwarps) were supposed to cover attention already; either they're incomplete too, or the real cause is elsewhere entirely (RMSNorm, rope, or a kernel not yet audited).
+
+Next step (not yet done, and the one still worth doing before another guess-and-check patch): the reviewer-gpt-agent's original bisection suggestion (req_c9780b77b9bc402b) -- run fixed depths N=1,2,3,4 (adaptive off) pairwise and see whether ANY two differ, or only ubatch=1 vs ubatch>=2 specifically. That would confirm whether this is a batch-width-general kernel issue or specific to the decode(1)-vs-verify(>1) boundary RD26 targets. The rd26-decode-verify-diagnostic.json artifact (now permanently captured on every future failing run, not just this one) removes the need to re-derive raw bytes each time -- future investigation can build on this evidence directly.
+
+2026-09-28 UBATCH BISECTION RESULT (tools/lab/prbe20-rd26-bisect/bisect_ubatch.py, commit ae432965, run against the already-built subject llama-results binary from t-1210diag-gfx1100-s1, gfx1100, no new build): pairwise raw-logit comparison across ubatch sizes {1,2,3,4,5} on the RD26 probe prompt.
+
+Result: EVERY pair diverges (no two ubatch sizes are bit-identical), but with a clear structure:
+- ubatch {2,3,4} are mutually close: they match almost the entire file, first diverging from EACH OTHER only very late, at byte offset ~1,987,040 (near the end of the sequence, not the start).
+- ubatch=1 diverges from every other size (2,3,4,5) starting at byte 480 (the very first logit row, as already established).
+- ubatch=5 ALSO diverges from every other size (1,2,3,4) starting at byte 480 -- it behaves like an outlier, not like a member of the {2,3,4} group.
+
+Ruled out: MMVQ_MAX_BATCH_SIZE and MMVF_MAX_BATCH_SIZE are both 8 (static_assert'd equal in ggml-cuda.cu), so ubatch=5 falling out of the {2,3,4} group is NOT explained by crossing either of RD26's own targeted kernel-selection thresholds.
+
+Interpretation: this is NOT simply "decode(1) vs everything-else" as RD26's design assumes -- it's a genuinely more complex, still-unexplained batch-width sensitivity: (a) ubatch=1 is uniquely different from the very first token (consistent with prior findings), (b) ubatch=5 is ALSO uniquely different from the very first token despite being within RD26's claimed <=8 coverage scope and despite 2/3/4 being mutually consistent there, and (c) even within the {2,3,4} group that IS consistent early on, a SEPARATE, later divergence appears near the end of the sequence (~1.98MB in, likely deep into the ~256-token context, possibly attention-window or KV-position-dependent, not applicable to a single first-token logit explanation).
+
+This means at least two distinct mechanisms are likely in play: an early (token-0) divergence affecting ubatch=1 and =5 specifically but not 2-4, and a separate late-sequence divergence affecting all of 2/3/4 (and presumably 1/5 too, just already diverged earlier so not separately visible). RD26's current kernel-routing scope (attention tile config, MMVQ/MMVF batch-size normalization, sgemm gate) does not fully explain either pattern. Further work needed: (1) why does ubatch=5 specifically fall outside the group RD26 successfully normalizes for 2-4 -- worth checking if 5 as verify_width=n_draft+1 hits some OTHER code path unrelated to the already-audited kernels (e.g. rope, KV cache layout, or a flash-attention config keyed differently); (2) what causes the late (~byte 1987040) divergence even among the mutually-early-consistent 2/3/4 group -- this is a second, separate root cause RD26 has not addressed at all.
+
+Not yet done: source-level investigation of what specifically differs about ubatch=5's code path vs 2-4, and what happens deep in the sequence (near ctx_size=256) that causes the late divergence among 2/3/4. This is real, substantial follow-up work -- flagging as the next concrete step rather than guessing another fix.
+
 ## Change Log
 
 - 2026-09-09T10:54:49.394058+00:00 (created-by): Created by capability-rebaseline-v3
@@ -152,3 +173,5 @@ Honest status: the actual root cause of the RD26 bit-identity gap is still NOT f
 - chg_20260928_050743_traced-the-root-cause-of-a-stu_6041
 - 2026-09-28T05:07:46.299946+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-28T06:07:07.967232+00:00 (updated-by): Updated: section:notes
+- 2026-09-28T06:46:25.005345+00:00 (updated-by): Updated: section:notes
+- 2026-09-28T06:57:57.849652+00:00 (updated-by): Updated: section:notes
