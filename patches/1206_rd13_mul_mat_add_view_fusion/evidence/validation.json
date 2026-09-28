@@ -1460,6 +1460,1040 @@
     },
     {
       "activation": {
+        "detail": "marker 'BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)' subject_hit=True control_hit=False",
+        "disposition": "activation-verified",
+        "mechanism": "trace_marker",
+        "status": "executed"
+      },
+      "artifact_hashes": {
+        "activation.json": "8f010d180846fa25046054ece1146d40c07f6f6be735a8e10885f6260142d801",
+        "artifacts/rd13-backend-reference.json": "c72f90d17599438287ea23b03efb797009f404426da0fc634cade917fa795eb0",
+        "artifacts/rd13-control-trace.log": "3c056030c2f45f579c2ac62ff010073580288b7f54d68c8eeb3b40a07e7ed740",
+        "artifacts/rd13-performance.json": "c66c597cbbb60870e708759dbf882b1ba2ff8ba281991bf9f31981526e6ee6a5",
+        "artifacts/rd13-subject-trace.log": "16a45867b9706a7718ca4e7b4d2085cb522c1d217d45b549a942a7ace8d84802",
+        "correctness.json": "a183b427808d27780981c58111adffe30bf68151be447bf3b9d718f71e8903be"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "activation.json",
+          "sha256": "8f010d180846fa25046054ece1146d40c07f6f6be735a8e10885f6260142d801"
+        },
+        {
+          "path": "correctness.json",
+          "sha256": "a183b427808d27780981c58111adffe30bf68151be447bf3b9d718f71e8903be"
+        },
+        {
+          "path": "artifacts/rd13-subject-trace.log",
+          "sha256": "16a45867b9706a7718ca4e7b4d2085cb522c1d217d45b549a942a7ace8d84802"
+        },
+        {
+          "path": "artifacts/rd13-performance.json",
+          "sha256": "c66c597cbbb60870e708759dbf882b1ba2ff8ba281991bf9f31981526e6ee6a5"
+        },
+        {
+          "path": "artifacts/rd13-backend-reference.json",
+          "sha256": "c72f90d17599438287ea23b03efb797009f404426da0fc634cade917fa795eb0"
+        },
+        {
+          "path": "artifacts/rd13-control-trace.log",
+          "sha256": "3c056030c2f45f579c2ac62ff010073580288b7f54d68c8eeb3b40a07e7ed740"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "68016b659b3fdb6f7d6922123da7bbf7975ffaa27f1ad0f522a38ff65f5ddb43",
+          "compile_verification_id": "93675b3e0167bac98cb58ab457da078b",
+          "effective_build_id": "a08595ace8d7451009cd900be1c9c00c",
+          "hip_compile_commands_digest": "37677c9ae451f97a397792736ae664ebf92be1b870facdb84e9747343a24d4ca",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "60441e41936623cecb2a6c8b472e2871dbbfed05137ef1b78c8158dbd6ffb4e3",
+            "libggml-hip.so.0.24.0": "457c6cf471eb74ca66497ecc75a0e53349fc9171e3d970709c20577fcfbc6630",
+            "libggml.so.0.24.0": "e3a4e0836f524b21a3fb7863c87236558543cf600c76d23784ca0b7e538a74c8",
+            "libllama-bench-impl.so": "8c00d3a60d7fb80399ef49cd1298153a52ed6e8d5d5c5ec01a5b15afe2b8646d",
+            "libllama-common.so.0.4.1": "258951438c80ea5d207a0a603763bcb1bb70bf5115d0dd5eb110ce428762e429",
+            "libllama-server-impl.so": "4970d76c9623bd3a589eba3275415cda77c5dd1c980f3b16f52e845c30c58bdb",
+            "libllama.so.0.4.1": "f89a617d2cbb9e7de689b53456325a021eca1ab02cfc6d7fce3dac05d22e5245",
+            "libmtmd.so.0.4.1": "2352ebab7611729b7f59ec9bf97f1e4e22b6a4d5965228c4cce1c909a0f87765",
+            "llama-bench": "b9d0d777f30fac2f29066d51767705595232f20ed2882c087e97a5cffb7ca481",
+            "llama-server": "64426c27f1bd22680df065d9ad3b79ef617232497c5055236cc74d2d235d91da"
+          },
+          "runtime_bundle_hash": "0e96bb6d7c97846b33340139bb1f5ff2"
+        },
+        "stock": {
+          "compile_commands_digest": "a08961adb197bc06dd30c5146a76a4515db53c58cb2076c406686328be4985fb",
+          "compile_verification_id": "08c1b84df1fe1277232631f414b62828",
+          "effective_build_id": "17726192fb6b698696dc684cdfb44a93",
+          "hip_compile_commands_digest": "db538d6aa86eddb507e2b8f5f7a8e5b5454700901f0cff32ce669a28c1060f66",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "b213c076956d5a665b8936447002e06e7c168b6e2d82777ccdeaad24065b7d84",
+            "libggml-hip.so.0.24.0": "e94fb9b710f09755ae7f4448aa712db7045bfd6bd9b0f12f58521b88ad9a3e14",
+            "libggml.so.0.24.0": "bd5155f2fc436c8927f874273b15adb4bf677ddd8efa0569d9f75f0d4a4ad843",
+            "libllama-bench-impl.so": "f3ac12ee7741f13d1a711f83386e972204fbf66bd347bedddc92a9d7791f30b9",
+            "libllama-common.so.0.4.1": "9f0521a6e502ce15aef7ecab1278172ca652aeb6d8cbc0f43985b65b78b391ff",
+            "libllama.so.0.4.1": "107021abd954ae5704a8ad669b365a423d5e7fbea41deb8375f3c5e8e4e276f2",
+            "llama-bench": "bc315b2cc2f8b9798e8aa12dd39e36132ed0ef6f0ee161944f26f6c11ccd2c44"
+          },
+          "runtime_bundle_hash": "8e8348047e35c82843cb154a4c738182"
+        },
+        "tune": {
+          "compile_commands_digest": "82adb8b75b9086c5f357cdc157c31364f606d541398eb3700ad59a5f5bf9145a",
+          "compile_verification_id": "59374dd0b386fdbf69a424927b7a5bbe",
+          "effective_build_id": "dc0213c1c9f446b86a2fa3d4b103db32",
+          "hip_compile_commands_digest": "820c5ee5cf42d8cd85f1de1ddae6d3b19acf4d59ea332edae25837e5850c3466",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "cbc45ff89d6581a160999c51b7a5df74b81b4b0029429d2709a1ff76e1b5a544",
+            "libggml-hip.so.0.24.0": "689278bcacae49d4589f4fd5a15e6a98d52293df7c7dab2c8ea99e3c7499e104",
+            "libggml.so.0.24.0": "884b747b089676a5f782c834927d23a892b772aa5b2b289eb132d1958e47b314",
+            "libllama-bench-impl.so": "3aee169a146e4a506b4f4645276e41496a0919d18c787b980cc8fad83835e7f4",
+            "libllama-common.so.0.4.1": "8a3ef89cba2b885943fd47feb252903090ba7b6e0bcf8154c67b33322c09c625",
+            "libllama-server-impl.so": "862b1a2ee483794d4bdc2c19954d7dfb5652adffad4b554f4aeb24ede68aeedb",
+            "libllama.so.0.4.1": "f7c46eb10e4ae1883181ba9d49f63cbd28013fef6940e677b207530323027e2c",
+            "libmtmd.so.0.4.1": "f50043959083c10f130f39880d590a40d47f0a3455fc11a381429e4c00fd57c4",
+            "llama-bench": "a31664f1a62cbe9c36a1c4a913741a3754eca3a959a80074be457e2f36fa9954",
+            "llama-server": "8d623f3f7ab648cabbfe1c9ef2a098fee5c781a694b9c4dc4db093fd1dea7a41"
+          },
+          "runtime_bundle_hash": "dda50a08299a801e0d649994e308e082"
+        }
+      },
+      "campaign_identity_digest": "531cbf41eb3e2392adf24bfcf4dfe6f327d62faa0474a3dc8c74f75c63bd5e66",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [],
+          "missing_checks": [],
+          "passed": true,
+          "required_checks": [
+            "backend_reference"
+          ],
+          "results": {
+            "backend_reference": {
+              "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+              "passed": true
+            }
+          }
+        },
+        "activation": {
+          "artifacts": [],
+          "capability": "activation",
+          "check_id": "activation",
+          "details": [],
+          "status": "pass",
+          "summary": "positive marker hit and negative-control non-hit are verified"
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "c66c597cbbb60870e708759dbf882b1ba2ff8ba281991bf9f31981526e6ee6a5"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [
+            {
+              "name": "correctness-summary",
+              "path": "correctness.json",
+              "sha256": "a183b427808d27780981c58111adffe30bf68151be447bf3b9d718f71e8903be"
+            }
+          ],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "pass",
+          "summary": "bound correctness summary reports pass"
+        },
+        "performance": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "c66c597cbbb60870e708759dbf882b1ba2ff8ba281991bf9f31981526e6ee6a5"
+            }
+          ],
+          "capability": "performance",
+          "check_id": "performance",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        }
+      },
+      "contract_verdicts": {
+        "RD13-MUL-MAT-ADD-VIEW-FUSION": {
+          "detail": {
+            "contract_hash": "734f16c414ff075264def857b645cc7a",
+            "contract_id": "RD13-MUL-MAT-ADD-VIEW-FUSION",
+            "passed": true,
+            "reasons": [],
+            "status": "pass"
+          },
+          "passed": true,
+          "status": "pass"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "734f16c414ff075264def857b645cc7a",
+          "id": "RD13-MUL-MAT-ADD-VIEW-FUSION"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "531cbf41eb3e2392adf24bfcf4dfe6f327d62faa0474a3dc8c74f75c63bd5e66",
+        "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+        "disposition": "passed",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "rd13-full-vocab-backend-reference",
+        "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+        "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+        "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": true,
+      "final_eligibility": true,
+      "framework_baseline_digest": "38b82729fc6f04e684c606e7e3d4b5d4cf48a2a4b5842d228b2ca4e90717f85d",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1100"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.9579191023951328,
+          "ci95_low_pct": 0.35656995914656875,
+          "decision": null,
+          "geometric_effect_pct": 0.6150944852687523,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0042982806877248,
+            1.0198360489828964,
+            1.0037901456213842,
+            1.0025994801039793,
+            1.0050080128205128,
+            1.0026932668329176,
+            1.0014940239043824,
+            1.005189620758483,
+            1.0081056739717802,
+            1.0086206896551724
+          ],
+          "paired_rounds": 10,
+          "role": "positive"
+        },
+        {
+          "ci95_high_pct": 0.13182118189132286,
+          "ci95_low_pct": -0.417261066147101,
+          "decision": null,
+          "geometric_effect_pct": -0.1318217141911937,
+          "metric": "tg128",
+          "pair_ratios": [
+            0.9989528150794628,
+            0.9998148376743612,
+            1.0038404360753221,
+            0.9999383096853794,
+            0.9905683639501911,
+            0.99839792963214,
+            0.9987693822298793,
+            0.9910593168084842,
+            1.0004315393625547,
+            1.0051444155200198
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+      "patch_implementation_digest": "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676",
+      "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+      "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "record_digest": "05ea1e1050d62be5a6ca9cd7bfebb2f65163dc742c8bc5f252612731f762d1d3",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1206_rd13_mul_mat_add_view_fusion",
+            "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "08b6138ae4593e3867b1b79858fb14d83ac4fdfc5df938cd9317b132118c468d",
+          "compile_verification_id": "688da38eb845469ad62e5fb78ae528cd",
+          "effective_build_id": "dfe0edf9efa12bdd38b16c3e544cebee",
+          "hip_compile_commands_digest": "0f6c68b4614bb3da4a65cc4d4109b56a70bc8082b75c64901a87fcf0eb0f8cde",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "da89802df9328718ac3a109e52d6725a7236bede611c4bb093f0457fb0371973",
+            "libggml-cpu.so.0.24.0": "85dbd43462842a0c737da79e16623e1b5a22b34f3b01d8f16d91b0f778c4496d",
+            "libggml-hip.so.0.24.0": "f98d2ef0d017be9c69dc2591d19568896bbe63071ff13b384688dcb4d4615a4c",
+            "libggml.so.0.24.0": "d5740c04bc349ff2e25dfa2a2fccd925d19c3b94e090371829903c9597272864",
+            "libllama-bench-impl.so": "7cda9c8acbb9a20098294a8be51d6e37eb35a1d69efda0c792b047d10110b6be",
+            "libllama-common.so.0.4.1": "a94d1c1a3461adf0b768ecb714354f5123c514eb800862089d48d129a0e1e97b",
+            "libllama-server-impl.so": "ca3a98564a854afd2d8e32600a7074ff08277549b409c276aeed7ac3f9e4bfce",
+            "libllama.so.0.4.1": "67beb1164a1e7197871184f10b0c315bf01e43b0039f4385b3f8c54c951d66fb",
+            "libmtmd.so.0.4.1": "a9f9db5a0a6d9aca968f724252a7d78798f479490e243e6bb1166948600c31a0",
+            "llama-bench": "39da8685f6ace8aa2c8a50560ac03142a65494a11fd43c3d9e86ca9c1f496b66"
+          },
+          "runtime_bundle_hash": "f597b6b603ff1c3b5e8ae643174591c7"
+        },
+        "subject": {
+          "compile_commands_digest": "08b6138ae4593e3867b1b79858fb14d83ac4fdfc5df938cd9317b132118c468d",
+          "compile_verification_id": "688da38eb845469ad62e5fb78ae528cd",
+          "effective_build_id": "dfe0edf9efa12bdd38b16c3e544cebee",
+          "hip_compile_commands_digest": "0f6c68b4614bb3da4a65cc4d4109b56a70bc8082b75c64901a87fcf0eb0f8cde",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "28b34a8359237d7d410e575a2f2804a292f0addd4d0f95a61506c1dfed59624e",
+            "libggml-hip.so.0.24.0": "c5881a365c808cf2e9206a0ea7a39467162ea9d3dfc35949dd56dd5a03f1f82b",
+            "libggml.so.0.24.0": "873f75e5b2f505ba9b5d8987a4864ccbaf4ed8bbaa2656fd20748925ea96944e",
+            "libllama-bench-impl.so": "decae1f67678da22cc8d1faa3022f6cdc7bccaa42aa848fe44df1064508279bf",
+            "libllama-common.so.0.4.1": "f22f8ddf5b65bf5d56e6366f8049b9f2946bc021150a7868c3b9f1f64dc3aaf4",
+            "libllama-server-impl.so": "3b4fad1e6e30c569981f5456cafab300051ff7ab3acdb897334b71b9bf8dc101",
+            "libllama.so.0.4.1": "373ee1154a69ac9ad48fc9aa33b6141f391e67a030b84b7313ad71e3188063ef",
+            "libmtmd.so.0.4.1": "5c29aef37b38cc87a44ec6ad0fb88a63cf55b0550b5d26c74730dc5d0852d3ce",
+            "llama-bench": "62c3be023b5002c6567e72fa3704c08ac350e43fbe5fac2a03a7bfb007c257b2"
+          },
+          "runtime_bundle_hash": "9f151b13be8d0beeff229b127faafe47"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "validated",
+      "validation_implementation_digest": "6d24d30afc70c8e85a3ae8414819644af16aaaec2770b8a97ceec76e837bc15d"
+    },
+    {
+      "activation": {
+        "detail": "marker 'BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)' subject_hit=True control_hit=False",
+        "disposition": "activation-verified",
+        "mechanism": "trace_marker",
+        "status": "executed"
+      },
+      "artifact_hashes": {
+        "activation.json": "111a9cc464e68a68dd7db18a24329d024dcf4420c48bffbb1edb4d5530538eb1",
+        "artifacts/rd13-backend-reference.json": "c24de3cfdc2fb23ea7a32d3b943ee26ed23a445b10ab78be7f3efaa5615980d9",
+        "artifacts/rd13-control-trace.log": "8c0cb58098bb599ce5d1e3d3c2ad8605a2d899c6009d977df99a9a452bc9484b",
+        "artifacts/rd13-performance.json": "5b6e41b81cab32dc696f00cdfd79413be9eea52c4ecb91de772c24c643b09c76",
+        "artifacts/rd13-subject-trace.log": "b721fdb5b8207bcefa83c3e3f65736b6df118added8121bb2dcbee31472bb62d",
+        "correctness.json": "6f42158760108cc350f1ee295782d66dc4429465b07f3a163e1ea4c1a204730b"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "activation.json",
+          "sha256": "111a9cc464e68a68dd7db18a24329d024dcf4420c48bffbb1edb4d5530538eb1"
+        },
+        {
+          "path": "correctness.json",
+          "sha256": "6f42158760108cc350f1ee295782d66dc4429465b07f3a163e1ea4c1a204730b"
+        },
+        {
+          "path": "artifacts/rd13-control-trace.log",
+          "sha256": "8c0cb58098bb599ce5d1e3d3c2ad8605a2d899c6009d977df99a9a452bc9484b"
+        },
+        {
+          "path": "artifacts/rd13-backend-reference.json",
+          "sha256": "c24de3cfdc2fb23ea7a32d3b943ee26ed23a445b10ab78be7f3efaa5615980d9"
+        },
+        {
+          "path": "artifacts/rd13-performance.json",
+          "sha256": "5b6e41b81cab32dc696f00cdfd79413be9eea52c4ecb91de772c24c643b09c76"
+        },
+        {
+          "path": "artifacts/rd13-subject-trace.log",
+          "sha256": "b721fdb5b8207bcefa83c3e3f65736b6df118added8121bb2dcbee31472bb62d"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "06ce38bef64cd1ed6ddea11cadf54ec169b2b1f43f2e237953083c848b2a0163",
+          "compile_verification_id": "01268fc38bf4fc5ab6423cc4533df1ba",
+          "effective_build_id": "4ae1d99b5d16ebcff9fe2b2d4a5547b8",
+          "hip_compile_commands_digest": "faa50f4eeff059c4fade95cbb2bd0478d37a35e86b0987126208a5fb09efbc3e",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "b88e733d4ba6bcf2ce82326826dee3a4b468bdcefa8e71669ed2e5cda78b29d8",
+            "libggml-hip.so.0.24.0": "c82ff74ccf187d3e3dcb0c5b253da05188b061c23d3510ce09d4dc1dba65bc52",
+            "libggml.so.0.24.0": "c177bf9dda9915daa154781707348c590b9ad385bed2b9a3184d7c903f3336da",
+            "libllama-bench-impl.so": "d7023dd35c993d2e47b112bd2497f703a6010439f3ceb049061dd2860e988b2c",
+            "libllama-common.so.0.4.1": "e9df440a22c20265f41ecaee5f12363b7b00b1a0b7aa56603baa6e527941c799",
+            "libllama-server-impl.so": "cc4e0bb3ad42c39606977bb474d998f210da103adc1a045c7c2a45bf3c88a8cc",
+            "libllama.so.0.4.1": "549410c12ce9893aa266f83e29c911869dbc698437ad283fdb386be2a47990dc",
+            "libmtmd.so.0.4.1": "a70e3a3ceb20d12171c20b8d449a54d6e76e0b7231deecb2224258ef08ce83ac",
+            "llama-bench": "3d62c62ca3e05f9773832ea60bedac76df3ec264bf8a5a617a857c175daca071",
+            "llama-server": "29b8af30074daf1dde44a46ce7a404bb1dcc5334850ec9f7f965401e6b326276"
+          },
+          "runtime_bundle_hash": "879ecf59acf763a8bf6f56628f52dc46"
+        },
+        "stock": {
+          "compile_commands_digest": "00db8320c93acd6c8d6bc385c546cead7faf0b7eaedfcb2a20b864d03dfa4389",
+          "compile_verification_id": "30500ca69404a227b0a36e6d9cc673a9",
+          "effective_build_id": "22abb80c40da613d383bc1cdca7a8510",
+          "hip_compile_commands_digest": "44c231d0e1cddf24c51e4eb9c9861c577b87127ed142ff2a6b135b2782f70b42",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "96805d15c9456ded59e2d730b9951b1de9d34b399c1d8dd7280e1665e72aa63d",
+            "libggml-hip.so.0.24.0": "011c026cf9f6711b1caa2d3ad402f30ee62519ef66869a3f81b3074bae4d36f6",
+            "libggml.so.0.24.0": "78f4136d338d788ce20ad060c3e95c6544c5ceb034b60b61f9197511314fa7bc",
+            "libllama-bench-impl.so": "9481f22ba6e29507860096fb490dc61675706c8f28de36dee4f4d424b61231dc",
+            "libllama-common.so.0.4.1": "a995e6b9d18ad182250ccfbcb017263c5f902b45f237bfcffde2ac9a3c462e74",
+            "libllama.so.0.4.1": "23a79d2311359f3b23295f03e6e19762b19cdae83d5082c7aa1bc3ffdee3bc99",
+            "llama-bench": "35d025424e7611350d157b639b92cbe68d56cb4d12619d28a08dbf04f64657f4"
+          },
+          "runtime_bundle_hash": "678d1fc618d214c963150566b3d44bfc"
+        },
+        "tune": {
+          "compile_commands_digest": "e1a917a88fef27b106f3d23290fa25746c8778fa1f43054401aca23580a18d88",
+          "compile_verification_id": "1eabaed7605fcbc8b3939be2eccf0fa1",
+          "effective_build_id": "64ff7fcf88d70af9f6314aa19740ee62",
+          "hip_compile_commands_digest": "305494d3a22ddf32bfebfcdf786daa8ea2d98246c71498fbeda3f7c561d001db",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "75be7387819e61ac33424cc2326a8f4d1609425b49fa459dcd564db52fc49ad0",
+            "libggml-hip.so.0.24.0": "6c4c5c1419fe293b6bd26fae9337c6f3325e6cabbf64dc870964d41fb91b7758",
+            "libggml.so.0.24.0": "328a621ba66012360ae0fd1706340bc3709b3f056eede3cb50cf7d18846e5e9b",
+            "libllama-bench-impl.so": "e11c391be00d6d6402d8c7b42e0e440f700b4d518ed8be80e0305f22948c7f8b",
+            "libllama-common.so.0.4.1": "4534abd8701b0846ce930ba1c1ccd67b22580bae8f9e9aeea9306f2ea46c323a",
+            "libllama-server-impl.so": "ff3539bdf79023af2b8c75f171b93e7c5b4987edc82d844397dac4d991e3cd57",
+            "libllama.so.0.4.1": "b68ee7841caad792055e75588831313bab1da811b8f864d24df0866be568822a",
+            "libmtmd.so.0.4.1": "084d5e7a1e52a8f6bb241636b2ec7d7817ba719af775ebc633eeb11d52a2949c",
+            "llama-bench": "c427bdf29499b23a458edda4787947a6203dc15912c9ca441f9839969ba17d51",
+            "llama-server": "a9d85d6a8547bdad3316a37b4d88284ebb32c0bde1fa0fde9e30ad3b60327dd8"
+          },
+          "runtime_bundle_hash": "3eded5a7454c6e283f1ec2b9dc1f5ad9"
+        }
+      },
+      "campaign_identity_digest": "5d0f2fed78c0436b4dc54a2d38b2d859ab3f1335ec0d01a0acb58d9e6d8f3460",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [],
+          "missing_checks": [],
+          "passed": true,
+          "required_checks": [
+            "backend_reference"
+          ],
+          "results": {
+            "backend_reference": {
+              "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+              "passed": true
+            }
+          }
+        },
+        "activation": {
+          "artifacts": [],
+          "capability": "activation",
+          "check_id": "activation",
+          "details": [],
+          "status": "pass",
+          "summary": "positive marker hit and negative-control non-hit are verified"
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "5b6e41b81cab32dc696f00cdfd79413be9eea52c4ecb91de772c24c643b09c76"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [
+            {
+              "name": "correctness-summary",
+              "path": "correctness.json",
+              "sha256": "6f42158760108cc350f1ee295782d66dc4429465b07f3a163e1ea4c1a204730b"
+            }
+          ],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "pass",
+          "summary": "bound correctness summary reports pass"
+        },
+        "performance": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "5b6e41b81cab32dc696f00cdfd79413be9eea52c4ecb91de772c24c643b09c76"
+            }
+          ],
+          "capability": "performance",
+          "check_id": "performance",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        }
+      },
+      "contract_verdicts": {
+        "RD13-MUL-MAT-ADD-VIEW-FUSION": {
+          "detail": {
+            "contract_hash": "734f16c414ff075264def857b645cc7a",
+            "contract_id": "RD13-MUL-MAT-ADD-VIEW-FUSION",
+            "passed": false,
+            "reasons": [
+              "target_kernel_gain_pct ci95_low -0.2756532554463198 does not establish an improvement above the evidence floor 0.0 (point estimate 0.2729060287016116) -- a positive point estimate whose interval reaches the floor is not an established gain"
+            ],
+            "status": "fail"
+          },
+          "passed": false,
+          "status": "fail"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "734f16c414ff075264def857b645cc7a",
+          "id": "RD13-MUL-MAT-ADD-VIEW-FUSION"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "5d0f2fed78c0436b4dc54a2d38b2d859ab3f1335ec0d01a0acb58d9e6d8f3460",
+        "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+        "disposition": "passed",
+        "gpu_architectures": [
+          "gfx1201"
+        ],
+        "mechanism": "rd13-full-vocab-backend-reference",
+        "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+        "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+        "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "38b82729fc6f04e684c606e7e3d4b5d4cf48a2a4b5842d228b2ca4e90717f85d",
+      "gpu_architectures": [
+        "gfx1201"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1201"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.8781923203630804,
+          "ci95_low_pct": 0.4736502584580027,
+          "decision": null,
+          "geometric_effect_pct": 0.6801400991633288,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0061554244678121,
+            1.0113489811710084,
+            1.0010266940451744,
+            1.0113607022979603,
+            1.0069346346474892,
+            1.0056468172484598,
+            1.0062868873492432,
+            1.0064242579982012,
+            1.010575187000258,
+            1.002309765173874
+          ],
+          "paired_rounds": 10,
+          "role": "positive"
+        },
+        {
+          "ci95_high_pct": 0.335677006669588,
+          "ci95_low_pct": -0.189882335182201,
+          "decision": null,
+          "geometric_effect_pct": 0.0649382207647431,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0008680555555556,
+            1.0,
+            1.008916487540801,
+            1.0059519085786843,
+            1.000710395453469,
+            0.9996842936069454,
+            1.0003157063930543,
+            0.9945532049257972,
+            0.9944742658667508,
+            1.0011061072924075
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+      "patch_implementation_digest": "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676",
+      "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+      "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "record_digest": "4214ac038ef8be32d4fdb94ac78ea00e0d0d48242c8e2d49fe11f705740327f3",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1206_rd13_mul_mat_add_view_fusion",
+            "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "e9746c5a751234b083acae0ada55d224e134ebdc4b0e291b3071ecdc7195fcce",
+          "compile_verification_id": "ba9f38a1a365abcddf36ac0cc0292ae6",
+          "effective_build_id": "829eda3b2be4bc01e6b19b0b5f7439bc",
+          "hip_compile_commands_digest": "ca50c7cf3bf1dcbdf2895adcdda60ffc54a8f0b87c1b8b18be595eb97d510d5a",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "da89802df9328718ac3a109e52d6725a7236bede611c4bb093f0457fb0371973",
+            "libggml-cpu.so.0.24.0": "e3bc39680597bf7102e242ef0054cb9fe78020a54ebfb1983791b1f17e76d78f",
+            "libggml-hip.so.0.24.0": "f6788457ed7a1e6279941a6abb5ffca852a7d18f6b0d674b7572d22e7eec9da8",
+            "libggml.so.0.24.0": "25d8e49bd84b40ad24a0d615dbecde239e8575b8ea062c562f9c4700082e5831",
+            "libllama-bench-impl.so": "34039ca658a480f6abebc3e109e8879697c9732bb70e3221f368c7870eae835e",
+            "libllama-common.so.0.4.1": "fc1d1072da96e493ea632c4d55b2730dced11d2e553aed2d73105db4b3247893",
+            "libllama-server-impl.so": "e2f6812f3feb8504d34606ac02cc20c986fbd30355de89508967d1b1d309ffac",
+            "libllama.so.0.4.1": "511b81c602ea9b784b2feaaf78a89de8f7251351086c90d9ecd11b85f7ed6ee3",
+            "libmtmd.so.0.4.1": "9bcd88be744a8649b741caedaa02c6c3bbc0e36bec414deaa10a96a57740ba9f",
+            "llama-bench": "059df1452bbcc457d35b9bb480a3ff0bebe8b1cf6e07aba6ff9d8a1dd717df71"
+          },
+          "runtime_bundle_hash": "e57ce7e8a55cb5658e9af652aa6fd64b"
+        },
+        "subject": {
+          "compile_commands_digest": "e9746c5a751234b083acae0ada55d224e134ebdc4b0e291b3071ecdc7195fcce",
+          "compile_verification_id": "ba9f38a1a365abcddf36ac0cc0292ae6",
+          "effective_build_id": "829eda3b2be4bc01e6b19b0b5f7439bc",
+          "hip_compile_commands_digest": "ca50c7cf3bf1dcbdf2895adcdda60ffc54a8f0b87c1b8b18be595eb97d510d5a",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "8922c50fc29efc259ad2cb54a4b5e269b369eb52d3946618b8a66a5a2e055dac",
+            "libggml-hip.so.0.24.0": "d5965b4d160cdaa3031b9143576b803b9fc62fc37d46f5feb66e7c869d5383ab",
+            "libggml.so.0.24.0": "2ebe5e6af2b73e9bc55b7f28a630062ae2c585ff518297323ec17faab56d6832",
+            "libllama-bench-impl.so": "7c3319910f15df54ab8870e6494df2e334f5f839cca3814a3b805bc981a85eac",
+            "libllama-common.so.0.4.1": "353b18043aa0309c863807b5075d611848badc6f221a470641e7391bb4656439",
+            "libllama-server-impl.so": "5981b797b9ddacfd8b5a4b8f6e901935e1fbbfc3a3e833d93cc67175432d2a25",
+            "libllama.so.0.4.1": "134349f56b06563da2d1880b99816037c5db46ea6ddda4dc61a92fe6dfe5e229",
+            "libmtmd.so.0.4.1": "dd2c31b1d6f5fa63864b672b9eb049dd48a7e712d3891322274b7454aa40f507",
+            "llama-bench": "dc5fbb3a9f3ee6884c3a96573054fa7e44aa02939de6fa2a6e085c4997cfc258"
+          },
+          "runtime_bundle_hash": "56c39cd69811d0f98fe1e6bbe0f8e748"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "6d24d30afc70c8e85a3ae8414819644af16aaaec2770b8a97ceec76e837bc15d"
+    },
+    {
+      "activation": {
         "detail": "1206_rd13_mul_mat_add_view_fusion activation: expected marker was observed with fusion enabled and was absent with GGML_CUDA_DISABLE_FUSION=1.",
         "disposition": "activation-verified",
         "mechanism": "BIGCHERRY_PATCH_TRACE two-probe control",
@@ -7224,6 +8258,524 @@
       "validation_contract_version": "hi83-v1",
       "validation_disposition": "incomplete",
       "validation_implementation_digest": "279229747b3a9da3cbfb8f79c6c5f6b089bf37988b51e048c9a6eae47f507e91"
+    },
+    {
+      "activation": {
+        "detail": "marker 'BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)' subject_hit=True control_hit=False",
+        "disposition": "activation-verified",
+        "mechanism": "trace_marker",
+        "status": "executed"
+      },
+      "artifact_hashes": {
+        "activation.json": "2ae1cbf44e691dafa23bc87a9b3880c5e828cbbda4b677917075a63055e64f4f",
+        "artifacts/rd13-backend-reference.json": "3213a06beedb052a6f173b87e809546ffa10136330032c226285a80ba827afc0",
+        "artifacts/rd13-control-trace.log": "f75722e93e45336b5a3563d9e5d2ec355b6ccf021cecd136409c3fd7b06957aa",
+        "artifacts/rd13-performance.json": "0486887790eee273a296b1cdf24cb5b56440d1ef66f0ae9ca05dbaa9e66e6e23",
+        "artifacts/rd13-subject-trace.log": "49e0c05f90cb80a43e95d082d014ec51e9550d46208331c5360c3b4bb8b06db6",
+        "correctness.json": "029baf58e3227d0c6d840e9fe48e8568cd0362309e7bae5feb07d6ede2a9f085"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "activation.json",
+          "sha256": "2ae1cbf44e691dafa23bc87a9b3880c5e828cbbda4b677917075a63055e64f4f"
+        },
+        {
+          "path": "correctness.json",
+          "sha256": "029baf58e3227d0c6d840e9fe48e8568cd0362309e7bae5feb07d6ede2a9f085"
+        },
+        {
+          "path": "artifacts/rd13-performance.json",
+          "sha256": "0486887790eee273a296b1cdf24cb5b56440d1ef66f0ae9ca05dbaa9e66e6e23"
+        },
+        {
+          "path": "artifacts/rd13-control-trace.log",
+          "sha256": "f75722e93e45336b5a3563d9e5d2ec355b6ccf021cecd136409c3fd7b06957aa"
+        },
+        {
+          "path": "artifacts/rd13-backend-reference.json",
+          "sha256": "3213a06beedb052a6f173b87e809546ffa10136330032c226285a80ba827afc0"
+        },
+        {
+          "path": "artifacts/rd13-subject-trace.log",
+          "sha256": "49e0c05f90cb80a43e95d082d014ec51e9550d46208331c5360c3b4bb8b06db6"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "a2d3a46b47a10e1a91f77c778beea9c109d12cb5bf527b7498efb47f244c65c7",
+          "compile_verification_id": "84497a28b7b15517d2188e10d67e9a3c",
+          "effective_build_id": "01ccb470cf317ed74c3fdbc9d40a533a",
+          "hip_compile_commands_digest": "8aa1290cf78fc76f55acda33d4329679e007ae5c575358bf468766956cd01ff6",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "5565354c29ea588fefae91a882dff7e186d36703ddedf4f11236a38c3a20b0e3",
+            "libggml-hip.so.0.24.0": "8128648ef9a684cd2bc739b69ccd36af7fd50abefdc63dba8b0fa4b0ec3b505b",
+            "libggml.so.0.24.0": "189f234673200cfcde0b6f05ea380e677d11363a59591f4c15aa3281d3769314",
+            "libllama-bench-impl.so": "dc800d36d8eae6eb14c2f4884f305b09ef3151a895d8b53348c6470801e3b14c",
+            "libllama-common.so.0.4.1": "bf5e0cf4cbe906f7053e7762bf6d772519f86480104b7b90ed960f6b21fb020d",
+            "libllama-server-impl.so": "7517095437a75362f5d053da87133220dcca860c8ecb3557b5c178fe13ee3d18",
+            "libllama.so.0.4.1": "ebe800971982f7438d12db2925a477ba3888af10f396d91270b3f5213c1c5b35",
+            "libmtmd.so.0.4.1": "757c48efe84ec158b3a8b7c702200beb8e0b4031f565d2718ff88edfbdeca3db",
+            "llama-bench": "b9eaa3ee25c7d9d5e53ca052f8f4fd06fd425b23e8004413666995048b0ff203",
+            "llama-server": "2dfc68f50d19a30903a3d6133d0ef89c7c5af2d27e0bf777282d5f04657fd443"
+          },
+          "runtime_bundle_hash": "9fa8c7b46ce34a781fa4d1f8743d93e2"
+        },
+        "stock": {
+          "compile_commands_digest": "0df9658c3e174bbb53e0d662acf606ba9f71dc269aed57e5b48802fedcd0f523",
+          "compile_verification_id": "ee497083a77abb598893bcca251c57f8",
+          "effective_build_id": "69ec3f99297ad44edd7ee8be84777558",
+          "hip_compile_commands_digest": "d78f85fac498493286e2c1e3deff93da5c4678c5c8c1222815f5176640b7b4f1",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "9515c6b34aba20f7c71582452bc44e59a37475bc83c9107fa91107f5104cf003",
+            "libggml-hip.so.0.24.0": "b58f08a3e0ccdd7e2bbd7e55e52c761e6921f9da4df7597ffd6d6231989f0108",
+            "libggml.so.0.24.0": "8a559cf3028b7cacd28e660c423b24b223fa5ca71f20715ed51f1053bae456fe",
+            "libllama-bench-impl.so": "6961707066ea248123e78d43ebf27ab4c69c77c42b582fb3c4816db027855e11",
+            "libllama-common.so.0.4.1": "d258dc9ce53b0f09b51d4dbe1ca86e97ea8b73b6faffb2855f30355502237e98",
+            "libllama.so.0.4.1": "75b997179da3735a3aa22f5552d82da59b63e6b56fb94d50ce0df8f329ff0b55",
+            "llama-bench": "d4b22f67ce7e110a59f8fd3724e30c9c603b3d9dd1742f944f66591a538f760f"
+          },
+          "runtime_bundle_hash": "94d07db9a6211341079d6328216f58f2"
+        },
+        "tune": {
+          "compile_commands_digest": "88bca756211f21d7fc6470b31206da022b94809b9111ba7f3fc14ea8e387014f",
+          "compile_verification_id": "7f3799d0e8a3e2b634afca9d1efe4ef8",
+          "effective_build_id": "517f332aa3fcf31429d99193d8e66e78",
+          "hip_compile_commands_digest": "9bfb78f41d071c5901a524a0f5aafdfa20bed70ca66757bed9e2a611ecb380df",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "fea86f7da2d258ecb051c77f5db11407a03bbc4bce8144c35ea2c44c3094e34d",
+            "libggml-hip.so.0.24.0": "e7cf3f550912e85cbfa42e53c93850be107a44cc2c8496eb36e2af6baba6c6e9",
+            "libggml.so.0.24.0": "c9cdf34600d702ea5201cacdc9be5c434a555a4d4b2cf18c813229c9f661d6d5",
+            "libllama-bench-impl.so": "92c7b0af22a70c26d40cac4795e4ff3652e670f0de162b447da4e293568e6722",
+            "libllama-common.so.0.4.1": "f2c7e244a46bc5a9e68baa93ee4031c6add8caf5b2660d97f42c6d5d3fd5e424",
+            "libllama-server-impl.so": "27132ad8a1f68cd120173de0bd1e337e8319ee01851112153d33416bbad52e6a",
+            "libllama.so.0.4.1": "ea899bfd332584075bb19584b136e27cd4be31c4ae13550f43003b096bd52a0a",
+            "libmtmd.so.0.4.1": "2967e51d8921b709926f922b2831341c436e1143ad2cde7458492f7f7d5e0b0d",
+            "llama-bench": "2d98414661fe51d301e4660782ad9ceb017cf0034503df07df1c44d4291136cd",
+            "llama-server": "dc25c41ca19ee55955418d80f471d4b18978590ee251e2230e144e28b3d6556b"
+          },
+          "runtime_bundle_hash": "07fa16a59747a5f04dda5b1a2b355c5e"
+        }
+      },
+      "campaign_identity_digest": "d674183c93396686f94018305e0ef769cdd8c0107ef1dfe0ce2363162b964141",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [],
+          "missing_checks": [],
+          "passed": true,
+          "required_checks": [
+            "backend_reference"
+          ],
+          "results": {
+            "backend_reference": {
+              "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+              "passed": true
+            }
+          }
+        },
+        "activation": {
+          "artifacts": [],
+          "capability": "activation",
+          "check_id": "activation",
+          "details": [],
+          "status": "pass",
+          "summary": "positive marker hit and negative-control non-hit are verified"
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "0486887790eee273a296b1cdf24cb5b56440d1ef66f0ae9ca05dbaa9e66e6e23"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [
+            {
+              "name": "correctness-summary",
+              "path": "correctness.json",
+              "sha256": "029baf58e3227d0c6d840e9fe48e8568cd0362309e7bae5feb07d6ede2a9f085"
+            }
+          ],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "pass",
+          "summary": "bound correctness summary reports pass"
+        },
+        "performance": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd13-performance.json",
+              "sha256": "0486887790eee273a296b1cdf24cb5b56440d1ef66f0ae9ca05dbaa9e66e6e23"
+            }
+          ],
+          "capability": "performance",
+          "check_id": "performance",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        }
+      },
+      "contract_verdicts": {
+        "RD13-MUL-MAT-ADD-VIEW-FUSION": {
+          "detail": {
+            "contract_hash": "734f16c414ff075264def857b645cc7a",
+            "contract_id": "RD13-MUL-MAT-ADD-VIEW-FUSION",
+            "passed": false,
+            "reasons": [
+              "target_kernel_gain_pct: 1 session(s) is below the pre-declared minimum 4 -- collect more; a within-run interval cannot represent between-session drift"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "734f16c414ff075264def857b645cc7a",
+          "id": "RD13-MUL-MAT-ADD-VIEW-FUSION"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "d674183c93396686f94018305e0ef769cdd8c0107ef1dfe0ce2363162b964141",
+        "detail": "64 decode steps, 15892480 full-vocabulary logprobs; max_abs_logprob_diff=0 <= tolerance=0.0005",
+        "disposition": "passed",
+        "gpu_architectures": [
+          "gfx1030"
+        ],
+        "mechanism": "rd13-full-vocab-backend-reference",
+        "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+        "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+        "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "38b82729fc6f04e684c606e7e3d4b5d4cf48a2a4b5842d228b2ca4e90717f85d",
+      "gpu_architectures": [
+        "gfx1030"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1030"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.7514421052347231,
+          "ci95_low_pct": 0.40597235035655377,
+          "decision": null,
+          "geometric_effect_pct": 0.5760517848225843,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.001412973667309,
+            1.005267891558525,
+            1.010568372212914,
+            1.006043461489006,
+            1.0065527431581653,
+            1.0098001289490652,
+            1.006303061487008,
+            1.0024415317399127,
+            1.0032137806916055,
+            1.0060395785145209
+          ],
+          "paired_rounds": 10,
+          "role": "positive"
+        },
+        {
+          "ci95_high_pct": 0.1748568897454783,
+          "ci95_low_pct": -0.18534542393198183,
+          "decision": null,
+          "geometric_effect_pct": -0.0033460757200232116,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0040746475429876,
+            1.0006493506493506,
+            1.0012976480129765,
+            1.0030939586386582,
+            0.9988628056209894,
+            0.9955353518954461,
+            1.0030901845978695,
+            0.9997566515249837,
+            0.9956987502028891,
+            0.9976476314081765
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1206_rd13_mul_mat_add_view_fusion",
+      "patch_implementation_digest": "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676",
+      "patch_validation_subject_digest": "d69e61c600b85e864e90a2a3e12d50418968a0bc3db718918b1bc3654115a95a",
+      "patched_source_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "record_digest": "024520537dcac5958c396d7dc449a0f5de31c28deb70fb86b6fd0f55eb911fed",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1206_rd13_mul_mat_add_view_fusion",
+            "0045d3f8eb48482ec2fff9016307ac07c18fc5c758114c0abed88b2c02b25676"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "e76451a3af7933a8c6d6a54d6750baecf286e6a0",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "03c6551b16b0432c84a04edd51dcccab78eb1d101eccd34fb4bf5f4bafbbb1d0",
+          "compile_verification_id": "237f5bcaf031fb950a73b0698a0cc766",
+          "effective_build_id": "04329e63e51c73fd62c964c257fecace",
+          "hip_compile_commands_digest": "26045846ae7dad902fbbe2a4533c0132f57f1656b26c88c3793772719e24b2f6",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "da89802df9328718ac3a109e52d6725a7236bede611c4bb093f0457fb0371973",
+            "libggml-cpu.so.0.24.0": "f48e642d595a48ebc8a5e2330050bd4a1a7c01869d2d8ed93c809c749d2bed79",
+            "libggml-hip.so.0.24.0": "e9a1c609c4ed52c22f3c0f2df2b804482cb0f3dc11eb0898d47ca9ee16b27d36",
+            "libggml.so.0.24.0": "59824c7a7e2c6e9e797defebb4f0f4188ddcdaef9d8cd5c355e63f6429acb975",
+            "libllama-bench-impl.so": "598ea3df5bb2eb35a67b5cdc9c4430e8e7bb40e42252f8f5d2fca3f9346dc02d",
+            "libllama-common.so.0.4.1": "ab144dce457772ee0c648657ff46ac805d5ab5f53e058de8cbd4bb703b5c8431",
+            "libllama-server-impl.so": "10a5de3e96fd5f78d341fea97aa8b1b9f2df1de689b618e05738759a360d3e5a",
+            "libllama.so.0.4.1": "1ce03d40fd5fa314e4755a9508971746a930964cd6b9542b4048d686e121db08",
+            "libmtmd.so.0.4.1": "12db17ce00c8c9e8b7c87fa272471109114bd770b2ad39b6c33b7337020de220",
+            "llama-bench": "3830103c8b45bfa5622a716f7d0a2f9ca2f38b1024d248b64b7e5f2496667e7e"
+          },
+          "runtime_bundle_hash": "97a6c79545fdcc3de1a1c1b4c8c0c6f2"
+        },
+        "subject": {
+          "compile_commands_digest": "03c6551b16b0432c84a04edd51dcccab78eb1d101eccd34fb4bf5f4bafbbb1d0",
+          "compile_verification_id": "237f5bcaf031fb950a73b0698a0cc766",
+          "effective_build_id": "04329e63e51c73fd62c964c257fecace",
+          "hip_compile_commands_digest": "26045846ae7dad902fbbe2a4533c0132f57f1656b26c88c3793772719e24b2f6",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "a2ffa43c89fe2aeb416fadc09470bd5d93d7c41e7e1ecee01db786afd875ce0a",
+            "libggml-cpu.so.0.24.0": "3b1d3f9a4726b1ea4d2b48be92ec560118cf84170c9070eea2e4e087a31478fa",
+            "libggml-hip.so.0.24.0": "39441a00e8e6f2438904df7d4560ade69ad974b60605345e0c9ffee3ddd9087c",
+            "libggml.so.0.24.0": "06b9ed18665f08df808cdc9dc96e8d7ffa6857e5bdcb49268ed8ad7905fb8035",
+            "libllama-bench-impl.so": "7b3ccb51b60dab4a2c008b3a025113df19cb5c5a2dda577bde06272662e63467",
+            "libllama-common.so.0.4.1": "52b4454cf59328f453fc1f9692cda0d2ab258fad8fb1f320a300429ad89e3354",
+            "libllama-server-impl.so": "51f0a086794b54b5c1596944abe018884c28f973103c031af147d41d7900727f",
+            "libllama.so.0.4.1": "b7c02c98a5a0322b02151c1fb38ebb3f9b640de33058031889fd44d2954816a8",
+            "libmtmd.so.0.4.1": "f18063bea7ebe8d30da55078db295276cd45d6811bbca6c6e3ec2528817f016a",
+            "llama-bench": "f68f4355facba23f65501a283749174a424e9364bb34b21a039cd6811f3243f6"
+          },
+          "runtime_bundle_hash": "a775bf05c1a2dbed236158270ac7d3a3"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "6d24d30afc70c8e85a3ae8414819644af16aaaec2770b8a97ceec76e837bc15d"
     },
     {
       "activation": {
