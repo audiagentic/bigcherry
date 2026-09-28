@@ -1754,3 +1754,44 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION]
+title = "1005: hybrid/recurrent prompt-cache checkpoint selection, shorter-prefix reuse correctness"
+prerequisites = []
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.source]
+# Cherry-picked and squashed from a 4-commit upstream stack (see patch.py's
+# own docstring for the individual commit subjects -- upstream PR #24055
+# plus three follow-ups). No single immutable source commit represents the
+# squashed composition, so this is recorded as a local composition rather
+# than a single external-source commit reference.
+source_id = "bigcherry-upstream-backport"
+commits = []
+atomic_part = "1005_prompt_cache_checkpoint_selection"
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.target]
+kind = "orchestration"
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.hypothesis]
+expected_effect = "correctness"
+rationale = "Hybrid/recurrent memory (LLM_ARCH_QWEN35 and siblings, per llm_arch_supports_rs_rollback in llama-arch.cpp) is only valid at its exact final position, unlike SWA memory which is valid over a range. Pre-fix code treated every checkpoint as range-valid, so a later request sharing only a SHORTER common prefix than a primed checkpoint could incorrectly select/restore it. The fix gates checkpoint creation/selection/invalidation on exact-position validity (ctx_tgt_state_exact()) and fixes prompt-cache entry selection to pick whichever cached entry saves the most work rather than requiring a candidate to merely beat the current slot's f_keep. Formalizes the exact regression sequence already manually validated (2026-09-12/13, README.md): prime a checkpoint at a full-prompt position (turn A), then send a request sharing only a shorter common prefix (turn C) -- the cache-assisted completion must exactly equal a cold fresh-process completion of the identical prompt. Substitutes tierA-qwen4b-q6k (Qwen3.5-4B, also LLM_ARCH_QWEN35, already registered) for the original manual test's lfm2.5-8B (never registered in config/models.toml) -- both are real hybrid/recurrent architectures under the same llm_arch_supports_rs_rollback gate, so this is the same class of test subject, not a methodology change."
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["state_restore"]
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.correctness]
+greedy_parity = "required"
+
+[contract.PROMPT-CACHE-CHECKPOINT-SELECTION.acceptance]
+max_control_regression_pct = 1
+effect_evidence_policy = "ci95_threshold_bound_v1"
+min_paired_rounds = 10
