@@ -18,9 +18,12 @@ scheduler backend for a tensor the target context owns on another device.
   tensors, never what tokens are ultimately emitted.
 - No activation check: the fix is unconditional, with no marker/env toggle
   to probe.
-- performance (positive): paired MTP speculative decode, metric
-  ``mtp_verify`` per the contract, tierA-qwen4b-q6k across both gfx1100
-  (-sm tensor, draft-n-max 4), 10 measured pairs.
+- performance (positive): paired MTP speculative decode, workload
+  ``mtp_verify`` per the contract (mtp_server_lane's real metric key is
+  ``mtp_wall_tps``, same as every other MTP-lane producer -- the
+  contract's workload label and the lane-effect metric key are distinct
+  names), tierA-qwen4b-q6k across both gfx1100 (-sm tensor, draft-n-max
+  4), 10 measured pairs.
 - controls: paired llama-bench tg128 on the SAME model (tierA-qwen4b-q6k;
   the contract uses one model for both positive and controls), ONE gfx1100
   (a single GPU never needs ctx_other's cross-device backend), 10 rounds.
@@ -178,7 +181,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "contract_id": _CONTRACT_ID,
             "model_identity": identity,
             "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
-            "positive": {"metric": "mtp_verify", "effect": dataclasses.asdict(positive_effect),
+            "positive": {"metric": "mtp_wall_tps", "effect": dataclasses.asdict(positive_effect),
                          "draft_acceptance": {arm: [r.get("draft_acceptance") for r in rows]
                                               for arm, rows in records.items()},
                          "requests": records},
@@ -198,7 +201,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         lane_effects=(),
         contract_correctness_results=(correctness,),
         promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
-        promotion_target_metric={_CONTRACT_ID: "mtp_verify"},
+        promotion_target_metric={_CONTRACT_ID: "mtp_wall_tps"},
         # No activation marker exists for this fix (unconditional whenever a
         # draft context is created), so there is no positive trigger to
         # probe -- record honestly as not-hit rather than fabricate one,
