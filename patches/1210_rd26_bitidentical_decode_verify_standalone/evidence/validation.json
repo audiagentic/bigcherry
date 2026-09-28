@@ -410,6 +410,456 @@
         "status": "unknown"
       },
       "artifact_hashes": {
+        "artifacts/rd26-controls.json": "c0e72b2dd1a1c3fae28f0c36fde026058298e764bbdecfe44fa7cbb8889c2056",
+        "artifacts/rd26-decode-verify-bit-identity.json": "5b1f76a0021cb03a616dd47cf437997aef080d48efa52347cb673f7d9756825a",
+        "correctness.json": "ce56d97aad285329652c88c6f9ebf2edac8bf01fe3f8f322a34303e0f2f8c4e1"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "correctness.json",
+          "sha256": "ce56d97aad285329652c88c6f9ebf2edac8bf01fe3f8f322a34303e0f2f8c4e1"
+        },
+        {
+          "path": "artifacts/rd26-controls.json",
+          "sha256": "c0e72b2dd1a1c3fae28f0c36fde026058298e764bbdecfe44fa7cbb8889c2056"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-bit-identity.json",
+          "sha256": "5b1f76a0021cb03a616dd47cf437997aef080d48efa52347cb673f7d9756825a"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "d2c02f06d5b2713d6e47ea299edc0eaa93ba99f7288f5f484b7ade7fa244ca9b",
+          "compile_verification_id": "2913e7100e4e574ac1cbcb6097d5b9e7",
+          "effective_build_id": "e9663a4fa72e547ebc9c882ea9cb3728",
+          "hip_compile_commands_digest": "0faf67f2b16c5183087f5eb9fd90cc08983a09ce7ad2562b30c8f670310176fd",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "bde609295f4a3eabf701cec16adba4a3b0d391c787bd6ad45d1b0aca2d652817",
+            "libggml-hip.so.0.24.0": "83a31d19a4468106fa4cc1d185dad50310066787148e44cfde38282de0365795",
+            "libggml.so.0.24.0": "9d457da96f1c7e2ec0f42c758794d98688df909eeb0806db4d5c96e1cd747a26",
+            "libllama-bench-impl.so": "e9eb64ff9610efcce6ea9bb75c9498f24fe73de27aae787215f66ddb18e6d2b6",
+            "libllama-common.so.0.4.1": "32921d37c4b22430f88dac3e675e33e207e2c1afc54dde7b174f53f0a87e6a35",
+            "libllama-server-impl.so": "10b21bd7d83e70b806beab14828ae3720aac4f1d0a1ef8728a534d004acc3323",
+            "libllama.so.0.4.1": "35b5534d103b14119aa2f7fe32675519ce27b5597236e66121f653797a3d5d2d",
+            "libmtmd.so.0.4.1": "e251ec147c978ca7d847e29c76910a5e6c693beee9d86edb084c0d4b360649cf",
+            "llama-bench": "3e214fc57610b81ee6219f074358ef89d4d4932e5eb9eafadb2703d065b04e77",
+            "llama-server": "d962bcbc3597800409365dc4f7e5db52d3047366c0fcc1973786ae8f476e8e31"
+          },
+          "runtime_bundle_hash": "6a4fc223066d1294a93279500662cbe5"
+        },
+        "stock": {
+          "compile_commands_digest": "a08961adb197bc06dd30c5146a76a4515db53c58cb2076c406686328be4985fb",
+          "compile_verification_id": "08c1b84df1fe1277232631f414b62828",
+          "effective_build_id": "17726192fb6b698696dc684cdfb44a93",
+          "hip_compile_commands_digest": "db538d6aa86eddb507e2b8f5f7a8e5b5454700901f0cff32ce669a28c1060f66",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "b213c076956d5a665b8936447002e06e7c168b6e2d82777ccdeaad24065b7d84",
+            "libggml-hip.so.0.24.0": "e94fb9b710f09755ae7f4448aa712db7045bfd6bd9b0f12f58521b88ad9a3e14",
+            "libggml.so.0.24.0": "bd5155f2fc436c8927f874273b15adb4bf677ddd8efa0569d9f75f0d4a4ad843",
+            "libllama-bench-impl.so": "f3ac12ee7741f13d1a711f83386e972204fbf66bd347bedddc92a9d7791f30b9",
+            "libllama-common.so.0.4.1": "9f0521a6e502ce15aef7ecab1278172ca652aeb6d8cbc0f43985b65b78b391ff",
+            "libllama.so.0.4.1": "107021abd954ae5704a8ad669b365a423d5e7fbea41deb8375f3c5e8e4e276f2",
+            "llama-bench": "bc315b2cc2f8b9798e8aa12dd39e36132ed0ef6f0ee161944f26f6c11ccd2c44"
+          },
+          "runtime_bundle_hash": "8e8348047e35c82843cb154a4c738182"
+        },
+        "tune": {
+          "compile_commands_digest": "8d29837d58fc0524f3a66dc101a83ec401cc362b969fffd83c3cc29b30e4b23d",
+          "compile_verification_id": "384df048d0f6ec30b451adb693b7ac01",
+          "effective_build_id": "c334e58603d0c36d8181d6f1e5cdfc28",
+          "hip_compile_commands_digest": "76fc9768babe2078057215d266329d91a766f6b2734f9318e204bb107ea9a074",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "4e796cac796665f1f15ef6297399d98f0f623a85d8d6951e8dc2dba6eaadfe05",
+            "libggml-hip.so.0.24.0": "f2cf4e8d5aff5de80ee33aa5c9172d49b298d28be0df4a7cbf8f21cdb6b22087",
+            "libggml.so.0.24.0": "269c3aa02f1d8a09e9325d699d07d492dbe6edc03d8e8cd4a10e5a9a0145b683",
+            "libllama-bench-impl.so": "3bf05365b69211613a3de08932f8c3dec8277c895c11d6d17c1966dd167b4006",
+            "libllama-common.so.0.4.1": "fb11427b84c44e6cb27412118ac0cd70524fb6175ac599ee6d19db6f5a70b774",
+            "libllama-server-impl.so": "b252246d1c6a55268ba1bc5b63cc578a41b3ed2f1b4d7e1b100db847e42db9dc",
+            "libllama.so.0.4.1": "9fa916b946c1a36183f6268332d96b6178f154280ad11a71c95b8f18dc245d1c",
+            "libmtmd.so.0.4.1": "571e5672de124f167ae583c6c2708d6c950c034bbe4d067798f1e22d15954529",
+            "llama-bench": "0156378632832b74c7ff5662fadc771a9667278ed2722d1fd47a89337fcba360",
+            "llama-server": "a99f27d1494f9e6126f46a74ddad4bfa51fa559872642a58d4129cf58fe038b2"
+          },
+          "runtime_bundle_hash": "21689d7bf9a7ecb1d5971f6eb2dd8d2c"
+        }
+      },
+      "campaign_identity_digest": "6186607916d8661296c83a4c9c24a6f975d51243565d2615eed0a5a84451667d",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [
+            "bit_identical"
+          ],
+          "missing_checks": [],
+          "passed": false,
+          "required_checks": [
+            "bit_identical"
+          ],
+          "results": {
+            "bit_identical": {
+              "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+              "passed": false
+            }
+          }
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd26-controls.json",
+              "sha256": "c0e72b2dd1a1c3fae28f0c36fde026058298e764bbdecfe44fa7cbb8889c2056"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "fail",
+          "summary": "bound correctness summary reports failure"
+        }
+      },
+      "contract_verdicts": {
+        "RD26-DECODE-VERIFY-BIT-IDENTITY": {
+          "detail": {
+            "contract_hash": "a00ab2b5068d8a32795aa627fba3ebae",
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "passed": false,
+            "reasons": [
+              "no positive-role trigger evidence supplied -- cannot prove the target code path was ever exercised"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "a00ab2b5068d8a32795aa627fba3ebae",
+          "id": "RD26-DECODE-VERIFY-BIT-IDENTITY"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "6186607916d8661296c83a4c9c24a6f975d51243565d2615eed0a5a84451667d",
+        "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+        "disposition": "failed",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "rd26-decode-verify-bit-identity",
+        "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+        "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+        "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "20b048b0c90bf29d1600d38185bec29fdcd2440faa26457f43dfe197a9b6a9d7",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1100"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.3567003221102816,
+          "ci95_low_pct": -0.19180494972603768,
+          "decision": null,
+          "geometric_effect_pct": 0.08594810203172987,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0009344047841526,
+            0.9986964618249534,
+            1.0080690561080878,
+            0.9996271439224459,
+            0.9979485266691533,
+            1.007230725889755,
+            1.0015871533937075,
+            1.0002799029669713,
+            1.002617311647037,
+            0.9917016317016317
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+      "patch_implementation_digest": "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988",
+      "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+      "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "record_digest": "3f474685cc316ba09ce464ad591b89d3ce12e3636567d85665ab8b41cf98b8b3",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1210_rd26_bitidentical_decode_verify_standalone",
+            "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4b2cd6250d956efa826e9fb3f00b597756affa670ae03ef551a86c2b0bd2077c",
+            "libggml-cpu.so.0.24.0": "84db9e6f8955e2068faefa9daf390b0498ba51dfe5d28f6303e82297f090ba37",
+            "libggml-hip.so.0.24.0": "e8533aa8379a6957729f826e07fbe31137bc603ee292981d37a8513ac0e978a7",
+            "libggml.so.0.24.0": "cbce5909fbe119d0ab873b76fb9159cf5f250e9efcf70361f44690028aaea531",
+            "libllama-common.so.0.4.1": "67ac878b4719c3095fa78fc3286bd0dc98852189b3302177b5ba7a052be2d782",
+            "libllama.so.0.4.1": "702289ceba74c1bd2866f07d6f3ad21e585d00bddeaa1175e5c04ebffe1026ed",
+            "llama-results": "215a970888833c2a04e39ea421525fa1902019fa488d3d6cb5a6dbd97726bfa3"
+          },
+          "runtime_bundle_hash": "dc9fa7ce19fb6404dc92b29a3b1ea961"
+        },
+        "subject": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "5b07cc7f924693d235436cf55589d001be5dda9a12cd3c9cc98ae04b47842848",
+            "libggml-cpu.so.0.24.0": "d911858b3a626c5f2a73f75b28aad0a170ae4d3c720e1c1027f558e73fc0b222",
+            "libggml-hip.so.0.24.0": "e1124f028a3e3ff76cbbdd4e0738fc4be8abf73fdea911078e908799c8023381",
+            "libggml.so.0.24.0": "b83ad3c2975bf37ff804e5b2fcb8fc8ce086e5c2330b9e140969df27324c35f4",
+            "libllama-common.so.0.4.1": "701fc45f4efdbeee676cdcf6d4753640215b73ab1569f72259909aa95bc66648",
+            "libllama.so.0.4.1": "7f643f7340f5de52e4bd0d9853e2dddbc987d699c8aef13daab1154f975581db",
+            "llama-results": "13142e387af21d9239e790ba4b5217ce54a0ba97d7841b44a3dc60d6f75e6dbd"
+          },
+          "runtime_bundle_hash": "1bec76f0ab78559ac5da30064cbd6d0e"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "dcc2ef196ec306346e53f4044c82074e944203c4a35b522f5d78bcaa5791b124"
+    },
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
         "artifacts/rd26-decode-verify-bit-identity.json": "2a7b20a8ed5fc33c8da7a77d13fa842c4c00931a153b0edb0062b28358480398",
         "correctness.json": "1cb2a583347c38452de79dfc92f7d69589833f0b6a39ccf914c4dd84f289f4eb",
         "status.json": "44779d5840c772289a45eb32a69c1e585a3ff6b18929835859220bbeefd174ac"
@@ -831,6 +1281,1835 @@
       "validation_contract_version": "hi83-v1",
       "validation_disposition": "incomplete",
       "validation_implementation_digest": "845a14d3baebb2797a482320774f4cedbf9e21007f20e3e8fefb6e11635a6991"
+    },
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
+        "artifacts/rd26-controls.json": "956f1cf2f30f9d19ce0d379d1aa7ad61aeb48240adf9ba825bedab21b586554c",
+        "artifacts/rd26-decode-verify-bit-identity.json": "2f4f69dacd5a3c2d5a5611460bf40ca1d6d9936e2c7d96c20fbe4288ace128b3",
+        "correctness.json": "463a6c1d22514dce85f07729d5810bf578cfbfb1e4e63fab95ce8c8ab7327a89"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "correctness.json",
+          "sha256": "463a6c1d22514dce85f07729d5810bf578cfbfb1e4e63fab95ce8c8ab7327a89"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-bit-identity.json",
+          "sha256": "2f4f69dacd5a3c2d5a5611460bf40ca1d6d9936e2c7d96c20fbe4288ace128b3"
+        },
+        {
+          "path": "artifacts/rd26-controls.json",
+          "sha256": "956f1cf2f30f9d19ce0d379d1aa7ad61aeb48240adf9ba825bedab21b586554c"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "eb6a3408f6d4afecf1ad57295994428caa2c4cdc73317caa0b2c12237c7fb8ae",
+          "compile_verification_id": "fe361d84267465c63d3a6d923ffbd8d8",
+          "effective_build_id": "7cb01ffbd332b2e4f386be6927327347",
+          "hip_compile_commands_digest": "9289a8f21e750ca25c5e451434de423fd71c882bb41260b1472e430ec1ff10b0",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "4cb45fa4ea7c0903d8affc708c48c6ac516ff8b2aa364e0e4242c52df9daad8e",
+            "libggml-hip.so.0.24.0": "f4ae7d267b7ebb024015b337b1e66caf410baa795194f06975848d008722b38a",
+            "libggml.so.0.24.0": "8f0a66e6cb9463182068ae4e2e650226bcebac8911af3af7074dab9c99f3ed4e",
+            "libllama-bench-impl.so": "3aa682f323b972ef8b41bb928e4629ff437ef3da57830049bcbfd81eb8e153d8",
+            "libllama-common.so.0.4.1": "77b4048c8a24f1337d83e3a34111d92237946f8f6d9ec3171b506ccfdee8e962",
+            "libllama-server-impl.so": "c3be7f1328ad0926aa361b1b35c0f62b53f22f590bf91b779907835b94f21d2f",
+            "libllama.so.0.4.1": "6ff5f5f5fc99d3d9693c0ad4ab7f92ed951b72dddce38b4af203684dfa0f7892",
+            "libmtmd.so.0.4.1": "46bf476811739708e796fedffc5d029a9ca4f78826c65ab49955cec1248af464",
+            "llama-bench": "4fb817bc2f5c6a755c9f57fd94fd573038359675512ac5288e1ccd36692187fb",
+            "llama-server": "f5ab80f8c9660fce1985777ae6b9f0c12ee5c0b7c9594e1ff0e460dd3440e43e"
+          },
+          "runtime_bundle_hash": "2f01e87c9941b8da5c3bbcc0cca73adc"
+        },
+        "stock": {
+          "compile_commands_digest": "00db8320c93acd6c8d6bc385c546cead7faf0b7eaedfcb2a20b864d03dfa4389",
+          "compile_verification_id": "30500ca69404a227b0a36e6d9cc673a9",
+          "effective_build_id": "22abb80c40da613d383bc1cdca7a8510",
+          "hip_compile_commands_digest": "44c231d0e1cddf24c51e4eb9c9861c577b87127ed142ff2a6b135b2782f70b42",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "96805d15c9456ded59e2d730b9951b1de9d34b399c1d8dd7280e1665e72aa63d",
+            "libggml-hip.so.0.24.0": "011c026cf9f6711b1caa2d3ad402f30ee62519ef66869a3f81b3074bae4d36f6",
+            "libggml.so.0.24.0": "78f4136d338d788ce20ad060c3e95c6544c5ceb034b60b61f9197511314fa7bc",
+            "libllama-bench-impl.so": "9481f22ba6e29507860096fb490dc61675706c8f28de36dee4f4d424b61231dc",
+            "libllama-common.so.0.4.1": "a995e6b9d18ad182250ccfbcb017263c5f902b45f237bfcffde2ac9a3c462e74",
+            "libllama.so.0.4.1": "23a79d2311359f3b23295f03e6e19762b19cdae83d5082c7aa1bc3ffdee3bc99",
+            "llama-bench": "35d025424e7611350d157b639b92cbe68d56cb4d12619d28a08dbf04f64657f4"
+          },
+          "runtime_bundle_hash": "678d1fc618d214c963150566b3d44bfc"
+        },
+        "tune": {
+          "compile_commands_digest": "4d1a5eac27f0316fa0ba472bdc5c14b5e61e53580a9aa0fb97642f412758e28e",
+          "compile_verification_id": "3df238f2e853f7ea378dd41c841701b4",
+          "effective_build_id": "ae42d53ba0d5ff0967ce4c3bc330d7ac",
+          "hip_compile_commands_digest": "ed135ef3513daad533ef9472e3752555d4145477d126ac16e59452a92dc9c776",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "fb57aadf9dacc84c4217c7cb2bf442ea35484d06e388be60c10471843b085b52",
+            "libggml-hip.so.0.24.0": "62145a016534be426e8bff6889ab9b0e098dc5a5872e6a3484d12f181ca79c63",
+            "libggml.so.0.24.0": "e0bd94c088bf9c18f795372e7c2a7047ebc444834e7f438fc59ee2d9f25d2046",
+            "libllama-bench-impl.so": "7b51968a17e2c0c061026f300c3d4af6588021429307d661d34f9a4c252e3894",
+            "libllama-common.so.0.4.1": "e43bcf53ccaaf2a8f25272351d12866adf8fd974643d175bd74e50661bb12e86",
+            "libllama-server-impl.so": "59e2fe37b2e430377db3f81049a431e8933bc4723203665af300654373024c3e",
+            "libllama.so.0.4.1": "26079f5d43dc21e8558c49c032e4850cca4776bcc3bc48f6bd54986bef5f8eaf",
+            "libmtmd.so.0.4.1": "b4e12bad9f53d0425e9c87a5195355420cbe7e040d7bcda3e25be77a55874cf1",
+            "llama-bench": "b98e8ff9fde06d05e672b6bfd6cf5a33ce0e550d9f29ad178002d656731e951e",
+            "llama-server": "119ccf0301c202ac01bb638691cf4db6e07ce4d27a22fae298d54aacba450df4"
+          },
+          "runtime_bundle_hash": "063dc704fa24e29e040fa7d2c82374a0"
+        }
+      },
+      "campaign_identity_digest": "c46dbd46e6eb372c77bce3e6c72efadb68cbad6c94a3586b2dc74bd298e94690",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [
+            "bit_identical"
+          ],
+          "missing_checks": [],
+          "passed": false,
+          "required_checks": [
+            "bit_identical"
+          ],
+          "results": {
+            "bit_identical": {
+              "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+              "passed": false
+            }
+          }
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd26-controls.json",
+              "sha256": "956f1cf2f30f9d19ce0d379d1aa7ad61aeb48240adf9ba825bedab21b586554c"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "fail",
+          "summary": "bound correctness summary reports failure"
+        }
+      },
+      "contract_verdicts": {
+        "RD26-DECODE-VERIFY-BIT-IDENTITY": {
+          "detail": {
+            "contract_hash": "a00ab2b5068d8a32795aa627fba3ebae",
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "passed": false,
+            "reasons": [
+              "no positive-role trigger evidence supplied -- cannot prove the target code path was ever exercised"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "a00ab2b5068d8a32795aa627fba3ebae",
+          "id": "RD26-DECODE-VERIFY-BIT-IDENTITY"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "c46dbd46e6eb372c77bce3e6c72efadb68cbad6c94a3586b2dc74bd298e94690",
+        "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+        "disposition": "failed",
+        "gpu_architectures": [
+          "gfx1201"
+        ],
+        "mechanism": "rd26-decode-verify-bit-identity",
+        "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+        "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+        "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "20b048b0c90bf29d1600d38185bec29fdcd2440faa26457f43dfe197a9b6a9d7",
+      "gpu_architectures": [
+        "gfx1201"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1201"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.11681989344827226,
+          "ci95_low_pct": -0.2088823673897955,
+          "decision": null,
+          "geometric_effect_pct": -0.04270064495452974,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.0009612743751717,
+            0.9998629573797451,
+            0.9991776315789476,
+            1.0044040737682358,
+            0.9960224934851187,
+            1.0012347372753465,
+            1.0001373437714598,
+            0.9990396487858416,
+            1.0005494505494505,
+            0.9943750857456441
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+      "patch_implementation_digest": "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988",
+      "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+      "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "record_digest": "7b62cc5ced17360076c0dc7066489f57e2d2c335fb103122bea51caf1fdfa22a",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1210_rd26_bitidentical_decode_verify_standalone",
+            "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4b2cd6250d956efa826e9fb3f00b597756affa670ae03ef551a86c2b0bd2077c",
+            "libggml-cpu.so.0.24.0": "84db9e6f8955e2068faefa9daf390b0498ba51dfe5d28f6303e82297f090ba37",
+            "libggml-hip.so.0.24.0": "e8533aa8379a6957729f826e07fbe31137bc603ee292981d37a8513ac0e978a7",
+            "libggml.so.0.24.0": "cbce5909fbe119d0ab873b76fb9159cf5f250e9efcf70361f44690028aaea531",
+            "libllama-common.so.0.4.1": "67ac878b4719c3095fa78fc3286bd0dc98852189b3302177b5ba7a052be2d782",
+            "libllama.so.0.4.1": "702289ceba74c1bd2866f07d6f3ad21e585d00bddeaa1175e5c04ebffe1026ed",
+            "llama-results": "215a970888833c2a04e39ea421525fa1902019fa488d3d6cb5a6dbd97726bfa3"
+          },
+          "runtime_bundle_hash": "dc9fa7ce19fb6404dc92b29a3b1ea961"
+        },
+        "subject": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "5b07cc7f924693d235436cf55589d001be5dda9a12cd3c9cc98ae04b47842848",
+            "libggml-cpu.so.0.24.0": "d911858b3a626c5f2a73f75b28aad0a170ae4d3c720e1c1027f558e73fc0b222",
+            "libggml-hip.so.0.24.0": "e1124f028a3e3ff76cbbdd4e0738fc4be8abf73fdea911078e908799c8023381",
+            "libggml.so.0.24.0": "b83ad3c2975bf37ff804e5b2fcb8fc8ce086e5c2330b9e140969df27324c35f4",
+            "libllama-common.so.0.4.1": "701fc45f4efdbeee676cdcf6d4753640215b73ab1569f72259909aa95bc66648",
+            "libllama.so.0.4.1": "7f643f7340f5de52e4bd0d9853e2dddbc987d699c8aef13daab1154f975581db",
+            "llama-results": "13142e387af21d9239e790ba4b5217ce54a0ba97d7841b44a3dc60d6f75e6dbd"
+          },
+          "runtime_bundle_hash": "1bec76f0ab78559ac5da30064cbd6d0e"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "dcc2ef196ec306346e53f4044c82074e944203c4a35b522f5d78bcaa5791b124"
+    },
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
+        "artifacts/rd26-controls.json": "c72036cb76420d75ad631c25c06d8948c90b010190dbc53ac3e191c33e8e1c71",
+        "artifacts/rd26-decode-verify-bit-identity.json": "2a911debeda9ade9e8eec7948a0b361bd1a87e086d40be053f0ec1f5567a3c2d",
+        "correctness.json": "b67adf3649f15a2e24736f1ad65ec2528a20a5afee6443a4a85c1818f1b33df7"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "correctness.json",
+          "sha256": "b67adf3649f15a2e24736f1ad65ec2528a20a5afee6443a4a85c1818f1b33df7"
+        },
+        {
+          "path": "artifacts/rd26-controls.json",
+          "sha256": "c72036cb76420d75ad631c25c06d8948c90b010190dbc53ac3e191c33e8e1c71"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-bit-identity.json",
+          "sha256": "2a911debeda9ade9e8eec7948a0b361bd1a87e086d40be053f0ec1f5567a3c2d"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "397b167fe44255f35fb903c4626be7cd2d455f1f65cd4b81cfcaa20f3becaae7",
+          "compile_verification_id": "0c2f6f2fc468a1956dd5722917ad3ef3",
+          "effective_build_id": "c2254c9ddf298ee25ea2f2907adf4880",
+          "hip_compile_commands_digest": "a1212890aee813cc92eb2dca338eb2cf95fd146e3a5dabccff237ee07a5950f8",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "79db2e0a4e6b4795f2837d1add187dbc4c54d70c0752f09a6d0a88a5c8cadff1",
+            "libggml-hip.so.0.24.0": "41b4bfea48dfe551d14e06d017e4bd6d275fc1b6ff9e84ce36c6256915555901",
+            "libggml.so.0.24.0": "bb7a6e56d6689983ed039dd3430832c202db854a8ef9df50d2fad6cbf6b6dedc",
+            "libllama-bench-impl.so": "700676a187542a9d1bd1c00f0164d81e5944b5370591283a6320bcfe55ea776e",
+            "libllama-common.so.0.4.1": "01d93704be29329b0e7716a3305ed34d4f61412311770e2d919c26a84584536b",
+            "libllama-server-impl.so": "d4f9aefe9018c5173be00e97b4d8eba151c65afa846312b4e8bf5a0aa770af64",
+            "libllama.so.0.4.1": "35225d5503b06464a48b026e9a32712f4e04818659dea2a2abb4b943fbe42e5c",
+            "libmtmd.so.0.4.1": "cd1d51d7a2c4cb0e079a28d5fc69b3ccd7a51ce51eeb03955bb67983f4bec8d2",
+            "llama-bench": "6e6485f31a40719e8688fbbd9a9d9172faf68929fbc2796b5d10136395ea31dd",
+            "llama-server": "048e284d7b4508339e1feb65bb29e4eb0085f7c573391fb8c011396bb947d3aa"
+          },
+          "runtime_bundle_hash": "ead5a492c88aab4fadedb4d67007247b"
+        },
+        "stock": {
+          "compile_commands_digest": "0df9658c3e174bbb53e0d662acf606ba9f71dc269aed57e5b48802fedcd0f523",
+          "compile_verification_id": "ee497083a77abb598893bcca251c57f8",
+          "effective_build_id": "69ec3f99297ad44edd7ee8be84777558",
+          "hip_compile_commands_digest": "d78f85fac498493286e2c1e3deff93da5c4678c5c8c1222815f5176640b7b4f1",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "9515c6b34aba20f7c71582452bc44e59a37475bc83c9107fa91107f5104cf003",
+            "libggml-hip.so.0.24.0": "b58f08a3e0ccdd7e2bbd7e55e52c761e6921f9da4df7597ffd6d6231989f0108",
+            "libggml.so.0.24.0": "8a559cf3028b7cacd28e660c423b24b223fa5ca71f20715ed51f1053bae456fe",
+            "libllama-bench-impl.so": "6961707066ea248123e78d43ebf27ab4c69c77c42b582fb3c4816db027855e11",
+            "libllama-common.so.0.4.1": "d258dc9ce53b0f09b51d4dbe1ca86e97ea8b73b6faffb2855f30355502237e98",
+            "libllama.so.0.4.1": "75b997179da3735a3aa22f5552d82da59b63e6b56fb94d50ce0df8f329ff0b55",
+            "llama-bench": "d4b22f67ce7e110a59f8fd3724e30c9c603b3d9dd1742f944f66591a538f760f"
+          },
+          "runtime_bundle_hash": "94d07db9a6211341079d6328216f58f2"
+        },
+        "tune": {
+          "compile_commands_digest": "d0238e178c3743bdcbe1e42c7d780f4ce04800ff9237a8e463dcd5a6b7e389e4",
+          "compile_verification_id": "ccb559d46b91115094e2bbf4d6be9487",
+          "effective_build_id": "3cedf270a8c32eaf658cc7ca39991e8b",
+          "hip_compile_commands_digest": "185299fa759199680fdf3214e46d59085e55733e4d156afea01ba36651365dd6",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "c036f85b8af7f48378f360e2c378d5dc7d817edddf98268a2f3ed58af1aba0ba",
+            "libggml-cpu.so.0.24.0": "baef35adccbbd8653257070eb9d51e68cdab35618391fa7d808b6496aeb32b8f",
+            "libggml-hip.so.0.24.0": "3ecac08f4b3ca5490708632f0cd0a9b99ff8ed7e4a73b7524bd9ae839b9ef8e5",
+            "libggml.so.0.24.0": "ea635ae4b6aeb81d164958d650a22d8120a8b02d1f8ba97b9ad5a184eb1e6d27",
+            "libllama-bench-impl.so": "09eeaa4a106087121263dec8712988f9a5543a0e26d9f40fc08e7c49ff66d65e",
+            "libllama-common.so.0.4.1": "251bb049e9080de2fbc0a47eedcf1bea3adc79151b144694f1fff1eb28687757",
+            "libllama-server-impl.so": "5f1668cc2c8945ae93660f730088a8779f3968cf0be191897a5e981b1276f7de",
+            "libllama.so.0.4.1": "a736aff04a4df6de5163a1ed21782f91ed990dbfbad087c1f2616e20e22c8833",
+            "libmtmd.so.0.4.1": "a1cf60e90c1f277a932cc89c95c8948194a47049ab8e69558df3558837b82c5f",
+            "llama-bench": "5fe536ae95494eb019982f3c913befecad6ae575f76faa42f8a716eaa6372ff2",
+            "llama-server": "ce5f3359afe57733e7c8ab6aff46e5f1640e7b2133fc634b43246135214209bd"
+          },
+          "runtime_bundle_hash": "84b722b2b5b01001084f2fad9ca6ccce"
+        }
+      },
+      "campaign_identity_digest": "ccecdbe0b7a5e8ef17e54c517ce56b5fb08121690686d41601510d5586d153d6",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [
+            "bit_identical"
+          ],
+          "missing_checks": [],
+          "passed": false,
+          "required_checks": [
+            "bit_identical"
+          ],
+          "results": {
+            "bit_identical": {
+              "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+              "passed": false
+            }
+          }
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd26-controls.json",
+              "sha256": "c72036cb76420d75ad631c25c06d8948c90b010190dbc53ac3e191c33e8e1c71"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "fail",
+          "summary": "bound correctness summary reports failure"
+        }
+      },
+      "contract_verdicts": {
+        "RD26-DECODE-VERIFY-BIT-IDENTITY": {
+          "detail": {
+            "contract_hash": "a00ab2b5068d8a32795aa627fba3ebae",
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "passed": false,
+            "reasons": [
+              "no positive-role trigger evidence supplied -- cannot prove the target code path was ever exercised"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "a00ab2b5068d8a32795aa627fba3ebae",
+          "id": "RD26-DECODE-VERIFY-BIT-IDENTITY"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "control_tree": "9494fb60333c7494c8f90109ebe1262520ab4803",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "ccecdbe0b7a5e8ef17e54c517ce56b5fb08121690686d41601510d5586d153d6",
+        "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+        "disposition": "failed",
+        "gpu_architectures": [
+          "gfx1030"
+        ],
+        "mechanism": "rd26-decode-verify-bit-identity",
+        "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+        "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+        "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "20b048b0c90bf29d1600d38185bec29fdcd2440faa26457f43dfe197a9b6a9d7",
+      "gpu_architectures": [
+        "gfx1030"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1030"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.14960780210226954,
+          "ci95_low_pct": -0.18684914976694333,
+          "decision": null,
+          "geometric_effect_pct": -0.024222331252210516,
+          "metric": "tg128",
+          "pair_ratios": [
+            0.9964850615114235,
+            1.001098901098901,
+            1.0015396458814472,
+            1.0019795447047177,
+            1.0049674356993046,
+            0.9992316136114161,
+            0.9968142370647038,
+            0.9967079995610666,
+            1.001427943760984,
+            0.9973626373626374
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+      "patch_implementation_digest": "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988",
+      "patch_validation_subject_digest": "74d9ef0c1b5e21a4b6d86154d764577a4eac3598da738dc9d4bffdb76b4c5506",
+      "patched_source_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "record_digest": "8ddaec4aae79aadf62d7c641b8745abad1f4bf5ba71d7983828c937fddb32fe2",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1210_rd26_bitidentical_decode_verify_standalone",
+            "9b91bbf1730628dae8084d8a448afaf336a8e8b17b303e8ae7334d6a92e52988"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ]
+        ]
+      },
+      "subject_tree": "bbdac2796103f48b94fb4bcd950d32827c3cea19",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4b2cd6250d956efa826e9fb3f00b597756affa670ae03ef551a86c2b0bd2077c",
+            "libggml-cpu.so.0.24.0": "84db9e6f8955e2068faefa9daf390b0498ba51dfe5d28f6303e82297f090ba37",
+            "libggml-hip.so.0.24.0": "e8533aa8379a6957729f826e07fbe31137bc603ee292981d37a8513ac0e978a7",
+            "libggml.so.0.24.0": "cbce5909fbe119d0ab873b76fb9159cf5f250e9efcf70361f44690028aaea531",
+            "libllama-common.so.0.4.1": "67ac878b4719c3095fa78fc3286bd0dc98852189b3302177b5ba7a052be2d782",
+            "libllama.so.0.4.1": "702289ceba74c1bd2866f07d6f3ad21e585d00bddeaa1175e5c04ebffe1026ed",
+            "llama-results": "215a970888833c2a04e39ea421525fa1902019fa488d3d6cb5a6dbd97726bfa3"
+          },
+          "runtime_bundle_hash": "dc9fa7ce19fb6404dc92b29a3b1ea961"
+        },
+        "subject": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "5b07cc7f924693d235436cf55589d001be5dda9a12cd3c9cc98ae04b47842848",
+            "libggml-cpu.so.0.24.0": "d911858b3a626c5f2a73f75b28aad0a170ae4d3c720e1c1027f558e73fc0b222",
+            "libggml-hip.so.0.24.0": "e1124f028a3e3ff76cbbdd4e0738fc4be8abf73fdea911078e908799c8023381",
+            "libggml.so.0.24.0": "b83ad3c2975bf37ff804e5b2fcb8fc8ce086e5c2330b9e140969df27324c35f4",
+            "libllama-common.so.0.4.1": "701fc45f4efdbeee676cdcf6d4753640215b73ab1569f72259909aa95bc66648",
+            "libllama.so.0.4.1": "7f643f7340f5de52e4bd0d9853e2dddbc987d699c8aef13daab1154f975581db",
+            "llama-results": "13142e387af21d9239e790ba4b5217ce54a0ba97d7841b44a3dc60d6f75e6dbd"
+          },
+          "runtime_bundle_hash": "1bec76f0ab78559ac5da30064cbd6d0e"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "dcc2ef196ec306346e53f4044c82074e944203c4a35b522f5d78bcaa5791b124"
+    },
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
+        "artifacts/rd26-controls.json": "ac622afb7fd7b2901b3e5b3fa935ea8cd2976a68dc4efe046860e760b181510b",
+        "artifacts/rd26-decode-verify-bit-identity.json": "f02e4a3315260c74056c54336a86d8f6d099a7617f35c6aee6e72241d5a53ade",
+        "correctness.json": "8b7494d673781dc0636bc9c48617336b637526dbbd96bb17b9f7fb286c0bf51d"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "correctness.json",
+          "sha256": "8b7494d673781dc0636bc9c48617336b637526dbbd96bb17b9f7fb286c0bf51d"
+        },
+        {
+          "path": "artifacts/rd26-controls.json",
+          "sha256": "ac622afb7fd7b2901b3e5b3fa935ea8cd2976a68dc4efe046860e760b181510b"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-bit-identity.json",
+          "sha256": "f02e4a3315260c74056c54336a86d8f6d099a7617f35c6aee6e72241d5a53ade"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "28deee5a0ec27b956deac18f00b276781fdc968a6fa9a20c9236f7e98817f1e0",
+          "compile_verification_id": "8af68454cc3131f9ebaf7d3aee4f1c4d",
+          "effective_build_id": "c21a5eb0729aa23d8671e10cb9bef33a",
+          "hip_compile_commands_digest": "105ca0014d8491cd19db3dbe8166aa6a5984e5562192dbbb210d550454cced39",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0c71860247d08ed4ee84102164540b97c6d5605302e34f641eee678d99060d84",
+            "libggml-cpu.so.0.24.0": "e58e79975efca93e725c18d91d8777a17f8c23885190a865ecad7a1f1169734a",
+            "libggml-hip.so.0.24.0": "1fe7da651b027f3f3fe29c5199634146bf92e5f669281f9c4e0c5ebd21c28278",
+            "libggml.so.0.24.0": "e964662101ac9347443d6007604896e50b32b671f8936aa81ab3aa591848fcf4",
+            "libllama-bench-impl.so": "22befbcca1bc693cebd9749916631231b3d3bcc3eb5a4e112b7ed1ca50f2a1aa",
+            "libllama-common.so.0.4.1": "3217f1638a8fc1e9b284211970c2d9e5a558dd41b64e98007bd426e987bae93f",
+            "libllama-server-impl.so": "5ebfecda53dfe3fe4b53f9d1f3a2703b23bd16d2fcadee9bbc0ac113e14725c6",
+            "libllama.so.0.4.1": "0529b43232d6dbefbf6a52590485fcaf798291c79482986b2ad15bcf07c19b5c",
+            "libmtmd.so.0.4.1": "f43aef7fd32516f044eeaa9a7b520e44b2f33a0a4f1beb61d60a11d3c1e27da4",
+            "llama-bench": "9e13cca31f69b3d4657391293b46840984af98fe8fc44207f0751bed41c5f52d",
+            "llama-server": "7dfa51bedefdb5ee62700372912b311219207b257aa49b462d17567060c77b0d"
+          },
+          "runtime_bundle_hash": "5a49f13af9a6ddad65f3e946ddf8dce2"
+        },
+        "stock": {
+          "compile_commands_digest": "a08961adb197bc06dd30c5146a76a4515db53c58cb2076c406686328be4985fb",
+          "compile_verification_id": "08c1b84df1fe1277232631f414b62828",
+          "effective_build_id": "17726192fb6b698696dc684cdfb44a93",
+          "hip_compile_commands_digest": "db538d6aa86eddb507e2b8f5f7a8e5b5454700901f0cff32ce669a28c1060f66",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "b213c076956d5a665b8936447002e06e7c168b6e2d82777ccdeaad24065b7d84",
+            "libggml-hip.so.0.24.0": "e94fb9b710f09755ae7f4448aa712db7045bfd6bd9b0f12f58521b88ad9a3e14",
+            "libggml.so.0.24.0": "bd5155f2fc436c8927f874273b15adb4bf677ddd8efa0569d9f75f0d4a4ad843",
+            "libllama-bench-impl.so": "f3ac12ee7741f13d1a711f83386e972204fbf66bd347bedddc92a9d7791f30b9",
+            "libllama-common.so.0.4.1": "9f0521a6e502ce15aef7ecab1278172ca652aeb6d8cbc0f43985b65b78b391ff",
+            "libllama.so.0.4.1": "107021abd954ae5704a8ad669b365a423d5e7fbea41deb8375f3c5e8e4e276f2",
+            "llama-bench": "bc315b2cc2f8b9798e8aa12dd39e36132ed0ef6f0ee161944f26f6c11ccd2c44"
+          },
+          "runtime_bundle_hash": "8e8348047e35c82843cb154a4c738182"
+        },
+        "tune": {
+          "compile_commands_digest": "88a215476a5a6461fc1d9436cb0287794bd42056704462a2da5f9077e6b0d12a",
+          "compile_verification_id": "16152297c2687b82783110b709a9c561",
+          "effective_build_id": "36a86349116679d45db603a887427b60",
+          "hip_compile_commands_digest": "712bbc234564e4aca9d624d9101d1c411a0e727488a7d24c3e1eb7507af46223",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0c71860247d08ed4ee84102164540b97c6d5605302e34f641eee678d99060d84",
+            "libggml-cpu.so.0.24.0": "358899f75f9eaa59007ceeb573e8d97c19c25548adbbb5d4d2ec2a226b6c097b",
+            "libggml-hip.so.0.24.0": "bc5ceba0498c1a6200d06499ff1a059cf6941f7e85d3207d589996635239fa6d",
+            "libggml.so.0.24.0": "6d6756ddc0c05e924541a30dfd8601ef1f166ee66b8a1ec9c26412a286929970",
+            "libllama-bench-impl.so": "85a726d224aa69175f96dbd90be5f3d1359dc894ab4bf5d8a61fd8611245ddb7",
+            "libllama-common.so.0.4.1": "0d922bf3a15dbc50d45ad82d1bfd09dc600a37326326273558f9be5c1b4df3fd",
+            "libllama-server-impl.so": "547a54817390f70e0dded815dc255f73184763db9188e500a3a504976f61bbec",
+            "libllama.so.0.4.1": "e73258c24ddc01d9d9b3e28467910943b3eda4bc927a82c897a362a5bda4f02e",
+            "libmtmd.so.0.4.1": "c598057c7e18cd8db062d101d8f5bc33887a20328316bfe8712bb6f5b8487744",
+            "llama-bench": "ede7c42cb07cb88abdf578291c5fe3b7c0cc8d072db06228bc9f699b6cd6de13",
+            "llama-server": "cfda615239aead33e76d3c686648bc2773966ea8d25602693f96d7043ac1f3e8"
+          },
+          "runtime_bundle_hash": "2aff538e6d868313477768139e91423c"
+        }
+      },
+      "campaign_identity_digest": "f9aabdb1ff5d7f756ee51433d2d7a7d942a898b0dba45bb5095b69df57f0bfa8",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [
+            "bit_identical"
+          ],
+          "missing_checks": [],
+          "passed": false,
+          "required_checks": [
+            "bit_identical"
+          ],
+          "results": {
+            "bit_identical": {
+              "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+              "passed": false
+            }
+          }
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd26-controls.json",
+              "sha256": "ac622afb7fd7b2901b3e5b3fa935ea8cd2976a68dc4efe046860e760b181510b"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "fail",
+          "summary": "bound correctness summary reports failure"
+        }
+      },
+      "contract_verdicts": {
+        "RD26-DECODE-VERIFY-BIT-IDENTITY": {
+          "detail": {
+            "contract_hash": "a00ab2b5068d8a32795aa627fba3ebae",
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "passed": false,
+            "reasons": [
+              "no positive-role trigger evidence supplied -- cannot prove the target code path was ever exercised"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "a00ab2b5068d8a32795aa627fba3ebae",
+          "id": "RD26-DECODE-VERIFY-BIT-IDENTITY"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ]
+      },
+      "control_tree": "b854c9ad479b91ed3b585fa457428113fb480c87",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "f9aabdb1ff5d7f756ee51433d2d7a7d942a898b0dba45bb5095b69df57f0bfa8",
+        "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+        "disposition": "failed",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "rd26-decode-verify-bit-identity",
+        "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+        "patch_validation_subject_digest": "2142a512519f23c1072048a1895f5666a9e84745fa90e62e6a8e24f422a629ce",
+        "patched_source_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "00adca1a10e218d64f3c276f578175e587826aa344ca9bba476c29cee0052af9",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1100"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.32740052641435646,
+          "ci95_low_pct": 0.057776930201147714,
+          "decision": null,
+          "geometric_effect_pct": 0.19530569917216578,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.003087285994948,
+            1.0019607843137255,
+            1.004119464469619,
+            1.0008393956351427,
+            1.0012139322065552,
+            1.0054317287881627,
+            0.9975716820771459,
+            1.002055498458376,
+            1.0035540591096146,
+            0.9997200186654223
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+      "patch_implementation_digest": "bb13d41f401ffa51801c80654f5d6410f6f653dcc539bc41ae1bf2448176e983",
+      "patch_validation_subject_digest": "2142a512519f23c1072048a1895f5666a9e84745fa90e62e6a8e24f422a629ce",
+      "patched_source_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+      "record_digest": "49e1ab94f00f501f4fa1608ed45f04d72443b578cf76cd9b04ff9a543e61eedd",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1210_rd26_bitidentical_decode_verify_standalone",
+            "bb13d41f401ffa51801c80654f5d6410f6f653dcc539bc41ae1bf2448176e983"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ]
+      },
+      "subject_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0279df4f7d61af0603cecc16ccd059287ae06b7421dae9477cda0e46c8b826d9",
+            "libggml-cpu.so.0.24.0": "e21aead1a1f3f92b38f2898b4b71066ab2e3c3761052ddaf3b5820616ee13c65",
+            "libggml-hip.so.0.24.0": "d9d277d9469bb691ffc3365679f7c16243823ab701849df007d343f1d5caf1fd",
+            "libggml.so.0.24.0": "026b0a7587da329427f7215aa99760cf6dba403ea7c8f993669b8acbb0d17c51",
+            "libllama-common.so.0.4.1": "a40bebbc43dff59829d2e625c6125359001523a6f33cf148870c46ccaa807241",
+            "libllama.so.0.4.1": "9d8ea6a7d3ccdf5cf5f2334ceb429b992596b6d7e18a879c85699909f21f88d3",
+            "llama-results": "a14e58458ef9683683f038b99e95d69a5c85413f072b7662bbb9778fdbe7325d"
+          },
+          "runtime_bundle_hash": "ac33d1992a8c524ec6126c1fca15bef9"
+        },
+        "subject": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4d9c6c971b8dba10b196029de78e22b46fa40735a04e3a0d1e1b72fdccdc4088",
+            "libggml-cpu.so.0.24.0": "180ea43ed90036c91cd2d12cd0102dca90b2427be095633a954db3d66fcbcfa5",
+            "libggml-hip.so.0.24.0": "7db4596a8d068733f64e504cded9fac44b528d5084c047ab8351ea7d2d208893",
+            "libggml.so.0.24.0": "944764f0ff543a0aeda47ca563368fcc8979915e1a4cec1440fd6e2652268a60",
+            "libllama-common.so.0.4.1": "9ce52b50124635a4829d983f9aa658869b4d55390eb8607c31d623adcb93bc1f",
+            "libllama.so.0.4.1": "b41d5ed565d9aa2ebf946f3906ab97e1e750c02653e252775d97168a1986a699",
+            "llama-results": "b20cec0a188a82988374b0bd3fb35a259821da978795c347b04a022eea8f8c2d"
+          },
+          "runtime_bundle_hash": "c26f55361bdf0b2061a2ab17a0440351"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "dcc2ef196ec306346e53f4044c82074e944203c4a35b522f5d78bcaa5791b124"
+    },
+    {
+      "activation": {
+        "detail": "",
+        "disposition": "unknown",
+        "mechanism": "",
+        "status": "unknown"
+      },
+      "artifact_hashes": {
+        "artifacts/rd26-controls.json": "aaec717b7a07d75c5caaccfdc11185bcfa70294f5ffc4d8e8d57aa268b1f8696",
+        "artifacts/rd26-decode-verify-bit-identity.json": "f02e4a3315260c74056c54336a86d8f6d099a7617f35c6aee6e72241d5a53ade",
+        "artifacts/rd26-decode-verify-diagnostic.json": "711cccf745f6bc6a428b4f38c8c9701fc7e018e12355c8893cfe73745f2ccbf4",
+        "correctness.json": "8b7494d673781dc0636bc9c48617336b637526dbbd96bb17b9f7fb286c0bf51d"
+      },
+      "base_ref": "b11126",
+      "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+      "baseline_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ],
+        "source": "bigcherry-tuning"
+      },
+      "blockers": [],
+      "campaign_artifacts": [
+        {
+          "path": "correctness.json",
+          "sha256": "8b7494d673781dc0636bc9c48617336b637526dbbd96bb17b9f7fb286c0bf51d"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-bit-identity.json",
+          "sha256": "f02e4a3315260c74056c54336a86d8f6d099a7617f35c6aee6e72241d5a53ade"
+        },
+        {
+          "path": "artifacts/rd26-controls.json",
+          "sha256": "aaec717b7a07d75c5caaccfdc11185bcfa70294f5ffc4d8e8d57aa268b1f8696"
+        },
+        {
+          "path": "artifacts/rd26-decode-verify-diagnostic.json",
+          "sha256": "711cccf745f6bc6a428b4f38c8c9701fc7e018e12355c8893cfe73745f2ccbf4"
+        }
+      ],
+      "campaign_build_identities": {
+        "replay": {
+          "compile_commands_digest": "28deee5a0ec27b956deac18f00b276781fdc968a6fa9a20c9236f7e98817f1e0",
+          "compile_verification_id": "8af68454cc3131f9ebaf7d3aee4f1c4d",
+          "effective_build_id": "c21a5eb0729aa23d8671e10cb9bef33a",
+          "hip_compile_commands_digest": "105ca0014d8491cd19db3dbe8166aa6a5984e5562192dbbb210d550454cced39",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0c71860247d08ed4ee84102164540b97c6d5605302e34f641eee678d99060d84",
+            "libggml-cpu.so.0.24.0": "e58e79975efca93e725c18d91d8777a17f8c23885190a865ecad7a1f1169734a",
+            "libggml-hip.so.0.24.0": "1fe7da651b027f3f3fe29c5199634146bf92e5f669281f9c4e0c5ebd21c28278",
+            "libggml.so.0.24.0": "e964662101ac9347443d6007604896e50b32b671f8936aa81ab3aa591848fcf4",
+            "libllama-bench-impl.so": "22befbcca1bc693cebd9749916631231b3d3bcc3eb5a4e112b7ed1ca50f2a1aa",
+            "libllama-common.so.0.4.1": "3217f1638a8fc1e9b284211970c2d9e5a558dd41b64e98007bd426e987bae93f",
+            "libllama-server-impl.so": "5ebfecda53dfe3fe4b53f9d1f3a2703b23bd16d2fcadee9bbc0ac113e14725c6",
+            "libllama.so.0.4.1": "0529b43232d6dbefbf6a52590485fcaf798291c79482986b2ad15bcf07c19b5c",
+            "libmtmd.so.0.4.1": "f43aef7fd32516f044eeaa9a7b520e44b2f33a0a4f1beb61d60a11d3c1e27da4",
+            "llama-bench": "9e13cca31f69b3d4657391293b46840984af98fe8fc44207f0751bed41c5f52d",
+            "llama-server": "7dfa51bedefdb5ee62700372912b311219207b257aa49b462d17567060c77b0d"
+          },
+          "runtime_bundle_hash": "5a49f13af9a6ddad65f3e946ddf8dce2"
+        },
+        "stock": {
+          "compile_commands_digest": "a08961adb197bc06dd30c5146a76a4515db53c58cb2076c406686328be4985fb",
+          "compile_verification_id": "08c1b84df1fe1277232631f414b62828",
+          "effective_build_id": "17726192fb6b698696dc684cdfb44a93",
+          "hip_compile_commands_digest": "db538d6aa86eddb507e2b8f5f7a8e5b5454700901f0cff32ce669a28c1060f66",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4c65896215ba356064c2da0ca3481640a462171f65b2cacd80e02653133b2164",
+            "libggml-cpu.so.0.24.0": "b213c076956d5a665b8936447002e06e7c168b6e2d82777ccdeaad24065b7d84",
+            "libggml-hip.so.0.24.0": "e94fb9b710f09755ae7f4448aa712db7045bfd6bd9b0f12f58521b88ad9a3e14",
+            "libggml.so.0.24.0": "bd5155f2fc436c8927f874273b15adb4bf677ddd8efa0569d9f75f0d4a4ad843",
+            "libllama-bench-impl.so": "f3ac12ee7741f13d1a711f83386e972204fbf66bd347bedddc92a9d7791f30b9",
+            "libllama-common.so.0.4.1": "9f0521a6e502ce15aef7ecab1278172ca652aeb6d8cbc0f43985b65b78b391ff",
+            "libllama.so.0.4.1": "107021abd954ae5704a8ad669b365a423d5e7fbea41deb8375f3c5e8e4e276f2",
+            "llama-bench": "bc315b2cc2f8b9798e8aa12dd39e36132ed0ef6f0ee161944f26f6c11ccd2c44"
+          },
+          "runtime_bundle_hash": "8e8348047e35c82843cb154a4c738182"
+        },
+        "tune": {
+          "compile_commands_digest": "88a215476a5a6461fc1d9436cb0287794bd42056704462a2da5f9077e6b0d12a",
+          "compile_verification_id": "16152297c2687b82783110b709a9c561",
+          "effective_build_id": "36a86349116679d45db603a887427b60",
+          "hip_compile_commands_digest": "712bbc234564e4aca9d624d9101d1c411a0e727488a7d24c3e1eb7507af46223",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0c71860247d08ed4ee84102164540b97c6d5605302e34f641eee678d99060d84",
+            "libggml-cpu.so.0.24.0": "358899f75f9eaa59007ceeb573e8d97c19c25548adbbb5d4d2ec2a226b6c097b",
+            "libggml-hip.so.0.24.0": "bc5ceba0498c1a6200d06499ff1a059cf6941f7e85d3207d589996635239fa6d",
+            "libggml.so.0.24.0": "6d6756ddc0c05e924541a30dfd8601ef1f166ee66b8a1ec9c26412a286929970",
+            "libllama-bench-impl.so": "85a726d224aa69175f96dbd90be5f3d1359dc894ab4bf5d8a61fd8611245ddb7",
+            "libllama-common.so.0.4.1": "0d922bf3a15dbc50d45ad82d1bfd09dc600a37326326273558f9be5c1b4df3fd",
+            "libllama-server-impl.so": "547a54817390f70e0dded815dc255f73184763db9188e500a3a504976f61bbec",
+            "libllama.so.0.4.1": "e73258c24ddc01d9d9b3e28467910943b3eda4bc927a82c897a362a5bda4f02e",
+            "libmtmd.so.0.4.1": "c598057c7e18cd8db062d101d8f5bc33887a20328316bfe8712bb6f5b8487744",
+            "llama-bench": "ede7c42cb07cb88abdf578291c5fe3b7c0cc8d072db06228bc9f699b6cd6de13",
+            "llama-server": "cfda615239aead33e76d3c686648bc2773966ea8d25602693f96d7043ac1f3e8"
+          },
+          "runtime_bundle_hash": "2aff538e6d868313477768139e91423c"
+        }
+      },
+      "campaign_identity_digest": "f9aabdb1ff5d7f756ee51433d2d7a7d942a898b0dba45bb5095b69df57f0bfa8",
+      "check_results": {
+        "_contract_correctness_gate": {
+          "failed_checks": [
+            "bit_identical"
+          ],
+          "missing_checks": [],
+          "passed": false,
+          "required_checks": [
+            "bit_identical"
+          ],
+          "results": {
+            "bit_identical": {
+              "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+              "passed": false
+            }
+          }
+        },
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control/subject application, tree, and idempotency evidence is present"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "verified control and subject build/source/runtime evidence is present"
+        },
+        "controls": {
+          "artifacts": [
+            {
+              "name": "benchmark",
+              "path": "artifacts/rd26-controls.json",
+              "sha256": "aaec717b7a07d75c5caaccfdc11185bcfa70294f5ffc4d8e8d57aa268b1f8696"
+            }
+          ],
+          "capability": "controls",
+          "check_id": "controls",
+          "details": [],
+          "status": "pass",
+          "summary": "benchmark evidence is verified and bound"
+        },
+        "correctness": {
+          "artifacts": [],
+          "capability": "correctness",
+          "check_id": "correctness",
+          "details": [],
+          "status": "fail",
+          "summary": "bound correctness summary reports failure"
+        }
+      },
+      "contract_verdicts": {
+        "RD26-DECODE-VERIFY-BIT-IDENTITY": {
+          "detail": {
+            "contract_hash": "a00ab2b5068d8a32795aa627fba3ebae",
+            "contract_id": "RD26-DECODE-VERIFY-BIT-IDENTITY",
+            "passed": false,
+            "reasons": [
+              "no positive-role trigger evidence supplied -- cannot prove the target code path was ever exercised"
+            ],
+            "status": "invalid"
+          },
+          "passed": false,
+          "status": "invalid"
+        }
+      },
+      "contracts": [
+        {
+          "hash": "a00ab2b5068d8a32795aa627fba3ebae",
+          "id": "RD26-DECODE-VERIFY-BIT-IDENTITY"
+        }
+      ],
+      "control_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ]
+      },
+      "control_tree": "b854c9ad479b91ed3b585fa457428113fb480c87",
+      "correctness": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "campaign_identity_digest": "f9aabdb1ff5d7f756ee51433d2d7a7d942a898b0dba45bb5095b69df57f0bfa8",
+        "detail": "subject decode/verify raw-logit artifacts differ; first_file_byte_mismatch=480",
+        "disposition": "failed",
+        "gpu_architectures": [
+          "gfx1100"
+        ],
+        "mechanism": "rd26-decode-verify-bit-identity",
+        "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+        "patch_validation_subject_digest": "2142a512519f23c1072048a1895f5666a9e84745fa90e62e6a8e24f422a629ce",
+        "patched_source_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+        "schema_version": 1
+      },
+      "eligible_for_validated_state": false,
+      "final_eligibility": false,
+      "framework_baseline_digest": "00adca1a10e218d64f3c276f578175e587826aa344ca9bba476c29cee0052af9",
+      "gpu_architectures": [
+        "gfx1100"
+      ],
+      "hardware": {
+        "architectures": [
+          "gfx1100"
+        ]
+      },
+      "lane_effects": [
+        {
+          "ci95_high_pct": 0.360399282867796,
+          "ci95_low_pct": 0.03544515609368304,
+          "decision": null,
+          "geometric_effect_pct": 0.18700472431369963,
+          "metric": "tg128",
+          "pair_ratios": [
+            1.000559284116331,
+            1.0036479281638762,
+            1.0069450961989677,
+            0.999439671273814,
+            1.0008393956351427,
+            1.0058095952023989,
+            0.9988788190227039,
+            0.999160447761194,
+            1.0018684603886396,
+            1.0015864128406122
+          ],
+          "paired_rounds": 10,
+          "role": "control"
+        }
+      ],
+      "patch_id": "1210_rd26_bitidentical_decode_verify_standalone",
+      "patch_implementation_digest": "bb13d41f401ffa51801c80654f5d6410f6f653dcc539bc41ae1bf2448176e983",
+      "patch_validation_subject_digest": "2142a512519f23c1072048a1895f5666a9e84745fa90e62e6a8e24f422a629ce",
+      "patched_source_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+      "record_digest": "b17033229971b8bb36e6adc14102ca5cf3cf6e3c2dfc426eaefd811d0ea64478",
+      "record_schema_version": 4,
+      "representation": "packaged",
+      "stock_tree": "69dd7b26d5ccd0e3e6ba9220847c040722757cb4",
+      "subject_composition": {
+        "base_revision": "b1ff4ca23630ac7c5a275405353ddb5c486332c9",
+        "patches": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1210_rd26_bitidentical_decode_verify_standalone",
+            "bb13d41f401ffa51801c80654f5d6410f6f653dcc539bc41ae1bf2448176e983"
+          ],
+          [
+            "1237_rd30_moe_mmq_compact_grid",
+            "4adebe092f16dd02a1a7c4f65b274f254805d05373837e6411675f30136863dd"
+          ],
+          [
+            "1253_nro04_gfx1100_bf16_chunked_gdn",
+            "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+          ],
+          [
+            "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+            "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+          ]
+        ]
+      },
+      "subject_tree": "2b06a89287f14b75c7e7d769cca1309635e38180",
+      "validation_build_identities": {
+        "control": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "0279df4f7d61af0603cecc16ccd059287ae06b7421dae9477cda0e46c8b826d9",
+            "libggml-cpu.so.0.24.0": "e21aead1a1f3f92b38f2898b4b71066ab2e3c3761052ddaf3b5820616ee13c65",
+            "libggml-hip.so.0.24.0": "d9d277d9469bb691ffc3365679f7c16243823ab701849df007d343f1d5caf1fd",
+            "libggml.so.0.24.0": "026b0a7587da329427f7215aa99760cf6dba403ea7c8f993669b8acbb0d17c51",
+            "libllama-common.so.0.4.1": "a40bebbc43dff59829d2e625c6125359001523a6f33cf148870c46ccaa807241",
+            "libllama.so.0.4.1": "9d8ea6a7d3ccdf5cf5f2334ceb429b992596b6d7e18a879c85699909f21f88d3",
+            "llama-results": "a14e58458ef9683683f038b99e95d69a5c85413f072b7662bbb9778fdbe7325d"
+          },
+          "runtime_bundle_hash": "ac33d1992a8c524ec6126c1fca15bef9"
+        },
+        "subject": {
+          "compile_commands_digest": "66d827ff3e826e4e9849f66825437605857aff3add5db0f207da4ab434ca7852",
+          "compile_verification_id": "4bbac957dc5e266c914594271d80aa34",
+          "effective_build_id": "b9548ff11d13150186ee89fb1832f915",
+          "hip_compile_commands_digest": "7b427f14d2eb83bd2ac6d84e644a5d1e53e0267949298ec33e3a37dfcc51adc2",
+          "runtime_artifacts": {
+            "libggml-base.so.0.24.0": "4d9c6c971b8dba10b196029de78e22b46fa40735a04e3a0d1e1b72fdccdc4088",
+            "libggml-cpu.so.0.24.0": "180ea43ed90036c91cd2d12cd0102dca90b2427be095633a954db3d66fcbcfa5",
+            "libggml-hip.so.0.24.0": "7db4596a8d068733f64e504cded9fac44b528d5084c047ab8351ea7d2d208893",
+            "libggml.so.0.24.0": "944764f0ff543a0aeda47ca563368fcc8979915e1a4cec1440fd6e2652268a60",
+            "libllama-common.so.0.4.1": "9ce52b50124635a4829d983f9aa658869b4d55390eb8607c31d623adcb93bc1f",
+            "libllama.so.0.4.1": "b41d5ed565d9aa2ebf946f3906ab97e1e750c02653e252775d97168a1986a699",
+            "llama-results": "b20cec0a188a82988374b0bd3fb35a259821da978795c347b04a022eea8f8c2d"
+          },
+          "runtime_bundle_hash": "c26f55361bdf0b2061a2ab17a0440351"
+        }
+      },
+      "validation_contract_version": "hi83-v1",
+      "validation_disposition": "incomplete",
+      "validation_implementation_digest": "b80f20fb7577a81a0d8761b460b46b360e152ecff81e082a3fa3b769bc82fd52"
     }
   ],
   "schema_version": 4
