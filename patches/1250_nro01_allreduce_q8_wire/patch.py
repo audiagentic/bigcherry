@@ -31,13 +31,21 @@ PATCH_01 = FilePatch(
     description='nro01-q8: ggml/CMakeLists.txt (nasone e06dcf63)',
     edits=(
         Edit(
+            # Narrowed 2026-09-29 from a 4-line replace spanning MFMA/
+            # EXPORT_METRICS/MUSA_GRAPHS/MUDNN_COPY (which collided with
+            # 0100_cmake_options's own single-line insert_after on the
+            # EXPORT_METRICS line whenever 0100 applied first) to a single-
+            # line insert_after on just GGML_HIP_EXPORT_METRICS -- the only
+            # line this edit actually needs to add ROCTX after. MFMA/
+            # MUSA_GRAPHS/MUDNN_COPY are untouched, so this composes with
+            # 0100 in either order.
             id='nro01-q8-01-01',
-            anchor='option\\(GGML_HIP_MMQ_MFMA\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ MFMA\\ MMA\\ for\\ CDNA\\ in\\ MMQ"\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ON\\)\\\noption\\(GGML_HIP_EXPORT_METRICS\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ kernel\\ perf\\ metrics\\ output"\\ \\ \\ \\ \\ \\ \\ \\ \\ OFF\\)\\\noption\\(GGML_MUSA_GRAPHS\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ use\\ MUSA\\ graph,\\ experimental,\\ unstable"\\ \\ \\ \\ OFF\\)\\\noption\\(GGML_MUSA_MUDNN_COPY\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ muDNN\\ for\\ accelerated\\ copy"\\ \\ \\ \\ \\ \\ \\ \\ \\ OFF\\)\\\n',
-            text='option(GGML_HIP_MMQ_MFMA                    "ggml: enable MFMA MMA for CDNA in MMQ"           ON)\noption(GGML_HIP_EXPORT_METRICS              "ggml: enable kernel perf metrics output"         OFF)\noption(GGML_HIP_ROCTX                       "ggml: enable ROCTx markers for HIP diagnostics"   OFF)\noption(GGML_MUSA_GRAPHS                     "ggml: use MUSA graph, experimental, unstable"    OFF)\noption(GGML_MUSA_MUDNN_COPY                 "ggml: enable muDNN for accelerated copy"         OFF)\n',
-            mode='replace',
+            anchor='option\\(GGML_HIP_EXPORT_METRICS\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ kernel\\ perf\\ metrics\\ output"\\ \\ \\ \\ \\ \\ \\ \\ \\ OFF\\)',
+            text='\noption(GGML_HIP_ROCTX                       "ggml: enable ROCTx markers for HIP diagnostics"   OFF)',
+            mode='insert_after',
             guard='option\\(GGML_HIP_ROCTX\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ "ggml:\\ enable\\ ROCTx\\ markers\\ for\\ HIP\\ diagnostics"\\ \\ \\ OFF\\)',
-            rationale='nro01-q8-01 hunk 1: upstream lines 221-220 -> result lines 221-221',
-            max_span_lines=6,
+            rationale='nro01-q8-01: insert GGML_HIP_ROCTX option immediately after GGML_HIP_EXPORT_METRICS',
+            max_span_lines=1,
         ),
     ),
 )
