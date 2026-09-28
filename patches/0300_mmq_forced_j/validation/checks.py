@@ -25,7 +25,11 @@ declaration/definition -- are exercised by the real build, not this proof):
 * the ``fallback`` and ``cc`` arguments actually reach the config tables --
   the stub carries one fallback-only, cc-gated row that none of the Q8_0
   assertions can see, so dropping or ignoring either argument in the emitted
-  blocks breaks the proof.
+  blocks breaks the proof;
+* the ``prec_src1`` template argument (b11233: src1 precision, GGML_PREC_Q8 or
+  Blackwell W4A4 GGML_PREC_Q4) reaches both the native scan's config lookup
+  and the launcher -- the stub carries one Q4-only row, so a scan or launch
+  that silently fell back to Q8 breaks the proof.
 
 It is not evidence of HIP, GPU, or architecture qualification.
 """
@@ -72,6 +76,11 @@ PREAMBLE = r'''
 #include <string>
 #include <vector>
 
+enum ggml_prec {
+    GGML_PREC_Q8 = 30,
+    GGML_PREC_Q4 = 40,
+};
+
 enum ggml_type {
     GGML_TYPE_Q4_0 = 0,
     GGML_TYPE_Q8_0 = 1,
@@ -93,7 +102,14 @@ struct ggml_cuda_mmq_config {
 
 static const ggml_cuda_mmq_config kMmqUndefined = { GGML_TYPE_COUNT, 0, 0, 0, 0 };
 
-ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_type type, int J, bool fallback, int cc) {
+ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_type type, int J, bool fallback, int cc,
+                                              ggml_prec prec_src1 = GGML_PREC_Q8) {
+    // Precision-gated row: only a GGML_PREC_Q4 caller can see it, proving
+    // prec_src1 actually reaches the table through the lifted scan.
+    if (type == GGML_TYPE_Q6_K && !fallback && prec_src1 == GGML_PREC_Q4) {
+        if (J == 16) return { GGML_TYPE_Q6_K, 16, 2, 256, 2048 };
+        return kMmqUndefined;
+    }
     if (type == GGML_TYPE_Q8_0 && !fallback) {
         if (J == 8)  return { GGML_TYPE_Q8_0, 8,  1, 256, 1024 };
         if (J == 16) return { GGML_TYPE_Q8_0, 16, 2, 256, 2048 };
@@ -145,10 +161,12 @@ struct mmq_args {
 };
 
 static std::vector<int> kLaunchJs;
-template <ggml_type type, int J, bool fallback>
+static std::vector<int> kLaunchPrecs;
+template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
 static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     (void)ctx; (void)args; (void)stream; (void)type; (void)fallback;
     kLaunchJs.push_back(J);
+    kLaunchPrecs.push_back((int) prec_src1);
 }
 
 void ggml_cuda_mul_mat_q(ggml_backend_cuda_context & ctx, const ggml_tensor * src0,
@@ -180,14 +198,14 @@ int main() {
 
     for (int J = 8; J <= 128; J += 8) {
         kLaunchJs.clear();
-        mul_mat_q_launch_forced_J<GGML_TYPE_Q8_0, false>(ctx, any, stream, J);
+        mul_mat_q_launch_forced_J<GGML_TYPE_Q8_0, false, GGML_PREC_Q8>(ctx, any, stream, J);
         expect(kLaunchJs.size() == 1 && kLaunchJs[0] == J, "switch-routes-J");
     }
     for (int J : { 4, 12, 136, 0, -8 }) {
         kLaunchJs.clear();
         bool aborted = false;
         try {
-            mul_mat_q_launch_forced_J<GGML_TYPE_Q8_0, false>(ctx, any, stream, J);
+            mul_mat_q_launch_forced_J<GGML_TYPE_Q8_0, false, GGML_PREC_Q8>(ctx, any, stream, J);
         } catch (const std::runtime_error &) { aborted = true; }
         expect(aborted && kLaunchJs.empty(), "switch-default-aborts");
     }
@@ -205,16 +223,33 @@ int main() {
     kLaunchJs.clear();
     mul_mat_q_switch_J<GGML_TYPE_Q8_0, false>(ctx, moe, stream);
     expect(kLaunchJs.size() == 1 && kLaunchJs[0] == 8, "scan-optimizes-ncols_opt");
-    expect(mul_mat_q_compute_J_best<GGML_TYPE_Q8_0, false>(moe) == 8, "compute-J-best-delegates-ncols_opt");
+    expect(mul_mat_q_compute_J_best<GGML_TYPE_Q8_0, false, GGML_PREC_Q8>(moe) == 8, "compute-J-best-delegates-ncols_opt");
 
     kLaunchJs.clear();
     mul_mat_q_switch_J<GGML_TYPE_Q8_0, false>(ctx, moe, stream, 16);
     expect(kLaunchJs.size() == 1 && kLaunchJs[0] == 16, "forced-replaces-scan");
 
-    const int native_j = mul_mat_q_compute_J_best<GGML_TYPE_Q8_0, false>(moe);
+    const int native_j = mul_mat_q_compute_J_best<GGML_TYPE_Q8_0, false, GGML_PREC_Q8>(moe);
     kLaunchJs.clear();
     mul_mat_q_switch_J<GGML_TYPE_Q8_0, false>(ctx, moe, stream, native_j);
     expect(kLaunchJs.size() == 1 && kLaunchJs[0] == native_j, "forced-equals-best-is-native");
+
+    // b11233 prec_src1 plumbing: the Q6_K stub row exists only at
+    // GGML_PREC_Q4, so the scan must see it at Q4 and nothing at Q8, and the
+    // launcher must be instantiated at the precision it was dispatched with.
+    const mmq_args q6 = { GGML_TYPE_Q6_K, 16, 16 };
+    expect(mul_mat_q_compute_J_best<GGML_TYPE_Q6_K, false, GGML_PREC_Q4>(q6) == 16, "prec-q4-reaches-scan");
+    expect(mul_mat_q_compute_J_best<GGML_TYPE_Q6_K, false, GGML_PREC_Q8>(q6) == 0,  "prec-q8-does-not-see-q4-row");
+    kLaunchJs.clear();
+    kLaunchPrecs.clear();
+    mul_mat_q_switch_J<GGML_TYPE_Q6_K, false, GGML_PREC_Q4>(ctx, q6, stream);
+    expect(kLaunchJs.size() == 1 && kLaunchJs[0] == 16 && kLaunchPrecs[0] == (int) GGML_PREC_Q4,
+           "prec-q4-native-launches-at-q4");
+    kLaunchJs.clear();
+    kLaunchPrecs.clear();
+    mul_mat_q_switch_J<GGML_TYPE_Q6_K, false, GGML_PREC_Q4>(ctx, q6, stream, 16);
+    expect(kLaunchJs.size() == 1 && kLaunchJs[0] == 16 && kLaunchPrecs[0] == (int) GGML_PREC_Q4,
+           "prec-q4-forced-launches-at-q4");
 
     expect( ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q8_0, 8,  false, 90900, 65536), "eligible-defined-row");
     expect( ggml_cuda_mmq_config_is_eligible(GGML_TYPE_Q8_0, 16, false, 90900, 65536), "eligible-defined-row-16");

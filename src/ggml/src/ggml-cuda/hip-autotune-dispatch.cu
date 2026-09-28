@@ -1891,7 +1891,8 @@ bool ggml_hip_mmq_can_execute(const ggml_hip_candidate_descriptor * self,
     // never make.
     if (self->source_class == GGML_HIP_SOURCE_NATIVE_WRAPPER) {
         const int native_j = ggml_cuda_mmq_native_j_best(
-            (ggml_type) sig.src0_type, shape_fallback, ncols_max);
+            (ggml_type) sig.src0_type, shape_fallback, ncols_max,
+            /*prec_src1 =*/ GGML_PREC_Q8);
         if (native_j == 0) {
             return false;
         }

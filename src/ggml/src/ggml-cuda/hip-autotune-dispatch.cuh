@@ -204,7 +204,13 @@ bool ggml_cuda_mmq_type_is_supported(
 // The J native's own scan would choose for this shape, or 0 if nothing is
 // eligible. A forced candidate at this J runs identical code to native, so the
 // pair calibrates measurement noise for free (HI24).
-int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max);
+//
+// prec_src1 (b11233) is the src1 activation precision the scan evaluates the
+// config table at. This overlay is HIP-only, where GGML_PREC_Q8 is the only
+// reachable value (upstream's Q4 path requires blackwell_mma_available, which
+// is NVIDIA-only), so every caller here passes GGML_PREC_Q8 explicitly.
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_max,
+                                ggml_prec prec_src1);
 
 bool ggml_cuda_mmvf_variant_is_eligible(
     ggml_type type, int block_size, bool acc_f16, int warp_size,
