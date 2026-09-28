@@ -50,13 +50,8 @@ _SELECTOR_NEW = """    const bool f16_f32_kernel = src1->type == GGML_TYPE_F32;
 """
 
 _TEST_ANCHOR = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
-
-
-    return test_cases;
-}"""
-_TEST_TEXT = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
+    }"""
+_TEST_CASES = """
 
     // bigcherry PRBE55: Vulkan small-N MMVQ/DMMV routing boundaries.
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 1,   4096, {1, 1}, {1, 1}));
@@ -67,10 +62,7 @@ _TEST_TEXT = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 6,   4096, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 7,   4096, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 8,   4096, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 128, 4096, {1, 1}, {1, 1}));
-
-    return test_cases;
-}"""
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 4096, 128, 4096, {1, 1}, {1, 1}));"""
 
 PATCHES = [
     FilePatch(
@@ -88,7 +80,7 @@ PATCHES = [
     FilePatch(
         path="tests/test-backend-ops.cpp",
         description="PRBE55 small-N MUL_MAT boundary coverage",
-        edits=(Edit(id="prbe55-smalln-cases", anchor=re.escape(_TEST_ANCHOR), mode="replace", text=_TEST_TEXT,
-                    guard=re.escape("bigcherry PRBE55: Vulkan small-N MMVQ/DMMV routing boundaries"), rationale="Exercise N=1, every 2..8 width, and a non-target batch.", expect_matches=1, max_span_lines=7),),
+        edits=(Edit(id="prbe55-smalln-cases", anchor=re.escape(_TEST_ANCHOR), mode="insert_after", text=_TEST_CASES,
+                    guard=re.escape("bigcherry PRBE55: Vulkan small-N MMVQ/DMMV routing boundaries"), rationale="Insert after make_test_cases_perf's unique final l2_norm_batch loop line+closing brace without consuming the shared tail, so 1203/1267 compose in any order.", expect_matches=1, max_span_lines=2),),
     ),
 ]
