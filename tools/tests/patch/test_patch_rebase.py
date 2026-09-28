@@ -279,6 +279,23 @@ class ConflictPartitionedAllPatchesTests(unittest.TestCase):
                 )
 
 
+    def test_partition_respects_requires_closure_of_conflicts(self):
+        # 1221-vs-1253 shape: A conflicts with B, C requires B. C must never
+        # share A's group, or B is dragged in as context and resolution fails.
+        from types import SimpleNamespace
+
+        modules = {
+            "a": SimpleNamespace(patch_id="a", conflicts=("b",), requires=()),
+            "b": SimpleNamespace(patch_id="b", conflicts=("a",), requires=()),
+            "c": SimpleNamespace(patch_id="c", conflicts=(), requires=("b",)),
+        }
+        groups = rebase._partition_conflict_free(("a", "b", "c"), modules)
+        for group in groups:
+            members = set(group)
+            if "c" in members:
+                self.assertNotIn("a", members)
+        self.assertEqual(sorted(p for g in groups for p in g), ["a", "b", "c"])
+
 def patchset_catalog():
     from bigcherry.patch import patchset
 

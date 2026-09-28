@@ -410,13 +410,50 @@ def _partition_conflict_free(
     genuinely conflicting patches would clash on real anchors, not just fail
     a policy check. Found live on pin-bump's first real bump: `--all`
     crashed uncaught the moment the registry contained two intentional
-    alternative candidates (1205/1207) at once, which it always will."""
+    alternative candidates (1205/1207) at once, which it always will.
+
+    Conflicts are checked over each patch's transitive `requires` closure,
+    not just the patch itself: a group member's out-of-group requirement is
+    pulled into that group's resolution as `context_ids`, so a patch that
+    merely *requires* one side of a conflict must never share a group with
+    the other side. Found live on the b11126 -> b11233 bump: sorted order put
+    1221 in group 1 and its declared alternative 1253 in group 2, then 1254
+    (requires 1253, no conflicts of its own) joined group 1 -- dragging 1253
+    back in as context and failing resolution with a spurious conflict."""
+    closures: dict[str, frozenset[str]] = {}
+
+    def closure(pid: str) -> frozenset[str]:
+        if pid not in closures:
+            seen: set[str] = set()
+            stack = [pid]
+            while stack:
+                current = stack.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                module = modules.get(current)
+                if module is not None:
+                    stack.extend(module.requires)
+            closures[pid] = frozenset(seen)
+        return closures[pid]
+
+    def closure_conflicts(pid: str) -> frozenset[str]:
+        return frozenset(
+            conflict
+            for member in closure(pid)
+            if member in modules
+            for conflict in modules[member].conflicts
+        )
+
     groups: list[list[str]] = []
     for pid in ids:
-        conflicts = set(modules[pid].conflicts)
+        mine = closure(pid)
+        my_conflicts = closure_conflicts(pid)
         for group in groups:
-            if conflicts.isdisjoint(group) and not any(
-                pid in modules[member].conflicts for member in group
+            if all(
+                my_conflicts.isdisjoint(closure(member))
+                and closure_conflicts(member).isdisjoint(mine)
+                for member in group
             ):
                 group.append(pid)
                 break
