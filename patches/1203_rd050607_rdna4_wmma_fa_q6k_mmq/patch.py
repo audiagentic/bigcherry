@@ -609,19 +609,15 @@ _SOFTLOOP_NEW = """                            // The mma kernel instantiates lo
 # upstream drift, discovered during PA39's real-hardware acceptance
 # attempt #3 (PatchSourceIsolationError on this exact edit id). Re-anchored
 # on the unique end-of-function tail of make_test_cases_perf() (the
-# {n,16,16,1}/4 l2_norm_batch line + "return test_cases;\n}"), which is a
-# stable insertion point independent of any specific perf test-case
-# ordering upstream chooses to keep/drop.
+# {n,16,16,1}/4 l2_norm_batch line + its closing brace), a stable
+# insertion point independent of any specific perf test-case ordering
+# upstream chooses to keep/drop. insert_after (not replace) so it never
+# consumes the shared "return test_cases;\n}" tail 1267/1269 also anchor
+# near, letting all three compose in any order (2026-09-29).
 _PERF_ANCHOR_OLD = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
+    }"""
 
-
-    return test_cases;
-}"""
-
-_PERF_NEW = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
-
+_PERF_NEW = """
     // rdna-boosts (RD05/06/07): Qwen3.6-27B Q6_K prefill shapes + FA perf:
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1})); // ffn_up/ffn_gate
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 5120,  512, 17408, {1, 1}, {1, 1})); // ffn_out
@@ -644,10 +640,7 @@ _PERF_NEW = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_
         const auto [hsk, hsv, nh, nr2, nb] = fa;
         test_cases.emplace_back(new test_flash_attn_ext(hsk, hsv, nh, {nr2, 1}, 16384, nb, true, false, 0, 0,
                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
-    }
-
-    return test_cases;
-}"""
+    }"""
 
 
 PATCHES = [
@@ -898,12 +891,16 @@ PATCHES = [
                 id="rd07-perf-cases",
                 anchor=re.escape(_PERF_ANCHOR_OLD),
                 rationale="make_test_cases_perf: qwen35-27B Q6_K prefill "
-                          "shapes + FA perf loop (position adaptation -- "
-                          "appended at end of make_test_cases_perf(), "
-                          "re-anchored 2026-09-16 against real pin drift)",
-                mode="replace",
+                          "shapes + FA perf loop, inserted after the "
+                          "function's unique final l2_norm_batch loop line "
+                          "+ closing brace without consuming the shared "
+                          "return test_cases;/} tail, so 1267/1269 can "
+                          "independently insert at the same point in any "
+                          "order (re-anchored 2026-09-29 for composability)",
+                mode="insert_after",
                 text=_PERF_NEW,
                 guard=r"rdna-boosts \(RD05/06/07\): Qwen3.6-27B Q6_K prefill shapes",
+                max_span_lines=2,
             ),
         ),
     ),
