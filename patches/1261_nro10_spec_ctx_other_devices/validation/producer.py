@@ -71,8 +71,15 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         context=f"{ctx.patch_id}: PNRO10 preflight", exact_count=2, env=ctx.build_env
     )
     devices = [d for d in ctx.runtime.device_contexts(device_map=ctx.device_map) if d.architecture == _ARCHITECTURE]
-    if not devices:
-        raise _fail("--device-map must map gfx1100 devices")
+    if len(devices) != 2:
+        raise _fail(f"--device-map must map exactly two {_ARCHITECTURE} devices for the dual-GPU tensor-split lane; got {len(devices)}")
+    if any(d.locator is None for d in devices):
+        raise _fail(
+            "RSA01: server-lane attestation requires real per-device PCI locators (the legacy "
+            "log-parsing ROCm attestor does not see llama-server's runtime output at all -- see "
+            "docs/planning/active/run-validation-attestation/RSA01.md); --device-map entries "
+            "without a locator cannot be attested for a server session"
+        )
     device = devices[0]
 
     servers = {role: ctx.validation_binaries.get(role, {}).get("llama-server") for role in ("control", "subject")}
@@ -81,17 +88,39 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         raise _fail("standard scaffold llama-server/llama-bench pair is missing")
 
     pair_env = {"HIP_VISIBLE_DEVICES": ",".join(str(d) for d in visibility.device_ids)}
-    expected = ExecutionIdentity(backend="rocm", architectures=(_ARCHITECTURE, _ARCHITECTURE))
+    # RSA01: llama-server does not print the legacy ggml_cuda_init/gfx log lines the plain
+    # log-parsing ROCm attestor (parse_rocm_attestation) depends on -- that attestor is only
+    # meaningful for llama-bench-style measured processes. A server session must instead be
+    # identified via real per-device PCI locators (the same architecture_by_locator mechanism
+    # server_session_factory already uses for the single-device case), extended to both devices
+    # of this tensor-split pair.
+    expected = ExecutionIdentity(
+        backend="rocm", architectures=(_ARCHITECTURE, _ARCHITECTURE),
+        locators=tuple(d.locator for d in devices),
+    )
+    by_locator = {d.locator: _ARCHITECTURE for d in devices}
 
     # ---- correctness: greedy MTP token identity on the dual-gfx1100 -sm tensor server ----
     logs = ctx.workdir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
+    # RSA01: under -sm tensor, layers are assigned to a single virtual
+    # "Meta()" scheduler device, never per-GPU -- the server's own log can
+    # never attest per-device identity for a tensor-split session on its
+    # own. tensor_split_preflights() runs a once-per-arm untimed RCCL
+    # preflight probe (the only diagnostic delta is NCCL_DEBUG) and binds
+    # that attestation to every timed session of the same binary/model/
+    # args/devices via tensor_split_preflight= below (the same pattern
+    # 1252/nro03 uses).
+    preflights = support.tensor_split_preflights(
+        servers, model=ctx.model, server_args=_TENSOR_MTP_ARGS, env=pair_env, workdir=logs, label=_LABEL
+    )
     server_logs = {role: logs / f"nro10-{role}-server.log" for role in servers}
     tokens: dict[str, list[int]] = {}
     for role in ("control", "subject"):
         session = AttestedServerSession(
             binary=servers[role], model=ctx.model, expected=expected, extra_args=_TENSOR_MTP_ARGS,
             log_path=server_logs[role], env_overrides=pair_env, env_unset=("ROCR_VISIBLE_DEVICES",),
+            architecture_by_locator=by_locator, tensor_split_preflight=preflights[role],
         )
         with session:
             reply = session.post_json("/completion", {
