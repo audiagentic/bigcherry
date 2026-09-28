@@ -1,33 +1,25 @@
 """PROMPT-CACHE-CHECKPOINT-SELECTION (1005): patch-local validation producer.
 
-Formalizes the exact regression sequence already manually validated on real
-hardware (README.md, 2026-09-12/13): hybrid/recurrent memory (LLM_ARCH_QWEN35
-and siblings, per llm_arch_supports_rs_rollback in llama-arch.cpp) is only
-valid at its exact final position. Pre-fix, every checkpoint was treated as
-range-valid, so a later request sharing only a SHORTER common prefix than a
-primed checkpoint could incorrectly select/restore it.
+Correctness-gated validation for the shorter-prefix checkpoint-selection
+regression. A warm server primes prompt A, then runs prompt C, which shares a
+shorter prefix and diverges. Server-side checkpoint logs must prove that C
+actually restored an A-era checkpoint whose position/token count is shorter
+than the newest checkpoint primed by A. C's greedy completion must exactly
+match a fresh --cache-ram 0 reference.
 
-Protocol (single server session, --cache-ram 512):
-  turn A: a long prompt -- primes a checkpoint at that full-prompt position.
-  turn C: a DIFFERENT prompt sharing only PROMPT_C's own short common prefix
-          with turn A's prompt, then diverging -- the exact "shorter common
-          prefix" scenario the fix must handle.
-The warm (cache-assisted) completion of turn C is compared against a cold
-reference: a fresh server process, --cache-ram 0 (cannot engage the
-checkpoint-selection code path at all), given ONLY turn C's prompt from
-scratch. For temp=0/seed=42 determinism these must match exactly if cache
-reuse is correct.
+If greedy parity fails, the producer records top-2 token IDs/logprobs at the
+first divergent prediction across the original pair plus three fresh
+warm/cold repetitions. Greedy parity remains exact; diagnostics do not create
+a mismatch tolerance.
 
-Uses tierA-qwen4b-q6k (Qwen3.5-4B, LLM_ARCH_QWEN35, already registered) in
-place of the original manual test's lfm2.5-8B (never registered in
-config/models.toml) -- both are real hybrid/recurrent architectures under
-the same llm_arch_supports_rs_rollback gate, so this is the same class of
-test subject, not a methodology change.
+The contract also carries auxiliary paired tg128 decode no-regression evidence.
+That lane is not the correctness gate and does not exercise checkpoint reuse.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 from bigcherry.experiment import contract as experiment_contract
@@ -44,16 +36,23 @@ _ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 _WARM_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--cache-ram", "512", "--fit", "off")
 _COLD_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--cache-ram", "0", "--fit", "off")
 _N_PREDICT = 64
+_N_PROBS = 2
+_DIAGNOSTIC_REPEATS = 3
 
-# Turn A: a long prompt that primes a checkpoint at its full-prompt position.
+_CHECKPOINT_RE = re.compile(
+    r"(?P<action>created|restored) context checkpoint.*?"
+    r"pos_min\s*=\s*(?P<pos_min>-?\d+).*?"
+    r"pos_max\s*=\s*(?P<pos_max>-?\d+).*?"
+    r"n_tokens\s*=\s*(?P<n_tokens>\d+)",
+    re.IGNORECASE,
+)
+
 _PROMPT_A = (
     "Describe, in careful technical detail, how a paged key-value cache "
     "allows a language model server to reuse computation across requests "
     "that share a common prefix, and explain why hybrid recurrent "
     "architectures require this reuse to be exact rather than approximate."
 )
-# Turn C: shares only its own short lead-in with PROMPT_A, then diverges --
-# the "shorter common prefix" scenario the fix must handle correctly.
 _PROMPT_C = (
     "Describe, in careful technical detail, why prime numbers greater than "
     "two are always odd, and give a short proof."
@@ -64,7 +63,7 @@ def _fail(message: str) -> vp.ValidationProducerError:
     return vp.ValidationProducerError(f"{_LABEL}: {message}")
 
 
-def _completion_tokens(session, prompt: str) -> list[int]:
+def _completion(session, prompt: str) -> dict:
     reply = session.post_json("/completion", {
         "prompt": prompt,
         "n_predict": _N_PREDICT,
@@ -74,11 +73,72 @@ def _completion_tokens(session, prompt: str) -> list[int]:
         "cache_prompt": True,
         "ignore_eos": True,
         "return_tokens": True,
+        "n_probs": _N_PROBS,
     })
     tokens = reply.get("tokens")
     if not isinstance(tokens, list) or len(tokens) != _N_PREDICT:
         raise _fail("invalid greedy token vector from /completion")
-    return tokens
+    probabilities = reply.get("completion_probabilities")
+    if not isinstance(probabilities, list) or len(probabilities) != _N_PREDICT:
+        raise _fail("/completion did not return one probability record per generated token")
+    return {"tokens": tokens, "probabilities": probabilities}
+
+
+def _checkpoint_records(text: str, *, action: str) -> list[dict[str, int]]:
+    records: list[dict[str, int]] = []
+    for match in _CHECKPOINT_RE.finditer(text):
+        if match.group("action").lower() != action:
+            continue
+        records.append({
+            "pos_min": int(match.group("pos_min")),
+            "pos_max": int(match.group("pos_max")),
+            "n_tokens": int(match.group("n_tokens")),
+        })
+    return records
+
+
+def _read_log_since(path: Path, offset: int) -> tuple[str, int]:
+    data = path.read_text(encoding="utf-8", errors="replace")
+    return data[offset:], len(data)
+
+
+def _top2(probability_record: object) -> list[dict[str, object]]:
+    if not isinstance(probability_record, dict):
+        raise _fail("invalid completion probability record")
+    candidates = probability_record.get("top_logprobs")
+    if not isinstance(candidates, list):
+        # Compatibility with the immediately preceding llama-server schema.
+        candidates = probability_record.get("probs")
+    if not isinstance(candidates, list):
+        raise _fail("completion probability record has no top-logprob candidates")
+    result: list[dict[str, object]] = []
+    for candidate in candidates[:_N_PROBS]:
+        if not isinstance(candidate, dict):
+            raise _fail("invalid top-logprob candidate")
+        token_id = candidate.get("id")
+        logprob = candidate.get("logprob")
+        # Older schema exposed probability rather than logprob and no token id.
+        if logprob is None:
+            logprob = candidate.get("prob")
+        result.append({
+            "id": token_id,
+            "logprob": logprob,
+            "token": candidate.get("token", candidate.get("tok_str")),
+        })
+    if len(result) < 2:
+        raise _fail("completion probability record did not expose top-2 candidates")
+    return result
+
+
+def _prediction_record(run: dict, step: int) -> dict[str, object]:
+    return {
+        "selected_token_id": run["tokens"][step],
+        "top2": _top2(run["probabilities"][step]),
+    }
+
+
+def _first_diff(cold: dict, warm: dict) -> int | None:
+    return next((i for i, (a, b) in enumerate(zip(cold["tokens"], warm["tokens"])) if a != b), None)
 
 
 def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
@@ -96,47 +156,126 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     logs = ctx.workdir / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-
     subject_server = servers["subject"]
     assert isinstance(subject_server, Path)
 
-    # Warm session: turn A primes the checkpoint, turn C reuses (shorter common prefix).
+    warm_log = logs / "pccs-subject-warm.log"
     warm_factory = support.server_session_factory(
         ctx, device=device, architecture=_ARCHITECTURE, binary=subject_server, model=ctx.model,
-        log_path=logs / "pccs-subject-warm.log", env={}, server_args=_WARM_ARGS,
+        log_path=warm_log, env={}, server_args=_WARM_ARGS,
     )
     with warm_factory() as session:
-        _completion_tokens(session, _PROMPT_A)  # turn A: prime the checkpoint (result unused)
-        warm_tokens = _completion_tokens(session, _PROMPT_C)  # turn C: shorter-prefix reuse
+        offset = len(warm_log.read_text(encoding="utf-8", errors="replace"))
+        _completion(session, _PROMPT_A)
+        a_log, offset = _read_log_since(warm_log, offset)
+        primed = _checkpoint_records(a_log, action="created")
+        if not primed:
+            raise _fail("turn A produced no observable context checkpoint creation")
+        primed_checkpoint = max(primed, key=lambda record: (record["n_tokens"], record["pos_max"]))
 
-    # Cold reference: fresh process, --cache-ram 0 (cannot engage checkpoint-selection at all).
+        warm = _completion(session, _PROMPT_C)
+        c_log, _ = _read_log_since(warm_log, offset)
+        restored = _checkpoint_records(c_log, action="restored")
+        shorter_restores = [
+            record for record in restored
+            if record["n_tokens"] < primed_checkpoint["n_tokens"]
+            and record["pos_max"] < primed_checkpoint["pos_max"]
+        ]
+        if not shorter_restores:
+            raise _fail(
+                "turn C did not prove shorter-prefix checkpoint reuse: no restored checkpoint "
+                "was shorter than turn A's newest primed checkpoint"
+            )
+        restored_checkpoint = max(shorter_restores, key=lambda record: (record["n_tokens"], record["pos_max"]))
+
+    activation_ref = ctx.runtime.write_artifact(
+        name="pccs-activation.json",
+        payload={
+            "schema_version": 1, "contract_id": _CONTRACT_ID,
+            "mechanism": "server-log-restored-context-checkpoint",
+            "positive_hit": True,
+            "turn_a_primed_checkpoint": primed_checkpoint,
+            "turn_c_restored_checkpoint": restored_checkpoint,
+            "proof": "turn C restored a checkpoint with both n_tokens and pos_max below turn A's newest primed checkpoint",
+        },
+    )
+
+    cold_log = logs / "pccs-subject-cold.log"
     cold_factory = support.server_session_factory(
         ctx, device=device, architecture=_ARCHITECTURE, binary=subject_server, model=ctx.model,
-        log_path=logs / "pccs-subject-cold.log", env={}, server_args=_COLD_ARGS,
+        log_path=cold_log, env={}, server_args=_COLD_ARGS,
     )
     with cold_factory() as session:
-        cold_tokens = _completion_tokens(session, _PROMPT_C)
+        cold = _completion(session, _PROMPT_C)
 
-    first_diff = next((i for i, (a, b) in enumerate(zip(cold_tokens, warm_tokens)) if a != b), None)
+    first_diff = _first_diff(cold, warm)
     passed = first_diff is None
     detail = (
-        f"turn C ({_N_PREDICT} tokens) warm-vs-cold identical"
+        f"turn C ({_N_PREDICT} tokens) warm-vs-cold identical with shorter-prefix checkpoint restore proven"
         if passed
-        else f"turn C warm-vs-cold diverge at step {first_diff}"
+        else f"turn C warm-vs-cold diverge at step {first_diff}; shorter-prefix checkpoint restore proven"
     )
     correctness = experiment_contract.CorrectnessResult(check="greedy_parity", passed=passed, detail=detail)
-    ctx.runtime.write_artifact(
+    correctness_ref = ctx.runtime.write_artifact(
         name="pccs-correctness.json",
         payload={
             "schema_version": 1, "contract_id": _CONTRACT_ID, "check": "greedy_parity",
             "passed": passed, "detail": detail, "model_identity": identity,
-            "first_divergence": first_diff, "cold_tokens": cold_tokens, "warm_tokens": warm_tokens,
+            "first_divergence": first_diff, "cold_tokens": cold["tokens"], "warm_tokens": warm["tokens"],
             "prompt_a": _PROMPT_A, "prompt_c": _PROMPT_C,
+            "activation_artifact": {"path": activation_ref.path, "sha256": activation_ref.sha256},
         },
     )
 
-    # Performance/controls: standard paired tg128 decode, no cache-checkpoint
-    # involvement -- proves the fix carries no ordinary-decode regression.
+    emitted = {"pccs-activation.json", "pccs-correctness.json", "pccs-performance.json"}
+    if first_diff is not None:
+        diagnostic_runs: list[dict[str, object]] = [{
+            "replicate": 0,
+            "first_divergence": first_diff,
+            "cold_at_first_divergence": _prediction_record(cold, first_diff),
+            "warm_at_first_divergence": _prediction_record(warm, first_diff),
+        }]
+        for replicate in range(1, _DIAGNOSTIC_REPEATS + 1):
+            repeat_warm_log = logs / f"pccs-diagnostic-warm-{replicate}.log"
+            repeat_warm_factory = support.server_session_factory(
+                ctx, device=device, architecture=_ARCHITECTURE, binary=subject_server, model=ctx.model,
+                log_path=repeat_warm_log, env={}, server_args=_WARM_ARGS,
+            )
+            with repeat_warm_factory() as session:
+                _completion(session, _PROMPT_A)
+                repeat_warm = _completion(session, _PROMPT_C)
+
+            repeat_cold_log = logs / f"pccs-diagnostic-cold-{replicate}.log"
+            repeat_cold_factory = support.server_session_factory(
+                ctx, device=device, architecture=_ARCHITECTURE, binary=subject_server, model=ctx.model,
+                log_path=repeat_cold_log, env={}, server_args=_COLD_ARGS,
+            )
+            with repeat_cold_factory() as session:
+                repeat_cold = _completion(session, _PROMPT_C)
+
+            repeat_diff = _first_diff(repeat_cold, repeat_warm)
+            record: dict[str, object] = {"replicate": replicate, "first_divergence": repeat_diff}
+            if repeat_diff is not None:
+                record["cold_at_first_divergence"] = _prediction_record(repeat_cold, repeat_diff)
+                record["warm_at_first_divergence"] = _prediction_record(repeat_warm, repeat_diff)
+            record["cold_at_original_divergence"] = _prediction_record(repeat_cold, first_diff)
+            record["warm_at_original_divergence"] = _prediction_record(repeat_warm, first_diff)
+            diagnostic_runs.append(record)
+
+        ctx.runtime.write_artifact(
+            name="pccs-divergence-diagnostic.json",
+            payload={
+                "schema_version": 1, "contract_id": _CONTRACT_ID,
+                "original_first_divergence": first_diff,
+                "n_probs": _N_PROBS,
+                "fresh_repeat_pairs": _DIAGNOSTIC_REPEATS,
+                "runs": diagnostic_runs,
+                "note": "top-2 token IDs/logprobs are diagnostic only; greedy_parity remains exact",
+            },
+        )
+        emitted.add("pccs-divergence-diagnostic.json")
+
+    # Auxiliary no-regression evidence only; correctness disposition is greedy_parity above.
     control_bench = benches["control"]
     subject_bench = benches["subject"]
     assert isinstance(control_bench, Path) and isinstance(subject_bench, Path)
@@ -160,9 +299,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
     return vp.ProducerResult(
         correctness={"disposition": "passed" if passed else "failed",
-                     "mechanism": "pccs-checkpoint-shorter-prefix-warm-vs-cold", "detail": detail},
+                     "mechanism": "pccs-checkpoint-shorter-prefix-warm-vs-cold", "detail": detail,
+                     "artifact": {"path": correctness_ref.path, "sha256": correctness_ref.sha256}},
         validation_build_identities=ctx.validation_build_identities,
-        activation_evidence=None,
+        activation_evidence={"artifact": {"path": activation_ref.path, "sha256": activation_ref.sha256}},
         performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
         trace_evidence=None,
         check_results=(),
@@ -170,11 +310,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         contract_correctness_results=(correctness,),
         promotion_lane_effects={_CONTRACT_ID: (control_effect,)},
         promotion_target_metric={_CONTRACT_ID: "tg128"},
-        # No activation marker exists for this fix (unconditional whenever
-        # checkpoint selection runs), so there is no positive trigger to
-        # probe -- record honestly as not-hit, matching 1210 (RD26)'s own
-        # marker-less contract pattern.
         promotion_trigger_evidence={_CONTRACT_ID: (experiment_execution.trigger_evidence_from_marker_probe(
-            lane_id="pccs-server", role="positive", positive_hit=False),)},
-        emitted_artifacts=frozenset({"pccs-correctness.json", "pccs-performance.json"}),
+            lane_id="pccs-server-shorter-prefix-restore", role="positive", positive_hit=True),)},
+        emitted_artifacts=frozenset(emitted),
     )
