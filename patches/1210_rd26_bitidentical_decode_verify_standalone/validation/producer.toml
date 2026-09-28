@@ -41,4 +41,10 @@ performance_benchmark_cli = "forbid"
 artifacts = [
   "rd26-decode-verify-bit-identity.json",
   "rd26-controls.json",
+  # PRBE20 2026-09-28: conditionally emitted only on a real mismatch (see
+  # producer.py's _diff_context docstring) -- raw-byte context around the
+  # first mismatch offset for both decode/verify arms, so a future run does
+  # not need to preserve the scratch .gguf files (deleted every run) just
+  # to answer "what is actually at this offset".
+  "rd26-decode-verify-diagnostic.json",
 ]
