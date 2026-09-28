@@ -1,0 +1,27 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [
+      "file.hip-autotune-types.h"
+    ],
+    "passed": false,
+    "strict": true,
+    "summary": {
+      "errors": 1,
+      "passed": 33,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "b3f07a7a1062f88f96763686ba6864514268c047",
+  "first_seen": "2026-09-28T21:55:50.436532+00:00",
+  "manifest_hash": "",
+  "notes": "source audit failed: file.hip-autotune-types.h",
+  "patches": {},
+  "promotion": null,
+  "release_tag": "b11233",
+  "revision": "d77dd0806dc26fc418273ef99f88da11239ca41b",
+  "stage": "broken",
+  "tree_state": "",
+  "updated_at": "2026-09-28T22:18:19.120954+00:00"
+}
