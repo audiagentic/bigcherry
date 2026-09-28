@@ -26,6 +26,7 @@ from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment import execution as experiment_execution
 from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
+from bigcherry.patch.activation import ActivationEvidence
 
 _LABEL = "pccs"
 _ARCHITECTURE = "gfx1100"
@@ -33,7 +34,7 @@ _CONTRACT_ID = "PROMPT-CACHE-CHECKPOINT-SELECTION"
 _MODEL_REF = "tierA-qwen4b-q6k"
 _ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
-_WARM_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--cache-ram", "512", "--fit", "off")
+_WARM_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--cache-ram", "512", "--fit", "off", "-v")
 _COLD_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "--cache-ram", "0", "--fit", "off")
 _N_PREDICT = 64
 _N_PROBS = 2
@@ -302,7 +303,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                      "mechanism": "pccs-checkpoint-shorter-prefix-warm-vs-cold", "detail": detail,
                      "artifact": {"path": correctness_ref.path, "sha256": correctness_ref.sha256}},
         validation_build_identities=ctx.validation_build_identities,
-        activation_evidence={"artifact": {"path": activation_ref.path, "sha256": activation_ref.sha256}},
+        activation_evidence=ActivationEvidence(
+            status="executed",
+            mechanism="server-log-restored-context-checkpoint",
+            detail=(
+                "turn C restored a checkpoint with both n_tokens and pos_max below turn A's "
+                f"newest primed checkpoint (artifact: {activation_ref.path})"
+            ),
+        ),
         performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
         trace_evidence=None,
         check_results=(),
