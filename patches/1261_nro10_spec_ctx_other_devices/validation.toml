@@ -1,0 +1,35 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# PNRO10-SPEC-CTX-OTHER-DEVICES requires correctness.greedy_parity only (no
+# activation marker -- 1261's fix is unconditional whenever a draft/MTP
+# context is created, so there is no opt-in trace to probe).
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
