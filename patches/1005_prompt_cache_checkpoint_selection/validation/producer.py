@@ -31,6 +31,7 @@ import dataclasses
 from pathlib import Path
 
 from bigcherry.experiment import contract as experiment_contract
+from bigcherry.experiment import execution as experiment_execution
 from bigcherry.patch import producer_support as support
 from bigcherry.patch import validation_producer as vp
 
@@ -169,5 +170,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         contract_correctness_results=(correctness,),
         promotion_lane_effects={_CONTRACT_ID: (control_effect,)},
         promotion_target_metric={_CONTRACT_ID: "tg128"},
+        # No activation marker exists for this fix (unconditional whenever
+        # checkpoint selection runs), so there is no positive trigger to
+        # probe -- record honestly as not-hit, matching 1210 (RD26)'s own
+        # marker-less contract pattern.
+        promotion_trigger_evidence={_CONTRACT_ID: (experiment_execution.trigger_evidence_from_marker_probe(
+            lane_id="pccs-server", role="positive", positive_hit=False),)},
         emitted_artifacts=frozenset({"pccs-correctness.json", "pccs-performance.json"}),
     )
