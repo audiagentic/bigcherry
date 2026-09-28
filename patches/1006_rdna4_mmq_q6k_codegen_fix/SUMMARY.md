@@ -1,6 +1,6 @@
 # 1006_rdna4_mmq_q6k_codegen_fix: Upstream backport, RDNA4 MMQ codegen fix for Q6_K only
 
-**Status:** untested
+**Status:** validated
 **Plan item:** PA35
 
 ## What it does
@@ -33,11 +33,14 @@ tuner already measures candidates head-to-head per shape.
 
 ## Lifecycle note
 
-`state = "untested"`. The 1.365x figure above was measured against the
-combined 1000 composition (Q2_K edit also present) and is preserved as
-directional evidence only -- it is explicitly NOT treated as sufficient
-promotion evidence for this patch, since the composition/subject digest
-differs. A fresh Q6-only hardware A/B (same exact-shape backend-ops
-methodology) is required before this patch can be promoted to `validated`
-and added to `config/recipes.toml`'s `[patch-set.validated-enhancements]`.
-This is tracked as a PA35 follow-up, not yet executed.
+`state = "validated"` (2026-09-29). The 1.365x figure above (measured
+against the combined 1000 composition) was preserved as directional
+evidence only and never used as promotion evidence for this patch's own
+composition identity. A fresh Q6-only hardware campaign (4 sessions,
+gfx1201, `tierA-qwen4b-q6k`) was run instead -- see `README.md`'s
+"Promotion evidence" section for the full 3-arm result (BigCherry vs
+native llama.cpp vs BigCherry+patch): a real, consistent ~+18% prefill
+gain with no decode regression, contract `RDNA4-MMQ-Q6K-CODEGEN`
+status=pass. Not yet added to `config/recipes.toml`'s
+`[patch-set.validated-enhancements]` -- that recipe-selection decision is
+separate from this lifecycle promotion.
