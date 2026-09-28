@@ -213,7 +213,10 @@ def check_mmq_j(ctx: AuditContext) -> None:
 
     where = "patched" if patched else "pristine"
     values = csource.int_captures(
-        switch_body, r"launch_mul_mat_q<\s*type\s*,\s*(\d+)\s*,\s*fallback\s*>")
+        switch_body,
+        # b11233 threads the src1 precision (GGML_PREC_Q8 / Blackwell W4A4 Q4)
+        # through every launch: `launch_mul_mat_q<type, J, fallback, prec_src1>`.
+        r"launch_mul_mat_q<\s*type\s*,\s*(\d+)\s*,\s*fallback\s*,\s*prec_src1\s*>")
     ctx.compare("mmq.j_switch_values", MMQ_J_VALUES, values,
                 f"MMQ J switch cases ({where} tree)")
 
