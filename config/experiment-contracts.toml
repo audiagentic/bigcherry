@@ -1795,3 +1795,44 @@ greedy_parity = "required"
 max_control_regression_pct = 1
 effect_evidence_policy = "ci95_threshold_bound_v1"
 min_paired_rounds = 10
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN]
+title = "1006: RDNA4 MMQ Q6_K float-promotion codegen fix (isolated Q6_K-only re-measurement)"
+prerequisites = []
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.source]
+source_id = "llama-cpp-upstream"
+commits = []
+atomic_part = "1006_rdna4_mmq_q6k_codegen_fix (Q6_K-only edit split from rejected 1000_rdna4_mmq_q2k_q6k_fix, upstream PR #25940)"
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.target]
+kind = "kernel_family"
+family = "mmq"
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.hypothesis]
+family = "mmq"
+expected_effect = "both"
+rationale = "Adds an explicit float cast before a scale multiply in the MFMA/WMMA MMQ vec_dot for Q6_K, changing ROCm's codegen on RDNA4. The combined package (1000, since rejected for its separate, regressing Q2_K edit) measured Q6_K at 1.365x [CI95 1.362x-1.367x] on gfx1201 exact-shape backend-ops (m=4096, n=512, k=14336) -- a real, statistically significant gain, but that evidence does not transfer to this narrower single-edit composition identity (project re-promotion doctrine: a changed implementation/composition requires fresh evidence). This contract re-measures Q6_K in isolation on the same architecture and exact shape, plus a real Q6_K-quantized model prefill/decode lane (tierA-qwen4b-q6k) so the kernel-level claim is also exercised on real production-shaped work, following RD33's own precedent (kernel-family correctness via test-backend-ops, performance via a real model-level lane, not a model-less kernel-only benchmark)."
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.scope]
+backend = "hip"
+architectures = ["gfx1201"]
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.positive]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["prefill"]
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.controls]
+models = ["tierA-qwen4b-q6k"]
+workloads = ["decode"]
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.correctness]
+backend_reference = "required"
+
+[contract.RDNA4-MMQ-Q6K-CODEGEN.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
