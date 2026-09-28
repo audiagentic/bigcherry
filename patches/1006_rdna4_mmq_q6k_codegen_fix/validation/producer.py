@@ -7,7 +7,7 @@ a real gain, but that evidence does not transfer to this narrower
 single-edit composition identity (project re-promotion doctrine: a changed
 composition requires fresh evidence).
 
-- correctness (``backend_reference``): test-backend-ops MUL_MAT type_a=q6_k
+- correctness (``backend_reference``): test-backend-ops MUL_MAT type_a=q6_K
   cases must pass the CPU-reference tolerance on BOTH arms. Filters by type
   only and accepts the full built-in shape sweep test-backend-ops generates
   for that type (mirrors 1241/RD33's own precedent) -- test-backend-ops has
@@ -73,7 +73,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         baseline_source="bigcherry", require_parity=True,
     )
     tbo_env = support.device_env(ctx, device, {"BIGCHERRY_PATCH_TRACE": "1"})
-    tbo_args = ("-o", "MUL_MAT", "-p", "type_a=q6_k")
+    # test-backend-ops's -p filter is a regex against each test case's
+    # vars() string, not a key=value lookup -- the real ggml type name is
+    # "q6_K" (capital K, ggml.c's .type_name for GGML_TYPE_Q6_K), so a
+    # lowercase "q6_k" silently matches zero cases (0/0, not a failure).
+    tbo_args = ("-o", "MUL_MAT", "-p", "type_a=q6_K")
     arms = {role: support.run_backend_ops(binary, tbo_args, tbo_env, label=_LABEL)
             for role, binary in (("control", pair.control_bin), ("subject", pair.subject_bin))}
     arm_ok = {role: rc == 0 and total > 0 and passed == total for role, (_, rc, passed, total) in arms.items()}

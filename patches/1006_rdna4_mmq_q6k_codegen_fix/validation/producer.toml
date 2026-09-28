@@ -2,7 +2,7 @@ schema = 1
 
 # 1006's (RDNA4-MMQ-Q6K-CODEGEN) patch-local producer. Single-GPU gfx1201.
 #
-# correctness (backend_reference): test-backend-ops MUL_MAT type_a=q6_k
+# correctness (backend_reference): test-backend-ops MUL_MAT type_a=q6_K
 # cases must pass the CPU-reference tolerance on BOTH arms (mirrors
 # 1241/RD33's own precedent: filter by type only, accept the full built-in
 # shape sweep test-backend-ops generates for that type, not an isolated
