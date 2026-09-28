@@ -44,7 +44,7 @@ _J_VALUES = list(range(8, 129, 8))
 
 _FORCED_CASES = "\n".join(
     f"        case {j:3d}:\n"
-    f"            launch_mul_mat_q<type, {j:3d}, fallback>(ctx, args, stream);\n"
+    f"            launch_mul_mat_q<type, {j:3d}, fallback, prec_src1>(ctx, args, stream);\n"
     f"            break;"
     for j in _J_VALUES
 )
@@ -54,7 +54,13 @@ _HELPERS = f"""
 // native path and measured dispatch go through here, which is what makes a
 // forced J equal to J_best the same code as native selection, not merely
 // equivalent code.
-template <ggml_type type, bool fallback>
+//
+// b11233: upstream threads the src1 precision (`prec_src1`, GGML_PREC_Q8 or
+// the Blackwell-only W4A4 GGML_PREC_Q4) through every MMQ template. It is a
+// compile-time property of the kernel, carried alongside `fallback`, and the
+// forced path must carry it identically or it would launch a different kernel
+// than native for the same (type, J, fallback).
+template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static void mul_mat_q_launch_forced_J(
         ggml_backend_cuda_context & ctx, const mmq_args & args,
         cudaStream_t stream, const int J) {{
@@ -100,7 +106,14 @@ static void mul_mat_q_launch_forced_J(
 // ggml_cuda_mmq_variant_is_eligible's own ncols_max parameter below -- that
 // one correctly needs the real launch width for padding/OOB safety, a
 // completely different purpose from this tile-size optimization scan.
-int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt);
+//
+// b11233: takes prec_src1 because upstream's scan now queries the config table
+// at that precision (Blackwell FP4 types resolve to a different config at Q4
+// than at Q8). Callers in the HIP-only dispatch overlay pass GGML_PREC_Q8,
+// which is the only precision reachable on HIP: Q4 requires
+// blackwell_mma_available(cc), which is NVIDIA-only.
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt,
+                                ggml_prec prec_src1);
 
 // bigcherry (HI06): upstream's J scan, as a pure function. The tuner needs the
 // native answer both as a fallback and as the baseline a challenger has to
@@ -109,9 +122,9 @@ int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt
 // Delegates to the runtime query above so there is one implementation rather
 // than two. A second copy of this scan would be exactly the restatement that
 // has caused four defects in this project already.
-template <ggml_type type, bool fallback>
+template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static int mul_mat_q_compute_J_best(const mmq_args & args) {{
-    return ggml_cuda_mmq_native_j_best(type, fallback, args.ncols_opt);
+    return ggml_cuda_mmq_native_j_best(type, fallback, args.ncols_opt, prec_src1);
 }}
 
 // bigcherry (HI06): hard eligibility (standards 12.4). Answers "could this J
@@ -130,10 +143,10 @@ static inline bool ggml_cuda_mmq_config_is_eligible(
     return mmq_get_nbytes_shared(config, cc) <= shared_mem_limit;
 }}
 
-template <ggml_type type, bool fallback>
+template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
 void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args,
                         cudaStream_t stream, int forced_J = 0) {{
-    int J_best = mul_mat_q_compute_J_best<type, fallback>(args);
+    int J_best = mul_mat_q_compute_J_best<type, fallback, prec_src1>(args);
 
     // bigcherry (HI06): a forced J replaces the scan's answer. Zero means
     // "native policy", so with no forced value this is exactly upstream.
@@ -141,7 +154,7 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args,
         J_best = forced_J;
     }}
 
-    mul_mat_q_launch_forced_J<type, fallback>(ctx, args, stream, J_best);
+    mul_mat_q_launch_forced_J<type, fallback, prec_src1>(ctx, args, stream, J_best);
 }}"""
 
 _MMQ_SOURCE = """
@@ -213,7 +226,8 @@ bool ggml_cuda_mmq_variant_is_eligible(
 // PRBE107 fix (2026-09-13): takes ncols_opt, matching upstream's own scan --
 // see this function's forward declaration in mmq.cuh for the full real-
 // hardware-confirmed regression this corrects.
-int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt) {
+int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt,
+                                ggml_prec prec_src1) {
     const int    id    = ggml_cuda_get_device();
     const int    cc    = ggml_cuda_info().devices[id].cc;
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
@@ -222,7 +236,7 @@ int ggml_cuda_mmq_native_j_best(ggml_type type, bool fallback, int64_t ncols_opt
     int ntiles_J_best = INT_MAX;
 
     for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {
-        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc);
+        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc, prec_src1);
         if (config.type == GGML_TYPE_COUNT) {
             continue;
         }
@@ -310,7 +324,8 @@ HEADER_PATCH = FilePatch(
             # of upstream's scan, so an edit anchored on the scan text would
             # match whichever copy came first and splice in the wrong place.
             # Replacing the whole function keeps the anchor unambiguous.
-            anchor=r"^template <ggml_type type, bool fallback>\n"
+            anchor=r"^template <ggml_type type, bool fallback, "
+                   r"ggml_prec prec_src1 = GGML_PREC_Q8>\n"
                    r"void mul_mat_q_switch_J\(ggml_backend_cuda_context & ctx, "
                    r"const mmq_args & args, cudaStream_t stream\) \{\n"
                    r"[\s\S]*?GGML_ABORT\([^)]*\);\n"
@@ -324,12 +339,12 @@ HEADER_PATCH = FilePatch(
         ),
         Edit(
             id="mmq-case-signature",
-            anchor=r"^template <ggml_type type>\n"
+            anchor=r"^template <ggml_type type, ggml_prec prec_src1 = GGML_PREC_Q8>\n"
                    r"void mul_mat_q_case\(ggml_backend_cuda_context & ctx, "
                    r"const mmq_args & args, cudaStream_t stream\) \{$",
             rationale="the definition of mul_mat_q_case",
             mode="replace",
-            text="template <ggml_type type>\n"
+            text="template <ggml_type type, ggml_prec prec_src1 = GGML_PREC_Q8>\n"
                  "void mul_mat_q_case(ggml_backend_cuda_context & ctx, "
                  "const mmq_args & args, cudaStream_t stream,\n"
                  "                    int forced_J = 0) {",
@@ -338,12 +353,12 @@ HEADER_PATCH = FilePatch(
         ),
         Edit(
             id="mmq-case-forward",
-            anchor=r"mul_mat_q_switch_J<type, fallback>\(ctx, args, stream\);",
+            anchor=r"mul_mat_q_switch_J<type, fallback, prec_src1>\(ctx, args, stream\);",
             rationale="both fallback branches inside mul_mat_q_case",
             mode="replace_all",
             expect_matches=2,
-            text="mul_mat_q_switch_J<type, fallback>(ctx, args, stream, forced_J);",
-            guard=r"mul_mat_q_switch_J<type, fallback>\(ctx, args, stream, forced_J\);",
+            text="mul_mat_q_switch_J<type, fallback, prec_src1>(ctx, args, stream, forced_J);",
+            guard=r"mul_mat_q_switch_J<type, fallback, prec_src1>\(ctx, args, stream, forced_J\);",
         ),
         Edit(
             id="mmq-instantiation-macro",
@@ -357,7 +372,23 @@ HEADER_PATCH = FilePatch(
             mode="replace",
             text="    template void mul_mat_q_case<type>(ggml_backend_cuda_context & ctx, "
                  "const mmq_args & args, cudaStream_t stream, int forced_J) \\",
-            guard=r"cudaStream_t stream, int forced_J\) \\",
+            guard=r"mul_mat_q_case<type>\(ggml_backend_cuda_context & ctx, "
+                  r"const mmq_args & args, cudaStream_t stream, int forced_J\) \\",
+        ),
+        Edit(
+            id="mmq-instantiation-macro-w4a4",
+            # b11233's Blackwell W4A4 instantiation macro restates the same
+            # parameter list for mul_mat_q_case<type, GGML_PREC_Q4>, so it
+            # gains forced_J for the same reason DECL_MMQ_CASE does.
+            anchor=r"    template void mul_mat_q_case<type, GGML_PREC_Q4>\("
+                   r"ggml_backend_cuda_context & ctx, "
+                   r"const mmq_args & args, cudaStream_t stream\) \\",
+            rationale="the W4A4 explicit-instantiation macro DECL_MMQ_CASE_W4A4",
+            mode="replace",
+            text="    template void mul_mat_q_case<type, GGML_PREC_Q4>(ggml_backend_cuda_context & ctx, "
+                 "const mmq_args & args, cudaStream_t stream, int forced_J) \\",
+            guard=r"mul_mat_q_case<type, GGML_PREC_Q4>\(ggml_backend_cuda_context & ctx, "
+                  r"const mmq_args & args, cudaStream_t stream, int forced_J\) \\",
         ),
         Edit(
             id="mmq-public-decl",
@@ -384,23 +415,27 @@ SOURCE_PATCH = FilePatch(
             id="mmq-type-switch-signature",
             anchor=r"^static void ggml_cuda_mul_mat_q_switch_type\("
                    r"ggml_backend_cuda_context & ctx, const mmq_args & args, "
-                   r"cudaStream_t stream\) \{$",
+                   r"cudaStream_t stream, const ggml_prec prec_src1\) \{$",
             rationale="the per-type MMQ dispatcher",
             mode="replace",
             text="static void ggml_cuda_mul_mat_q_switch_type("
                  "ggml_backend_cuda_context & ctx, const mmq_args & args,\n"
                  "                                            cudaStream_t stream, "
-                 "int forced_J = 0) {",
-            guard=r"cudaStream_t stream, int forced_J = 0\) \{",
+                 "const ggml_prec prec_src1, int forced_J = 0) {",
+            guard=r"const ggml_prec prec_src1, int forced_J = 0\) \{",
         ),
         Edit(
             id="mmq-type-switch-forward",
-            anchor=r"(mul_mat_q_case<GGML_TYPE_[A-Z0-9_]+>)\(ctx, args, stream\);",
+            # b11233: 22 plain cases plus the two Blackwell W4A4 cases
+            # (MXFP4/NVFP4 at GGML_PREC_Q4) = 24.
+            anchor=r"(mul_mat_q_case<GGML_TYPE_[A-Z0-9_]+(?:, GGML_PREC_Q4)?>)"
+                   r"\(ctx, args, stream\);",
             rationale="every per-type case in the MMQ type dispatcher",
             mode="replace_all",
-            expect_matches=22,
+            expect_matches=24,
             text=r"\1(ctx, args, stream, forced_J);",
-            guard=r"mul_mat_q_case<GGML_TYPE_[A-Z0-9_]+>\(ctx, args, stream, forced_J\);",
+            guard=r"mul_mat_q_case<GGML_TYPE_[A-Z0-9_]+(?:, GGML_PREC_Q4)?>"
+                  r"\(ctx, args, stream, forced_J\);",
         ),
         Edit(
             id="mmq-public-param",
@@ -417,12 +452,12 @@ SOURCE_PATCH = FilePatch(
         ),
         Edit(
             id="mmq-public-forward",
-            anchor=r"ggml_cuda_mul_mat_q_switch_type\(ctx, args, stream\);",
+            anchor=r"ggml_cuda_mul_mat_q_switch_type\(ctx, args, stream, prec_src1\);",
             rationale="the dense and MUL_MAT_ID calls into the type dispatcher",
             mode="replace_all",
             expect_matches=2,
-            text="ggml_cuda_mul_mat_q_switch_type(ctx, args, stream, forced_J);",
-            guard=r"ggml_cuda_mul_mat_q_switch_type\(ctx, args, stream, forced_J\);",
+            text="ggml_cuda_mul_mat_q_switch_type(ctx, args, stream, prec_src1, forced_J);",
+            guard=r"ggml_cuda_mul_mat_q_switch_type\(ctx, args, stream, prec_src1, forced_J\);",
         ),
         Edit(
             id="mmq-eligibility-and-entry",
