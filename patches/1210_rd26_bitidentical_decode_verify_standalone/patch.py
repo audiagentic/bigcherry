@@ -29,6 +29,24 @@ depends on 1202/1203: b11126's own tile launcher and WMMA gate are the
 pre-images. Known gap: with a quantized KV cache, decode (n_q 1..2) takes the
 vector kernel while n_q 3..8 take the tile kernel, so identity is only
 claimed for F16/BF16 KV.
+
+PRBE20 2026-09-28: real hardware re-run of --run-rd26-contract (gfx1100,
+gfx1201, gfx1030) against this Wave1+Wave2 port STILL fails at the identical
+byte offset (first_file_byte_mismatch=480) as the pre-port run -- the port
+above did not close the gap. Source audit found a SECOND, independent call
+site into ggml_cuda_should_use_mmvf() in ggml-cuda.cu:
+ggml_cuda_should_fuse_mul_mat_vec_f() (the op-fusion decision gate, called
+from FFN up/gate fusion sites) computes its own batch-size argument as
+`is_mul_mat_id ? src1->ne[2] : src1->ne[1]` and passes it straight through,
+bypassing the ne11 <= MMVF_MAX_BATCH_SIZE normalization the
+rd26a-mmvf-decode-verify edit below already applies to the plain dispatch
+call site. For GGML_OP_MUL_MAT_ID (MoE) tensors this fusion gate can select
+differently between a decode-scale batch and a verify-scale batch -- every
+hardware run that hit this failure used an MoE model (qwen3.6-35B-A3B), so
+this is the leading candidate for the remaining divergence. The
+rd26a-mmvf-fusion-decode-verify edit below applies the same normalization
+to this second call site; hardware re-verification of --run-rd26-contract
+is still required to confirm it closes the gap (not done in this change).
 """
 
 import re
@@ -54,6 +72,35 @@ PATCHES = [
                     "    if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11_mmvf)) {"
                 ),
                 guard=r"const\ int64_t\ ne11_mmvf\ =\ ne11\ <=\ MMVF_MAX_BATCH_SIZE\ \?\ 1\ :\ ne11;",
+                max_span_lines=1,
+            ),
+            Edit(
+                id="rd26a-mmvf-fusion-decode-verify",
+                anchor=(
+                    r"    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf"
+                    r"\(src0->type, cc, src0->ne, src0->nb, is_mul_mat_id \? src1->ne\[2\] : src1->ne\[1\]\);"
+                ),
+                rationale=(
+                    "PRBE20 2026-09-28: ggml_cuda_should_fuse_mul_mat_vec_f() (the op-fusion "
+                    "decision gate) makes its own independent ggml_cuda_should_use_mmvf() call "
+                    "using is_mul_mat_id ? src1->ne[2] : src1->ne[1] as the batch-size argument, "
+                    "bypassing the decode/verify normalization the sibling "
+                    "rd26a-mmvf-decode-verify edit already applies to the plain dispatch call "
+                    "site. For MUL_MAT_ID (MoE) tensors this fusion gate can select differently "
+                    "between a decode-scale and a verify-scale batch. Apply the same "
+                    "ne11 <= MMVF_MAX_BATCH_SIZE normalization here."
+                ),
+                mode="replace",
+                text=(
+                    "    // PRBE20: this fusion-decision gate makes its own independent MMVF call;\n"
+                    "    // normalize its batch-size argument the same way rd26a-mmvf-decode-verify\n"
+                    "    // normalizes the plain dispatch call site above, so decode (n_q = 1) and\n"
+                    "    // verify (n_q <= 8) select the same fusion decision for MUL_MAT_ID too.\n"
+                    "    const int64_t ne11_fuse = is_mul_mat_id ? src1->ne[2] : src1->ne[1];\n"
+                    "    const int64_t ne11_fuse_mmvf = ne11_fuse <= MMVF_MAX_BATCH_SIZE ? 1 : ne11_fuse;\n"
+                    "    use_mul_mat_vec_f = use_mul_mat_vec_f && ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11_fuse_mmvf);"
+                ),
+                guard=r"const\ int64_t\ ne11_fuse_mmvf\ =\ ne11_fuse\ <=\ MMVF_MAX_BATCH_SIZE\ \?\ 1\ :\ ne11_fuse;",
                 max_span_lines=1,
             ),
         ),
