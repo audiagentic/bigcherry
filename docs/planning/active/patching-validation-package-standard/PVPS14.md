@@ -53,9 +53,15 @@ GPT design review (reviewer-gpt-agent, req_0b8ef25771864ee1, 2026-09-28) of patc
 
 ## Notes
 
-
+Dispatched dev-gpt-agent (req_0356c1e3b9f74d2a) to implement fixes for the review's two mechanical gaps. It delivered real code (branch fix/pvps14-pccs-evidence, merged b821fd68): server-log proof of shorter-prefix checkpoint reuse, and conditional top-2 token/logprob divergence capture across the original pair + 3 fresh warm/cold repeats. Found and fixed two real bugs in the draft before merging (GPT had no execution environment to catch these): activation_evidence was a plain dict, not the required ActivationEvidence instance (would crash); the checkpoint-detection regex targets SLT_TRC/SRV_TRC server logs which are trace-level (verified in vendor/llama.cpp's common/log.h) and don't print at the default verbosity threshold (would silently always fail-closed) -- added -v to the warm server args (verified against common/arg.cpp). Offline suite clean. State stays untested -- the actual 63/64-token divergence question is still open pending a real hardware run with this new diagnostic capture.
 
 ## Change Log
 
 - 2026-09-28T22:28:32.391094+00:00 (created-by): Created by agent
 - 2026-09-28T22:28:44.022196+00:00 (updated-by): Updated: section:description, section:steps
+
+## Ledger-events
+
+- chg_20260928_224951_fixed-1005s-validation-produc_9562
+- 2026-09-28T22:49:54.050331+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-28T22:50:02.035924+00:00 (updated-by): Updated: section:notes
