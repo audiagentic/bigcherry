@@ -2,17 +2,19 @@ schema = 1
 
 # 1005's (PROMPT-CACHE-CHECKPOINT-SELECTION) patch-local producer.
 #
-# correctness (greedy_parity): formalizes the exact regression sequence
-# already manually validated (README.md, 2026-09-12/13): turn A primes a
-# checkpoint at a full-prompt position under --cache-ram 512, turn C sends
-# a request sharing only a SHORTER common prefix (the exact scenario
-# hybrid/recurrent memory's exact-position-only validity requires this
-# patch to handle correctly). Turn C's cache-assisted completion must
-# exactly equal a cold (--cache-ram 0, fresh process) reference completion
-# of the identical turn C prompt.
+# correctness (greedy_parity): turn A primes context checkpoints under
+# --cache-ram 512; turn C shares only a shorter common prefix and must both
+# (a) produce a server-side "restored context checkpoint" record whose
+# n_tokens/pos_max are below A's newest primed checkpoint, proving the target
+# reuse path actually executed, and (b) exactly match a fresh --cache-ram 0
+# greedy reference.
 #
-# No activation check: the fix has no opt-in marker/env toggle -- it
-# changes always-active checkpoint-selection logic.
+# On a mismatch the producer conditionally emits top-2 token IDs/logprobs at
+# the first divergent prediction across the original pair plus three fresh
+# warm/cold repeat pairs. This is diagnostic only; greedy_parity stays exact.
+#
+# The paired tg128 lane is auxiliary no-regression evidence, not the
+# correctness gate and not checkpoint-path activation evidence.
 [producer.prompt-cache-checkpoint-selection]
 entrypoint = "producer.py"
 callable = "run"
@@ -21,6 +23,9 @@ standard_campaign = "run"
 correctness_evidence_cli = "forbid"
 performance_benchmark_cli = "forbid"
 artifacts = [
+  "pccs-activation.json",
   "pccs-correctness.json",
   "pccs-performance.json",
+  # Conditionally emitted only when greedy_parity diverges.
+  "pccs-divergence-diagnostic.json",
 ]
