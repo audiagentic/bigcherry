@@ -106,20 +106,15 @@ _MMQ_INCLUDES_NEW = """#include <atomic>
 #include <cstdint>
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
-_MMQ_SWITCH_OLD = """        case GGML_TYPE_Q6_K:
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
-            break;"""
-_MMQ_SWITCH_NEW = """        case GGML_TYPE_Q6_K: {
-            // bigcherry: PRBE110/RD07 activation evidence, not source-port logic.
+_MMQ_DISPATCH_CALL = "            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);"
+_MMQ_MARKER = """            // bigcherry: PRBE110/RD07 activation evidence, not source-port logic.
             if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_rd07_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_rd07_logged.test_and_set(std::memory_order_relaxed)) {
                     GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold path=q6k_mmq_dispatch contract=PRBE110-RD07-Q6K-MMQ-SCALE-FOLD\\n");
                 }
             }
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
-            break;
-        }"""
+"""
 
 _JMAX_OLD = """    int ret = std::min(ne11, int64_t(512));
     ret -= ret % 8;"""
@@ -147,14 +142,9 @@ _JMAX_NEW = """    int ret = std::min(ne11, int64_t(512));
         }
     }"""
 
-_PERF_OLD = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
-
-
-    return test_cases;
-}"""
-_PERF_NEW = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
-    }
+_PERF_ANCHOR = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
+    }"""
+_PERF_CASES = """
 
     // bigcherry PRBE110/RD07: Q6_K MMQ target shapes plus non-target controls.
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1}));
@@ -162,10 +152,7 @@ _PERF_NEW = """        test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 10240, 512, 5120, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1}));
-    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1}));
-
-    return test_cases;
-}"""
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, 17408, 512, 5120, {1, 1}, {1, 1}));"""
 
 PATCHES = [
     FilePatch(
@@ -186,8 +173,8 @@ PATCHES = [
         edits=(
             Edit(id="rd07-atomic-include", anchor=re.escape(_MMQ_INCLUDES_OLD), mode="replace", text=_MMQ_INCLUDES_NEW,
                  guard=r"#include <atomic>", rationale="Support once-per-process activation instrumentation.", expect_matches=1, max_span_lines=3),
-            Edit(id="rd07-activation-marker", anchor=re.escape(_MMQ_SWITCH_OLD), mode="replace", text=_MMQ_SWITCH_NEW,
-                 guard=re.escape("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold"), rationale="Anchor after 0300_mmq_forced_j and prove the optimized Q6_K specialization was dispatched.", expect_matches=1, max_span_lines=3),
+            Edit(id="rd07-activation-marker", anchor=re.escape(_MMQ_DISPATCH_CALL), mode="insert_before", text=_MMQ_MARKER,
+                 guard=re.escape("BIGCHERRY_PATCH_HIT patch=1267_rd07_q6k_mmq_scale_fold"), rationale="Insert before the unique Q6_K dispatch call without consuming it, so 1006 can compose in either order.", expect_matches=1, max_span_lines=1),
         ),
     ),
     FilePatch(
@@ -199,7 +186,7 @@ PATCHES = [
     FilePatch(
         path="tests/test-backend-ops.cpp",
         description="RD07-only Q6_K MMQ performance cases",
-        edits=(Edit(id="rd07-perf-cases", anchor=re.escape(_PERF_OLD), mode="replace", text=_PERF_NEW,
-                    guard=re.escape("bigcherry PRBE110/RD07: Q6_K MMQ target shapes"), rationale="Add only RD07 MMQ target/control cases; exclude RD05/RD06 FA cases.", expect_matches=1, max_span_lines=7),),
+        edits=(Edit(id="rd07-perf-cases", anchor=re.escape(_PERF_ANCHOR), mode="insert_after", text=_PERF_CASES,
+                    guard=re.escape("bigcherry PRBE110/RD07: Q6_K MMQ target shapes"), rationale="Insert after make_test_cases_perf's unique final l2_norm_batch loop line+closing brace; the anchor remains intact for 1203/1269 in any order.", expect_matches=1, max_span_lines=2),),
     ),
 ]

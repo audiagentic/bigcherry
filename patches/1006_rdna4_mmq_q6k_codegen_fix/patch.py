@@ -71,9 +71,9 @@ PATCH = FilePatch(
 # promotion above lives inside a __device__ kernel body (no host I/O, so a
 # getenv()-gated marker cannot live there). Following 1267/RD07's own
 # precedent exactly (same dispatch site, same file): instrument the HOST
-# dispatch switch in ggml_cuda_mul_mat_q_switch_type (mmq.cu) at its
-# case GGML_TYPE_Q6_K: branch -- proves the Q6_K MMQ path was actually
-# dispatched, once per process, only under BIGCHERRY_PATCH_TRACE=1.
+# dispatch switch in ggml_cuda_mul_mat_q_switch_type (mmq.cu) immediately
+# before its semantic Q6_K dispatch call. The call text itself is preserved,
+# so 1006 and 1267 can insert their independent markers in either order.
 _MMQ_INCLUDES_OLD = """#include <cstdint>
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
@@ -82,20 +82,15 @@ _MMQ_INCLUDES_NEW = """#include <atomic>
 
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args,"""
 
-_MMQ_SWITCH_OLD = """        case GGML_TYPE_Q6_K:
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
-            break;"""
-_MMQ_SWITCH_NEW = """        case GGML_TYPE_Q6_K: {
-            // bigcherry: RDNA4-MMQ-Q6K-CODEGEN activation evidence, not source-port logic.
+_MMQ_DISPATCH_CALL = "            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);"
+_MMQ_MARKER = """            // bigcherry: RDNA4-MMQ-Q6K-CODEGEN activation evidence, not source-port logic.
             if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 static std::atomic_flag bigcherry_1006_logged = ATOMIC_FLAG_INIT;
                 if (!bigcherry_1006_logged.test_and_set(std::memory_order_relaxed)) {
                     GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1006_rdna4_mmq_q6k_codegen_fix path=q6k_mmq_dispatch contract=RDNA4-MMQ-Q6K-CODEGEN\\n");
                 }
             }
-            mul_mat_q_case<GGML_TYPE_Q6_K>(ctx, args, stream, forced_J);
-            break;
-        }"""
+"""
 
 ACTIVATION_PATCH = FilePatch(
     path="ggml/src/ggml-cuda/mmq.cu",
@@ -112,17 +107,14 @@ ACTIVATION_PATCH = FilePatch(
         ),
         Edit(
             id="mmq-q6k-dispatch-marker",
-            # Unique in the file: ggml_cuda_mul_mat_q_switch_type's own
-            # Q6_K case, not any of the other switch statements in mmq.cu
-            # that also branch on GGML_TYPE_Q6_K (verified anchor text
-            # includes the specific mul_mat_q_case<GGML_TYPE_Q6_K> call).
-            anchor=re.escape(_MMQ_SWITCH_OLD),
-            rationale="prove the Q6_K MMQ path was actually dispatched",
-            mode="replace",
-            text=_MMQ_SWITCH_NEW,
+            anchor=re.escape(_MMQ_DISPATCH_CALL),
+            rationale="insert immediately before the unique Q6_K mul_mat_q_case dispatch call; "
+                      "the call remains unchanged so RD07 can independently target it in either order",
+            mode="insert_before",
+            text=_MMQ_MARKER,
             guard=re.escape("BIGCHERRY_PATCH_HIT patch=1006_rdna4_mmq_q6k_codegen_fix"),
             expect_matches=1,
-            max_span_lines=3,
+            max_span_lines=1,
         ),
     ),
 )
