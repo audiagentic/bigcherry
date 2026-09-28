@@ -57,7 +57,12 @@ CAMPAIGN_SRC = (
 PRODUCER_SRC = (
     TOOLS_ROOT.parent / "patches" / PATCH_ID / "validation" / "producer.py"
 ).read_text(encoding="utf-8")
-EXPECTED_ARTIFACT_NAMES = frozenset({"rd26-decode-verify-bit-identity.json", "rd26-controls.json"})
+EXPECTED_ARTIFACT_NAMES = frozenset({
+    "rd26-decode-verify-bit-identity.json",
+    "rd26-controls.json",
+    # PRBE20 2026-09-28: conditionally emitted only on a real mismatch.
+    "rd26-decode-verify-diagnostic.json",
+})
 
 
 def cfg_pinned() -> str:

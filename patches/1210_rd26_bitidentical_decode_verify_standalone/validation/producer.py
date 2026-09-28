@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,6 +81,7 @@ _PROMPT = (
 )
 
 _ARTIFACT_NAME = "rd26-decode-verify-bit-identity.json"
+_DIAGNOSTIC_ARTIFACT_NAME = "rd26-decode-verify-diagnostic.json"
 
 
 def _sha256_file(path: Path) -> str:
@@ -91,6 +93,50 @@ def _sha256_file(path: Path) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _diff_context(left: Path, right: Path, offset: int, *, radius: int = 64) -> dict:
+    """Diagnostic dump around a raw-byte mismatch offset (PRBE20 2026-09-28).
+
+    Two independent fix attempts (Wave1+Wave2 fork port, then the
+    fusion-gate MMVF call site) both left an unexplained mismatch at the
+    SAME small offset (480) with no visibility into what's actually there.
+    The scratch .gguf files are unconditionally deleted in run()'s
+    ``finally`` block, so the mismatch offset alone gives no way to tell,
+    after the fact, whether it lands in GGUF header/metadata (structural,
+    not a kernel bug) or in the logits tensor payload itself (a real
+    numerical divergence) -- this closes that gap by recording the raw
+    bytes around the offset, interpreted both as int32 (token-id shape)
+    and float32 (logit shape), directly in the correctness artifact.
+    """
+    start = max(0, offset - radius)
+    with left.open("rb") as lf, right.open("rb") as rf:
+        lf.seek(start)
+        rf.seek(start)
+        left_bytes = lf.read(radius * 2)
+        right_bytes = rf.read(radius * 2)
+
+    def _as_int32(raw: bytes) -> list[int]:
+        n = len(raw) - (len(raw) % 4)
+        return list(struct.unpack(f"<{n // 4}i", raw[:n]))
+
+    def _as_float32(raw: bytes) -> list[float]:
+        n = len(raw) - (len(raw) % 4)
+        return list(struct.unpack(f"<{n // 4}f", raw[:n]))
+
+    total_diff_bytes = sum(1 for a, b in zip(left_bytes, right_bytes) if a != b)
+    return {
+        "offset": offset,
+        "window_start": start,
+        "window_size": len(left_bytes),
+        "left_hex": left_bytes.hex(),
+        "right_hex": right_bytes.hex(),
+        "left_as_int32": _as_int32(left_bytes),
+        "right_as_int32": _as_int32(right_bytes),
+        "left_as_float32": _as_float32(left_bytes),
+        "right_as_float32": _as_float32(right_bytes),
+        "differing_bytes_in_window": total_diff_bytes,
+    }
 
 
 @dataclass(frozen=True)
@@ -276,6 +322,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                     )
 
         arm_comparison: dict[str, dict[str, object]] = {}
+        diagnostics: dict[str, dict[str, object]] = {}
         for arm in ("control", "subject"):
             decode = runs[arm]["decode"][0]
             verify = runs[arm]["verify"][0]
@@ -290,6 +337,9 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
 
             identical = decode.sha256 == verify.sha256
             first_diff = None if identical else _first_diff_offset(decode.path, verify.path)
+            diff_context = (
+                None if identical else _diff_context(decode.path, verify.path, first_diff)
+            )
 
             arm_comparison[arm] = {
                 "bit_identical": identical,
@@ -298,6 +348,11 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                 "verify_repeat_sha256": [record.sha256 for record in runs[arm]["verify"]],
                 "artifact_size": decode.size, "first_file_byte_mismatch": first_diff,
             }
+            if diff_context is not None and arm == "subject":
+                # Control is EXPECTED to diverge (that's what makes a pass
+                # non-vacuous) -- only the subject's divergence is a real
+                # finding worth persisting raw bytes for.
+                diagnostics[arm] = diff_context
 
         subject_identical = bool(arm_comparison["subject"]["bit_identical"])
         control_diverged = not bool(arm_comparison["control"]["bit_identical"])
@@ -354,6 +409,18 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         }
         ctx.runtime.write_artifact(name=_ARTIFACT_NAME, payload=doc)
 
+        emitted = {_ARTIFACT_NAME, _CONTROLS_ARTIFACT_NAME}
+        if diagnostics:
+            # PRBE20 2026-09-28: only emitted on a real mismatch (empty dict
+            # is falsy) -- see _diff_context's docstring. Persists what the
+            # scratch .gguf files (deleted in this run()'s finally block)
+            # would otherwise take a whole new hardware run to re-derive.
+            ctx.runtime.write_artifact(
+                name=_DIAGNOSTIC_ARTIFACT_NAME,
+                payload={"schema_version": 1, "contract_id": _CONTRACT_ID, "arms": diagnostics},
+            )
+            emitted.add(_DIAGNOSTIC_ARTIFACT_NAME)
+
         # PRBE20: the contract's controls lane (tg128 decode must not regress
         # by more than 1%) on the standard scaffold llama-bench pair. Wave 2
         # changes nwarps only for ncols_dst 2..8, so decode is the control.
@@ -405,7 +472,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             # crashing on mismatched promotion keysets.
             promotion_trigger_evidence={_CONTRACT_ID: (experiment_execution.trigger_evidence_from_marker_probe(
                 lane_id="rd26-controls", role="control", positive_hit=False),)},
-            emitted_artifacts=frozenset({_ARTIFACT_NAME, _CONTROLS_ARTIFACT_NAME}),
+            emitted_artifacts=frozenset(emitted),
         )
     finally:
         for path in created_outputs:
