@@ -25,7 +25,7 @@ PATCHES = [
                     "        // can be scheduled on valid backends.\n"
                     "        if (cparams.ctx_other != nullptr) {\n"
                     "            llama_context * other = cparams.ctx_other;\n"
-                    "            llama_model * other_model = llama_get_model(other);\n"
+                    "            const llama_model * other_model = llama_get_model(other);\n"
                     "            if (other_model != nullptr) {\n"
                     "                for (const auto & dev : other_model->devices) {\n"
                     "                    // deduplicate by backend device handle\n"
