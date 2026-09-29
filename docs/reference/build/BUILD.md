@@ -25,6 +25,10 @@ are in [TEST.md — reusable campaign build matrix](../testing/TEST.md#reusable-
 Framework configuration qualification is a prerequisite build/evidence
 operation, not a substitute for this production performance comparison.
 
+Patch qualification campaigns and A/Bs on the build server run through the
+queue, with a firing pre-flight: see
+[Queued qualification campaigns](#queued-qualification-campaigns-and-the-firing-pre-flight).
+
 ## Environment — the build server
 
 Host facts (address, paths, toolchain, ports, device inventory) live in
@@ -71,6 +75,90 @@ not either doc, and fix whichever doc is behind.)
   ```bash
   scp "$BC_HOST:/tmp/thing.md" docs/reference/THING.md   # run from Windows
   ```
+
+## Queued qualification campaigns and the firing pre-flight
+
+Run every patch qualification campaign through `tools/lab/plan-qualification/queue.sh`,
+not ad hoc. The queue gives content-addressed, ccache-backed builds (stock, base,
+control and subject builds are reused across patches and sessions, never rebuilt per
+run), a host-exclusive activity lock plus per-GPU locks, and restartable runs
+(a job whose log already ends in `CAMPAIGN_EXIT=` or `PREFLIGHT_EXIT=` is skipped).
+Working files live under the work root (`/mnt/data/bigcherry-work` on Brutus,
+`runs/<run-name>.log` and `runs/<run-name>/campaign/`).
+
+### Job file
+
+One row per job, run in file order. Rows are plain text; `#` starts a comment.
+
+```
+[MODEL=<gguf>] [HIP=<rocm prefix>] [VIS=<devices>] [REQUIRES=<preflight-run>] <patch> <producer|-> <arch> <device> <run-name> [campaign args...]
+PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
+PREFLIGHT <run-name> <binary> <model> <marker-regex> [server args...]
+```
+
+- `MODEL=` and `HIP=` override `BC_MODEL` and `BC_HIP_PATH` for that row. Set
+  `BC_HIP_PATH` (Brutus: `/mnt/vault/tmp/bc-rocm`) and `BC_MODEL` before starting.
+- Producer arguments: `--producer-input control_model=<gguf>` (the model that must
+  NOT fire the patch), `--producer-corpus <jsonl>`, `--common-patches <id>` for
+  prerequisite patches.
+- Multi-GPU models (the 27B Q8_0 does not fit one 24 GB card) use the multi-GPU
+  producer pattern: no single device, `ROCR_VISIBLE_DEVICES` unset, `-sm tensor`.
+- Timed campaign sessions are serialized; PROFILE rows fan out first. Sessions
+  need a cooldown gap (PA35): back-to-back sessions can show GPU clock instability.
+
+Start it detached and read the log:
+
+```
+cd /mnt/vault/development/projects/bigcherry/workspaces/main
+nohup bash tools/lab/plan-qualification/queue.sh jobs.txt > ~/bc-runs/batch.log 2>&1 &
+tail -f ~/bc-runs/batch.log        # start/done lines per job; ends "queue completed ..."
+```
+
+A worked example that builds and runs a 12-job batch is
+`tools/lab/native-vs-patched/queue-gfx1100-batch.sh`.
+
+### Prove the patch fires before timing it
+
+A "flat" result is uninterpretable unless the patch's code path is shown to have run
+on that model. Every patch needs, before any timed run:
+
+1. the **target model and configuration that can fire it** (the contract-defined
+   positive model; a control model that does not fire it);
+2. a **marker** printed under `BIGCHERRY_PATCH_TRACE=1`
+   (`BIGCHERRY_PATCH_HIT patch=<id> path=<name>`);
+3. a **pre-flight** showing the marker at least once on that model.
+
+Queue it, and block the campaign on it:
+
+```
+PREFLIGHT pf-1206-4b /path/to/llama-server /path/to/model.gguf patch=1206_rd13
+REQUIRES=pf-1206-4b MODEL=<gguf> 1206_rd13_mul_mat_add_view_fusion 1206_rd13_mul_mat_add_view_fusion/rd13 gfx1100 0 t-1206-s1 --producer-input control_model=<control gguf>
+```
+
+A row with `REQUIRES=<run>` is refused (`blocked campaign ...`, counted as a failure)
+unless that preflight logged `PREFLIGHT_EXIT=0`. For a one-off check outside a
+queue, run `tools/lab/native-vs-patched/preflight-fire.sh BINARY MODEL PATTERN
+[server args]` directly: it takes the same locks, so it waits for a running
+campaign rather than disturbing it. `activation-check.sh` (same arguments) is the
+lock-free primitive underneath; use it only when nothing else holds the GPUs.
+
+Known firing constraints (verify against the patch before planning a run):
+
+| Patch | Fires when | Notes |
+|---|---|---|
+| 1241 rd33 | Q8_0, `ne1==1` decode, RDNA3 | MTP verify batches (ncols>1) stay stock |
+| 1245 gp11 | MTP verify width 6 (`n_max=5`), Q8_0 | cannot fire at `n_max=4`; has no trace marker yet |
+| 1206 rd13 | dense + GDN models | contract positive model is the 4B |
+| 1263 prbe41 | single GPU only | aborts under `-sm tensor` (meta-backend assert) |
+| 1254 nro05 | GDN MoE + MTP | needs `--common-patches 1253_nro04_gfx1100_bf16_chunked_gdn` |
+
+Producers still decide activation themselves after their timed lanes; moving that
+check ahead of the timed lanes is tracked in PVPS15. Until then, the queue-level
+`PREFLIGHT` / `REQUIRES=` gate is the required guard.
+
+Rules: bench scripts live under `tools/lab/<topic>/` in the repo (never `/tmp` on
+the build server), do not edit a script while the queue is executing it, and do not
+start builds or extra jobs on a host that is mid-campaign.
 
 ## Sources — the normal way to build
 
