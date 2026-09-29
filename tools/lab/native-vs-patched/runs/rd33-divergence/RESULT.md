@@ -18,3 +18,9 @@ evidence of degradation (rd33's activations are unquantised), but no quality mea
 Not established: output quality vs a high-precision reference (needs perplexity/KL vs an unquantised-activation reference), MTP-lane effect
 (acceptance changes 0.901 -> 0.956, see ../rd33-ab1), other models.
 Promotion is blocked on the correctness/quality gate, not on performance.
+
+## Quality check (added): perplexity at batch 1 (the only path rd33 touches)
+`llama-perplexity -sm tensor -c 512 -b 1 -ub 1 --chunks 8` on 8 chunks of repo docs text (same corpus, same builds; logs ppl-*.log).
+control PPL 11.6132 +/- 0.717; rd33 PPL 11.5989 +/- 0.716 (-0.12%). rd33 is lower in all 8 running-mean checkpoints.
+Reading: the numerical change moves predictions slightly toward better, not worse (consistent with removing activation quantisation).
+Scope: one corpus, 4096 tokens, one model. It is evidence of no quality regression, not a formal contract correctness gate (5e-4 logprob).
