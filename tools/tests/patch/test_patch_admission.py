@@ -42,6 +42,25 @@ class TestPatchAdmission(unittest.TestCase):
             self.assertFalse(result.gate_active)
             self.assertEqual(result.status, "not-ready")
 
+    def test_build_mode_admits_stale_evidence_with_warnings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            catalog, patches = self._catalog(root)
+            evidence = root / "evidence"
+            evidence.mkdir()
+            (evidence / "0002_eligible.json").write_text(
+                json.dumps({"records": [{"eligible_for_validated_state": True}]}),
+                encoding="utf-8",
+            )
+            result = patch_admission.admit(
+                ["0001_test"], mode="build", catalog_path=catalog,
+                patches_dir=patches, pinned_ref="pin", evidence_root=evidence,
+            )
+            self.assertTrue(result.admissible)
+            self.assertEqual(result.failures, ())
+            self.assertEqual(result.status, "admitted-with-warnings")
+            self.assertTrue(any("not fully validated" in w for w in result.warnings))
+
     def test_production_gate_rejects_stale_validated_state_after_bootstrap(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
