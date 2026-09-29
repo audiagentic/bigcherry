@@ -44,7 +44,7 @@ from .patch import (
     cmd_patches,
 )
 from .profiling import cmd_profile_campaign
-from .runtime import cmd_runtime_matrix
+from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .source import cmd_audit, cmd_pull
 from .tuning import (
     cmd_execution_audit,
@@ -885,6 +885,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="resolve and write the immutable matrix without launching workers",
     )
     runtime_matrix_cmd.set_defaults(func=cmd_runtime_matrix)
+
+    reference_ladder_cmd = sub.add_parser(
+        "reference-ladder",
+        help="order-rotated llama-bench comparison of named build arms (e.g. stock vs patched) over registered models",
+    )
+    reference_ladder_cmd.add_argument(
+        "--arm", action="append", required=True, metavar="NAME=BIN_DIR",
+        help="build arm; repeatable; one must be named 'stock' (the shared, cached baseline)",
+    )
+    reference_ladder_cmd.add_argument(
+        "--model-id", action="append", required=True,
+        help="config/models.toml id; repeatable; topology sets the required device count and -sm args",
+    )
+    reference_ladder_cmd.add_argument("--devices", required=True, help="HIP_VISIBLE_DEVICES, e.g. '0,1'")
+    reference_ladder_cmd.add_argument("--output", required=True)
+    reference_ladder_cmd.add_argument("--model-root", default=None, help="default: the default host's model-root")
+    reference_ladder_cmd.add_argument("--cache-dir", default=None)
+    reference_ladder_cmd.add_argument("--rounds-per-arm", type=int, default=3)
+    reference_ladder_cmd.set_defaults(func=cmd_reference_ladder)
 
     # PROF01/HI132: repeatable rocprofv3-based GPU/runtime deep-profiling
     # campaign -- see profiling/workflow.py for the actual orchestration.

@@ -62,7 +62,7 @@ def _distinct_arms(arms: dict[str, Path]) -> dict[Path, list[str]]:
 
 def _cache_path(
     cache_dir: Path, binary_dir: Path, model: Path, device_key: str,
-    workloads: tuple[str, ...], rounds_per_arm: int, exe: str = "",
+    workloads: tuple[str, ...], rounds_per_arm: int, runtime_args: tuple[str, ...], exe: str = "",
 ) -> Path:
     """A build root is content-addressed by SOURCE, not by binary bytes: a
     build in place (e.g. a ccache rebuild that changes generated code without
@@ -80,7 +80,7 @@ def _cache_path(
         "binary_mtime_ns": binary_stat.st_mtime_ns if binary_stat else None,
         "model": str(model.resolve()), "model_size": model_stat.st_size,
         "model_mtime_ns": model_stat.st_mtime_ns, "device": device_key, "workloads": sorted(workloads),
-        "rounds_per_arm": rounds_per_arm,
+        "rounds_per_arm": rounds_per_arm, "runtime_args": list(runtime_args),
     }, sort_keys=True)
     return cache_dir / f"{hashlib.sha256(key.encode()).hexdigest()[:32]}.json"
 
@@ -93,6 +93,7 @@ def run_reference_ladder(
     cache_dir: Path,
     shared_arms: frozenset[str],
     device_key: str,
+    runtime_args: tuple[str, ...],
     workloads: tuple[str, ...] = ("decode", "prefill"),
     rounds_per_arm: int = 2,
     exe: str = "",
@@ -112,7 +113,7 @@ def run_reference_ladder(
     # cached: one sample per rotation round, len(distinct) x rounds_per_arm.
     rounds = len(distinct) * rounds_per_arm
     for binary_dir, names in distinct.items():
-        path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, exe)
+        path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, runtime_args, exe)
         entry = json.loads(path.read_text(encoding="utf-8")) if set(names) & shared_arms and path.is_file() else None
         if entry is not None and all(entry["samples"].get(w) for w in workloads):
             cached.extend(names)
@@ -133,7 +134,7 @@ def run_reference_ladder(
     for r in range(rounds if n else 0):
         order = groups[r % n:] + groups[: r % n]
         for position, (binary_dir, names) in enumerate(order):
-            command = [str(binary_dir / f"llama-bench{exe}"), "-m", str(model), "-p", prompt, "-n", gen, "-ngl", "99"]
+            command = [str(binary_dir / f"llama-bench{exe}"), "-m", str(model), "-p", prompt, "-n", gen, "-ngl", "99", *runtime_args]
             completed = runner(command)
             for workload in workloads:
                 pattern = _PAIRED_BENCH_METRIC_PATTERN[workload]
@@ -151,7 +152,7 @@ def run_reference_ladder(
         }
         if all(len(samples[w]) == rounds for w in workloads):
             cache_dir.mkdir(parents=True, exist_ok=True)
-            path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, exe)
+            path = _cache_path(cache_dir, binary_dir, model, device_key, workloads, rounds_per_arm, runtime_args, exe)
             path.write_text(json.dumps({"binary_dir": str(binary_dir), "arms": names, "samples": samples},
                                        indent=2, sort_keys=True) + "\n", encoding="utf-8")
     payload = summarise_ladder(arms=arms, runs=runs, workloads=workloads)
