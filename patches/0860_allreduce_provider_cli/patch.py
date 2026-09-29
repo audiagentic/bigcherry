@@ -19,6 +19,7 @@ from bigcherry.patcher import Edit, FilePatch
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     description="replace GGML_CUDA_ALLREDUCE env selection with an explicit registered provider/wire configuration seam",
+    language="none",
     edits=(
         Edit(
             id="allreduce-provider-config",
@@ -80,10 +81,16 @@ CUDA = FilePatch(
                 r"#endif // defined\(__linux__\)\n"
                 r"    \} else \{\n"
                 r"        std::string env_str\(env\);\n"
-                r"        if \(env_str == \"nccl\"\) \{ ggml_backend_cuda_comm_init_nccl\(ret\); \}\n"
-                r"        else if \(env_str == \"internal\"\) \{ ggml_backend_cuda_comm_init_internal\(ret\); \}\n"
-                r"        else if \(env_str == \"none\"\) \{ ggml_backend_cuda_comm_init_none\(ret\); \}\n"
-                r"        else \{ GGML_LOG_WARN\(\"unknown GGML_CUDA_ALLREDUCE value: %s\\n\", env\); ggml_backend_cuda_comm_init_none\(ret\); \}\n"
+                r"        if \(env_str == \"nccl\"\) \{\n"
+                r"            ggml_backend_cuda_comm_init_nccl\(ret\);\n"
+                r"        \} else if \(env_str == \"internal\"\) \{\n"
+                r"            ggml_backend_cuda_comm_init_internal\(ret\);\n"
+                r"        \} else if \(env_str == \"none\"\) \{\n"
+                r"            ggml_backend_cuda_comm_init_none\(ret\);\n"
+                r"        \} else \{\n"
+                r"            GGML_LOG_WARN\(\"unknown GGML_CUDA_ALLREDUCE value: %s\\n\", env\);\n"
+                r"            ggml_backend_cuda_comm_init_none\(ret\);\n"
+                r"        \}\n"
                 r"    \}"
             ),
             rationale="remove GGML_CUDA_ALLREDUCE and select only from the validated explicit configuration; auto preserves the stock platform default",
@@ -119,7 +126,7 @@ CUDA = FilePatch(
             id="allreduce-provider-proc",
             anchor=(
                 r"    if \(strcmp\(name, \"ggml_backend_comm_init\"\) == 0\) \{\n"
-                r"        return \(void \*\) ggml_backend_cuda_comm_init;\n"
+                r"        return \(void \*\)ggml_backend_cuda_comm_init;\n"
                 r"    \}"
             ),
             rationale="publish the configuration setter beside the existing communication proc-address seam",
