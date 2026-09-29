@@ -26,7 +26,7 @@ real cross-device allreduce on every matmul that's split this way.
 
 Provider selection happens once, at backend-construction time, in
 `ggml_backend_cuda_comm_init()` (`ggml/src/ggml-cuda/ggml-cuda.cu`),
-controlled by `GGML_CUDA_ALLREDUCE` (default: unset, which tries RCCL first
+controlled by `--allreduce` (`auto|ccl|host|adaptive|p2p|root3|butterfly`, patch 0860; default `auto`, which is RCCL first
 on Linux):
 
 1. **RCCL** — the first choice by default. Works **only when every
@@ -107,7 +107,7 @@ to reduction/allreduce without new evidence.
   handles it natively, no META involvement.
 - Any tensor-split deployment spanning different GPU architectures on this
   box will hard-abort under the default `GGML_HIP_REDUCE_PLAN=auto` /
-  `GGML_CUDA_ALLREDUCE` settings unless META is forced explicitly
+  `--allreduce` settings unless META is forced explicitly
   (`GGML_HIP_REDUCE_PLAN=meta`), per patch 1225's fail-closed policy.
 - `-sm layer` remains unaffected by any of this regardless of architecture
   mix, since it never invokes a reduction provider at all — it's the

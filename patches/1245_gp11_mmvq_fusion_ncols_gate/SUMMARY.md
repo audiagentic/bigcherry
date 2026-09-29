@@ -120,7 +120,7 @@ repetition noise floor. A paired/interleaved re-run would tighten the figure but
 is unlikely to flip the sign; it was not run because the direction is already
 clear and unfavourable.
 
-Both arms ran on `bigcherry-native` (no patch 0840), so `GGML_CUDA_ALLREDUCE=hybrid`
+Both arms ran on `bigcherry-native` (no patch 0840), so `--allreduce adaptive`
 was inert. Fine for an A/B of this patch — both arms share that base — but these
 absolute tps values are **not** comparable to production numbers.
 
