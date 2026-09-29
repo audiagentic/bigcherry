@@ -11,7 +11,7 @@ MR=/mnt/vault/llm-models
 ladder() { python -m bigcherry reference-ladder --arm stock="$STOCK" --arm patched="$PATCHED" --model-id "$1" --devices "$2" --output "$O/$3" --rounds-per-arm 3; }
 probe() { # model-path devices tag extra-args
   mkdir -p "$O/activation"
-  HIP_VISIBLE_DEVICES=$2 BIGCHERRY_PATCH_HIT=1 BIGCHERRY_PATCH_TRACE=1 "$PATCHED/llama-bench" -m "$MR/$1" -p 512 -n 8 -r 1 -ngl 99 $4 > "$O/activation/$3.log" 2>&1
+  HIP_VISIBLE_DEVICES=$2 BIGCHERRY_PATCH_HIT=1 BIGCHERRY_PATCH_TRACE=1 "$PATCHED/llama-bench" -m "$MR/$1" -p 512 -n 8 -r 1 -ngl 99 -v $4 > "$O/activation/$3.log" 2>&1
   grep -a "BIGCHERRY_PATCH_HIT" "$O/activation/$3.log" | sed 's/^.*BIGCHERRY_PATCH_HIT/BIGCHERRY_PATCH_HIT/' | sort | uniq -c > "$O/activation/$3.hits"
 }
 A=qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf
