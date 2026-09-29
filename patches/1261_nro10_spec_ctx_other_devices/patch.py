@@ -24,7 +24,7 @@ PATCHES = [
                     "        // so that shared tensors between the draft and target contexts\n"
                     "        // can be scheduled on valid backends.\n"
                     "        if (cparams.ctx_other != nullptr) {\n"
-                    "            llama_context * other = cparams.ctx_other;\n"
+                    "            const llama_context * other = cparams.ctx_other;\n"
                     "            const llama_model * other_model = llama_get_model(other);\n"
                     "            if (other_model != nullptr) {\n"
                     "                for (const auto & dev : other_model->devices) {\n"
@@ -44,13 +44,16 @@ PATCHES = [
                     "                                       ggml_backend_dev_name(dev.dev)));\n"
                     "                        }\n"
                     "                        backends.emplace_back(other_backend);\n"
+                    "                        if (getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
+                    "                            LLAMA_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1261_nro10 path=ctx_other_backend device=%s\\n\", ggml_backend_dev_name(dev.dev));\n"
+                    "                        }\n"
                     "                    }\n"
                     "                }\n"
                     "            }\n"
                     "        }"
                 ),
                 mode="insert_after",
-                guard="PNRO10: add ctx_other model devices",
+                guard="BIGCHERRY_PATCH_HIT patch=1261_nro10",
                 rationale="Add ctx_other model devices to the scheduler backends so that shared tensors between the draft and target contexts can be scheduled on valid backends.",
                 expect_matches=2,
                 occurrence=0,
