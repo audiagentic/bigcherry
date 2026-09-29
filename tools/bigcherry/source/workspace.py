@@ -212,6 +212,18 @@ def materialize(
     results = patcher.apply_all(loaded, destination)
     if not all(result.ok for result in results):
         raise WorkspaceError("source patch application failed")
+    # apply_all preserves input order 1:1 (tools/bigcherry/patch/apply.py's
+    # own docstring: a list comprehension over `patches`), so zipping with
+    # `loaded` recovers which FilePatch produced each PatchResult. A patch
+    # declaring create=True introduces a file upstream must not already
+    # have; without recording that here, describe()/git_tree_oid() sees it
+    # as an untracked ("??") file and fails closed with "unexpected source
+    # worktree files" even though the patch application itself succeeded --
+    # this genuinely happened for 1253_nro04_gfx1100_bf16_chunked_gdn's new
+    # gated_delta_net_chunked*.cu/.cuh files.
+    for patch, result in zip(loaded, results):
+        if patch.create and result.changed:
+            allowed_untracked.add(patch.path)
     metadata = describe(
         root=destination,
         upstream_revision=plan.upstream_revision,
