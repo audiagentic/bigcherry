@@ -1,0 +1,16 @@
+schema = 1
+id = "0860_allreduce_provider_cli"
+order = 860
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = []
+backends = []
+tags = ["allreduce", "cli", "provider", "wire"]
