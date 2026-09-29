@@ -1,20 +1,9 @@
-"""0860: explicit AllReduce provider/wire configuration seam.
-
-Source ranges still required before the remaining CLI edits can be authored
-without inventing anchors/APIs:
-- examples/llama-bench/llama-bench.cpp: exact -sm parser block (~750), cmd_params
-  definition carrying split-mode (~parser state), and post-ggml_backend_load_all
-  block (~2263).
-
-The CUDA seam below and common/arg.cpp CLI are fully anchored from supplied
-b11233 excerpts.
-"""
+"""0860: explicit AllReduce provider/wire configuration seam."""
 
 GROUP = "core"
 STATE = "untested"
 
 from bigcherry.patcher import Edit, FilePatch
-
 
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
@@ -51,9 +40,6 @@ CUDA = FilePatch(
                 "        }\n"
                 "        return false;\n"
                 "    }\n"
-                "    // Extension providers are registered by patches that require 0860. Until\n"
-                "    // those patches extend this dispatch, fail explicitly rather than silently\n"
-                "    // selecting another provider.\n"
                 "    if (p == \"adaptive\" || p == \"p2p\" || p == \"root3\") {\n"
                 "        if (err != nullptr && err_len != 0) {\n"
                 "            snprintf(err, err_len, \"allreduce provider not available in this build: %s\", p.c_str());\n"
@@ -142,7 +128,6 @@ CUDA = FilePatch(
     ),
 )
 
-
 ARG_CPP = FilePatch(
     path="common/arg.cpp",
     description="add explicit AllReduce provider/wire CLI options and forward them through the backend registry",
@@ -157,17 +142,9 @@ ARG_CPP = FilePatch(
                 "static void common_apply_allreduce_config(const std::string & provider, const std::string & wire) {\n"
                 "    static std::string current_provider;\n"
                 "    static std::string current_wire;\n\n"
-                "    if (!provider.empty()) {\n"
-                "        current_provider = provider;\n"
-                "    }\n"
-                "    if (!wire.empty()) {\n"
-                "        current_wire = wire;\n"
-                "    }\n\n"
-                "    // Permit --allreduce-wire q8 before --allreduce p2p: keep it pending\n"
-                "    // until the provider is known, then validate/apply the pair together.\n"
-                "    if (current_provider.empty() && current_wire == \"q8\") {\n"
-                "        return;\n"
-                "    }\n\n"
+                "    if (!provider.empty()) {\n        current_provider = provider;\n    }\n"
+                "    if (!wire.empty()) {\n        current_wire = wire;\n    }\n\n"
+                "    if (current_provider.empty() && current_wire == \"q8\") {\n        return;\n    }\n\n"
                 "    const std::string effective_provider = current_provider.empty() ? \"auto\" : current_provider;\n"
                 "    const std::string effective_wire = current_wire.empty() ? \"native\" : current_wire;\n\n"
                 "    ggml_backend_load_all();\n"
@@ -176,19 +153,12 @@ ARG_CPP = FilePatch(
                 "        ggml_backend_reg_t reg = ggml_backend_reg_get(i);\n"
                 "        auto set_config = (bool (*)(const char *, const char *, char *, size_t))\n"
                 "            ggml_backend_reg_get_proc_address(reg, \"ggml_backend_comm_set_config\");\n"
-                "        if (set_config == nullptr) {\n"
-                "            continue;\n"
-                "        }\n"
-                "        found = true;\n"
-                "        char err[256] = {};\n"
+                "        if (set_config == nullptr) {\n            continue;\n        }\n"
+                "        found = true;\n        char err[256] = {};\n"
                 "        if (!set_config(effective_provider.c_str(), effective_wire.c_str(), err, sizeof(err))) {\n"
-                "            throw std::invalid_argument(err);\n"
-                "        }\n"
-                "    }\n\n"
+                "            throw std::invalid_argument(err);\n        }\n    }\n\n"
                 "    if (!found && (effective_provider != \"auto\" || effective_wire != \"native\")) {\n"
-                "        throw std::invalid_argument(\"--allreduce requires a CUDA/HIP build\");\n"
-                "    }\n"
-                "}\n\n"
+                "        throw std::invalid_argument(\"--allreduce requires a CUDA/HIP build\");\n    }\n}\n\n"
             ),
             guard=r"common_apply_allreduce_config",
             expect_matches=1,
@@ -199,21 +169,14 @@ ARG_CPP = FilePatch(
             rationale="keep AllReduce selection adjacent to the existing multi-GPU split-mode controls",
             mode="insert_before",
             text=(
-                "add_opt(common_arg(\n"
-                "        {\"--allreduce\"}, \"PROVIDER\",\n"
+                "add_opt(common_arg(\n        {\"--allreduce\"}, \"PROVIDER\",\n"
                 "        \"multi-GPU AllReduce provider: auto|ccl|host|adaptive|p2p|root3|butterfly (default: auto)\",\n"
-                "        [](common_params &, const std::string & value) {\n"
-                "            common_apply_allreduce_config(value, \"\");\n"
-                "        }\n"
+                "        [](common_params &, const std::string & value) {\n            common_apply_allreduce_config(value, \"\");\n        }\n"
                 "    ).set_env(\"LLAMA_ARG_ALLREDUCE\"));\n"
-                "    add_opt(common_arg(\n"
-                "        {\"--allreduce-wire\"}, \"WIRE\",\n"
+                "    add_opt(common_arg(\n        {\"--allreduce-wire\"}, \"WIRE\",\n"
                 "        \"AllReduce wire format: native|q8 (default: native; q8 requires p2p)\",\n"
-                "        [](common_params &, const std::string & value) {\n"
-                "            common_apply_allreduce_config(\"\", value);\n"
-                "        }\n"
-                "    ).set_env(\"LLAMA_ARG_ALLREDUCE_WIRE\"));\n"
-                "    "
+                "        [](common_params &, const std::string & value) {\n            common_apply_allreduce_config(\"\", value);\n        }\n"
+                "    ).set_env(\"LLAMA_ARG_ALLREDUCE_WIRE\"));\n    "
             ),
             guard=r'"--allreduce-wire"',
             expect_matches=1,
@@ -221,5 +184,78 @@ ARG_CPP = FilePatch(
     ),
 )
 
+LLAMA_BENCH = FilePatch(
+    path="tools/llama-bench/llama-bench.cpp",
+    description="add llama-bench AllReduce provider/wire CLI controls and apply them after parsing",
+    language="none",
+    edits=(
+        Edit(
+            id="bench-allreduce-config-helper",
+            anchor=r"^static void print_usage\(int /\* argc \*/, char \*\* argv\) \{$",
+            rationale="keep benchmark-only scalar CLI state and registry bridge immediately before usage/parser code",
+            mode="insert_before",
+            text=(
+                "static std::string bench_allreduce_provider = \"auto\";\n"
+                "static std::string bench_allreduce_wire = \"native\";\n\n"
+                "static void bench_apply_allreduce_config(const std::string & provider, const std::string & wire) {\n"
+                "    bool found = false;\n"
+                "    for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {\n"
+                "        ggml_backend_reg_t reg = ggml_backend_reg_get(i);\n"
+                "        auto set_config = (bool (*)(const char *, const char *, char *, size_t))\n"
+                "            ggml_backend_reg_get_proc_address(reg, \"ggml_backend_comm_set_config\");\n"
+                "        if (set_config == nullptr) {\n            continue;\n        }\n"
+                "        found = true;\n        char err[256] = {};\n"
+                "        if (!set_config(provider.c_str(), wire.c_str(), err, sizeof(err))) {\n"
+                "            fprintf(stderr, \"error: %s\\n\", err);\n            exit(1);\n        }\n    }\n"
+                "    if (!found && (provider != \"auto\" || wire != \"native\")) {\n"
+                "        fprintf(stderr, \"error: --allreduce requires a CUDA/HIP build\\n\");\n        exit(1);\n    }\n}\n\n"
+            ),
+            guard=r"bench_apply_allreduce_config",
+            expect_matches=1,
+        ),
+        Edit(
+            id="bench-allreduce-usage",
+            anchor=r'^    printf\("  -sm, --split-mode <none\|layer\|row\|tensor>         \(default: %s\)\\n", join\(transform_to_str\(cmd_params_defaults\.split_mode, split_mode_str\), ","\)\.c_str\(\)\);$',
+            rationale="document benchmark-local scalar AllReduce controls beside split-mode",
+            mode="insert_after",
+            text=(
+                "\n    printf(\"      --allreduce <auto|ccl|host|adaptive|p2p|root3|butterfly> (default: auto)\\n\");\n"
+                "    printf(\"      --allreduce-wire <native|q8>                 (default: native)\\n\");"
+            ),
+            guard=r"--allreduce-wire <native\|q8>",
+            expect_matches=1,
+        ),
+        Edit(
+            id="bench-allreduce-parser",
+            anchor=(
+                r"                params\.split_mode\.insert\(params\.split_mode\.end\(\), modes\.begin\(\), modes\.end\(\)\);\n"
+                r"            \} else if \(arg == \"-lm\" \|\| arg == \"--load-mode\"\) \{"
+            ),
+            rationale="parse AllReduce provider/wire as scalar benchmark settings; comma-list syntax is invalid",
+            mode="replace",
+            text=(
+                "                params.split_mode.insert(params.split_mode.end(), modes.begin(), modes.end());\n"
+                "            } else if (arg == \"--allreduce\") {\n"
+                "                if (++i >= argc || strchr(argv[i], ',') != nullptr) {\n                    invalid_param = true;\n                    break;\n                }\n"
+                "                bench_allreduce_provider = argv[i];\n"
+                "            } else if (arg == \"--allreduce-wire\") {\n"
+                "                if (++i >= argc || strchr(argv[i], ',') != nullptr) {\n                    invalid_param = true;\n                    break;\n                }\n"
+                "                bench_allreduce_wire = argv[i];\n"
+                "            } else if (arg == \"-lm\" || arg == \"--load-mode\") {"
+            ),
+            guard=r'arg == "--allreduce-wire"',
+            expect_matches=1,
+        ),
+        Edit(
+            id="bench-allreduce-apply",
+            anchor=r"^    cmd_params params = parse_cmd_params\(argc, argv\);$",
+            rationale="backends are already loaded; apply the parsed benchmark AllReduce configuration before device/model setup",
+            mode="insert_after",
+            text="\n    bench_apply_allreduce_config(bench_allreduce_provider, bench_allreduce_wire);",
+            guard=r"bench_apply_allreduce_config\(bench_allreduce_provider, bench_allreduce_wire\)",
+            expect_matches=1,
+        ),
+    ),
+)
 
-PATCHES = (CUDA, ARG_CPP)
+PATCHES = (CUDA, ARG_CPP, LLAMA_BENCH)
