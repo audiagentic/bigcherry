@@ -319,9 +319,9 @@ _GATE_ANCHOR_NEW = (
     "    // activation quantization. Never taken for a forced autotune\n"
     "    // candidate -- this is a structural fast path, not a dispatch\n"
     "    // candidate, and must not affect measured candidate timing.\n"
-    "    // PRBE26: widened from ncols_dst==1 to 1..8 (MMVQ's batch limit) so\n"
-    "    // MTP verification batches (ncols_dst 5/6) take the same path.\n"
-    "    if (!ids && src0->type == GGML_TYPE_Q8_0 && ne1 >= 1 && ne1 <= 8 && !forced.requested()) {\n"
+    "    // Single-token decode only: MTP verify batches (ncols_dst>1) keep the\n"
+    "    // stock Q8_1 activation path so speculative verification stays exact.\n"
+    "    if (!ids && src0->type == GGML_TYPE_Q8_0 && ne1 == 1 && !forced.requested()) {\n"
     "        const int rd33_cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;\n"
     "        if (GGML_CUDA_CC_IS_RDNA3_0(rd33_cc)) {\n"
     "            // bigcherry PRBE26: activation evidence, once per ncols_dst.\n"
@@ -342,16 +342,7 @@ _GATE_ANCHOR_NEW = (
     "                    (int) (nb03 / ts_src0), (int) (nb13 / ts_src1), (int) (nb3 / ts_dst),\n"
     "                    stream);\n"
     "            };\n"
-    "            switch (ne1) {\n"
-    "                case 1: rd33_launch(std::integral_constant<int, 1>{}); break;\n"
-    "                case 2: rd33_launch(std::integral_constant<int, 2>{}); break;\n"
-    "                case 3: rd33_launch(std::integral_constant<int, 3>{}); break;\n"
-    "                case 4: rd33_launch(std::integral_constant<int, 4>{}); break;\n"
-    "                case 5: rd33_launch(std::integral_constant<int, 5>{}); break;\n"
-    "                case 6: rd33_launch(std::integral_constant<int, 6>{}); break;\n"
-    "                case 7: rd33_launch(std::integral_constant<int, 7>{}); break;\n"
-    "                default: rd33_launch(std::integral_constant<int, 8>{}); break;\n"
-    "            }\n"
+    "            rd33_launch(std::integral_constant<int, 1>{});\n"
     "            return;\n"
     "        }\n"
     "    }\n"
@@ -440,7 +431,7 @@ MMVQ_CU_PATCH = FilePatch(
                       "whenever ineligible",
             mode="replace",
             text=_GATE_ANCHOR_NEW,
-            guard=r"if \(!ids && src0->type == GGML_TYPE_Q8_0 && ne1 >= 1 && ne1 <= 8",
+            guard=r"if \(!ids && src0->type == GGML_TYPE_Q8_0 && ne1 == 1",
         ),
     ),
 )
