@@ -6,7 +6,7 @@ low-latency internal AllReduce on HIP that real dual-XTX hardware evidence shows
 for decode (+17.33% TPS, MTP completion-bench; +6.88%, plain tg128) but a
 severe regression for prefill (-32% to -34%, pp512/pp2048/pp4096
 llama-bench) -- see patches/1001_hip_internal_allreduce/SUMMARY.md.
-``GGML_CUDA_ALLREDUCE`` today selects exactly one provider once, for the
+The provider selection (now ``--allreduce``, patch 0860) selects exactly one provider once, for the
 whole communicator's lifetime (a single stored ``try_allreduce`` function
 pointer) -- there is no per-call, size-aware choice, so shipping either
 provider alone regresses one of the two regimes.
@@ -22,7 +22,7 @@ reaches that copy-engine path in practice, so the entire prefill regression
 is attributable to that one strategy, not to internal's small-message path
 scaling up.
 
-This patch adds a fourth ``GGML_CUDA_ALLREDUCE=hybrid`` provider:
+This patch adds a fourth ``--allreduce adaptive`` provider:
 
 * Init brings up BOTH RCCL and the internal pipeline independently (not the
   existing greedy nccl->internal->none chain, where each step's failure
@@ -167,7 +167,7 @@ ALLREDUCE_CU = FilePatch(
 
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
-    description="add GGML_CUDA_ALLREDUCE=hybrid: both providers alive, "
+    description="add --allreduce adaptive: both providers alive, "
                 "per-call byte-threshold dispatch with internal->rccl->meta "
                 "fallback",
     edits=(
@@ -316,29 +316,6 @@ CUDA = FilePatch(
             guard=r"ggml_backend_cuda_comm_init_hybrid\(ggml_backend_cuda_comm_context \* ret\) \{",
         ),
         Edit(
-            id="hybrid-env-selector",
-            # csource.strip_noise blanks string-literal contents (not just
-            # comments) to same-length whitespace before anchor matching, so
-            # the quoted "none" is invisible to the anchor regex here -- \s+
-            # matches the blanked span instead of the literal text.
-            anchor=(
-                r'        \} else if \(env_str ==\s+\) \{\n'
-                r'            ggml_backend_cuda_comm_init_none\(ret\);\n'
-                r'        \} else \{'
-            ),
-            rationale="add hybrid as a fourth GGML_CUDA_ALLREDUCE value, "
-                      "beside the existing nccl/internal/none branches",
-            mode="replace",
-            text=(
-                '        } else if (env_str == "none") {\n'
-                '            ggml_backend_cuda_comm_init_none(ret);\n'
-                '        } else if (env_str == "hybrid") {\n'
-                '            ggml_backend_cuda_comm_init_hybrid(ret);\n'
-                '        } else {'
-            ),
-            guard=r'else if \(env_str == "hybrid"\) \{',
-        ),
-        Edit(
             id="gp03-fix-explicit-rccl-plan-telemetry",
             # GP03 fix (gpt-dev-agent review, 2026-09-02): 0830's own shared
             # try_reduce_plan() rccl branch (used whenever the operator
@@ -388,4 +365,45 @@ CUDA = FilePatch(
     ),
 )
 
-PATCHES = [ALLREDUCE_CUH, ALLREDUCE_CU, CUDA]
+CUDA_PROVIDER = FilePatch(
+    path="ggml/src/ggml-cuda/ggml-cuda.cu",
+    language="none",
+    description="register the adaptive provider on top of 0860's --allreduce "
+                "configuration seam",
+    edits=(
+        Edit(
+            id="adaptive-provider-available",
+            anchor=(
+                r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n'
+            ),
+            rationale="0860 rejects adaptive as unavailable; this patch provides it, "
+                      "so drop it from the unavailable list",
+            mode="replace",
+            text='    if (p == "p2p" || p == "root3") {\n',
+            guard=r'    if \(p == \"p2p\" \|\| p == \"root3\"\) \{\n',
+            expect_matches=1,
+        ),
+        Edit(
+            id="adaptive-provider-init",
+            anchor=(
+                r'    \} else if \(provider == \"butterfly\"\) \{\n'
+                r'        ggml_backend_cuda_comm_init_none\(ret\);\n'
+                r'    \} else \{\n'
+            ),
+            rationale="add adaptive beside the ccl/host/butterfly branches "
+                      "0860 selects from",
+            mode="replace",
+            text=(
+                '    } else if (provider == "butterfly") {\n'
+                '        ggml_backend_cuda_comm_init_none(ret);\n'
+                '    } else if (provider == "adaptive") {\n'
+                '        ggml_backend_cuda_comm_init_hybrid(ret);\n'
+                '    } else {\n'
+            ),
+            guard=r'provider == \"adaptive\"\) \{\n        ggml_backend_cuda_comm_init_hybrid',
+            expect_matches=1,
+        ),
+    ),
+)
+
+PATCHES = [ALLREDUCE_CUH, ALLREDUCE_CU, CUDA, CUDA_PROVIDER]
