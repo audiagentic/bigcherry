@@ -5,6 +5,7 @@ state = "untested"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
+plan-ids = ["PGC04"]
 requires = []
 conflicts = []
 requires-options = []
