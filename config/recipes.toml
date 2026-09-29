@@ -281,6 +281,12 @@ patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
+[experiment.nro05-only]
+patches = ["1254_nro05_gdn_mtp_prefix_tail"]
+
+[experiment.nro10-only]
+patches = ["1261_nro10_spec_ctx_other_devices"]
+
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
