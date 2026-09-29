@@ -1,0 +1,152 @@
+{
+  "blocked": false,
+  "check_results": {
+    "_contract_correctness_gate": {
+      "failed_checks": [],
+      "missing_checks": [],
+      "passed": true,
+      "required_checks": [
+        "backend_reference"
+      ],
+      "results": {
+        "backend_reference": {
+          "detail": "Q8_0 MUL_MAT test-backend-ops: control 50/50, subject 50/50 within CPU-reference tolerance",
+          "passed": true
+        }
+      }
+    },
+    "activation": {
+      "artifacts": [],
+      "capability": "activation",
+      "check_id": "activation",
+      "details": [],
+      "status": "pass",
+      "summary": "positive marker hit and negative-control non-hit are verified"
+    },
+    "apply": {
+      "artifacts": [],
+      "capability": "apply",
+      "check_id": "apply",
+      "details": [],
+      "status": "pass",
+      "summary": "verified control/subject application, tree, and idempotency evidence is present"
+    },
+    "build": {
+      "artifacts": [],
+      "capability": "build",
+      "check_id": "build",
+      "details": [],
+      "status": "pass",
+      "summary": "verified control and subject build/source/runtime evidence is present"
+    },
+    "controls": {
+      "artifacts": [
+        {
+          "name": "benchmark",
+          "path": "artifacts/rd33-performance.json",
+          "sha256": "bc4e32b6b4f4546a30b84fb0b29844a386aa637ab239683e940585e822bb7656"
+        }
+      ],
+      "capability": "controls",
+      "check_id": "controls",
+      "details": [],
+      "status": "pass",
+      "summary": "benchmark evidence is verified and bound"
+    },
+    "correctness": {
+      "artifacts": [
+        {
+          "name": "correctness-summary",
+          "path": "correctness.json",
+          "sha256": "83f83403fcf3b5d0df87c2339bbe2e2a9048bd2121783db1b96c47240794dba2"
+        }
+      ],
+      "capability": "correctness",
+      "check_id": "correctness",
+      "details": [],
+      "status": "pass",
+      "summary": "bound correctness summary reports pass"
+    },
+    "performance": {
+      "artifacts": [
+        {
+          "name": "benchmark",
+          "path": "artifacts/rd33-performance.json",
+          "sha256": "bc4e32b6b4f4546a30b84fb0b29844a386aa637ab239683e940585e822bb7656"
+        }
+      ],
+      "capability": "performance",
+      "check_id": "performance",
+      "details": [],
+      "status": "pass",
+      "summary": "benchmark evidence is verified and bound"
+    }
+  },
+  "contract_verdicts": {
+    "RD33-MMVQ-Q8_0-F32-DECODE": {
+      "detail": {
+        "contract_hash": "08280ba29c2515be6e5519111a17a711",
+        "contract_id": "RD33-MMVQ-Q8_0-F32-DECODE",
+        "passed": false,
+        "reasons": [
+          "target_kernel_gain_pct: 2 session(s) is below the pre-declared minimum 4 -- collect more; a within-run interval cannot represent between-session drift"
+        ],
+        "status": "invalid"
+      },
+      "passed": false,
+      "status": "invalid"
+    }
+  },
+  "eligible": true,
+  "errors": [],
+  "evidence_record": "/mnt/vault/development/projects/bigcherry/workspaces/main/patches/1241_rd33_mmvq_q8_0_f32_decode/evidence/validation.json",
+  "patch_id": "1241_rd33_mmvq_q8_0_f32_decode",
+  "producer_id": "rd33",
+  "reasons": [],
+  "validation_build_identities": {
+    "control": {
+      "compile_commands_digest": "a0eb010c76c3f26c0a205d751c829ff335754d621088a359273bdcd86a523e40",
+      "compile_verification_id": "5c6e657d808966bf5980c657773bfd08",
+      "effective_build_id": "33f101d298a953a65142f945423d054f",
+      "hip_compile_commands_digest": "c4741b3ed61bb94b225cf641564a13652b48a6b69f26455a4d1adc94834bfb88",
+      "runtime_artifacts": {
+        "libggml-base.so.0.24.0": "4b2cd6250d956efa826e9fb3f00b597756affa670ae03ef551a86c2b0bd2077c",
+        "libggml-base.so.0.25.3": "3e01b1a675bf7a6166ac7c97198c84e32423df07748983f48ec9d81a49e61ddd",
+        "libggml-cpu.so.0.24.0": "f593029d1126fdb9fe5fe82225965d2a093647dc063005c525999f78b5351272",
+        "libggml-cpu.so.0.25.3": "f7b7333eb41095c46416b1a3e575d5d198a68e4b77ac1d15f09bba095da9a219",
+        "libggml-hip.so.0.24.0": "b86bc6869d5d5b49b42559c82d7d304d2a23d83a633018b594af2e1f884e8a89",
+        "libggml-hip.so.0.25.3": "3fccd9d4d9e07c1cf92b0f335a71decde06a45ef68d8f1f5f67a05896e73fe84",
+        "libggml.so.0.24.0": "3f681071eec1f10d94f04ff7adf6197dd945a031e835836e4d19589b5e88a67c",
+        "libggml.so.0.25.3": "defb0049192ae536d8076daee2b2871e1c907d438428da371bec025b538c997b",
+        "libllama-common.so.0.4.1": "bd0bfdf00af2233fa69da4c5984746d627160b4b1ce0b1646216d308ee59b4a4",
+        "libllama-common.so.0.5.0": "3fd3663e394cea61b2cbc79ff306f75f40850a8a87994ea3381d6a3d0f3261d8",
+        "libllama.so.0.4.1": "b9fd32c8a9beb5f6ec8d912fc89698c9d29e28c8beabae5695fe9c2b91761f55",
+        "libllama.so.0.5.0": "632395687c7c605cafc1ca720d2feddab50afab01eeb46e8c89e85bf0aa5af93",
+        "test-backend-ops": "c30b55b66c6a5db603da22c340ccb6f9aca849cea791caa736c255b414d06422"
+      },
+      "runtime_bundle_hash": "973b0567685e9ea3386854374b45717f"
+    },
+    "subject": {
+      "compile_commands_digest": "a0eb010c76c3f26c0a205d751c829ff335754d621088a359273bdcd86a523e40",
+      "compile_verification_id": "5c6e657d808966bf5980c657773bfd08",
+      "effective_build_id": "33f101d298a953a65142f945423d054f",
+      "hip_compile_commands_digest": "c4741b3ed61bb94b225cf641564a13652b48a6b69f26455a4d1adc94834bfb88",
+      "runtime_artifacts": {
+        "libggml-base.so.0.24.0": "4fb85cc993d803529e629facdc67cb4161df7d05aa32f1451f709424839d4a43",
+        "libggml-base.so.0.25.3": "45793fb668449e7b25bca21ef59c63b750a810dc36c4981d502b20a7e0b3dc89",
+        "libggml-cpu.so.0.24.0": "7bbc58e07dac51f0658e43dc00c67fdfcb183b57a6663ab87976e7f9a8b0bd79",
+        "libggml-cpu.so.0.25.3": "032e01bfb8c66d8cb46ffa8b88821e730b368c7aead7f14f3e6947a0be220e0a",
+        "libggml-hip.so.0.24.0": "95bd12eebc98659efd06675e6ecf13f6ae33e69d2fdad44b13d9e6337c21972a",
+        "libggml-hip.so.0.25.3": "c995f302714256241654ee4b3327351222f990757ee73d6a283e4d07a8087490",
+        "libggml.so.0.24.0": "4aa185a3cee43504993d04a866a1af42b8bbbcf2c5d2986f4df9425505f98e28",
+        "libggml.so.0.25.3": "3cdaf93ab3cadf74f7e902881ab0c55667f4b3d963bbaa4f2f6d2292c11aedf2",
+        "libllama-common.so.0.4.1": "6e4c84aad783a0c40d7780e464f90f1fa7dce7087de405b2ad34f37538ae2097",
+        "libllama-common.so.0.5.0": "0af819dfecd22d02f672a27f60590be5f39fa32fb65a94191ff5f298adce8510",
+        "libllama.so.0.4.1": "826a4c96eca1da0b7a88180f87995abe4a596b9b121af34fa4fccf6ff546f09d",
+        "libllama.so.0.5.0": "881a8a58885b80405b1cfe601b1753c62bd6a750e0415c41076cae0ad3f9eeed",
+        "test-backend-ops": "7ce7899b416e20a2cbe8201d5d89fb253d11e72b5418d48e16a0e712318f7c46"
+      },
+      "runtime_bundle_hash": "18245c92aa09b512d70f5922d88559f1"
+    }
+  }
+}

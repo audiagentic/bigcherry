@@ -1,0 +1,9 @@
+{
+  "activation": {
+    "detail": "subject ncols hit=[1] (require [1], forbid 2..8), control hits=[]",
+    "mechanism": "trace_marker",
+    "status": "executed"
+  },
+  "campaign_identity_digest": "a62c63a168e40c45b5527f7d6bc2e71213f3ec1d8e0a1e95b1c9a47ff1f909aa",
+  "verdict": "activation-verified"
+}

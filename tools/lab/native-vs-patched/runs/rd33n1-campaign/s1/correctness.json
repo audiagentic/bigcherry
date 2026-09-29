@@ -1,0 +1,14 @@
+{
+  "base_revision": "d77dd0806dc26fc418273ef99f88da11239ca41b",
+  "campaign_identity_digest": "a62c63a168e40c45b5527f7d6bc2e71213f3ec1d8e0a1e95b1c9a47ff1f909aa",
+  "detail": "Q8_0 MUL_MAT test-backend-ops: control 50/50, subject 50/50 within CPU-reference tolerance",
+  "disposition": "passed",
+  "gpu_architectures": [
+    "gfx1100"
+  ],
+  "mechanism": "rd33-q8_0-mul-mat-backend-reference",
+  "patch_id": "1241_rd33_mmvq_q8_0_f32_decode",
+  "patch_validation_subject_digest": "87c473370c550f927ebd4c2b0f388cdd2aab2fbe531841d5f7fc340a71cc7e2c",
+  "patched_source_tree": "abd5a78b3436515c5c5e8cb3bdc7bcb3e18a53d3",
+  "schema_version": 1
+}
