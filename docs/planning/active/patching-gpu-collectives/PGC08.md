@@ -60,5 +60,8 @@ ab-benchmark dual gfx1100, -sm tensor, MTP n_max=4; token parity; marker per arm
 
 ## Ledger-events
 
+
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:38.087570+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
+- 2026-09-29T21:57:14.630409+00:00 (updated-by): Updated: section:ledger-events

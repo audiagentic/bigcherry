@@ -34,5 +34,8 @@ No throughput claim from non-equivalent speculative work; no patch is described 
 
 ## Ledger-events
 
+
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:32.092038+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
+- 2026-09-29T21:57:08.643499+00:00 (updated-by): Updated: section:ledger-events
