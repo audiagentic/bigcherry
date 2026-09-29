@@ -27,7 +27,7 @@ static cmd_params parse_cmd_params(int argc, char ** argv) {
         arg = argv[i];
         if (arg == "-sm" || arg == "--split-mode") {
             std::vector<llama_split_mode> modes;
-            params.split_mode.insert(params.split_mode.end(), modes.begin(), modes.end());
+                params.split_mode.insert(params.split_mode.end(), modes.begin(), modes.end());
             } else if (arg == "-lm" || arg == "--load-mode") {
         }
     }
