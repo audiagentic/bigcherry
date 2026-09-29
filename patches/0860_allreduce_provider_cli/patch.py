@@ -139,14 +139,13 @@ ARG_CPP = FilePatch(
             rationale="place the process-wide CLI-to-backend configuration bridge beside the existing backend-registry helper",
             mode="insert_before",
             text=(
-                "static void common_apply_allreduce_config(const std::string & provider, const std::string & wire) {\n"
-                "    static std::string current_provider;\n"
-                "    static std::string current_wire;\n\n"
-                "    if (!provider.empty()) {\n        current_provider = provider;\n    }\n"
-                "    if (!wire.empty()) {\n        current_wire = wire;\n    }\n\n"
-                "    if (current_provider.empty() && current_wire == \"q8\") {\n        return;\n    }\n\n"
-                "    const std::string effective_provider = current_provider.empty() ? \"auto\" : current_provider;\n"
-                "    const std::string effective_wire = current_wire.empty() ? \"native\" : current_wire;\n\n"
+                "static std::string common_allreduce_provider;\n"
+                "static std::string common_allreduce_wire;\n\n"
+                "// Option callbacks only record values; applied once after all args/env are parsed, so option order is irrelevant.\n"
+                "static void common_apply_allreduce_config() {\n"
+                "    if (common_allreduce_provider.empty() && common_allreduce_wire.empty()) {\n        return;\n    }\n\n"
+                "    const std::string effective_provider = common_allreduce_provider.empty() ? \"auto\" : common_allreduce_provider;\n"
+                "    const std::string effective_wire = common_allreduce_wire.empty() ? \"native\" : common_allreduce_wire;\n\n"
                 "    ggml_backend_load_all();\n"
                 "    bool found = false;\n"
                 "    for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {\n"
@@ -171,14 +170,23 @@ ARG_CPP = FilePatch(
             text=(
                 "add_opt(common_arg(\n        {\"--allreduce\"}, \"PROVIDER\",\n"
                 "        \"multi-GPU AllReduce provider: auto|ccl|host|adaptive|p2p|root3|butterfly (default: auto)\",\n"
-                "        [](common_params &, const std::string & value) {\n            common_apply_allreduce_config(value, \"\");\n        }\n"
+                "        [](common_params &, const std::string & value) {\n            common_allreduce_provider = value;\n        }\n"
                 "    ).set_env(\"LLAMA_ARG_ALLREDUCE\"));\n"
                 "    add_opt(common_arg(\n        {\"--allreduce-wire\"}, \"WIRE\",\n"
                 "        \"AllReduce wire format: native|q8 (default: native; q8 requires p2p)\",\n"
-                "        [](common_params &, const std::string & value) {\n            common_apply_allreduce_config(\"\", value);\n        }\n"
+                "        [](common_params &, const std::string & value) {\n            common_allreduce_wire = value;\n        }\n"
                 "    ).set_env(\"LLAMA_ARG_ALLREDUCE_WIRE\"));\n    "
             ),
             guard=r'"--allreduce-wire"',
+            expect_matches=1,
+        ),
+        Edit(
+            id="allreduce-config-apply",
+            anchor=r"^    parse_cli_args\(\);$",
+            rationale="apply the recorded AllReduce provider/wire pair once after every option and env var is parsed, making option order irrelevant",
+            mode="insert_after",
+            text="\n    common_apply_allreduce_config();",
+            guard=r"^    common_apply_allreduce_config\(\);$",
             expect_matches=1,
         ),
     ),
