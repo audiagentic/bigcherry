@@ -1,0 +1,146 @@
+{
+  "architecture": "gfx1100",
+  "arms": {
+    "base": "/mnt/data/bigcherry-work/builds/gfx1100-974f5feb/a56cf022dc66e859b556f6ab234161d45f4d35cb6dfe2ed9f01b9ab6e34eac6e/base/bin",
+    "stock": "/mnt/data/bigcherry-work/builds/gfx1100-974f5feb/ad61e554af426a539eb9bfad6a7eb590654391800488a1915474d0727b84798d/stock/bin",
+    "validated": "/mnt/data/bigcherry-work/builds/gfx1100-974f5feb/f34663b022540a7a3380acaf864e788ceefca9026946b0bcf784ef83935134f0/control/bin",
+    "validated+patch": "/mnt/data/bigcherry-work/builds/gfx1100-974f5feb/bc2576ef0ff3ff75522e904cc1e66f03e57db195acaae21490d71a78e7ea29c0/validation-subject/bin"
+  },
+  "cached_arms": [
+    "base",
+    "stock",
+    "validated"
+  ],
+  "hip_visible_devices": "0,1",
+  "metrics": {
+    "pp512": {
+      "failed_runs": 0,
+      "mean": {
+        "base": 1056.00375,
+        "stock": 1057.6275,
+        "validated": 1104.80625,
+        "validated+patch": 1100.6075
+      },
+      "pct_vs_stock": {
+        "base": -0.1535275888722598,
+        "stock": 0.0,
+        "validated": 4.460809689611889,
+        "validated+patch": 4.063812637247044
+      },
+      "position_mean": {
+        "0": 1100.6075
+      },
+      "samples": {
+        "base": [
+          1051.15,
+          1059.39,
+          1059.74,
+          1047.14,
+          1061.0,
+          1060.61,
+          1062.29,
+          1046.71
+        ],
+        "stock": [
+          1033.19,
+          1060.38,
+          1060.73,
+          1060.23,
+          1061.74,
+          1062.1,
+          1061.48,
+          1061.17
+        ],
+        "validated": [
+          1106.86,
+          1108.14,
+          1112.1,
+          1097.8,
+          1113.77,
+          1113.24,
+          1095.16,
+          1091.38
+        ],
+        "validated+patch": [
+          1088.56,
+          1093.83,
+          1106.04,
+          1095.48,
+          1100.51,
+          1108.76,
+          1100.38,
+          1111.3
+        ]
+      }
+    },
+    "tg128": {
+      "failed_runs": 0,
+      "mean": {
+        "base": 23.1175,
+        "stock": 23.115,
+        "validated": 23.16375,
+        "validated+patch": 23.99875
+      },
+      "pct_vs_stock": {
+        "base": 0.01081548777850383,
+        "stock": 0.0,
+        "validated": 0.21090201168072475,
+        "validated+patch": 3.8232749296993385
+      },
+      "position_mean": {
+        "0": 23.99875
+      },
+      "samples": {
+        "base": [
+          23.12,
+          23.1,
+          23.08,
+          23.16,
+          23.11,
+          23.15,
+          23.12,
+          23.1
+        ],
+        "stock": [
+          23.08,
+          23.13,
+          23.09,
+          23.13,
+          23.14,
+          23.15,
+          23.11,
+          23.09
+        ],
+        "validated": [
+          23.21,
+          23.14,
+          23.15,
+          23.16,
+          23.16,
+          23.16,
+          23.17,
+          23.16
+        ],
+        "validated+patch": [
+          23.99,
+          24.0,
+          24.03,
+          24.03,
+          23.97,
+          23.98,
+          23.99,
+          24.0
+        ]
+      }
+    }
+  },
+  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "reference_only": true,
+  "schema": 1,
+  "shared_binaries": [],
+  "validated_patches": [
+    "1237_rd30_moe_mmq_compact_grid",
+    "1253_nro04_gfx1100_bf16_chunked_gdn",
+    "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2"
+  ]
+}
