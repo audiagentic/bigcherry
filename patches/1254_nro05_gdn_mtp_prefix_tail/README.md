@@ -1,9 +1,11 @@
 # 1254_nro05_gdn_mtp_prefix_tail
 
-Plan `NRO05`; state `untested`; requires NRO04.
+Plan `NRO05`; state `untested`; requires `1253_nro04_gfx1100_bf16_chunked_gdn`.
 
-The source optimization accelerates `K>1` GDN prefill by running a chunked prefix of `n_tokens-K`, then retaining the existing sequential kernel for the last K tokens so snapshot slots remain defined by the stock recurrence. This first draft only materializes the fail-closed eligibility predicate and prefix calculation; runtime routing remains unchanged.
+For MTP (`K > 1`) prefill of one long sequence, this patch runs 1253's gfx1100 BF16 chunked GDN on the first `n_tokens-K` tokens, then the stock sequential kernel on the last K tokens so snapshot slots retain stock recurrence semantics. The runtime route is implemented; set `GGML_CUDA_GDN_CHUNKED=0` to opt out.
 
-Initial predicate: non-KDA, K>1, single sequence, `S_v` supported by the parent chunked implementation, and `n_tokens > K + 64`. Multi-sequence and short inputs remain sequential.
+Activation evidence is `BIGCHERRY_PATCH_HIT patch=1254_nro05 path=gdn_mtp_prefix_bf16` under patch tracing. Eligibility remains fail-closed for unsupported shapes/sequences.
 
-Before wiring, tests must compare every snapshot slot and final state, not merely logits or absence of crashes.
+Measured fact from `tools/lab/native-vs-patched/runs/nro05-ab2/RESULT.md`: on Qwen3.8-27B-Q8_0, dual gfx1100, `-sm tensor`, MTP `n_max=4`, 8 order-balanced pairs measured pp4096 +2.12%; decode was flat; MTP acceptance was identical in all 16 cells. This is benchmark evidence only, not contract qualification or sign-off. Contract-grade full-vocabulary MTP logprob parity remains required.
+
+See `TESTING.md` for the remaining activation, correctness, work-equivalence, and order-balanced A/B plan.

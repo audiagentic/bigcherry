@@ -14,43 +14,20 @@ work: M
 # Additional wire formats (bf16/fp8) on --allreduce-wire
 
 ## Description
-
-Evaluate bf16/fp8 payload wire formats as alternatives to q8. New code, not an existing patch; pursue only if q8 shows a measurable gain over native on the dual XTX. Depends on PGC04.
+Evaluate bf16/fp8 wire formats only after native/q8 and the target dual-gfx1100 candidate stack have correctness/work-equivalence evidence. New code; depends on PGC04.
 
 ## Steps
-
-
-
-## Detailed Solution & Technical Design
-
-
-
-## Code Samples & Guidance
-
-
-
-## Files
-
-
+1. Do not use the current 1241+1206+1245 combo result as a performance baseline: `combo-ab1` is VOID because greedy output and MTP acceptance differ.
+2. Establish a correctness-clean, work-equivalent baseline composition first.
+3. Require activation evidence for every behavior-affecting candidate; 1245 currently has no marker and must gain `BIGCHERRY_PATCH_HIT patch=1245_gp11 path=mmvq_fusion_q8_0_ncols6` before reuse.
+4. Compare native, q8, then bf16/fp8 only if prior gates pass.
 
 ## Validation
-
-Accuracy (perplexity / greedy-token parity) plus paired throughput A/B against native and q8.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
+Full-vocabulary MTP logprobs <=5e-4 where required; greedy-token parity; drafted/accepted counts and acceptance parity; fixed-work `llama-bench`; order-balanced server A/B via `tools/lab/native-vs-patched/server-ab-*.json`. Preserve per-arm activation logs and raw pair records.
 
 ## Acceptance Criteria
-
-
-
-## Notes
+No new wire format proceeds on a numerically divergent or non-work-equivalent baseline; no validation/sign-off claim from planning alone.
 
 ## Change Log
-
+- 2026-09-29: added candidate-stack correctness/work-equivalence prerequisites.
 - 2026-09-29T09:34:08.605811+00:00 (created-by): Created by agent
