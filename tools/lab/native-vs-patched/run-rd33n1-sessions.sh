@@ -4,6 +4,7 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
+export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 M=/mnt/vault/llm-models
 for s in 1 2 3 4; do
   jobs=$(mktemp)
