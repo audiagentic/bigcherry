@@ -27,7 +27,7 @@ capability = "correctness"
 validator = "correctness-summary"
 required = true
 
-# Positive performance is plain non-MTP Q8_0 decode; MTP verify is a non-activation/control lane.
+# Positive: tierL Qwen27B Q8_0 plain decode, paired llama-bench; no speculative/MTP arguments.
 [[check]]
 id = "performance"
 capability = "performance"
@@ -35,7 +35,9 @@ validator = "benchmark"
 required = true
 benchmark-executor = "paired-llama-bench-v1"
 
-# Non-target/control lanes must not regress; MTP verification must not activate RD33.
+# Contract control: tierA Q6_K plain decode. Separately retain MTP as a documented
+# no-regression check: verify widths must not activate RD33 and draft acceptance/output
+# must remain control-parity; it is not the positive performance lane.
 [[check]]
 id = "controls"
 capability = "controls"
