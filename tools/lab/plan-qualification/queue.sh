@@ -33,7 +33,7 @@ while IFS= read -r line; do
     case "$line" in ''|'#'*) continue ;; esac
     set -- $line
     while :; do
-        case "$1" in MODEL=*|HIP=*|VIS=*) shift ;; *) break ;; esac
+        case "$1" in MODEL=*|HIP=*|VIS=*|REQUIRES=*) shift ;; *) break ;; esac
     done
     if [ "$1" = PROFILE ]; then profiles+=("$line"); else campaigns+=("$line"); fi
 done < "$jobs"
@@ -44,11 +44,13 @@ parse_prefixes() {
     PARSED_MODEL=$BC_MODEL
     PARSED_HIP=$BC_HIP_PATH
     PARSED_VIS=""
+    PARSED_REQUIRES=""
     while :; do
         case "$1" in
             MODEL=*) PARSED_MODEL=${1#MODEL=}; shift ;;
             HIP=*) PARSED_HIP=${1#HIP=}; shift ;;
             VIS=*) PARSED_VIS=${1#VIS=}; shift ;;
+            REQUIRES=*) PARSED_REQUIRES=${1#REQUIRES=}; shift ;;
             *) break ;;
         esac
     done
@@ -84,10 +86,34 @@ profile_line() {
     return "$rc"
 }
 
+preflight_line() {
+    # PREFLIGHT <run-name> <binary> <model> <marker-regex> [server args...]
+    # Proves the patch marker fires on the target model; campaign rows that
+    # carry REQUIRES=<run-name> are refused unless this exited 0.
+    local run=$2 log rc
+    log="$work/runs/$run.log"
+    if [ -f "$log" ] && grep -q '^PREFLIGHT_EXIT=' "$log"; then
+        echo "skip preflight $run (finished)"
+        return 0
+    fi
+    echo "start preflight $run $(date -Is)"
+    shift 2
+    bash "$here/../native-vs-patched/preflight-fire.sh" "$@" > "$log" 2>&1 < /dev/null
+    rc=$?
+    echo "PREFLIGHT_EXIT=$rc" >> "$log"
+    echo "done  preflight $run $(date -Is) rc=$rc"
+    return "$rc"
+}
+
 campaign_line() {
     local line=$1 run log rc
     parse_prefixes "$line"
     set -- "${PARSED_ARGS[@]}"
+    if [ "$1" = PREFLIGHT ]; then preflight_line "$@"; return $?; fi
+    if [ -n "$PARSED_REQUIRES" ] && ! grep -qx 'PREFLIGHT_EXIT=0' "$work/runs/$PARSED_REQUIRES.log" 2>/dev/null; then
+        echo "blocked campaign $5: preflight $PARSED_REQUIRES did not pass (patch not proven to fire)"
+        return 1
+    fi
     run=$5
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^CAMPAIGN_EXIT=' "$log"; then

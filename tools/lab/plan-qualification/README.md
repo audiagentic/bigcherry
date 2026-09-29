@@ -21,6 +21,12 @@ with `BC_HIP_PATH` and `BC_MODEL` set in the environment.
 
 Optional leading `MODEL=`, `HIP=` and `VIS=` tokens are supported.
 
+`PREFLIGHT <run-name> <binary> <model> <marker-regex> [server args...]` proves a
+patch marker fires on the target model (traced short completion on GPUs 0,1, under
+the same host/GPU locks). A campaign row carrying `REQUIRES=<run-name>` is blocked
+unless that preflight exited 0, so a patch that does not fire never spends timed
+sessions. See `tools/lab/native-vs-patched/preflight-fire.sh`.
+
 ## Scheduling policy
 
 The legacy queue now matches the evidence policy conservatively:
