@@ -287,6 +287,9 @@ patches = ["1254_nro05_gdn_mtp_prefix_tail"]
 [experiment.dense-decode-combo]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode", "1206_rd13_mul_mat_add_view_fusion", "1245_gp11_mmvq_fusion_ncols_gate"]
 
+[experiment.allreduce-cli]
+patches = ["0860_allreduce_provider_cli"]
+
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
 
