@@ -1171,7 +1171,7 @@ effect_evidence_policy = "ci95_threshold_bound_v1"
 min_paired_rounds = 10
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE]
-title = "RD33: dense Q8_0 MMVQ without Q8_1 activation quantization (ncols_dst 1..8, gfx1100)"
+title = "RD33: dense Q8_0 MMVQ without Q8_1 activation quantization (ncols_dst==1 decode, gfx1100)"
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.source]
 # AMD-MMV-001 from the AMD PR set; 1241 is a local implementation of the
@@ -1187,7 +1187,7 @@ family = "mmvq"
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.hypothesis]
 family = "mmvq"
 expected_effect = "both"
-rationale = "Dense Q8_0 weights x F32 activations at ncols_dst 1..8 skip the per-matmul Q8_1 quantize kernel and read F32 activations directly (PRBE26). The ncols_dst==1-only form measured null; MTP verification batches (ncols_dst 5/6 with draft-n-max 4) dominate production Qwen3.8-27B Q8_0 dual-gfx1100 decode, so the claim is measured on the real MTP server path. Output is not bit-identical (no activation quantization), so correctness is the backend reference tolerance."
+rationale = "Dense Q8_0 weights x F32 activations at ncols_dst==1 (plain single-token decode, including MTP drafter steps) skip the per-matmul Q8_1 quantize kernel and read F32 activations directly. MTP verify batches (ncols_dst>1) keep the stock Q8_1 path so speculative verification stays exact; MTP is therefore a non-activation/no-regression control (draft acceptance must match control), not the positive workload. Output is not bit-identical (no activation quantization), so correctness is the width-1 backend reference tolerance."
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.scope]
 backend = "hip"
@@ -1195,10 +1195,10 @@ architectures = ["gfx1100"]
 
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.positive]
 models = ["tierL-qwen27b-q8"]
-workloads = ["mtp_verify"]
+workloads = ["decode"]
 
 # Q6_K never takes the Q8_0 path: a dense non-target model isolates any
-# collateral cost of the widened gate and extra template instantiations.
+# collateral cost of the extra template instantiation.
 [contract.RD33-MMVQ-Q8_0-F32-DECODE.controls]
 models = ["tierA-qwen4b-q6k"]
 workloads = ["decode"]
