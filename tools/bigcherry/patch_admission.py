@@ -25,6 +25,14 @@ Policy decisions:
 * Direct apply is hard-fail by default.  ``allow_stale_validation_evidence`` is
   an explicit development escape hatch and returns a warning; it never affects
   the production campaign/build gate.
+* ``mode="build"`` (campaign/lane builds) never blocks on evidence staleness:
+  every evidence problem (pin, implementation digest, missing record) is
+  returned as a warning and the composition is admitted.  A build is how a
+  patch's current form gets *compared*; requiring fresh proof before a build
+  exists makes re-validation impossible.  Mechanical validity is still
+  enforced by applicability, dependency resolution and the apply
+  transaction.  Promotion/qualification (``mode="production"``, gate G7)
+  stays strict.
 * The production gate is activation-aware: until one non-grandfathered
   ``eligible_for_validated_state=true`` record exists, the gate reports
   ``not-ready`` and allows existing work to continue.  Once that bootstrap
@@ -43,7 +51,7 @@ from .patch import catalog as patch_catalog
 from .source import identity as source_identity
 
 DEFAULT_VALIDATION_ARCHITECTURES = ("gfx1100",)
-AdmissionMode = Literal["production", "apply"]
+AdmissionMode = Literal["production", "apply", "build"]
 
 
 @dataclass(frozen=True)
@@ -130,6 +138,11 @@ def admit(
         if check.status == "carried-forward"
     )
     bootstrap_ready = _has_non_grandfathered_eligible(evidence_root=evidence_root)
+    if mode == "build":
+        return AdmissionResult(
+            True, True, "admitted-with-warnings" if failures or carried else "admitted",
+            warnings=tuple(f"not fully validated: {item}" for item in failures) + carried,
+        )
     if mode == "production" and not bootstrap_ready:
         return AdmissionResult(True, False, "not-ready", warnings=failures)
     if failures and mode == "apply" and allow_stale_validation_evidence:

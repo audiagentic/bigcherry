@@ -37,6 +37,7 @@ post-selection, fail-closed) admission check.
 
 from __future__ import annotations
 
+import sys
 import hashlib
 import json
 import tomllib
@@ -180,11 +181,13 @@ def resolve_for_context(
     # not accidentally consult the real repository's evidence directory.
     if catalog_path is None or Path(catalog_path).resolve() == paths.PATCH_CATALOG.resolve():
         from .. import patch_admission
-        patch_admission.require_admission(
-            patch_ids, mode="production", catalog_path=catalog_path,
+        result = patch_admission.require_admission(
+            patch_ids, mode="build", catalog_path=catalog_path,
             patches_dir=effective_patches_dir,
             resolved_base_revision=resolved_base_revision,
         )
+        for warning in result.warnings:
+            print(f"build admission warning: {warning}", file=sys.stderr)
     return tuple(patch_ids)
 
 
