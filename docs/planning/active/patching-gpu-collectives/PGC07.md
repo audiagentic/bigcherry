@@ -31,3 +31,8 @@ No new wire format proceeds on a numerically divergent or non-work-equivalent ba
 ## Change Log
 - 2026-09-29: added candidate-stack correctness/work-equivalence prerequisites.
 - 2026-09-29T09:34:08.605811+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260929_135722_allreduce-methods-are-now-sele_7144
+- 2026-09-29T13:57:35.114933+00:00 (updated-by): Updated: section:ledger-events
