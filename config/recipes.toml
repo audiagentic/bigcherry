@@ -801,3 +801,6 @@ path = "${BIGCHERRY_BRUTUS_TREE}"
 role = "campaign"
 required = true
 expected-tooling-revision = ""
+
+[experiment.ssm-conv-channels-major]
+patches = ["1263_prbe41_ssm_conv_channels_major"]
