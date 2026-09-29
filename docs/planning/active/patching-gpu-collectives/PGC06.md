@@ -31,3 +31,8 @@ No throughput claim from non-equivalent speculative work; no patch is described 
 ## Change Log
 - 2026-09-29: added work-equivalence and combo-ab1 void handling.
 - 2026-09-29T09:34:05.557756+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260929_135722_allreduce-methods-are-now-sele_7144
+- 2026-09-29T13:57:32.092038+00:00 (updated-by): Updated: section:ledger-events

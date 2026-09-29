@@ -31,3 +31,8 @@ No lifecycle-state changes from planning. Any throughput claim is causal, single
 ## Change Log
 - 2026-09-29: added concrete candidate qualification prerequisites and evidence rules.
 - 2026-09-29T09:34:02.512413+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260929_135722_allreduce-methods-are-now-sele_7144
+- 2026-09-29T13:57:29.109931+00:00 (updated-by): Updated: section:ledger-events

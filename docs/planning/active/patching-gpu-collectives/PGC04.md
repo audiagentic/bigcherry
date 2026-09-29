@@ -56,3 +56,8 @@ Framework change: no promotion gate. Q8 wire is lossy activation compression, or
 ## Change Log
 
 - 2026-09-29T09:33:59.429712+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20260929_135722_allreduce-methods-are-now-sele_7144
+- 2026-09-29T13:57:26.139352+00:00 (updated-by): Updated: section:ledger-events
