@@ -5,17 +5,12 @@ baseline + 1241 (standard scaffold pair for the server/bench lanes, an own
 test-backend-ops pair for correctness).
 
 - correctness (``backend_reference``): test-backend-ops MUL_MAT cases with
-  type_a=q8_0 (upstream covers n=1..9, k=256 and n=1/8, k=4096) must all pass
-  the CPU-reference tolerance on BOTH arms. Output is not bit-identical by
-  design (F32 activations instead of Q8_1), so tolerance is the contract.
-- activation: the subject test-backend-ops run under BIGCHERRY_PATCH_TRACE=1
-  must log the marker for every ncols_dst 1..8; the control none.
-- performance (positive): paired MTP speculative decode on llama-server,
-  tierL-qwen27b-q8 across both gfx1100 cards (-sm tensor, draft-n-max 4, so
-  verification batches of 5), metric mtp_wall_tps, 10 measured pairs.
-  Per-request draft acceptance is recorded (work equivalence).
-- controls: paired llama-bench tg128 on tierA-qwen4b-q6k (Q6_K never takes
-  the path), one gfx1100, 10 rounds.
+  type_a=q8_0 must all pass CPU-reference tolerance on BOTH arms; width 1 is
+  the only RD33 target path.
+- activation: subject under BIGCHERRY_PATCH_TRACE=1 must log the marker for
+  ncols_dst=1 only; ncols 2..8 are forbidden on subject and control logs none.
+- performance/control scaffolding remains contract-driven; MTP verify is a
+  non-activation/control lane after the ne1==1 narrowing.
 
 Run with --device-map gfx1100=0,1 and HIP_VISIBLE_DEVICES=0,1.
 """
@@ -39,7 +34,8 @@ _CONTRACT_ID = "RD33-MMVQ-Q8_0-F32-DECODE"
 _MODEL_REF = "tierL-qwen27b-q8"
 _CONTROL_MODEL_REF = "tierA-qwen4b-q6k"
 _MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=(\d+)")
-_REQUIRED_NCOLS = frozenset(range(1, 9))
+_REQUIRED_NCOLS = frozenset({1})
+_FORBIDDEN_NCOLS = frozenset(range(2, 9))
 _ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
 
 _CORRECTNESS_ARTIFACT = "rd33-correctness.json"
@@ -72,7 +68,6 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         raise _fail("--device-map must map gfx1100 devices")
     device = devices[0]
 
-    # ---- correctness + activation: test-backend-ops Q8_0 MUL_MAT ----
     pair = ctx.runtime.build_pair(
         targets=(_ARCHITECTURE,), primary_target="test-backend-ops",
         baseline_source="bigcherry", require_parity=True,
@@ -92,11 +87,18 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     backend_reference = experiment_contract.CorrectnessResult(
         check="backend_reference", passed=correctness_passed, detail=detail
     )
-    activation_ok = _REQUIRED_NCOLS <= subject_ncols and not control_ncols
+    activation_ok = (
+        _REQUIRED_NCOLS <= subject_ncols
+        and not (_FORBIDDEN_NCOLS & subject_ncols)
+        and not control_ncols
+    )
     activation = ActivationEvidence(
         status="executed" if activation_ok else "not_executed",
         mechanism="trace_marker",
-        detail=f"subject ncols hit={sorted(subject_ncols)} (need 1..8), control hits={sorted(control_ncols)}",
+        detail=(
+            f"subject ncols hit={sorted(subject_ncols)} (require [1], forbid 2..8), "
+            f"control hits={sorted(control_ncols)}"
+        ),
     )
     subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT, text=arms["subject"][0])
     control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT, text=arms["control"][0])
@@ -116,7 +118,6 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
     )
 
-    # ---- performance: MTP server lane (dual gfx1100) + dense control ----
     servers = {role: ctx.validation_binaries.get(role, {}).get("llama-server") for role in ("control", "subject")}
     benches = {role: ctx.validation_binaries.get(role, {}).get("llama-bench") for role in ("control", "subject")}
     if not all(isinstance(b, Path) and b.is_file() for b in (*servers.values(), *benches.values())):
