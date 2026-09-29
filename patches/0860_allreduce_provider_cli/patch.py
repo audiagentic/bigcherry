@@ -1,14 +1,13 @@
 """0860: explicit AllReduce provider/wire configuration seam.
 
-Source ranges still required before the CLI edits can be authored without
-inventing anchors/APIs:
-- common/arg.cpp: exact backend-registry/proc lookup helper or the model-load
-  boundary where a common_params-stored value can be applied.
+Source ranges still required before the remaining CLI edits can be authored
+without inventing anchors/APIs:
 - examples/llama-bench/llama-bench.cpp: exact -sm parser block (~750), cmd_params
   definition carrying split-mode (~parser state), and post-ggml_backend_load_all
   block (~2263).
 
-The CUDA seam below is fully anchored from the supplied b11233 excerpts.
+The CUDA seam below and common/arg.cpp CLI are fully anchored from supplied
+b11233 excerpts.
 """
 
 GROUP = "core"
@@ -137,4 +136,83 @@ CUDA = FilePatch(
 )
 
 
-PATCHES = (CUDA,)
+ARG_CPP = FilePatch(
+    path="common/arg.cpp",
+    description="add explicit AllReduce provider/wire CLI options and forward them through the backend registry",
+    language="none",
+    edits=(
+        Edit(
+            id="allreduce-config-helper",
+            anchor=r"^static void add_rpc_devices\(const std::string & servers\) \{$",
+            rationale="place the process-wide CLI-to-backend configuration bridge beside the existing backend-registry helper",
+            mode="insert_before",
+            text=(
+                "static void common_apply_allreduce_config(const std::string & provider, const std::string & wire) {\n"
+                "    static std::string current_provider;\n"
+                "    static std::string current_wire;\n\n"
+                "    if (!provider.empty()) {\n"
+                "        current_provider = provider;\n"
+                "    }\n"
+                "    if (!wire.empty()) {\n"
+                "        current_wire = wire;\n"
+                "    }\n\n"
+                "    // Permit --allreduce-wire q8 before --allreduce p2p: keep it pending\n"
+                "    // until the provider is known, then validate/apply the pair together.\n"
+                "    if (current_provider.empty() && current_wire == \"q8\") {\n"
+                "        return;\n"
+                "    }\n\n"
+                "    const std::string effective_provider = current_provider.empty() ? \"auto\" : current_provider;\n"
+                "    const std::string effective_wire = current_wire.empty() ? \"native\" : current_wire;\n\n"
+                "    ggml_backend_load_all();\n"
+                "    bool found = false;\n"
+                "    for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {\n"
+                "        ggml_backend_reg_t reg = ggml_backend_reg_get(i);\n"
+                "        auto set_config = (bool (*)(const char *, const char *, char *, size_t))\n"
+                "            ggml_backend_reg_get_proc_address(reg, \"ggml_backend_comm_set_config\");\n"
+                "        if (set_config == nullptr) {\n"
+                "            continue;\n"
+                "        }\n"
+                "        found = true;\n"
+                "        char err[256] = {};\n"
+                "        if (!set_config(effective_provider.c_str(), effective_wire.c_str(), err, sizeof(err))) {\n"
+                "            throw std::invalid_argument(err);\n"
+                "        }\n"
+                "    }\n\n"
+                "    if (!found && (effective_provider != \"auto\" || effective_wire != \"native\")) {\n"
+                "        throw std::invalid_argument(\"--allreduce requires a CUDA/HIP build\");\n"
+                "    }\n"
+                "}\n\n"
+            ),
+            guard=r"common_apply_allreduce_config",
+            expect_matches=1,
+        ),
+        Edit(
+            id="allreduce-cli-options",
+            anchor=r'add_opt\(common_arg\(\n        \{"-ts", "--tensor-split"\}',
+            rationale="keep AllReduce selection adjacent to the existing multi-GPU split-mode controls",
+            mode="insert_before",
+            text=(
+                "add_opt(common_arg(\n"
+                "        {\"--allreduce\"}, \"PROVIDER\",\n"
+                "        \"multi-GPU AllReduce provider: auto|ccl|host|adaptive|p2p|root3|butterfly (default: auto)\",\n"
+                "        [](common_params &, const std::string & value) {\n"
+                "            common_apply_allreduce_config(value, \"\");\n"
+                "        }\n"
+                "    ).set_env(\"LLAMA_ARG_ALLREDUCE\"));\n"
+                "    add_opt(common_arg(\n"
+                "        {\"--allreduce-wire\"}, \"WIRE\",\n"
+                "        \"AllReduce wire format: native|q8 (default: native; q8 requires p2p)\",\n"
+                "        [](common_params &, const std::string & value) {\n"
+                "            common_apply_allreduce_config(\"\", value);\n"
+                "        }\n"
+                "    ).set_env(\"LLAMA_ARG_ALLREDUCE_WIRE\"));\n"
+                "    "
+            ),
+            guard=r'"--allreduce-wire"',
+            expect_matches=1,
+        ),
+    ),
+)
+
+
+PATCHES = (CUDA, ARG_CPP)
