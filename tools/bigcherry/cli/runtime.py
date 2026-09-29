@@ -299,3 +299,68 @@ def cmd_runtime_matrix(args) -> int:
     except (MatrixResolutionError, OSError, ValueError) as exc:
         print(f"runtime-matrix: invalid: {exc}", file=sys.stderr)
         return 2
+
+
+def cmd_reference_ladder(args) -> int:
+    """Order-rotated llama-bench comparison of named build arms over registered models.
+
+    Reuses the campaign's PVPS03 reference ladder and PVPS02 model/topology
+    resolution; ``stock`` is the shared (cached) arm."""
+    from ..campaign.benchmark import sanitize_environment
+    from ..patch.campaign import ladder
+    from ..patch.campaign.benchmark import resolve_benchmark_model
+    from ..patch.campaign.build import PatchCampaignError
+
+    try:
+        arms: dict[str, Path] = {}
+        for spec in args.arm:
+            name, sep, directory = spec.partition("=")
+            if not sep or not name or not directory:
+                raise ValueError(f"--arm must be NAME=BIN_DIR, got {spec!r}")
+            binary_dir = Path(directory).resolve()
+            if not (binary_dir / "llama-bench").is_file():
+                raise ValueError(f"--arm {name}: no llama-bench in {binary_dir}")
+            arms[name] = binary_dir
+        if "stock" not in arms or len(arms) < 2:
+            raise ValueError("--arm needs a 'stock' arm plus at least one other")
+        model_root = Path(args.model_root) if args.model_root else Path(
+            environment.load_default().host(None).model_root
+        )
+        devices = args.devices.split(",")
+        output = Path(args.output).resolve()
+        output.mkdir(parents=True, exist_ok=True)
+        cache_dir = Path(args.cache_dir).resolve() if args.cache_dir else output / "reference-ladder-cache"
+        env = sanitize_environment(dict(os.environ), mode="stock")
+        for key in list(env):
+            if key.startswith("BIGCHERRY_") or key in ("GGML_CUDA_DISABLE_FUSION", "ROCR_VISIBLE_DEVICES"):
+                env.pop(key)
+        env["HIP_VISIBLE_DEVICES"] = args.devices
+
+        def _runner(command: list[str]) -> "subprocess.CompletedProcess[str]":
+            return subprocess.run(command, capture_output=True, text=True, check=False, env=env)
+
+        for model_id in args.model_id:
+            model = resolve_benchmark_model(model_id, model_root=model_root)
+            if model.device_count != len(devices):
+                raise ValueError(
+                    f"{model_id}: topology {model.topology!r} needs {model.device_count} device(s), "
+                    f"--devices gives {len(devices)}"
+                )
+            payload = ladder.run_reference_ladder(
+                arms=arms, model=model.path, runner=_runner, cache_dir=cache_dir,
+                shared_arms=frozenset({"stock"}), device_key=f"devices:{args.devices}",
+                runtime_args=model.runtime_args, rounds_per_arm=args.rounds_per_arm,
+            )
+            payload["model_id"] = model_id
+            payload["hip_visible_devices"] = args.devices
+            payload["runtime_args"] = list(model.runtime_args)
+            path = output / f"reference-ladder-{model_id}.json"
+            path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            print(f"{model_id}: {path}")
+            for metric, body in payload["metrics"].items():
+                print(f"  {metric}: mean={body['mean']} pct_vs_stock={body['pct_vs_stock']} "
+                      f"position_mean={body['position_mean']} failed={body['failed_runs']}")
+        return 0
+    except (PatchCampaignError, OSError, ValueError) as exc:
+        print(f"reference-ladder: {exc}", file=sys.stderr)
+        return 2

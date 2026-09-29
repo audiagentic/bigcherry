@@ -34,6 +34,7 @@ class ReferenceLadderTests(unittest.TestCase):
 
     def _ladder(self, **kwargs):
         kwargs.setdefault("runner", self._runner)
+        kwargs.setdefault("runtime_args", ())
         return ladder.run_reference_ladder(
             arms=_arms(self.root), model=self.model, cache_dir=self.tmp / "cache",
             shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0", **kwargs,
@@ -107,7 +108,7 @@ class ReferenceLadderTests(unittest.TestCase):
                 "validated": real_root / "stock", "validated+patch": real_root / "subject"}
         first = ladder.run_reference_ladder(
             arms=arms, model=self.model, runner=self._runner, cache_dir=self.tmp / "cache",
-            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0",
+            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0", runtime_args=(),
             workloads=("decode",),
         )
         self.assertEqual(first["cached_arms"], [])
@@ -116,11 +117,21 @@ class ReferenceLadderTests(unittest.TestCase):
         (real_root / "stock" / "llama-bench").write_bytes(b"v2-different-build")
         second = ladder.run_reference_ladder(
             arms=arms, model=self.model, runner=self._runner, cache_dir=self.tmp / "cache",
-            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0",
+            shared_arms=frozenset({"stock", "base", "validated"}), device_key="gfx1100:0", runtime_args=(),
             workloads=("decode",),
         )
         self.assertEqual(second["cached_arms"], [], "a rebuilt binary must be a cache miss, not stale-served")
         self.assertIn("stock", self.calls)
+
+    def test_runtime_args_reach_the_command_and_the_cache_key(self):
+        seen: list[list[str]] = []
+
+        def runner(command):
+            seen.append(command)
+            return self._runner(command)
+
+        self._ladder(runner=runner, runtime_args=("-sm", "tensor"))
+        self.assertTrue(all(c[-2:] == ["-sm", "tensor"] for c in seen))
 
 
 if __name__ == "__main__":

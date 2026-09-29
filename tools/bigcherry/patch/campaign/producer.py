@@ -2477,6 +2477,7 @@ def _run_reference_ladder(args, *, scaffold, device_map, run_dir: Path) -> None:
             cache_dir=(Path(args.build_root) if args.build_root else run_dir) / "reference-ladder-cache",
             shared_arms=frozenset({"stock", "base", "validated"}),
             device_key=f"{args.amdgpu_targets}:{env.get('HIP_VISIBLE_DEVICES', '')}",
+            runtime_args=(),
             exe=".exe" if sys.platform == "win32" else "",
         )
     except Exception as exc:  # reference evidence: record, never fail the campaign
