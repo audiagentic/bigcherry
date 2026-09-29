@@ -120,13 +120,15 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
     )
 
-    # Positive: plain Q8_0 decode. Control: non-target Q6_K decode.
+    # Positive: plain Q8_0 decode on both cards (-sm tensor; 27B Q8_0 does not fit one 24 GB card).
+    # Control: non-target Q6_K decode on one card.
     benches = {role: ctx.validation_binaries.get(role, {}).get("llama-bench") for role in ("control", "subject")}
     if not all(isinstance(b, Path) and b.is_file() for b in benches.values()):
         raise _fail("standard scaffold llama-bench pair is missing")
     positive_outcome = ctx.runtime.run_paired_llama_benchmark(
         control_binary=benches["control"], subject_binary=benches["subject"], model=ctx.model,
-        workloads=("decode",), pairs=_ROUNDS, log_context="rd33-positive", device=device,
+        workloads=("decode",), pairs=_ROUNDS, log_context="rd33-positive", device=None,
+        env_unset=("ROCR_VISIBLE_DEVICES",), runtime_args=("-sm", "tensor"),
     )
     positive_effect, positive_run = support.lane_effect(
         positive_outcome, workload="decode", metric="tg128", role="positive", rounds=_ROUNDS, label=_LABEL
