@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-Base-framework patch 0860_allreduce_provider_cli. Replace env GGML_CUDA_ALLREDUCE with --allreduce {auto,ccl,host,adaptive,p2p,root} and orthogonal --allreduce-wire {native,q8}; unknown name or unsupported provider+wire combo is a startup error. Old names (nccl/internal/hybrid) and GGML_CUDA_AR_WIRE removed; all callers/docs/tests migrated in one change (no shims). Emits BIGCHERRY_PATCH_HIT naming the selected provider. Updates requires/conflicts for 0840, 1244, 1250, 1252.
+Base-framework patch 0860_allreduce_provider_cli. Replace env GGML_CUDA_ALLREDUCE with --allreduce {auto,ccl,host,adaptive,p2p,root3,butterfly} and orthogonal --allreduce-wire {native,q8}; unknown name or unsupported provider+wire combo is a startup error. Old names (nccl/internal/hybrid) and GGML_CUDA_AR_WIRE removed; all callers/docs/tests migrated in one change (no shims). Emits BIGCHERRY_PATCH_HIT naming the selected provider. Updates requires/conflicts for 0840, 1244, 1250, 1252. 2026-09-30 GPT review: common/arg option callbacks now only record provider/wire and a single common_apply_allreduce_config() runs after parse_cli_args(), so option order no longer matters (previously '--allreduce-wire q8 --allreduce p2p' failed). Focal-overlay rebase check CLEAN; ARG_CPP mechanics tests added. Remaining: dual-XTX hardware matrix, both option orders.
 
 ## Steps
 
@@ -59,8 +59,8 @@ Framework change: no promotion gate. Q8 wire is lossy activation compression, or
 
 ## Ledger-events
 
-
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:26.139352+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
 - 2026-09-29T21:57:02.675576+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-29T23:13:55.054240+00:00 (updated-by): Updated: section:description
