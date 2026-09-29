@@ -5,7 +5,7 @@
 
 ## What it does
 
-Adds `GGML_CUDA_ALLREDUCE=hybrid`: a fourth provider that brings up both
+Adds `--allreduce adaptive`: a fourth provider that brings up both
 RCCL and the internal AllReduce pipeline (patch 1001) simultaneously, then
 picks per call based on `ggml_nbytes(tensors[0])` against the internal
 pipeline's own real copy-engine threshold -- below it, tries internal
@@ -23,7 +23,7 @@ to the same lossy wire encoding 1001's evidence shows is a net loss.
 
 Patch 1001 (validated) is a large win for decode (+17.33% TPS,
 MTP completion-bench) but a severe regression for prefill (-32% to -34%,
-real llama-bench pp512/pp2048/pp4096) -- `GGML_CUDA_ALLREDUCE` can only
+real llama-bench pp512/pp2048/pp4096) -- the `--allreduce` selector can only
 pick one provider for a whole server session, so neither `internal` nor
 `rccl` alone is safe to ship as a blanket default. Real HI155-1 telemetry
 (0830's new `reduction_bytes` field) captured on real traffic found a
@@ -92,7 +92,7 @@ b10705, 2578138397d7) in an isolated scratch clone, patches applied and
 verified to apply cleanly + idempotently against the true pinned source
 (0100_cmake_options, 0830, 1001, this patch). Compared against 5 arms on
 {0,1} (2x RX 7900 XTX): native llama.cpp RCCL (zero BigCherry patches --
-confirmed the GGML_CUDA_ALLREDUCE selector itself is genuine unpatched
+confirmed the --allreduce selector itself is genuine unpatched
 upstream code, a legitimate baseline), native META (`-sm tensor`,
 butterfly), layer-split (`-sm layer`), this patch's `hybrid` provider, and
 `internal`-only.

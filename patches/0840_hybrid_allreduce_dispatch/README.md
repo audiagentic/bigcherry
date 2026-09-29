@@ -2,7 +2,7 @@
 
 ## Scope
 
-Adds `GGML_CUDA_ALLREDUCE=hybrid`: a 4th AllReduce provider that brings up
+Adds `--allreduce adaptive`: a 4th AllReduce provider that brings up
 both RCCL and BigCherry's own internal AllReduce pipeline (formerly patch 1001;
 native upstream since pin b11126) simultaneously, then dispatches per call based on
 `ggml_nbytes(tensors[0])` against the internal pipeline's own real
@@ -18,7 +18,7 @@ internal pipeline to exact F32 rather than trusting
 
 Patch 1001 (validated) alone is a large decode win (+17.33% TPS, MTP
 completion-bench) but a severe prefill regression (-32% to -34%, real
-llama-bench pp512/pp2048/pp4096) -- `GGML_CUDA_ALLREDUCE` can only pick one
+llama-bench pp512/pp2048/pp4096) -- the `--allreduce` selector can only pick one
 provider for a whole server session, so neither `internal` nor `rccl` alone
 is safe to ship as a blanket default. Real telemetry (0830's
 `reduction_bytes` field, captured on real traffic) found a clean, 10x,
