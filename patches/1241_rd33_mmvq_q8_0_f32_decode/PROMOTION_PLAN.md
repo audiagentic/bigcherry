@@ -1,45 +1,31 @@
 # RD33 scoped promotion follow-up
 
-## 1. Supportable claim
+## Supportable claim
 
-PASS, scoped only. Evidence now supports: **"On dual Radeon RX 7900 XTX (gfx1100), `-sm tensor`, dense Q8_0 Qwen3.8-27B plain non-speculative decode, RD33 improves fixed-length generation throughput by about 4.4-4.5% at tg512/tg2048 in an 8-pair order-balanced A/B; this claim excludes MTP/speculative decoding."**
+PASS, scoped only: **dual Radeon RX 7900 XTX (gfx1100), `-sm tensor`, dense Q8_0 Qwen3.8-27B plain non-speculative decode: RD33 improves fixed-length generation throughput about 4.4-4.5% at tg512/tg2048 in an 8-pair order-balanced A/B.** MTP/speculative decoding is excluded.
 
-Do not claim generic gfx1100 decode, other models/quantizations/device counts, quality equivalence, prefill improvement, or MTP benefit. The MTP n_max=4 lane is explicitly excluded: acceptance changes 0.90101 -> 0.95580 and tg2048 is -5.65%; outputs/work differ. Prefill is also not a benefit claim (measured -0.32% pp1024, -0.13% pp4096).
+Correction: shipped PRBE26 eligibility is `ne1 >= 1 && ne1 <= 8`, not single-column-only. Dual-XTX trace evidence confirms ncols 1/2/4 hits, and MTP n_max=4 verify width 5 is eligible. This directly explains why MTP verification numerics/acceptance can change.
 
-## 2. Proposed amended correctness contract
+## Correctness contract by gate width
 
-Replace stock-relative `max_abs_logprob_diff <= 5e-4`; stock deliberately quantizes activations to Q8_1 and is not the numerical oracle for RD33.
+Common rule: replace stock-relative `max_abs_logprob_diff <= 5e-4` with independent backend/F32-activation reference accuracy. Require normalized error/NMSE <=5e-4, no NaN/Inf, and report stock and RD33 against the same reference. Keep a fixed >=100k-token `llama-perplexity -b 1 -ub 1` quality guard (RD33 relative PPL <=+0.25%, chunk/bootstrap upper CI <=+0.5%) and >=32 deterministic prompts reporting top-1 agreement/divergence. Full-vocabulary KL is optional only if existing tooling can emit full logits.
 
-### Primary gate: backend/reference accuracy
+**Current 1..8 gate:** backend-reference shapes must cover widths 1..8, emphasizing production widths 1 and MTP verify 5. MTP acceptance, greedy behavior, and end-to-end performance are in-scope correctness/behavior evidence because RD33 modifies verify. Current acceptance 0.90101 -> 0.95580 and tg2048 -5.65% block an MTP promotion claim.
 
-Positive scope: gfx1100, dense Q8_0, `ncols_dst==1`, representative production K/M shapes including Qwen3.8-27B decode shapes. Use the existing backend/reference test machinery (CPU/backend reference) to evaluate the intended operation: Q8_0 weights dequantized and multiplied by original F32 activations with F32 accumulation. Require all selected shapes to pass the existing backend-reference tolerance; concretely gate normalized error/NMSE <= 5e-4 and no NaN/Inf. Report stock and RD33 errors against the same reference; require RD33 error <= 5e-4 and no >2x worsening versus stock on aggregate/reference error. This is an accuracy gate, not byte identity.
+**Proposed ne1==1 gate:** backend-reference positive scope is width 1 only. MTP becomes a negative-activation/control lane: traced subject must hit width 1 but not width 5; MTP acceptance/output should remain control-equivalent under the unchanged verify path. Plain non-MTP tg512/tg2048 remains the positive performance lane; pp and MTP are no-regression controls.
 
-### End-to-end distribution guard
+## Next experiment / patch structure
 
-Use a fixed, versioned prompt/corpus set and deterministic server settings. `llama-server` with `n_probs` can capture token probabilities, but top-N output cannot prove full-vocabulary KL unless the harness exposes complete logits; therefore KL is optional until a full-logit artifact exists. Required server diagnostics: >=32 fixed prompts, >=256 generated tokens/prompt, temp=0; report top-1 agreement and first-divergence positions versus stock. Because divergence is intentional/possible, set a guard rather than equality: top-1 agreement over common-prefix decisions >=95%, and prompt-level greedy-divergence rate <=25%. The currently observed 2/4 is insufficient to pass this proposed guard and is too small a sample to calibrate it; thresholds are prospective and must not be weakened after collection.
+Run `ne1==1` as the next isolated experiment. If it retains the plain-decode gain and eliminates MTP perturbation, **narrow patch 1241 itself and migrate callers/compositions**. Do not add a permanent runtime option/backward-compat shim for 1..8: that would combine two materially different hypotheses under one patch/contract.
 
-If full-vocabulary logits can be emitted by an existing producer, additionally require mean KL(reference || RD33) <= mean KL(reference || stock) + 1e-4 nats/token and 99th-percentile KL <= 1e-2 nats/token. Reference must be an independently computed F32-activation/backend reference, not stock Q8_1 activation quantization.
+Only create a separate patch for the 1..8 behavior if it is intentionally retained as an independently useful multi-column/MTP optimization with its own positive evidence. That patch would require widths 1..8 reference validation plus MTP acceptance/quality/performance gates.
 
-### Broader quality guard
+## Minimum hardware work after narrowing
 
-Run `llama-perplexity` at `-b 1 -ub 1` on a fixed, checked-in/versioned corpus of at least 100k tokens spanning prose/code/multilingual text, same model/context/settings. Require RD33 PPL relative change <= +0.25% versus stock; report bootstrap/chunk CI and require its upper bound <= +0.5%. Existing 4096-token PPL (11.5989 vs 11.6132) is supportive only, not sufficient campaign evidence.
+1. Trace activation: subject hit at width 1; explicit no-hit at MTP verify width 5; control no-hit.
+2. Backend/F32 reference accuracy for representative production Q8_0 width-1 shapes.
+3. MTP control check: acceptance/output behavior returns to stock/control behavior; this is a non-regression check, not a performance qualification campaign.
+4. Contract-admitted order-balanced plain-decode A/B (tg512/tg2048 positive; pp <=1% regression), reusing prior evidence only if the evidence system permits it after the gate/contract hash changes.
+5. Fixed >=100k-token PPL + >=32-prompt distribution guard for validated correctness evidence.
 
-### Performance acceptance
-
-Plain non-MTP decode only: order-balanced A/B, fixed lengths, tg512 and tg2048; require positive CI95 lower bound for both. Prefill is a no-regression control: pp1024/pp4096 regression <=1%. MTP is an excluded positive lane and must not be used to satisfy promotion.
-
-## 3. Remaining validated-evidence blockers / minimum runs
-
-1. **Activation evidence:** run one traced plain-decode subject/control probe with `BIGCHERRY_PATCH_TRACE=1`; require exact RD33 hit marker on subject and absence on control, bound to binaries/source identity. If patch has no permanent marker, add one before the contract campaign.
-2. **Primary correctness campaign:** backend-reference exact/representative `ncols_dst==1` Q8_0 production shapes on gfx1100; capture normalized error for stock and RD33 against the same reference.
-3. **Quality campaign:** fixed >=100k-token PPL corpus plus >=32-prompt deterministic server distribution/greedy diagnostics. Add full-logit KL only if current tooling can capture full logits without new invasive machinery.
-4. **Contract performance campaign:** reuse/reproduce the order-balanced non-MTP tg512/tg2048 A/B under the amended contract so `patch-verify-evidence` can consume validated evidence rather than ad-hoc lab evidence; include pp controls.
-5. **Architecture coverage:** contract/patch currently validates gfx1100 only. Do not block the narrowly worded gfx1100 promotion on gfx1201/gfx1030; instead keep runtime eligibility gfx1100-exact and require other architectures only before broadening scope.
-
-Priority is 1 -> 2 -> 3 -> 4. Do not spend hardware on MTP performance qualification for this promotion scope.
-
-## 4. MTP runtime gating
-
-BLOCKED for production-wide enablement unless MTP is excluded at runtime/composition. The measured MTP lane has a deterministic acceptance shift and tg2048 -5.65%, so enabling RD33 indiscriminately in an MTP server contradicts the only supportable promotion scope.
-
-Preferred solution: gate RD33 off when speculative/MTP verification is active, **if that state is available cheaply and unambiguously at dispatch/configuration time**; then validate both activation (plain decode hits) and non-activation (MTP does not hit). If the CUDA/MMVQ dispatch layer cannot cheaply know MTP mode without cross-layer plumbing, do not add brittle inference based on tensor shape/content: make patch selection/composition mutually exclusive with the production MTP profile instead. This gating implementation is a code change and therefore outside this docs-only follow-up, but it is a blocker to shipping RD33 in configurations that may enable MTP.
+Architecture scope may remain gfx1100-only while the runtime eligibility is gfx1100-exact.
