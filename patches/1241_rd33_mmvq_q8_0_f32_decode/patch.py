@@ -4,7 +4,7 @@
 activation into ``block_q8_1`` format (via ``quantize_row_q8_1_cuda``, a
 separate GPU kernel launch plus a pool allocation) before every MMVQ call,
 including ``ncols_dst == 1`` -- plain single-token decode, the dominant
-shape for ordinary autoregressive generation and MTP speculative-verify.
+shape for ordinary autoregressive generation and MTP drafter steps.
 That quantization step exists to let both weight and activation be
 dot-producted as packed int8 (``vec_dot_q8_0_q8_1``, integer accumulation
 via dp4a). For n=1 decode this is pure overhead: there is no batching to
