@@ -209,7 +209,7 @@ static void mul_mat_vec_q_switch_fusion(
 _SWITCH_FUSION_HEAD_NEW = """template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false,
          int iq_vdr = 0, int iq_nwarps = 0>
 static void mul_mat_vec_q_switch_fusion(
-""
+"""
 
 _FUSED_LAUNCH_OLD = """            ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters>, launch_params,
 """
@@ -392,6 +392,7 @@ PATCHES = [
                 rationale="At the real single-token MMVQ host launch site, dispatch only IQ4_XS/IQ3_XXS on gfx1100/gfx1201 into independently gated VDR/nwarps candidates and return before pristine launch logic.",
                 expect_matches=1,
                 max_span_lines=4,
+            ),
         ),
     ),
 ]
