@@ -70,8 +70,11 @@ class Patch0860Mechanics(unittest.TestCase):
         registry = patch_registry.load_registry(_REPO / "patches")
         descriptor = registry.get("0860_allreduce_provider_cli")
         patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
+        cls.cuda_patches = tuple(p for p in patches if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu")
         cls.bench_patches = tuple(p for p in patches if p.path == "tools/llama-bench/llama-bench.cpp")
         cls.arg_patches = tuple(p for p in patches if p.path == "common/arg.cpp")
+        if len(cls.cuda_patches) != 1:
+            raise AssertionError(f"expected one CUDA FilePatch, got {len(cls.cuda_patches)}")
         if len(cls.arg_patches) != 1:
             raise AssertionError(f"expected one common/arg.cpp FilePatch, got {len(cls.arg_patches)}")
         if len(cls.bench_patches) != 1:
@@ -92,6 +95,8 @@ class Patch0860Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
             text = path.read_text(encoding="utf-8")
             self.assertIn("--allreduce", text)
+            self.assertIn("--allreduce-switch-bytes", text)
+            self.assertIn("bench_allreduce_switch_bytes = argv[i];", text)
             self.assertIn("ggml_backend_comm_set_config", text)
             before = text
             second = apply_all(self.bench_patches, root)
@@ -128,18 +133,34 @@ class Patch0860Mechanics(unittest.TestCase):
         with td:
             apply_all(self.arg_patches, root)
             text = path.read_text(encoding="utf-8")
-            # Callbacks only record; the single apply call sits right after parse_cli_args().
             self.assertIn("common_allreduce_provider = value;", text)
             self.assertIn("common_allreduce_wire = value;", text)
-            self.assertEqual(text.count("common_apply_allreduce_config()"), 2)  # definition + one call
+            self.assertIn("common_allreduce_switch_bytes = value;", text)
+            self.assertIn("common_parse_allreduce_switch_bytes", text)
+            self.assertIn("? 1048576 : common_parse_allreduce_switch_bytes", text)
+            self.assertEqual(text.count("common_apply_allreduce_config()"), 2)
             self.assertIn("    parse_cli_args();" + chr(10) + "    common_apply_allreduce_config();", text)
             self.assertNotIn("common_apply_allreduce_config(value", text)
-            # pristine b11233 order: parse_ex (the call site) precedes add_rpc_devices; the
-            # definition must come before the call or arg.cpp does not compile.
-            self.assertLess(text.index("static void common_apply_allreduce_config()"),
-                            text.index("    common_apply_allreduce_config();"))
-            # --allreduce-wire q8 without a provider must reach the backend as auto/q8 and fail closed there.
+            self.assertLess(
+                text.index("static void common_apply_allreduce_config()"),
+                text.index("    common_apply_allreduce_config();"),
+            )
             self.assertNotIn("current_wire == ", text)
+
+    def test_switch_bytes_has_no_environment_binding(self):
+        options = next(e for e in self.arg_patches[0].edits if e.id == "allreduce-cli-options").text
+        self.assertIn('{"--allreduce-switch-bytes"}, "N"', options)
+        self.assertNotIn("LLAMA_ARG_ALLREDUCE_SWITCH", options)
+        helper = next(e for e in self.arg_patches[0].edits if e.id == "allreduce-config-helper").text
+        self.assertIn("must be a non-negative integer", helper)
+        self.assertIn("effective_switch_bytes", helper)
+
+    def test_cuda_config_owns_default_switch_and_is_visible_before_adaptive_dispatch(self):
+        edit = next(e for e in self.cuda_patches[0].edits if e.id == "allreduce-provider-config")
+        self.assertEqual(edit.anchor, r"^static bool ggml_backend_cuda_comm_try_allreduce_internal\($")
+        self.assertIn("size_t switch_bytes = 1048576;", edit.text)
+        self.assertIn("const char * provider, const char * wire, size_t switch_bytes", edit.text)
+        self.assertIn("g_ggml_backend_cuda_comm_config.switch_bytes = switch_bytes;", edit.text)
 
     def test_arg_missing_parse_anchor_fails_closed(self):
         td, root, path = self._arg_tree(_ARG_SOURCE.replace("    parse_cli_args();", "    run_parse();", 1))
@@ -147,7 +168,9 @@ class Patch0860Mechanics(unittest.TestCase):
             self.assertFalse(all(r.ok for r in apply_all(self.arg_patches, root)))
 
     def test_arg_duplicate_parse_anchor_fails_closed(self):
-        td, root, path = self._arg_tree(_ARG_SOURCE.replace("    parse_cli_args();", "    parse_cli_args();" + chr(10) + "    parse_cli_args();", 1))
+        td, root, path = self._arg_tree(
+            _ARG_SOURCE.replace("    parse_cli_args();", "    parse_cli_args();" + chr(10) + "    parse_cli_args();", 1)
+        )
         with td:
             self.assertFalse(all(r.ok for r in apply_all(self.arg_patches, root)))
 
