@@ -66,3 +66,8 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 - 2026-09-30T04:03:45.724752+00:00 (created-by): Created by agent
 - 2026-09-30T12:21:22.319473+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T12:23:40.352140+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:52:13.375927+00:00 (updated-by): Updated: section:ledger-events

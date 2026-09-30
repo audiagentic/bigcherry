@@ -63,6 +63,7 @@ Framework change: no promotion gate. Q8 wire is lossy activation compression, or
 
 ## Ledger-events
 
+
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:26.139352+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
@@ -75,3 +76,5 @@ Framework change: no promotion gate. Q8 wire is lossy activation compression, or
 - 2026-09-30T02:14:23.019228+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T12:49:28.815429+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T12:49:32.000222+00:00 (state-transition): State: pending → superseded
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:52:03.237715+00:00 (updated-by): Updated: section:ledger-events

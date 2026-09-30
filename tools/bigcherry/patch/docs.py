@@ -43,6 +43,12 @@ _HEADER_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+# An activation marker emitted at INFO: `GGML_LOG_INFO(` / `LLAMA_LOG_INFO(` / `LOG_INF(`
+# followed (possibly after a line break and escaped quotes in patch text) by the marker.
+_INFO_MARKER_PATTERN = re.compile(
+    r"(?:GGML_LOG_INFO|LLAMA_LOG_INFO|LOG_INF)\(\s*(?:\\n\s*)?\\?\"BIGCHERRY_PATCH_HIT"
+)
+
 
 class PatchDocError(Exception):
     """A requested patch id could not be resolved against the registry."""
@@ -127,6 +133,14 @@ def check_summary_for_patch(
         problems.append(
             f"{descriptor.patch_id}: SUMMARY.md Status={header['status']!r} "
             f"does not match patch.toml state={descriptor.state!r}"
+        )
+    implementation = patches_root / descriptor.implementation_path
+    if implementation.is_file() and _INFO_MARKER_PATTERN.search(implementation.read_text(encoding="utf-8")):
+        # INFO is filtered at llama-server/llama-bench default verbosity, so an INFO
+        # marker makes every activation preflight report "did not fire".
+        problems.append(
+            f"{descriptor.patch_id}: BIGCHERRY_PATCH_HIT is logged at INFO level; "
+            "use GGML_LOG_WARN / LLAMA_LOG_WARN so it is visible at default verbosity"
         )
     expected_plan_item = _expected_plan_item(descriptor)
     if header["plan_item"] != expected_plan_item:

@@ -68,6 +68,7 @@ Successor key: patching-gpu-collectives-gp13
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.780752+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -77,3 +78,5 @@ Successor key: patching-gpu-collectives-gp13
 - 2026-09-10T02:38:24.281852+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T12:49:22.214069+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T12:49:25.384922+00:00 (state-transition): State: pending → deprecated
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:51:59.976391+00:00 (updated-by): Updated: section:ledger-events
