@@ -65,6 +65,8 @@ Successor key: patching-nasone-rdna-optimizations-nro11
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified via direct read that patch.py assigns llama_get_model()'s const-qualified return (include/llama.h:584) to a non-const llama_model* -- a real compile error. Also verified the backends.emplace_back(backend) anchor occurrence 0 sits inside the ordinary model.devices loop, causing per-device reprocessing/duplication and complete skip when model.devices is empty. Fixed both: corrected pointer type and moved the block to run once, after the ordinary loop and before the ACCEL enumeration loop.
 
+2026-09-30: does not apply to MTP on a tensor split. 1261's WARN marker fires only when ctx_other contributes a device backend absent from the draft context (!already_present); with -sm tensor the MTP draft shares the main model's devices, so the path never runs (dev-gpt-agent req_68f6c09055474b6d; Brutus preflight on Qwen3.8-27B Q8_0 dual XTX found no marker). Relevant only for a separate draft model placed on other devices. Off the 27B priority queue.
+
 ## Change Log
 
 - 2026-09-09T10:52:53.458006+00:00 (created-by): Created by capability-rebaseline-v3
@@ -83,3 +85,4 @@ Successor key: patching-nasone-rdna-optimizations-nro11
 - 2026-09-20T06:43:55.564429+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:26:37.993604+00:00 (updated-by): Updated: section:description, section:validation, section:notes
 - 2026-09-24T04:50:24.013352+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-09-30T13:38:15.199353+00:00 (updated-by): Updated: section:notes
