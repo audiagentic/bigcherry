@@ -293,6 +293,10 @@ patches = ["0860_allreduce_provider_cli"]
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
 
+[experiment.allreduce-adaptive]
+# 0840 alone (no 1224 probe) so the production-role A/B harness accepts the build.
+patches = ["0840_hybrid_allreduce_dispatch"]
+
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
