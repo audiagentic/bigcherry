@@ -178,6 +178,29 @@ _LAUNCH_NEW = """#define LAUNCH_AR_KERNEL(T_dst, T_wire) \\
                 ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(p->small_blocks), dim3(p->small_threads), 0, stream>>>( \\
 """
 
+# 1272 composition: 1272's explicit-wire helper (ggml_cuda_ar_allreduce_wire_typed) has its own
+# slot acquire and fixed 8x256 launch. Without these edits, GGML_CUDA_AR_WIRE=f32|f16 arms
+# silently bypass both 1275 switches (dev-gpt-agent review req_91f06cc3b4094306).
+_WIRE_HELPER_PRESENT = r"static bool ggml_cuda_ar_allreduce_wire_typed\("
+
+_WIRE_SLOT_OLD = """        const size_t chunk_elems = std::min(max_chunk_elems, remaining_elems);
+        const size_t chunk_dst_bytes = chunk_elems * sizeof(T_dst);
+        const auto [slot, token] = ggml_cuda_ar_acquire_slot(p);
+"""
+_WIRE_SLOT_NEW = """        const size_t chunk_elems = std::min(max_chunk_elems, remaining_elems);
+        const size_t chunk_dst_bytes = chunk_elems * sizeof(T_dst);
+        const bool wire_skip_host_sync =
+            (size_t) ne <= max_chunk_elems && p->slot_sync == ggml_cuda_ar_slot_sync::none;
+        const auto [slot, token] = ggml_cuda_ar_acquire_slot(p, wire_skip_host_sync);
+"""
+
+_WIRE_LAUNCH_OLD = """            ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>(
+                data, data,
+"""
+_WIRE_LAUNCH_NEW = """            ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(p->small_blocks), dim3(p->small_threads), 0, stream>>>(
+                data, data,
+"""
+
 PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/allreduce.cu",
@@ -264,6 +287,26 @@ PATCHES = [
                 guard=r"dim3\(p->small_blocks\), dim3\(p->small_threads\)",
                 expect_matches=1,
                 rationale="Tune active launch geometry without changing the fixed eight-block arrival-ring allocation/stride.",
+            ),
+            Edit(
+                id="ar-small-1272-wire-slot",
+                anchor=_re.escape(_WIRE_SLOT_OLD),
+                text=_WIRE_SLOT_NEW,
+                mode="replace",
+                guard=r"wire_skip_host_sync",
+                expect_matches=1,
+                applies_if=_WIRE_HELPER_PRESENT,
+                rationale="When 1272 is composed, its explicit-wire helper gets the same single-chunk slot-sync bypass.",
+            ),
+            Edit(
+                id="ar-small-1272-wire-geometry",
+                anchor=_re.escape(_WIRE_LAUNCH_OLD),
+                text=_WIRE_LAUNCH_NEW,
+                mode="replace",
+                guard=r"ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3\(p->small_blocks\), dim3\(p->small_threads\), 0, stream>>>\(\n\s+data, data,",
+                expect_matches=1,
+                applies_if=_WIRE_HELPER_PRESENT,
+                rationale="When 1272 is composed, its explicit-wire kernel launch uses the tuned small geometry.",
             ),
         ),
     ),
