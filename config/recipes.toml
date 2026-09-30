@@ -321,6 +321,11 @@ patches = ["1274_mmvq_kquant_f32_decode"]
 # + 1272 wire codec + 1250 q8 wire over P2P. Needs the P2P-enabled Brutus kernel.
 patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", "1250_nro01_allreduce_q8_wire"]
 
+[experiment.adaptive-wire-latency]
+# Promotion candidates combined: adaptive closure (0860 + 1225 + 0840) + 1272 wire formats + 1275
+# small-AllReduce latency switches, so f32/bf16/f16 x latency-fix arms run on one binary.
+patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
