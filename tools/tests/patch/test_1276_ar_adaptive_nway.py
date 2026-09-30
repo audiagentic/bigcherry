@@ -27,7 +27,6 @@ def _load(name: str, relative: str):
     return module
 
 
-_P0830 = _load("patch_0830_for_1276", "patches/0830_split_reduce_telemetry/patch.py")
 _P0860 = _load("patch_0860_for_1276", "patches/0860_allreduce_provider_cli/patch.py")
 _P1225 = _load("patch_1225_for_1276", "patches/1225_hi85_nccl_heterogeneous_arch_guard/patch.py")
 _P0840 = _load("patch_0840_for_1276", "patches/0840_hybrid_allreduce_dispatch/patch.py")
@@ -59,19 +58,10 @@ def _select(module, path: str, edit_ids: set[str] | None = None) -> list[FilePat
 
 
 # The vendored ggml-cuda fixture is the communication excerpt, not the full
-# translation unit. Select the dependency edits that materialize the adaptive
-# communication seam in that excerpt; 0860's arg.cpp/llama-bench and 0830's
-# include/registry/meta edits have their own focused tests and are unrelated to
-# N=3 routing.
+# translation unit. Select only dependency edits that materialize the adaptive
+# communication seam in that excerpt; 0860's arg.cpp/llama-bench edits have
+# their own focused tests and are unrelated to N=3 routing.
 _CUDA_CHAIN = [
-    *_select(_P0830, "ggml/src/ggml-cuda/ggml-cuda.cu", {
-        "reduce-telemetry-context-fields",
-        "reduce-telemetry-provider-names",
-        "reduce-telemetry-internal-name",
-        "reduce-telemetry-nccl-name",
-        "reduce-telemetry-plan-helper",
-        "reduce-telemetry-call",
-    }),
     *_select(_P0860, "ggml/src/ggml-cuda/ggml-cuda.cu", {
         "allreduce-provider-config",
         "allreduce-provider-init",
@@ -107,9 +97,6 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             ar = ar_path.read_text(encoding="utf-8")
             cuda = cuda_path.read_text(encoding="utf-8")
 
-            # 0840 keeps the logical tensor-byte crossover: small prefers the
-            # internal provider, large prefers RCCL. 1244 makes that internal
-            # provider reach root3 for N=3.
             self.assertIn("const size_t reduction_bytes", cuda)
             self.assertIn("reduction_bytes < switch_bytes", cuda)
             self.assertIn("ggml_backend_cuda_comm_allreduce_internal(comm_ctx, tensors)", cuda)
@@ -117,7 +104,6 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             self.assertIn("GGML_ASSERT(n_backends == 2 || n_backends == 3);", cuda)
             self.assertIn("return ggml_cuda_ar_allreduce_root3(p, backends, tensors, ne);", ar)
 
-            # Root rank is a closed 0|1|2 selector read once at N=3 init.
             self.assertIn('getenv("BIGCHERRY_AR_ROOT3_ROOT")', ar)
             for value in ("0", "1", "2"):
                 self.assertIn(f'strcmp(value, "{value}") == 0', ar)
@@ -139,8 +125,17 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             self.assertIn("p->ev_pool[leaf0][slot].ker", ar)
             self.assertIn("p->ev_pool[leaf1][slot].ker", ar)
 
-            self.assertNotIn("internal AllReduce init failed (n_devices != 2?)", cuda)
+            # 1276 owns only 0840's hybrid diagnostic. The pristine internal
+            # provider has a separate warning with the same bare substring.
+            self.assertNotIn(
+                "hybrid: internal AllReduce init failed (n_devices != 2?);",
+                cuda,
+            )
             self.assertIn("hybrid: internal AllReduce init failed;", cuda)
+            self.assertIn(
+                'GGML_LOG_WARN("internal AllReduce init failed (n_devices != 2?); "',
+                cuda,
+            )
 
             before_ar = ar
             before_cuda = cuda
@@ -171,7 +166,9 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             self.assertEqual(cuda_before, cuda_path.read_text(encoding="utf-8"))
 
     def test_metadata_and_recipe_resolve_dependency_closure(self):
-        meta = tomllib.loads((_REPO / "patches/1276_ar_adaptive_nway/patch.toml").read_text(encoding="utf-8"))
+        meta = tomllib.loads(
+            (_REPO / "patches/1276_ar_adaptive_nway/patch.toml").read_text(encoding="utf-8")
+        )
         self.assertEqual(meta["state"], "untested")
         self.assertEqual(meta["plan-ids"], ["PGC10"])
         self.assertEqual(meta["requires"], [
@@ -179,20 +176,20 @@ class Patch1276AdaptiveNway(unittest.TestCase):
             "1244_gp11_internal_allreduce_nway_root",
         ])
 
-        recipes = tomllib.loads((_REPO / "config/recipes.toml").read_text(encoding="utf-8"))
-        requested = recipes["experiment"]["ar-adaptive-nway"]["patches"]
-        self.assertEqual(requested, ["1276_ar_adaptive_nway"])
-        expanded = patchset.expand_composition(requested, directory=_REPO / "patches")
         expected = (
-            "0830_split_reduce_telemetry",
             "0860_allreduce_provider_cli",
             "1225_hi85_nccl_heterogeneous_arch_guard",
             "0840_hybrid_allreduce_dispatch",
             "1244_gp11_internal_allreduce_nway_root",
             "1276_ar_adaptive_nway",
         )
+        recipes = tomllib.loads((_REPO / "config/recipes.toml").read_text(encoding="utf-8"))
+        requested = recipes["experiment"]["ar-adaptive-nway"]["patches"]
+        self.assertEqual(tuple(requested), expected)
+
+        expanded = patchset.expand_composition(requested, directory=_REPO / "patches")
         self.assertEqual(expanded.expanded, expected)
-        resolved = patchset.resolve_exact(list(expanded.expanded), directory=_REPO / "patches")
+        resolved = patchset.resolve_exact(list(requested), directory=_REPO / "patches")
         self.assertEqual(tuple(m.patch_id for m in resolved.modules), expected)
 
     def test_edit_contracts_are_fail_closed(self):
