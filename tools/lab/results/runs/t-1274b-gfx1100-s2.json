@@ -1,0 +1,17 @@
+{
+ "correctness": [
+  {
+   "check": "backend_reference",
+   "contract_id": "RD74-MMVQ-Q6_K-F32-DECODE",
+   "control_marker_ncols": [],
+   "detail": "Q6_K MUL_MAT test-backend-ops: control 13/13, subject 13/13 within CPU-reference tolerance",
+   "passed": true,
+   "subject_marker_ncols": [
+    1
+   ]
+  }
+ ],
+ "kind": "campaign",
+ "performance": [],
+ "run": "t-1274b-gfx1100-s2"
+}

@@ -1,0 +1,11 @@
+{
+ "env": [
+  "GGML_CUDA_ALLREDUCE=internal"
+ ],
+ "kind": "kld",
+ "mean_kld": 0.000541,
+ "p99_kld": 0.004822,
+ "ppl_ratio": 1.00034,
+ "run": "kld-27b-host-pristine",
+ "same_top_pct": 98.983
+}

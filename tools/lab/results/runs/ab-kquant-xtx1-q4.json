@@ -1,0 +1,76 @@
+{
+ "arm_config": [
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/ecaea379a11f011c9304e75cc0d88410/bin/llama-server",
+   "environment": null,
+   "model": null,
+   "name": "control",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e428fc49f5dd0bdf1a142a105df3888d/4b0860deb1863bbb62a6071c83f4ffe0/bin/llama-server",
+   "environment": null,
+   "model": null,
+   "name": "kquant_f32",
+   "server_args": null
+  }
+ ],
+ "arms": {
+  "control": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 773.79,
+    "tg128_tps": 37.8
+   },
+   "n": 4
+  },
+  "kquant_f32": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 773.62,
+    "tg128_tps": 37.16
+   },
+   "n": 4
+  }
+ },
+ "comparisons": {
+  "kquant_f32_vs_control": {
+   "pp512_tps": {
+    "ci95": [
+     -0.21,
+     0.12
+    ],
+    "effect_pct": -0.02
+   },
+   "tg128_tps": {
+    "ci95": [
+     -1.89,
+     -1.46
+    ],
+    "effect_pct": -1.67
+   }
+  }
+ },
+ "kind": "ab",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+ "run": "ab-kquant-xtx1-q4",
+ "schedule_seed": 0,
+ "server_args": [
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ]
+}

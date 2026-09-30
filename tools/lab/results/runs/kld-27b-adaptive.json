@@ -1,0 +1,9 @@
+{
+ "env": [],
+ "kind": "kld",
+ "mean_kld": 0.000496,
+ "p99_kld": 0.004402,
+ "ppl_ratio": 1.000219,
+ "run": "kld-27b-adaptive",
+ "same_top_pct": 98.873
+}

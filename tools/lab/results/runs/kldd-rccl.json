@@ -1,0 +1,9 @@
+{
+ "env": [],
+ "kind": "kld",
+ "mean_kld": -0.0,
+ "p99_kld": 3.5e-05,
+ "ppl_ratio": 1.000032,
+ "run": "kldd-rccl",
+ "same_top_pct": 99.988
+}
