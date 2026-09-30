@@ -33,6 +33,10 @@ is ambiguous between patch mechanics, validation, and lifecycle;
 
 requests an end-to-end patch workflow.
 
+For workload-targeted performance hunting (many candidate patches for one model/hardware
+configuration, queued builds/preflights/A-Bs, reviewer-agent loop), use
+bigcherry-perf-pipeline instead; it orders that loop and routes back to these skills.
+
 Non-triggers
 
 Do not use as the substantive worker when the request is clearly limited to one domain:
