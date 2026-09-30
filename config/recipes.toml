@@ -293,6 +293,10 @@ patches = ["0860_allreduce_provider_cli"]
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
 
+[experiment.allreduce-root3]
+# 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
+patches = ["1244_gp11_internal_allreduce_nway_root"]
+
 [experiment.allreduce-adaptive]
 # 0840 alone (no 1224 probe) so the production-role A/B harness accepts the build.
 patches = ["0840_hybrid_allreduce_dispatch"]
