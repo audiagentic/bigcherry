@@ -12,7 +12,7 @@ for glob in "$@"; do
     case "$glob" in */*|*..*) echo "refusing pattern '$glob': run-name globs only" >&2; exit 2 ;; esac
     for log in "$runs"/$glob.log; do
         [ -f "$log" ] || continue
-        if grep -qE '^(BUILD|AB|PREFLIGHT|CAMPAIGN|PROFILE)_EXIT=0$' "$log"; then continue; fi
+        if grep -qE '^(BUILD|AB|PREFLIGHT|CAMPAIGN|PROFILE|SCRIPT)_EXIT=0$' "$log"; then continue; fi
         run=$(basename "$log" .log)
         echo "clearing failed row $run"
         rm -rf "$log" "$runs/$run"
