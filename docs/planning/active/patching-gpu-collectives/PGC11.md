@@ -56,6 +56,9 @@ Balanced A/B (6 rounds) per combo on dual XTX 27B Q8_0 MTP with MTP acceptance p
 
 Design requested from dev-gpt-agent deep-dive session ses_9811a27a734746c3.
 
+2026-10-01 KLD findings (27B Q8_0 dual XTX, 32 x 2048-token prefill chunks, frozen docs corpus, reference = host exact-f32 wire): noise floor (reference repeat) mean 0.000000, p99 3e-5, same-top 99.997% (deterministic). host stock bf16 wire: mean 0.00054, p99 0.0048, same-top 98.98%. RCCL: mean 0.000496, p99 0.0044. adaptive with exact-f32 host side: identical to RCCL (0.000496) — because perplexity passes are all prefill-sized (>= 1 MiB) reductions that adaptive routes to RCCL, and RCCL goes bf16 >= 32768 elements. So prefill-mode KLD measures stock RCCL's own bf16 prefill loss (~0.0005 mean) and CANNOT see the decode-size host wire. Added decode-mode KLD (queue-kld-decode.sh: --ubatch-size 1, 8 chunks, own decode-mode f32 reference) comparing RCCL, host bf16/f16, adaptive f32/bf16. Also measured: RCCL channels (2 / >=8) no gain (8 ch: decode +0.5%, prefill -0.9%); 1275 neutral/-8.5%.
+
 ## Change Log
 
 - 2026-09-30T14:04:38.045766+00:00 (created-by): Created by agent
+- 2026-09-30T16:25:35.929349+00:00 (updated-by): Updated: section:notes
