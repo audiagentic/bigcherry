@@ -47,7 +47,7 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         cls.provider_patches = tuple(
             p for p in patches
             if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu"
-            and any(e.id.startswith("adaptive-provider") for e in p.edits)
+            and any(e.id.startswith("adaptive-provider") or e.id == "adaptive-auto-default" for e in p.edits)
         )
         cls.dispatch_patch = next(
             p for p in patches
@@ -82,8 +82,34 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             {e.id for p in self.patches for e in p.edits},
         )
 
+    def test_auto_default_is_scoped_to_dual_physical_gfx1100_hip(self):
+        edit = next(e for e in self.provider_patches[0].edits if e.id == "adaptive-auto-default")
+        self.assertIn("#ifdef GGML_USE_HIP", edit.text)
+        self.assertIn("ret->dev_ids.size() == 2", edit.text)
+        self.assertIn("ret->dev_ids[0] != ret->dev_ids[1]", edit.text)
+        self.assertIn("info.device_count == info.physical_device_count", edit.text)
+        self.assertEqual(edit.text.count("== GGML_CUDA_CC_RDNA3"), 2)
+        self.assertIn('provider = "adaptive";', edit.text)
+        self.assertIn('provider = "ccl";', edit.text)
+        self.assertIn('provider = "host";', edit.text)
+
     def test_apply_registers_adaptive_and_is_idempotent(self):
-        td, root, path = self._tree()
+        source = _CUDA_SOURCE.replace(
+            "static void comm_init",
+            "static void provider_default() {\n"
+            "    std::string provider = \"auto\";\n"
+            "    if (provider == \"auto\") {\n"
+            "#if defined(__linux__)\n"
+            "        provider = \"ccl\";\n"
+            "#else\n"
+            "        provider = \"host\";\n"
+            "#endif\n"
+            "    }\n"
+            "}\n\n"
+            "static void comm_init",
+            1,
+        )
+        td, root, path = self._tree(source)
         with td:
             first = apply_all(self.provider_patches, root)
             self.assertTrue(all(r.ok for r in first), [e.detail for r in first for e in r.failed])
@@ -92,6 +118,7 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             self.assertIn('if (p == "p2p" || p == "root3")', text)
             self.assertIn('provider == "adaptive"', text)
             self.assertIn("ggml_backend_cuda_comm_init_hybrid(ret);", text)
+            self.assertIn("use_adaptive_default", text)
             second = apply_all(self.provider_patches, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(text, path.read_text(encoding="utf-8"))
@@ -125,13 +152,15 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         self.assertEqual([m.patch_id for m in resolved.modules], expected)
 
     def test_missing_unavailable_anchor_fails_closed(self):
-        td, root, path = self._tree(_CUDA_SOURCE.replace('p == "root3"', 'p == "other"', 1))
+        source = _CUDA_SOURCE.replace('p == "root3"', 'p == "other"', 1)
+        td, root, path = self._tree(source)
         with td:
             results = apply_all(self.provider_patches, root)
             self.assertFalse(all(r.ok for r in results))
 
     def test_missing_butterfly_branch_fails_closed(self):
-        td, root, path = self._tree(_CUDA_SOURCE.replace("butterfly", "bfly"))
+        source = _CUDA_SOURCE.replace("butterfly", "bfly")
+        td, root, path = self._tree(source)
         with td:
             results = apply_all(self.provider_patches, root)
             self.assertFalse(all(r.ok for r in results))

@@ -6,6 +6,11 @@ configured byte count prefer host, while reductions at or above it prefer
 RCCL. If the preferred provider is unavailable or host rejects a small call,
 the other provider is tried before meta fallback.
 
+When the CLI provider remains `auto`, adaptive is the default only for the
+validated production envelope: HIP tensor-parallel communication with exactly
+two distinct physical gfx1100 participants. Explicit `--allreduce adaptive`
+remains available outside that envelope.
+
 0840 owns the minimal provider_name field required by adaptive dispatch; the
 0830 telemetry package may observe it when present but is not a runtime
 dependency. Adaptive never mutates the internal pipeline's wire state. When
@@ -138,6 +143,44 @@ CUDA_PROVIDER = FilePatch(
     language="none",
     description="register adaptive on 0860's explicit provider seam",
     edits=(
+        Edit(
+            id="adaptive-auto-default",
+            anchor=(
+                r'    if \(provider == \"auto\"\) \{\n'
+                r'#if defined\(__linux__\)\n'
+                r'        provider = \"ccl\";\n'
+                r'#else\n'
+                r'        provider = \"host\";\n'
+                r'#endif\n'
+                r'    \}'
+            ),
+            rationale="default to adaptive only for the validated HIP tensor-parallel dual-gfx1100 envelope",
+            mode="replace",
+            text=(
+                '    if (provider == "auto") {\n'
+                '        bool use_adaptive_default = false;\n'
+                '#ifdef GGML_USE_HIP\n'
+                '        const ggml_cuda_device_info & info = ggml_cuda_info();\n'
+                '        use_adaptive_default = ret->dev_ids.size() == 2 &&\n'
+                '            ret->dev_ids[0] != ret->dev_ids[1] &&\n'
+                '            info.device_count == info.physical_device_count &&\n'
+                '            info.devices[ret->dev_ids[0]].cc == GGML_CUDA_CC_RDNA3 &&\n'
+                '            info.devices[ret->dev_ids[1]].cc == GGML_CUDA_CC_RDNA3;\n'
+                '#endif\n'
+                '        if (use_adaptive_default) {\n'
+                '            provider = "adaptive";\n'
+                '        } else {\n'
+                '#if defined(__linux__)\n'
+                '            provider = "ccl";\n'
+                '#else\n'
+                '            provider = "host";\n'
+                '#endif\n'
+                '        }\n'
+                '    }'
+            ),
+            guard=r'use_adaptive_default = ret->dev_ids\.size\(\) == 2',
+            expect_matches=1,
+        ),
         Edit(
             id="adaptive-provider-available",
             anchor=r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n',

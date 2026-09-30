@@ -155,6 +155,11 @@ class Patch0860Mechanics(unittest.TestCase):
         self.assertIn("must be a non-negative integer", helper)
         self.assertIn("effective_switch_bytes", helper)
 
+    def test_single_named_switch_default_constant(self):
+        source = (_REPO / "patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
+        self.assertIn("ADAPTIVE_SWITCH_BYTES_DEFAULT = 1 << 20", source)
+        self.assertEqual(source.count("1048576"), 0)
+
     def test_cuda_config_owns_default_switch_and_is_visible_before_adaptive_dispatch(self):
         edit = next(e for e in self.cuda_patches[0].edits if e.id == "allreduce-provider-config")
         self.assertEqual(edit.anchor, r"^static bool ggml_backend_cuda_comm_try_allreduce_internal\($")
