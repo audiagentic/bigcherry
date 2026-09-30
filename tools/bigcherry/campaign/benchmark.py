@@ -847,7 +847,7 @@ def run_server_comparison_capture(
             if key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_AUTOTUNE_", "GGML_HIP_TUNE_", "GGML_HIP_FORCE_")):
                 env.pop(key)
             elif key not in supplied_env and (
-                    key == "GGML_CUDA_ALLREDUCE" or key.startswith(("GGML_CUDA_AR_", "BIGCHERRY_"))):
+                    key == "GGML_CUDA_ALLREDUCE" or key.startswith(("GGML_CUDA_AR_", "BIGCHERRY_", "NCCL_", "RCCL_"))):
                 env.pop(key)
         if mode != "stock":
             env["GGML_HIP_DISPATCH_MODE"] = mode
@@ -855,11 +855,12 @@ def run_server_comparison_capture(
         controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
         if any(
             key != "GGML_CUDA_ALLREDUCE"
-            and not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_", "GGML_CUDA_AR_"))
+            and not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_", "GGML_CUDA_AR_",
+                                    "NCCL_", "RCCL_"))
             and not (key.startswith("BIGCHERRY_") and key != "BIGCHERRY_PATCH_TRACE")
             for key in controls
         ):
-            raise ValueError("arm-specific environment is limited to dispatch/tuning/allreduce and BigCherry patch controls (not tracing); topology belongs to the shared environment")
+            raise ValueError("arm-specific environment is limited to dispatch/tuning/allreduce/RCCL and BigCherry patch controls (not tracing); topology belongs to the shared environment")
         if "GGML_HIP_DISPATCH_MODE" in controls:
             raise ValueError("arm environment cannot override the declared dispatch mode")
         env.update(controls)
