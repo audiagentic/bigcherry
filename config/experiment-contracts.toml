@@ -1765,7 +1765,7 @@ prerequisites = []
 # plus three follow-ups). No single immutable source commit represents the
 # squashed composition, so this is recorded as a local composition rather
 # than a single external-source commit reference.
-source_id = "bigcherry-upstream-backport"
+source_id = "llama-cpp-upstream"
 commits = []
 atomic_part = "1005_prompt_cache_checkpoint_selection"
 
