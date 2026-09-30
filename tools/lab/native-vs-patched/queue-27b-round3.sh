@@ -1,5 +1,5 @@
 #!/bin/bash
-# Round 3 dual-XTX 27B queue: 1263 (PRBE41) with the Meta split fallback. The preflight must
+# Round 3 dual-XTX 27B queue: 1263 (PRBE41) declines channels-major under a tensor split. The preflight must
 # show the fallback marker under -sm tensor (the channels-major kernel still runs, replicated)
 # before the A/B against the plain control build (b-27b-control from queue-27b-remaining.sh).
 set -u
@@ -11,7 +11,7 @@ SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 BUILD b-27b-1263 ssm-conv-channels-major
-PREFLIGHT pf-27b-1263-split @b-27b-1263 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1263_prbe41.path=ssm_conv_channels_major_split_fallback $SRV
+PREFLIGHT pf-27b-1263-split @b-27b-1263 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1263_prbe41.path=ssm_conv_channels_major_declined_split $SRV
 REQUIRES=pf-27b-1263-split AB ab-27b-1263 $L/server-ab-1263.json --pairs 4
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
