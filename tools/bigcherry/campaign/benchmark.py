@@ -850,8 +850,12 @@ def run_server_comparison_capture(
             env["GGML_HIP_DISPATCH_MODE"] = mode
         # Only explicitly supplied arm controls survive ambient sanitization.
         controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
-        if any(not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_")) for key in controls):
-            raise ValueError("arm-specific environment is limited to dispatch/tuning controls; topology belongs to the shared environment")
+        if any(
+            key != "GGML_CUDA_ALLREDUCE"
+            and not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_", "GGML_CUDA_AR_"))
+            for key in controls
+        ):
+            raise ValueError("arm-specific environment is limited to dispatch/tuning/allreduce controls; topology belongs to the shared environment")
         if "GGML_HIP_DISPATCH_MODE" in controls:
             raise ValueError("arm environment cannot override the declared dispatch mode")
         env.update(controls)

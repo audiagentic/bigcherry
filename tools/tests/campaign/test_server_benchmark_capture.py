@@ -179,6 +179,24 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         advisories = json.loads((self.output / "advisories.json").read_text())
         self.assertIn("AB_NOT_ADMITTED", [item["id"] for item in advisories["findings"]])
 
+    def test_arm_environment_admits_allreduce_controls_but_not_topology(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        arms = [dict(self.arms[0], environment={"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_COPY_THRESHOLD": "65536"}), self.arms[1]]
+        self.write_config(arms=arms)
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        env = next(item["env"] for item in captured if item["side"] == self.arms[0]["name"])
+        self.assertEqual(env["GGML_CUDA_ALLREDUCE"], "internal")
+        self.assertEqual(env["GGML_CUDA_AR_COPY_THRESHOLD"], "65536")
+        self.write_config(arms=[dict(self.arms[0], environment={"HIP_VISIBLE_DEVICES": "0"}), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
+
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
         with self.patches_for_preflight(instrumented=True), patch(
