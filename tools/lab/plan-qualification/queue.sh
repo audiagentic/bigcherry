@@ -141,7 +141,8 @@ ab_line() {
     out="$work/runs/$run"
     if [ -f "$log" ] && grep -q '^AB_EXIT=' "$log"; then
         echo "skip ab $run (finished)"
-        return 0
+        grep -qx 'AB_EXIT=0' "$log"
+        return $?
     fi
     echo "start ab $run $(date -Is)"
     mkdir -p "$out"
@@ -181,7 +182,8 @@ script_line() {
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^SCRIPT_EXIT=' "$log"; then
         echo "skip script $run (finished)"
-        return 0
+        grep -qx 'SCRIPT_EXIT=0' "$log"
+        return $?
     fi
     echo "start script $run $(date -Is)"
     local args=()
@@ -213,7 +215,8 @@ preflight_line() {
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^PREFLIGHT_EXIT=' "$log"; then
         echo "skip preflight $run (finished)"
-        return 0
+        grep -qx 'PREFLIGHT_EXIT=0' "$log"
+        return $?
     fi
     echo "start preflight $run $(date -Is)"
     shift 2
