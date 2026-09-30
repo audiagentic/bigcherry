@@ -10,8 +10,9 @@ PID=$!
 for i in $(seq 1 180); do curl -sf http://127.0.0.1:18092/health >/dev/null && break; sleep 2; done
 # BC_PREFLIGHT_PROMPT_REPEAT=N repeats the prompt N times so prefill-only paths (large
 # reductions, copy-engine/P2P AllReduce) fire; default 1 = short decode-style probe.
+# BC_PREFLIGHT_N_PREDICT (default 16) lengthens generation for paths that need many decode steps.
 prompt=$(python3 -c 'import sys; print(" ".join(["The capital of France is Paris, a city on the Seine."] * int(sys.argv[1])))' "${BC_PREFLIGHT_PROMPT_REPEAT:-1}")
-python3 -c 'import json,sys; print(json.dumps({"prompt": sys.argv[1], "n_predict": 16, "temperature": 0}))' "$prompt"   | curl -s http://127.0.0.1:18092/completion -d @- >/dev/null
+python3 -c 'import json,sys; print(json.dumps({"prompt": sys.argv[1], "n_predict": int(sys.argv[2]), "temperature": 0}))' "$prompt" "${BC_PREFLIGHT_N_PREDICT:-16}"   | curl -s http://127.0.0.1:18092/completion -d @- >/dev/null
 kill -INT $PID; wait $PID 2>/dev/null
 echo "log: $LOG"
 grep -c "$PAT" "$LOG" | sed 's/^/hits: /'
