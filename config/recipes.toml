@@ -520,7 +520,7 @@ needs = ["inventory", "promoted-winners"]
 # what ships.
 [build.replay-diagnostic]
 description = "Replay with per-dispatch hit-log attribution -- validation only, not what ships."
-options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
 variant-set = "replay-full"
 needs = ["inventory", "promoted-winners"]
 
@@ -860,3 +860,7 @@ expected-tooling-revision = ""
 
 [experiment.ssm-conv-channels-major]
 patches = ["1263_prbe41_ssm_conv_channels_major"]
+
+[experiment.ar-small-latency]
+# 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
+patches = ["1275_ar_small_latency"]
