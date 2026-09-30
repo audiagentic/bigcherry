@@ -846,6 +846,9 @@ def run_server_comparison_capture(
         for key in tuple(env):
             if key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_AUTOTUNE_", "GGML_HIP_TUNE_", "GGML_HIP_FORCE_")):
                 env.pop(key)
+            elif key not in supplied_env and (
+                    key == "GGML_CUDA_ALLREDUCE" or key.startswith(("GGML_CUDA_AR_", "BIGCHERRY_"))):
+                env.pop(key)
         if mode != "stock":
             env["GGML_HIP_DISPATCH_MODE"] = mode
         # Only explicitly supplied arm controls survive ambient sanitization.

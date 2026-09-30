@@ -583,6 +583,15 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
             campaign_resolution.resolve_lane(
                 "multi", self._cfg(("set-b", "set-a")), catalog, catalog_directory=self.patches_root)
 
+    def test_earlier_sets_one_way_conflict_with_a_later_set_fails_closed(self):
+        a = self.patches_root / "0001_a.py"
+        a.write_text(a.read_text(encoding="utf-8").replace(
+            "STATE = 'validated'\n", "STATE = 'validated'\nCONFLICTS = ('0002_b',)\n"), encoding="utf-8")
+        catalog = patchset.catalog(directory=self.patches_root)
+        with self.assertRaisesRegex(campaign_resolution.ResolutionError, "0001_a conflicts"):
+            campaign_resolution.resolve_lane(
+                "multi", self._cfg(("set-a", "set-b")), catalog, catalog_directory=self.patches_root)
+
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
         # Today's only real production shape (bigcherry: serving-core +
         # upstream-fixes + validated-enhancements, all 'validated') --

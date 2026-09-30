@@ -85,7 +85,9 @@ static __device__ __forceinline__ float vec_dot_iq4_xs_q8_1_vdr2(
         sumi = ggml_cuda_dp4a(v.y, u1, sumi);
     }
 
-    const int ls = ((bq4->scales_l[iqs/8] >> (iqs & 0x04)) & 0x0F) | (((bq4->scales_h >> (iqs/2)) & 0x03) << 4);
+    // Scale index belongs to the pristine VDR=4 group (iqs multiple of 4); both halves share it.
+    const int s_iqs = iqs & ~0x02;
+    const int ls = ((bq4->scales_l[s_iqs/8] >> (s_iqs & 0x04)) & 0x0F) | (((bq4->scales_h >> (s_iqs/2)) & 0x03) << 4);
     sumi *= ls - 32;
 
     const float d = __half2float(bq4->d) * __low2float(bq8_1[iqs/4].ds);
@@ -229,8 +231,8 @@ _CASE1_ANCHOR = """        case 1: {
 _CASE1_TUNING = r'''
 
             if constexpr (type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_IQ3_XXS) {
-                const bool tune_vdr = bigcherry_iq_mmvq_env_enabled("BIGCHERRY_IQ_MMVQ_VDR");
-                const bool tune_nwarps = bigcherry_iq_mmvq_env_enabled("BIGCHERRY_IQ_MMVQ_NWARPS");
+                static const bool tune_vdr = bigcherry_iq_mmvq_env_enabled("BIGCHERRY_IQ_MMVQ_VDR");
+                static const bool tune_nwarps = bigcherry_iq_mmvq_env_enabled("BIGCHERRY_IQ_MMVQ_NWARPS");
                 const bool target_arch = table_id == MMVQ_PARAMETERS_RDNA3_0 || table_id == MMVQ_PARAMETERS_RDNA4;
 
                 if (target_arch && (tune_vdr || tune_nwarps)) {
