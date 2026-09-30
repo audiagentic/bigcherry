@@ -3,7 +3,8 @@
 The repeatable loop for finding, authoring, testing and promoting performance patches for a
 target workload (e.g. Qwen3.8-27B Q8_0 on 2x 7900 XTX, `-sm tensor`, MTP). Any agent or tool
 can follow it. Mechanics live in the linked docs; this page is the order of operations and
-the rules that keep runs trustworthy.
+the rules that keep runs trustworthy. Agents follow it through the
+`bigcherry-perf-pipeline` skill (`.claude/skills/bigcherry-perf-pipeline/SKILL.md`).
 
 ## Stages
 
