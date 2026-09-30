@@ -1,6 +1,9 @@
-# 1273 IQ MMVQ RDNA tuning
+# 1273_iq_mmvq_rdna_tuning
 
-State: **untested**. No hardware performance or correctness claim is made by this patch package.
+**Status:** untested
+**Plan item:** none
+
+No hardware performance or correctness claim is made by this patch package.
 
 ## Scope
 

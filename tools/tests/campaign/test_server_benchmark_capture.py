@@ -193,6 +193,9 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         env = next(item["env"] for item in captured if item["side"] == self.arms[0]["name"])
         self.assertEqual(env["GGML_CUDA_ALLREDUCE"], "internal")
         self.assertEqual(env["GGML_CUDA_AR_COPY_THRESHOLD"], "65536")
+        self.write_config(arms=[dict(self.arms[0], environment={"BIGCHERRY_PATCH_TRACE": "1"}), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "not tracing"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "trace", rounds=2, seed=0, settle_seconds=0)
         self.write_config(arms=[dict(self.arms[0], environment={"HIP_VISIBLE_DEVICES": "0"}), self.arms[1]])
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
             benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
