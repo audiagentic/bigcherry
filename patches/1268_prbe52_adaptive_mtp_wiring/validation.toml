@@ -17,7 +17,7 @@ id = "activation"
 capability = "activation"
 validator = "trace-marker"
 required = true
-marker-regex = "BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING"
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING event=depth_change"
 
 [[check]]
 id = "correctness"

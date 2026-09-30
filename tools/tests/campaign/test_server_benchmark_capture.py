@@ -197,6 +197,24 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
             benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
 
+    def test_arm_server_args_are_appended_to_that_arm_only(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        arms = [dict(self.arms[0], server_args=["--spec-draft-n-min-adaptive", "1"]), self.arms[1]]
+        self.write_config(arms=arms)
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["extra_args"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]], ("-sm", "tensor", "--spec-draft-n-min-adaptive", "1"))
+        self.assertEqual(by_side[self.arms[1]["name"]], ("-sm", "tensor"))
+        self.write_config(arms=[dict(self.arms[0], server_args=["--port", "1"]), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "managed model or endpoint"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
+
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
         with self.patches_for_preflight(instrumented=True), patch(

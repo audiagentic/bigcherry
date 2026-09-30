@@ -110,7 +110,13 @@ _ACCEPT_NEW = """        const int32_t i_h = std::min<int32_t>(n_accepted, n_row
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
 
         if (params.n_min_adaptive > 0) {
+            const int old_depth = adaptive_state[seq_id].n_cur;
             adaptive_state[seq_id].update(last_n_draft[seq_id], (int) n_accepted, params.n_max, params.n_min_adaptive);
+            const int new_depth = adaptive_state[seq_id].n_cur;
+            if (new_depth != old_depth && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                SPC_WRN("BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING event=depth_change old=%d new=%d drafted=%d accepted=%d seq=%d\\n",
+                        old_depth, new_depth, last_n_draft[seq_id], (int) n_accepted, (int) seq_id);
+            }
         }
     }
 };
