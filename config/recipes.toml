@@ -191,8 +191,23 @@ required-state = "validated"
 # larger original-digest number on the original model. If the +8-9% gfx1201
 # claim needs reconfirming against this digest, that requires a further
 # Qwen3.6-35B-A3B gfx1201 session, not yet run.
+#
+# PROMOTED 2026-09-30 (owner-directed: "promote that to the prod build"):
+# 1241_rd33_mmvq_q8_0_f32_decode (RD33), gfx1100. Contract
+# RD33-MMVQ-Q8_0-F32-DECODE PASS in 4 fresh sessions at pin b11233
+# (t-1241n2-gfx1100-s1..s4; patch-verify-evidence: validated-evidence):
+# tierL-qwen27b-q8 dual 7900 XTX -sm tensor tg128 +4.64/+4.62/+4.38/+4.60%
+# (CI95 lows 4.08-4.50%); the tierA-qwen4b-q6k non-firing control moved
+# +1.3..+1.6% in every session (build-layout effect, as in the b11126
+# sessions), so the control-adjusted decode gain is about +3%. Earlier
+# b11126 evidence is preserved. NOT covered: other architectures (runtime
+# gate is gfx1100 only), MoE, non-Q8_0 weights, ncols_dst > 1 (MTP verify
+# and prefill keep the stock path). Its producer's baseline_source is
+# "bigcherry", which now contains 1241, so a future re-validation must use a
+# baseline source without this set (same issue 1265 hit on 2026-09-27).
 patches = [
     "1237_rd30_moe_mmq_compact_grid",
+    "1241_rd33_mmvq_q8_0_f32_decode",
     "1253_nro04_gfx1100_bf16_chunked_gdn",
     "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
 ]

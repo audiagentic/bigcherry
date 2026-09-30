@@ -70,6 +70,7 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 ## Ledger-events
 
 
+
 - chg_20260929_222105_patch-qualification-queues-can_5436
 - 2026-09-29T22:21:08.894835+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T00:04:54.693739+00:00 (updated-by): Updated: section:notes
@@ -79,3 +80,5 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 - 2026-09-30T01:03:14.283546+00:00 (updated-by): Updated: section:notes
 - chg_20260930_010324_validation-campaigns-that-cann_9359
 - 2026-09-30T01:03:27.769967+00:00 (updated-by): Updated: section:ledger-events
+- chg_20260930_021419_builds-firing-checks-and-ab_8646
+- 2026-09-30T02:14:26.106622+00:00 (updated-by): Updated: section:ledger-events
