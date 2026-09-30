@@ -12,7 +12,8 @@ K=tools/lab/ar-accuracy/kld.sh
 # tokens; ppl-default.txt was only 2 chunks). Built fresh each run so it is reproducible from git.
 C=/mnt/data/bigcherry-work/corpus/kld-docs.txt
 mkdir -p "$(dirname "$C")"
-find docs -name '*.md' | sort | xargs cat > "$C"
+# Frozen after first creation: every KLD compare must use the exact corpus its reference used.
+[ -s "$C" ] || find docs -name '*.md' | sort | xargs cat > "$C"
 R=/mnt/data/bigcherry-work/runs/kld-27b-reference.kld
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
