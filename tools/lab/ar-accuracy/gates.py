@@ -19,7 +19,12 @@ GATES = {"mean_kld": 0.001, "p99_kld": 0.01, "same_top_pct": 99.5}
 def kld(runs: Path, names: list[str]) -> int:
     failed = 0
     for name in names:
-        text = (runs / name / "perplexity.log").read_text(errors="replace")
+        log = runs / name / "perplexity.log"
+        if not log.is_file():
+            print(f"{name}: no perplexity.log (run missing or blocked) -> FAIL")
+            failed += 1
+            continue
+        text = log.read_text(errors="replace")
         mean = re.search(r"Mean\s+KLD:\s+([0-9.eE+-]+)", text)
         p99 = re.search(r"99\.0%\s+KLD:\s+([0-9.eE+-]+)", text)
         top = re.search(r"Same top p:\s+([0-9.]+)", text)

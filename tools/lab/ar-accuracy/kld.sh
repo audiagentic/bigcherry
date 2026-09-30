@@ -20,6 +20,7 @@ export HIP_VISIBLE_DEVICES=${BC_GPUS:-0,1} ROCR_VISIBLE_DEVICES=${BC_GPUS:-0,1}
 common=(-m "$model" -f "$corpus" -c 2048 --chunks 32 -ngl 99 -sm tensor --flash-attn on "${extra[@]}")
 out=${BC_RUN_DIR:-.}
 env | grep -E '^(GGML_CUDA_ALLREDUCE|GGML_CUDA_AR_)' | sort > "$out/env.txt" || true
+if [ "$mode" = compare ] && [ ! -s "$ref" ]; then echo "reference $ref missing; run the base configuration first" >&2; exit 3; fi
 case "$mode" in
     base) "$bin" "${common[@]}" --kl-divergence-base "$ref" 2>&1 | tee "$out/perplexity.log" | tail -n 20 ;;
     compare) "$bin" "${common[@]}" --kl-divergence-base "$ref" --kl-divergence 2>&1 | tee "$out/perplexity.log" | tail -n 40 ;;
