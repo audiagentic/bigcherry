@@ -51,9 +51,11 @@ def acceptance(dirs: list[str]) -> int:
             for a, g in pat.findall(log.read_text(errors="replace")):
                 acc[arm][0] += int(a)
                 acc[arm][1] += int(g)
+        arms = {log.parent.name.split("-", 2)[2] for log in Path(d).glob("pair-*-*/server.log")}
         rates = {arm: 100.0 * a / g for arm, (a, g) in sorted(acc.items()) if g}
-        if not rates:
-            print(f"{d}: no MTP acceptance lines (MTP off?)")
+        if len(arms) < 2 or set(rates) != arms:
+            print(f"{d}: acceptance missing for arms {sorted(arms - set(rates))} (need >= 2 arms with data) -> FAIL")
+            failed += 1
             continue
         ref = next(iter(rates.values()))
         ok = all(abs(r - ref) <= 0.5 for r in rates.values())
