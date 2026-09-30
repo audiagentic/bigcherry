@@ -35,7 +35,9 @@ for dev, groups in GROUPS.items():
             "model": M + Q[quants[0]] + ".gguf",
             "server_args": [*split, "-ngl", "99", "--fit", "off", "-c", "8192", "--flash-attn", "on",
                             "--ubatch-size", "512", "--batch-size", "2048", "--threads", "8", "--parallel", "1"],
-            "environment": {"HIP_VISIBLE_DEVICES": vis, "ROCR_VISIBLE_DEVICES": vis},
+            # ROCR selects physical GPUs and renumbers them from 0; HIP indices are post-ROCR.
+            "environment": {"ROCR_VISIBLE_DEVICES": vis,
+                            "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(len(vis.split(","))))},
             "expected_execution": {"backend": "ROCm", "architectures": archs, "locators": locs},
             "bench_configs": "default",
             "required_metrics": ["pp512_tps", "tg128_tps"],

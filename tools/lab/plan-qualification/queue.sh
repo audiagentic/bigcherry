@@ -158,7 +158,8 @@ ab_line() {
     done
     # Lock exactly the GPUs the config runs on; a VIS= prefix must agree with it.
     local cfg_gpus
-    cfg_gpus=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["environment"]["HIP_VISIBLE_DEVICES"])' "$resolved")
+    # Physical GPUs: ROCR_VISIBLE_DEVICES when set (HIP indices are renumbered after it).
+    cfg_gpus=$(python3 -c 'import json,sys; e=json.load(open(sys.argv[1]))["environment"]; print(e.get("ROCR_VISIBLE_DEVICES") or e["HIP_VISIBLE_DEVICES"])' "$resolved")
     if [ -n "$PARSED_VIS" ] && [ "$PARSED_VIS" != "$cfg_gpus" ]; then
         echo "blocked ab $run: VIS=$PARSED_VIS disagrees with config HIP_VISIBLE_DEVICES=$cfg_gpus" | tee "$log"
         echo "AB_EXIT=1" >> "$log"
