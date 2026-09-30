@@ -316,6 +316,11 @@ patches = ["1272_ar_host_compressed_wire"]
 # 1274 alone (1241, which it requires, is in validated-enhancements): Q6_K/Q4_K F32-activation ncols=1 decode.
 patches = ["1274_mmvq_kquant_f32_decode"]
 
+[experiment.ar-p2p]
+# 1252 P2P internal AllReduce (opt-in GGML_CUDA_AR_P2P=1, content-probed; falls back to host staging)
+# + 1272 wire codec + 1250 q8 wire over P2P. Needs the P2P-enabled Brutus kernel.
+patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", "1250_nro01_allreduce_q8_wire"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
