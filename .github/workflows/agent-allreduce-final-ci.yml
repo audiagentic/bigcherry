@@ -22,9 +22,33 @@ jobs:
             patches/0840_hybrid_allreduce_dispatch/patch.py \
             patches/0860_allreduce_provider_cli/patch.py
       - name: Patch lint
-        run: PYTHONPATH=tools python -m bigcherry patch-lint
-      - name: Focused patch tests
+        shell: bash
         run: |
+          set +e
+          PYTHONPATH=tools python -m bigcherry patch-lint 2>&1 | tee patch-lint.log
+          echo "${PIPESTATUS[0]}" > patch-lint.rc
+          exit 0
+      - name: Focused patch tests
+        shell: bash
+        run: |
+          set +e
           PYTHONPATH=tools python -m unittest \
             tools.tests.patch.test_0840_adaptive_provider \
-            tools.tests.patch.test_0860_allreduce_provider_cli
+            tools.tests.patch.test_0860_allreduce_provider_cli 2>&1 | tee focused-tests.log
+          echo "${PIPESTATUS[0]}" > focused-tests.rc
+          exit 0
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mechanics-diagnostics
+          path: |
+            patch-lint.log
+            patch-lint.rc
+            focused-tests.log
+            focused-tests.rc
+      - name: Enforce gates
+        shell: bash
+        run: |
+          test "$(cat patch-lint.rc)" = "0"
+          test "$(cat focused-tests.rc)" = "0"
