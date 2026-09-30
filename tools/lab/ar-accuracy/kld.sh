@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do
         *) echo "unexpected argument $1" >&2; exit 2 ;;
     esac
 done
-export HIP_VISIBLE_DEVICES=${BC_GPUS:-0,1} ROCR_VISIBLE_DEVICES=${BC_GPUS:-0,1}
+export ROCR_VISIBLE_DEVICES=${BC_GPUS:-0,1}; unset HIP_VISIBLE_DEVICES
 common=(-m "$model" -f "$corpus" -c 2048 --chunks 32 -ngl 99 -sm tensor --flash-attn on "${extra[@]}")
 out=${BC_RUN_DIR:-.}
 env | grep -E '^(GGML_CUDA_ALLREDUCE|GGML_CUDA_AR_)' | sort > "$out/env.txt" || true

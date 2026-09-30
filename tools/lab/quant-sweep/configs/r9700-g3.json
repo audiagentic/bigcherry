@@ -22,8 +22,8 @@
   "1"
  ],
  "environment": {
-  "HIP_VISIBLE_DEVICES": "2",
-  "ROCR_VISIBLE_DEVICES": "2"
+  "ROCR_VISIBLE_DEVICES": "2",
+  "HIP_VISIBLE_DEVICES": "0"
  },
  "expected_execution": {
   "backend": "ROCm",
