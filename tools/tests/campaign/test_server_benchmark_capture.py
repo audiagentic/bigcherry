@@ -215,6 +215,24 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "managed model or endpoint"):
             benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
 
+    def test_arm_model_overrides_the_shared_model_for_that_arm(self):
+        other = self.root / "other.gguf"
+        other.write_bytes(b"other")
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        self.write_config(arms=[dict(self.arms[0], model=str(other)), self.arms[1]])
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["model"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]], other.resolve())
+        self.assertEqual(by_side[self.arms[1]["name"]], self.model.resolve())
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(list(summary["arm_model_sha256"]), [self.arms[0]["name"]])
+
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
         with self.patches_for_preflight(instrumented=True), patch(
