@@ -57,6 +57,17 @@ Unit test: a producer whose marker never fires aborts before any timed lane runs
 
 Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/native-vs-patched/preflight-fire.sh. 1245 ncols=6 Q8_0 fused kernel measured 60 VGPR, no spill, no scratch, so the register-pressure explanation for its -6.4% at n_max=5 is ruled out.
 
+2026-09-30 progress: steps 1-2 done. Instead of a new runtime API, added vp.ValidationProducerBlocked, vp.require_activation_ok and vp.require_fires; producers 1204/1206/1237/1265/1241/1253/1254 now abort (non-zero, no record, no timed lane) when the marker does not fire. 1204 and 1206 reordered so the probe runs before any timed lane. Step 3: 1245 REJECTED instead of instrumented (-6.4% at n_max=5, identical acceptance; spill ruled out). REMAINING: step 4 (per-patch firing requirements in validation.toml, e.g. 1263 single-GPU, 1245-style n_max scope), persisted BLOCKED verdict + policy handling in patch-verify-evidence (GPT req_f8ad9fe280fd47eb), rd13 27B activation preflight run on Brutus. Note: the rd13 test test_probe_failure_still_exit_zero_with_failed_record covers the dispatcher trace_probe=run mode, which no real patch uses; it is unchanged.
+
 ## Change Log
 
 - 2026-09-29T22:19:04.336861+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+
+- chg_20260929_222105_patch-qualification-queues-can_5436
+- 2026-09-29T22:21:08.894835+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-30T00:04:54.693739+00:00 (updated-by): Updated: section:notes
+- chg_20260930_000454_qualification-runs-no-longer-s_6036
+- 2026-09-30T00:04:57.988566+00:00 (updated-by): Updated: section:ledger-events

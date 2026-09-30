@@ -94,6 +94,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         and not (_FORBIDDEN_NCOLS & subject_ncols)
         and not control_ncols
     )
+    vp.require_activation_ok(
+        activation_ok,
+        label="RD33",
+        detail=(
+            f"subject ncols hit={sorted(subject_ncols)} (require [1], forbid 2..8), "
+            f"control hits={sorted(control_ncols)}"
+        ),
+    )
     activation = ActivationEvidence(
         status="executed" if activation_ok else "not_executed",
         mechanism="trace_marker",

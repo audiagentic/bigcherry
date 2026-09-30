@@ -359,9 +359,9 @@ class RD08ActivationEvidenceTests(unittest.TestCase):
                 ("no marker", "no marker", "not_executed"),
             ):
                 ctx.runtime = Runtime(subject_log, control_log)
-                activation, _, _, _ = producer._run_activation(ctx, object())
-                self.assertIsInstance(activation, producer.ActivationEvidence)
-                self.assertEqual(activation.status, expected)
+                with self.assertRaises(producer.vp.ValidationProducerBlocked) as cm:
+                    producer._run_activation(ctx, object())
+                self.assertIn("no timed lane was run", str(cm.exception))
 
 
 if __name__ == "__main__":

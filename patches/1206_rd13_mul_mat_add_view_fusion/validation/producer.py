@@ -451,27 +451,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     device = matches[0]
 
-    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=bench_control,
-        subject_binary=bench_subject,
-        model=model,
-        workloads=("decode",),
-        pairs=_MIN_PAIRED_ROUNDS,
-        log_context="rd13-performance-positive",
-        device=device,
-    )
-    control_outcome = ctx.runtime.run_paired_llama_benchmark(
-        control_binary=bench_control,
-        subject_binary=bench_subject,
-        model=control_model,
-        workloads=("decode",),
-        pairs=_MIN_PAIRED_ROUNDS,
-        log_context="rd13-performance-control",
-        device=device,
-    )
-    positive_effect = _lane_effect(positive_outcome, role="positive", label="positive")
-    control_effect = _lane_effect(control_outcome, role="control", label="control")
-
+    # Activation preflight BEFORE any timed lane (PVPS15).
     subject_trace = ctx.runtime.run_trace_probe(
         binary=bench_subject,
         model=model,
@@ -493,6 +473,31 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     marker = re.compile(_MARKER_REGEX)
     subject_hit = marker.search(subject_trace) is not None
     control_hit = marker.search(control_trace) is not None
+    vp.require_fires(
+        subject_hit=subject_hit, control_hit=control_hit, label="RD13", marker=_MARKER_REGEX
+    )
+
+    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control,
+        subject_binary=bench_subject,
+        model=model,
+        workloads=("decode",),
+        pairs=_MIN_PAIRED_ROUNDS,
+        log_context="rd13-performance-positive",
+        device=device,
+    )
+    control_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=bench_control,
+        subject_binary=bench_subject,
+        model=control_model,
+        workloads=("decode",),
+        pairs=_MIN_PAIRED_ROUNDS,
+        log_context="rd13-performance-control",
+        device=device,
+    )
+    positive_effect = _lane_effect(positive_outcome, role="positive", label="positive")
+    control_effect = _lane_effect(control_outcome, role="control", label="control")
+
     trigger_hit = subject_hit and not control_hit
     activation = ActivationEvidence(
         status="executed"

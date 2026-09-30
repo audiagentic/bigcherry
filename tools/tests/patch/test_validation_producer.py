@@ -315,5 +315,27 @@ class ProducerResultTests(unittest.TestCase):
         vp.validate_producer_result(spec, result, plan=plan, context=context)  # must not raise
 
 
+class ActivationPreflightTests(unittest.TestCase):
+    def test_fires_only_when_subject_hits_and_control_does_not(self) -> None:
+        vp.require_fires(subject_hit=True, control_hit=False, label="X", marker="m")
+        for subject_hit, control_hit, text in (
+            (False, False, "did not fire in the subject"),
+            (True, True, "invalid negative control"),
+            (False, True, "did not fire in the subject"),
+        ):
+            with self.assertRaises(vp.ValidationProducerBlocked) as cm:
+                vp.require_fires(
+                    subject_hit=subject_hit, control_hit=control_hit, label="X", marker="m"
+                )
+            self.assertIn(text, str(cm.exception))
+            self.assertIn("no timed lane was run", str(cm.exception))
+
+    def test_blocked_is_a_producer_error(self) -> None:
+        self.assertTrue(issubclass(vp.ValidationProducerBlocked, vp.ValidationProducerError))
+        with self.assertRaises(vp.ValidationProducerBlocked):
+            vp.require_activation_ok(False, label="X", detail="d")
+        vp.require_activation_ok(True, label="X", detail="d")
+
+
 if __name__ == "__main__":
     unittest.main()
