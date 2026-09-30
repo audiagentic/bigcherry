@@ -58,14 +58,32 @@
   {
    "mode": "stock",
    "shutdown_method": "sigint",
-   "name": "control",
-   "binary": "@b-27b-control"
+   "name": "ccl",
+   "binary": "@b-27b-adaptive",
+   "server_args": [
+    "--allreduce",
+    "ccl"
+   ]
   },
   {
    "mode": "stock",
    "shutdown_method": "sigint",
    "name": "adaptive",
-   "binary": "@b-27b-adaptive"
+   "binary": "@b-27b-adaptive",
+   "server_args": [
+    "--allreduce",
+    "adaptive"
+   ]
+  },
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "host",
+   "binary": "@b-27b-adaptive",
+   "server_args": [
+    "--allreduce",
+    "host"
+   ]
   }
  ]
 }
