@@ -1,0 +1,75 @@
+{
+ "schema_version": 1,
+ "evidence_role": "production",
+ "execution_evidence": "observe",
+ "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "server_args": [
+  "-sm",
+  "tensor",
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "64000",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1",
+  "--spec-type",
+  "draft-mtp",
+  "--spec-draft-n-max",
+  "4",
+  "-ctkd",
+  "q8_0",
+  "-ctvd",
+  "q8_0"
+ ],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1100",
+   "gfx1100"
+  ],
+  "locators": [
+   "0000:03:00.0",
+   "0000:06:00.0"
+  ]
+ },
+ "bench_configs": "mtp-dual",
+ "required_metrics": [
+  "pp1024_tps",
+  "pp4096_tps",
+  "tg512_tps",
+  "tg2048_tps"
+ ],
+ "repetitions": 3,
+ "arms": [
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "fixed",
+   "binary": "@b-27b-adaptive-mtp"
+  },
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "adaptive",
+   "binary": "@b-27b-adaptive-mtp",
+   "server_args": [
+    "--spec-draft-n-min-adaptive",
+    "2"
+   ]
+  }
+ ]
+}

@@ -861,8 +861,11 @@ def run_server_comparison_capture(
         env.update(controls)
         if mode == "replay" and not Path(env.get("GGML_HIP_DISPATCH_CACHE", "")).is_file():
             raise ValueError("replay arm requires an existing explicit cache")
+        arm_args = tuple(os.path.expandvars(value) for value in arm.get("server_args", []))
+        if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in arm_args):
+            raise ValueError(f"{arm['name']}: server_args cannot override the managed model or endpoint")
         prepared[arm["name"]] = {
-            "binary": binary, "env": env, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "binary": binary, "env": env, "extra_args": (*extra_args, *arm_args), "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
                            "compiler_observation": observation,
@@ -910,7 +913,7 @@ def run_server_comparison_capture(
                     return 1
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
             result = run_server_arm_capture(
-                binary=arm["binary"], model=model, extra_args=extra_args, output=output,
+                binary=arm["binary"], model=model, extra_args=arm["extra_args"], output=output,
                 pair=pair, side=name, position=position, env=arm["env"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],
