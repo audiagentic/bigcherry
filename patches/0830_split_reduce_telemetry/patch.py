@@ -64,7 +64,7 @@ CUDA = FilePatch(
         Edit(
             id="reduce-telemetry-plan-helper",
             anchor=r'^static bool ggml_backend_cuda_comm_allreduce_tensor\(void \* comm_ctx_v, struct ggml_tensor \*\* tensors\) \{$',
-            rationale="select an explicit reduction plan per call without mutating the shared communication context",
+            rationale="select an explicit reduction plan per call and record the provider actually executed",
             mode="insert_before",
             text=(
                 '#ifdef GGML_HIP_DISPATCH\n'
@@ -89,6 +89,7 @@ CUDA = FilePatch(
                 '    if (strcmp(plan, "rccl") == 0) {\n'
                 '#ifdef GGML_USE_NCCL\n'
                 '        if (comm_ctx->comms.size() == comm_ctx->backends.size()) {\n'
+                '            comm_ctx->provider_name = "rccl";\n'
                 '            return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n'
                 '        }\n'
                 '#endif\n'
