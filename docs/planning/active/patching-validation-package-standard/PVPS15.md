@@ -59,15 +59,17 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 
 2026-09-30 progress: steps 1-2 done. Instead of a new runtime API, added vp.ValidationProducerBlocked, vp.require_activation_ok and vp.require_fires; producers 1204/1206/1237/1265/1241/1253/1254 now abort (non-zero, no record, no timed lane) when the marker does not fire. 1204 and 1206 reordered so the probe runs before any timed lane. Step 3: 1245 REJECTED instead of instrumented (-6.4% at n_max=5, identical acceptance; spill ruled out). REMAINING: step 4 (per-patch firing requirements in validation.toml, e.g. 1263 single-GPU, 1245-style n_max scope), persisted BLOCKED verdict + policy handling in patch-verify-evidence (GPT req_f8ad9fe280fd47eb), rd13 27B activation preflight run on Brutus. Note: the rd13 test test_probe_failure_still_exit_zero_with_failed_record covers the dispatcher trace_probe=run mode, which no real patch uses; it is unchanged.
 
+2026-09-30 27B dual-XTX findings: rd13 (1206) firing on Qwen3.8-27B Q8_0 is PROVEN (preflight-rd13-27b: BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q, hits=1), and the 4-round paired A/B on 27B -sm tensor (rd13-ab1, mtp-dual) shows no effect: pp1024 -0.03%, pp4096 -0.03%, tg512 +0.02%, tg2048 +0.06%, all CIs straddle 0. So rd13 fires but is neutral on 27B; the 4B contract passes do not transfer. 1254 (nro05) shows no gain on gfx1100 in 5 sessions. 1263 is single-GPU only (aborts under -sm tensor). None of these three helps the dual-XTX 27B production config; no lifecycle mutation made (lifecycle decisions remain explicit).
+
 ## Change Log
 
 - 2026-09-29T22:19:04.336861+00:00 (created-by): Created by agent
 
 ## Ledger-events
 
-
 - chg_20260929_222105_patch-qualification-queues-can_5436
 - 2026-09-29T22:21:08.894835+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T00:04:54.693739+00:00 (updated-by): Updated: section:notes
 - chg_20260930_000454_qualification-runs-no-longer-s_6036
 - 2026-09-30T00:04:57.988566+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-30T00:17:47.477124+00:00 (updated-by): Updated: section:notes
