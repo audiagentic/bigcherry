@@ -59,7 +59,10 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 
 2026-09-30 promotion plan AGREED with dev-gpt-agent (req_f76c6c7f145a4fc8 + amendments): adaptive default only for HIP + tensor split + exactly two participating gfx1100 devices; closure 0860 + 1225 + 0840 (0830 dependency removed in 50a2ff57; default scoped in 952b920e); 1272 experimental; 1275 only as a frozen digest after its A/B + stress; N=3 RCCL-only until 1276 qualifies. Gates: tg512/tg2048 gain vs ccl CI95 low > 0; pp1024/pp4096 CI95 low > -0.5%; MTP acceptance within 1.5 pp (exact/exact spread 1.2 pp); closure overhead (old production binary vs closure forced ccl); KLD vs host-f32 reference (mean <= 0.001, p99 <= 0.01, same-top >= 99.5%; pristine RCCL is bf16 >= 32768 elements so not a reference); AR stress; single-GPU/non-HIP unchanged; contract ALLREDUCE-ADAPTIVE-DEFAULT with llama-server preflight. Evidence so far: adaptive vs ccl tg512 +4.1% (CI 3.8..4.5), tg2048 +4.3%, pp -0.1..-0.2%, acceptance 84.28 vs 84.29%. P2P (1252) gives nothing over host staging and does not change RCCL; excluded. Review req_93102df2391e4495: do not promote yet — fix 1225 non-HIP compile safety, 0830 provider_name in explicit RCCL branch, add RCCL admission to the auto-adaptive eligibility test, snapshot switch_bytes per comm context; plus 0860 provider marker missing under llama-server.
 
+2026-09-30 owner: BigCherry is AMD/HIP-only; NVIDIA/CUDA builds are not a consideration. Dropped: 1225 non-HIP compile-safety fix and the 'non-HIP default unchanged' gate. HIP-specific code needs no CUDA fallbacks.
+
 ## Change Log
 
 - 2026-09-30T04:03:45.724752+00:00 (created-by): Created by agent
 - 2026-09-30T12:21:22.319473+00:00 (updated-by): Updated: section:notes
+- 2026-09-30T12:23:40.352140+00:00 (updated-by): Updated: section:notes
