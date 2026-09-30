@@ -64,14 +64,22 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         path.write_text(source, encoding="utf-8")
         return td, root, path
 
-    def test_requires_cli_telemetry_and_rccl_guard(self):
+    def test_requires_cli_and_rccl_guard_not_qualification_telemetry(self):
         self.assertEqual(
             set(self.descriptor.requires),
             {
-                "0830_split_reduce_telemetry",
                 "0860_allreduce_provider_cli",
                 "1225_hi85_nccl_heterogeneous_arch_guard",
             },
+        )
+        self.assertNotIn("0830_split_reduce_telemetry", self.descriptor.requires)
+
+    def test_owns_minimal_provider_name_seam(self):
+        edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-provider-context-field")
+        self.assertIn("provider_name", edit.text)
+        self.assertNotIn(
+            "gp03-fix-explicit-rccl-plan-telemetry",
+            {e.id for p in self.patches for e in p.edits},
         )
 
     def test_apply_registers_adaptive_and_is_idempotent(self):

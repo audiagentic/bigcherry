@@ -6,9 +6,11 @@ configured byte count prefer host, while reductions at or above it prefer
 RCCL. If the preferred provider is unavailable or host rejects a small call,
 the other provider is tried before meta fallback.
 
-Adaptive never mutates the internal pipeline's wire state. When composed with
-1272_ar_host_compressed_wire, GGML_CUDA_AR_WIRE therefore selects the exact
-same host codec/path as the plain internal provider.
+0840 owns the minimal provider_name field required by adaptive dispatch; the
+0830 telemetry package may observe it when present but is not a runtime
+dependency. Adaptive never mutates the internal pipeline's wire state. When
+composed with 1272_ar_host_compressed_wire, GGML_CUDA_AR_WIRE therefore
+selects the exact same host codec/path as the plain internal provider.
 """
 
 GROUP = "core"
@@ -20,6 +22,18 @@ CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     description="add adaptive provider with CLI-sized host/RCCL per-call dispatch",
     edits=(
+        Edit(
+            id="hybrid-provider-context-field",
+            anchor=r'^    try_allreduce_fn            try_allreduce = nullptr;$',
+            rationale="adaptive records the provider selected per call without depending on 0830 telemetry",
+            mode="replace",
+            text=(
+                '    try_allreduce_fn            try_allreduce = nullptr;\n'
+                '    const char *                provider_name = "unknown";'
+            ),
+            guard=r'const char \*                provider_name',
+            expect_matches=1,
+        ),
         Edit(
             id="hybrid-try-allreduce",
             anchor=(
@@ -114,34 +128,6 @@ CUDA = FilePatch(
                 "}\n\n"
             ),
             guard=r"ggml_backend_cuda_comm_init_hybrid\(ggml_backend_cuda_comm_context \* ret\) \{",
-            expect_matches=1,
-        ),
-        Edit(
-            id="gp03-fix-explicit-rccl-plan-telemetry",
-            anchor=(
-                r"    if \(strcmp\(plan, [^\n]*\) == 0\) \{\n"
-                r"#ifdef GGML_USE_NCCL\n"
-                r"        if \(comm_ctx->comms\.size\(\) == comm_ctx->backends\.size\(\)\) \{\n"
-                r"            return ggml_backend_cuda_comm_allreduce_nccl\(comm_ctx, tensors\);\n"
-                r"        \}\n"
-                r"#endif\n"
-                r"    \}\n"
-                r"    return false;"
-            ),
-            rationale="record the provider actually used by the explicit RCCL plan",
-            mode="replace",
-            text=(
-                "    if (strcmp(plan, \"rccl\") == 0) {\n"
-                "#ifdef GGML_USE_NCCL\n"
-                "        if (comm_ctx->comms.size() == comm_ctx->backends.size()) {\n"
-                "            comm_ctx->provider_name = \"rccl\";\n"
-                "            return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n"
-                "        }\n"
-                "#endif\n"
-                "    }\n"
-                "    return false;"
-            ),
-            guard=r"comm_ctx->provider_name = \"rccl\";\n            return ggml_backend_cuda_comm_allreduce_nccl",
             expect_matches=1,
         ),
     ),
