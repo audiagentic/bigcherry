@@ -1,0 +1,67 @@
+{
+ "correctness": [
+  {
+   "check": "bit_identical",
+   "contract_id": "RD30-MOE-MMQ-COMPACT-GRID",
+   "control_marker_ncols": null,
+   "detail": null,
+   "passed": true,
+   "subject_marker_ncols": null
+  }
+ ],
+ "kind": "campaign",
+ "performance": [
+  {
+   "contract_id": "RD30-MOE-MMQ-COMPACT-GRID",
+   "control": {
+    "effect": {
+     "ci95_high_pct": -0.05131574989691856,
+     "ci95_low_pct": -0.14460004611805966,
+     "decision": null,
+     "geometric_effect_pct": -0.09609674490647091,
+     "metric": "tg128",
+     "pair_ratios": [
+      0.9986004851651427,
+      0.9999067425160869,
+      0.997854677735286,
+      0.9996267612204908,
+      0.9993469540069037,
+      0.9995333208885571,
+      0.9976700838769804,
+      0.9988799701325368,
+      1.0,
+      0.9989742633345766
+     ],
+     "paired_rounds": 10,
+     "role": "control"
+    },
+    "metric": "tg128"
+   },
+   "positive": {
+    "effect": {
+     "ci95_high_pct": 7.576915410028939,
+     "ci95_low_pct": 7.286311300355375,
+     "decision": null,
+     "geometric_effect_pct": 7.440117924766532,
+     "metric": "pp512",
+     "pair_ratios": [
+      1.074556846348364,
+      1.0766494998669442,
+      1.0720582909803824,
+      1.0724334648224896,
+      1.0767823182022922,
+      1.073978276964023,
+      1.0774009318170432,
+      1.0750668900502613,
+      1.0694728430016764,
+      1.0756383068696886
+     ],
+     "paired_rounds": 10,
+     "role": "positive"
+    },
+    "metric": "pp512"
+   }
+  }
+ ],
+ "run": "r-1237-gfx1100-s1"
+}

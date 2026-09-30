@@ -1,0 +1,69 @@
+{
+ "correctness": [
+  {
+   "check": "backend_reference",
+   "contract_id": "RD33-MMVQ-Q8_0-F32-DECODE",
+   "control_marker_ncols": [],
+   "detail": "Q8_0 MUL_MAT test-backend-ops: control 50/50, subject 50/50 within CPU-reference tolerance",
+   "passed": true,
+   "subject_marker_ncols": [
+    1
+   ]
+  }
+ ],
+ "kind": "campaign",
+ "performance": [
+  {
+   "contract_id": "RD33-MMVQ-Q8_0-F32-DECODE",
+   "control": {
+    "effect": {
+     "ci95_high_pct": 1.6382598379868218,
+     "ci95_low_pct": 1.350422524615147,
+     "decision": null,
+     "geometric_effect_pct": 1.488863681989927,
+     "metric": "tg128",
+     "pair_ratios": [
+      1.0117967332123412,
+      1.0122760752932618,
+      1.01318781264211,
+      1.0178343949044586,
+      1.014766201804758,
+      1.0182348650619986,
+      1.0133891975589762,
+      1.0184981684981684,
+      1.0143300474625776,
+      1.0145998722511178
+     ],
+     "paired_rounds": 10,
+     "role": "control"
+    },
+    "metric": "tg128"
+   },
+   "positive": {
+    "effect": {
+     "ci95_high_pct": 4.894264804361659,
+     "ci95_low_pct": 4.417221679276473,
+     "decision": null,
+     "geometric_effect_pct": 4.666003198279833,
+     "metric": "tg128",
+     "pair_ratios": [
+      1.0450643776824033,
+      1.0517241379310345,
+      1.0501888828926065,
+      1.0502159827213822,
+      1.0394948952176248,
+      1.0413422818791946,
+      1.0461538461538462,
+      1.0493927125506075,
+      1.0485961123110152,
+      1.0444983818770226
+     ],
+     "paired_rounds": 10,
+     "role": "positive"
+    },
+    "metric": "tg128"
+   }
+  }
+ ],
+ "run": "t-1241n1-gfx1100-s1"
+}
