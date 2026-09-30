@@ -5,6 +5,12 @@ STATE = "untested"
 
 from bigcherry.patcher import Edit, FilePatch
 
+
+# Single source of truth for the adaptive host/RCCL crossover. Freeze this
+# value from the 256 KiB / 1 MiB / 4 MiB sweep before qualification evidence.
+ADAPTIVE_SWITCH_BYTES_DEFAULT = 1 << 20
+
+
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     description="replace AllReduce env provider selection with explicit provider/wire/switch configuration",
@@ -19,7 +25,7 @@ CUDA = FilePatch(
                 "struct ggml_backend_cuda_comm_config {\n"
                 "    std::string provider = \"auto\";\n"
                 "    std::string wire = \"native\";\n"
-                "    size_t switch_bytes = 1048576;\n"
+                f"    size_t switch_bytes = {ADAPTIVE_SWITCH_BYTES_DEFAULT};\n"
                 "};\n\n"
                 "static ggml_backend_cuda_comm_config g_ggml_backend_cuda_comm_config;\n\n"
                 "static bool ggml_backend_comm_set_config(\n"
@@ -81,7 +87,7 @@ CUDA = FilePatch(
                 r"        \}\n"
                 r"    \}"
             ),
-            rationale="select only from the validated explicit configuration; auto preserves the stock platform default",
+            rationale="select only from the validated explicit configuration; auto preserves the stock platform default until 0840 scopes adaptive",
             mode="replace",
             text=(
                 "    std::string provider = g_ggml_backend_cuda_comm_config.provider;\n"
@@ -169,7 +175,7 @@ ARG_CPP = FilePatch(
                 "    const std::string effective_provider = common_allreduce_provider.empty() ? \"auto\" : common_allreduce_provider;\n"
                 "    const std::string effective_wire = common_allreduce_wire.empty() ? \"native\" : common_allreduce_wire;\n"
                 "    const size_t effective_switch_bytes = common_allreduce_switch_bytes.empty()\n"
-                "        ? 1048576 : common_parse_allreduce_switch_bytes(common_allreduce_switch_bytes);\n\n"
+                f"        ? {ADAPTIVE_SWITCH_BYTES_DEFAULT} : common_parse_allreduce_switch_bytes(common_allreduce_switch_bytes);\n\n"
                 "    ggml_backend_load_all();\n"
                 "    bool found = false;\n"
                 "    for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {\n"
@@ -215,7 +221,7 @@ ARG_CPP = FilePatch(
                 "    ).set_env(\"LLAMA_ARG_ALLREDUCE_WIRE\"));\n"
                 "    add_opt(common_arg(\n"
                 "        {\"--allreduce-switch-bytes\"}, \"N\",\n"
-                "        \"adaptive AllReduce host/RCCL crossover in bytes (default: 1048576; host below N, RCCL at/above N)\",\n"
+                f"        \"adaptive AllReduce host/RCCL crossover in bytes (default: {ADAPTIVE_SWITCH_BYTES_DEFAULT}; host below N, RCCL at/above N)\",\n"
                 "        [](common_params &, const std::string & value) {\n"
                 "            common_allreduce_switch_bytes = value;\n"
                 "        }\n"
@@ -250,7 +256,7 @@ LLAMA_BENCH = FilePatch(
             text=(
                 "static std::string bench_allreduce_provider = \"auto\";\n"
                 "static std::string bench_allreduce_wire = \"native\";\n"
-                "static std::string bench_allreduce_switch_bytes = \"1048576\";\n\n"
+                f"static std::string bench_allreduce_switch_bytes = \"{ADAPTIVE_SWITCH_BYTES_DEFAULT}\";\n\n"
                 "static size_t bench_parse_allreduce_switch_bytes(const std::string & text) {\n"
                 "    if (text.empty() || text[0] < '0' || text[0] > '9') {\n"
                 "        fprintf(stderr, \"error: --allreduce-switch-bytes must be a non-negative integer\\n\");\n"
@@ -289,7 +295,7 @@ LLAMA_BENCH = FilePatch(
                 "            exit(1);\n"
                 "        }\n"
                 "    }\n"
-                "    if (!found && (provider != \"auto\" || wire != \"native\" || switch_bytes != \"1048576\")) {\n"
+                f"    if (!found && (provider != \"auto\" || wire != \"native\" || switch_bytes != \"{ADAPTIVE_SWITCH_BYTES_DEFAULT}\")) {{\n"
                 "        fprintf(stderr, \"error: --allreduce requires a CUDA/HIP build\\n\");\n"
                 "        exit(1);\n"
                 "    }\n"
@@ -306,7 +312,7 @@ LLAMA_BENCH = FilePatch(
             text=(
                 "\n    printf(\"      --allreduce <auto|ccl|host|adaptive|p2p|root3|butterfly> (default: auto)\\n\");\n"
                 "    printf(\"      --allreduce-wire <native|q8>                 (default: native)\\n\");\n"
-                "    printf(\"      --allreduce-switch-bytes <N>                  (default: 1048576)\\n\");"
+                f"    printf(\"      --allreduce-switch-bytes <N>                  (default: {ADAPTIVE_SWITCH_BYTES_DEFAULT})\\n\");"
             ),
             guard=r"--allreduce-switch-bytes <N>",
             expect_matches=1,
