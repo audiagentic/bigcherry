@@ -402,6 +402,7 @@ def resolve_patch_set(
     catalog_directory: object = None,
     composition_names: tuple[str, ...] | None = None,
     modules: dict[str, patchset.PatchModule] | None = None,
+    context_ids: frozenset[str] = frozenset(),
 ) -> ResolvedPatchSet:
     if name == "all":
         raise ResolutionError("'all' is not a valid production patch-set")
@@ -440,6 +441,7 @@ def resolve_patch_set(
             ids,
             modules=modules,
             required_state=required_state_override or declared.required_state,
+            context_ids=context_ids,
         )
         by_id = modules
     else:
@@ -454,6 +456,7 @@ def resolve_patch_set(
             ids,
             directory=resolved_catalog_directory,
             required_state=required_state_override or declared.required_state,
+            context_ids=context_ids,
         )
         by_id = {module.patch_id: module for module in catalog}
         if set(by_id) != {
@@ -666,8 +669,14 @@ def resolve_lane(
         # only because every current multi-set source happens to share one
         # policy, and would be silently wrong the moment two named sets in
         # the same source genuinely diverge).
-        per_set = [
-            resolve_patch_set(
+        # A later set's REQUIRES may be satisfied by an earlier set in the
+        # same source (e.g. validated-enhancements on serving-core); each set
+        # is still resolved under its own policy, with earlier members as
+        # context only.
+        per_set = []
+        earlier: frozenset[str] = frozenset()
+        for name in source.patch_sets:
+            resolved_set = resolve_patch_set(
                 name,
                 cfg,
                 catalog,
@@ -675,9 +684,10 @@ def resolve_lane(
                 catalog_directory=catalog_directory,
                 composition_names=(name,),
                 modules=modules,
+                context_ids=earlier,
             )
-            for name in source.patch_sets
-        ]
+            per_set.append(resolved_set)
+            earlier = earlier | frozenset(resolved_set.module_ids)
         claimed_by: dict[str, str] = {}
         for resolved_set in per_set:
             for patch_id in resolved_set.module_ids:

@@ -558,6 +558,31 @@ class MultiSetIndependentRequiredStateTests(unittest.TestCase):
                 "multi", cfg, catalog, catalog_directory=self.patches_root
             )
 
+    def _cfg(self, order):
+        return config.Config(
+            pinned="unused",
+            patch_sets={
+                "set-a": config.PatchSet(name="set-a", patches=("0001_a",), required_state="validated"),
+                "set-b": config.PatchSet(name="set-b", patches=("0002_b",), required_state="validated"),
+            },
+            sources={"multi": config.Source(name="multi", ref="pinned", overlay=False, patch_sets=order)},
+            builds={}, platforms={}, experiments={}, campaigns={},
+            path=Path(self.directory.name) / "recipes.toml",
+        )
+
+    def test_later_set_requires_may_be_satisfied_by_an_earlier_set(self):
+        b = self.patches_root / "0002_b.py"
+        b.write_text(b.read_text(encoding="utf-8").replace(
+            "STATE = 'validated'\n", "STATE = 'validated'\nREQUIRES = ('0001_a',)\n"), encoding="utf-8")
+        catalog = patchset.catalog(directory=self.patches_root)
+        lane = campaign_resolution.resolve_lane(
+            "multi", self._cfg(("set-a", "set-b")), catalog, catalog_directory=self.patches_root)
+        ids = list(lane.patch_set.module_ids)
+        self.assertLess(ids.index("0001_a"), ids.index("0002_b"))
+        with self.assertRaisesRegex(ValueError, "requires explicitly selected"):
+            campaign_resolution.resolve_lane(
+                "multi", self._cfg(("set-b", "set-a")), catalog, catalog_directory=self.patches_root)
+
     def test_shared_policy_across_sets_is_unchanged_backward_compatible(self):
         # Today's only real production shape (bigcherry: serving-core +
         # upstream-fixes + validated-enhancements, all 'validated') --
