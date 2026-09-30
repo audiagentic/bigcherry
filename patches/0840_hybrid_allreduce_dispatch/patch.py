@@ -40,6 +40,15 @@ CUDA = FilePatch(
             expect_matches=1,
         ),
         Edit(
+            id="hybrid-switch-context-field",
+            anchor=r'^    try_allreduce_fn            try_allreduce = nullptr;$',
+            rationale="snapshot the adaptive crossover per communication context instead of rereading process-global CLI state",
+            mode="insert_after",
+            text='\n    size_t                      adaptive_switch_bytes = 0;',
+            guard=r'adaptive_switch_bytes = 0',
+            expect_matches=1,
+        ),
+        Edit(
             id="hybrid-try-allreduce",
             anchor=(
                 r"static bool ggml_backend_cuda_comm_try_allreduce_internal\(\n"
@@ -55,7 +64,7 @@ CUDA = FilePatch(
                 "        ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors) {\n"
                 "    const size_t reduction_bytes = tensors != nullptr && tensors[0] != nullptr\n"
                 "        ? ggml_nbytes(tensors[0]) : 0;\n"
-                "    const size_t switch_bytes = g_ggml_backend_cuda_comm_config.switch_bytes;\n"
+                "    const size_t switch_bytes = comm_ctx->adaptive_switch_bytes;\n"
                 "    const bool have_internal = comm_ctx->ar_pipeline != nullptr;\n"
                 "#ifdef GGML_USE_NCCL\n"
                 "    const bool have_rccl = !comm_ctx->comms.empty();\n"
@@ -92,6 +101,7 @@ CUDA = FilePatch(
             mode="insert_before",
             text=(
                 "static void ggml_backend_cuda_comm_init_hybrid(ggml_backend_cuda_comm_context * ret) {\n"
+                "    ret->adaptive_switch_bytes = g_ggml_backend_cuda_comm_config.switch_bytes;\n"
                 "    bool have_nccl = false;\n"
                 "#ifdef GGML_USE_NCCL\n"
                 "    const ggml_cuda_device_info & info = ggml_cuda_info();\n"
@@ -154,7 +164,7 @@ CUDA_PROVIDER = FilePatch(
                 r'#endif\n'
                 r'    \}'
             ),
-            rationale="default to adaptive only for the validated HIP tensor-parallel dual-gfx1100 envelope",
+            rationale="default to adaptive only for the validated HIP tensor-parallel dual-gfx1100 envelope with RCCL-safe participants",
             mode="replace",
             text=(
                 '    if (provider == "auto") {\n'
@@ -165,7 +175,8 @@ CUDA_PROVIDER = FilePatch(
                 '            ret->dev_ids[0] != ret->dev_ids[1] &&\n'
                 '            info.device_count == info.physical_device_count &&\n'
                 '            info.devices[ret->dev_ids[0]].cc == GGML_CUDA_CC_RDNA3 &&\n'
-                '            info.devices[ret->dev_ids[1]].cc == GGML_CUDA_CC_RDNA3;\n'
+                '            info.devices[ret->dev_ids[1]].cc == GGML_CUDA_CC_RDNA3 &&\n'
+                '            ggml_backend_cuda_comm_rccl_admission_ok(ret->dev_ids.data(), ret->dev_ids.size());\n'
                 '#endif\n'
                 '        if (use_adaptive_default) {\n'
                 '            provider = "adaptive";\n'
