@@ -22,7 +22,97 @@ Port notes:
     loadable by one with it (and vice versa).
 """
 
+import re as _re
+
 from bigcherry.patcher import Edit, FilePatch
+
+# Pristine b11233 time-major conv-state build (delta-net-base.cpp build_conv_state), used verbatim
+# when the model runs under a Meta tensor split. The layout choice is fixed per run (split mode), so
+# the recurrent conv-state memory is written and read in one layout only.
+_TIME_MAJOR_FALLBACK = r'''
+    if (!channels_major) {
+        if (std::getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_declined_split\n");
+        }
+
+        conv_states = ggml_reshape_3d(ctx0, conv_states, conv_kernel_size - 1, conv_channels, n_seqs);
+        cb(conv_states, "conv_states_reshaped", il);
+
+        qkv_mixed = ggml_transpose(ctx0, qkv_mixed);
+        cb(qkv_mixed, "qkv_mixed_transposed", il);
+
+        ggml_tensor * conv_input = ggml_concat(ctx0, conv_states, qkv_mixed, 0);
+        cb(conv_input, "conv_input", il);
+
+        const int64_t row_count = (conv_kernel_size - 1) * conv_channels;
+
+        const size_t row_size  = ggml_row_size(conv_states_all->type, row_count);
+
+        if (cparams.n_rs_seq == 0) {
+            const int64_t s_idx  = conv_input->ne[0] - conv_states->ne[0];
+            const int64_t s_slot = 0;
+
+            ggml_tensor * conv_state_last =
+                ggml_view_3d(ctx0, conv_input,
+                        conv_kernel_size - 1, conv_channels, n_seqs,
+                        conv_input->nb[1], conv_input->nb[2],
+                        ggml_row_size(conv_input->type, s_idx));
+            cb(conv_state_last, "conv_state_last", il);
+
+            ggml_tensor * conv_state_update =
+                ggml_view_2d(ctx0, conv_states_all,
+                        row_count, n_seqs, conv_states_all->nb[1],
+                        (s_slot * mem_size + kv_head) * row_size);
+            cb(conv_state_update, "conv_state_update", il);
+
+            ggml_build_forward_expand(gf, ggml_cpy(ctx0, conv_state_last, conv_state_update));
+        } else {
+            const int64_t K = (int64_t) cparams.n_rs_seq + 1;
+
+            for (int64_t t = 1; t <= K; ++t) {
+                const int64_t s_idx  = std::max<int64_t>(0, conv_input->ne[0] - conv_states->ne[0] - K + t);
+                const int64_t s_slot = K - t;
+
+                ggml_tensor * conv_state_last =
+                    ggml_view_3d(ctx0, conv_input,
+                            conv_kernel_size - 1, conv_channels, n_seqs,
+                            conv_input->nb[1], conv_input->nb[2],
+                            ggml_row_size(conv_input->type, s_idx));
+
+                ggml_tensor * conv_state_update =
+                    ggml_view_2d(ctx0,
+                            conv_states_all, row_count, n_seqs,
+                            conv_states_all->nb[1],
+                            (s_slot * mem_size + kv_head) * row_size);
+
+                ggml_build_forward_expand(gf, ggml_cpy(ctx0, conv_state_last, conv_state_update));
+            }
+        }
+
+        return conv_input;
+    }
+'''
+
+_CALL_OLD = ('    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, '
+             'conv_kernel_size, conv_channels, il);\n')
+_CALL_NEW = ('    const bool channels_major = model.split_mode() != LLAMA_SPLIT_MODE_TENSOR;\n'
+             '    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, '
+             'conv_kernel_size, conv_channels, channels_major, il);\n')
+_CONV_CALL_NEW = ('    ggml_tensor * conv_output_proper = channels_major\n'
+                  '        ? ggml_ssm_conv_channels_major(ctx0, conv_input, conv_kernel)\n'
+                  '        : ggml_ssm_conv(ctx0, conv_input, conv_kernel);\n')
+
+
+def _call_site_edit(tag: str) -> Edit:
+    return Edit(
+        id=f'prbe41-{tag}-00',
+        anchor=_re.escape(_CALL_OLD),
+        text=_CALL_NEW,
+        mode='replace',
+        guard=r'const bool channels_major = model\.split_mode\(\) != LLAMA_SPLIT_MODE_TENSOR;',
+        expect_matches=1,
+        rationale='A Meta tensor split keeps the pristine time-major graph.',
+    )
 
 PROVENANCE = {
     "source-id": "nasone-rdna-optimizations",
@@ -51,22 +141,6 @@ PATCH_01 = FilePatch(
             mode='replace',
             guard='//\\ same\\ as\\ ggml_ssm_conv\\ but\\ sx\\ is\\ channels\\-major:\\ \\[d_inner,\\ d_conv\\-1\\+n_t,\\ n_s\\]',
             rationale='prbe41-01 hunk 2: upstream lines 2528-2527 -> result lines 2534-2543',
-            max_span_lines=6,
-        ),
-    ),
-)
-
-PATCH_02 = FilePatch(
-    path='ggml/src/ggml-backend-meta.cpp',
-    description='channels-major SSM_CONV (nasone 33611a98): ggml/src/ggml-backend-meta.cpp',
-    edits=(
-        Edit(
-            id='prbe41-02-01',
-            anchor='\\\n\\ \\ \\ \\ auto\\ handle_ssm_conv\\ =\\ \\[\\&\\]\\(const\\ std::vector<ggml_backend_meta_split_state>\\ \\&\\ src_ss\\)\\ \\->\\ ggml_backend_meta_split_state\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(src_ss\\[0\\]\\.axis\\ ==\\ src_ss\\[1\\]\\.axis\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(src_ss\\[0\\]\\.axis\\ ==\\ GGML_BACKEND_SPLIT_AXIS_0\\)\\ \\{\\\n',
-            text='\n    auto handle_ssm_conv = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {\n        if (ggml_ssm_conv_get_layout(tensor) == GGML_SSM_CONV_LAYOUT_CHANNELS_MAJOR) {\n            // Tensor-split channels-major SSM_CONV is not proven safe (aborted under -sm tensor):\n            // replicate the result instead of propagating a cross-axis split.\n            if (getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n                GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_split_fallback\\n\");\n            }\n            return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};\n        }\n        // time-major: d_inner is axis 1 of both sx and c\n        if (src_ss[0].axis == src_ss[1].axis) {\n            if (src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_0) {\n',
-            mode='replace',
-            guard='if\\ \\(ggml_ssm_conv_get_layout\\(tensor\\)\\ ==\\ GGML_SSM_CONV_LAYOUT_CHANNELS_MAJOR\\)\\ \\{',
-            rationale='prbe41-02 hunk 1: upstream lines 802-801 -> result lines 802-810',
             max_span_lines=6,
         ),
     ),
@@ -452,6 +526,84 @@ PATCH_13 = FilePatch(
             rationale='prbe41-13 hunk 5: upstream lines 510-512 -> result lines 514-516',
             max_span_lines=5,
         ),
+        Edit(
+            id='prbe41-13-00-include',
+            anchor=_re.escape('#include "models.h"\n'),
+            text='#include "models.h"\n\n#include <cstdlib>\n',
+            mode='replace',
+            guard=r'#include <cstdlib>',
+            expect_matches=1,
+            rationale='std::getenv is used by the tensor-split decline trace.',
+        ),
+        Edit(
+            id='prbe41-13-00-signature',
+            anchor=_re.escape(
+                'ggml_tensor * llm_build_delta_net_base::build_conv_state(\n'
+                '        llm_graph_input_rs * inp,\n'
+                '        ggml_tensor *        conv_states_all,\n'
+                '        ggml_tensor *        qkv_mixed,\n'
+                '        int64_t              conv_kernel_size,\n'
+                '        int64_t              conv_channels,\n'
+                '        int                  il) {\n'),
+            text=(
+                'ggml_tensor * llm_build_delta_net_base::build_conv_state(\n'
+                '        llm_graph_input_rs * inp,\n'
+                '        ggml_tensor *        conv_states_all,\n'
+                '        ggml_tensor *        qkv_mixed,\n'
+                '        int64_t              conv_kernel_size,\n'
+                '        int64_t              conv_channels,\n'
+                '        bool                 channels_major,\n'
+                '        int                  il) {\n'),
+            mode='replace',
+            guard=r'bool\s+channels_major,\n\s+int\s+il\) \{',
+            expect_matches=1,
+            rationale='Select pristine time-major or channels-major graph topology before SSM_CONV.',
+        ),
+        # Applied last: its body is the pristine time-major code, which the edits above anchor on.
+        Edit(
+            id='prbe41-13-00-tensor-split-fallback',
+            # String literals are blanked before anchor matching, hence `cb(conv_states, <spaces>, il)`.
+            anchor=(_re.escape(
+                '    ggml_tensor * conv_states = build_rs(inp, conv_states_all, hparams.n_embd_r(), n_seqs);\n')
+                + r'    cb\(conv_states, +, il\);\n'),
+            text=_TIME_MAJOR_FALLBACK,
+            mode='insert_after',
+            guard=r'BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_declined_split',
+            expect_matches=1,
+            rationale='Under a Meta tensor split, build the byte-for-byte pristine time-major graph (channels-major '
+                      'aborted there: its cross-axis split state breaks downstream reshape invariants).',
+        ),
+    ),
+)
+
+PATCH_13_DECL = FilePatch(
+    path='src/models/models.h',
+    description='channels-major SSM_CONV: build_conv_state takes the layout decision',
+    edits=(
+        Edit(
+            id='prbe41-13-decl-01',
+            anchor=_re.escape(
+                '    ggml_tensor * build_conv_state(\n'
+                '            llm_graph_input_rs * inp,\n'
+                '            ggml_tensor *        conv_states_all,\n'
+                '            ggml_tensor *        qkv_mixed,\n'
+                '            int64_t              conv_kernel_size,\n'
+                '            int64_t              conv_channels,\n'
+                '            int                  il);\n'),
+            text=(
+                '    ggml_tensor * build_conv_state(\n'
+                '            llm_graph_input_rs * inp,\n'
+                '            ggml_tensor *        conv_states_all,\n'
+                '            ggml_tensor *        qkv_mixed,\n'
+                '            int64_t              conv_kernel_size,\n'
+                '            int64_t              conv_channels,\n'
+                '            bool                 channels_major,\n'
+                '            int                  il);\n'),
+            mode='replace',
+            guard=r'bool\s+channels_major,\n\s+int\s+il\);',
+            expect_matches=1,
+            rationale='Pass the graph-build layout decision into shared conv-state construction.',
+        ),
     ),
 )
 
@@ -459,12 +611,13 @@ PATCH_14 = FilePatch(
     path='src/models/qwen35.cpp',
     description='channels-major SSM_CONV (nasone 33611a98): src/models/qwen35.cpp',
     edits=(
+        _call_site_edit('14'),
         Edit(
             id='prbe41-14-01',
             anchor='\\ \\ \\ \\ ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv\\(ctx0,\\ conv_input,\\ conv_kernel\\);\\\n',
-            text='    ggml_tensor * conv_output_proper = ggml_ssm_conv_channels_major(ctx0, conv_input, conv_kernel);\n',
+            text=_CONV_CALL_NEW,
             mode='replace',
-            guard='ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv_channels_major\\(ctx0,\\ conv_input,\\ conv_kernel\\);',
+            guard=r'ggml_tensor \* conv_output_proper = channels_major',
             rationale='prbe41-14 hunk 1: upstream lines 391-391 -> result lines 391-391',
             max_span_lines=3,
         ),
@@ -475,12 +628,13 @@ PATCH_15 = FilePatch(
     path='src/models/qwen35moe.cpp',
     description='channels-major SSM_CONV (nasone 33611a98): src/models/qwen35moe.cpp',
     edits=(
+        _call_site_edit('15'),
         Edit(
             id='prbe41-15-01',
             anchor='\\ \\ \\ \\ ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv\\(ctx0,\\ conv_input,\\ conv_kernel\\);\\\n',
-            text='    ggml_tensor * conv_output_proper = ggml_ssm_conv_channels_major(ctx0, conv_input, conv_kernel);\n',
+            text=_CONV_CALL_NEW,
             mode='replace',
-            guard='ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv_channels_major\\(ctx0,\\ conv_input,\\ conv_kernel\\);',
+            guard=r'ggml_tensor \* conv_output_proper = channels_major',
             rationale='prbe41-15 hunk 1: upstream lines 415-415 -> result lines 415-415',
             max_span_lines=3,
         ),
@@ -491,12 +645,13 @@ PATCH_16 = FilePatch(
     path='src/models/qwen3next.cpp',
     description='channels-major SSM_CONV (nasone 33611a98): src/models/qwen3next.cpp',
     edits=(
+        _call_site_edit('16'),
         Edit(
             id='prbe41-16-01',
             anchor='\\ \\ \\ \\ ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv\\(ctx0,\\ conv_input,\\ conv_kernel\\);\\\n',
-            text='    ggml_tensor * conv_output_proper = ggml_ssm_conv_channels_major(ctx0, conv_input, conv_kernel);\n',
+            text=_CONV_CALL_NEW,
             mode='replace',
-            guard='ggml_tensor\\ \\*\\ conv_output_proper\\ =\\ ggml_ssm_conv_channels_major\\(ctx0,\\ conv_input,\\ conv_kernel\\);',
+            guard=r'ggml_tensor \* conv_output_proper = channels_major',
             rationale='prbe41-16 hunk 1: upstream lines 471-471 -> result lines 471-471',
             max_span_lines=3,
         ),
@@ -546,4 +701,4 @@ PATCH_17 = FilePatch(
     ),
 )
 
-PATCHES = [PATCH_01, PATCH_02, PATCH_03, PATCH_04, PATCH_05, PATCH_06, PATCH_07, PATCH_08, PATCH_09, PATCH_10, PATCH_11, PATCH_12, PATCH_13, PATCH_14, PATCH_15, PATCH_16, PATCH_17]
+PATCHES = [PATCH_01, PATCH_03, PATCH_04, PATCH_05, PATCH_06, PATCH_07, PATCH_08, PATCH_09, PATCH_10, PATCH_11, PATCH_12, PATCH_13_DECL, PATCH_13, PATCH_14, PATCH_15, PATCH_16, PATCH_17]
