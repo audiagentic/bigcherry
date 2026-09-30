@@ -184,7 +184,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         def fake_capture(**kwargs):
             captured.append(kwargs)
             return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
-        arms = [dict(self.arms[0], environment={"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_COPY_THRESHOLD": "65536"}), self.arms[1]]
+        arms = [dict(self.arms[0], environment={"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_COPY_THRESHOLD": "65536",
+                                                "NCCL_PROTO": "LL"}), self.arms[1]]
         self.write_config(arms=arms)
         with self.patches_for_preflight(), patch(
             "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
@@ -193,6 +194,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         env = next(item["env"] for item in captured if item["side"] == self.arms[0]["name"])
         self.assertEqual(env["GGML_CUDA_ALLREDUCE"], "internal")
         self.assertEqual(env["GGML_CUDA_AR_COPY_THRESHOLD"], "65536")
+        self.assertEqual(env["NCCL_PROTO"], "LL")
         self.write_config(arms=[dict(self.arms[0], environment={"BIGCHERRY_PATCH_TRACE": "1"}), self.arms[1]])
         with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "not tracing"):
             benchmark.run_server_comparison_capture(self.config, self.output / "trace", rounds=2, seed=0, settle_seconds=0)
@@ -243,7 +245,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
         self.write_config(arms=[dict(self.arms[0], environment={"GGML_CUDA_AR_WIRE": "bf16"}), self.arms[1]])
         ambient = {"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_WIRE": "q8_0",
-                   "BIGCHERRY_IQ_MMVQ_VDR": "1", "BIGCHERRY_PATCH_TRACE": "1"}
+                   "BIGCHERRY_IQ_MMVQ_VDR": "1", "BIGCHERRY_PATCH_TRACE": "1", "NCCL_ALGO": "Tree"}
         with self.patches_for_preflight(), patch.dict("os.environ", ambient), patch(
             "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
         ):
@@ -251,7 +253,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         by_side = {item["side"]: item["env"] for item in captured}
         self.assertEqual(by_side[self.arms[0]["name"]].get("GGML_CUDA_AR_WIRE"), "bf16")
         for env in by_side.values():
-            for key in ("GGML_CUDA_ALLREDUCE", "BIGCHERRY_IQ_MMVQ_VDR", "BIGCHERRY_PATCH_TRACE"):
+            for key in ("GGML_CUDA_ALLREDUCE", "BIGCHERRY_IQ_MMVQ_VDR", "BIGCHERRY_PATCH_TRACE", "NCCL_ALGO"):
                 self.assertNotIn(key, env)
         self.assertNotIn("GGML_CUDA_AR_WIRE", by_side[self.arms[1]["name"]])
 
