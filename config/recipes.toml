@@ -339,6 +339,11 @@ patches = [
     "0840_hybrid_allreduce_dispatch",
 ]
 
+[experiment.ar-adaptive-nway]
+# 1276 composes adaptive N=3: root3 below the CLI switch, RCCL at/above it.
+# Its REQUIRES closure supplies 0840, 1244, and 0840's dependencies.
+patches = ["1276_ar_adaptive_nway"]
+
 [experiment.allreduce-adaptive-wire]
 # Adaptive dispatcher plus 1272's host-wire codec; exact dependency-complete composition.
 patches = [
