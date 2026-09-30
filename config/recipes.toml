@@ -308,6 +308,10 @@ patches = ["0860_allreduce_provider_cli"]
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
 
+[experiment.ar-wire]
+# 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
+patches = ["1272_ar_host_compressed_wire"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
