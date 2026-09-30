@@ -59,7 +59,10 @@ The 3-GPU Q8_0 27B runs slower than the dual-XTX host path (tg512 95.5), so Q8_0
 
 2026-09-30 design review with dev-gpt-agent (req_ba6aa3f60e0e4f92) agreed: decode AllReduce is fixed-latency bound (per small AR: one 8x256 mapped-host kernel per GPU for ~10 KiB bf16, ev.ker records, two host hipEventSynchronize in acquire_slot from AR #3; AR outside the device graph). Patch B (pipelined copy-engine wire) dropped. 1275_ar_small_latency: BIGCHERRY_AR_SLOT_SYNC=host|stream|none (none primary; proven safe for 2-slot ring incl. pinned-host reuse and root3 as long as collectives are not skipped/reordered and each AR is single-chunk), BIGCHERRY_AR_SMALL_BLOCKS {1,2,4,8} + _THREADS {128,256}, trace host_enqueue_us/slot_wait_us, marker with n_devices/blocks/threads/slot_sync; covers 1244 root3. 1276: 0840 adaptive composes with 1244 for N=3 (small->root3, large->RCCL) and BIGCHERRY_AR_ROOT3_ROOT=0|1|2 (default 0; choose root from measurements, not architecture). Authoring requested (req after ba6aa3f6).
 
+2026-10-01 1275 A/B on the dual-XTX host path (27B Q8_0 MTP, 6 balanced rounds, ab-27b-ar-small): BIGCHERRY_AR_SLOT_SYNC=none vs pristine tg512 +0.04% (CI -0.16..+0.23), tg2048 -0.01%, pp4096 -0.24% -> neutral; BIGCHERRY_AR_SMALL_BLOCKS=1 vs pristine tg512 -8.56%, tg2048 -8.47%, pp4096 -2.39% -> strongly worse. MTP acceptance identical (82.22%). Conclusion: the fixed 8x256 small-AR grid is not oversized and host slot syncs are not the decode bottleneck; the design review's fixed-latency hypothesis for these two knobs is refuted. 1275 stays untested (no gain); next question is whether MORE than 8 blocks helps (needs the arrival-ring layout widened).
+
 ## Change Log
 
 - 2026-09-30T05:20:19.155660+00:00 (created-by): Created by agent
 - 2026-09-30T06:29:06.022444+00:00 (updated-by): Updated: section:notes
+- 2026-09-30T14:44:36.752908+00:00 (updated-by): Updated: section:notes
