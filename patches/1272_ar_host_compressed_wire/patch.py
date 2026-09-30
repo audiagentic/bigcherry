@@ -309,7 +309,7 @@ PATCHES = [
                 guard=r"enum class ggml_cuda_ar_wire_override",
                 rationale="Attach the explicit wire selector and once-per-process BIGCHERRY_PATCH_TRACE marker immediately before the pristine event-slot declaration.",
                 expect_matches=1,
-                max_span_lines=2,
+                max_span_lines=3,
             ),
             Edit(
                 id="ar-wire-pipeline-field",
@@ -319,7 +319,7 @@ PATCHES = [
                 guard=r"ggml_cuda_ar_wire_override wire_override;",
                 rationale="Persist the parsed wire override in the pipeline while leaving the pristine BF16 threshold field and behavior intact.",
                 expect_matches=1,
-                max_span_lines=2,
+                max_span_lines=3,
             ),
             Edit(
                 id="ar-wire-init",
@@ -329,7 +329,7 @@ PATCHES = [
                 guard=r"p->wire_override = ggml_cuda_ar_wire_from_env\(\);",
                 rationale="Parse GGML_CUDA_AR_WIRE once at pipeline initialization; unset remains pristine before the existing BF16-threshold initialization.",
                 expect_matches=1,
-                max_span_lines=3,
+                max_span_lines=4,
             ),
             Edit(
                 id="ar-wire-convert-kernel",
@@ -339,7 +339,7 @@ PATCHES = [
                 guard=r"static __global__ void ggml_cuda_ar_convert_kernel\(",
                 rationale="Provide device-side source-to-wire conversion used only when explicit copy-engine wire type differs from the tensor type.",
                 expect_matches=1,
-                max_span_lines=3,
+                max_span_lines=4,
             ),
             Edit(
                 id="ar-wire-helpers",
@@ -349,7 +349,7 @@ PATCHES = [
                 guard=r"static bool ggml_cuda_ar_allreduce_wire_override\(",
                 rationale="Add a separate explicit-wire implementation after copy_outer is defined, preserving the pristine allreduce body for the unset case and handling chunked/copy-engine paths with fused F32 accumulation.",
                 expect_matches=1,
-                max_span_lines=4,
+                max_span_lines=5,
             ),
             Edit(
                 id="ar-wire-dispatch",
@@ -359,7 +359,7 @@ PATCHES = [
                 guard=r"return ggml_cuda_ar_allreduce_wire_override\(",
                 rationale="Route only explicit wire selections into 1272 after compute flags are known; 1244's n==3 early return remains ahead of this site and untouched.",
                 expect_matches=1,
-                max_span_lines=4,
+                max_span_lines=5,
             ),
         ),
     ),
