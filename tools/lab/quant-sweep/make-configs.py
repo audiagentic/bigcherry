@@ -1,7 +1,7 @@
 """Generate balanced server A/B configs for the Qwen3.8-27B unsloth quant sweep.
 
 One variable per group: the weight file. Every group shares one binary (@b-3g-control,
-multi-arch gfx1100+gfx1201) and an anchor quant so groups can be chained. MTP is off so only
+multi-arch gfx1100+gfx1201) and an anchor quant so groups can be chained. server-bench "default" reports pp512 and tg128 only. MTP is off so only
 the weight-quant kernels differ. Usage: python3 make-configs.py  (writes ./configs/*.json)
 """
 import json
@@ -38,7 +38,7 @@ for dev, groups in GROUPS.items():
             "environment": {"HIP_VISIBLE_DEVICES": vis, "ROCR_VISIBLE_DEVICES": vis},
             "expected_execution": {"backend": "ROCm", "architectures": archs, "locators": locs},
             "bench_configs": "default",
-            "required_metrics": ["pp512_tps", "pp1024_tps", "tg128_tps", "tg2048_tps"],
+            "required_metrics": ["pp512_tps", "tg128_tps"],
             "repetitions": 1,
             "arms": [{"name": q, "mode": "stock", "shutdown_method": "sigint",
                       "binary": "@b-3g-control", "model": M + Q[q] + ".gguf"} for q in quants],
