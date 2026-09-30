@@ -17,7 +17,7 @@ id = "activation"
 capability = "activation"
 validator = "trace-marker"
 required = true
-marker-regex = "BIGCHERRY_PATCH_HIT patch=1274_kquant_f32 path=f32_decode type=(q4_k|q6_k) ncols=1"
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1274_kquant_f32 path=f32_decode type=q6_k ncols=1"
 
 [[check]]
 id = "correctness"

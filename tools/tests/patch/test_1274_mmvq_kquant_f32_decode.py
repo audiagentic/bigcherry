@@ -56,13 +56,14 @@ class Patch1274Mechanics(unittest.TestCase):
             text = mmvq.read_text(encoding="utf-8")
 
             self.assertIn("vec_dot_f32_decode<type>", text)
-            self.assertIn("static __device__ __forceinline__ float vec_dot_q4_K_f32(", text)
+            # Q6_K only: Q4_K measured -1.7% decode on one XTX and was dropped.
+            self.assertNotIn("vec_dot_q4_K_f32(", text)
+            self.assertNotIn("type=q4_k", text)
             self.assertIn("static __device__ __forceinline__ float vec_dot_q6_K_f32(", text)
             self.assertIn("ggml_cuda_mmvq_f32_decode<GGML_TYPE_Q8_0", text)
-            self.assertIn("ggml_cuda_mmvq_f32_decode<ktype, 1>", text)
-            self.assertIn("type=q4_k ncols=1", text)
+            self.assertIn("ggml_cuda_mmvq_f32_decode<GGML_TYPE_Q6_K, 1>", text)
             self.assertIn("type=q6_k ncols=1", text)
-            self.assertIn("src0->type == GGML_TYPE_Q4_K || src0->type == GGML_TYPE_Q6_K", text)
+            self.assertIn("!forced.requested() && src0->type == GGML_TYPE_Q6_K", text)
             self.assertIn("ggml_cuda_pool_alloc<char> src1_q8_1", text)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode", text)
             self.assertEqual(vecdot_pristine, vecdot.read_text(encoding="utf-8"))
@@ -86,8 +87,6 @@ class Patch1274Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in apply_all(_base.PATCHES, root)))
             self.assertTrue(all(r.ok for r in apply_all(_module.PATCHES, root)))
             text = mmvq.read_text(encoding="utf-8")
-            self.assertIn("const int bq8_offset = QR4_K * ((iqs/2) / (QI8_1/2));", text)
-            self.assertIn("bq4_K->qs + 16*bq8_offset + 4*((iqs/2)%4)", text)
             self.assertIn("const int bq8_offset = 2*QR6_K*(iqs/(QI6_K/2))", text)
             self.assertIn("const int vi = __vsubss4((vil | vih), 0x20202020);", text)
 
