@@ -28,6 +28,9 @@ def _load(name: str, path: Path):
 
 _module = _load("patch_1274", _PATCH_FILE)
 _base = _load("patch_1241_for_1274", _BASE_PATCH_FILE)
+# 1241 REQUIRES 0600 (MMVQ geometry adds nwarps_explicit/rows_per_block_explicit), so the
+# test tree carries 0600 first, exactly like any real build stack.
+_geometry = _load("patch_0600_for_1274", _REPO / "patches/0600_mmvq_geometry/patch.py")
 
 
 class Patch1274Mechanics(unittest.TestCase):
@@ -38,6 +41,8 @@ class Patch1274Mechanics(unittest.TestCase):
         cuda.mkdir(parents=True)
         shutil.copy2(_VENDOR / "mmvq.cu", cuda / "mmvq.cu")
         shutil.copy2(_VENDOR / "vecdotq.cuh", cuda / "vecdotq.cuh")
+        geometry = apply_all([_geometry.PATCH], root)
+        assert all(r.ok for r in geometry), [e.detail for r in geometry for e in r.failed]
         return td, root, cuda / "mmvq.cu", cuda / "vecdotq.cuh"
 
     def test_composes_after_1241_and_is_idempotent(self):

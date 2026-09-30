@@ -312,6 +312,10 @@ patches = ["1261_nro10_spec_ctx_other_devices"]
 # 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
 patches = ["1272_ar_host_compressed_wire"]
 
+[experiment.kquant-f32]
+# 1274 alone (1241, which it requires, is in validated-enhancements): Q6_K/Q4_K F32-activation ncols=1 decode.
+patches = ["1274_mmvq_kquant_f32_decode"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
