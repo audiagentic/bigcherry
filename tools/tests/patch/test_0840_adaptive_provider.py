@@ -1,19 +1,21 @@
-"""Hardware-free mechanics tests for 0840's adaptive provider registration on the 0860 seam."""
+"""Hardware-free mechanics tests for 0840 adaptive dispatch and 1272 composition."""
 
 from __future__ import annotations
 
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch import patchset  # noqa: E402
 from bigcherry.patch import registry as patch_registry  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 
-_CUDA_SOURCE = '''static bool provider_available(const std::string & p) {
+_CUDA_SOURCE = """static bool provider_available(const std::string & p) {
     if (p == "adaptive" || p == "p2p" || p == "root3") {
         return false;
     }
@@ -31,7 +33,7 @@ static void comm_init(ggml_backend_cuda_comm * ret, const std::string & provider
         GGML_ABORT("unknown provider");
     }
 }
-'''
+"""
 
 
 class Patch0840AdaptiveProvider(unittest.TestCase):
@@ -41,10 +43,15 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         descriptor = registry.get("0840_hybrid_allreduce_dispatch")
         patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
         cls.descriptor = descriptor
+        cls.patches = patches
         cls.provider_patches = tuple(
             p for p in patches
             if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu"
             and any(e.id.startswith("adaptive-provider") for e in p.edits)
+        )
+        cls.dispatch_patch = next(
+            p for p in patches
+            if any(e.id == "hybrid-try-allreduce" for e in p.edits)
         )
         if len(cls.provider_patches) != 1:
             raise AssertionError(f"expected one provider FilePatch, got {len(cls.provider_patches)}")
@@ -57,8 +64,15 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         path.write_text(source, encoding="utf-8")
         return td, root, path
 
-    def test_requires_0860(self):
-        self.assertIn("0860_allreduce_provider_cli", self.descriptor.requires)
+    def test_requires_cli_telemetry_and_rccl_guard(self):
+        self.assertEqual(
+            set(self.descriptor.requires),
+            {
+                "0830_split_reduce_telemetry",
+                "0860_allreduce_provider_cli",
+                "1225_hi85_nccl_heterogeneous_arch_guard",
+            },
+        )
 
     def test_apply_registers_adaptive_and_is_idempotent(self):
         td, root, path = self._tree()
@@ -73,6 +87,34 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             second = apply_all(self.provider_patches, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(text, path.read_text(encoding="utf-8"))
+
+    def test_switch_uses_0860_cli_value_not_internal_env_threshold(self):
+        edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-try-allreduce")
+        self.assertIn("g_ggml_backend_cuda_comm_config.switch_bytes", edit.text)
+        self.assertIn("reduction_bytes < switch_bytes", edit.text)
+        self.assertNotIn("ggml_cuda_ar_pipeline_copy_threshold", edit.text)
+        self.assertNotIn("GGML_CUDA_AR_COPY_THRESHOLD", edit.text)
+
+    def test_adaptive_host_preserves_1272_wire_policy(self):
+        edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-init")
+        self.assertNotIn("force_exact_f32", edit.text)
+        self.assertNotIn("bf16_threshold =", edit.text)
+        self.assertIn("GGML_CUDA_AR_WIRE", edit.text)
+        self.assertTrue(all(p.path != "ggml/src/ggml-cuda/allreduce.cu" for p in self.patches))
+        self.assertTrue(all(p.path != "ggml/src/ggml-cuda/allreduce.cuh" for p in self.patches))
+
+    def test_adaptive_wire_recipe_is_exact_and_resolves(self):
+        data = tomllib.loads((_REPO / "config/recipes.toml").read_text(encoding="utf-8"))
+        expected = [
+            "0830_split_reduce_telemetry",
+            "0860_allreduce_provider_cli",
+            "1225_hi85_nccl_heterogeneous_arch_guard",
+            "0840_hybrid_allreduce_dispatch",
+            "1272_ar_host_compressed_wire",
+        ]
+        self.assertEqual(data["experiment"]["allreduce-adaptive-wire"]["patches"], expected)
+        resolved = patchset.resolve_exact(expected, directory=_REPO / "patches")
+        self.assertEqual([m.patch_id for m in resolved.modules], expected)
 
     def test_missing_unavailable_anchor_fails_closed(self):
         td, root, path = self._tree(_CUDA_SOURCE.replace('p == "root3"', 'p == "other"', 1))
