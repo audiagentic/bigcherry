@@ -1,12 +1,16 @@
-# 1275 — small AllReduce latency controls
+# 1275_ar_small_latency
 
 **Status:** untested
-**Plan item:** `PGC10`
+**Plan item:** PGC10
 
-Adds opt-in latency controls for single-chunk mapped-host AllReduce while keeping unset/default behavior equivalent to pristine b11233: `BIGCHERRY_AR_SLOT_SYNC=host|stream|none` (default `host`), `BIGCHERRY_AR_SMALL_BLOCKS={1,2,4,8}` (default `8`), and `BIGCHERRY_AR_SMALL_THREADS={128,256}` (default `256`).
+Small mapped-host AllReduce latency controls over pristine b11233. Defaults
+preserve pristine behavior: `BIGCHERRY_AR_SLOT_SYNC=host`,
+`BIGCHERRY_AR_SMALL_BLOCKS=8`, and `BIGCHERRY_AR_SMALL_THREADS=256`.
+`slot_sync=none` bypasses the pool-wrap host event waits only for a
+single-chunk mapped-host reduction; copy-engine and multi-chunk paths retain
+the host waits. Geometry accepts blocks `1|2|4|8` and threads `128|256` while
+leaving the fixed `GGML_CUDA_AR_KERNEL_BLOCKS=8` arrival-ring layout unchanged.
 
-`none` removes the pool-wrap host event waits only for single-chunk small collectives. `stream` instead enqueues waits on each old-generation `ev.ker` before that slot can be re-recorded. Multi-chunk reductions retain host synchronization. The arrival allocation/stride remains sized for `GGML_CUDA_AR_KERNEL_BLOCKS=8`; geometry controls only reduce the launched grid.
-
-When `BIGCHERRY_PATCH_TRACE` is set, the patch emits a once-per-process activation marker plus per-small-AR `host_enqueue_us` and `slot_wait_us` CPU timing. Timing adds no device or host synchronization. The conditional root3 edits apply only when 1244 was materialized first.
-
-No hardware validation is claimed.
+Validation required: apply, HIP build on gfx1100, activation marker,
+correctness, and paired performance A/B. Stream slot sync, timing traces, and
+1244/root3 composition are intentionally deferred.
