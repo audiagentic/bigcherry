@@ -10,6 +10,8 @@ export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 P=BIGCHERRY_PATCH_HIT.patch=0860_allreduce_provider_cli
+# Adaptive MTP only changes depth after several verify steps: generate long enough to see it.
+export BC_PREFLIGHT_N_PREDICT=256
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 BUILD b-27b-0860 allreduce-cli
