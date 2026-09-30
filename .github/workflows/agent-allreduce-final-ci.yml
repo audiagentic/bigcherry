@@ -1,0 +1,30 @@
+name: Agent allreduce final CI
+
+on:
+  push:
+    branches: [agent-allreduce-final-ci]
+
+permissions:
+  contents: read
+
+jobs:
+  mechanics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: |
+          python -m py_compile \
+            patches/0830_split_reduce_telemetry/patch.py \
+            patches/0840_hybrid_allreduce_dispatch/patch.py \
+            patches/0860_allreduce_provider_cli/patch.py
+      - name: Patch lint
+        run: PYTHONPATH=tools python -m bigcherry patch-lint
+      - name: Focused patch tests
+        run: |
+          PYTHONPATH=tools python -m unittest \
+            tools.tests.patch.test_0840_adaptive_provider \
+            tools.tests.patch.test_0860_allreduce_provider_cli
