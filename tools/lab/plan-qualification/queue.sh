@@ -4,9 +4,12 @@
 # Each non-comment line: <patch> <producer|-> <arch> <device> <run-name> [extra campaign args...]
 # PROFILE lines use: PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
 # Optional leading MODEL=, HIP= and VIS= tokens are supported for both.
-# BUILD <run-name> <experiment|-> builds bigcherry:stock:linux-multi (+ <experiment>) for gfx1100
+# BUILD <run-name> <experiment|-> [arch-list] builds bigcherry:stock:linux-multi (+ <experiment>)
+#   for arch-list (comma-separated, default gfx1100; e.g. gfx1100,gfx1201 for XTX+R9700)
 #   and records BUILD_BINARY=<llama-server path>.
 # AB <run-name> <server-config.json> [ab-benchmark args] runs a balanced server A/B.
+# VIS=<gpus> on BUILD/AB/PREFLIGHT rows selects the GPU set they lock and (preflight) run on;
+#   default 0,1. AB topology itself comes from the config's environment block.
 # PREFLIGHT and AB binary arguments (and "@name" strings inside an AB config) may be
 #   @<build-run-name>, resolved to that BUILD row's BUILD_BINARY.
 #
@@ -100,8 +103,8 @@ resolve_binary() {
 }
 
 build_line() {
-    # BUILD <run-name> <experiment|->   ("-" builds the plain lane with no experiment)
-    local run=$2 log rc plan bin
+    # BUILD <run-name> <experiment|-> [arch-list]   ("-" builds the plain lane with no experiment)
+    local run=$2 arch=${4:-gfx1100} log rc plan bin
     local experiment_args=()
     [ "$3" != - ] && experiment_args=(--experiment "$3")
     log="$work/runs/$run.log"
@@ -113,7 +116,7 @@ build_line() {
     echo "start build $run $(date -Is)"
     ROCM_PATH=/opt/rocm PYTHONPATH="$root/tools" bash "$here/locked-run.sh" \
         python3 -m bigcherry build --lane bigcherry:stock:linux-multi "${experiment_args[@]}" \
-        --arch gfx1100 --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
+        --arch "$arch" --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
@@ -186,6 +189,7 @@ campaign_line() {
     local line=$1 run log rc
     parse_prefixes "$line"
     set -- "${PARSED_ARGS[@]}"
+    export BC_GPUS=${PARSED_VIS:-0,1}
     if [ "$1" = BUILD ]; then build_line "$@"; return $?; fi
     if [ "$1" = PREFLIGHT ]; then preflight_line "$@"; return $?; fi
     if [ -n "$PARSED_REQUIRES" ] && ! grep -qx 'PREFLIGHT_EXIT=0' "$work/runs/$PARSED_REQUIRES.log" 2>/dev/null; then

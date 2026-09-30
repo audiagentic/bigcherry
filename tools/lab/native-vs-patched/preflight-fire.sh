@@ -9,8 +9,7 @@ root=$(cd "$here/../../.." && pwd)
 source "$root/tools/lab/plan-qualification/work-root.sh"
 work=$(work_root_resolve "$root")
 activity_lock_exclusive_acquire "$work"
-gpu_lock_acquire "$work" 0
-gpu_lock_acquire "$work" 1
+gpu_lock_acquire "$work" "${BC_GPUS:-0,1}"
 out=$(bash "$here/activation-check.sh" "$@")
 echo "$out"
 hits=$(echo "$out" | sed -n 's/^hits: //p')
