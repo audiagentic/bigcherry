@@ -72,6 +72,39 @@ class ValidationProducerError(ValueError):
     a producer result that violates its own declared contract."""
 
 
+class ValidationProducerBlocked(ValidationProducerError):
+    """The activation preflight failed: the patch did not provably fire on
+    the requested model/config, so no timed lane was run. This is neither
+    a PASS nor a FAIL of the patch -- the campaign is blocked (PVPS15)."""
+
+
+def require_activation_ok(ok: bool, *, label: str, detail: str) -> None:
+    """Producers call this right after their activation probe and BEFORE any
+    timed lane, so a run that cannot fire the patch never spends timed
+    sessions."""
+    if not ok:
+        raise ValidationProducerBlocked(
+            f"{label}: activation preflight failed ({detail}); "
+            "no timed lane was run"
+        )
+
+
+def require_fires(
+    *, subject_hit: bool, control_hit: bool, label: str, marker: str
+) -> None:
+    """Two-probe marker rule: the marker must fire in the subject and must
+    be absent from the unpatched control."""
+    if subject_hit and control_hit:
+        detail = "marker also fired in the unpatched control (invalid negative control)"
+    else:
+        detail = "marker did not fire in the subject"
+    require_activation_ok(
+        subject_hit and not control_hit,
+        label=label,
+        detail=f"{detail}; marker {marker!r}",
+    )
+
+
 @dataclass(frozen=True)
 class FatTargetPlan:
     """The build-once-fat-multiarch rule (STANDARDIZED_PATCH_VALIDATION_

@@ -85,6 +85,7 @@ Successor key: patching-rdna-boost-experiments-rd33
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.244503+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260909_143622_cleaned-up-the-tooling-registr_2452
@@ -98,3 +99,5 @@ Successor key: patching-rdna-boost-experiments-rd33
 - 2026-09-24T04:45:20.608430+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-09-24T15:40:42.696090+00:00 (state-transition): State: pending → in_progress
 - 2026-09-24T15:40:45.627605+00:00 (updated-by): Updated: section:notes
+- chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
+- 2026-09-29T21:57:20.643944+00:00 (updated-by): Updated: section:ledger-events

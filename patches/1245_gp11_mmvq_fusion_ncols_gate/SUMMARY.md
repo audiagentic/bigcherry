@@ -1,11 +1,15 @@
 # 1245: Widen the MMVQ MUL_MAT+GLU fusion gate beyond ncols_dst==1
 
-**Status:** untested
+**Status:** rejected
 **Plan item:** GP11
 
-> DO NOT PROMOTE. `untested` here means "not contract-qualified", not
-> "unmeasured": an ad-hoc benchmark measured this NEGATIVE (-9.4%) on real
-> hardware. It is retained as a recorded negative result, not a candidate.
+> REJECTED 2026-09-30. Measured NEGATIVE on real hardware: -9.4% ad hoc, and
+> -6.4% at MTP n_max=5 (its only firing configuration; verify width 6) with
+> identical draft acceptance. The fused Q8_0 ncols=6 kernel uses 60 VGPR with 0
+> spill and 0 scratch versus 44 VGPR unfused, so register spilling is ruled out;
+> the slowdown cause is unknown. Retained as a recorded negative result. Do not
+> re-run the unchanged patch; a redesign would need a fused-vs-unfused kernel
+> profile (PRBE113) first.
 
 Origin is local (bigcherry-original): this relaxes an upstream restriction, it
 is not a port of any upstream commit, so there is no external commit to cite as

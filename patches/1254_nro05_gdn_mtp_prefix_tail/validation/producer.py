@@ -113,6 +113,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     subject_hit = marker.search(subject_text) is not None and marker.search(tbo["subject"][0]) is not None
     control_hit = marker.search(control_text) is not None or marker.search(tbo["control"][0]) is not None
     trigger_hit = subject_hit and not control_hit
+    vp.require_fires(subject_hit=subject_hit, control_hit=control_hit, label="NRO05", marker=_MARKER_REGEX)
     activation = ActivationEvidence(
         status="executed" if trigger_hit else ("unobservable" if subject_hit else "not_executed"),
         mechanism="trace_marker",

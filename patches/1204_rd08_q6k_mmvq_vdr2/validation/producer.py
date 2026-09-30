@@ -84,16 +84,17 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         )
     device = device_contexts[0]
 
-    # 1. Run the decode (positive) and prefill (control) lanes
-    decode_effect, prefill_effect, lanes_outcome = _run_lanes(ctx, device)
-
-    # 2. Run the correctness check (backend_reference)
-    correctness, correctness_pair_identities = _run_correctness(ctx, device)
-
-    # 3. Run the activation check (trace-marker) + trigger evidence
+    # 1. Activation preflight (trace-marker) + trigger evidence: must prove the
+    # patch fires BEFORE any timed lane (PVPS15)
     activation, trigger_evidence, subject_log, control_log = _run_activation(
         ctx, device
     )
+
+    # 2. Run the decode (positive) and prefill (control) lanes
+    decode_effect, prefill_effect, lanes_outcome = _run_lanes(ctx, device)
+
+    # 3. Run the correctness check (backend_reference)
+    correctness, correctness_pair_identities = _run_correctness(ctx, device)
 
     # 4. Write the artifacts
     ctx.runtime.write_artifact(
@@ -464,35 +465,15 @@ def _run_activation(
         positive_hit=effective_positive_hit,
     )
 
-    # Activation: subject_hit AND NOT control_hit
-    activation_ok = subject_hit and not control_hit
-    if activation_ok:
-        activation = ActivationEvidence(
-            status="executed",
-            mechanism="trace_marker",
-            detail=(
-                f"marker {_MARKER_REGEX!r} observed in subject, "
-                f"absent in control (scaffold unpatched binary)"
-            ),
-        )
-    elif subject_hit:
-        activation = ActivationEvidence(
-            status="unobservable",
-            mechanism="trace_marker",
-            detail=(
-                f"marker {_MARKER_REGEX!r} observed in BOTH subject and "
-                f"control -- the negative control is invalid, activation "
-                f"cannot be trusted"
-            ),
-        )
-    else:
-        activation = ActivationEvidence(
-            status="not_executed",
-            mechanism="trace_marker",
-            detail=(
-                f"marker {_MARKER_REGEX!r} NOT observed in subject -- "
-                f"the patch's path did not execute"
-            ),
-        )
+    # Activation: subject_hit AND NOT control_hit (else Blocked, before any timed lane)
+    vp.require_fires(subject_hit=subject_hit, control_hit=control_hit, label="RD08", marker=_MARKER_REGEX)
+    activation = ActivationEvidence(
+        status="executed",
+        mechanism="trace_marker",
+        detail=(
+            f"marker {_MARKER_REGEX!r} observed in subject, "
+            f"absent in control (scaffold unpatched binary)"
+        ),
+    )
 
     return activation, trigger_evidence, subject_log, control_log
