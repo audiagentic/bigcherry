@@ -109,7 +109,7 @@ CUDA = FilePatch(
                 "        GGML_ABORT(\"allreduce provider reached init without implementation: %s\", provider.c_str());\n"
                 "    }\n"
                 "    if (getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
-                "        GGML_LOG_INFO(\"BIGCHERRY_PATCH_HIT patch=0860_allreduce_provider_cli provider=%s wire=%s switch_bytes=%zu\\n\",\n"
+                "        GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=0860_allreduce_provider_cli provider=%s wire=%s switch_bytes=%zu\\n\",\n"
                 "            provider.c_str(), wire.c_str(), g_ggml_backend_cuda_comm_config.switch_bytes);\n"
                 "    }"
             ),
