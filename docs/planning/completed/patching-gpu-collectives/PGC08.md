@@ -60,6 +60,7 @@ ab-benchmark dual gfx1100, -sm tensor, MTP n_max=4; token parity; marker per arm
 
 ## Ledger-events
 
+
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:38.087570+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
@@ -67,3 +68,5 @@ ab-benchmark dual gfx1100, -sm tensor, MTP n_max=4; token parity; marker per arm
 - 2026-09-30T12:49:41.713709+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T12:49:54.761059+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-09-30T12:49:57.869858+00:00 (state-transition): State: pending → completed
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:52:09.715968+00:00 (updated-by): Updated: section:ledger-events

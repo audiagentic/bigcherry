@@ -96,6 +96,7 @@ While refreshing RD58's (patch 1234) state-restore evidence at the current pin, 
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.771380+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -116,3 +117,5 @@ While refreshing RD58's (patch 1234) state-restore evidence at the current pin, 
 - 2026-09-12T15:35:55.590300+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T12:49:35.334347+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T12:49:38.542164+00:00 (state-transition): State: pending → superseded
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:51:56.739873+00:00 (updated-by): Updated: section:ledger-events

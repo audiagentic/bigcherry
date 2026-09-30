@@ -78,7 +78,7 @@ static void ggml_cuda_ar_trace_wire(ggml_cuda_ar_wire_override wire) {
     }
     static std::atomic_flag logged = ATOMIC_FLAG_INIT;
     if (!logged.test_and_set(std::memory_order_relaxed)) {
-        GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1272_ar_wire path=ar_wire_%s\n",
+        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1272_ar_wire path=ar_wire_%s\n",
                       ggml_cuda_ar_wire_name(wire));
     }
 }

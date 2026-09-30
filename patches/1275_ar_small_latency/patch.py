@@ -96,7 +96,7 @@ static void ggml_cuda_ar_trace_small(const ggml_cuda_ar_pipeline * p) {
     }
     static std::atomic_flag logged = ATOMIC_FLAG_INIT;
     if (!logged.test_and_set(std::memory_order_relaxed)) {
-        GGML_LOG_INFO(
+        GGML_LOG_WARN(
             "BIGCHERRY_PATCH_HIT patch=1275_ar_small path=small_ar n_devices=%d blocks=%d threads=%d slot_sync=%s\n",
             p->n_devices, p->small_blocks, p->small_threads, ggml_cuda_ar_slot_sync_name(p->slot_sync));
     }

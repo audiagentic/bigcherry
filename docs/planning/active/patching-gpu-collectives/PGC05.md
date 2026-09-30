@@ -63,8 +63,11 @@ No lifecycle-state changes from planning. Any throughput claim is causal, single
 
 ## Ledger-events
 
+
 - chg_20260929_135722_allreduce-methods-are-now-sele_7144
 - 2026-09-29T13:57:29.109931+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260929_215656_dual-xtx-27b-q8_0-plain-decode_1707
 - 2026-09-29T21:57:05.647193+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T12:49:47.975320+00:00 (updated-by): Updated: section:notes
+- chg_20260930_125153_reviewed-and-consolidated-toda_3870
+- 2026-09-30T12:52:06.498687+00:00 (updated-by): Updated: section:ledger-events
