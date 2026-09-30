@@ -1,11 +1,14 @@
 """0840: size-adaptive internal/RCCL AllReduce dispatch.
 
-Adaptive initializes RCCL and the stock internal host pipeline together. Calls
-below the internal pipeline's copy threshold prefer host; calls at/above it
-prefer RCCL, with the surviving provider used as fallback if the other is
-unavailable. The adaptive host path deliberately leaves the internal
-pipeline's wire policy untouched, so GGML_CUDA_AR_WIRE/1272 and pristine
-wire selection behave exactly as they do for the plain host provider.
+Adaptive initializes RCCL and the stock internal host pipeline together.
+`--allreduce-switch-bytes` is owned by 0860: reductions strictly below the
+configured byte count prefer host, while reductions at or above it prefer
+RCCL. If the preferred provider is unavailable or host rejects a small call,
+the other provider is tried before meta fallback.
+
+Adaptive never mutates the internal pipeline's wire state. When composed with
+1272_ar_host_compressed_wire, GGML_CUDA_AR_WIRE therefore selects the exact
+same host codec/path as the plain internal provider.
 """
 
 GROUP = "core"
@@ -13,64 +16,9 @@ STATE = "validated"
 
 from bigcherry.patcher import Edit, FilePatch
 
-ALLREDUCE_CUH = FilePatch(
-    path="ggml/src/ggml-cuda/allreduce.cuh",
-    description="expose the internal pipeline copy threshold to adaptive dispatch",
-    edits=(
-        Edit(
-            id="declare-copy-threshold-accessor",
-            anchor=r"^bool ggml_cuda_ar_allreduce\($",
-            rationale="declare the threshold accessor beside the pipeline allreduce API",
-            mode="insert_before",
-            text=(
-                "size_t ggml_cuda_ar_pipeline_copy_threshold(\n"
-                "    const ggml_cuda_ar_pipeline * pipeline);\n\n"
-            ),
-            guard=r"ggml_cuda_ar_pipeline_copy_threshold\(\n    const ggml_cuda_ar_pipeline \* pipeline\);",
-            expect_matches=1,
-        ),
-    ),
-)
-
-ALLREDUCE_CU = FilePatch(
-    path="ggml/src/ggml-cuda/allreduce.cu",
-    description="implement the adaptive copy-threshold accessor and MUSA stub",
-    edits=(
-        Edit(
-            id="implement-copy-threshold-accessor",
-            anchor=r"    return ok;\n\}\n\n#else",
-            rationale="insert after the real ggml_cuda_ar_allreduce implementation",
-            mode="replace",
-            text=(
-                "    return ok;\n}\n\n"
-                "size_t ggml_cuda_ar_pipeline_copy_threshold(\n"
-                "        const ggml_cuda_ar_pipeline * pipeline) {\n"
-                "    return pipeline == nullptr ? 0 : pipeline->copy_threshold;\n"
-                "}\n\n"
-                "#else"
-            ),
-            guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(\n        const ggml_cuda_ar_pipeline \* pipeline\) \{",
-            expect_matches=1,
-        ),
-        Edit(
-            id="implement-copy-threshold-accessor-musa-stub",
-            anchor=r"^bool ggml_cuda_ar_allreduce\(ggml_cuda_ar_pipeline \*, ggml_backend_t \*, ggml_tensor \*\*\) \{\n    return false;\n\}$",
-            rationale="MUSA never constructs a real internal pipeline",
-            mode="insert_after",
-            text=(
-                "\nsize_t ggml_cuda_ar_pipeline_copy_threshold(const ggml_cuda_ar_pipeline *) {\n"
-                "    return 0;\n"
-                "}"
-            ),
-            guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(const ggml_cuda_ar_pipeline \*\) \{\n    return 0;\n\}",
-            expect_matches=1,
-        ),
-    ),
-)
-
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
-    description="add adaptive provider with per-call host/RCCL dispatch",
+    description="add adaptive provider with CLI-sized host/RCCL per-call dispatch",
     edits=(
         Edit(
             id="hybrid-try-allreduce",
@@ -88,16 +36,14 @@ CUDA = FilePatch(
                 "        ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors) {\n"
                 "    const size_t reduction_bytes = tensors != nullptr && tensors[0] != nullptr\n"
                 "        ? ggml_nbytes(tensors[0]) : 0;\n"
+                "    const size_t switch_bytes = g_ggml_backend_cuda_comm_config.switch_bytes;\n"
                 "    const bool have_internal = comm_ctx->ar_pipeline != nullptr;\n"
-                "    const size_t internal_threshold = have_internal\n"
-                "        ? ggml_cuda_ar_pipeline_copy_threshold(comm_ctx->ar_pipeline) : 0;\n"
-                "    const bool below_copy_threshold = internal_threshold == 0 || reduction_bytes < internal_threshold;\n"
                 "#ifdef GGML_USE_NCCL\n"
                 "    const bool have_rccl = !comm_ctx->comms.empty();\n"
                 "#else\n"
                 "    const bool have_rccl = false;\n"
                 "#endif\n"
-                "    const bool prefer_internal = have_internal && (below_copy_threshold || !have_rccl);\n"
+                "    const bool prefer_internal = have_internal && (reduction_bytes < switch_bytes || !have_rccl);\n"
                 "    if (prefer_internal) {\n"
                 "        comm_ctx->provider_name = \"internal\";\n"
                 "        if (ggml_backend_cuda_comm_allreduce_internal(comm_ctx, tensors)) {\n"
@@ -152,9 +98,8 @@ CUDA = FilePatch(
                 "#endif // GGML_USE_NCCL\n"
                 "    ret->ar_pipeline = ggml_cuda_ar_pipeline_init(ret->dev_ids.data(), ret->dev_ids.size());\n"
                 "    const bool have_internal = ret->ar_pipeline != nullptr;\n"
-                "    // Do not mutate the pipeline's BF16 threshold or wire state here. The\n"
-                "    // adaptive host side must behave exactly like the plain internal provider,\n"
-                "    // including 1272's GGML_CUDA_AR_WIRE codec selection when composed.\n"
+                "    // Leave the internal pipeline untouched: 1272/GGML_CUDA_AR_WIRE and\n"
+                "    // pristine host wire selection must match the plain host provider.\n"
                 "    if (!have_internal) {\n"
                 "        (void) cudaGetLastError();\n"
                 "        GGML_LOG_WARN(\"hybrid: internal AllReduce init failed (n_devices != 2?); \"\n"
@@ -238,4 +183,4 @@ CUDA_PROVIDER = FilePatch(
     ),
 )
 
-PATCHES = [ALLREDUCE_CUH, ALLREDUCE_CU, CUDA, CUDA_PROVIDER]
+PATCHES = [CUDA, CUDA_PROVIDER]
