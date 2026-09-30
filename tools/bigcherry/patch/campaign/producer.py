@@ -71,6 +71,7 @@ from bigcherry.patch.validation_producer import (
     validate_producer_cli_compatibility,
     validate_producer_inputs,
     validate_producer_result,
+    ValidationProducerBlocked,
     ValidationProducerError,
 )
 
@@ -1204,6 +1205,8 @@ def execute_validation_producer(
 
     try:
         result = selection.producer(context)
+    except ValidationProducerBlocked:
+        raise
     except Exception as exc:
         raise PatchCampaignError(
             f"{selection.spec.patch_id}/{selection.spec.producer_id}: producer raised: {exc}"
@@ -2271,6 +2274,9 @@ def _load_producer_plan(args: argparse.Namespace):
     return registry, descriptor, cfg, validation_plan, bound_contracts
 
 
+BLOCKED_EXIT_CODE = 3
+
+
 def _run_validation_producer(
     args: argparse.Namespace,
     *,
@@ -2361,18 +2367,37 @@ def _run_validation_producer(
     scaffold = setup.scaffold
     run_dir = setup.run_dir
 
-    execution = _execute_selected_producer(
-        args,
-        producer_id=producer_id,
-        provided_inputs=provided_inputs,
-        patch_dir=patch_dir,
-        workdir=workdir,
-        fat_targets=fat_targets,
-        device_map=device_map,
-        selection=selection,
-        validation_plan=validation_plan,
-        setup=setup,
-    )
+    try:
+        execution = _execute_selected_producer(
+            args,
+            producer_id=producer_id,
+            provided_inputs=provided_inputs,
+            patch_dir=patch_dir,
+            workdir=workdir,
+            fat_targets=fat_targets,
+            device_map=device_map,
+            selection=selection,
+            validation_plan=validation_plan,
+            setup=setup,
+        )
+    except ValidationProducerBlocked as exc:
+        blocked_path = run_dir / "producer-blocked.json"
+        _atomic_write_json(
+            blocked_path,
+            {
+                "patch_id": args.patch,
+                "producer_id": producer_id,
+                "verdict": "BLOCKED",
+                "reason": str(exc),
+                "timed_lanes_run": False,
+                "evidence_record": None,
+            },
+        )
+        _print(
+            f"validation producer {args.patch}/{producer_id}: BLOCKED -- {exc} "
+            f"(no tracked evidence record persisted; {blocked_path})"
+        )
+        return BLOCKED_EXIT_CODE
 
     contract_correctness_gate, producer_check_results = _producer_check_results(
         bound_contracts, execution
