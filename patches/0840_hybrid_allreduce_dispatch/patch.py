@@ -1,77 +1,11 @@
-"""HI155: size-adaptive internal/RCCL AllReduce provider dispatch.
+"""0840: size-adaptive internal/RCCL AllReduce dispatch.
 
-The HIP internal AllReduce (backported by the now-superseded
-1001_hip_internal_allreduce; native upstream since pin b11126) is a
-low-latency internal AllReduce on HIP that real dual-XTX hardware evidence shows is a large win
-for decode (+17.33% TPS, MTP completion-bench; +6.88%, plain tg128) but a
-severe regression for prefill (-32% to -34%, pp512/pp2048/pp4096
-llama-bench) -- see patches/1001_hip_internal_allreduce/SUMMARY.md.
-The provider selection (now ``--allreduce``, patch 0860) selects exactly one provider once, for the
-whole communicator's lifetime (a single stored ``try_allreduce`` function
-pointer) -- there is no per-call, size-aware choice, so shipping either
-provider alone regresses one of the two regimes.
-
-Real HI155-1 telemetry (0830's ``reduction_bytes`` field, added for this
-item) captured on real traffic shows a clean, 10x separation with zero
-overlap: MTP decode reduction sizes range 20,480-1,044,480 bytes; pp2048
-prefill is a flat 10,485,760 bytes. Notably, decode's max sits right at
-allreduce.cu's own ``GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT`` (1,048,576 bytes,
-the point where the internal implementation's own small-message chunked
-kernel hands off to its large-message copy-engine strategy) -- decode never
-reaches that copy-engine path in practice, so the entire prefill regression
-is attributable to that one strategy, not to internal's small-message path
-scaling up.
-
-This patch adds a fourth ``--allreduce adaptive`` provider:
-
-* Init brings up BOTH RCCL and the internal pipeline independently (not the
-  existing greedy nccl->internal->none chain, where each step's failure
-  falls through to the next -- hybrid needs both alive simultaneously so a
-  per-call choice is possible). Either can fail to initialize without being
-  fatal to the other; if both fail, this degrades to the meta backend's
-  generic butterfly exactly like the existing chains do.
-* Per call, ``ggml_backend_cuda_comm_try_allreduce_hybrid`` computes
-  ``ggml_nbytes(tensors[0])`` and compares it against the internal
-  pipeline's OWN real copy-engine threshold (via the new
-  ``ggml_cuda_ar_pipeline_copy_threshold`` accessor -- not a second,
-  independently-configurable constant that could drift out of sync with
-  ``GGML_CUDA_AR_COPY_THRESHOLD``). Below that threshold, it tries internal
-  first; on failure (or if unavailable, or at/above the threshold), it
-  falls through to RCCL; if neither is available, it returns false and lets
-  the existing meta-backend fallback handle the call, same as every other
-  provider chain here.
-* ``comm_ctx->provider_name`` is set to whichever sub-provider actually
-  serviced each call, right before invoking it -- 0830's existing telemetry
-  seam reads this same field immediately after ``try_allreduce`` returns,
-  so per-call attribution (``effective_provider``: "internal" or "rccl")
-  falls out of the existing telemetry pipeline for free, no separate
-  labeling edit needed.
-* Init forces the internal pipeline to exact F32 (a new
-  ``ggml_cuda_ar_pipeline_force_exact_f32`` setter, called once right after
-  ``ggml_cuda_ar_pipeline_init`` succeeds) rather than trusting whatever
-  ``GGML_CUDA_AR_BF16_THRESHOLD`` happens to be set to. That env var
-  defaults to 1 (BF16 wire round-trip for every nonzero-size reduction);
-  hybrid mode must never inherit that silently -- 1001's own validated
-  performance result requires exact F32, and real hardware evidence in
-  1001's SUMMARY.md shows BF16 wire compression is a net loss on this
-  workload, not a neutral tradeoff. This was caught by HI155-4's own
-  correctness gate: the first run (no override) failed the analytical F32
-  bound on both sides of the threshold -- exactly the BF16-approximation
-  signature, not a real defect -- confirming gpt-dev-agent's warning that
-  hybrid must not depend on an external env combination the operator has
-  to remember.
-
-Deliberately NOT done in this slice (per gpt-dev-agent's explicit guidance,
-dev-gpt-agent gateway session ses_5307d9c58ec645cb): raising the threshold
-above the internal pipeline's own copy-engine boundary, or introducing a
-second independent threshold knob -- both would risk routing hybrid mode
-into exactly the code path the real prefill regression evidence implicates.
-Also not yet done: splitting the internal pipeline's init so hybrid mode
-skips paying for its large-message (32MB-class host/device staging) buffers
-it will never route through below the copy threshold -- accepted for this
-validation slice per gpt's guidance, with the resource cost (VRAM, pinned
-host allocation, clean teardown) to be measured, not assumed, before wider
-adoption.
+Adaptive initializes RCCL and the stock internal host pipeline together. Calls
+below the internal pipeline's copy threshold prefer host; calls at/above it
+prefer RCCL, with the surviving provider used as fallback if the other is
+unavailable. The adaptive host path deliberately leaves the internal
+pipeline's wire policy untouched, so GGML_CUDA_AR_WIRE/1272 and pristine
+wire selection behave exactly as they do for the plain host provider.
 """
 
 GROUP = "core"
@@ -81,54 +15,31 @@ from bigcherry.patcher import Edit, FilePatch
 
 ALLREDUCE_CUH = FilePatch(
     path="ggml/src/ggml-cuda/allreduce.cuh",
-    description="expose the internal pipeline's real copy-engine threshold "
-                "so a caller can avoid ever selecting it for a size it "
-                "would itself route through the slow large-message path",
+    description="expose the internal pipeline copy threshold to adaptive dispatch",
     edits=(
         Edit(
             id="declare-copy-threshold-accessor",
             anchor=r"^bool ggml_cuda_ar_allreduce\($",
-            rationale="alongside the other pipeline accessor declarations, "
-                      "before the per-call allreduce entry point",
+            rationale="declare the threshold accessor beside the pipeline allreduce API",
             mode="insert_before",
             text=(
-                "// Real per-pipeline copy-engine threshold (bytes) -- the point where\n"
-                "// the internal AllReduce switches from its small-message chunked kernel\n"
-                "// to its large-message copy-engine strategy. A caller choosing whether\n"
-                "// to route a given reduction through this pipeline (HI155's hybrid\n"
-                "// dispatcher) needs this exact value, not a second, independently\n"
-                "// configurable threshold that could drift out of sync with the pipeline's\n"
-                "// own GGML_CUDA_AR_COPY_THRESHOLD.\n"
                 "size_t ggml_cuda_ar_pipeline_copy_threshold(\n"
                 "    const ggml_cuda_ar_pipeline * pipeline);\n\n"
-                "// HI155: hybrid mode must never silently inherit whatever\n"
-                "// GGML_CUDA_AR_BF16_THRESHOLD happens to be set to (default: 1, i.e. BF16\n"
-                "// wire round-trip for every nonzero-size reduction) -- 1001's own validated\n"
-                "// result requires exact F32, and real hardware evidence in\n"
-                "// patches/1001_hip_internal_allreduce/SUMMARY.md shows BF16 wire\n"
-                "// compression is a net loss on this workload, not a neutral tradeoff. This\n"
-                "// forces an already-constructed pipeline to exact F32 regardless of the env\n"
-                "// var, so hybrid's policy does not depend on an external env combination\n"
-                "// the operator has to remember.\n"
-                "void ggml_cuda_ar_pipeline_force_exact_f32(\n"
-                "    ggml_cuda_ar_pipeline * pipeline);\n\n"
             ),
-            guard=r"ggml_cuda_ar_pipeline_force_exact_f32\(\n    ggml_cuda_ar_pipeline \* pipeline\);",
+            guard=r"ggml_cuda_ar_pipeline_copy_threshold\(\n    const ggml_cuda_ar_pipeline \* pipeline\);",
+            expect_matches=1,
         ),
     ),
 )
 
 ALLREDUCE_CU = FilePatch(
     path="ggml/src/ggml-cuda/allreduce.cu",
-    description="implement the copy-engine-threshold accessor, both the "
-                "real (HIP/CUDA) and MUSA-stub branches",
+    description="implement the adaptive copy-threshold accessor and MUSA stub",
     edits=(
         Edit(
             id="implement-copy-threshold-accessor",
             anchor=r"    return ok;\n\}\n\n#else",
-            rationale="right after ggml_cuda_ar_allreduce's closing brace "
-                      "(its final statement, 'return ok;', makes the anchor "
-                      "unique), before the MUSA-only stub branch",
+            rationale="insert after the real ggml_cuda_ar_allreduce implementation",
             mode="replace",
             text=(
                 "    return ok;\n}\n\n"
@@ -136,40 +47,30 @@ ALLREDUCE_CU = FilePatch(
                 "        const ggml_cuda_ar_pipeline * pipeline) {\n"
                 "    return pipeline == nullptr ? 0 : pipeline->copy_threshold;\n"
                 "}\n\n"
-                "void ggml_cuda_ar_pipeline_force_exact_f32(\n"
-                "        ggml_cuda_ar_pipeline * pipeline) {\n"
-                "    if (pipeline != nullptr) {\n"
-                "        pipeline->bf16_threshold = 0;\n"
-                "    }\n"
-                "}\n\n"
                 "#else"
             ),
             guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(\n        const ggml_cuda_ar_pipeline \* pipeline\) \{",
+            expect_matches=1,
         ),
         Edit(
             id="implement-copy-threshold-accessor-musa-stub",
             anchor=r"^bool ggml_cuda_ar_allreduce\(ggml_cuda_ar_pipeline \*, ggml_backend_t \*, ggml_tensor \*\*\) \{\n    return false;\n\}$",
-            rationale="MUSA never builds a real pipeline (pipeline_init "
-                      "always returns nullptr there), so both accessor "
-                      "stubs are no-ops/zero",
+            rationale="MUSA never constructs a real internal pipeline",
             mode="insert_after",
             text=(
                 "\nsize_t ggml_cuda_ar_pipeline_copy_threshold(const ggml_cuda_ar_pipeline *) {\n"
                 "    return 0;\n"
-                "}\n"
-                "void ggml_cuda_ar_pipeline_force_exact_f32(ggml_cuda_ar_pipeline *) {\n"
                 "}"
             ),
-            guard=r"void ggml_cuda_ar_pipeline_force_exact_f32\(ggml_cuda_ar_pipeline \*\) \{\n\}",
+            guard=r"size_t ggml_cuda_ar_pipeline_copy_threshold\(const ggml_cuda_ar_pipeline \*\) \{\n    return 0;\n\}",
+            expect_matches=1,
         ),
     ),
 )
 
 CUDA = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
-    description="add --allreduce adaptive: both providers alive, "
-                "per-call byte-threshold dispatch with internal->rccl->meta "
-                "fallback",
+    description="add adaptive provider with per-call host/RCCL dispatch",
     edits=(
         Edit(
             id="hybrid-try-allreduce",
@@ -179,34 +80,10 @@ CUDA = FilePatch(
                 r"    return ggml_backend_cuda_comm_allreduce_internal\(comm_ctx, tensors\);\n"
                 r"\}"
             ),
-            rationale="right after the plain internal try_allreduce "
-                      "wrapper, before the butterfly stub",
+            rationale="insert the adaptive dispatcher beside the plain internal wrapper",
             mode="insert_after",
             text=(
                 "\n\n"
-                "// HI155/GP03: both providers are alive simultaneously in hybrid mode (see\n"
-                "// ggml_backend_cuda_comm_init_hybrid below). Per call, route reductions\n"
-                "// below the internal pipeline's OWN copy-engine threshold through internal\n"
-                "// (the regime real hardware evidence shows it wins -- decode); everything\n"
-                "// else through RCCL (prefill, where internal's large-message path measured\n"
-                "// -32% to -34% against RCCL on real hardware). Internal failure at small\n"
-                "// sizes falls through to RCCL rather than straight to the meta fallback,\n"
-                "// same as the ordinary single-provider chains do on their own init failure.\n"
-                "//\n"
-                "// GP03 fix (gpt-dev-agent review, 2026-09-02): a reduction at/above the\n"
-                "// threshold used to fall straight to META whenever RCCL wasn't available\n"
-                "// (e.g. NCCL init failed, or virtual devices disabled it) even though the\n"
-                "// internal pipeline WAS available and is strictly better than META for any\n"
-                "// size -- only RCCL is unavailable, not internal. Internal is now always the\n"
-                "// last-resort fallback before META, not only the below-threshold path.\n"
-                "//\n"
-                "// GP03 fix: GGML_CUDA_AR_COPY_THRESHOLD=0 is the internal pipeline's own\n"
-                "// sentinel for \"never use the copy-engine, the chunked kernel is eligible for\n"
-                "// every size\" (see allreduce.cu's use_copy_engine computation). The naive\n"
-                "// `reduction_bytes < internal_threshold` comparison inverted that meaning --\n"
-                "// with threshold=0 it was NEVER true, so an operator explicitly forcing\n"
-                "// internal-always via that env var got the opposite of what they asked for.\n"
-                "// below_copy_threshold treats threshold==0 as \"always eligible\" explicitly.\n"
                 "static bool ggml_backend_cuda_comm_try_allreduce_hybrid(\n"
                 "        ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors) {\n"
                 "    const size_t reduction_bytes = tensors != nullptr && tensors[0] != nullptr\n"
@@ -234,8 +111,6 @@ CUDA = FilePatch(
                 "    }\n"
                 "#endif // GGML_USE_NCCL\n"
                 "    if (have_internal && !prefer_internal) {\n"
-                "        // Large call, RCCL unavailable -- internal is still strictly better\n"
-                "        // than falling straight to META.\n"
                 "        comm_ctx->provider_name = \"internal\";\n"
                 "        return ggml_backend_cuda_comm_allreduce_internal(comm_ctx, tensors);\n"
                 "    }\n"
@@ -243,33 +118,18 @@ CUDA = FilePatch(
                 "}"
             ),
             guard=r"ggml_backend_cuda_comm_try_allreduce_hybrid\(",
+            expect_matches=1,
         ),
         Edit(
             id="hybrid-init",
-            anchor=(
-                r"static void ggml_backend_cuda_comm_init_nccl\(ggml_backend_cuda_comm_context \* ret\) \{"
-            ),
-            rationale="right before the existing (greedy, chained) NCCL "
-                      "init function -- hybrid's init is independent of "
-                      "that chain",
+            anchor=r"static void ggml_backend_cuda_comm_init_nccl\(ggml_backend_cuda_comm_context \* ret\) \{",
+            rationale="adaptive initialization is independent of the stock greedy provider chain",
             mode="insert_before",
             text=(
-                "// HI155: unlike comm_init_{nccl,internal}, this does not chain-fallback\n"
-                "// into the other provider on failure -- hybrid mode needs both alive at\n"
-                "// once so ggml_backend_cuda_comm_try_allreduce_hybrid can choose per call.\n"
-                "// A failure in either is not fatal to the other; if both fail this\n"
-                "// degrades to the meta backend's generic butterfly, exactly like the\n"
-                "// existing chains do when their one provider fails.\n"
                 "static void ggml_backend_cuda_comm_init_hybrid(ggml_backend_cuda_comm_context * ret) {\n"
                 "    bool have_nccl = false;\n"
                 "#ifdef GGML_USE_NCCL\n"
                 "    const ggml_cuda_device_info & info = ggml_cuda_info();\n"
-                "    // GP02: this is a SECOND, independent ncclCommInitAll() call site --\n"
-                "    // confirmed by direct testing that it does NOT inherit any protection\n"
-                "    // from the original comm_init_nccl()'s own admission check (patch 1225)\n"
-                "    // just because that patch exists elsewhere in this file. Without this\n"
-                "    // call, a device-3-inclusive topology reports spurious ncclCommInitAll\n"
-                "    // success here and then hard-crashes on the first real collective.\n"
                 "    if (info.device_count <= info.physical_device_count &&\n"
                 "            ggml_backend_cuda_comm_rccl_admission_ok(ret->dev_ids.data(), ret->dev_ids.size())) {\n"
                 "        const size_t n = ret->dev_ids.size();\n"
@@ -286,20 +146,15 @@ CUDA = FilePatch(
                 "        GGML_LOG_WARN(\"hybrid: NCCL disabled (virtual devices in use); hybrid \"\n"
                 "                      \"dispatch will use internal only\\n\");\n"
                 "    } else {\n"
-                "        GGML_LOG_WARN(\"hybrid: NCCL disabled (RCCL admission check failed -- a \"\n"
-                "                      \"participating device lacks PCIe AtomicOps completion \"\n"
-                "                      \"capability, see HI85/HI138/GP02); hybrid dispatch will use \"\n"
-                "                      \"internal only\\n\");\n"
+                "        GGML_LOG_WARN(\"hybrid: NCCL disabled (RCCL admission check failed); hybrid \"\n"
+                "                      \"dispatch will use internal only\\n\");\n"
                 "    }\n"
                 "#endif // GGML_USE_NCCL\n"
                 "    ret->ar_pipeline = ggml_cuda_ar_pipeline_init(ret->dev_ids.data(), ret->dev_ids.size());\n"
                 "    const bool have_internal = ret->ar_pipeline != nullptr;\n"
-                "    if (have_internal) {\n"
-                "        // Never inherit GGML_CUDA_AR_BF16_THRESHOLD's default (1, BF16 for\n"
-                "        // every nonzero reduction) -- hybrid's internal side must stay exact\n"
-                "        // F32, matching 1001's own validated result.\n"
-                "        ggml_cuda_ar_pipeline_force_exact_f32(ret->ar_pipeline);\n"
-                "    }\n"
+                "    // Do not mutate the pipeline's BF16 threshold or wire state here. The\n"
+                "    // adaptive host side must behave exactly like the plain internal provider,\n"
+                "    // including 1272's GGML_CUDA_AR_WIRE codec selection when composed.\n"
                 "    if (!have_internal) {\n"
                 "        (void) cudaGetLastError();\n"
                 "        GGML_LOG_WARN(\"hybrid: internal AllReduce init failed (n_devices != 2?); \"\n"
@@ -314,28 +169,10 @@ CUDA = FilePatch(
                 "}\n\n"
             ),
             guard=r"ggml_backend_cuda_comm_init_hybrid\(ggml_backend_cuda_comm_context \* ret\) \{",
+            expect_matches=1,
         ),
         Edit(
             id="gp03-fix-explicit-rccl-plan-telemetry",
-            # GP03 fix (gpt-dev-agent review, 2026-09-02): 0830's own shared
-            # try_reduce_plan() rccl branch (used whenever the operator
-            # explicitly sets GGML_HIP_REDUCE_PLAN=rccl, bypassing
-            # try_allreduce_hybrid's own per-call dispatch entirely) calls
-            # ggml_backend_cuda_comm_allreduce_nccl() directly without ever
-            # updating comm_ctx->provider_name -- in hybrid mode that field
-            # was last set (at init) to whichever provider initialized
-            # successfully, so an explicit-rccl-forced call can genuinely
-            # run RCCL while telemetry still reports "internal". Not
-            # specific to hybrid mode's own dispatcher -- this is a real
-            # bug in the shared function every provider chain uses -- but
-            # hybrid mode is the first case where the init-time
-            # provider_name and the actually-invoked-per-call provider can
-            # provably diverge, so it is fixed here.
-            # Anchors match against a noise-stripped copy of the source
-            # where string literals -- QUOTES INCLUDED -- are blanked to
-            # spaces of the same length, so the "rccl" literal below is
-            # matched as a bare [^\n]* with no quote characters at all
-            # (same technique the retired 1243 patch used).
             anchor=(
                 r"    if \(strcmp\(plan, [^\n]*\) == 0\) \{\n"
                 r"#ifdef GGML_USE_NCCL\n"
@@ -346,8 +183,7 @@ CUDA = FilePatch(
                 r"    \}\n"
                 r"    return false;"
             ),
-            rationale="record the actually-invoked provider before the "
-                      "explicit-override rccl call, not just at init time",
+            rationale="record the provider actually used by the explicit RCCL plan",
             mode="replace",
             text=(
                 "    if (strcmp(plan, \"rccl\") == 0) {\n"
@@ -361,6 +197,7 @@ CUDA = FilePatch(
                 "    return false;"
             ),
             guard=r"comm_ctx->provider_name = \"rccl\";\n            return ggml_backend_cuda_comm_allreduce_nccl",
+            expect_matches=1,
         ),
     ),
 )
@@ -368,16 +205,12 @@ CUDA = FilePatch(
 CUDA_PROVIDER = FilePatch(
     path="ggml/src/ggml-cuda/ggml-cuda.cu",
     language="none",
-    description="register the adaptive provider on top of 0860's --allreduce "
-                "configuration seam",
+    description="register adaptive on 0860's explicit provider seam",
     edits=(
         Edit(
             id="adaptive-provider-available",
-            anchor=(
-                r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n'
-            ),
-            rationale="0860 rejects adaptive as unavailable; this patch provides it, "
-                      "so drop it from the unavailable list",
+            anchor=r'    if \(p == \"adaptive\" \|\| p == \"p2p\" \|\| p == \"root3\"\) \{\n',
+            rationale="0840 provides adaptive, so remove only adaptive from 0860's unavailable list",
             mode="replace",
             text='    if (p == "p2p" || p == "root3") {\n',
             guard=r'    if \(p == \"p2p\" \|\| p == \"root3\"\) \{\n',
@@ -390,8 +223,7 @@ CUDA_PROVIDER = FilePatch(
                 r'        ggml_backend_cuda_comm_init_none\(ret\);\n'
                 r'    \} else \{\n'
             ),
-            rationale="add adaptive beside the ccl/host/butterfly branches "
-                      "0860 selects from",
+            rationale="select adaptive beside 0860's implemented providers",
             mode="replace",
             text=(
                 '    } else if (provider == "butterfly") {\n'
