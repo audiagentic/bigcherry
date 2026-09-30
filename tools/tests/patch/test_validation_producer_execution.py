@@ -240,5 +240,52 @@ class SyntheticValidationProducerExecutionTests(unittest.TestCase):
             self.assertIs(verdict["passed"], True)
 
 
+class ProducerBlockedDispatchTests(unittest.TestCase):
+    def _execute(self, raiser):
+        patch_dir = _FIXTURE_PATCH_DIR
+        patch_id = "0000_synthetic_validation_producer"
+        with tempfile.TemporaryDirectory(prefix="pvps15-blocked-") as tmp:
+            run_dir = Path(tmp)
+            checks = pv.parse_validation_toml(patch_dir / "validation.toml", patch_id=patch_id)
+            plan = pv.ValidationPlan(patch_id=patch_id, checks=checks, universal_capabilities=())
+            context = pv.ValidationContext(
+                descriptor=None, base_revision="a" * 40, control_source=None, subject_source=None,
+                package_root=patch_dir, contracts=(), contract_hashes={},
+            )
+            producer_context = vp.ProducerContext(
+                repo_root=REPO_ROOT, patch_dir=patch_dir, workdir=run_dir,
+                campaign_id=f"{patch_id}/synthetic", base_revision="a" * 40,
+                hip_path=Path("/hip"), fat_targets=vp.FatTargetPlan(targets=("gfx1100",)),
+                model=None, corpus=None, build_env={}, inputs={},
+                validation_build_identities={}, patch_id=patch_id, device_map={},
+                runtime=_FakeProducerRuntime(run_dir),
+            )
+            selection = dataclasses.replace(
+                vp.resolve_producer(patch_dir=patch_dir, producer_id="synthetic"),
+                producer=raiser,
+            )
+            return campaign_producer.execute_validation_producer(
+                patch_dir=patch_dir, producer_id="synthetic",
+                provided_inputs={"token": "synthetic-token-value"},
+                producer_context=producer_context, validation_plan=plan,
+                validation_context=context, selection=selection,
+                correctness_evidence_requested=False, performance_benchmark_requested=False,
+            )
+
+    def test_blocked_propagates_unwrapped_so_the_run_can_persist_a_blocked_outcome(self) -> None:
+        def blocked(_ctx):
+            raise vp.ValidationProducerBlocked("X: activation preflight failed; no timed lane was run")
+
+        with self.assertRaises(vp.ValidationProducerBlocked):
+            self._execute(blocked)
+
+    def test_other_producer_exceptions_still_fail_closed_as_campaign_errors(self) -> None:
+        def boom(_ctx):
+            raise RuntimeError("boom")
+
+        with self.assertRaises(campaign_producer.PatchCampaignError):
+            self._execute(boom)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,8 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 
 2026-09-30 27B dual-XTX findings: rd13 (1206) firing on Qwen3.8-27B Q8_0 is PROVEN (preflight-rd13-27b: BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_q, hits=1), and the 4-round paired A/B on 27B -sm tensor (rd13-ab1, mtp-dual) shows no effect: pp1024 -0.03%, pp4096 -0.03%, tg512 +0.02%, tg2048 +0.06%, all CIs straddle 0. So rd13 fires but is neutral on 27B; the 4B contract passes do not transfer. 1254 (nro05) shows no gain on gfx1100 in 5 sessions. 1263 is single-GPU only (aborts under -sm tensor). None of these three helps the dual-XTX 27B production config; no lifecycle mutation made (lifecycle decisions remain explicit).
 
+2026-09-30 BLOCKED handling done: ValidationProducerBlocked now propagates unwrapped from execute_validation_producer; _run_validation_producer catches it, writes run_dir/producer-blocked.json (verdict=BLOCKED, reason, timed_lanes_run=false, evidence_record=null), prints it, and returns exit 3 (BLOCKED_EXIT_CODE). Deliberately NO tracked validation record is persisted for a BLOCKED run, so it cannot satisfy improvement_no_regression_v1 / patch-verify-evidence (neither PASS nor FAIL, ineligible for promotion). Tests: ProducerBlockedDispatchTests. Remaining: per-patch firing requirements in validation.toml (1263 marker, 0860 provider marker), ProducerRuntime.require_activation API to replace per-producer require_fires plumbing, an end-to-end test of the exit-3 path, rd13 27B requirement in validation.toml (fires; neutral).
+
 ## Change Log
 
 - 2026-09-29T22:19:04.336861+00:00 (created-by): Created by agent
@@ -73,3 +75,4 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 - chg_20260930_000454_qualification-runs-no-longer-s_6036
 - 2026-09-30T00:04:57.988566+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-30T00:17:47.477124+00:00 (updated-by): Updated: section:notes
+- 2026-09-30T01:03:14.283546+00:00 (updated-by): Updated: section:notes
