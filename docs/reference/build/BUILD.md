@@ -93,8 +93,25 @@ One row per job, run in file order. Rows are plain text; `#` starts a comment.
 ```
 [MODEL=<gguf>] [HIP=<rocm prefix>] [VIS=<devices>] [REQUIRES=<preflight-run>] <patch> <producer|-> <arch> <device> <run-name> [campaign args...]
 PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
-PREFLIGHT <run-name> <binary> <model> <marker-regex> [server args...]
+PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
+[VIS=<gpus>] BUILD <run-name> <experiment|-> [arch-list]
+[VIS=<gpus>] [REQUIRES=<preflight-run>] AB <run-name> <server-config.json> [ab-benchmark args...]
 ```
+
+- `BUILD` builds `bigcherry:stock:linux-multi` plus the named `[experiment.*]` from
+  `config/recipes.toml` (`-` = no experiment) for `arch-list` (default `gfx1100`;
+  multi-arch e.g. `gfx1100,gfx1201` for 2x XTX + R9700) and records
+  `BUILD_BINARY=<llama-server>` in its log.
+- `AB` runs `bigcherry ab-benchmark --server-config` (balanced, order-rotated, 2-3 arms;
+  `--pairs` a multiple of arm-count factorial). Any `"@<build-run>"` string in the
+  config is replaced with that BUILD row's binary, so configs never hard-code build
+  hashes. Arms may set dispatch/tuning and AllReduce env (`GGML_CUDA_ALLREDUCE`,
+  `GGML_CUDA_AR_*`); topology (`HIP_VISIBLE_DEVICES`) belongs to the shared block.
+- `VIS=` selects the GPU set a BUILD/AB/PREFLIGHT row locks (and a preflight runs on);
+  default `0,1`. Every row holds the host-exclusive lock, so builds never overlap a
+  timed run.
+- Worked examples: `tools/lab/native-vs-patched/queue-27b-remaining.sh` (dual XTX) and
+  `queue-27b-3gpu.sh` (XTX x2 + R9700).
 
 - `MODEL=` and `HIP=` override `BC_MODEL` and `BC_HIP_PATH` for that row. Set
   `BC_HIP_PATH` (Brutus: `/mnt/vault/tmp/bc-rocm`) and `BC_MODEL` before starting.
