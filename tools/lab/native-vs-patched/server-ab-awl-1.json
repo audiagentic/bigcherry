@@ -76,12 +76,8 @@
     "--allreduce",
     "adaptive"
    ],
-   "name": "f32_fast",
-   "environment": {
-    "GGML_CUDA_AR_WIRE": "f32",
-    "BIGCHERRY_AR_SLOT_SYNC": "none",
-    "BIGCHERRY_AR_SMALL_BLOCKS": "1"
-   }
+   "name": "bf16",
+   "environment": {}
   },
   {
    "mode": "stock",
@@ -91,8 +87,10 @@
     "--allreduce",
     "adaptive"
    ],
-   "name": "bf16",
-   "environment": {}
+   "name": "f16",
+   "environment": {
+    "GGML_CUDA_AR_WIRE": "f16"
+   }
   }
  ]
 }
