@@ -40,6 +40,7 @@ class MetaSplitFallbackTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIn(_FALLBACK, text)
             self.assertEqual(text.count(_MARKER), 1)
+            self.assertIn(_MARKER + '\\n");', text)  # C escape, not a raw newline in the literal
             self.assertNotIn(_UNSAFE, text)
             before = text
             again = apply_all([_module.PATCH_02], path.parents[2])

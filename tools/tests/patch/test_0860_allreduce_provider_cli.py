@@ -41,10 +41,7 @@ int main(int argc, char ** argv) {
 }
 '''
 
-_ARG_SOURCE = r'''static void add_rpc_devices(const std::string & servers) {
-}
-
-static bool common_params_parse_ex(int argc, char ** argv, common_params_context & ctx_arg) {
+_ARG_SOURCE = r'''static bool common_params_parse_ex(int argc, char ** argv, common_params_context & ctx_arg) {
     auto parse_cli_args = [&]() {
     };
 
@@ -52,6 +49,9 @@ static bool common_params_parse_ex(int argc, char ** argv, common_params_context
     parse_cli_args();
 
     postprocess_cpu_params(params.cpuparams, nullptr);
+}
+
+static void add_rpc_devices(const std::string & servers) {
 }
 
 void common_params_add_all(common_params_context & ctx_arg) {
@@ -134,6 +134,10 @@ class Patch0860Mechanics(unittest.TestCase):
             self.assertEqual(text.count("common_apply_allreduce_config()"), 2)  # definition + one call
             self.assertIn("    parse_cli_args();" + chr(10) + "    common_apply_allreduce_config();", text)
             self.assertNotIn("common_apply_allreduce_config(value", text)
+            # pristine b11233 order: parse_ex (the call site) precedes add_rpc_devices; the
+            # definition must come before the call or arg.cpp does not compile.
+            self.assertLess(text.index("static void common_apply_allreduce_config()"),
+                            text.index("    common_apply_allreduce_config();"))
             # --allreduce-wire q8 without a provider must reach the backend as auto/q8 and fail closed there.
             self.assertNotIn("current_wire == ", text)
 

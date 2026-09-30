@@ -318,8 +318,14 @@ patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adapti
 patches = ["1244_gp11_internal_allreduce_nway_root"]
 
 [experiment.allreduce-adaptive]
-# 0840 alone (no 1224 probe) so the production-role A/B harness accepts the build.
-patches = ["0840_hybrid_allreduce_dispatch"]
+# 0840 with its REQUIRES (0830 telemetry, 0860 --allreduce CLI, 1225 NCCL arch guard), no 1224
+# probe. 0840 is selected with --allreduce adaptive, so one binary serves every provider arm.
+patches = [
+    "0830_split_reduce_telemetry",
+    "0860_allreduce_provider_cli",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+]
 
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]

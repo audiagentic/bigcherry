@@ -16,7 +16,7 @@ BUILD b-27b-adaptive allreduce-adaptive
 BUILD b-27b-rd12 rd12-only
 BUILD b-27b-nro10 nro10-only
 AB ab-27b-allreduce $L/server-ab-allreduce.json --pairs 6
-AB ab-27b-adaptive $L/server-ab-adaptive.json --pairs 4
+AB ab-27b-adaptive $L/server-ab-adaptive.json --pairs 6
 PREFLIGHT pf-27b-rd12 @b-27b-rd12 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1205_rd12 $SRV
 PREFLIGHT pf-27b-nro10 @b-27b-nro10 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1261_nro10 $SRV
 REQUIRES=pf-27b-rd12 AB ab-27b-rd12 $L/server-ab-rd12.json --pairs 4

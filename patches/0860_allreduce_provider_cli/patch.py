@@ -135,8 +135,8 @@ ARG_CPP = FilePatch(
     edits=(
         Edit(
             id="allreduce-config-helper",
-            anchor=r"^static void add_rpc_devices\(const std::string & servers\) \{$",
-            rationale="place the process-wide CLI-to-backend configuration bridge beside the existing backend-registry helper",
+            anchor=r"^static bool common_params_parse_ex\(int argc, char \*\* argv, common_params_context & ctx_arg\) \{$",
+            rationale="define the process-wide CLI-to-backend configuration bridge before common_params_parse_ex, which calls it after parse_cli_args()",
             mode="insert_before",
             text=(
                 "static std::string common_allreduce_provider;\n"
