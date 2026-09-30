@@ -41,9 +41,7 @@
  "bench_configs": "default",
  "required_metrics": [
   "pp512_tps",
-  "pp1024_tps",
-  "tg128_tps",
-  "tg2048_tps"
+  "tg128_tps"
  ],
  "repetitions": 1,
  "arms": [
