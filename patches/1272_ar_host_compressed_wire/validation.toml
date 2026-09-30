@@ -31,3 +31,9 @@ capability = "performance"
 validator = "benchmark"
 required = true
 benchmark-executor = "paired-llama-bench-v1"
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
