@@ -120,7 +120,10 @@ build_line() {
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
-    [ -n "$plan" ] && bin=$(ls -d "$root"/work/builds/*/"$plan"/bin/llama-server 2>/dev/null | head -1)
+    # bigcherry build publishes under the checkout's work/builds (not the queue work root).
+    local matches=()
+    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$root"/work/builds/*/"$plan"/bin/llama-server 2>/dev/null)
+    [ "${#matches[@]}" -eq 1 ] && bin=${matches[0]}
     if [ "$rc" -eq 0 ] && [ -f "$bin" ]; then echo "BUILD_BINARY=$bin" >> "$log"; else [ "$rc" -eq 0 ] && rc=1; fi
     echo "BUILD_EXIT=$rc" >> "$log"
     echo "done  build $run $(date -Is) rc=$rc $bin"
@@ -150,6 +153,15 @@ ab_line() {
         fi
         sed -i "s|\"$ref\"|\"$bin\"|g" "$resolved"
     done
+    # Lock exactly the GPUs the config runs on; a VIS= prefix must agree with it.
+    local cfg_gpus
+    cfg_gpus=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["environment"]["HIP_VISIBLE_DEVICES"])' "$resolved")
+    if [ -n "$PARSED_VIS" ] && [ "$PARSED_VIS" != "$cfg_gpus" ]; then
+        echo "blocked ab $run: VIS=$PARSED_VIS disagrees with config HIP_VISIBLE_DEVICES=$cfg_gpus" | tee "$log"
+        echo "AB_EXIT=1" >> "$log"
+        return 1
+    fi
+    export BC_GPUS=$cfg_gpus
     ROCM_PATH=/opt/rocm PYTHONPATH="$root/tools" bash "$here/locked-run.sh" \
         python3 -m bigcherry ab-benchmark --server-config "$resolved" --output "$out/result" "$@" > "$log" 2>&1 < /dev/null
     rc=$?
@@ -190,6 +202,10 @@ campaign_line() {
     parse_prefixes "$line"
     set -- "${PARSED_ARGS[@]}"
     export BC_GPUS=${PARSED_VIS:-0,1}
+    if [ -n "$PARSED_REQUIRES" ] && { [ "$1" = BUILD ] || [ "$1" = PREFLIGHT ]; }; then
+        echo "invalid row $1 ${2:-}: REQUIRES= applies only to AB and campaign rows" >&2
+        return 1
+    fi
     if [ "$1" = BUILD ]; then build_line "$@"; return $?; fi
     if [ "$1" = PREFLIGHT ]; then preflight_line "$@"; return $?; fi
     if [ -n "$PARSED_REQUIRES" ] && ! grep -qx 'PREFLIGHT_EXIT=0' "$work/runs/$PARSED_REQUIRES.log" 2>/dev/null; then

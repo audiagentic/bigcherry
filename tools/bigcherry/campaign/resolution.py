@@ -703,6 +703,17 @@ def resolve_lane(
             if modules is not None
             else {module.patch_id: module for module in catalog}
         )
+        # Per-set resolution only checks each module's own CONFLICTS against its
+        # set plus earlier sets; an earlier module's one-way conflict with a later
+        # set's module must be caught on the merged composition.
+        merged_ids = set(claimed_by)
+        for patch_id in sorted(merged_ids):
+            clash = sorted(set(by_id[patch_id].conflicts) & merged_ids)
+            if clash:
+                raise ResolutionError(
+                    f"{patch_id} conflicts with selected module(s) in source "
+                    f"{source_name!r}: {', '.join(clash)}"
+                )
         # RV80 follow-up (GPT deep review, systemic): a GLOBAL (order, patch_id)
         # re-sort here would destroy the dependency order that
         # resolve_patch_set()/resolve_exact() already established whenever

@@ -32,6 +32,31 @@ class Patch1273Mechanics(unittest.TestCase):
             shutil.copy2(_VENDOR / name, cuda / name)
         return td, root, cuda / "mmvq.cu", cuda / "vecdotq.cuh"
 
+    def test_iq4_xs_vdr2_halves_reuse_the_pristine_group_scale_and_lanes(self):
+        # Mirror of the index math: pristine VDR=4 visits iqs=4k with words iqs+0..3 and q8 lanes
+        # 0..3/4..7 under one 6-bit scale; VDR=2 visits iqs=4k and 4k+2 and must cover the same
+        # words/lanes with that same scale (GPT review req_3c536b57ab6a4865: CRITICAL).
+        def scale_bits(i):
+            return (i // 8, i & 0x04, i // 2)  # scales_l index, scales_l shift, scales_h shift
+
+        for iqs in range(0, 32, 4):
+            pristine = {(iqs + j, j) for j in range(4)} | {(iqs + j, j + 4) for j in range(4)}
+            halves = set()
+            for half in (iqs, iqs + 2):
+                q8_base = half & 0x02
+                s_iqs = half & ~0x02
+                self.assertEqual(scale_bits(s_iqs), scale_bits(iqs))
+                halves |= {(half + j, q8_base + j) for j in range(2)} | {(half + j, q8_base + j + 4) for j in range(2)}
+            self.assertEqual(halves, pristine)
+        td, root, _, vecdot_path = self._tree()
+        with td:
+            self.assertTrue(all(r.ok for r in apply_all(_module.PATCHES, root)))
+            vecdot = vecdot_path.read_text(encoding="utf-8")
+            vdr2 = vecdot.split("vec_dot_iq4_xs_q8_1_vdr2(", 1)[1].split("\n}\n", 1)[0]
+            self.assertIn("const int s_iqs = iqs & ~0x02;", vdr2)
+            self.assertIn("bq4->scales_h >> (s_iqs/2)", vdr2)
+            self.assertNotIn("scales_h >> (iqs/2)", vdr2)
+
     def test_apply_variants_and_idempotent(self):
         td, root, mmvq_path, vecdot_path = self._tree()
         with td:

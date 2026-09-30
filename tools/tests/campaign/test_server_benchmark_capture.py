@@ -236,6 +236,25 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         summary = json.loads((self.output / "run.json").read_text())
         self.assertEqual(list(summary["arm_model_sha256"]), [self.arms[0]["name"]])
 
+    def test_ambient_patch_and_allreduce_controls_do_not_leak_into_arms(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        self.write_config(arms=[dict(self.arms[0], environment={"GGML_CUDA_AR_WIRE": "bf16"}), self.arms[1]])
+        ambient = {"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_WIRE": "q8_0",
+                   "BIGCHERRY_IQ_MMVQ_VDR": "1", "BIGCHERRY_PATCH_TRACE": "1"}
+        with self.patches_for_preflight(), patch.dict("os.environ", ambient), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["env"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]].get("GGML_CUDA_AR_WIRE"), "bf16")
+        for env in by_side.values():
+            for key in ("GGML_CUDA_ALLREDUCE", "BIGCHERRY_IQ_MMVQ_VDR", "BIGCHERRY_PATCH_TRACE"):
+                self.assertNotIn(key, env)
+        self.assertNotIn("GGML_CUDA_AR_WIRE", by_side[self.arms[1]["name"]])
+
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
         with self.patches_for_preflight(instrumented=True), patch(
