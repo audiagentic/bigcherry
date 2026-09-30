@@ -42,8 +42,14 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         registry = patch_registry.load_registry(_REPO / "patches")
         descriptor = registry.get("0840_hybrid_allreduce_dispatch")
         patches = patch_registry.load_implementation(descriptor, root=_REPO / "patches")
+        telemetry_descriptor = registry.get("0830_split_reduce_telemetry")
+        telemetry_patches = patch_registry.load_implementation(telemetry_descriptor, root=_REPO / "patches")
         cls.descriptor = descriptor
         cls.patches = patches
+        cls.telemetry_cuda_patch = next(
+            p for p in telemetry_patches
+            if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu"
+        )
         cls.provider_patches = tuple(
             p for p in patches
             if p.path == "ggml/src/ggml-cuda/ggml-cuda.cu"
@@ -74,21 +80,39 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         )
         self.assertNotIn("0830_split_reduce_telemetry", self.descriptor.requires)
 
-    def test_owns_minimal_provider_name_seam(self):
-        edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-provider-context-field")
-        self.assertIn("provider_name", edit.text)
+    def test_0830_composes_and_labels_explicit_rccl(self):
+        edit = next(e for e in self.telemetry_cuda_patch.edits if e.id == "reduce-telemetry-plan-helper")
+        label = 'comm_ctx->provider_name = "rccl";'
+        call = "return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);"
+        self.assertIn(label, edit.text)
+        self.assertLess(edit.text.index(label), edit.text.index(call))
+        expected = [
+            "0830_split_reduce_telemetry",
+            "0860_allreduce_provider_cli",
+            "1225_hi85_nccl_heterogeneous_arch_guard",
+            "0840_hybrid_allreduce_dispatch",
+        ]
+        resolved = patchset.resolve_exact(expected, directory=_REPO / "patches")
+        self.assertEqual([m.patch_id for m in resolved.modules], expected)
+
+    def test_owns_minimal_provider_name_and_switch_snapshot_seams(self):
+        provider_edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-provider-context-field")
+        switch_edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-switch-context-field")
+        self.assertIn("provider_name", provider_edit.text)
+        self.assertIn("adaptive_switch_bytes", switch_edit.text)
         self.assertNotIn(
             "gp03-fix-explicit-rccl-plan-telemetry",
             {e.id for p in self.patches for e in p.edits},
         )
 
-    def test_auto_default_is_scoped_to_dual_physical_gfx1100_hip(self):
+    def test_auto_default_is_scoped_to_dual_physical_gfx1100_hip_and_rccl_admission(self):
         edit = next(e for e in self.provider_patches[0].edits if e.id == "adaptive-auto-default")
         self.assertIn("#ifdef GGML_USE_HIP", edit.text)
         self.assertIn("ret->dev_ids.size() == 2", edit.text)
         self.assertIn("ret->dev_ids[0] != ret->dev_ids[1]", edit.text)
         self.assertIn("info.device_count == info.physical_device_count", edit.text)
         self.assertEqual(edit.text.count("== GGML_CUDA_CC_RDNA3"), 2)
+        self.assertIn("ggml_backend_cuda_comm_rccl_admission_ok(ret->dev_ids.data(), ret->dev_ids.size())", edit.text)
         self.assertIn('provider = "adaptive";', edit.text)
         self.assertIn('provider = "ccl";', edit.text)
         self.assertIn('provider = "host";', edit.text)
@@ -123,12 +147,15 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(text, path.read_text(encoding="utf-8"))
 
-    def test_switch_uses_0860_cli_value_not_internal_env_threshold(self):
-        edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-try-allreduce")
-        self.assertIn("g_ggml_backend_cuda_comm_config.switch_bytes", edit.text)
-        self.assertIn("reduction_bytes < switch_bytes", edit.text)
-        self.assertNotIn("ggml_cuda_ar_pipeline_copy_threshold", edit.text)
-        self.assertNotIn("GGML_CUDA_AR_COPY_THRESHOLD", edit.text)
+    def test_switch_snapshots_0860_cli_value_per_context(self):
+        dispatch = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-try-allreduce")
+        init = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-init")
+        self.assertIn("comm_ctx->adaptive_switch_bytes", dispatch.text)
+        self.assertNotIn("g_ggml_backend_cuda_comm_config.switch_bytes", dispatch.text)
+        self.assertIn("ret->adaptive_switch_bytes = g_ggml_backend_cuda_comm_config.switch_bytes;", init.text)
+        self.assertIn("reduction_bytes < switch_bytes", dispatch.text)
+        self.assertNotIn("ggml_cuda_ar_pipeline_copy_threshold", dispatch.text)
+        self.assertNotIn("GGML_CUDA_AR_COPY_THRESHOLD", dispatch.text)
 
     def test_adaptive_host_preserves_1272_wire_policy(self):
         edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-init")
