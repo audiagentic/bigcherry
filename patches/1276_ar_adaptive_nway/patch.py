@@ -171,7 +171,8 @@ _ROOT3_LEAF1_NEW = """        ggml_cuda_set_device(p->devices[leaf1]);
 _HYBRID_WARN_OLD = """        GGML_LOG_WARN("hybrid: internal AllReduce init failed (n_devices != 2?); "
                       "hybrid dispatch will use %s only\\n", have_nccl ? "rccl" : "meta");
 """
-_HYBRID_WARN_NEW = """        GGML_LOG_WARN("hybrid: internal AllReduce init failed; "
+_HYBRID_WARN_NEW = """        // PGC10: N=3 internal root3 is valid; init failure is not a device-count diagnostic.
+        GGML_LOG_WARN("hybrid: internal AllReduce init failed; "
                       "hybrid dispatch will use %s only\\n", have_nccl ? "rccl" : "meta");
 """
 
@@ -268,7 +269,7 @@ ADAPTIVE = FilePatch(
             anchor=_re.escape(_HYBRID_WARN_OLD),
             mode="replace",
             text=_HYBRID_WARN_NEW,
-            guard=r"hybrid: internal AllReduce init failed;",
+            guard=r"PGC10: N=3 internal root3 is valid; init failure is not a device-count diagnostic\.",
             expect_matches=1,
             rationale="1244 admits N=3, so an internal-init failure is no longer evidence that the device count is not two.",
             max_span_lines=3,
