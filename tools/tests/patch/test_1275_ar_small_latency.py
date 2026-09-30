@@ -99,3 +99,42 @@ class Patch1275Mechanics(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Compose1272Tests(unittest.TestCase):
+    """1272's explicit-wire helper must honour 1275's switches (review req_91f06cc3b4094306)."""
+
+    def test_explicit_wire_helper_uses_slot_bypass_and_tuned_geometry(self):
+        import importlib.util
+        import shutil
+        import tempfile
+
+        repo = Path(__file__).resolve().parents[3]
+
+        def load(name):
+            spec = importlib.util.spec_from_file_location(name, repo / "patches" / name / "patch.py")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cuda = root / "ggml/src/ggml-cuda"
+            cuda.mkdir(parents=True)
+            for name in ("allreduce.cu", "allreduce.cuh"):
+                shutil.copy2(repo / "tools/lab/allreduce-wire/vendor-b11233" / name, cuda / name)
+            stack = ("1272_ar_host_compressed_wire", "1275_ar_small_latency")
+            for name in stack:
+                patches = [p for p in load(name).PATCHES if Path(p.path).name == "allreduce.cu"]
+                results = apply_all(patches, root)
+                self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
+            text = (cuda / "allreduce.cu").read_text(encoding="utf-8")
+            helper = text.split("static bool ggml_cuda_ar_allreduce_wire_typed(", 1)[1].split("\nstatic bool ", 1)[0]
+            self.assertIn("ggml_cuda_ar_acquire_slot(p, wire_skip_host_sync)", helper)
+            self.assertIn("dim3(p->small_blocks), dim3(p->small_threads)", helper)
+            self.assertNotIn("dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256)", helper)
+            before = text
+            again = [r for name in stack
+                     for r in apply_all([p for p in load(name).PATCHES if Path(p.path).name == "allreduce.cu"], root)]
+            self.assertTrue(all(r.ok for r in again))
+            self.assertEqual(before, (cuda / "allreduce.cu").read_text(encoding="utf-8"))
