@@ -117,9 +117,12 @@ build_line() {
         return $?
     fi
     echo "start build $run $(date -Is)"
+    # One build per (source, arch): always request llama-server so the build plan (and its
+    # directory) is the same whichever binary a row wants; every tool is built in the same tree
+    # (LLAMA_BUILD_TOOLS=ON), so the row's $target is resolved from it below.
     ROCM_PATH=/opt/rocm PYTHONPATH="$root/tools" bash "$here/locked-run.sh" \
         python3 -m bigcherry build --lane bigcherry:stock:linux-multi "${experiment_args[@]}" \
-        --arch "$arch" --binary-relative-path "$target" > "$log" 2>&1 < /dev/null
+        --arch "$arch" --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
