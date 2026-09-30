@@ -8,7 +8,10 @@ ROCR_VISIBLE_DEVICES=${BC_GPUS:-0,1} BIGCHERRY_PATCH_TRACE=1 \
   "$BIN" -m "$MODEL" -sm tensor -ngl 99 --fit off -c 4096 --flash-attn on --parallel 1 --port 18092 "$@" >"$LOG" 2>&1 &
 PID=$!
 for i in $(seq 1 180); do curl -sf http://127.0.0.1:18092/health >/dev/null && break; sleep 2; done
-curl -s http://127.0.0.1:18092/completion -d '{"prompt":"The capital of France is","n_predict":16,"temperature":0}' >/dev/null
+# BC_PREFLIGHT_PROMPT_REPEAT=N repeats the prompt N times so prefill-only paths (large
+# reductions, copy-engine/P2P AllReduce) fire; default 1 = short decode-style probe.
+prompt=$(python3 -c 'import sys; print(" ".join(["The capital of France is Paris, a city on the Seine."] * int(sys.argv[1])))' "${BC_PREFLIGHT_PROMPT_REPEAT:-1}")
+python3 -c 'import json,sys; print(json.dumps({"prompt": sys.argv[1], "n_predict": 16, "temperature": 0}))' "$prompt"   | curl -s http://127.0.0.1:18092/completion -d @- >/dev/null
 kill -INT $PID; wait $PID 2>/dev/null
 echo "log: $LOG"
 grep -c "$PAT" "$LOG" | sed 's/^/hits: /'

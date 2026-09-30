@@ -8,6 +8,8 @@ cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
 export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 export GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_P2P=1
+# 1252's P2P path only runs on copy-engine (>= 1 MiB) reductions, i.e. prefill: use a long prompt.
+export BC_PREFLIGHT_PROMPT_REPEAT=200
 L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
