@@ -322,7 +322,7 @@ patches = ["1273_iq_mmvq_rdna_tuning"]
 
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
-# off unless --spec-draft-n-min-adaptive > 0, so one binary serves both A/B arms.
+# off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
 patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
 
 [experiment.allreduce-root3]
@@ -337,6 +337,16 @@ patches = [
     "0860_allreduce_provider_cli",
     "1225_hi85_nccl_heterogeneous_arch_guard",
     "0840_hybrid_allreduce_dispatch",
+]
+
+[experiment.allreduce-adaptive-wire]
+# Adaptive dispatcher plus 1272's host-wire codec; exact dependency-complete composition.
+patches = [
+    "0830_split_reduce_telemetry",
+    "0860_allreduce_provider_cli",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+    "1272_ar_host_compressed_wire",
 ]
 
 [experiment.hi18-reduce-probe]
