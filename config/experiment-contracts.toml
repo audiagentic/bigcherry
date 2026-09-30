@@ -1836,3 +1836,45 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE]
+title = "1274: dense Q6_K MMVQ without Q8_1 activation quantization (ncols_dst==1 decode, gfx1100)"
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.source]
+# Local extension of RD33 (1241) from Q8_0 to Q6_K; not a port.
+source_id = "amd-ecosystem-llama-cpp"
+commits = []
+atomic_part = "1274_mmvq_kquant_f32_decode"
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.target]
+kind = "kernel_family"
+family = "mmvq"
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.hypothesis]
+family = "mmvq"
+expected_effect = "both"
+rationale = "Dense Q6_K weights x F32 activations at ncols_dst==1 skip the per-matmul Q8_1 quantize kernel, as RD33 does for Q8_0. Widths >1 keep the stock path. Not bit-identical, so correctness is the backend reference tolerance."
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.positive]
+models = ["tierB-qwen9b-q6k"]
+workloads = ["decode"]
+
+# Q8_0 27B has no Q6_K weights, so it cannot take the 1274 path.
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.controls]
+models = ["tierL-qwen27b-q8"]
+workloads = ["decode"]
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.correctness]
+backend_reference = "required"
+
+[contract.RD74-MMVQ-Q6_K-F32-DECODE.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
