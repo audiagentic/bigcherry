@@ -4,9 +4,12 @@
 # Each non-comment line: <patch> <producer|-> <arch> <device> <run-name> [extra campaign args...]
 # PROFILE lines use: PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
 # Optional leading MODEL=, HIP= and VIS= tokens are supported for both.
-# BUILD <run-name> <experiment|-> [arch-list] builds bigcherry:stock:linux-multi (+ <experiment>)
-#   for arch-list (comma-separated, default gfx1100; e.g. gfx1100,gfx1201 for XTX+R9700)
-#   and records BUILD_BINARY=<llama-server path>.
+# BUILD <run-name> <experiment|-> [arch-list] [binary] builds bigcherry:stock:linux-multi
+#   (+ <experiment>) for arch-list (comma-separated, default gfx1100; e.g. gfx1100,gfx1201 for
+#   XTX+R9700), target binary default bin/llama-server (e.g. bin/llama-perplexity), and records
+#   BUILD_BINARY=<path>.
+# SCRIPT <run-name> <script> [args...] runs a repo script under the host + GPU locks; @<build-run>
+#   arguments are resolved to binaries. REQUIRES= gates it like AB rows.
 # AB <run-name> <server-config.json> [ab-benchmark args] runs a balanced server A/B.
 # VIS=<gpus> on BUILD/AB/PREFLIGHT rows selects the GPU set they lock and (preflight) run on;
 #   default 0,1. AB topology itself comes from the config's environment block.
@@ -103,8 +106,8 @@ resolve_binary() {
 }
 
 build_line() {
-    # BUILD <run-name> <experiment|-> [arch-list]   ("-" builds the plain lane with no experiment)
-    local run=$2 arch=${4:-gfx1100} log rc plan bin
+    # BUILD <run-name> <experiment|-> [arch-list] [binary]   ("-" builds the plain lane with no experiment)
+    local run=$2 arch=${4:-gfx1100} target=${5:-bin/llama-server} log rc plan bin
     local experiment_args=()
     [ "$3" != - ] && experiment_args=(--experiment "$3")
     log="$work/runs/$run.log"
@@ -116,13 +119,13 @@ build_line() {
     echo "start build $run $(date -Is)"
     ROCM_PATH=/opt/rocm PYTHONPATH="$root/tools" bash "$here/locked-run.sh" \
         python3 -m bigcherry build --lane bigcherry:stock:linux-multi "${experiment_args[@]}" \
-        --arch "$arch" --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
+        --arch "$arch" --binary-relative-path "$target" > "$log" 2>&1 < /dev/null
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""
     # bigcherry build publishes under the checkout's work/builds (not the queue work root).
     local matches=()
-    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$root"/work/builds/*/"$plan"/bin/llama-server 2>/dev/null)
+    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$root"/work/builds/*/"$plan"/"$target" 2>/dev/null)
     [ "${#matches[@]}" -eq 1 ] && bin=${matches[0]}
     if [ "$rc" -eq 0 ] && [ -f "$bin" ]; then echo "BUILD_BINARY=$bin" >> "$log"; else [ "$rc" -eq 0 ] && rc=1; fi
     echo "BUILD_EXIT=$rc" >> "$log"
@@ -170,6 +173,37 @@ ab_line() {
     return "$rc"
 }
 
+script_line() {
+    # SCRIPT <run-name> <script> [args...]
+    local run=$2 script=$3 log rc arg bin
+    shift 3
+    log="$work/runs/$run.log"
+    if [ -f "$log" ] && grep -q '^SCRIPT_EXIT=' "$log"; then
+        echo "skip script $run (finished)"
+        return 0
+    fi
+    echo "start script $run $(date -Is)"
+    local args=()
+    for arg in "$@"; do
+        case "$arg" in
+            @*) bin=$(resolve_binary "$arg")
+                if [ -z "$bin" ]; then
+                    echo "blocked script $run: $arg has no BUILD_BINARY" | tee "$log"
+                    echo "SCRIPT_EXIT=1" >> "$log"
+                    return 1
+                fi
+                args+=("$bin") ;;
+            *) args+=("$arg") ;;
+        esac
+    done
+    mkdir -p "$work/runs/$run"
+    BC_RUN_DIR="$work/runs/$run" bash "$here/locked-run.sh" bash "$script" "${args[@]}" > "$log" 2>&1 < /dev/null
+    rc=$?
+    echo "SCRIPT_EXIT=$rc" >> "$log"
+    echo "done  script $run $(date -Is) rc=$rc"
+    return "$rc"
+}
+
 preflight_line() {
     # PREFLIGHT <run-name> <binary> <model> <marker-regex> [server args...]
     # Proves the patch marker fires on the target model; campaign rows that
@@ -213,6 +247,7 @@ campaign_line() {
         return 1
     fi
     if [ "$1" = AB ]; then ab_line "$@"; return $?; fi
+    if [ "$1" = SCRIPT ]; then script_line "$@"; return $?; fi
     run=$5
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^CAMPAIGN_EXIT=' "$log"; then
