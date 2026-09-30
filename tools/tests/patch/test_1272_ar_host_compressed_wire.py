@@ -14,12 +14,24 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1272_ar_host_compressed_wire/patch.py"
+_P2P_PATCH_FILE = _REPO / "patches/1252_nro03_allreduce_p2p_provider/patch.py"
 _VENDOR = _REPO / "tools/lab/allreduce-wire/vendor-b11233"
 
-_spec = importlib.util.spec_from_file_location("patch_1272", _PATCH_FILE)
-assert _spec is not None and _spec.loader is not None
-_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_module)
+
+def _load(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_module = _load("patch_1272", _PATCH_FILE)
+_p2p_module = _load("patch_1252_for_1272", _P2P_PATCH_FILE)
+
+
+def _allreduce_only(module):
+    return [p for p in module.PATCHES if p.path == "ggml/src/ggml-cuda/allreduce.cu"]
 
 
 class Patch1272Mechanics(unittest.TestCase):
@@ -55,7 +67,7 @@ class Patch1272Mechanics(unittest.TestCase):
             self.assertIn('case ggml_cuda_ar_wire_override::f16:  return ggml_cuda_ar_allreduce_wire_typed<T_dst, half>', text)
             self.assertIn('case ggml_cuda_ar_wire_override::q8_0: return ggml_cuda_ar_allreduce_wire_q8<T_dst>', text)
 
-            self.assertIn('return ggml_cuda_ar_allreduce_copy_outer<T_wire, T_dst>(', text)
+            self.assertIn('return ggml_cuda_ar_allreduce_copy_outer<T_wire, T_dst>', text)
             self.assertIn('ggml_cuda_ar_kernel<T_dst, T_wire><<<', text)
             self.assertIn('ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(src[i])', text)
             self.assertIn('ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k])', text)
@@ -65,15 +77,15 @@ class Patch1272Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(before, path.read_text(encoding="utf-8"))
 
-    def test_q8_0_codec_covers_both_paths(self):
+    def test_q8_0_codec_and_shared_finish_cover_both_paths(self):
         td, root, path = self._tree()
         with td:
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             text = path.read_text(encoding="utf-8")
 
-            # Upstream block_q8_0 is QK8_0=32 with fp16 d. Quantization pads
-            # the tail, and receiver-side dequantization sums in float.
+            self.assertEqual(1, text.count('static __global__ void ggml_cuda_ar_quantize_q8_0_kernel('))
+            self.assertEqual(1, text.count('static __global__ void ggml_cuda_ar_q8_0_add_kernel('))
             self.assertIn('block_q8_0  * __restrict__ dst', text)
             self.assertIn('const int lane = threadIdx.x % QK8_0;', text)
             self.assertIn('warp_reduce_max<QK8_0>(fabsf(x))', text)
@@ -81,18 +93,30 @@ class Patch1272Mechanics(unittest.TestCase):
             self.assertIn('const float a = ggml_cuda_cast<float>(local[ib].d)', text)
             self.assertIn('dst[i] = ggml_cuda_cast<T_dst>(a + b);', text)
 
-            # Large messages remain on the copy-engine route, with Q8 wire
-            # bytes staged D2H/H2D and fused peer dequant + local dequant + add.
+            self.assertIn('static __global__ void ggml_cuda_ar_q8_0_add_residual_kernel(', text)
+            self.assertIn('static void ggml_cuda_ar_launch_finish(', text)
+            self.assertIn('residual_buf ? residual_buf[i] : nullptr', text)
+
             self.assertIn('static bool ggml_cuda_ar_allreduce_copy_q8_impl(', text)
             self.assertIn('return ggml_cuda_ar_allreduce_copy_q8_outer<T_dst>', text)
-            self.assertIn('ggml_cuda_ar_q8_0_add_kernel<T_dst><<<', text)
             self.assertIn('reinterpret_cast<const block_q8_0 *>(p->dev_tmp[i])', text)
 
-            # Decode-sized messages stay on mapped-host chunked transport.
             self.assertIn('static __global__ void ggml_cuda_ar_q8_0_mapped_kernel(', text)
             self.assertIn('p->host_buf[i].dev + (size_t) slot * p->buf_bytes', text)
             self.assertIn('p->host_buf[peer].dev + (size_t) slot * p->buf_bytes', text)
             self.assertIn('ggml_cuda_ar_arrival_ptr(p, slot, peer)', text)
+
+    def test_composes_after_1252_p2p_provider(self):
+        td, root, path = self._tree()
+        with td:
+            p2p = apply_all(_allreduce_only(_p2p_module), root)
+            self.assertTrue(all(r.ok for r in p2p), [e.detail for r in p2p for e in r.failed])
+            wire = apply_all(_module.PATCHES, root)
+            self.assertTrue(all(r.ok for r in wire), [e.detail for r in wire for e in r.failed])
+            text = path.read_text(encoding="utf-8")
+            self.assertIn('p2p_enabled;', text)
+            self.assertIn('ggml_cuda_ar_wire_override wire_override;', text)
+            self.assertEqual(1, text.count('ggml_cuda_ar_wire_override wire_override;'))
 
     def test_edit_contracts_are_fail_closed(self):
         for file_patch in _module.PATCHES:
