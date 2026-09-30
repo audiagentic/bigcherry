@@ -32,7 +32,7 @@ from bigcherry.patcher import Edit, FilePatch
 _TIME_MAJOR_FALLBACK = r'''
     if (!channels_major) {
         if (std::getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_declined_split\n");
+            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1263_prbe41 path=ssm_conv_channels_major_declined_split\n");
         }
 
         conv_states = ggml_reshape_3d(ctx0, conv_states, conv_kernel_size - 1, conv_channels, n_seqs);
