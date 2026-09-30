@@ -106,13 +106,11 @@ _VIRTUAL_DEVICE_ANCHOR = (
 
 _ADMISSION_FUNCTION = '''
 // GP02: shared, reusable, ordinal-independent RCCL admission check.
-// Queries each participating device's REAL PCIe-atomics capability via
-// the standard HIP API (hipDeviceAttributeHostNativeAtomicSupported) --
-// confirmed on real hardware (2026-09-02) to correctly identify the one
-// PCIe-limited device on this box with no ordinal hardcoded, unlike this
-// guard's original architecture-inequality proxy. Callable from every
-// ncclCommInitAll() entry point in the tree; see HI85/HI138/GP02.
+// HIP queries each participating device's REAL PCIe-atomics capability via
+// hipDeviceAttributeHostNativeAtomicSupported. Non-HIP builds keep this
+// shared helper compile-safe and admit; they cannot perform the HIP query.
 static bool ggml_backend_cuda_comm_rccl_admission_ok(const int * dev_ids, size_t n_devices) {
+#ifdef GGML_USE_HIP
     for (size_t i = 0; i < n_devices; ++i) {
         int supported = 0;
         hipError_t rc = hipDeviceGetAttribute(&supported, hipDeviceAttributeHostNativeAtomicSupported, dev_ids[i]);
@@ -121,6 +119,11 @@ static bool ggml_backend_cuda_comm_rccl_admission_ok(const int * dev_ids, size_t
         }
     }
     return true;
+#else
+    (void) dev_ids;
+    (void) n_devices;
+    return true;
+#endif
 }
 '''
 
