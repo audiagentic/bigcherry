@@ -11,7 +11,7 @@ L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 BUILD b-27b-awl adaptive-wire-latency
-AB ab-27b-adaptive-switch $L/server-ab-adaptive-switch.json --pairs 3
+AB ab-27b-adaptive-switch $L/server-ab-adaptive-switch.json --pairs 6
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
