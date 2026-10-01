@@ -1878,3 +1878,47 @@ effect_evidence_policy = "improvement_no_regression_v1"
 min_sessions = 4
 min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100]
+title = "PGC09: adaptive AllReduce (host below 1 MiB, RCCL at or above) as the default for dual gfx1100 tensor split"
+prerequisites = []
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.source]
+# Local BigCherry work, no external source; registered as the llama.cpp
+# mainline it extends (the host path and RCCL provider are upstream code).
+source_id = "llama-cpp-upstream"
+commits = []
+atomic_part = "0840_hybrid_allreduce_dispatch with 0860_allreduce_provider_cli + 1225_hi85_nccl_heterogeneous_arch_guard as common patches in both arms"
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.target]
+kind = "orchestration"
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.hypothesis]
+expected_effect = "performance"
+rationale = "On exactly two gfx1100 devices under -sm tensor, decode-sized AllReduces (20-120 KB per call, including MTP verify) are latency-bound and faster on the mapped-host path than RCCL, while prompt-processing AllReduces (>= 1 MiB) stay on RCCL. Both providers sum two f32 partials exactly, so output must be bit-identical. Measured exploratory: MTP depth 5 tg512 +7.9%, tg2048 +2.3%; plain decode +6.9%; prefill pp4096 within 0.25%. Known limitation tracked in PGC12: without MTP at ubatch 512, a 4-token prompt tail costs pp1024 about -4%."
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.scope]
+backend = "hip"
+architectures = ["gfx1100"]
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.positive]
+models = ["tierL-qwen27b-q8"]
+workloads = ["mtp_verify"]
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.controls]
+models = ["tierL-qwen27b-q8"]
+workloads = ["prefill"]
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.correctness]
+bit_identical = "required"
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.measurement]
+server_requests_per_start = 5
+
+[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.acceptance]
+target_kernel_gain_pct = 0.0
+max_control_regression_pct = 1
+effect_evidence_policy = "improvement_no_regression_v1"
+min_sessions = 4
+min_evidence_effect_pct = 0.0
+min_paired_rounds = 10
