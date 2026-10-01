@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "evidence_role": "production",
-  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
   "server_args": ["-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096", "-np", "1"],
   "environment": {"HIP_VISIBLE_DEVICES": "0,1", "ROCR_VISIBLE_DEVICES": "0,1", "LLAMA_SERVER_ENABLE_SHUTDOWN": "1"},
   "expected_execution": {

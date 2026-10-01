@@ -8,7 +8,7 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 K=tools/lab/ar-accuracy/kld.sh
 C=/mnt/vault/development/llmhosts/llamacpp/bench/corpus/ppl-default.txt
 R=/mnt/data/bigcherry-work/runs/kld-27b-p2p-reference.kld

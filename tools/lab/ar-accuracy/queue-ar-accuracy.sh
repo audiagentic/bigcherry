@@ -6,7 +6,7 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 K=tools/lab/ar-accuracy/kld.sh
 # Corpus: the repo's own docs at the checked-out commit (English technical prose, >= 32 x 2048
 # tokens; ppl-default.txt was only 2 chunks). Built fresh each run so it is reproducible from git.

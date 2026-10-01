@@ -8,7 +8,7 @@ cd /mnt/vault/development/projects/bigcherry/workspaces/main
 source tools/lab/plan-qualification/cooldown.sh
 STOCK=$1; PATCHED=$2; O=$3
 mkdir -p "$O"
-MR=/mnt/vault/llm-models
+MR=/mnt/data/llm-models
 ladder() { python -m bigcherry reference-ladder --arm stock="$STOCK" --arm patched="$PATCHED" --model-id "$1" --devices "$2" --output "$O/$3" --rounds-per-arm 3; }
 probe() { # model-path devices tag extra-args
   mkdir -p "$O/activation"

@@ -2,7 +2,7 @@
 # MTP greedy parity on the t-0840d builds: control (RCCL) and subject (adaptive, f32 host).
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
-export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 B=/mnt/data/bigcherry-work/builds/gfx1100-974f5feb
 jobs=$(mktemp)

@@ -6,7 +6,7 @@
 set -u
 server=$1 out=$2
 lb=$(dirname "$server")/llama-bench
-model=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 rp=${BC_HIP_PATH:-/opt/rocm}/bin/rocprofv3
 export HIP_VISIBLE_DEVICES=0,1 ROCR_VISIBLE_DEVICES=0,1
 common=(-m "$model" -ngl 99 -sm tensor -fa on -b 2048 -r 1 -o jsonl)

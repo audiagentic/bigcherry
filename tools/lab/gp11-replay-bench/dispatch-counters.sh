@@ -24,7 +24,7 @@
 #                                                (only in a build carrying HI160)
 set -u
 H=/mnt/vault/development/llmhosts/llamacpp
-M=${MODEL:-/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}
+M=${MODEL:-/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}
 CACHE_PATH=${CACHE_PATH:-$HOME/.cache/bigcherry/tune-campaigns/b4d3cf708425/dispatch.cache}
 BENCH_MODEL=${BENCH_MODEL:-qwen27b}
 DEVICES=${DEVICES:-0,1}

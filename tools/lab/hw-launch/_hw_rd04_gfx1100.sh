@@ -17,7 +17,7 @@ python3 -m bigcherry.patch.validation_campaign \
 	--baseline-source bigcherry-tuning \
 	--amdgpu-targets gfx1100 \
 	--device-map gfx1100=0 \
-	--model /mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf \
+	--model /mnt/data/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf \
 	--producer-corpus /home/audumla/perf-sweep-20260911/corpus/wikitext-2-raw/wiki.test.raw \
 	--hip-path /mnt/vault/tmp/bc-rocm \
 	--workdir /mnt/vault/tmp/bc-runs/rd04-gfx1100-contract-run2 \

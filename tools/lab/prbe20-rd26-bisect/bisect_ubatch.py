@@ -5,7 +5,7 @@ subject llama-results binary. See README.md for the question this answers.
 Usage (on Brutus, inside the repo root):
     BC_HIP_PATH=/mnt/vault/tmp/bc-rocm python3 tools/lab/prbe20-rd26-bisect/bisect_ubatch.py \
         --binary work/worktrees/builds/1210_rd26_bitidentical_decode_verify_standalone-subject-gfx1100+gfx1201+gfx1030/bin/llama-results \
-        --model /mnt/vault/llm-models/qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf \
+        --model /mnt/data/llm-models/qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf \
         --device 0
 """
 
