@@ -52,6 +52,8 @@ probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
 probe cpu3-tensor-exp6900 0,1,2,3 -sm tensor -ts 3,3,2,0 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=ROCm3'
 probe cpu3-tensor-exp6900-mtp3 0,1,2,3 -sm tensor -ts 3,3,2,0 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=ROCm3' --spec-type draft-mtp --spec-draft-n-max 3
 probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-tensor-cpumoe8 0,1,2 -sm tensor -ts 3,3,2 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=CPU'
+probe cpu3-tensor-cpumoe16 0,1,2 -sm tensor -ts 3,3,2 -ot 'blk\.(3[2-9]|4[0-7])\.ffn_(gate|up|down)_exps.*=CPU'
 probe cpu3-tensor-192k 0,1,2 -sm tensor -ts 1,1,1 -c 196608 -ctk q8_0 -ctv q8_0
 probe cpu3-tensor-exp6900-192k 0,1,2,3 -sm tensor -ts 3,3,2,0 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=ROCm3' -c 196608 -ctk q8_0 -ctv q8_0
 for n in cpu3-tensor-exp6900; do
