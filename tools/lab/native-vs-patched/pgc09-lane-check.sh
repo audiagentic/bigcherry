@@ -16,7 +16,7 @@ for arm in control subject; do
   for _ in $(seq 150); do curl -sf http://127.0.0.1:$port/health >/dev/null && break; sleep 2; done
   for i in 1 2 3; do
     curl -s http://127.0.0.1:$port/completion -H 'Content-Type: application/json' \
-      -d '{"prompt":"Write a long detailed story about a lighthouse keeper.","n_predict":512,"temperature":0,"cache_prompt":false}' \
+      -d "{\"prompt\":\"Write a long detailed story about a lighthouse keeper.\",\"n_predict\":${N_PREDICT:-512},\"temperature\":0,\"cache_prompt\":false,\"ignore_eos\":true}" \
       | python3 -c "import json,sys;t=json.load(sys.stdin)['timings'];print('$arm', round(t['predicted_per_second'],2), t.get('draft_n_accepted'), t.get('draft_n'))"
   done
   grep -h "BIGCHERRY_PATCH_HIT patch=0860" "$out/$arm.log" | head -1
