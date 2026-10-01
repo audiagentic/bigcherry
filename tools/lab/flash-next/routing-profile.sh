@@ -12,9 +12,9 @@ ec=$tree/bin/llama-eval-callback
   || { echo "eval-callback build failed"; tail -20 "$out/build-eval-callback.log"; exit 1; }
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 root=$(cd "$(dirname "$0")/../../.." && pwd)
-{ head -c 6000 /mnt/data/bigcherry-work/corpus/kld-docs.txt; echo; echo "Now some code:"; head -c 6000 "$root/tools/bigcherry/patch/campaign/build.py"; } > "$out/prompt.txt"
+{ head -c 40000 /mnt/data/bigcherry-work/corpus/kld-docs.txt; echo; echo "Now some code:"; cat "$root/tools/bigcherry/patch/campaign/build.py" "$root/tools/bigcherry/campaign/build.py" | head -c 20000; } > "$out/prompt.txt"
 HIP_VISIBLE_DEVICES=0,1,2 ROCR_VISIBLE_DEVICES=0,1,2 BIGCHERRY_DEBUG_FULL_TENSORS=1 \
-  "$ec" -m "$model" -ngl 99 --fit off -sm tensor -ts 3,3,2 -c 8192 -b 4096 -ub 4096 --flash-attn on \
+  "$ec" -m "$model" -ngl 99 --fit off -sm tensor -ts 3,3,2 -c 32768 -b 4096 -ub 4096 --flash-attn on \
   -ot '^per_layer_token_embd\.weight$=CPU' --tensor-filter 'ffn_moe_topk.*' -f "$out/prompt.txt" \
   > "$out/dump.txt" 2> "$out/stderr.txt"
 echo "EVAL_EXIT=$?"
