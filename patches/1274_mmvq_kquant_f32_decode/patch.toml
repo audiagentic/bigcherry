@@ -1,7 +1,7 @@
 schema = 1
 id = "1274_mmvq_kquant_f32_decode"
 order = 1274
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

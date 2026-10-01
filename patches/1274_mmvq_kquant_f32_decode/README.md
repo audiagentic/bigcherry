@@ -19,3 +19,17 @@ Dual gfx1100, 27B UD-Q6_K: decode +1.6..+1.7%, prefill -0.43% (order-balanced A/
 ## Promotion scope
 
 gfx1100 dense Q6_K plain non-speculative decode only. Other architectures, quant types, MoE/ID matmuls and wider batches are out of scope.
+
+## Promotion evidence (2026-10-01)
+
+Campaign `t-1274b-gfx1100-s1..s4` at pin b11233, contract RD74-MMVQ-Q6_K-F32-DECODE (verdict pass):
+
+| session | positive tg128 (9B Q6_K, 1 card) | control (27B Q8_0, -sm tensor) |
+|---|---|---|
+| s1 | +4.28% | -0.01% |
+| s2 | +4.27% | -0.01% |
+| s3 | +4.17% | -0.03% |
+| s4 | +4.22% | 0.00% |
+
+- Correctness: 13/13 Q6_K MUL_MAT cases within CPU-reference tolerance on both arms. Activation: marker on subject at ncols=1 only; none on control; none for ncols 2..8.
+- Native llama.cpp baseline comparison (s4 reference ladder, 9B Q6_K tg128 t/s): stock (native llama.cpp) 71.04, base 71.06, validated set 71.46 (+0.59% vs stock), validated + 1274 74.11 (+4.32% vs stock). pp512: validated + 1274 +3.84% vs stock (the validated set's own +3.97%); 1274 does not move prefill.
