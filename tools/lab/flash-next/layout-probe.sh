@@ -35,7 +35,7 @@ text = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").re
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 rows = []
 for i in range(3):
-    t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0})["timings"]
+    t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0, "ignore_eos": True})["timings"]
     rows.append({k: t.get(k) for k in ("prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second", "draft_n", "draft_n_accepted")})
 greedy = post({"prompt": "List the first ten prime numbers and explain why 1 is not prime.", "n_predict": 64, "cache_prompt": False, "temperature": 0, "seed": 1})
 open(f"{out}/{name}.greedy.txt", "w").write(greedy["content"])
@@ -49,11 +49,10 @@ PY
   kill -INT "$pid"; wait "$pid"
 }
 probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
-probe cpu3-layer 0,1,2 -sm layer -ts 5,6,5
-probe all4-tensor 0,1,2,3 -sm tensor -ts 15,15,10,8
+probe cpu3-tensor-exp6900 0,1,2,3 -sm tensor -ts 3,3,2,0 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=ROCm3'
+probe cpu3-tensor-exp6900-mtp3 0,1,2,3 -sm tensor -ts 3,3,2,0 -ot 'blk\.(4[0-7])\.ffn_(gate|up|down)_exps.*=ROCm3' --spec-type draft-mtp --spec-draft-n-max 3
 probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 3
-probe cpu3-tensor-ngram-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type ngram-mod,draft-mtp --spec-draft-n-max 3
-for n in cpu3-layer all4-tensor; do
+for n in cpu3-tensor-exp6900; do
   [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
 done
 echo PROBE_DONE
