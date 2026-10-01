@@ -15,21 +15,13 @@
   "--flash-attn",
   "on",
   "--ubatch-size",
-  "2048",
+  "512",
   "--batch-size",
   "2048",
   "--threads",
   "8",
   "--parallel",
-  "1",
-  "--spec-type",
-  "draft-mtp",
-  "--spec-draft-n-max",
-  "5",
-  "-ctkd",
-  "q8_0",
-  "-ctvd",
-  "q8_0"
+  "1"
  ],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
@@ -58,32 +50,37 @@
   {
    "mode": "stock",
    "shutdown_method": "sigint",
-   "name": "rccl_default",
-   "binary": "@b-27b-control",
-   "environment": {
-    "GGML_CUDA_ALLREDUCE": "nccl"
-   }
+   "binary": "@b-27b-awl",
+   "name": "ccl",
+   "server_args": [
+    "--allreduce",
+    "ccl"
+   ],
+   "environment": {}
   },
   {
    "mode": "stock",
    "shutdown_method": "sigint",
-   "name": "rccl_ch2",
-   "binary": "@b-27b-control",
-   "environment": {
-    "GGML_CUDA_ALLREDUCE": "nccl",
-    "NCCL_MIN_NCHANNELS": "2",
-    "NCCL_MAX_NCHANNELS": "2"
-   }
+   "binary": "@b-27b-awl",
+   "name": "adaptive1m",
+   "server_args": [
+    "--allreduce",
+    "adaptive"
+   ],
+   "environment": {}
   },
   {
    "mode": "stock",
    "shutdown_method": "sigint",
-   "name": "rccl_ch8",
-   "binary": "@b-27b-control",
-   "environment": {
-    "GGML_CUDA_ALLREDUCE": "nccl",
-    "NCCL_MIN_NCHANNELS": "8"
-   }
+   "binary": "@b-27b-awl",
+   "name": "adaptive16k",
+   "server_args": [
+    "--allreduce",
+    "adaptive",
+    "--allreduce-switch-bytes",
+    "16384"
+   ],
+   "environment": {}
   }
  ]
 }
