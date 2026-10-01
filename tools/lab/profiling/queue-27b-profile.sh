@@ -7,7 +7,7 @@ export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 BUILD b-27b-awl adaptive-wire-latency
-SCRIPT prof-27b-q8-1 tools/lab/profiling/profile-27b-q8.sh @b-27b-awl /mnt/data/bigcherry-work/runs/prof-27b-q8-1/out
+SCRIPT prof-27b-q8-2 tools/lab/profiling/profile-27b-q8.sh @b-27b-awl /mnt/data/bigcherry-work/runs/prof-27b-q8-2/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
