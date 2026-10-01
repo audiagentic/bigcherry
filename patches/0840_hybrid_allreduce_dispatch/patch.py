@@ -13,10 +13,13 @@ remains available outside that envelope.
 
 0840 owns the minimal provider_name field required by adaptive dispatch; the
 0830 telemetry package may observe it when present but is not a runtime
-dependency. Adaptive never mutates the internal pipeline's wire state. When
-composed with 1272_ar_host_compressed_wire, GGML_CUDA_AR_WIRE therefore
-selects the exact same host codec/path as the plain internal provider.
+dependency. Adaptive sets its internal pipeline's bf16 round-trip threshold to
+0, so the host path reduces in exact f32 (PGC11: the bf16 host wire costs MTP
+acceptance and long-decode throughput); the plain internal provider keeps the
+pristine bf16 default.
 """
+
+import re as _re
 
 GROUP = "core"
 STATE = "validated"
@@ -127,8 +130,12 @@ CUDA = FilePatch(
                 "#endif // GGML_USE_NCCL\n"
                 "    ret->ar_pipeline = ggml_cuda_ar_pipeline_init(ret->dev_ids.data(), ret->dev_ids.size());\n"
                 "    const bool have_internal = ret->ar_pipeline != nullptr;\n"
-                "    // Leave the internal pipeline untouched: 1272/GGML_CUDA_AR_WIRE and\n"
-                "    // pristine host wire selection must match the plain host provider.\n"
+                "    // Adaptive host path reduces in exact f32 (no bf16 round-trip): decode-sized\n"
+                "    // messages then match RCCL's f32 sum, and MTP draft acceptance stays at RCCL\n"
+                "    // level (PGC11 wire study: bf16 host wire costs ~2 pp acceptance, tg2048 -1.7%).\n"
+                "    if (have_internal) {\n"
+                "        ggml_cuda_ar_pipeline_set_bf16_threshold(ret->ar_pipeline, 0);\n"
+                "    }\n"
                 "    if (!have_internal) {\n"
                 "        (void) cudaGetLastError();\n"
                 "        GGML_LOG_WARN(\"hybrid: internal AllReduce init failed (n_devices != 2?); \"\n"
@@ -223,4 +230,63 @@ CUDA_PROVIDER = FilePatch(
     ),
 )
 
-PATCHES = [CUDA, CUDA_PROVIDER]
+_AR_INIT_DECL = (
+    "ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(\n"
+    "    const int * devices, size_t n_devices);\n"
+)
+
+AR_HEADER = FilePatch(
+    path="ggml/src/ggml-cuda/allreduce.cuh",
+    language="none",
+    description="Declare a setter for the internal pipeline's bf16 round-trip threshold.",
+    edits=(
+        Edit(
+            id="ar-bf16-threshold-setter-decl",
+            anchor=_re.escape(_AR_INIT_DECL),
+            mode="insert_after",
+            text=(
+                "\n// Bytes at or above which F32 inputs are reduced via a BF16 round-trip;\n"
+                "// 0 keeps every reduction in F32. Overrides GGML_CUDA_AR_BF16_THRESHOLD.\n"
+                "void ggml_cuda_ar_pipeline_set_bf16_threshold(ggml_cuda_ar_pipeline * pipeline, size_t bytes);\n"
+            ),
+            guard=r"void ggml_cuda_ar_pipeline_set_bf16_threshold\(ggml_cuda_ar_pipeline \* pipeline, size_t bytes\);",
+            expect_matches=1,
+            rationale="Adaptive (0840) selects an exact F32 host wire without an environment variable.",
+        ),
+    ),
+)
+
+_AR_INIT_DEF = "ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n_devices) {\n"
+_AR_MUSA_FREE = "void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline *) {\n}\n"
+
+AR_SOURCE = FilePatch(
+    path="ggml/src/ggml-cuda/allreduce.cu",
+    language="none",
+    description="Define the bf16 threshold setter (HIP/CUDA pipeline and the MUSA stub).",
+    edits=(
+        Edit(
+            id="ar-bf16-threshold-setter-def",
+            anchor=_re.escape(_AR_INIT_DEF),
+            mode="insert_before",
+            text=(
+                "void ggml_cuda_ar_pipeline_set_bf16_threshold(ggml_cuda_ar_pipeline * p, size_t bytes) {\n"
+                "    p->bf16_threshold = bytes;\n"
+                "}\n\n"
+            ),
+            guard=r"p->bf16_threshold = bytes;",
+            expect_matches=1,
+            rationale="The pipeline struct is private to allreduce.cu; set the field beside its init.",
+        ),
+        Edit(
+            id="ar-bf16-threshold-setter-musa-stub",
+            anchor=_re.escape(_AR_MUSA_FREE),
+            mode="insert_after",
+            text="void ggml_cuda_ar_pipeline_set_bf16_threshold(ggml_cuda_ar_pipeline *, size_t) {\n}\n",
+            guard=r"void ggml_cuda_ar_pipeline_set_bf16_threshold\(ggml_cuda_ar_pipeline \*, size_t\) \{",
+            expect_matches=1,
+            rationale="Keep the declared API defined in the MUSA build too.",
+        ),
+    ),
+)
+
+PATCHES = [CUDA, CUDA_PROVIDER, AR_HEADER, AR_SOURCE]

@@ -1895,7 +1895,7 @@ kind = "orchestration"
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.hypothesis]
 expected_effect = "performance"
-rationale = "On exactly two gfx1100 devices under -sm tensor, decode-sized AllReduces (20-120 KB per call, including MTP verify) are latency-bound and faster on the mapped-host path than RCCL, while prompt-processing AllReduces (>= 1 MiB) stay on RCCL. Both providers sum two f32 partials exactly, so output must be bit-identical. Measured exploratory: MTP depth 5 tg512 +7.9%, tg2048 +2.3%; plain decode +6.9%; prefill pp4096 within 0.25%. Known limitation tracked in PGC12: without MTP at ubatch 512, a 4-token prompt tail costs pp1024 about -4%."
+rationale = "On exactly two gfx1100 devices under -sm tensor, decode-sized AllReduces (20-120 KB per call, including MTP verify) are latency-bound and faster on the mapped-host path than RCCL, while prompt-processing AllReduces (>= 1 MiB) stay on RCCL. Adaptive's host path reduces in exact f32 (0840 sets the bf16 round-trip threshold to 0); output must be near-lossless against RCCL (identical tokens). Measured exploratory: MTP depth 5 tg512 +7.9%, tg2048 +2.3%; plain decode +6.9%; prefill pp4096 within 0.25%. Known limitation tracked in PGC12: without MTP at ubatch 512, a 4-token prompt tail costs pp1024 about -4%."
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.scope]
 backend = "hip"
@@ -1910,7 +1910,10 @@ models = ["tierL-qwen27b-q8"]
 workloads = ["prefill"]
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.correctness]
-bit_identical = "required"
+# full_vocab.NEAR_LOSSLESS (as RD17/1207): RCCL rounds >= 32768-element messages
+# via bf16, adaptive's host path keeps them in exact f32, so prompt-phase sums
+# differ in rounding; generated tokens must still match exactly.
+backend_reference = "required"
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.measurement]
 server_requests_per_start = 5
