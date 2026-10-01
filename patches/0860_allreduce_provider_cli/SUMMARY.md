@@ -1,6 +1,6 @@
 # 0860_allreduce_provider_cli
 
-**Status:** untested
+**Status:** validated
 **Plan item:** PGC04
 
 ## What it does
