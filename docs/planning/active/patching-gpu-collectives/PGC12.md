@@ -53,6 +53,9 @@ Plain and MTP A/B vs RCCL: decode gain kept in both, pp256/pp1024/pp4096 within 
 
 ## Notes
 
+2026-10-01 profile (prof-27b-q8-2, pp2048 ubatch): per-device compute 0.93 s vs AllReduce 2.4 s per 2048-token ubatch (profiled; ~4 ms/AR unprofiled), start skew between XTX ~0.1 ms, so service not imbalance. Links: XTX PCIe 4.0 x8, R9700 x4, no P2P: host-staged ceiling ~6-7 GB/s, measured 5-10 GB/s. Prefill lever is compute/communication overlap (chunked AR along tokens) or fewer prefill ARs, not RCCL tuning.
+
 ## Change Log
 
 - 2026-10-01T05:46:32.484296+00:00 (created-by): Created by agent
+- 2026-10-01T07:45:53.626006+00:00 (updated-by): Updated: section:notes
