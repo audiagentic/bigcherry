@@ -6,9 +6,11 @@ the CLI provider left at ``auto`` the subject selects adaptive (host path below
 1 MiB, RCCL at or above) for exactly two RDNA3 devices under a tensor split, so
 both arms run the same server arguments.
 
-- correctness (``bit_identical``): a fixed temperature-0 request on a
-  dual-gfx1100 ``-sm tensor`` llama-server WITHOUT speculative decoding must
-  give byte-identical full-vocabulary logprobs and tokens on both arms.
+- correctness (``backend_reference``): a fixed temperature-0 request on a
+  dual-gfx1100 ``-sm tensor`` llama-server WITHOUT speculative decoding must meet
+  full_vocab.NEAR_LOSSLESS (identical generated tokens; KL, material-logprob and
+  nucleus bounds). Not bit-identical: RCCL rounds messages of >= 32768 elements
+  (prompt) via bf16 while adaptive's host path reduces them in exact f32.
 - activation: the subject server log carries 0860's provider marker with
   ``provider=adaptive``; the control build has no 0860 and cannot.
 - performance (positive): paired MTP speculative decode on the production model
@@ -95,13 +97,13 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     try:
         comparison = full_vocab.compare_servers(
             control_session=_factory("control"), subject_session=_factory("subject"),
-            prompt=_PROMPT, n_predict=_N_PREDICT, criterion=full_vocab.BIT_IDENTICAL,
+            prompt=_PROMPT, n_predict=_N_PREDICT, criterion=full_vocab.NEAR_LOSSLESS,
             scratch_dir=ctx.workdir / "scratch" / "pgc09",
         )
     except full_vocab.FullVocabError as exc:
-        raise _fail(f"bit_identical: {exc}") from exc
-    bit_identical = experiment_contract.CorrectnessResult(
-        check="bit_identical", passed=comparison.passed,
+        raise _fail(f"backend_reference: {exc}") from exc
+    backend_reference = experiment_contract.CorrectnessResult(
+        check="backend_reference", passed=comparison.passed,
         detail=f"dual-gfx1100 -sm tensor, provider auto (adaptive on subject, RCCL on control): {comparison.detail}",
     )
 
@@ -120,8 +122,8 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT, text=support.compact_log(control_text))
     ctx.runtime.write_artifact(
         name=_CORRECTNESS_ARTIFACT,
-        payload={"schema_version": 1, "contract_id": _CONTRACT_ID, "check": "bit_identical",
-                 "passed": comparison.passed, "detail": bit_identical.detail, "model_identity": identity,
+        payload={"schema_version": 1, "contract_id": _CONTRACT_ID, "check": "backend_reference",
+                 "passed": comparison.passed, "detail": backend_reference.detail, "model_identity": identity,
                  "comparison": comparison.document()},
     )
 
@@ -169,7 +171,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
     )
     return vp.ProducerResult(
         correctness={"disposition": "passed" if comparison.passed else "failed",
-                     "mechanism": "pgc09-dual-gfx1100-full-vocab-bit-identical", "detail": bit_identical.detail},
+                     "mechanism": "pgc09-dual-gfx1100-full-vocab-near-lossless", "detail": backend_reference.detail},
         validation_build_identities=ctx.validation_build_identities,
         activation_evidence=activation,
         performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
@@ -179,7 +181,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         },
         check_results=(),
         lane_effects=(),
-        contract_correctness_results=(bit_identical,),
+        contract_correctness_results=(backend_reference,),
         promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
         promotion_target_metric={_CONTRACT_ID: "mtp_wall_tps"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},

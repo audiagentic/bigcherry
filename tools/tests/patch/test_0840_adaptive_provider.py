@@ -157,13 +157,15 @@ class Patch0840AdaptiveProvider(unittest.TestCase):
         self.assertNotIn("ggml_cuda_ar_pipeline_copy_threshold", dispatch.text)
         self.assertNotIn("GGML_CUDA_AR_COPY_THRESHOLD", dispatch.text)
 
-    def test_adaptive_host_preserves_1272_wire_policy(self):
+    def test_adaptive_host_wire_is_exact_f32(self):
         edit = next(e for e in self.dispatch_patch.edits if e.id == "hybrid-init")
-        self.assertNotIn("force_exact_f32", edit.text)
-        self.assertNotIn("bf16_threshold =", edit.text)
-        self.assertIn("GGML_CUDA_AR_WIRE", edit.text)
-        self.assertTrue(all(p.path != "ggml/src/ggml-cuda/allreduce.cu" for p in self.patches))
-        self.assertTrue(all(p.path != "ggml/src/ggml-cuda/allreduce.cuh" for p in self.patches))
+        self.assertIn("ggml_cuda_ar_pipeline_set_bf16_threshold(ret->ar_pipeline, 0);", edit.text)
+        header = next(p for p in self.patches if p.path == "ggml/src/ggml-cuda/allreduce.cuh")
+        source = next(p for p in self.patches if p.path == "ggml/src/ggml-cuda/allreduce.cu")
+        self.assertIn("void ggml_cuda_ar_pipeline_set_bf16_threshold(ggml_cuda_ar_pipeline * pipeline, size_t bytes);",
+                      header.edits[0].text)
+        self.assertEqual({e.id for e in source.edits},
+                         {"ar-bf16-threshold-setter-def", "ar-bf16-threshold-setter-musa-stub"})
 
     def test_adaptive_wire_recipe_is_exact_and_resolves(self):
         data = tomllib.loads((_REPO / "config/recipes.toml").read_text(encoding="utf-8"))
