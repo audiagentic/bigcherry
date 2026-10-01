@@ -5,6 +5,7 @@ set -u
 source /home/audumla/bc-pytest-venv/bin/activate
 export PYTHONPATH=tools ROCM_PATH=/opt/rocm
 cd /mnt/vault/development/projects/bigcherry/workspaces/main
+source tools/lab/plan-qualification/cooldown.sh
 STOCK=$1; PATCHED=$2; O=$3
 mkdir -p "$O"
 MR=/mnt/vault/llm-models
@@ -22,7 +23,7 @@ ladder tierA-qwen4b-q6k 2 gfx1201; sleep 120
 probe $A 0 tierA-gfx1100 ""
 ladder tierA-qwen4b-q6k 0 gfx1100; sleep 120
 probe $B 0 tierB-gfx1100 ""
-ladder tierB-qwen9b-q6k 0 gfx1100; sleep 300
+ladder tierB-qwen9b-q6k 0 gfx1100; gpu_cooldown
 probe $L 0,1 tierL-tensor2 "-sm tensor"
 ladder tierL-qwen27b-q8 0,1 tensor2
 echo LADDER-DONE
