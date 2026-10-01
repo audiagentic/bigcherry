@@ -15,7 +15,7 @@
   "--flash-attn",
   "on",
   "--ubatch-size",
-  "512",
+  "2048",
   "--batch-size",
   "2048",
   "--threads",
