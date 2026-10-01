@@ -6,9 +6,12 @@ STATE = "untested"
 from bigcherry.patcher import Edit, FilePatch
 
 
-# Single source of truth for the adaptive host/RCCL crossover. Freeze this
-# value from the 256 KiB / 1 MiB / 4 MiB sweep before qualification evidence.
-ADAPTIVE_SWITCH_BYTES_DEFAULT = 1 << 20
+# Single source of truth for the adaptive host/RCCL crossover. 96 KiB (PGC09,
+# 2026-10-01, reviewer-gpt-agent req_8a6eb42b): decode/draft ARs (20-80 KB) take
+# the exact-f32 host path; MTP verify ARs (6 tokens x 5120 f32 = 120 KB) and
+# prefill go to RCCL, which is faster at that size (MTP -1.4% at 1 MiB, +0.3% at
+# 96 KiB; plain decode +3.6%).
+ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10
 
 
 CUDA = FilePatch(

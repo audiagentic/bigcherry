@@ -27,7 +27,7 @@ capability = "correctness"
 validator = "correctness-summary"
 required = true
 
-# MTP mtp_wall_tps on tierL-qwen27b-q8, dual gfx1100, -sm tensor (10 pairs).
+# llama-bench tg128 plain decode on tierL-qwen27b-q8, dual gfx1100, -sm tensor (10 pairs).
 [[check]]
 id = "performance"
 capability = "performance"

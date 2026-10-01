@@ -137,7 +137,7 @@ class Patch0860Mechanics(unittest.TestCase):
             self.assertIn("common_allreduce_wire = value;", text)
             self.assertIn("common_allreduce_switch_bytes = value;", text)
             self.assertIn("common_parse_allreduce_switch_bytes", text)
-            self.assertIn("? 1048576 : common_parse_allreduce_switch_bytes", text)
+            self.assertIn("? 98304 : common_parse_allreduce_switch_bytes", text)
             self.assertEqual(text.count("common_apply_allreduce_config()"), 2)
             self.assertIn("    parse_cli_args();" + chr(10) + "    common_apply_allreduce_config();", text)
             self.assertNotIn("common_apply_allreduce_config(value", text)
@@ -157,13 +157,13 @@ class Patch0860Mechanics(unittest.TestCase):
 
     def test_single_named_switch_default_constant(self):
         source = (_REPO / "patches/0860_allreduce_provider_cli/patch.py").read_text(encoding="utf-8")
-        self.assertIn("ADAPTIVE_SWITCH_BYTES_DEFAULT = 1 << 20", source)
-        self.assertEqual(source.count("1048576"), 0)
+        self.assertIn("ADAPTIVE_SWITCH_BYTES_DEFAULT = 96 << 10", source)
+        self.assertEqual(source.count("98304"), 0)
 
     def test_cuda_config_owns_default_switch_and_is_visible_before_adaptive_dispatch(self):
         edit = next(e for e in self.cuda_patches[0].edits if e.id == "allreduce-provider-config")
         self.assertEqual(edit.anchor, r"^static bool ggml_backend_cuda_comm_try_allreduce_internal\($")
-        self.assertIn("size_t switch_bytes = 1048576;", edit.text)
+        self.assertIn("size_t switch_bytes = 98304;", edit.text)
         self.assertIn("const char * provider, const char * wire, size_t switch_bytes", edit.text)
         self.assertIn("g_ggml_backend_cuda_comm_config.switch_bytes = switch_bytes;", edit.text)
 
