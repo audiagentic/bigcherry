@@ -335,6 +335,11 @@ patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", 
 # small-AllReduce latency switches, so f32/bf16/f16 x latency-fix arms run on one binary.
 patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
 
+[experiment.adaptive-size-trace]
+# Diagnostic: the adaptive closure (0860 + 1225 + 0840) + 1277's env-gated per-call AllReduce
+# size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>). Investigates adaptive's pp1024 -3.9%.
+patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1277_ar_size_trace"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
