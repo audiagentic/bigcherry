@@ -66,8 +66,14 @@ Owner 2026-10-01: vLLM is not run while Flash-Next runs, so all four GPUs (96 Gi
 
 Owner 2026-10-01: PCIe topology: 2x XTX and the R9700 hang off CPU PCIe lanes; the RX 6900 XT is on chipset PCIe (shares the chipset uplink, higher latency, lower bandwidth). Consequence: keep the 6900 XT out of any per-token AllReduce / tensor-split group; give it only whole layers or whole expert blocks so cross-device traffic is one activation hand-off per layer boundary, or use it last if VRAM is short. Prefer layouts where the three CPU-attached cards carry all hot traffic.
 
+Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effective), R9700 on PCIe 4.0 x4 (~6.5 GB/s), 6900 XT on chipset PCIe. No P2P, so host-staged collectives cross each link twice. 27B dual-XTX prefill AllReduce measures 5-10 GB/s effective, i.e. near the x8 host-staged ceiling: RCCL tuning cannot fix prefill; overlap or fewer/smaller ARs can. Any tensor-split group including the R9700 is AR-bound at about half the XTX link rate.
+
+2026-10-01 probe flashnext-probe-1 (b11233 + validated set, gfx1100/gfx1201/gfx1030 build, PLE -ot to CPU, -c 16384): (1) every -sm tensor layout fails at load: 'LLAMA_SPLIT_MODE_TENSOR not implemented for architecture qwen4exp' -- tensor split needs a patch adding qwen4exp to the tensor-split architecture support (per-tensor split rules for the hybrid SSM/GDN, sparse-attention indexer, PLE and MoE tensors, as for qwen35). (2) -sm layer on XTX,XTX,R9700 -ts 3,3,2: out of memory on device 0 allocating a 231 MiB compute buffer (pp graph), i.e. GPU0 got more than its share of resident weights. (3) -sm layer on all four: model loaded, then no health within 10 min (hang or very slow warmup; log stops at threadpool init). Next: verbose (-lv 4) load with per-device buffer sizes, lower -ts weight on device 0 and -c 8192, check where per_layer_token_embd lands; design the qwen4exp tensor-split patch (owner: tensor split is much better than layer split).
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
 - 2026-10-01T06:23:08.097063+00:00 (updated-by): Updated: section:notes
 - 2026-10-01T06:24:16.813548+00:00 (updated-by): Updated: section:notes
+- 2026-10-01T07:45:50.591371+00:00 (updated-by): Updated: section:notes
+- 2026-10-01T08:31:56.666485+00:00 (updated-by): Updated: section:notes
