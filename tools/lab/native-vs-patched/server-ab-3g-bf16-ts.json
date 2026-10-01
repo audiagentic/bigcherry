@@ -62,13 +62,13 @@
   {
    "mode": "stock",
    "shutdown_method": "sigint",
-   "name": "ts554",
+   "name": "ts292922",
    "binary": "@b-3g-nway",
    "server_args": [
     "--allreduce",
     "ccl",
     "-ts",
-    "5,5,4"
+    "29,29,22"
    ]
   },
   {
