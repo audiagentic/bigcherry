@@ -128,3 +128,4 @@ vendor/llama.cpp-stock-b10327-linux
 
 # FUSE mount artifacts (/mnt/vault): open-but-replaced files; never tracked, must not mark the tree dirty
 .fuse_hidden*
+.rocprofv3/
