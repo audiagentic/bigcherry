@@ -173,9 +173,15 @@ def _requested_cmake_args(
     verification -- ONE definition so the two can never silently drift
     apart (capture_completed_build_evidence() checks these same values
     against the resolved CMakeCache.txt)."""
+    # Linux campaign builds link RCCL like the production linux-multi lane
+    # (config/recipes.toml); without it the multi-GPU "ccl" provider silently
+    # falls back to the internal host AllReduce and tensor-split evidence is
+    # not measured on the production collective. RCCL is Linux-only.
+    rccl = [] if sys.platform == "win32" else ["-DGGML_HIP_RCCL=ON"]
     return [
         "-DCMAKE_BUILD_TYPE=Release",
         "-DGGML_HIP=ON",
+        *rccl,
         f"-DAMDGPU_TARGETS={amdgpu_targets}",
         *extra_cmake_args,
     ]
