@@ -9,7 +9,7 @@ model=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 port=$((40000 + RANDOM % 2000))
 HIP_VISIBLE_DEVICES=0,1 ROCR_VISIBLE_DEVICES=0,1 BIGCHERRY_AR_SIZE_TRACE=200000 \
   "$bin" -m "$model" -sm tensor -ngl 99 --fit off -c 8192 --flash-attn on --ubatch-size 512 \
-  --batch-size 2048 --threads 8 --parallel 1 --allreduce adaptive --port "$port" > "$out/server.log" 2>&1 &
+  --batch-size 2048 --threads 8 --parallel 1 --allreduce adaptive ${TRACE_EXTRA_ARGS:-} --port "$port" > "$out/server.log" 2>&1 &
 pid=$!
 for _ in $(seq 120); do curl -sf "http://127.0.0.1:$port/health" >/dev/null && break; sleep 2; done
 python3 - "$port" "$out" <<'PY'
