@@ -1,6 +1,7 @@
 #!/bin/bash
 # Qwen3.8-Flash-Next (qwen4exp, 87 GiB IQ4_XS) load + layout probe (QFN01). For each layout:
-# start llama-server, record per-device VRAM, send one ~1000-token prompt with 128 generated
+# start llama-server (tensor split is the expected winner: all cards read weights at once;
+# layer split runs one card at a time), record per-device VRAM, send one ~1000-token prompt with 128 generated
 # tokens (cache off), record prompt/decode tokens/s and draft acceptance, stop.
 # GPU order: 0,1 = 7900 XTX, 2 = R9700 (all CPU PCIe), 3 = 6900 XT (chipset PCIe, kept last).
 # Usage: layout-probe.sh <llama-server> <out-dir>
@@ -9,7 +10,7 @@ bin=$1 out=$2
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 ple=(-ot '^per_layer_token_embd\.weight$=CPU')
-common=(-m "$model" -ngl 99 --fit off -c 16384 --flash-attn on --parallel 1 --threads 16 -sm layer "${ple[@]}")
+common=(-m "$model" -ngl 99 --fit off -c 16384 --flash-attn on --parallel 1 --threads 16 "${ple[@]}")
 probe() {
   local name=$1 vis=$2; shift 2
   local port=$((43000 + RANDOM % 2000)) log="$out/$name.server.log"
@@ -45,8 +46,10 @@ PY
   cat "$out/$name.vram.txt"
   kill -INT "$pid"; wait "$pid"
 }
-probe cpu3-layer 0,1,2 -ts 3,3,2
-probe all4-layer 0,1,2,3 -ts 15,15,10,8
-probe cpu3-mtp3 0,1,2 -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 3
-probe cpu3-ngram-mtp3 0,1,2 -ts 3,3,2 --spec-type ngram-mod,draft-mtp --spec-draft-n-max 3
+probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
+probe cpu3-layer 0,1,2 -sm layer -ts 3,3,2
+probe all4-layer 0,1,2,3 -sm layer -ts 15,15,10,8
+probe all4-tensor 0,1,2,3 -sm tensor -ts 15,15,10,8
+probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-tensor-ngram-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type ngram-mod,draft-mtp --spec-draft-n-max 3
 echo PROBE_DONE
