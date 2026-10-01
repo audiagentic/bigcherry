@@ -1880,7 +1880,7 @@ min_evidence_effect_pct = 0.0
 min_paired_rounds = 10
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100]
-title = "PGC09: adaptive AllReduce (host below 1 MiB, RCCL at or above) as the default for dual gfx1100 tensor split"
+title = "PGC09: adaptive AllReduce (exact-f32 host below 96 KiB, RCCL at or above) as the default for dual gfx1100 tensor split"
 prerequisites = []
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.source]
@@ -1895,7 +1895,7 @@ kind = "orchestration"
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.hypothesis]
 expected_effect = "performance"
-rationale = "On exactly two gfx1100 devices under -sm tensor, decode-sized AllReduces (20-120 KB per call, including MTP verify) are latency-bound and faster on the mapped-host path than RCCL, while prompt-processing AllReduces (>= 1 MiB) stay on RCCL. Adaptive's host path reduces in exact f32 (0840 sets the bf16 round-trip threshold to 0); output must be near-lossless against RCCL (identical tokens). Measured exploratory: MTP depth 5 tg512 +7.9%, tg2048 +2.3%; plain decode +6.9%; prefill pp4096 within 0.25%. Known limitation tracked in PGC12: without MTP at ubatch 512, a 4-token prompt tail costs pp1024 about -4%."
+rationale = "On exactly two gfx1100 devices under -sm tensor (PCIe 4.0 x8, no P2P), single-token decode AllReduces (20 KB f32) are latency-bound and faster on the mapped-host path, reduced in exact f32 (0840 sets the bf16 round-trip threshold to 0), than on RCCL. At or above 96 KiB -- MTP verify (120 KB) and prompt processing -- RCCL is used. Exploratory on the contract builds: plain decode +3.6%, MTP depth 5 +0.3% with identical outputs and acceptance. Wire choice (f32, 96 KiB) agreed with reviewer-gpt-agent req_8a6eb42b. Known limitation (PGC12): a 4-token prompt tail (80 KB) takes the host path."
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.scope]
 backend = "hip"
@@ -1903,7 +1903,7 @@ architectures = ["gfx1100"]
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.positive]
 models = ["tierL-qwen27b-q8"]
-workloads = ["mtp_verify"]
+workloads = ["decode"]
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.controls]
 models = ["tierL-qwen27b-q8"]
@@ -1916,9 +1916,6 @@ workloads = ["prefill"]
 # bf16 while adaptive keeps f32 (t-0840c-gfx1100-s1: tokens identical, KL 3e-4,
 # one p=1.4e-4 token at step 0 differing by 0.15 logprob).
 bit_identical = "required"
-
-[contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.measurement]
-server_requests_per_start = 5
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.acceptance]
 target_kernel_gain_pct = 0.0

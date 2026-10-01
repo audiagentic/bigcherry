@@ -14,9 +14,10 @@ both arms run the same server arguments.
   arms then sum two f32 partials exactly (0840's host path reduces in f32).
 - activation: the subject server log carries 0860's provider marker with
   ``provider=adaptive``; the control build has no 0860 and cannot.
-- performance (positive): paired MTP speculative decode on the production model
-  across both gfx1100 (-sm tensor), metric mtp_wall_tps, draft acceptance
-  recorded.
+- performance (positive): paired llama-bench plain decode tg128 on the production
+  model across both gfx1100 (-sm tensor). Decode ARs (20 KB) take the exact-f32
+  host path below the 96 KiB switch. MTP verify ARs (120 KB) go to RCCL, so
+  speculative decode is a no-regression check (lab A/B), not the positive lane.
 - controls: paired llama-bench pp512 on the same model across both gfx1100
   (-sm tensor): prompt processing must not regress (prefill AllReduces are
   >= 1 MiB and stay on RCCL).
@@ -128,16 +129,14 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
                  "comparison": comparison.document()},
     )
 
-    # ---- performance: MTP decode on both gfx1100 ----
-    positive_effect, records, combined_logs = support.mtp_server_lane(
-        ctx,
-        control_binary=servers["control"],
-        subject_binary=servers["subject"],
-        expected=expected,
-        env=pair_env,
-        label=_LABEL,
-        measured_pairs=_ROUNDS,
-        requests_per_start=support.contract_measurement(_CONTRACT_ID).server_requests_per_start,
+    # ---- performance: plain decode on both gfx1100 ----
+    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=benches["control"], subject_binary=benches["subject"], model=ctx.model,
+        workloads=("decode",), pairs=_ROUNDS, log_context="pgc09-positive", device=None,
+        env_unset=("ROCR_VISIBLE_DEVICES",), runtime_args=("-sm", "tensor"),
+    )
+    positive_effect, positive_run = support.lane_effect(
+        positive_outcome, workload="decode", metric="tg128", role="positive", rounds=_ROUNDS, label=_LABEL
     )
     # ---- control: prompt processing on the same model and topology ----
     control_outcome = ctx.runtime.run_paired_llama_benchmark(
@@ -158,13 +157,10 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
             "positive_model_identity": identity,
             "control_model_identity": identity,
             "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
-            "positive": {"metric": "mtp_wall_tps", "effect": dataclasses.asdict(positive_effect),
-                         "draft_acceptance": {arm: [r.get("draft_acceptance") for r in rows]
-                                              for arm, rows in records.items()},
-                         "requests": records},
+            "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
+                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
             "control": {"metric": "pp512", "effect": dataclasses.asdict(control_effect),
                         "runs": list(control_run.runs), "stats": dict(control_run.stats)},
-            "server_logs": {arm: str(path) for arm, path in combined_logs.items()},
         },
     )
     trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
@@ -184,7 +180,7 @@ def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
         lane_effects=(),
         contract_correctness_results=(bit_identical,),
         promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
-        promotion_target_metric={_CONTRACT_ID: "mtp_wall_tps"},
+        promotion_target_metric={_CONTRACT_ID: "tg128"},
         promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
         emitted_artifacts=frozenset(
             {_CORRECTNESS_ARTIFACT, _PERFORMANCE_ARTIFACT, _SUBJECT_TRACE_ARTIFACT, _CONTROL_TRACE_ARTIFACT}),
