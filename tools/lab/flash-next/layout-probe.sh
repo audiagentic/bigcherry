@@ -10,7 +10,7 @@ bin=$1 out=$2
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 ple=(-ot '^per_layer_token_embd\.weight$=CPU')
-common=(-m "$model" -ngl 99 --fit off -c 16384 --flash-attn on --parallel 1 --threads 16 "${ple[@]}")
+common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 16 -lv 4 "${ple[@]}")
 probe() {
   local name=$1 vis=$2; shift 2
   local port=$((43000 + RANDOM % 2000)) log="$out/$name.server.log"
@@ -37,6 +37,8 @@ rows = []
 for i in range(3):
     t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0})["timings"]
     rows.append({k: t.get(k) for k in ("prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second", "draft_n", "draft_n_accepted")})
+greedy = post({"prompt": "List the first ten prime numbers and explain why 1 is not prime.", "n_predict": 64, "cache_prompt": False, "temperature": 0, "seed": 1})
+open(f"{out}/{name}.greedy.txt", "w").write(greedy["content"])
 json.dump(rows, open(f"{out}/{name}.timings.json", "w"), indent=1)
 pp = sum(r["prompt_per_second"] for r in rows) / 3; tg = sum(r["predicted_per_second"] for r in rows) / 3
 acc = [r for r in rows if r.get("draft_n")]
@@ -47,9 +49,11 @@ PY
   kill -INT "$pid"; wait "$pid"
 }
 probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
-probe cpu3-layer 0,1,2 -sm layer -ts 3,3,2
-probe all4-layer 0,1,2,3 -sm layer -ts 15,15,10,8
+probe cpu3-layer 0,1,2 -sm layer -ts 5,6,5
 probe all4-tensor 0,1,2,3 -sm tensor -ts 15,15,10,8
 probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 3
 probe cpu3-tensor-ngram-mtp3 0,1,2 -sm tensor -ts 3,3,2 --spec-type ngram-mod,draft-mtp --spec-draft-n-max 3
+for n in cpu3-layer all4-tensor; do
+  [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
+done
 echo PROBE_DONE

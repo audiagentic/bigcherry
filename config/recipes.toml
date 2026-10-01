@@ -340,6 +340,10 @@ patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_gua
 # size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>). Investigates adaptive's pp1024 -3.9%.
 patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1277_ar_size_trace"]
 
+[experiment.qwen4exp-tensor]
+# QFN01: allow -sm tensor for Qwen3.8-Flash-Next (qwen4exp); validated end to end against -sm layer.
+patches = ["1278_qwen4exp_sm_tensor"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
