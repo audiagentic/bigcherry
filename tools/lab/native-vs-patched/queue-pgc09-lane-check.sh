@@ -6,6 +6,7 @@ set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 L=tools/lab/native-vs-patched
 B=/mnt/data/bigcherry-work/builds/gfx1100-974f5feb
+export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 export SPEC_ARGS= EXTRA_ARGS="--flash-attn on -c 8192"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
