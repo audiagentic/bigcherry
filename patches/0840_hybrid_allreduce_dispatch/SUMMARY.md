@@ -1,7 +1,7 @@
 # 0840_hybrid_allreduce_dispatch: size-adaptive internal/RCCL AllReduce provider dispatch
 
 **Status:** validated
-**Plan item:** GP03
+**Plan item:** GP03/PGC09
 
 ## What it does
 
