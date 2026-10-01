@@ -61,6 +61,10 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 
 2026-09-30 owner: BigCherry is AMD/HIP-only; NVIDIA/CUDA builds are not a consideration. Dropped: 1225 non-HIP compile-safety fix and the 'non-HIP default unchanged' gate. HIP-specific code needs no CUDA fallbacks.
 
+2026-10-01 pp1024 regression found and fixed by threshold. Plain decode (no MTP, ubatch 512), 6 rounds vs RCCL: adaptive 1 MiB pp1024 -4.2%/-3.6%, tg +6.9..+7.1%; adaptive 16 KiB = RCCL on everything; adaptive 64 KiB pp1024 -0.07% [-0.58,+0.60], pp4096 -0.25%, tg512 +6.80%, tg2048 +6.92%. Cause (1277 size trace, ar-size-trace-1): the server splits a 1000-token prompt into 512 + 484 + a 4-token tail; the tail's 128 ARs are 80 KB and took the host path at 1 MiB; decode ARs are 20 KB. Mechanism of the ~50 ms cost not yet explained (128 host calls should cost a few ms). Pending: MTP depth 5 A/B (ab-27b-adaptive-switch-mtp) since MTP verify ARs are ~100-120 KB and move to RCCL at 64 KiB. Review items from req_93102df2391e4495 checked at HEAD: RCCL admission present in 0840 init_hybrid, switch_bytes snapshotted per comm context, 0860 marker WARN-level, 0830 out of the closure. Decode KLD: adaptive-f32 = 0 vs exact f32 (same as RCCL).
+
+2026-10-01 MTP depth 5, ubatch 2048, 6 rounds vs RCCL: adaptive 1 MiB pp1024 -0.20%, pp4096 -0.14%, tg512 +7.98% [7.71,8.21], tg2048 +2.17% [1.95,2.41], acceptance 78.45 vs 78.74% (gate PASS); adaptive 64 KiB tg +0.5% only (MTP verify ARs ~100-120 KB go to RCCL). Decision (owner): promote at the 1 MiB default for the MTP production setup; plain-decode pp1024 tail cost and phase-aware routing tracked in PGC12. Contract ALLREDUCE-ADAPTIVE-DUAL-GFX1100 sessions t-0840-gfx1100-s1..s4 running.
+
 ## Change Log
 
 - 2026-09-30T04:03:45.724752+00:00 (created-by): Created by agent
@@ -71,3 +75,5 @@ Yardstick: Q8_0 weight quantization itself is ~0.001-0.003 mean KLD vs full prec
 
 - chg_20260930_125153_reviewed-and-consolidated-toda_3870
 - 2026-09-30T12:52:13.375927+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-01T05:33:24.886015+00:00 (updated-by): Updated: section:notes
+- 2026-10-01T06:26:12.665601+00:00 (updated-by): Updated: section:notes

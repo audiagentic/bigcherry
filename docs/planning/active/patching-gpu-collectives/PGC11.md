@@ -58,7 +58,10 @@ Design requested from dev-gpt-agent deep-dive session ses_9811a27a734746c3.
 
 2026-10-01 KLD findings (27B Q8_0 dual XTX, 32 x 2048-token prefill chunks, frozen docs corpus, reference = host exact-f32 wire): noise floor (reference repeat) mean 0.000000, p99 3e-5, same-top 99.997% (deterministic). host stock bf16 wire: mean 0.00054, p99 0.0048, same-top 98.98%. RCCL: mean 0.000496, p99 0.0044. adaptive with exact-f32 host side: identical to RCCL (0.000496) — because perplexity passes are all prefill-sized (>= 1 MiB) reductions that adaptive routes to RCCL, and RCCL goes bf16 >= 32768 elements. So prefill-mode KLD measures stock RCCL's own bf16 prefill loss (~0.0005 mean) and CANNOT see the decode-size host wire. Added decode-mode KLD (queue-kld-decode.sh: --ubatch-size 1, 8 chunks, own decode-mode f32 reference) comparing RCCL, host bf16/f16, adaptive f32/bf16. Also measured: RCCL channels (2 / >=8) no gain (8 ch: decode +0.5%, prefill -0.9%); 1275 neutral/-8.5%.
 
+2026-10-01 ab-27b-awl-1 (adaptive 0840 + 1272 wire + 1275 slot_sync=none, 27B Q8_0 dual XTX, MTP n4, 6 balanced rounds). Means f32/bf16/f16: pp1024 995.5/998.8/997.8, pp4096 1248.9/1249.0/1248.8, tg512 92.8/95.5/94.0, tg2048 106.3/104.5/98.6. bf16 vs f32: tg512 +2.86% [+2.54,+3.20], tg2048 -1.65% [-1.94,-1.40]. f16 vs f32: tg512 +1.29%, tg2048 -7.27% [-7.52,-7.02]. MTP acceptance f32 84.28% / bf16 82.17% / f16 78.56% (acceptance gate FAIL for bf16 and f16). Plain f16 wire loses draft acceptance and long-decode throughput: ruled out. bf16 buys short-decode speed with an acceptance cost that turns into a tg2048 loss. f32 stays the adaptive host wire; safe-f16 (scaled) is the only remaining low-precision candidate. awl-2 row failed only because the running queue script predates the consolidation (stale reference, no rerun needed).
+
 ## Change Log
 
 - 2026-09-30T14:04:38.045766+00:00 (created-by): Created by agent
 - 2026-09-30T16:25:35.929349+00:00 (updated-by): Updated: section:notes
+- 2026-09-30T17:27:22.793498+00:00 (updated-by): Updated: section:notes
