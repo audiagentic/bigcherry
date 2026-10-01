@@ -1910,10 +1910,12 @@ models = ["tierL-qwen27b-q8"]
 workloads = ["prefill"]
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.correctness]
-# full_vocab.NEAR_LOSSLESS (as RD17/1207): RCCL rounds >= 32768-element messages
-# via bf16, adaptive's host path keeps them in exact f32, so prompt-phase sums
-# differ in rounding; generated tokens must still match exactly.
-backend_reference = "required"
+# Bit-identical on a <= 6-token prompt: every AllReduce stays below RCCL's
+# hard-coded bf16 switch (32768 elements for 2 devices), so both providers sum
+# two f32 partials exactly. A longer prompt makes RCCL (the control) round via
+# bf16 while adaptive keeps f32 (t-0840c-gfx1100-s1: tokens identical, KL 3e-4,
+# one p=1.4e-4 token at step 0 differing by 0.15 logprob).
+bit_identical = "required"
 
 [contract.ALLREDUCE-ADAPTIVE-DUAL-GFX1100.measurement]
 server_requests_per_start = 5
