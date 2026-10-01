@@ -4,6 +4,7 @@
 # although the stock-lane A/B gave +7%; this tells whether the validated set cancels the gain.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
+L=tools/lab/native-vs-patched
 B=/mnt/data/bigcherry-work/builds/gfx1100-974f5feb
 export SPEC_ARGS= EXTRA_ARGS="--flash-attn on -c 8192"
 jobs=$(mktemp)
