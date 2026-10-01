@@ -8,8 +8,8 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-N
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-flash-4g - gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-probe-1 tools/lab/flash-next/layout-probe.sh @b-flash-4g /mnt/data/bigcherry-work/runs/flashnext-probe-1/out
+VIS=0,1,2,3 BUILD b-flash-4g-ts qwen4exp-tensor gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT flashnext-probe-2 tools/lab/flash-next/layout-probe.sh @b-flash-4g-ts /mnt/data/bigcherry-work/runs/flashnext-probe-2/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
