@@ -1,6 +1,6 @@
 # 1274_mmvq_kquant_f32_decode
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RD33
 
 Extends the validated 1241 dense single-token F32-activation MMVQ path from Q8_0 to Q6_K on gfx1100 (Q4_K was measured and dropped: -1.7% decode on one XTX, flat on two; Q6_K +1.6%..+1.7% decode). It requires 1241 and reuses its `f32_act` kernel/launcher seam, so Q8_0 remains owned by 1241 while 1274 adds only the K-quant helpers and dispatch gate.
