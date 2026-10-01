@@ -7,7 +7,7 @@
 set -u
 bin=$1 out=$2; shift 2
 mkdir -p "$out"
-model=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 run() {
   local name=$1; shift
   local port=$((45000 + RANDOM % 2000))

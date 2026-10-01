@@ -5,7 +5,7 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-M=/mnt/vault/llm-models
+M=/mnt/data/llm-models
 Q4=$M/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf
 Q35=$M/qwen3.6-35B-A3B/gguf/mtp/Qwen3.6-35B-A3B-APEX-MTP-I-Compact.gguf
 GO=$M/gpt-oss-20B/gguf/gpt-oss-20b-UD-Q6_K_XL.gguf

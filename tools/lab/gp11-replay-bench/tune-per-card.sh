@@ -5,8 +5,8 @@
 cd ~/rd73-requal-clone
 export PYTHONPATH=tools ROCM_PATH=/home/audumla/rocm-shim HIP_PATH=/home/audumla/rocm-shim
 export PATH=/home/audumla/rocm-shim/bin:$PATH
-M27=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
-M9=/mnt/vault/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf
+M27=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+M9=/mnt/data/llm-models/qwen3.5-9B/gguf/mtp/Qwen3.5-9B-Q6_K.gguf
 tune () {
   local label=$1 model=$2 devs=$3 prof=$4
   echo "=== TUNE $label START $(date -Is) ==="

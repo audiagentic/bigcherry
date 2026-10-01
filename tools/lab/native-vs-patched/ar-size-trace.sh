@@ -5,7 +5,7 @@
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
-model=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 port=$((40000 + RANDOM % 2000))
 HIP_VISIBLE_DEVICES=0,1 ROCR_VISIBLE_DEVICES=0,1 BIGCHERRY_AR_SIZE_TRACE=200000 \
   "$bin" -m "$model" -sm tensor -ngl 99 --fit off -c 8192 --flash-attn on --ubatch-size 512 \

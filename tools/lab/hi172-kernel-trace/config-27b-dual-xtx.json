@@ -1,5 +1,5 @@
 {
-  "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+  "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
   "common_args": [
     "-ngl", "99", "-sm", "tensor", "--fit", "off", "-c", "4096",
     "--flash-attn", "on", "--ubatch-size", "512", "--batch-size", "2048",

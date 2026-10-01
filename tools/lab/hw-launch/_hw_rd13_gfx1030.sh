@@ -14,7 +14,7 @@ python3 -m bigcherry.patch.validation_campaign \
   --baseline-source bigcherry-tuning \
   --amdgpu-targets gfx1030 \
   --device-map gfx1030=3 \
-  --model /mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf \
+  --model /mnt/data/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf \
   --hip-path /mnt/vault/tmp/bc-rocm \
   --workdir /mnt/vault/tmp/bc-runs/rd13-gfx1030-run1 \
   --worktree-root /mnt/vault/tmp/bc-worktrees

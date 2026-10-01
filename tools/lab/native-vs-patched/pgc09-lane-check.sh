@@ -5,7 +5,7 @@
 set -u
 ctl=$1 sub=$2 out=$3
 mkdir -p "$out"
-model=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 for arm in control subject; do
   bin=$ctl; [ $arm = subject ] && bin=$sub
   port=$((44000 + RANDOM % 2000))

@@ -6,7 +6,7 @@
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
-export BC_MODEL=/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 export GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_WIRE=q8_0
 L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
