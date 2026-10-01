@@ -20,7 +20,7 @@ validator = "trace-marker"
 required = true
 marker-regex = "BIGCHERRY_PATCH_HIT patch=0860_allreduce_provider_cli provider=adaptive"
 
-# backend_reference: full-vocab NEAR_LOSSLESS (identical tokens, KL/logprob bounds) on dual-gfx1100 -sm tensor, adaptive vs RCCL.
+# bit_identical: full-vocab logprobs on dual-gfx1100 -sm tensor, short prompt (all ARs f32 on both providers), adaptive vs RCCL.
 [[check]]
 id = "correctness"
 capability = "correctness"
