@@ -10,7 +10,7 @@ for arm in control subject; do
   bin=$ctl; [ $arm = subject ] && bin=$sub
   port=$((44000 + RANDOM % 2000))
   HIP_VISIBLE_DEVICES=0,1 BIGCHERRY_PATCH_TRACE=1 "$bin/llama-server" -m "$model" -ngl 99 \
-    --parallel 1 --metrics -sm tensor --fit off --spec-type draft-mtp --spec-draft-n-max 4 \
+    --parallel 1 --metrics -sm tensor --fit off --spec-type draft-mtp --spec-draft-n-max 4 ${EXTRA_ARGS:-} \
     --port $port > "$out/$arm.log" 2>&1 &
   pid=$!
   for _ in $(seq 150); do curl -sf http://127.0.0.1:$port/health >/dev/null && break; sleep 2; done
