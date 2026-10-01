@@ -344,6 +344,10 @@ patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_gua
 # QFN01: allow -sm tensor for Qwen3.8-Flash-Next (qwen4exp); validated end to end against -sm layer.
 patches = ["1278_qwen4exp_sm_tensor"]
 
+[experiment.qwen4exp-routing]
+# QFN02: qwen4exp tensor split (1278) + full eval-callback tensor dump (1279) for the MoE routing profile.
+patches = ["1278_qwen4exp_sm_tensor", "1279_moe_routing_dump"]
+
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
