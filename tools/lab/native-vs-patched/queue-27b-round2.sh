@@ -14,8 +14,8 @@ P=BIGCHERRY_PATCH_HIT.patch=0860_allreduce_provider_cli
 export BC_PREFLIGHT_N_PREDICT=256
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-0860 allreduce-cli
-BUILD b-27b-adaptive-mtp adaptive-mtp
+BUILD b-27b-0860 bigcherry:stock:linux-multi allreduce-cli gfx1100
+BUILD b-27b-adaptive-mtp bigcherry:stock:linux-multi adaptive-mtp gfx1100
 PREFLIGHT pf-0860-auto @b-27b-0860 $BC_MODEL $P.provider=ccl.wire=native $SRV --allreduce auto
 PREFLIGHT pf-0860-ccl @b-27b-0860 $BC_MODEL $P.provider=ccl.wire=native $SRV --allreduce ccl
 PREFLIGHT pf-0860-host @b-27b-0860 $BC_MODEL $P.provider=host.wire=native $SRV --allreduce host

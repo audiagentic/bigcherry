@@ -10,7 +10,7 @@ L=tools/lab/native-vs-patched
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2 BUILD b-3g-nway ar-adaptive-nway gfx1100,gfx1201
+VIS=0,1,2 BUILD b-3g-nway bigcherry:stock:linux-multi ar-adaptive-nway gfx1100,gfx1201
 VIS=0,1,2 AB ab-3g-bf16-nway $L/server-ab-3g-bf16-nway.json --pairs 6
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

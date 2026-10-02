@@ -8,8 +8,8 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2 BUILD b-3g-control - gfx1100,gfx1201
-VIS=0,1,2 BUILD b-3g-root3 allreduce-root3 gfx1100,gfx1201
+VIS=0,1,2 BUILD b-3g-control bigcherry:stock:linux-multi - gfx1100,gfx1201
+VIS=0,1,2 BUILD b-3g-root3 bigcherry:stock:linux-multi allreduce-root3 gfx1100,gfx1201
 VIS=0,1,2 AB ab-3g-allreduce $L/server-ab-allreduce-3gpu.json --pairs 6
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

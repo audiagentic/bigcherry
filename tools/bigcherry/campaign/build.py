@@ -57,7 +57,10 @@ class CampaignBuildError(RuntimeError):
 #: state (terminal colors, unrelated app config) with no bearing on the
 #: build, and would leak local machine details into a supposedly portable
 #: identity.
-_BUILD_RELEVANT_ENV_VARS = ("PATH", "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH")
+# Compile-affecting environment. VULKAN_SDK / CMAKE_PREFIX_PATH select the Vulkan headers and glslc;
+# ICD selection (VK_DRIVER_FILES, VK_ICD_FILENAMES, RADV_PERFTEST, GGML_VK_VISIBLE_DEVICES) is runtime
+# identity, not compile identity.
+_BUILD_RELEVANT_ENV_VARS = ("PATH", "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH", "CMAKE_PREFIX_PATH", "VULKAN_SDK")
 
 
 def resolve_build_environment() -> tuple[tuple[str, str], ...]:

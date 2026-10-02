@@ -10,7 +10,7 @@ L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-1263 ssm-conv-channels-major
+BUILD b-27b-1263 bigcherry:stock:linux-multi ssm-conv-channels-major gfx1100
 PREFLIGHT pf-27b-1263-split @b-27b-1263 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1263_prbe41.path=ssm_conv_channels_major_declined_split $SRV
 REQUIRES=pf-27b-1263-split AB ab-27b-1263 $L/server-ab-1263.json --pairs 4
 JOBS

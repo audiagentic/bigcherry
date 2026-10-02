@@ -11,15 +11,18 @@ work: M
 priority: P2
 ---
 
-# Campaign and CLI stack propagation
+# Campaign/CLI HIP and Vulkan stack propagation
 
 ## Description
 
-Thread explicit stack selection through campaign requests, lane/execution identity, planner checks, CLI/workflow stages, receipts, and replay. Migrate callers to stack-aware identity in one pass; do not preserve the legacy three-part lane as a compatibility shim.
+Resume with Vulkan stock as first consumer. Carry explicit runtime stack identity for HIP, Vulkan/RADV and Vulkan/AMDVLK through run configuration without coupling ICD choice to BUILD.
 
 ## Steps
 
-1. Add explicit stack selection and absence semantics to CampaignRequest, CampaignLane, execution specs, workflow reconstruction, and receipts. 2. Preserve source:build:platform parsing only as an external input grammar if required, then resolve an explicit stack field or configured default into internal source:build:platform:stack identity; never infer from PATH, environment, or whichever stack exists. 3. Thread the resolved stack through build, record, tune, profile, verifier, replay, and receipt reconstruction. 4. Reject missing, ambiguous, unknown, and source/backend-mismatched stacks before any evidence-producing work. 5. Migrate all request/CLI/lane identity callers and tests in one pass; do not add a legacy --lane compatibility parser or shim that preserves stackless identity.
+1. Use the existing stack.vulkan-radv and stack.vulkan-amdvlk identities.
+2. Thread stack through server/benchmark run identity and receipts.
+3. Use GGML_VK_VISIBLE_DEVICES for Vulkan device selection.
+4. No HIP/Vulkan compatibility shim; migrate affected callers together.
 
 ## Detailed Solution & Technical Design
 
@@ -35,11 +38,11 @@ campaign request/planner/lane/execution specs; CLI build/tuning/profiling and wo
 
 ## Validation
 
-Run build, tune-campaign, profile-campaign, verifier, and replay with explicit stack selection and verify every receipt/stage preserves it. Test explicit configured defaults, missing/ambiguous/unknown stacks, backend mismatch, source/build/platform collisions, and distinct stacks producing distinct internal lane IDs. Assert that legacy stackless lane requests are rejected or require explicit migration—not accepted through a compatibility shim—and no evidence-producing work begins before stack resolution.
+RADV and AMDVLK executions have distinct runtime identities while sharing one compatible Vulkan binary.
 
 ## Effort & Risk
 
-
+M / medium.
 
 ## Standards
 
@@ -70,7 +73,6 @@ Supersedes RO02. Preserve RO01 as authoritative stack selection and the later no
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.515849+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:38.803173+00:00 (updated-by): Updated: section:notes
@@ -90,3 +92,4 @@ Supersedes RO02. Preserve RO01 as authoritative stack selection and the later no
 - 2026-09-10T04:01:57.861841+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_040226_fixed-the-four-remaining-seman_2499
 - 2026-09-10T04:02:26.607718+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T12:34:41.199739+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk

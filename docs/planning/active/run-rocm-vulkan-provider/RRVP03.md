@@ -11,15 +11,17 @@ work: L
 priority: P2
 ---
 
-# Runtime stack attestation
+# Runtime HIP/Vulkan stack attestation
 
 ## Description
 
-Capture actual loaded HIP/Vulkan runtime stack before accepted samples, compare against expected identity, and persist fail-closed attestations.
+Resume the existing ExecutionAttestation integration and make it mandatory before accepting Vulkan timing/correctness evidence.
 
 ## Steps
 
-Freeze backend-neutral attestation schema/comparator; implement actual loaded HIP reporter and Vulkan adapter; collect after provider-exercising initialization/warmup before timed work; reject missing/malformed/substituted/lazy-loaded provider identities; thread reports through record/tune/verifier/correctness/replay receipts and persistence; normalize effective visibility/ICD state.
+1. Attest the loaded Vulkan loader/ICD after device initialization and warmup.
+2. Compare requested stack with the actual loaded stack, fail-closed.
+3. Reuse the existing attested-session seam; no parallel attestation system.
 
 ## Detailed Solution & Technical Design
 
@@ -35,11 +37,11 @@ hip-autotune-stack h/cpp; workflow ServerRunner stages; runtime/attestation test
 
 ## Validation
 
-Build under one stack/launch another; DSO/ICD substitution, visibility reorder, missing/malformed/lazy provider tests; report refreshed after provider-exercising warmup; actual identity persisted per run.
+Wrong ICD, missing ICD, or a substituted driver prevents evidence acceptance.
 
 ## Effort & Risk
 
-
+M / medium.
 
 ## Standards
 
@@ -68,7 +70,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.528882+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:47.119856+00:00 (updated-by): Updated: section:notes
@@ -85,3 +86,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T03:28:57.809162+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032911_repaired-three-providerrun-su_5934
 - 2026-09-10T03:29:12.009995+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T12:34:47.413574+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk

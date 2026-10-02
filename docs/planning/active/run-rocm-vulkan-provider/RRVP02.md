@@ -11,15 +11,18 @@ work: L
 priority: P2
 ---
 
-# Backend stack probing and canonical identity
+# HIP/Vulkan provider and capability probing
 
 ## Description
 
-Define backend-neutral canonical resolved software/provider identity and HIP/Vulkan probes with deterministic stack fingerprints.
+Resume and prioritise the minimum probe needed for the Brutus comparison: Vulkan loader, selected ICD/driver, API version, physical device/PCI identity, subgroup, integer-dot, fp16/bf16 and cooperative-matrix capability.
 
 ## Steps
 
-Define versioned ProviderIdentity/ResolvedBackendStack/CapabilitySnapshot/provenance; probe compiler, SDK, runtime, provider and ICD identities; canonicalize stable semantic fields with missing/unknown states; exclude timestamps/hostnames/BDF/ordinals/paths; add mocked/real probes and visibility reorder tests.
+1. Separate compiler-supported shader features from runtime device/ICD features.
+2. Capture RADV versus AMDVLK deterministically.
+3. Capture GGML_VK_DISABLE_* overrides affecting executed kernels.
+4. Keep device ordinal out of canonical identity; retain PCI/device identity.
 
 ## Detailed Solution & Technical Design
 
@@ -35,11 +38,11 @@ tools/bigcherry/backend/{stack,hip_probe,vulkan_probe}.py and backend tests.
 
 ## Validation
 
-Repeated probes byte-identical; provider binary change alters fingerprint; equivalent paths/ordinals remain equal; volatile fields do not; missing states round-trip; common HIP/Vulkan envelope.
+RADV/AMDVLK differ; visibility reorder does not alter physical identity; capability changes remain observable.
 
 ## Effort & Risk
 
-
+M / medium.
 
 ## Standards
 
@@ -68,7 +71,6 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.519983+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:41.712289+00:00 (updated-by): Updated: section:notes
@@ -85,3 +87,4 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - 2026-09-10T03:28:51.350912+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032911_repaired-three-providerrun-su_5934
 - 2026-09-10T03:29:11.998186+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T12:34:44.314152+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk

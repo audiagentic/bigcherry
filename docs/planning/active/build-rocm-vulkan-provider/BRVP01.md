@@ -11,19 +11,18 @@ work: L
 priority: P2
 ---
 
-# BuildPlan and cache stack identity
+# BuildPlan identity for HIP and Vulkan toolchains
 
 ## Description
 
-BuildPlan/cache stack-identity implementation is pending; acceptance is unchecked.
+Resume Vulkan scope (2026-10-02, GPT design session ses_62f7004ea2d24bba). Make compile identity distinguish source/build options plus Vulkan SDK, glslc/SPIR-V toolchain and generated shader capability set. RADV/AMDVLK ICD identity is runtime identity, not build identity.
 
 ## Steps
 
-- After RRVP02 identity is frozen and Vulkan scope resumes, define the compile-affecting per-backend projection; do not hash the entire RRVP02 object blindly.
-- Extend existing BuildPlan/build_plan_id/effective_build_id/reuse machinery rather than creating a second identity system.
-- Persist the build-time RRVP02 probe attestation beside metadata and include provider/toolchain/cache-stack identity in the projection.
-- Test same source/build/platform with rocm-7-14 vs rocm-10, provider-bit swaps, path/device-order/visibility-only changes, and incomplete attestations.
-- Reject cache reuse on exact identity mismatch or incomplete attestation; rebuild is allowed but warn-and-reuse is not.
+1. Fingerprint VULKAN_SDK / glslc / SPIR-V-Headers / Vulkan headers in the Vulkan BuildPlan (content-level: glslc --version + realpath, header identity).
+2. Keep runtime ICD/device capability under RRVP02/RRVP03.
+3. Prove an in-place glslc/toolchain change invalidates build reuse.
+4. No gfx1100/gfx1201/gfx1030 Vulkan compile targets: c061 emits device-neutral SPIR-V and runtime-gates device capabilities.
 
 ## Detailed Solution & Technical Design
 
@@ -43,11 +42,11 @@ tools/bigcherry/build/builds.py; campaign/build.py; campaign/lane.py; campaign/w
 
 ## Validation
 
-Paused until Vulkan scope resumes and RRVP02 is frozen. Then verify compiler/toolchain/provider identity changes IDs, non-compile-affecting path/device-order/visibility changes do not, and mismatched/incomplete cache attestations reject reuse.
+Same source + shader toolchain reuses one build across RADV/AMDVLK; a glslc/header change changes build_plan_id; HIP identity is unaffected by Vulkan runtime selectors.
 
 ## Effort & Risk
 
-
+M / medium: cache-identity change; HIP builds must not depend on irrelevant Vulkan tools.
 
 ## Standards
 
@@ -80,7 +79,6 @@ Vulkan remains paused by directive; this is not closure.
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.524607+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-10T00:07:44.258237+00:00 (updated-by): Updated: section:notes
@@ -97,3 +95,4 @@ Vulkan remains paused by directive; this is not closure.
 - 2026-09-10T02:41:03.776847+00:00 (updated-by): Updated: section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_024129_build-and-external-fix-success_1105
 - 2026-09-10T02:41:29.969279+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T12:34:38.010202+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk

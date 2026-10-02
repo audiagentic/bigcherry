@@ -8,7 +8,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-size-trace adaptive-size-trace
+BUILD b-27b-size-trace bigcherry:stock:linux-multi adaptive-size-trace gfx1100
 SCRIPT ar-size-trace-1 $L/ar-size-trace.sh @b-27b-size-trace /mnt/data/bigcherry-work/runs/ar-size-trace-1/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

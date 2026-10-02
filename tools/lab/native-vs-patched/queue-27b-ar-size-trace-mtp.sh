@@ -9,7 +9,7 @@ export TRACE_EXTRA_ARGS="--spec-type draft-mtp --spec-draft-n-max 5"
 L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-size-trace adaptive-size-trace
+BUILD b-27b-size-trace bigcherry:stock:linux-multi adaptive-size-trace gfx1100
 SCRIPT ar-size-trace-mtp-1 $L/ar-size-trace.sh @b-27b-size-trace /mnt/data/bigcherry-work/runs/ar-size-trace-mtp-1/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

@@ -17,8 +17,8 @@ mkdir -p "$(dirname "$C")"
 R=/mnt/data/bigcherry-work/runs/kld-27b-reference.kld
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD bp-27b-ar-wire ar-wire gfx1100 bin/llama-perplexity
-BUILD bp-27b-adaptive allreduce-adaptive gfx1100 bin/llama-perplexity
+BUILD bp-27b-ar-wire bigcherry:stock:linux-multi ar-wire gfx1100 bin/llama-perplexity
+BUILD bp-27b-adaptive bigcherry:stock:linux-multi allreduce-adaptive gfx1100 bin/llama-perplexity
 SCRIPT kld-27b-ref $K @bp-27b-ar-wire $BC_MODEL $C $R base GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_WIRE=f32
 SCRIPT kld-27b-ref-repeat $K @bp-27b-ar-wire $BC_MODEL $C $R compare GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_WIRE=f32
 SCRIPT kld-27b-host-pristine $K @bp-27b-ar-wire $BC_MODEL $C $R compare GGML_CUDA_ALLREDUCE=internal

@@ -95,14 +95,18 @@ One row per job, run in file order. Rows are plain text; `#` starts a comment.
 [MODEL=<gguf>] [HIP=<rocm prefix>] [VIS=<devices>] [REQUIRES=<preflight-run>] <patch> <producer|-> <arch> <device> <run-name> [campaign args...]
 PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
 PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
-[VIS=<gpus>] BUILD <run-name> <experiment|-> [arch-list]
+[VIS=<gpus>] BUILD <run-name> <source:build:platform> <experiment|-> <arch-list|-> [binary]
 [VIS=<gpus>] [REQUIRES=<preflight-run>] AB <run-name> <server-config.json> [ab-benchmark args...]
 ```
 
-- `BUILD` builds `bigcherry:stock:linux-multi` plus the named `[experiment.*]` from
-  `config/recipes.toml` (`-` = no experiment) for `arch-list` (default `gfx1100`;
-  multi-arch e.g. `gfx1100,gfx1201` for 2x XTX + R9700) and records
-  `BUILD_BINARY=<llama-server>` in its log.
+- `BUILD` builds the explicit lane (e.g. `bigcherry:stock:linux-multi` for HIP, or
+  `vulkan-stock:vulkan-stock:vulkan-linux` for Vulkan) plus the named `[experiment.*]` from
+  `config/recipes.toml` (`-` = no experiment). HIP rows pass an `arch-list` (e.g.
+  `gfx1100,gfx1201,gfx1030`); Vulkan rows pass `-` (c061 Vulkan shaders are not specialised by
+  AMDGPU targets; device architecture and ICD are runtime evidence). The optional `binary`
+  (default `bin/llama-server`, e.g. `bin/llama-bench`) is built in the same tree; the row records
+  `BUILD_BINARY=<path>` in its log. Vulkan device selection at run time is
+  `GGML_VK_VISIBLE_DEVICES`; the ICD is chosen with `VK_DRIVER_FILES`.
 - `AB` runs `bigcherry ab-benchmark --server-config` (balanced, order-rotated, 2-3 arms;
   `--pairs` a multiple of arm-count factorial). Any `"@<build-run>"` string in the
   config is replaced with that BUILD row's binary, so configs never hard-code build
