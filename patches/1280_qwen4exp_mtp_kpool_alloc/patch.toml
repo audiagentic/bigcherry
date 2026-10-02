@@ -1,0 +1,17 @@
+schema = 1
+id = "1280_qwen4exp_mtp_kpool_alloc"
+order = 1280
+state = "untested"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = ["QFN01"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["model"]
+tags = []
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]
