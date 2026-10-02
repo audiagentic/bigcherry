@@ -60,8 +60,11 @@ Design requested from dev-gpt-agent deep-dive session ses_9811a27a734746c3.
 
 2026-10-01 ab-27b-awl-1 (adaptive 0840 + 1272 wire + 1275 slot_sync=none, 27B Q8_0 dual XTX, MTP n4, 6 balanced rounds). Means f32/bf16/f16: pp1024 995.5/998.8/997.8, pp4096 1248.9/1249.0/1248.8, tg512 92.8/95.5/94.0, tg2048 106.3/104.5/98.6. bf16 vs f32: tg512 +2.86% [+2.54,+3.20], tg2048 -1.65% [-1.94,-1.40]. f16 vs f32: tg512 +1.29%, tg2048 -7.27% [-7.52,-7.02]. MTP acceptance f32 84.28% / bf16 82.17% / f16 78.56% (acceptance gate FAIL for bf16 and f16). Plain f16 wire loses draft acceptance and long-decode throughput: ruled out. bf16 buys short-decode speed with an acceptance cost that turns into a tg2048 loss. f32 stays the adaptive host wire; safe-f16 (scaled) is the only remaining low-precision candidate. awl-2 row failed only because the running queue script predates the consolidation (stale reference, no rerun needed).
 
+2026-10-02 recorded (run finished overnight, log ~/bc-runs/queue-kld-decode-0225.log): decode-mode KLD (ubatch 1, 8 chunks, own decode-mode host-f32 reference), 27B Q8_0 dual XTX. ref repeat: mean 0.000000, p99 0.00003, same-top 99.99%. RCCL: 0.000000 / 0.00003 / 99.99% (decode-size reductions are below RCCL's bf16 threshold, so f32). host bf16: 0.000020 / 0.00017 / 99.74%. host f16: 0.000003 / 0.00008 / 99.94%. adaptive f32: 0.000000 / 0.00003 / 99.99%. adaptive bf16: 0.000020 / 0.00017 / 99.74%. All PASS the KLD gate, but the MTP acceptance A/B (ab-27b-awl-1) already fails bf16 (82.17% vs 84.28%) and f16 (78.56%), so acceptance, not KLD, is the binding gate. Conclusion unchanged: f32 stays the adaptive host wire; safe-f16 (scaled) is the only remaining low-precision candidate (unbuilt). Note f16 has lower KLD than bf16 yet the worst acceptance and tg2048 (-7.27%) - KLD at decode size does not predict MTP acceptance here.
+
 ## Change Log
 
 - 2026-09-30T14:04:38.045766+00:00 (created-by): Created by agent
 - 2026-09-30T16:25:35.929349+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T17:27:22.793498+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T05:34:08.182339+00:00 (updated-by): Updated: section:notes
