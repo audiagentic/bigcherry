@@ -69,13 +69,14 @@ struct bc_cpu_root {
     struct l_desc { uint32_t n_elems; uint32_t mask; };
     l_desc   l_ring[1024] = {};              // written by the enqueue thread before l_posted is released
     std::atomic<uint32_t> l_posted{0};       // last generation whose descriptor is published
-    std::atomic<uint32_t> l_finished{0};     // last generation the worker completed
+    static constexpr int L_WORKERS = 4;      // run 5: one scalar worker cost ~2.7 ms per 6.5 MB call
+    std::atomic<uint32_t> l_finished[L_WORKERS] = {};  // per worker: last generation it completed
     uint32_t l_gen = 0;                      // enqueue-side generation
     hipStream_t l_d2h[GGML_CUDA_MAX_DEVICES] = {};
     hipStream_t l_h2d[GGML_CUDA_MAX_DEVICES] = {};
     hipEvent_t  l_ready[GGML_CUDA_MAX_DEVICES] = {};
     hipEvent_t  l_done[GGML_CUDA_MAX_DEVICES] = {};
-    std::thread l_worker;
+    std::thread l_worker[L_WORKERS];
     bool l_traced = false;
 };
 
@@ -173,7 +174,7 @@ static void bc_cpu_root_worker(bc_cpu_root * cr) {
     }
 }
 
-static void bc_cpu_root_large_worker(bc_cpu_root * cr) {
+static void bc_cpu_root_large_worker(bc_cpu_root * cr, int t) {
     uint32_t want = 1;
     while (!cr->stop.load(std::memory_order_relaxed)) {
         if ((int32_t) (cr->l_posted.load(std::memory_order_acquire) - want) < 0) {
@@ -182,7 +183,7 @@ static void bc_cpu_root_large_worker(bc_cpu_root * cr) {
         }
         const bc_cpu_root::l_desc d = cr->l_ring[want % 1024];
         const size_t nchunks = (d.n_elems + cr->l_chunk_elems - 1) / cr->l_chunk_elems;
-        for (size_t c = 0; c < nchunks && !cr->stop.load(std::memory_order_relaxed); c++) {
+        for (size_t c = t; c < nchunks && !cr->stop.load(std::memory_order_relaxed); c += bc_cpu_root::L_WORKERS) {
             for (int r = 0; r < cr->n; r++) {
                 const volatile uint32_t * a = &cr->l_arrived[(size_t) r * BC_CPU_ROOT_MAX_CHUNKS + c];
                 while ((int32_t) (__atomic_load_n((const uint32_t *) a, __ATOMIC_ACQUIRE) - want) < 0 &&
@@ -203,8 +204,10 @@ static void bc_cpu_root_large_worker(bc_cpu_root * cr) {
                     memcpy(out, src, len * sizeof(float));
                     first = false;
                 } else {
+                    float * __restrict o = out;
+                    const float * __restrict sr = src;
                     for (size_t i = 0; i < len; i++) {
-                        out[i] += src[i];
+                        o[i] += sr[i];
                     }
                 }
             }
@@ -213,7 +216,7 @@ static void bc_cpu_root_large_worker(bc_cpu_root * cr) {
             }
             __atomic_store_n((uint32_t *) &cr->l_reduced[c], want, __ATOMIC_RELEASE);
         }
-        cr->l_finished.store(want, std::memory_order_release);
+        cr->l_finished[t].store(want, std::memory_order_release);
         want++;
     }
 }
@@ -226,8 +229,10 @@ static void bc_cpu_root_free(bc_cpu_root * cr) {
     if (cr->worker.joinable()) {
         cr->worker.join();
     }
-    if (cr->l_worker.joinable()) {
-        cr->l_worker.join();
+    for (auto & w : cr->l_worker) {
+        if (w.joinable()) {
+            w.join();
+        }
     }
     for (int r = 0; r < cr->n; r++) {
         if (cr->l_d2h[r]) { (void) hipStreamDestroy(cr->l_d2h[r]); }
@@ -286,7 +291,9 @@ static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes, const int * dev
         } else {
             memset((void *) cr->l_arrived, 0, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS * n);
             memset((void *) cr->l_reduced, 0, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS);
-            cr->l_worker = std::thread(bc_cpu_root_large_worker, cr);
+            for (int t = 0; t < bc_cpu_root::L_WORKERS; t++) {
+                cr->l_worker[t] = std::thread(bc_cpu_root_large_worker, cr, t);
+            }
         }
     }
     cr->worker = std::thread(bc_cpu_root_worker, cr);
@@ -316,7 +323,17 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
             const size_t ne = (size_t) ggml_nelements(tensors[0]);
             const size_t nchunks = (ne + cr->l_chunk_elems - 1) / cr->l_chunk_elems;
             const uint32_t gen = ++cr->l_gen;
-            while ((int32_t) (gen - cr->l_finished.load(std::memory_order_acquire)) > 512) {
+            uint32_t fin = cr->l_finished[0].load(std::memory_order_acquire);
+            for (int t = 1; t < bc_cpu_root::L_WORKERS; t++) {
+                const uint32_t ft = cr->l_finished[t].load(std::memory_order_acquire);
+                fin = (int32_t) (ft - fin) < 0 ? ft : fin;
+            }
+            while ((int32_t) (gen - fin) > 512) {
+                fin = cr->l_finished[0].load(std::memory_order_acquire);
+                for (int t = 1; t < bc_cpu_root::L_WORKERS; t++) {
+                    const uint32_t ft = cr->l_finished[t].load(std::memory_order_acquire);
+                    fin = (int32_t) (ft - fin) < 0 ? ft : fin;
+                }
                 BC_CPU_ROOT_PAUSE();  // never let the descriptor ring wrap
             }
             uint32_t mask = 0;
@@ -404,7 +421,7 @@ static void ggml_backend_cuda_comm_init_cpu_root(ggml_backend_cuda_comm_context 
     const char * lenv = getenv("BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES");
     const char * cenv = getenv("BIGCHERRY_AR_CPU_ROOT_CHUNK_BYTES");
     const size_t large_max = lenv != nullptr ? (size_t) strtoull(lenv, nullptr, 10) : 0;  // opt-in: run 5 measured prefill 1450 -> 1060 t/s with 32 MiB
-    const size_t chunk     = cenv != nullptr ? (size_t) strtoull(cenv, nullptr, 10) : (size_t) 2 << 20;
+    const size_t chunk     = cenv != nullptr ? (size_t) strtoull(cenv, nullptr, 10) : (size_t) 1 << 20;
     ret->cpu_root = bc_cpu_root_create((int) ret->dev_ids.size(), max_bytes, ret->dev_ids.data(), large_max, chunk);
     if (ret->cpu_root == nullptr) {
         GGML_LOG_WARN("cpu-root: pinned host allocation failed; using the %s provider\n", ret->provider_name);
