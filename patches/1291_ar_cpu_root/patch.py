@@ -403,7 +403,7 @@ static void ggml_backend_cuda_comm_init_cpu_root(ggml_backend_cuda_comm_context 
     const size_t max_bytes = env != nullptr ? (size_t) strtoull(env, nullptr, 10) : 65536;
     const char * lenv = getenv("BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES");
     const char * cenv = getenv("BIGCHERRY_AR_CPU_ROOT_CHUNK_BYTES");
-    const size_t large_max = lenv != nullptr ? (size_t) strtoull(lenv, nullptr, 10) : (size_t) 32 << 20;
+    const size_t large_max = lenv != nullptr ? (size_t) strtoull(lenv, nullptr, 10) : 0;  // opt-in: run 5 measured prefill 1450 -> 1060 t/s with 32 MiB
     const size_t chunk     = cenv != nullptr ? (size_t) strtoull(cenv, nullptr, 10) : (size_t) 2 << 20;
     ret->cpu_root = bc_cpu_root_create((int) ret->dev_ids.size(), max_bytes, ret->dev_ids.data(), large_max, chunk);
     if (ret->cpu_root == nullptr) {
