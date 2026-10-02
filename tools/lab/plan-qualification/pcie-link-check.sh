@@ -3,8 +3,11 @@
 # max speed (seen on Brutus: XTX0 and R9700 at 2.5 GT/s under load, amdgpu pp_dpm_pcie with no active level)
 # roughly halves AllReduce-bound prefill until reboot. For each GPU, compares the root port's
 # current_link_speed with its max_link_speed (the GPU-internal switch hops do not reflect the slot link).
+# Cause seen on Brutus: thermald drives the kernel's PCIe_Port_Link_Speed_<port> cooling devices (bwctrl)
+# under CPU heat and never releases them, leaving LnkCtl2 target speed at Gen 1.
 # Usage: pcie-link-check.sh            -> report; exit 1 if any root-port link is degraded
-#        pcie-link-check.sh --retrain  -> also set Link Control Retrain on degraded root ports (sudo; run
+#        pcie-link-check.sh --retrain  -> also reset the degraded ports' PCIe_Port_Link_Speed cooling devices
+#                                         to 0 and request a link retrain (sudo -S, password on stdin; run
 #                                         only with the GPUs idle), wait, and re-check
 set -u
 retrain=0; [ "${1:-}" = "--retrain" ] && retrain=1
@@ -21,7 +24,14 @@ check() {
 check
 [ ${#bad[@]} -eq 0 ] && exit 0
 [ $retrain -eq 1 ] || exit 1
-for r in "${bad[@]}"; do sudo -S setpci -s "$r" CAP_EXP+0x10.w=0x0020:0x0020 && echo "retrain requested on $r"; done
+read -r pw
+for r in "${bad[@]}"; do
+  for c in /sys/class/thermal/cooling_device*; do
+    [ "$(cat $c/type)" = "PCIe_Port_Link_Speed_$r" ] || continue
+    echo "$pw" | sudo -S -p "" sh -c "echo 0 > $c/cur_state" && echo "cooling device $(basename $c) for $r reset to 0"
+  done
+  echo "$pw" | sudo -S -p "" setpci -s "$r" CAP_EXP+0x10.w=0x0020:0x0020 && echo "retrain requested on $r"
+done
 sleep 2
 check
 [ ${#bad[@]} -eq 0 ]

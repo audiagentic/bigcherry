@@ -7,7 +7,7 @@ export BC_MODEL=/mnt/data/llm-models/deepseek-v4-flash/gguf/DeepSeek-V4-Flash-07
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 SCRIPT dsv4-flash-probe-1 tools/lab/deepseek/probe-v4-flash.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dsv4-flash-probe-1/out
+VIS=0,1,2,3 SCRIPT dsv4-flash-probe-2 tools/lab/deepseek/probe-v4-flash.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dsv4-flash-probe-2/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
