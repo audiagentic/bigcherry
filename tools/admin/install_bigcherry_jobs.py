@@ -13,10 +13,11 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
-def unit_texts(*, project_root: Path, work_root: Path, python: Path, user: str) -> dict[str, str]:
+def unit_texts(*, project_root: PurePosixPath, work_root: PurePosixPath, python: PurePosixPath, user: str) -> dict[str, str]:
+    # systemd units are Linux text: build them from POSIX paths whatever OS renders them.
     pending = work_root / "jobs" / "inbox" / "pending"
     service = f"""[Unit]
 Description=BigCherry durable job inbox ingestion
@@ -83,7 +84,7 @@ WantedBy=timers.target
     }
 
 
-def env_text(*, project_root: Path, work_root: Path) -> str:
+def env_text(*, project_root: PurePosixPath, work_root: PurePosixPath) -> str:
     return "\n".join((
         f"BIGCHERRY_PROJECT_ROOT={project_root}",
         f"BIGCHERRY_WORK_ROOT={work_root}",
@@ -116,21 +117,22 @@ def install(args: argparse.Namespace) -> dict[str, object]:
     project = args.project_root.resolve()
     work = args.work_root.resolve()
     python = args.python.resolve()
-    units = unit_texts(project_root=project, work_root=work, python=python, user=args.user)
+    units = unit_texts(project_root=PurePosixPath(project.as_posix()), work_root=PurePosixPath(work.as_posix()),
+                       python=PurePosixPath(python.as_posix()), user=args.user)
     if args.dest_root is not None:
         root = args.dest_root.resolve()
         systemd = root / "etc" / "systemd" / "system"
         envdir = root / "etc" / "bigcherry"
     else:
         if not args.apply:
-            return {"apply": False, "units": units, "environment": env_text(project_root=project, work_root=work), "doctor": doctor(project)}
+            return {"apply": False, "units": units, "environment": env_text(project_root=PurePosixPath(project.as_posix()), work_root=PurePosixPath(work.as_posix())), "doctor": doctor(project)}
         systemd = Path("/etc/systemd/system")
         envdir = Path("/etc/bigcherry")
     systemd.mkdir(parents=True, exist_ok=True)
     envdir.mkdir(parents=True, exist_ok=True)
     for name, text in units.items():
         (systemd / name).write_text(text, encoding="utf-8")
-    (envdir / "jobs.env").write_text(env_text(project_root=project, work_root=work), encoding="utf-8")
+    (envdir / "jobs.env").write_text(env_text(project_root=PurePosixPath(project.as_posix()), work_root=PurePosixPath(work.as_posix())), encoding="utf-8")
     for path in (
         work / "jobs" / "inbox" / "pending",
         work / "jobs" / "status",

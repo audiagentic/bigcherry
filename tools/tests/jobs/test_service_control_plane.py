@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from admin.install_bigcherry_jobs import unit_texts
 from bigcherry.hardware.inventory import HardwareBindingError, bind_gpu_requirement
@@ -268,9 +268,9 @@ class RemoteAndInstallTests(unittest.TestCase):
 
     def test_systemd_render_is_host_parameterized(self):
         units = unit_texts(
-            project_root=Path("/srv/bigcherry"),
-            work_root=Path("/mnt/data/bc"),
-            python=Path("/srv/venv/bin/python"),
+            project_root=PurePosixPath("/srv/bigcherry"),
+            work_root=PurePosixPath("/mnt/data/bc"),
+            python=PurePosixPath("/srv/venv/bin/python"),
             user="bigcherry",
         )
         service = units["bigcherry-jobs-ingest.service"]

@@ -4,7 +4,7 @@ idempotently to the real vendored test-backend-ops.cpp."""
 
 import importlib.util
 from pathlib import Path
-import shutil
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -30,7 +30,8 @@ def _apply_to_copy(tmp_path: Path) -> Path:
     vendor = ROOT / "vendor" / "llama.cpp"
     target = tmp_path / "tests" / "test-backend-ops.cpp"
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(vendor / "tests" / "test-backend-ops.cpp", target)
+    # Pristine pinned bytes from git: the working vendor tree may already carry applied patches.
+    target.write_bytes(subprocess.check_output(["git", "-C", str(vendor), "show", "HEAD:tests/test-backend-ops.cpp"]))
     return target
 
 
@@ -49,12 +50,12 @@ def test_applies_cleanly_stacked_on_1222(tmp_path):
     ]
     text = target.read_text(encoding="utf-8")
     assert "BIGCHERRY_CORRECTNESS_METRIC" in text
-    # Placed after err is computed, before the existing pass/fail check --
-    # both must still be present and in that order.
+    # Emitted after the existing pass/fail block (5992f183), so the err line and
+    # the check stay untouched for patches anchoring on them; all three present in order.
     err_idx = text.index("double err = ud->tc->err(")
     metric_idx = text.index("BIGCHERRY_CORRECTNESS_METRIC")
     threshold_check_idx = text.index('printf("[%s] ERR = %.9f > %.9f "')
-    assert err_idx < metric_idx < threshold_check_idx
+    assert err_idx < threshold_check_idx < metric_idx
 
 
 def test_apply_is_idempotent(tmp_path):

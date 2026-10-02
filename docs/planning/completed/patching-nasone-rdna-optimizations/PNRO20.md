@@ -60,3 +60,5 @@ Found 2026-09-27 during a queue audit; the 1205 session had been sitting failed 
 - 2026-09-27T13:59:50.927188+00:00 (created-by): Created by agent
 - 2026-09-27T14:06:12.153188+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria, section:notes
 - 2026-09-27T14:06:19.400684+00:00 (state-transition): State: pending → completed
+
+## Ledger-events

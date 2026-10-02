@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 import unittest
 from pathlib import Path
+
+if not sys.platform.startswith("linux"):
+    raise unittest.SkipTest("Slurm installer targets Linux hosts (imports pwd)")
 
 from admin.install_bigcherry_slurm import _validate_preconditions, action_plan
 from bigcherry.hardware.inventory import InventoryCatalog

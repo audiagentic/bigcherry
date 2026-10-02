@@ -20,7 +20,7 @@ PLANS = ROOT / "docs" / "planning" / "active" / "patching-nasone-rdna-optimizati
 
 EXPECTED = {
     # e06dcf63 is one atomic commit: NRO02's fusion ships inside 1250.
-    "1250_nro01_allreduce_q8_wire": (["NRO01", "NRO02"], ["1252_nro03_allreduce_p2p_provider"]),
+    "1250_nro01_allreduce_q8_wire": (["NRO01", "NRO02"], ["1252_nro03_allreduce_p2p_provider", "1272_ar_host_compressed_wire"]),
     "1252_nro03_allreduce_p2p_provider": ("NRO03", []),
     "1253_nro04_gfx1100_bf16_chunked_gdn": ("NRO04", []),
     "1254_nro05_gdn_mtp_prefix_tail": ("NRO05", ["1253_nro04_gfx1100_bf16_chunked_gdn"]),
@@ -155,7 +155,13 @@ class NroPackageShapeTests(unittest.TestCase):
 class NroSafetyInvariantTests(unittest.TestCase):
     def test_allreduce_modes_are_opt_in_and_traced(self):
         source = _patch_source("1250_nro01_allreduce_q8_wire")
-        self.assertIn("return ggml_cuda_ar_wire_mode::legacy", source)
+        # Wire selection moved to 1272's shared codec: unset env stays on the pristine path.
+        wire = _patch_source("1272_ar_host_compressed_wire")
+        self.assertIn(
+            "if (value == nullptr || value[0] == '\\0') {\n"
+            "        return ggml_cuda_ar_wire_override::pristine;",
+            wire,
+        )
         self.assertIn('getenv("GGML_CUDA_AR_FUSED_RESIDUAL") != nullptr', source)
         self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro01", source)
         self.assertIn("BIGCHERRY_PATCH_HIT patch=1250_nro02", source)

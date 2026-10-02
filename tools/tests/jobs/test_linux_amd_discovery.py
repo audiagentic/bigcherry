@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,7 @@ STATIC = {
 
 
 class AmdSmiDiscoveryTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "builds a fake sysfs tree whose PCI device names contain ':' (invalid on Windows)")
     def test_uuid_inventory_captures_locators_but_keys_identity_by_uuid(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

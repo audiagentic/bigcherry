@@ -17,3 +17,10 @@ This patch changes `ggml/src/ggml-cuda/allreduce.cu` only. It does not modify 12
 ## Validation
 
 State is **untested**. Required evidence is declared in `validation.toml`: deterministic apply, HIP build, explicit-wire activation, correctness, and paired performance on gfx1100. The checked-in offline mechanics test applies against the pristine b11233 fixtures, covers all four format branches and both Q8 transport paths, verifies idempotence, and checks anchor mutation fails closed.
+
+## Validation adapter removed (2026-10-02)
+
+No experiment contract was ever bound, so the execution gate refused every validation run. The wire
+question was answered by lab A/B instead (PGC11, 27B Q8_0 dual XTX, ab-27b-awl-1 + decode-mode KLD):
+bf16 and f16 fail the MTP acceptance gate, f32 stays the adaptive host wire. A validation adapter
+returns only together with a contract (e.g. for a safe scaled-f16 wire).

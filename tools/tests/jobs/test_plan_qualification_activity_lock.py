@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import time
+import sys
 import unittest
 from pathlib import Path
 
@@ -35,6 +36,7 @@ def _proc(script: str, work: Path) -> subprocess.Popen[str]:
     )
 
 
+@unittest.skipUnless(sys.platform.startswith("linux"), "the queue activity lock is bash + flock on the Linux campaign host")
 class PlanQualificationActivityLockTests(unittest.TestCase):
     def test_shell_scripts_parse(self) -> None:
         for name in ("work-root.sh", "profile_run.sh", "run_campaign.sh", "queue.sh"):

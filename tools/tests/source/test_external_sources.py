@@ -68,8 +68,8 @@ class TestRegistryStructure(unittest.TestCase):
         by_item = {}
         for entry in rdna["tracked"]:
             by_item.setdefault(entry.get("plan-item"), []).append(entry)
-        # The SSM pre-scan chain supersedes both RD14 and RD16.
-        rd24 = by_item.get("RD24", [])
+        # The SSM pre-scan chain supersedes both RD14 and RD16 (legacy RD24, now owned by PRBE18).
+        rd24 = by_item.get("PRBE18", [])
         self.assertEqual(len(rd24), 1)
         superseded = {
             e["plan-item"] for e in rdna["tracked"] if e["status"] == "superseded"
@@ -135,13 +135,16 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # ses_866bf44313864664, 2026-08-23) -- see the patch's own README.md
     # for the full real evidence. Corrected here to match, not a new claim.
     # 1237 (RD30) promoted 2026-09-26: 4-session PASS on gfx1100.
-    VALIDATED_RDNA_PATCHES = frozenset({"1200_rd19_single_gpu_meta_bypass", "1237_rd30_moe_mmq_compact_grid"})
+    VALIDATED_RDNA_PATCHES = frozenset({
+        "1200_rd19_single_gpu_meta_bypass", "1237_rd30_moe_mmq_compact_grid",
+        "1241_rd33_mmvq_q8_0_f32_decode",  # promoted fb2e75a7 (gfx1100 dual-XTX dense Q8_0 decode)
+    })
     # Patches actually composed into [patch-set.validated-enhancements],
     # which [source.bigcherry] builds on top of framework -- so the release
     # build genuinely runs them. Shipping is a separate, deliberate axis
     # from VALIDATED_RDNA_PATCHES above, taken only after the evidence axis
     # was satisfied. Currently empty for the same reason as above.
-    SHIPPED_RDNA_PATCHES = frozenset({"1237_rd30_moe_mmq_compact_grid"})
+    SHIPPED_RDNA_PATCHES = frozenset({"1237_rd30_moe_mmq_compact_grid", "1241_rd33_mmvq_q8_0_f32_decode"})
 
     # Patches retired from the first-sweep pool, either because upstream
     # shipped the same fix independently (STATE = "superseded" -- the patch
