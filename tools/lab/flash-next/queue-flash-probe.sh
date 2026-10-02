@@ -15,8 +15,8 @@ done
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-flash-mtp2 qwen4exp-mtp gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-probe-11 tools/lab/flash-next/layout-probe.sh @b-flash-mtp2 /mnt/data/bigcherry-work/runs/flashnext-probe-11/out
+VIS=0,1,2,3 SCRIPT flashnext-layer-c061 tools/lab/flash-next/layout-probe.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/flashnext-layer-c061/out cpu3-layer
+VIS=0,1,2,3 SCRIPT flashnext-layer-1280 tools/lab/flash-next/layout-probe.sh @b-flash-mtp2 /mnt/data/bigcherry-work/runs/flashnext-layer-1280/out cpu3-layer
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
