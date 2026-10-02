@@ -127,6 +127,38 @@ int main(int argc, char ** argv) {
         printf("ranks=%d elems=%d  %.1f us/call (stream-ordered chain)\n", nd, n,
                std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters);
     }
+    // Exact verification: before each call every rank holds distinct values (rank r, call k):
+    // v = (i % 97) + 100*r + k (exactly representable); after the call each rank must hold the sum.
+    {
+        int bad = 0;
+        std::vector<std::vector<float>> in(nd, std::vector<float>(n));
+        std::vector<float> out(n);
+        const unsigned int base = 4 * iters + 10;
+        for (int k = 0; k < 64 && !bad; k++) {
+            for (int d = 0; d < nd; d++) {
+                for (int i = 0; i < n; i++) in[d][i] = float(i % 97) + 100.0f * d + k;
+                (void) hipSetDevice(d);
+                (void) hipMemcpy(d_buf[d], in[d].data(), sizeof(float) * n, hipMemcpyHostToDevice);
+            }
+            const unsigned int epoch = base + k + 1;
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                produce<<<blocks, threads, 0, st[d]>>>(d_buf[d], d_slot_base + (size_t) d * n, d_ep + d, epoch, n);
+                consume<<<blocks, threads, 0, st[d]>>>(d_buf[d], d_res, d_rep, epoch, n);
+            }
+            for (int d = 0; d < nd && !bad; d++) {
+                (void) hipSetDevice(d); (void) hipStreamSynchronize(st[d]);
+                (void) hipMemcpy(out.data(), d_buf[d], sizeof(float) * n, hipMemcpyDeviceToHost);
+                for (int i = 0; i < n; i++) {
+                    float want = 0; for (int r = 0; r < nd; r++) want += in[r][i];
+                    if (out[i] != want) { printf("VERIFY FAIL call %d rank %d i %d got %g want %g
+", k, d, i, out[i], want); bad = 1; break; }
+                }
+            }
+        }
+        printf("ranks=%d elems=%d exact verification over 64 calls: %s
+", nd, n, bad ? "FAIL" : "PASS");
+    }
     // values double every call (x -> sum over ranks); just check rank 0 equals rank 1.
     std::vector<float> a(n), b(n);
     (void) hipSetDevice(0); (void) hipMemcpy(a.data(), d_buf[0], sizeof(float) * n, hipMemcpyDeviceToHost);
