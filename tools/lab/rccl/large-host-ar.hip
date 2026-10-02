@@ -1,0 +1,91 @@
+// Pipelined host-staged AllReduce for LARGE messages (Flash-Next prefill: ~10 MB f32 per call, 3 ranks).
+// Chunked: each GPU copies chunk k device->pinned host on its copy engine (hipMemcpyAsync, own stream) and
+// records an event; CPU workers wait for chunk k of every rank, sum in fixed rank order (exact f32, AVX2,
+// several threads per chunk), then each GPU copies the reduced chunk host->device on a second stream.
+// D2H of chunk k+1 overlaps the CPU sum of k and the H2D of k-1. Compares against the RCCL numbers from
+// ar-latency.hip (10 MB 3 ranks: ~3.6 ms stream-ordered).
+// Build: hipcc -O2 -mavx2 --offload-arch=gfx1100,gfx1201 large-host-ar.hip -o large-host-ar -pthread
+#include <hip/hip_runtime.h>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <thread>
+#include <vector>
+#include <immintrin.h>
+
+static void sum_range(float * out, const std::vector<float *> & in, size_t lo, size_t hi) {
+    for (size_t i = lo; i < hi; i += 8) {
+        __m256 acc = _mm256_loadu_ps(in[0] + i);
+        for (size_t r = 1; r < in.size(); r++) acc = _mm256_add_ps(acc, _mm256_loadu_ps(in[r] + i));
+        _mm256_storeu_ps(out + i, acc);
+    }
+}
+
+int main(int argc, char ** argv) {
+    int nd = 0; (void) hipGetDeviceCount(&nd);
+    const size_t elems = argc > 1 ? strtoull(argv[1], nullptr, 10) : 2621440;       // 10 MB
+    const size_t chunk = argc > 2 ? strtoull(argv[2], nullptr, 10) : 262144;         // 1 MB chunks
+    const int cpu_threads = argc > 3 ? atoi(argv[3]) : 4;
+    const int iters = 30;
+    const size_t nchunks = (elems + chunk - 1) / chunk;
+    std::vector<float *> dev(nd), slot(nd);
+    std::vector<hipStream_t> d2h(nd), h2d(nd);
+    std::vector<std::vector<hipEvent_t>> ev(nd, std::vector<hipEvent_t>(nchunks));
+    float * result;
+    (void) hipHostMalloc((void **) &result, elems * sizeof(float), hipHostMallocPortable);
+    for (int d = 0; d < nd; d++) {
+        (void) hipSetDevice(d);
+        (void) hipMalloc(&dev[d], elems * sizeof(float));
+        (void) hipHostMalloc((void **) &slot[d], elems * sizeof(float), hipHostMallocPortable);
+        (void) hipStreamCreateWithFlags(&d2h[d], hipStreamNonBlocking);
+        (void) hipStreamCreateWithFlags(&h2d[d], hipStreamNonBlocking);
+        for (auto & e : ev[d]) (void) hipEventCreateWithFlags(&e, hipEventDisableTiming);
+        std::vector<float> init(elems, 1.0f);
+        (void) hipMemcpy(dev[d], init.data(), elems * sizeof(float), hipMemcpyHostToDevice);
+    }
+    auto one = [&]() {
+        for (size_t c = 0; c < nchunks; c++) {
+            const size_t off = c * chunk, n = std::min(chunk, elems - off);
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                (void) hipMemcpyAsync(slot[d] + off, dev[d] + off, n * sizeof(float), hipMemcpyDeviceToHost, d2h[d]);
+                (void) hipEventRecord(ev[d][c], d2h[d]);
+            }
+        }
+        for (size_t c = 0; c < nchunks; c++) {
+            const size_t off = c * chunk, n = std::min(chunk, elems - off);
+            for (int d = 0; d < nd; d++) (void) hipEventSynchronize(ev[d][c]);
+            std::vector<float *> in(nd);
+            for (int d = 0; d < nd; d++) in[d] = slot[d] + off;
+            std::vector<std::thread> th;
+            const size_t per = ((n / cpu_threads) + 7) & ~size_t(7);
+            for (int t = 0; t < cpu_threads; t++) {
+                const size_t lo = t * per, hi = std::min(n, lo + per);
+                if (lo >= hi) break;
+                std::vector<float *> sub(nd);
+                for (int d = 0; d < nd; d++) sub[d] = in[d];
+                th.emplace_back([=] { sum_range(result + off, sub, lo, hi); });
+            }
+            for (auto & t : th) t.join();
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                (void) hipMemcpyAsync(dev[d] + off, result + off, n * sizeof(float), hipMemcpyHostToDevice, h2d[d]);
+            }
+        }
+        for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(h2d[d]); }
+    };
+    one();  // warmup
+    for (int d = 0; d < nd; d++) {  // reset to 1.0 so values stay finite (3^k grows fast)
+        std::vector<float> init(elems, 1.0f);
+        (void) hipSetDevice(d); (void) hipMemcpy(dev[d], init.data(), elems * sizeof(float), hipMemcpyHostToDevice);
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    for (int it = 0; it < iters; it++) one();
+    const double us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters;
+    std::vector<float> a(elems), b(elems);
+    (void) hipSetDevice(0); (void) hipMemcpy(a.data(), dev[0], elems * sizeof(float), hipMemcpyDeviceToHost);
+    (void) hipSetDevice(nd - 1); (void) hipMemcpy(b.data(), dev[nd - 1], elems * sizeof(float), hipMemcpyDeviceToHost);
+    printf("ranks=%d bytes=%zu chunk_bytes=%zu cpu_threads=%d  %.1f us/call  %.2f GB/s algbw  ranks agree: %s\n",
+           nd, elems * 4, chunk * 4, cpu_threads, us, elems * 4 / us / 1e3, memcmp(a.data(), b.data(), elems * 4) == 0 ? "yes" : "NO");
+    return 0;
+}
