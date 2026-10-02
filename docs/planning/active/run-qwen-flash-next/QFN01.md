@@ -78,6 +78,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-02 stock kernel 7.0.13-070013 (P2P-hack kernel halved host<->GPU DMA; thermald had throttled XTX0/R9700 links to Gen1 - all earlier prefill numbers in this item are low). flashnext-stock-1/-3, production build b-flash-c061, greedy identical in every MTP run. No MTP -ts 4,4,3: ub512 1079 pp / 36.2 tg; ub2048 1478 pp / 36.5 tg. MTP3 draft on 6900, -ts 4,4,3: ub512 933 pp / 66.8 tg (acc 73.1%); ub1024 1139 / 68.4 (73.9%); ub2048 1328 / 66.2 (69.5%). Depth 2: 65.2 (81.0%); depth 4: 66.2 (68.5%). -ts 5,5,4 MTP3: 951 / 68.0. 192K -ts 2,2,3 MTP3 (q8_0 KV): ub512 917.5 / 62.5 (74.0%); ub1024 OOM. 224K ub256: 704 / 61.2. Preferred: 8K-160K -ts 4,4,3 (or 5,5,4), MTP depth 3, draft on 6900, ub1024 (best decode, +22% prefill vs ub512) or ub2048 for prefill-heavy use; 192K -ts 2,2,3 ub512. Single-session numbers; differences under ~2% not conclusive.
 
+2026-10-02 native (llama-native:stock:linux-multi, pristine c061, same RCCL HIP build) vs production, same window, 3 requests: Flash-Next 3-card no MTP ub512 969/35.1 vs 1079/36.2 (+11% pp); ub2048 1403/35.6 vs 1478/36.5; best 8K MTP3 ub1024 draft-6900 1090/67.8 vs 1139/68.4; 192K 865/63.3 vs 918/62.5. 27B: no-draft dual-XTX tensor 1430/34.2 vs 1479/38.5 (+13% tg); MTP5 ~1314/77.6 vs ~1316/78.7; 3-card MTP5 1101/78.7 vs 1101/77.3; single R9700 HIP 1223/19.7 vs 1340/19.7 (Vulkan RADV 1120/19.2). BigCherry's gains are mostly plain decode/prefill; with MTP decode is within ~1-2% of native -> the MTP verify path (AllReduce on verify batches) is the remaining lever.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -96,3 +98,4 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T05:23:42.872770+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T07:20:01.905871+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T11:50:00.976519+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T13:16:39.643772+00:00 (updated-by): Updated: section:notes
