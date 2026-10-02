@@ -1,6 +1,6 @@
 # 1268_prbe52_adaptive_mtp_wiring
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PRBE52
 
 ## What it does

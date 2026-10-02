@@ -176,9 +176,16 @@ questions:
 
 | Axis | Values | Meaning |
 | --- | --- | --- |
-| `patch.toml state` | `untested`, `validated`, `rejected`, `superseded` | Whether the patch implementation is accepted for composition; recipes normally require `validated` |
+| `patch.toml state` | `untested`, `evaluated`, `validated`, `rejected`, `superseded` | Whether the patch implementation is accepted for composition; recipes normally require `validated` |
 | `external-sources.toml` tracked status | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, `superseded`, `excluded`, `evidence-only` | Historical/working progress of a tracked logical change and its proof level |
 | Campaign/evidence result | `PASS`, `FAIL`, `BLOCKED`, `ERROR` plus named results | What this run actually established; not a lifecycle edit |
+
+`evaluated` means the patch has been run on real hardware (A/B, KLD or contract
+sessions with recorded results) but has not passed qualification, including
+patches whose measurements came out neutral or negative but that have not been
+formally rejected. It composes exactly like `untested`: experiments may select
+it and qualification may still promote it; recipes requiring `validated` do not
+accept it. Use `rejected` only once the evidence settles that the candidate fails.
 
 An experimental patch can have a package `state = "untested"` while its
 tracked logical change is `ported-benched`; that is not automatically a

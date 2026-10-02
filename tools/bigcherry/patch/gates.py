@@ -806,7 +806,7 @@ def evaluate_lifecycle_gate(
             "patch.catalog",
             ("focal patch is absent from the resolved composition",),
         )
-    if getattr(module, "state", None) != "untested":
+    if getattr(module, "state", None) not in ("untested", "evaluated"):
         return GateResult(GateId.G5, GateStatus.NA, "lifecycle", "patch.catalog")
     missing = tuple(
         gate_id.value

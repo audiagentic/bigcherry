@@ -41,6 +41,12 @@ EXPECTED = {
 # Promoted into [patch-set.validated-enhancements] on a 4-session PASS on
 # every contract-scope architecture (1253/NRO04: 2026-09-26).
 PROMOTED = {"1253_nro04_gfx1100_bf16_chunked_gdn"}
+# Run on hardware with recorded results but not qualified (state "evaluated").
+EVALUATED = {"1250_nro01_allreduce_q8_wire"}
+
+
+def _expected_state(patch_id):
+    return "validated" if patch_id in PROMOTED else ("evaluated" if patch_id in EVALUATED else "untested")
 
 
 def _pnro_numbers() -> list[int]:
@@ -115,7 +121,7 @@ class NroPackageShapeTests(unittest.TestCase):
             manifest = _manifest(patch_id)
             self.assertEqual(manifest["id"], patch_id)
             self.assertEqual(manifest["order"], int(patch_id.split("_", 1)[0]))
-            self.assertEqual(manifest["state"], "validated" if patch_id in PROMOTED else "untested")
+            self.assertEqual(manifest["state"], _expected_state(patch_id))
             self.assertEqual(manifest["plan-ids"], plan_id if isinstance(plan_id, list) else [plan_id])
             self.assertEqual(manifest["requires"], requires)
 
@@ -123,7 +129,7 @@ class NroPackageShapeTests(unittest.TestCase):
         for patch_id, (plan_id, _) in EXPECTED.items():
             text = (PATCHES / patch_id / "SUMMARY.md").read_text(encoding="utf-8")
             self.assertTrue(text.startswith(f"# {patch_id}\n\n"))
-            self.assertIn(f"**Status:** {'validated' if patch_id in PROMOTED else 'untested'}", text)
+            self.assertIn(f"**Status:** {_expected_state(patch_id)}", text)
             self.assertIn(f"**Plan item:** {'/'.join(plan_id) if isinstance(plan_id, list) else plan_id}", text)
 
     def test_patch_modules_are_valid_python_and_export_patches(self):

@@ -53,7 +53,11 @@ from .apply import FilePatch
 # imports and re-exports it.
 VALIDATION_FRAMEWORK_VERSION = "2"
 
-STATES: tuple[str, ...] = ("validated", "rejected", "untested", "superseded")
+# "evaluated": the patch has been run on real hardware (A/B, KLD or contract
+# sessions with recorded results) but has not passed qualification, so it is
+# not "untested". It composes exactly like "untested" (experiments may select
+# it, qualification may still promote it; recipes requiring "validated" do not).
+STATES: tuple[str, ...] = ("validated", "rejected", "untested", "evaluated", "superseded")
 # Both are terminal/excluded from discovery (patch-rebase-check --all,
 # disposition coverage, composition prerequisites): "rejected" means the
 # patch failed our own validation as a candidate; "superseded" means it
