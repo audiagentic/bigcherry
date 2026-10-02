@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "bigcherry-perf",
+  "patch_digest": "cdc71498fcfb21e3274c37e77b472dc604b35c67dc86d5c5761508409f7aa933",
+  "patch_id": "1250_nro01_allreduce_q8_wire",
+  "reason": "pin c061df1: allreduce.cu anchors nro01-p2p-q8-outer/nro01-q8-provider-route no longer match; patch retired (no gain, PGC10), not in any recipe",
+  "target_revision": "c061df19838ff60970faf54fd7e414953590125d",
+  "tracking_item": "PGC10"
+}

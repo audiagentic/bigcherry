@@ -1,7 +1,7 @@
 schema = 1
 id = "1278_qwen4exp_sm_tensor"
 order = 1278
-state = "untested"
+state = "superseded"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

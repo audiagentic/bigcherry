@@ -356,13 +356,9 @@ patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_gua
 # size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>). Investigates adaptive's pp1024 -3.9%.
 patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1277_ar_size_trace"]
 
-[experiment.qwen4exp-tensor]
-# QFN01: allow -sm tensor for Qwen3.8-Flash-Next (qwen4exp); validated end to end against -sm layer.
-patches = ["1278_qwen4exp_sm_tensor"]
-
 [experiment.qwen4exp-routing]
-# QFN02: qwen4exp tensor split (1278) + full eval-callback tensor dump (1279) for the MoE routing profile.
-patches = ["1278_qwen4exp_sm_tensor", "1279_moe_routing_dump"]
+# QFN02: full eval-callback tensor dump (1279) for the MoE routing profile (qwen4exp -sm tensor is native at c061df198).
+patches = ["1279_moe_routing_dump"]
 
 [experiment.iq-mmvq]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).

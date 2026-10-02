@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "bigcherry-perf",
+  "patch_digest": "c6959d6078aa81178b63c7dd664d9348a9acaf8fa7d84387a67a8375c8c9972e",
+  "patch_id": "1273_iq_mmvq_rdna_tuning",
+  "reason": "pin c061df1: five mmvq.cu anchors (kernel template/constants/launch) no longer match upstream mmvq; experimental, not in any recipe",
+  "target_revision": "c061df19838ff60970faf54fd7e414953590125d",
+  "tracking_item": "PKC05"
+}
