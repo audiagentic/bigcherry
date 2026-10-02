@@ -15,9 +15,12 @@
 
 struct alignas(128) Epoch { volatile unsigned int v; char pad[124]; };
 
+__global__ void empty_kernel() {}
+
 __global__ void produce(const float * __restrict__ src, float * slot, Epoch * ep, unsigned int epoch, int n) {
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x) {
-        slot[i] = src[i];
+    const float4 * s4 = (const float4 *) src; float4 * d4 = (float4 *) slot;
+    for (int i = threadIdx.x; i < n / 4; i += blockDim.x) {
+        d4[i] = s4[i];
     }
     // Single block: every store is done after the barrier; publish once.
     __syncthreads();
@@ -33,8 +36,9 @@ __global__ void consume(float * __restrict__ dst, const float * result, const Ep
     }
     __syncthreads();
     __threadfence_system();
-    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x) {
-        dst[i] = ((volatile const float *) result)[i];
+    const float4 * r4 = (const float4 *) result; float4 * d4 = (float4 *) dst;
+    for (int i = threadIdx.x; i < n / 4; i += blockDim.x) {
+        d4[i] = __builtin_nontemporal_load(&r4[i]);
     }
 }
 
@@ -42,7 +46,7 @@ int main(int argc, char ** argv) {
     int nd = 0; hipGetDeviceCount(&nd);
     const int n = argc > 1 ? atoi(argv[1]) : 2560;
     const int iters = 5000;
-    const int blocks = 1, threads = 256;
+    const int blocks = 1, threads = 1024;
     float * h_slots; Epoch * h_ep; float * h_res; Epoch * h_rep;
     (void) hipHostMalloc((void **) &h_slots, sizeof(float) * n * nd, hipHostMallocMapped | hipHostMallocPortable | hipHostMallocCoherent);
     (void) hipHostMalloc((void **) &h_ep, sizeof(Epoch) * nd, hipHostMallocMapped | hipHostMallocPortable | hipHostMallocCoherent);
@@ -81,6 +85,17 @@ int main(int argc, char ** argv) {
     (void) hipHostGetDevicePointer((void **) &d_ep, h_ep, 0);
     (void) hipHostGetDevicePointer((void **) &d_res, h_res, 0);
     (void) hipHostGetDevicePointer((void **) &d_rep, (void *) h_rep, 0);
+    // Floor: the same launch/sync pattern with empty kernels (no host memory traffic, no CPU work).
+    {
+        auto t0 = std::chrono::steady_clock::now();
+        for (int it = 0; it < iters; it++) {
+            for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); empty_kernel<<<1, 64, 0, st[d]>>>(); empty_kernel<<<1, 64, 0, st[d]>>>(); }
+            for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(st[d]); }
+        }
+        printf("ranks=%d floor (2 empty kernels per rank + sync) %.1f us/call
+", nd,
+               std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters);
+    }
     double best = 1e9;
     for (int rep = 0; rep < 3; rep++) {
         auto t0 = std::chrono::steady_clock::now();
