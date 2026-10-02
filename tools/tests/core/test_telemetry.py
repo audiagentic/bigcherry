@@ -5,7 +5,7 @@ import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
-from bigcherry.telemetry import console_telemetry, summarize_launch
+from bigcherry.core.telemetry import console_telemetry, summarize_launch
 
 
 class TelemetryTests(unittest.TestCase):

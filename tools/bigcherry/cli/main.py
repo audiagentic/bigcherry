@@ -867,7 +867,7 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_matrix_cmd.add_argument(
         "--environment",
         default=None,
-        help="host environment TOML (default: config/environment.toml)",
+        help="host environment TOML (default: config/environment.local.toml)",
     )
     runtime_matrix_cmd.add_argument(
         "--models",

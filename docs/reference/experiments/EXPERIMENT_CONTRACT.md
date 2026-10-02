@@ -12,7 +12,7 @@ family, dispatch key, benchmark framework, or runtime model dispatcher.
   `tools/bigcherry/experiment/contract.py`
 - Real per-lane paired execution: `tools/bigcherry/experiment/execution.py`
   (VA14 — see
-  [PATCH_VALIDATION.md's "Real contract-execution architecture"](../testing/PATCH_VALIDATION.md#real-contract-execution-architecture)
+  [PATCH_VALIDATION.md's "Evidence production between G3 and G4"](../testing/PATCH_VALIDATION.md#evidence-production-between-g3-and-g4-not-a-gate)
   for the full picture, including `patch/validation_campaign.py`'s
   validation-domain build/lane wiring). `tools/bigcherry/campaign/` provides
   shared statistics/environment primitives (`block_bootstrap_effect()`,
