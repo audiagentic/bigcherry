@@ -1,0 +1,132 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
+    "strict": true,
+    "summary": {
+      "errors": 1,
+      "passed": 33,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "8b31cda55f2bfa6fa66b49a6b25f2321f35133b7",
+  "first_seen": "2026-10-02T00:37:49.960517+00:00",
+  "manifest_hash": "",
+  "notes": "source audit failed: overlay.vendor_sync",
+  "patches": {
+    "applied_cleanly": false,
+    "failed_edits": [
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-kernel-template",
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-switch-fusion-template",
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-kernel-forward",
+      "ggml/src/ggml-cuda/mmvq.cu:rd33-loop-body",
+      "ggml/src/ggml-cuda/mmvq.cu:rd33-switch-fusion-false-and-launcher"
+    ],
+    "files": {
+      "common/arg.cpp": {
+        "allreduce-cli-options": "already-applied",
+        "allreduce-config-apply": "already-applied",
+        "allreduce-config-helper": "already-applied"
+      },
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "already-applied",
+        "hip-autotune-validation": "already-applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cu": {
+        "ar-bf16-threshold-setter-def": "already-applied",
+        "ar-bf16-threshold-setter-musa-stub": "already-applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cuh": {
+        "ar-bf16-threshold-setter-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "nro04-gdn_dispatch-01": "already-applied",
+        "nro04-gdn_dispatch-02": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh": {
+        "nro04-header-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu": {
+        "nro04-bf16_gfx12-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu": {
+        "nro04-bf16_gfx11-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "adaptive-auto-default": "already-applied",
+        "adaptive-provider-available": "already-applied",
+        "adaptive-provider-init": "already-applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-dispatch.cu": {
+        "rd30-workspace-moe": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "already-applied",
+        "mmf-coverage-count": "already-applied",
+        "mmf-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "already-applied",
+        "mmf-dispatcher-forward": "already-applied",
+        "mmf-dispatcher-params": "already-applied",
+        "mmf-instantiation-macro": "already-applied",
+        "mmf-nwarps-apply": "already-applied",
+        "mmf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "already-applied",
+        "mmq-coverage-count": "already-applied",
+        "mmq-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd30b-gate": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "already-applied",
+        "mmvf-coverage-count": "already-applied",
+        "mmvf-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "kquant-f32-eligibility-gate": "already-applied",
+        "kquant-f32-gate-dispatch": "already-applied",
+        "kquant-f32-generic-launcher": "already-applied",
+        "kquant-f32-helpers": "already-applied",
+        "kquant-f32-q8-launch-call": "already-applied",
+        "kquant-f32-vx-dispatch": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "already-applied",
+        "mmvq-cuh-signature": "already-applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "already-applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "nro04-tests-01": "already-applied",
+        "nro04-tests-02": "already-applied",
+        "nro04-tests-03": "already-applied",
+        "nro04-tests-04": "already-applied",
+        "nro04-tests-05": "already-applied"
+      },
+      "tools/llama-bench/llama-bench.cpp": {
+        "bench-allreduce-apply": "already-applied",
+        "bench-allreduce-config-helper": "already-applied",
+        "bench-allreduce-parser": "already-applied",
+        "bench-allreduce-usage": "already-applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "",
+  "revision": "c061df19838ff60970faf54fd7e414953590125d",
+  "stage": "broken",
+  "tree_state": "",
+  "updated_at": "2026-10-02T00:47:35.829000+00:00"
+}
