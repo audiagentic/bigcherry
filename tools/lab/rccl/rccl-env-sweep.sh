@@ -21,11 +21,14 @@ for pass in a b; do
   [ $pass = a ] && list=("${order[@]}") || list=("${rev[@]}")
   for name in "${list[@]}"; do
     echo "== $pass $name: ${cfg[$name]}"
-    env ${cfg[$name]} HIP_VISIBLE_DEVICES=0,1 ROCR_VISIBLE_DEVICES=0,1 "$bench" -m "$model" -sm tensor -ngl 99 \
+    # 300 s cap: NCCL_SHM_USE_CUDA_MEMCPY hung llama-bench indefinitely on 2026-10-02.
+    timeout -k 10 300 env ${cfg[$name]} HIP_VISIBLE_DEVICES=0,1 ROCR_VISIBLE_DEVICES=0,1 "$bench" -m "$model" -sm tensor -ngl 99 \
       -fa 1 -p 512,4096 -n 128 -ub 512 -b 2048 -r 3 -o csv 2> "$out/$pass-$name.stderr" > "$out/$pass-$name.csv"
     python3 - "$out/$pass-$name.csv" "$pass" "$name" <<'PY'
 import csv, sys
 rows = list(csv.DictReader(open(sys.argv[1])))
+if not rows:
+    print(sys.argv[2], sys.argv[3], "NO_RESULT (timeout or crash)"); raise SystemExit
 print(sys.argv[2], sys.argv[3], " ".join(f"{('pp'+r['n_prompt']) if r['n_prompt']!='0' else ('tg'+r['n_gen'])}={float(r['avg_ts']):.1f}" for r in rows))
 PY
   done
