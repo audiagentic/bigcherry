@@ -6,7 +6,7 @@ export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
 export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,3 SCRIPT dflash-27b-1 tools/lab/dflash/probe-27b.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dflash-27b-1/out
+VIS=0,1,3 SCRIPT dflash-27b-2 tools/lab/dflash/probe-27b.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dflash-27b-2/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
