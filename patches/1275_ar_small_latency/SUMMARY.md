@@ -1,6 +1,6 @@
 # 1275_ar_small_latency
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PGC10
 
 Small mapped-host AllReduce latency controls over pristine b11233. Defaults

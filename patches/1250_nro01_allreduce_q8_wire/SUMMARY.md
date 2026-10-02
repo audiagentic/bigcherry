@@ -1,6 +1,6 @@
 # 1250_nro01_allreduce_q8_wire
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** NRO01/NRO02
 
 ## What it does

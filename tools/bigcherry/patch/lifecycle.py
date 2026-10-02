@@ -22,9 +22,11 @@ fabricated. What IS real and computed here:
                     plan-item (or the tracked entry's own `patch` field
                     points at a package module that actually exists)
   build-applies  -- the materialized patch's own STATE constant is
-                    "validated" or "untested" (both mean the TRANSFORM
-                    applies cleanly against the pinned tree; "untested"
-                    is about the *hypothesis*, not the patch mechanics)
+                    "validated", "evaluated" or "untested" (all mean the
+                    TRANSFORM applies cleanly against the pinned tree;
+                    "untested"/"evaluated" are about the *hypothesis*:
+                    "evaluated" has recorded hardware results but has not
+                    passed qualification; neither is about patch mechanics)
   rejected       -- the materialized patch's STATE is "rejected" (failed
                     our own validation as a candidate)
   superseded     -- the materialized patch's STATE is "superseded"
@@ -61,7 +63,7 @@ class LifecycleStatus:
     source_pinned: bool
     materialized: bool
     patch_ids: tuple[str, ...]
-    build_state: str | None  # "validated" | "untested" | "rejected" | "superseded" | None
+    build_state: str | None  # "validated" | "evaluated" | "untested" | "rejected" | "superseded" | None
     contracted: bool
     contract_ids: tuple[str, ...]
     tracked_status: str | None  # the [[sources.tracked]] entry's own `status` field, if any
@@ -143,7 +145,7 @@ def compute_all(
         states = {patch_states[pid] for pid in patch_ids if pid in patch_states}
         # A plan item's materialization can span more than one patch (e.g. a
         # composition-gated cluster) -- report the WORST state present:
-        # rejected beats superseded beats untested beats validated, since a
+        # rejected beats superseded beats untested beats evaluated beats validated, since a
         # lifecycle summary should surface the thing most likely to need
         # attention (a real rejection over a benign supersession).
         build_state: str | None = None
@@ -153,6 +155,8 @@ def compute_all(
             build_state = "superseded"
         elif "untested" in states:
             build_state = "untested"
+        elif "evaluated" in states:
+            build_state = "evaluated"
         elif "validated" in states:
             build_state = "validated"
 
