@@ -37,6 +37,8 @@ _IMPL = r'''
 #define BC_CPU_ROOT_PAUSE() ((void) 0)
 #endif
 
+static constexpr int BC_CPU_ROOT_MAX_CHUNKS = 256;
+
 struct alignas(128) bc_cpu_root_line {
     volatile uint32_t v;      // epoch (arrive/done) or counter (ctr)
     volatile uint32_t n;      // element count published with an arrival
@@ -56,6 +58,25 @@ struct bc_cpu_root {
     std::atomic<bool> stop{false};
     std::thread worker;
     bool traced = false;
+    // Large-message path (prefill): chunked copy-engine pipeline driven entirely from the enqueue thread
+    // with stream memops; a CPU worker sums each chunk once every rank's copy of it has arrived.
+    size_t   l_max_elems = 0;                // per-rank staging capacity (0 = large path off)
+    size_t   l_chunk_elems = 0;
+    float *  l_slots = nullptr;              // [n][l_max_elems] pinned
+    float *  l_result = nullptr;             // [l_max_elems] pinned
+    volatile uint32_t * l_arrived = nullptr; // [n][BC_CPU_ROOT_MAX_CHUNKS] mapped, hipStreamWriteValue32 targets
+    volatile uint32_t * l_reduced = nullptr; // [BC_CPU_ROOT_MAX_CHUNKS] mapped, hipStreamWaitValue32 sources
+    struct l_desc { uint32_t n_elems; uint32_t mask; };
+    l_desc   l_ring[1024] = {};              // written by the enqueue thread before l_posted is released
+    std::atomic<uint32_t> l_posted{0};       // last generation whose descriptor is published
+    std::atomic<uint32_t> l_finished{0};     // last generation the worker completed
+    uint32_t l_gen = 0;                      // enqueue-side generation
+    hipStream_t l_d2h[GGML_CUDA_MAX_DEVICES] = {};
+    hipStream_t l_h2d[GGML_CUDA_MAX_DEVICES] = {};
+    hipEvent_t  l_ready[GGML_CUDA_MAX_DEVICES] = {};
+    hipEvent_t  l_done[GGML_CUDA_MAX_DEVICES] = {};
+    std::thread l_worker;
+    bool l_traced = false;
 };
 
 static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float * slots2,
@@ -152,6 +173,51 @@ static void bc_cpu_root_worker(bc_cpu_root * cr) {
     }
 }
 
+static void bc_cpu_root_large_worker(bc_cpu_root * cr) {
+    uint32_t want = 1;
+    while (!cr->stop.load(std::memory_order_relaxed)) {
+        if ((int32_t) (cr->l_posted.load(std::memory_order_acquire) - want) < 0) {
+            BC_CPU_ROOT_PAUSE();
+            continue;
+        }
+        const bc_cpu_root::l_desc d = cr->l_ring[want % 1024];
+        const size_t nchunks = (d.n_elems + cr->l_chunk_elems - 1) / cr->l_chunk_elems;
+        for (size_t c = 0; c < nchunks && !cr->stop.load(std::memory_order_relaxed); c++) {
+            for (int r = 0; r < cr->n; r++) {
+                const volatile uint32_t * a = &cr->l_arrived[(size_t) r * BC_CPU_ROOT_MAX_CHUNKS + c];
+                while ((int32_t) (__atomic_load_n((const uint32_t *) a, __ATOMIC_ACQUIRE) - want) < 0 &&
+                        !cr->stop.load(std::memory_order_relaxed)) {
+                    BC_CPU_ROOT_PAUSE();
+                }
+            }
+            const size_t off = c * cr->l_chunk_elems;
+            const size_t len = std::min(cr->l_chunk_elems, (size_t) d.n_elems - off);
+            float * out = cr->l_result + off;
+            bool first = true;
+            for (int r = 0; r < cr->n; r++) {  // fixed rank order; uncomputed ranks contribute zeros
+                if (!(d.mask & (1u << r))) {
+                    continue;
+                }
+                const float * src = cr->l_slots + (size_t) r * cr->l_max_elems + off;
+                if (first) {
+                    memcpy(out, src, len * sizeof(float));
+                    first = false;
+                } else {
+                    for (size_t i = 0; i < len; i++) {
+                        out[i] += src[i];
+                    }
+                }
+            }
+            if (first) {
+                memset(out, 0, len * sizeof(float));
+            }
+            __atomic_store_n((uint32_t *) &cr->l_reduced[c], want, __ATOMIC_RELEASE);
+        }
+        cr->l_finished.store(want, std::memory_order_release);
+        want++;
+    }
+}
+
 static void bc_cpu_root_free(bc_cpu_root * cr) {
     if (cr == nullptr) {
         return;
@@ -160,6 +226,19 @@ static void bc_cpu_root_free(bc_cpu_root * cr) {
     if (cr->worker.joinable()) {
         cr->worker.join();
     }
+    if (cr->l_worker.joinable()) {
+        cr->l_worker.join();
+    }
+    for (int r = 0; r < cr->n; r++) {
+        if (cr->l_d2h[r]) { (void) hipStreamDestroy(cr->l_d2h[r]); }
+        if (cr->l_h2d[r]) { (void) hipStreamDestroy(cr->l_h2d[r]); }
+        if (cr->l_ready[r]) { (void) hipEventDestroy(cr->l_ready[r]); }
+        if (cr->l_done[r]) { (void) hipEventDestroy(cr->l_done[r]); }
+    }
+    (void) hipHostFree(cr->l_slots);
+    (void) hipHostFree(cr->l_result);
+    (void) hipHostFree((void *) cr->l_arrived);
+    (void) hipHostFree((void *) cr->l_reduced);
     (void) hipHostFree(cr->slots);
     (void) hipHostFree(cr->result);
     (void) hipHostFree(cr->arrive);
@@ -168,7 +247,7 @@ static void bc_cpu_root_free(bc_cpu_root * cr) {
     delete cr;
 }
 
-static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes) {
+static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes, const int * dev_ids, size_t large_max_bytes, size_t chunk_bytes) {
     auto * cr = new bc_cpu_root;
     cr->n = n;
     cr->max_elems = (max_bytes / sizeof(float) + 3) & ~size_t(3);
@@ -186,6 +265,30 @@ static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes) {
     memset((void *) cr->arrive, 0, sizeof(bc_cpu_root_line) * n);
     memset((void *) cr->done, 0, sizeof(bc_cpu_root_line));
     memset((void *) cr->ctr, 0, sizeof(bc_cpu_root_line) * n);
+    if (large_max_bytes > 0 && chunk_bytes > 0) {
+        cr->l_chunk_elems = chunk_bytes / sizeof(float);
+        cr->l_max_elems = std::min(large_max_bytes / sizeof(float), cr->l_chunk_elems * BC_CPU_ROOT_MAX_CHUNKS);
+        bool lok = hipHostMalloc((void **) &cr->l_slots, sizeof(float) * cr->l_max_elems * n, hipHostMallocPortable) == hipSuccess;
+        lok = lok && hipHostMalloc((void **) &cr->l_result, sizeof(float) * cr->l_max_elems, hipHostMallocPortable) == hipSuccess;
+        lok = lok && hipHostMalloc((void **) &cr->l_arrived, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS * n, flags) == hipSuccess;
+        lok = lok && hipHostMalloc((void **) &cr->l_reduced, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS, flags) == hipSuccess;
+        for (int r = 0; lok && r < n; r++) {
+            ggml_cuda_set_device(dev_ids[r]);
+            lok = hipStreamCreateWithFlags(&cr->l_d2h[r], hipStreamNonBlocking) == hipSuccess &&
+                  hipStreamCreateWithFlags(&cr->l_h2d[r], hipStreamNonBlocking) == hipSuccess &&
+                  hipEventCreateWithFlags(&cr->l_ready[r], hipEventDisableTiming) == hipSuccess &&
+                  hipEventCreateWithFlags(&cr->l_done[r], hipEventDisableTiming) == hipSuccess;
+        }
+        if (!lok) {
+            (void) hipGetLastError();
+            cr->l_max_elems = 0;  // large path off; RCCL keeps large messages
+            GGML_LOG_WARN("cpu-root: large-message path disabled (allocation failed)\n");
+        } else {
+            memset((void *) cr->l_arrived, 0, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS * n);
+            memset((void *) cr->l_reduced, 0, sizeof(uint32_t) * BC_CPU_ROOT_MAX_CHUNKS);
+            cr->l_worker = std::thread(bc_cpu_root_large_worker, cr);
+        }
+    }
     cr->worker = std::thread(bc_cpu_root_worker, cr);
     return cr;
 }
@@ -199,6 +302,66 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
     for (size_t i = 0; small && i < n_ranks; i++) {
         small = tensors[i] != nullptr && ggml_is_contiguous(tensors[i]) &&
             ggml_nelements(tensors[i]) == ggml_nelements(tensors[0]) && tensors[i]->type == GGML_TYPE_F32;
+    }
+    if (!small && cr != nullptr && cr->l_max_elems > 0 && tensors != nullptr && tensors[0] != nullptr &&
+            tensors[0]->type == GGML_TYPE_F32 && (size_t) ggml_nelements(tensors[0]) <= cr->l_max_elems &&
+            ggml_nelements(tensors[0]) > 0) {
+        bool ok = (int) n_ranks == cr->n;
+        for (size_t i = 0; ok && i < n_ranks; i++) {
+            ok = tensors[i] != nullptr && ggml_is_contiguous(tensors[i]) &&
+                ggml_nelements(tensors[i]) == ggml_nelements(tensors[0]) && tensors[i]->type == GGML_TYPE_F32;
+        }
+        if (ok) {
+            comm_ctx->provider_name = "cpu-root-large";
+            const size_t ne = (size_t) ggml_nelements(tensors[0]);
+            const size_t nchunks = (ne + cr->l_chunk_elems - 1) / cr->l_chunk_elems;
+            const uint32_t gen = ++cr->l_gen;
+            while ((int32_t) (gen - cr->l_finished.load(std::memory_order_acquire)) > 512) {
+                BC_CPU_ROOT_PAUSE();  // never let the descriptor ring wrap
+            }
+            uint32_t mask = 0;
+            for (size_t i = 0; i < n_ranks; i++) {
+                if (tensors[i]->flags & GGML_TENSOR_FLAG_COMPUTE) {
+                    mask |= 1u << i;
+                }
+            }
+            cr->l_ring[gen % 1024] = { (uint32_t) ne, mask };
+            cr->l_posted.store(gen, std::memory_order_release);
+            for (size_t i = 0; i < n_ranks; i++) {
+                auto * cctx = static_cast<ggml_backend_cuda_context *>(comm_ctx->backends[i]->context);
+                ggml_cuda_set_device(cctx->device);
+                cudaStream_t stream = cctx->stream();
+                float * data = (float *) tensors[i]->data;
+                CUDA_CHECK(hipEventRecord(cr->l_ready[i], stream));
+                CUDA_CHECK(hipStreamWaitEvent(cr->l_d2h[i], cr->l_ready[i], 0));
+                for (size_t c = 0; c < nchunks; c++) {
+                    const size_t off = c * cr->l_chunk_elems;
+                    const size_t len = std::min(cr->l_chunk_elems, ne - off);
+                    if (mask & (1u << i)) {
+                        CUDA_CHECK(hipMemcpyAsync(cr->l_slots + i * cr->l_max_elems + off, data + off,
+                            len * sizeof(float), hipMemcpyDeviceToHost, cr->l_d2h[i]));
+                    }
+                    CUDA_CHECK(hipStreamWriteValue32(cr->l_d2h[i],
+                        (void *) &cr->l_arrived[i * BC_CPU_ROOT_MAX_CHUNKS + c], gen, 0));
+                }
+                for (size_t c = 0; c < nchunks; c++) {
+                    const size_t off = c * cr->l_chunk_elems;
+                    const size_t len = std::min(cr->l_chunk_elems, ne - off);
+                    CUDA_CHECK(hipStreamWaitValue32(cr->l_h2d[i], (void *) &cr->l_reduced[c], gen,
+                        hipStreamWaitValueGte, 0xffffffff));
+                    CUDA_CHECK(hipMemcpyAsync(data + off, cr->l_result + off, len * sizeof(float),
+                        hipMemcpyHostToDevice, cr->l_h2d[i]));
+                }
+                CUDA_CHECK(hipEventRecord(cr->l_done[i], cr->l_h2d[i]));
+                CUDA_CHECK(hipStreamWaitEvent(stream, cr->l_done[i], 0));
+            }
+            if (!cr->l_traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                cr->l_traced = true;
+                GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1291_ar_cpu_root path=large ranks=%zu bytes=%zu chunks=%zu\n",
+                    n_ranks, ne * sizeof(float), nchunks);
+            }
+            return true;
+        }
     }
     if (!small) {
         comm_ctx->provider_name = "rccl";
@@ -238,7 +401,11 @@ static void ggml_backend_cuda_comm_init_cpu_root(ggml_backend_cuda_comm_context 
     ggml_backend_cuda_comm_init_nccl(ret);  // RCCL for messages above the small threshold
     const char * env = getenv("BIGCHERRY_AR_CPU_ROOT_MAX_BYTES");
     const size_t max_bytes = env != nullptr ? (size_t) strtoull(env, nullptr, 10) : 65536;
-    ret->cpu_root = bc_cpu_root_create((int) ret->dev_ids.size(), max_bytes);
+    const char * lenv = getenv("BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES");
+    const char * cenv = getenv("BIGCHERRY_AR_CPU_ROOT_CHUNK_BYTES");
+    const size_t large_max = lenv != nullptr ? (size_t) strtoull(lenv, nullptr, 10) : (size_t) 32 << 20;
+    const size_t chunk     = cenv != nullptr ? (size_t) strtoull(cenv, nullptr, 10) : (size_t) 2 << 20;
+    ret->cpu_root = bc_cpu_root_create((int) ret->dev_ids.size(), max_bytes, ret->dev_ids.data(), large_max, chunk);
     if (ret->cpu_root == nullptr) {
         GGML_LOG_WARN("cpu-root: pinned host allocation failed; using the %s provider\n", ret->provider_name);
         return;
