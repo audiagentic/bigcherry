@@ -50,13 +50,14 @@ PY
   kill -INT "$pid"; wait "$pid"
 }
 probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
-probe cpu3-even 0,1,2 -sm tensor -ts 1,1,1
-probe cpu3-even-mtp3 0,1,2 -sm tensor -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
-probe 192k-ts556-mtp3 0,1,2 -sm tensor -ts 5,5,6 -c 196608 -ctk q8_0 -ctv q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -ctkd q8_0 -ctvd q8_0
-probe 192k-ts556-mtp3-devd 0,1,2 -sm tensor -ts 5,5,6 -c 196608 -ctk q8_0 -ctv q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -ctkd q8_0 -ctvd q8_0 -devd ROCm2
-probe 192k-ts557-mtp3-devd 0,1,2 -sm tensor -ts 5,5,7 -c 196608 -ctk q8_0 -ctv q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -ctkd q8_0 -ctvd q8_0 -devd ROCm2
-probe 192k-ts556 0,1,2 -sm tensor -ts 5,5,6 -c 196608 -ctk q8_0 -ctv q8_0
-for n in cpu3-even cpu3-even-mtp3 192k-ts556-mtp3 192k-ts556-mtp3-devd 192k-ts557-mtp3-devd 192k-ts556; do
+probe cpu3-332-mtp3-a 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-even-mtp3-a 0,1,2 -sm tensor -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-332-mtp3-b 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-even-mtp3-b 0,1,2 -sm tensor -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-even-mtp3-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -devd ROCm3
+probe 192k-ts223-mtp3-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 2,2,3 -c 196608 -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -devd ROCm3
+probe 192k-ts556-mtp3-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 5,5,6 -c 196608 -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -devd ROCm3
+for n in cpu3-332-mtp3-a cpu3-even-mtp3-a cpu3-332-mtp3-b cpu3-even-mtp3-b cpu3-even-mtp3-d6900 192k-ts223-mtp3-d6900 192k-ts556-mtp3-d6900; do
   [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
 done
 echo PROBE_DONE
