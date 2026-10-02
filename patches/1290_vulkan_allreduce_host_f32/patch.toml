@@ -1,7 +1,7 @@
 schema = 1
 id = "1290_vulkan_allreduce_host_f32"
 order = 1290
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "vulkan"
