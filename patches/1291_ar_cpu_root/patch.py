@@ -38,28 +38,36 @@ _IMPL = r'''
 #endif
 
 struct alignas(128) bc_cpu_root_line {
-    volatile uint32_t v;
-    char pad[124];
+    volatile uint32_t v;      // epoch (arrive/done) or counter (ctr)
+    volatile uint32_t n;      // element count published with an arrival
+    char pad[120];
 };
 
-static constexpr uint32_t BC_CPU_ROOT_RING = 4096;
-
+// Graph-safe: every per-call value is produced on the device at run time, never baked into kernel
+// arguments (HIP graph capture/replay of decode and MTP verify would freeze a host-side epoch).
 struct bc_cpu_root {
     int n = 0;
     size_t max_elems = 0;
     float * slots = nullptr;              // [n][2][max_elems], pinned + mapped
     float * result = nullptr;             // [2][max_elems]
-    bc_cpu_root_line * arrive = nullptr;  // [n]
-    bc_cpu_root_line * done = nullptr;    // [1]
-    volatile uint32_t * counts = nullptr; // [BC_CPU_ROOT_RING] element count per generation
-    uint32_t gen = 0;                     // host-side enqueue generation
+    bc_cpu_root_line * arrive = nullptr;  // [n]  rank r: epoch + count of its latest slice
+    bc_cpu_root_line * ctr = nullptr;     // [n]  rank r's own call counter (advanced by produce)
+    bc_cpu_root_line * done = nullptr;    // [1]  CPU: epoch of the latest published result
     std::atomic<bool> stop{false};
     std::thread worker;
     bool traced = false;
 };
 
-static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float * slot,
-        bc_cpu_root_line * line, uint32_t gen, int n) {
+static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float * slots2,
+        bc_cpu_root_line * ctr, bc_cpu_root_line * line, size_t max_elems, int n) {
+    __shared__ uint32_t s_gen;
+    if (threadIdx.x == 0) {
+        s_gen = ((volatile bc_cpu_root_line *) ctr)->v + 1;
+        ((volatile bc_cpu_root_line *) ctr)->v = s_gen;
+    }
+    __syncthreads();
+    const uint32_t gen = s_gen;
+    float * slot = slots2 + (size_t) (gen & 1) * max_elems;
     const int n4 = n / 4;
     const float4 * s4 = (const float4 *) src;
     float4 * d4 = (float4 *) slot;
@@ -71,20 +79,25 @@ static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float
     }
     __syncthreads();
     if (threadIdx.x == 0) {
+        line->n = (uint32_t) n;
         __threadfence_system();
         line->v = gen;
     }
 }
 
-static __global__ void bc_cpu_root_consume(float * __restrict__ dst, const float * res,
-        const bc_cpu_root_line * done, uint32_t gen, int n) {
+static __global__ void bc_cpu_root_consume(float * __restrict__ dst, const float * result2,
+        const bc_cpu_root_line * ctr, const bc_cpu_root_line * done, size_t max_elems, int n) {
+    __shared__ uint32_t s_gen;
     if (threadIdx.x == 0) {
+        const uint32_t gen = ((const volatile bc_cpu_root_line *) ctr)->v;  // set by this rank's produce
         while ((int32_t) (((const volatile bc_cpu_root_line *) done)->v - gen) < 0) {
             __builtin_amdgcn_s_sleep(1);
         }
+        s_gen = gen;
     }
     __syncthreads();
     __threadfence_system();
+    const float * res = result2 + (size_t) (s_gen & 1) * max_elems;
     const int n4 = n / 4;
     const float4 * r4 = (const float4 *) res;
     float4 * d4 = (float4 *) dst;
@@ -111,7 +124,7 @@ static void bc_cpu_root_worker(bc_cpu_root * cr) {
             continue;
         }
         std::atomic_thread_fence(std::memory_order_acquire);
-        const size_t n = cr->counts[want % BC_CPU_ROOT_RING];
+        const size_t n = cr->arrive[0].n;
         const size_t p = want & 1;
         float * out = cr->result + p * cr->max_elems;
         const float * s0 = cr->slots + (0 * 2 + p) * cr->max_elems;
@@ -142,7 +155,7 @@ static void bc_cpu_root_free(bc_cpu_root * cr) {
     (void) hipHostFree(cr->result);
     (void) hipHostFree(cr->arrive);
     (void) hipHostFree(cr->done);
-    (void) hipHostFree((void *) cr->counts);
+    (void) hipHostFree(cr->ctr);
     delete cr;
 }
 
@@ -155,7 +168,7 @@ static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes) {
     ok = ok && hipHostMalloc((void **) &cr->result, sizeof(float) * cr->max_elems * 2, flags) == hipSuccess;
     ok = ok && hipHostMalloc((void **) &cr->arrive, sizeof(bc_cpu_root_line) * n, flags) == hipSuccess;
     ok = ok && hipHostMalloc((void **) &cr->done, sizeof(bc_cpu_root_line), flags) == hipSuccess;
-    ok = ok && hipHostMalloc((void **) &cr->counts, sizeof(uint32_t) * BC_CPU_ROOT_RING, flags) == hipSuccess;
+    ok = ok && hipHostMalloc((void **) &cr->ctr, sizeof(bc_cpu_root_line) * n, flags) == hipSuccess;
     if (!ok) {
         (void) hipGetLastError();
         bc_cpu_root_free(cr);
@@ -163,7 +176,7 @@ static bc_cpu_root * bc_cpu_root_create(int n, size_t max_bytes) {
     }
     memset((void *) cr->arrive, 0, sizeof(bc_cpu_root_line) * n);
     memset((void *) cr->done, 0, sizeof(bc_cpu_root_line));
-    memset((void *) cr->counts, 0, sizeof(uint32_t) * BC_CPU_ROOT_RING);
+    memset((void *) cr->ctr, 0, sizeof(bc_cpu_root_line) * n);
     cr->worker = std::thread(bc_cpu_root_worker, cr);
     return cr;
 }
@@ -189,18 +202,14 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
     }
     comm_ctx->provider_name = "cpu-root";
     const int n = (int) ggml_nelements(tensors[0]);
-    const uint32_t gen = ++cr->gen;
-    cr->counts[gen % BC_CPU_ROOT_RING] = (uint32_t) n;
-    std::atomic_thread_fence(std::memory_order_release);
-    const size_t p = gen & 1;
     for (size_t i = 0; i < n_ranks; i++) {
         auto * cctx = static_cast<ggml_backend_cuda_context *>(comm_ctx->backends[i]->context);
         ggml_cuda_set_device(cctx->device);
         cudaStream_t stream = cctx->stream();
         float * data = (float *) tensors[i]->data;
-        bc_cpu_root_produce<<<1, 1024, 0, stream>>>(data, cr->slots + (i * 2 + p) * cr->max_elems,
-            cr->arrive + i, gen, n);
-        bc_cpu_root_consume<<<1, 1024, 0, stream>>>(data, cr->result + p * cr->max_elems, cr->done, gen, n);
+        bc_cpu_root_produce<<<1, 1024, 0, stream>>>(data, cr->slots + i * 2 * cr->max_elems,
+            cr->ctr + i, cr->arrive + i, cr->max_elems, n);
+        bc_cpu_root_consume<<<1, 1024, 0, stream>>>(data, cr->result, cr->ctr + i, cr->done, cr->max_elems, n);
     }
     if (!cr->traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
         cr->traced = true;
