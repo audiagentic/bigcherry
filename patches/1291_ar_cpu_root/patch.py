@@ -16,7 +16,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "evaluated"
 
 _FWD = """#if defined(GGML_USE_HIP)
 // BigCherry 1291: CPU-root one-shot AllReduce state (defined with the provider below).
