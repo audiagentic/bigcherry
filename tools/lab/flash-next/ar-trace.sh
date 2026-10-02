@@ -28,8 +28,7 @@ def post(body):
 text = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()[:5000]
 post({"prompt": "Hello", "n_predict": 4, "cache_prompt": False})
 m = open(f"{out}/{name}.marks.txt", "w")
-m.write(f"PREFILL_START trace={ntrace()}
-"); m.flush()
+m.write(f"PREFILL_START trace={ntrace()}\n"); m.flush()
 r = post({"prompt": text, "n_predict": 1, "cache_prompt": False})
 m.write(f"PREFILL_DONE trace={ntrace()} prompt_n={r['timings']['prompt_n']}\n"); m.flush()
 r = post({"prompt": "Count slowly:", "n_predict": 64, "cache_prompt": False, "temperature": 0, "ignore_eos": True})
