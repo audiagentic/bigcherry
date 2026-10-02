@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "bigcherry-perf",
+  "patch_digest": "c6cf94acb4c35e4e53cbaf2b577ccc156fe9379932a0f1a7dd5efd095d1c4ee9",
+  "patch_id": "1275_ar_small_latency",
+  "reason": "pin c061df1: allreduce.cu anchor ar-small-init-once no longer matches; measured neutral/negative (PGC10), not in any recipe",
+  "target_revision": "c061df19838ff60970faf54fd7e414953590125d",
+  "tracking_item": "PGC10"
+}
