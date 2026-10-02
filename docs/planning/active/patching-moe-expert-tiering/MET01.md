@@ -58,6 +58,9 @@ Profiles from >=4 workloads; solver output passes validator; predicted CPU-activ
 
 Key number: CPU cost ~2 ms per CPU-active layer; P(layer touches CPU) = 1-(1-q)^10 for CPU route mass q. 1% CPU mass ~ +9 ms/token vs 23.3 ms/token MTP baseline. Route mass, not expert count, decides CPU cost. Prefill activates far more cold experts (512*10 selections/ubatch).
 
+2026-10-02 first routing profile (flashnext-routing-4; Flash-Next UD-IQ4_XS, one XTX + routed experts on CPU, -sm none, because llama-debug's per-node callback asserts in the meta backend under -sm tensor; --tensor-filter exists only in llama-debug; ub 512). Single mixed prose+code prompt, 176,330 selections/layer (~17.6K tokens), prefill-only. Per layer: experts used mean 496/512 (min 293). Hottest 10/25/50% of experts cover 41.5/68.8/91.3% of picks (means). Coldest experts holding <= 0.25/0.5/1/2/5% of picks: mean 84/106/134/169/225 of 512 (min 39/54/72/95/130, max ~440 - skew varies a lot by layer). Experts needed for 50/80/90/95% of picks: mean 73/174/235/287. Implication: a <= 0.5% CPU route-mass budget puts only ~21% of routed experts (~20 GiB at Q6) in RAM; the other ~75 GiB of Q6 routed experts must sit on the four GPUs alongside ~10 GiB non-expert weights, 192K KV and the MTP draft - roughly the whole 96 GB of combined VRAM. Q6 at <= 0.5% CPU mass is at the edge; Q5_K or a 1-2% CPU budget is more realistic. Caveats: one prompt domain, prefill only (decode routing may be more skewed), IQ4_XS routing may differ slightly from Q6. Next: profile chat/long-context/MTP-generation workloads and decode-only routing.
+
 ## Change Log
 
 - 2026-10-02T04:44:44.458623+00:00 (created-by): Created by agent
+- 2026-10-02T06:35:13.803287+00:00 (updated-by): Updated: section:notes
