@@ -11,7 +11,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "upstream-fixes"
-STATE = "untested"
+STATE = "rejected"
 
 _NEW_POOL = (
     "    // BigCherry 1280: set_input fills the re-pool inputs too, so keep them allocated\n"
