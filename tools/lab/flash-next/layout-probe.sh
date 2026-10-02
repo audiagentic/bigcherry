@@ -49,10 +49,10 @@ PY
   kill -INT "$pid"; wait "$pid"
 }
 probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
-probe cpu3-tensor-mtp2 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 2
-probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 3
-probe cpu3-tensor-mtp2-ngram 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --spec-type draft-mtp --spec-type ngram-mod,draft-mtp --spec-draft-n-max 2
-probe cpu3-tensor-192k-mtp2 0,1,2 -sm tensor -ts 1,1,1 -c 196608 -ctk q8_0 -ctv q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 2
+probe cpu3-tensor-mtp2 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 2
+probe cpu3-tensor-mtp3 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 3
+probe cpu3-tensor-mtp2-ngram 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --spec-type ngram-mod,draft-mtp --spec-draft-n-max 2
+probe cpu3-tensor-192k-mtp2 0,1,2 -sm tensor -ts 1,1,1 -c 196608 -ctk q8_0 -ctv q8_0 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --spec-draft-n-max 2
 for n in cpu3-tensor-mtp2; do
   [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
 done
