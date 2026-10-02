@@ -364,6 +364,11 @@ patches = ["1279_moe_routing_dump"]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
 
+[experiment.draft-local-shared]
+# 1286: DFlash/DSpark drafts get draft-local copies of target tensors held in the tensor-split buffer,
+# so they run with a -sm tensor target (27B draft x deployment matrix, 2026-10-02).
+patches = ["1286_draft_local_shared_tensors"]
+
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
 # off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
