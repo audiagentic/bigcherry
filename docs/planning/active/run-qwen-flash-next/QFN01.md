@@ -80,6 +80,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-02 native (llama-native:stock:linux-multi, pristine c061, same RCCL HIP build) vs production, same window, 3 requests: Flash-Next 3-card no MTP ub512 969/35.1 vs 1079/36.2 (+11% pp); ub2048 1403/35.6 vs 1478/36.5; best 8K MTP3 ub1024 draft-6900 1090/67.8 vs 1139/68.4; 192K 865/63.3 vs 918/62.5. 27B: no-draft dual-XTX tensor 1430/34.2 vs 1479/38.5 (+13% tg); MTP5 ~1314/77.6 vs ~1316/78.7; 3-card MTP5 1101/78.7 vs 1101/77.3; single R9700 HIP 1223/19.7 vs 1340/19.7 (Vulkan RADV 1120/19.2). BigCherry's gains are mostly plain decode/prefill; with MTP decode is within ~1-2% of native -> the MTP verify path (AllReduce on verify batches) is the remaining lever.
 
+2026-10-02 flashnext-ar-1 (production build, -ts 4,4,3 ub1024 MTP3 draft on 6900, 3 requests): auto 1132/67.9 and repeat 1136/68.5; ccl 1137/67.8; adaptive switch 32K/96K/256K/1M 1135-1138 / 67.0-69.1 (acceptance 73-75%, spread within noise); host-only 608/47.0; butterfly 608/47.5; 4-card incl. 6900 (-ts 4,4,3,2, host provider) no MTP 270/8.1; 3-card ref no MTP ub1024 1266/36.6. On 3 GPUs auto==adaptive==RCCL; the BigCherry host path does not scale to 3 devices (x4 R9700); the 6900 must stay out of the tensor split. Gains must come from structural changes (fewer/fused/overlapped reductions), not provider choice.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -99,3 +101,4 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T07:20:01.905871+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T11:50:00.976519+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T13:16:39.643772+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T13:27:09.420054+00:00 (updated-by): Updated: section:notes
