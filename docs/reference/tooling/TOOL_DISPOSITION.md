@@ -6,7 +6,7 @@
 
 ## Description
 
-This is the current 803-row control-plane registry for in-scope tooling. The
+This is the current 804-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
 registered GP10 lab tools, four HI168 investigation tools, and the
 planning-capability-rebaseline-v3 migration pack and scripts, and (2026-10-02) every
@@ -894,6 +894,7 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 | `tools/lab/plan-qualification/queue-linux-tests.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/probe-27b-vk.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/queue-vk-first.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/vulkan/queue-vk-ar.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 
 ## Exit status
 

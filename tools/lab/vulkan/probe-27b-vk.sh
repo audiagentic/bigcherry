@@ -4,8 +4,11 @@
 # against the first layout). Devices are selected with GGML_VK_VISIBLE_DEVICES (Vulkan order on Brutus:
 # 0,1 = 7900 XTX, 2 = R9700, 3 = 6900 XT, same as HIP); the ICD with VK_DRIVER_FILES (RADV default).
 # Usage: probe-27b-vk.sh <llama-server> <out-dir> [layout-name regex] [timed requests per layout, default 1]
+#        [VAR=value ...]  (extra environment for every server, e.g. BIGCHERRY_VK_ALLREDUCE=host-f32)
 set -u
 bin=$1 out=$2 only=${3:-} reps=${4:-1}
+shift $(( $# < 4 ? $# : 4 ))
+for kv in "$@"; do export "$kv"; done
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)

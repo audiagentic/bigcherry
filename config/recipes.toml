@@ -369,6 +369,10 @@ patches = ["1273_iq_mmvq_rdna_tuning"]
 # so they run with a -sm tensor target (27B draft x deployment matrix, 2026-10-02).
 patches = ["1286_draft_local_shared_tensors"]
 
+[experiment.vulkan-allreduce-host-f32]
+# PRVP03 phase 0: default-off Vulkan meta communication provider (BIGCHERRY_VK_ALLREDUCE=host-f32).
+patches = ["1290_vulkan_allreduce_host_f32"]
+
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
 # off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
