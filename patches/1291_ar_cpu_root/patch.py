@@ -68,7 +68,8 @@ static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float
     __syncthreads();
     const uint32_t gen = s_gen;
     float * slot = slots2 + (size_t) (gen & 1) * max_elems;
-    const int n4 = n / 4;
+    const bool aligned = ((((uintptr_t) src) | ((uintptr_t) slot)) & 15) == 0;
+    const int n4 = aligned ? n / 4 : 0;
     const float4 * s4 = (const float4 *) src;
     float4 * d4 = (float4 *) slot;
     for (int i = threadIdx.x; i < n4; i += blockDim.x) {
@@ -81,7 +82,7 @@ static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float
     if (threadIdx.x == 0) {
         line->n = (uint32_t) n;
         __threadfence_system();
-        line->v = gen;
+        __hip_atomic_store((uint32_t *) &line->v, gen, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);
     }
 }
 
@@ -90,7 +91,7 @@ static __global__ void bc_cpu_root_consume(float * __restrict__ dst, const float
     __shared__ uint32_t s_gen;
     if (threadIdx.x == 0) {
         const uint32_t gen = ((const volatile bc_cpu_root_line *) ctr)->v;  // set by this rank's produce
-        while ((int32_t) (((const volatile bc_cpu_root_line *) done)->v - gen) < 0) {
+        while ((int32_t) (__hip_atomic_load((const uint32_t *) &done->v, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM) - gen) < 0) {
             __builtin_amdgcn_s_sleep(1);
         }
         s_gen = gen;
@@ -98,7 +99,8 @@ static __global__ void bc_cpu_root_consume(float * __restrict__ dst, const float
     __syncthreads();
     __threadfence_system();
     const float * res = result2 + (size_t) (s_gen & 1) * max_elems;
-    const int n4 = n / 4;
+    const bool aligned = ((((uintptr_t) res) | ((uintptr_t) dst)) & 15) == 0;
+    const int n4 = aligned ? n / 4 : 0;
     const float4 * r4 = (const float4 *) res;
     float4 * d4 = (float4 *) dst;
     for (int i = threadIdx.x; i < n4; i += blockDim.x) {
@@ -114,7 +116,7 @@ static void bc_cpu_root_worker(bc_cpu_root * cr) {
     while (!cr->stop.load(std::memory_order_relaxed)) {
         bool ready = true;
         for (int r = 0; r < cr->n; r++) {
-            if ((int32_t) (cr->arrive[r].v - want) < 0) {
+            if ((int32_t) (__atomic_load_n((const uint32_t *) &cr->arrive[r].v, __ATOMIC_ACQUIRE) - want) < 0) {
                 ready = false;
                 break;
             }
@@ -137,8 +139,7 @@ static void bc_cpu_root_worker(bc_cpu_root * cr) {
                 out[i] += sr[i];
             }
         }
-        std::atomic_thread_fence(std::memory_order_release);
-        cr->done->v = want;
+        __atomic_store_n((uint32_t *) &cr->done->v, want, __ATOMIC_RELEASE);
         want++;
     }
 }
@@ -201,6 +202,8 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
         return false;
     }
     comm_ctx->provider_name = "cpu-root";
+    // Every generation must reach every rank (the CPU waits for all arrivals): never launch a subset.
+    GGML_ASSERT((int) n_ranks == cr->n);
     const int n = (int) ggml_nelements(tensors[0]);
     for (size_t i = 0; i < n_ranks; i++) {
         auto * cctx = static_cast<ggml_backend_cuda_context *>(comm_ctx->backends[i]->context);
@@ -210,6 +213,7 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
         bc_cpu_root_produce<<<1, 1024, 0, stream>>>(data, cr->slots + i * 2 * cr->max_elems,
             cr->ctr + i, cr->arrive + i, cr->max_elems, n);
         bc_cpu_root_consume<<<1, 1024, 0, stream>>>(data, cr->result, cr->ctr + i, cr->done, cr->max_elems, n);
+        CUDA_CHECK(cudaGetLastError());  // a partial launch would leave other ranks spinning: fail hard
     }
     if (!cr->traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
         cr->traced = true;
