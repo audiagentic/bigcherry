@@ -38,7 +38,7 @@ __global__ void consume(float * __restrict__ dst, const float * result, const Ep
     __threadfence_system();
     const float4 * r4 = (const float4 *) result; float4 * d4 = (float4 *) dst;
     for (int i = threadIdx.x; i < n / 4; i += blockDim.x) {
-        d4[i] = __builtin_nontemporal_load(&r4[i]);
+        d4[i] = r4[i];
     }
 }
 
@@ -92,8 +92,7 @@ int main(int argc, char ** argv) {
             for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); empty_kernel<<<1, 64, 0, st[d]>>>(); empty_kernel<<<1, 64, 0, st[d]>>>(); }
             for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(st[d]); }
         }
-        printf("ranks=%d floor (2 empty kernels per rank + sync) %.1f us/call
-", nd,
+        printf("ranks=%d floor (2 empty kernels per rank + sync) %.1f us/call\n", nd,
                std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters);
     }
     double best = 1e9;
