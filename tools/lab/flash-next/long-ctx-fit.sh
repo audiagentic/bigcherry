@@ -36,7 +36,10 @@ post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0, "ignore_eos": True})["timings"]
 print(f"{name}: prompt {t['prompt_n']} tok at {t['prompt_per_second']:.1f} t/s, decode {t['predicted_per_second']:.1f} t/s, accepted {t.get('draft_n_accepted')}/{t.get('draft_n')}", flush=True)
 PY
-  kill -INT "$pid"; wait "$pid"
+  kill -INT "$pid"  # bounded: a rocprofv3-wrapped server hung 6.5 h after SIGINT on 2026-10-03
+  for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  kill -0 "$pid" 2>/dev/null && { echo "$name: shutdown hung, SIGKILL"; kill -9 "$pid"; }
+  wait "$pid"
 }
 fit 192k-223-ub512   196608 2,2,3 512     # reference (current deployment)
 fit 192k-334-ub1024  196608 3,3,4 1024

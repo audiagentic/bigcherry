@@ -47,7 +47,10 @@ a = sum(r["draft_n_accepted"] for r in acc) / max(1, sum(r["draft_n"] for r in a
 print(f"{name}: prompt {rows[0]['prompt_n']} tok at {pp:.1f} t/s, decode {tg:.1f} t/s" + (f", draft acceptance {100*a:.1f}%" if a is not None else ""))
 PY
   cat "$out/$name.vram.txt"
-  kill -INT "$pid"; wait "$pid"
+  kill -INT "$pid"  # bounded: a rocprofv3-wrapped server hung 6.5 h after SIGINT on 2026-10-03
+  for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  kill -0 "$pid" 2>/dev/null && { echo "$name: shutdown hung, SIGKILL"; kill -9 "$pid"; }
+  wait "$pid"
 }
 probe cpu3-tensor 0,1,2 -sm tensor -ts 4,4,3
 probe cpu3-tensor-ub2048 0,1,2 -sm tensor -ts 4,4,3 -ub 2048 -b 2048

@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir>
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -47,11 +47,19 @@ for d in depths:
 json.dump(rows, open(f"{out}/{name}.timings.json", "w"), indent=1)
 PY
   cat "$out/$name.vram.txt"
-  kill -INT "$pid"; wait "$pid"
+  kill -INT "$pid"  # bounded: a rocprofv3-wrapped server hung 6.5 h after SIGINT on 2026-10-03
+  for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  kill -0 "$pid" 2>/dev/null && { echo "$name: shutdown hung, SIGKILL"; kill -9 "$pid"; }
+  wait "$pid"
   grep -h "memory breakdown\|ROCm\|Host " "$log" | grep common_memory_breakdown_print | tail -6
 }
-run_pass plain 8192 32768 98304
-WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+mode=${3:-full}
+if [ "$mode" = full ]; then
+  run_pass plain 8192 32768 98304
+  WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+else  # decode: cached ~96K-token prompt, then a long decode, so decode at depth dominates the trace
+  DECODE_N=1024 CACHE=1 WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass decode 65536
+fi
 python3 - "$out/rocprof" <<'PY'
 import csv, glob, sys, collections
 for path in sorted(glob.glob(f"{sys.argv[1]}/**/*kernel_stats.csv", recursive=True))[:1]:
@@ -64,4 +72,17 @@ for path in sorted(glob.glob(f"{sys.argv[1]}/**/*memory_copy_stats.csv", recursi
     print(f"memory copy stats ({path}):")
     for r in csv.DictReader(open(path)):
         print(f"  {r['Name']}: calls {r['Calls']} total {float(r['TotalDurationNs'])/1e6:.1f} ms")
+PY
+python3 - "$out/rocprof" <<'PY'
+# Where do the large device-to-device copies come from? Group by size and agent pair.
+import csv, glob, sys, collections
+for path in sorted(glob.glob(f"{sys.argv[1]}/**/*memory_copy_trace.csv", recursive=True))[:1]:
+    groups = collections.defaultdict(lambda: [0, 0.0])
+    for r in csv.DictReader(open(path)):
+        if r.get("Direction", r.get("Kind", "")).endswith("DEVICE_TO_DEVICE"):
+            k = (r.get("Src_Agent_Id", "?"), r.get("Dst_Agent_Id", "?"), int(r.get("Bytes", r.get("Size", 0))))
+            g = groups[k]; g[0] += 1; g[1] += (int(r["End_Timestamp"]) - int(r["Start_Timestamp"])) / 1e6
+    print("device-to-device copies by (src, dst, bytes): calls, total ms")
+    for k, (n, ms) in sorted(groups.items(), key=lambda kv: -kv[1][1])[:15]:
+        print(f"  {k}: {n} calls, {ms:.1f} ms")
 PY
