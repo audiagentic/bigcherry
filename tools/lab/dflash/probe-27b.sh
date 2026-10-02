@@ -1,10 +1,11 @@
 #!/bin/bash
-# Qwen3.8-27B Q8_0 speculative-decoding probe on dual XTX (-sm tensor): MTP depth 5 (production) vs the
-# DFlash2 block drafter (Q8_0 / Q4_K_M, block size 8), unsloth's standalone MTP sidecar (Q4_0) and the
-# DSpark drafter (Anbeeld Q8_0), each with the draft on the XTXs or on the 6900 XT
-# (-dev ROCm0,ROCm1 for the target, -devd ROCm3 = 6900 or ROCm0 = one XTX: the draft must sit on ONE device,
-# DFlash/DSpark graphs assert in the meta backend under -sm tensor). All four GPUs are made visible
-# (a non-contiguous HIP+ROCR visible list filters twice and drops the 6900); the R9700 (vLLM) gets no tensors.
+# Qwen3.8-27B Q8_0 speculative-decoding x deployment matrix (ubatch 2048, the 27B runtime setting).
+# Deployments: dual XTX -sm tensor; 3-card XTX+XTX+R9700 -sm tensor -ts 3,3,2; dual XTX -sm layer.
+# Drafts: built-in MTP (depth 3/4/5), unsloth MTP sidecar (Q4_0), DFlash2 (Q8_0/Q4_K_M, block 8),
+# DSpark (Q8_0, block 7). DFlash/DSpark only run with a layer-split target: they reuse the target's
+# output.weight, which a single-device draft cannot read from the tensor-split (meta) buffer.
+# A draft on its own device uses -devd ROCm0 (one XTX) or ROCm3 (the 6900 XT); all four GPUs are visible
+# and -dev picks the target cards (a non-contiguous HIP+ROCR visible list drops the 6900).
 # Same per-layout measurement as tools/lab/flash-next/layout-probe.sh: ~1665-token prompt, 3 x 128 tokens,
 # greedy 64-token parity check against the plain (no draft) run.
 # Usage: probe-27b.sh <llama-server> <out-dir> [layout-name regex]
@@ -12,7 +13,7 @@ set -u
 bin=$1 out=$2 only=${3:-}
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
-common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -sm tensor -ub 2048 -b 2048 -lv 4)
+common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 probe() {
   local name=$1 vis=$2; shift 2
   [[ -n "$only" && ! "$name" =~ ^(${only})$ ]] && return
@@ -51,16 +52,24 @@ PY
   cat "$out/$name.vram.txt"
   kill -INT "$pid"; wait "$pid"
 }
-probe plain 0,1
-probe mtp5 0,1 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe mtpside5-d6900 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
-probe dflash-q8-n7-dx0 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dflash-q8-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dflash-q8-n4-d6900 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
-probe dflash-q4-n7-d6900 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
-probe dspark-q8-n6-dx0 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-probe dspark-q8-n6-d6900 0,1,2,3 -dev ROCm0,ROCm1 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
-for n in mtp5 mtpside5-d6900 dflash-q8-n7-dx0 dflash-q8-n7-d6900 dflash-q8-n4-d6900 dflash-q4-n7-d6900 dspark-q8-n6-dx0 dspark-q8-n6-d6900; do
+probe plain 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor
+probe mtp5 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe mtp4 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 4 -ctkd q8_0 -ctvd q8_0
+probe mtp3 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 3 -ctkd q8_0 -ctvd q8_0
+probe mtpside5-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe plain-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2
+probe mtp5-3card 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe mtpside5-3card-d6900 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,2 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe plain-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer
+probe mtp5-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe dflash-q8-n7-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q8-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q4-n7-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe dflash-q8-n4-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
+probe dspark-q8-n6-layer 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm0 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe dspark-q8-n6-layer-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm layer -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 6
+probe mtp5-b 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+for n in mtp5 mtp4 mtp3 mtpside5-d6900 plain-3card mtp5-3card mtpside5-3card-d6900 plain-layer mtp5-layer dflash-q8-n7-layer dflash-q8-n7-layer-d6900 dflash-q4-n7-layer-d6900 dflash-q8-n4-layer dspark-q8-n6-layer dspark-q8-n6-layer-d6900 mtp5-b; do
   [ -f "$out/plain.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] && { cmp -s "$out/plain.greedy.txt" "$out/$n.greedy.txt" && echo "greedy plain == $n" || echo "greedy plain != $n"; }
 done
 echo PROBE_DONE
