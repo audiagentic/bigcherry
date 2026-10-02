@@ -6,7 +6,7 @@
 
 ## Description
 
-This is the current 818-row control-plane registry for in-scope tooling. The
+This is the current 819-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
 registered GP10 lab tools, four HI168 investigation tools, and the
 planning-capability-rebaseline-v3 migration pack and scripts, and (2026-10-02) every
@@ -909,6 +909,7 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 | `tools/lab/rccl/large-host-ar.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/bidir-check.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/flash-next/queue-flash-cpuroot.sh` | **TRANSITIONAL** | `flash-next` lab topic file (see `tools/lab/flash-next/README.md`); experiment-only, disposed per that README. |
 
 ## Exit status
 
