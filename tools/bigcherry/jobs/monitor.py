@@ -175,7 +175,7 @@ def disk_guards_from_environment(
         ),
         DiskGuard(
             "temp-root",
-            Path(tempfile.gettempdir()).resolve(),
+            Path(tempfile.gettempdir()).resolve(),  # tr14: observed-only (free-space guard, never written)
             int(tmp_gib * _GIB),
             tmp_fraction,
         ),

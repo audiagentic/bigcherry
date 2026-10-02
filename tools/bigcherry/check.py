@@ -131,6 +131,9 @@ _USER_FOLDER_DEFAULT_RE = re.compile(
     r"|tempfile\.gettempdir\(\)"
     r"|r?[\"'][A-Za-z]:[\\/]"
 )
+# A line that only OBSERVES an external location (e.g. a disk-pressure guard reading free space on the
+# temp filesystem) and never writes there carries this marker; it must name what is observed.
+_OBSERVED_ONLY_MARKER = "# tr14: observed-only"
 _ARTIFACTS_REFERENCE_RE = re.compile(r"artifacts/([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
@@ -735,7 +738,7 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
         for topic in sorted(
             path
             for path in lab_root.iterdir()
-            if path.is_dir() and path.name != "_template"
+            if path.is_dir() and path.name != "_template" and not path.name.startswith(".")
         ):
             if not (topic / "README.md").is_file():
                 findings.append(
@@ -798,7 +801,7 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
             for number, line in enumerate(lines, start=1):
                 if line.lstrip().startswith("#"):
                     continue
-                if _USER_FOLDER_DEFAULT_RE.search(line):
+                if _USER_FOLDER_DEFAULT_RE.search(line) and _OBSERVED_ONLY_MARKER not in line:
                     findings.append(
                         _diagnostic(
                             root,
