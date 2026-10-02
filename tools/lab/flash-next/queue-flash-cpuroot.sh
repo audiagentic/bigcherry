@@ -10,8 +10,8 @@ export BIGCHERRY_PATCH_TRACE=1
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-flash-cpuroot-3 bigcherry:stock:linux-multi ar-cpu-root gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-cpuroot-3 tools/lab/flash-next/layout-probe.sh @b-flash-cpuroot-3 /mnt/data/bigcherry-work/runs/flashnext-cpuroot-3/out cr-.*
+VIS=0,1,2,3 BUILD b-flash-cpuroot-4 bigcherry:stock:linux-multi ar-cpu-root gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT flashnext-cpuroot-4 tools/lab/flash-next/layout-probe.sh @b-flash-cpuroot-4 /mnt/data/bigcherry-work/runs/flashnext-cpuroot-4/out cr-.*
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
