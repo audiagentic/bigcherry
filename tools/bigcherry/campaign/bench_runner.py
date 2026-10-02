@@ -48,7 +48,7 @@ def _resolve_runner_root(runner_root: Path | None) -> Path:
         # BC_BENCH_HARNESS points at bench/, while the runner's cwd is the
         # harness repository root containing bench/run_bench.py.
         return Path(harness).expanduser().parent
-    # Delayed import/load is intentional: missing config/environment.toml is
+    # Delayed import/load is intentional: missing config/environment.local.toml is
     # reported when a benchmark is requested, not while importing the module.
     from bigcherry.core.environment import load_default
     return Path(load_default().host().bench_harness).expanduser().parent

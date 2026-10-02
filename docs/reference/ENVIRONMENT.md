@@ -1,6 +1,7 @@
 # Environment reference
 
-Machine-specific facts live in [`config/environment.toml`](../../config/environment.toml).
+Machine-specific facts live in `config/environment.local.toml` (gitignored; created from
+[`config/environment.example.toml`](../../config/environment.example.toml)).
 Documentation names a **role**; the config resolves it to a host.
 
 ## Why

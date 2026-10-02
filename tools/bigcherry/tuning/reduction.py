@@ -218,7 +218,7 @@ def make_reduction_signature_key(
     *, element_type: str, element_count: int,
     slice_shape: tuple[int, int, int, int], topology_key: str,
 ) -> str:
-    """The exact canonical key format tools/bigcherry/telemetry.py derives
+    """The exact canonical key format tools/bigcherry/tuning/telemetry.py derives
     from real production reduction telemetry -- verified against its
     signature_key construction before use here, so a case's declared
     reduction_signature_key and a probe's observed runtime signature are
@@ -252,7 +252,7 @@ def write_case(
     element_count) -- required, not optional, because a case's evidence is
     only comparable to a real recorded reduction_signature_key if it
     reproduces that exact shape, not merely the same total element count
-    (schema v2 fix; verified against tools/bigcherry/telemetry.py's key
+    (schema v2 fix; verified against tools/bigcherry/tuning/telemetry.py's key
     format, which joins slice_shape into the key, not just element_count)."""
     device_count = len(devices)
     element_count = len(devices[0])

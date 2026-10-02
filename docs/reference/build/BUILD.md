@@ -32,7 +32,8 @@ queue, with a firing pre-flight: see
 ## Environment — the build server
 
 Host facts (address, paths, toolchain, ports, device inventory) live in
-[`config/environment.toml`](../../../config/environment.toml); `source
+`config/environment.local.toml` (gitignored; created from
+[`config/environment.example.toml`](../../../config/environment.example.toml)); `source
 tools/bigcherry-env.sh` exports them as `$BC_*`. See
 [ENVIRONMENT.md](../ENVIRONMENT.md).
 

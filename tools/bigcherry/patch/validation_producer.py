@@ -197,7 +197,7 @@ class ProducerDeviceContext:
     execution_identity: ExecutionIdentity
     env_overrides: Mapping[str, str]
     env_unset: tuple[str, ...]
-    # The verified physical PCI locator from config/environment.toml
+    # The verified physical PCI locator from config/environment.local.toml
     # (PA36 RD13/1206 migration, GPT req_760c0fe82d7b4609 BLOCKER).
     # ``execution_identity`` deliberately omits locators because the
     # llama-bench/llama-perplexity attestation banner carries no PCI

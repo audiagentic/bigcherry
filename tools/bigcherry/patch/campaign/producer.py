@@ -347,14 +347,14 @@ class CampaignProducerRuntime:
         if not matches:
             raise PatchCampaignError(
                 f"{self.patch_id}: device_contexts() index {index} is not a "
-                f"configured device in config/environment.toml (known indices: "
+                f"configured device in config/environment.local.toml (known indices: "
                 f"{sorted(d.index for d in host_devices)})"
             )
         device = matches[0]
         if device.locator is None:
             raise PatchCampaignError(
                 f"{self.patch_id}: device_contexts() index {index} "
-                f"({device.arch}) has no verified locator in config/environment.toml"
+                f"({device.arch}) has no verified locator in config/environment.local.toml"
             )
         if device.arch != architecture:
             raise PatchCampaignError(

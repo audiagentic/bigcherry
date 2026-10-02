@@ -86,7 +86,7 @@ python -m bigcherry.patch.validation_campaign \
 The command above is build-server qualification infrastructure, not a
 portable repository interface. Resolve the paths with
 `source tools/env/bigcherry-env.sh` (see [ENVIRONMENT.md](../ENVIRONMENT.md));
-on another host, change `config/environment.toml` rather than this command. A run contributes
+on another host, change `config/environment.local.toml` rather than this command. A run contributes
 qualification evidence only when the campaign persists the required contract
 identity, measurements, provenance, and verdict through the canonical evidence
 path.

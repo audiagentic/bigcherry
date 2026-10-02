@@ -97,7 +97,7 @@ def resolve_selected_device_execution_identity(
     - HIP_VISIBLE_DEVICES must be explicitly set in the environment.
     - It must select exactly one device (a single numeric index).
     - That index must be a real, configured Device in this host's
-      inventory (config/environment.toml).
+      inventory (config/environment.local.toml).
     - The configured Device must have a real, verified `locator`.
     - The configured Device's `arch` must equal `expected_arch` -- a
       selector pointing at the wrong physical architecture is a caller
@@ -140,13 +140,13 @@ def resolve_selected_device_execution_identity(
         raise PatchCampaignError(
             f"resolve_selected_device_execution_identity: HIP_VISIBLE_DEVICES "
             f"selects index {index}, which is not a configured device in "
-            f"config/environment.toml (known indices: {sorted(d.index for d in host_devices)})"
+            f"config/environment.local.toml (known indices: {sorted(d.index for d in host_devices)})"
         )
     device = matches[0]
     if device.locator is None:
         raise PatchCampaignError(
             f"resolve_selected_device_execution_identity: device index {index} "
-            f"({device.arch}) has no verified locator in config/environment.toml -- "
+            f"({device.arch}) has no verified locator in config/environment.local.toml -- "
             "add one (via real `rocm-smi --showbus` output, never invented) before "
             "using it with a server-based attestation producer"
         )

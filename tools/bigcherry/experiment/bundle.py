@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from ..telemetry import console_telemetry
+from ..core.telemetry import console_telemetry
 from ..tuning.journal import atomic_write, canonical
 
 SCHEMA_VERSION = 1
