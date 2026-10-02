@@ -70,6 +70,10 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-01 probe flashnext-probe-1 (b11233 + validated set, gfx1100/gfx1201/gfx1030 build, PLE -ot to CPU, -c 16384): (1) every -sm tensor layout fails at load: 'LLAMA_SPLIT_MODE_TENSOR not implemented for architecture qwen4exp' -- tensor split needs a patch adding qwen4exp to the tensor-split architecture support (per-tensor split rules for the hybrid SSM/GDN, sparse-attention indexer, PLE and MoE tensors, as for qwen35). (2) -sm layer on XTX,XTX,R9700 -ts 3,3,2: out of memory on device 0 allocating a 231 MiB compute buffer (pp graph), i.e. GPU0 got more than its share of resident weights. (3) -sm layer on all four: model loaded, then no health within 10 min (hang or very slow warmup; log stops at threadpool init). Next: verbose (-lv 4) load with per-device buffer sizes, lower -ts weight on device 0 and -c 8192, check where per_layer_token_embd lands; design the qwen4exp tensor-split patch (owner: tensor split is much better than layer split).
 
+2026-10-02 MTP under -sm tensor resolved. The unsloth self-contained MTP sidecar is legacy-format: qwen4exp.attention.compress_ratios[48]=0 (dense MTP) although blk.48 carries indexer tensors; c061df198 (#29761) expects the MTP layer QSA (ratio 4). Load asserts (dead k-pool inputs) and the first-draft get_rows OOB both came from that. Corrected copy mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf (ratio[48]=4, edited in place on a copy) on pristine b-flash-c061, -sm tensor -ts 3,3,2: baseline 421 pp / 28.3 tg; MTP depth 2: 384.5 pp / 41.8 tg, acceptance 68.9%; depth 3: 385.6 pp / 42.9 tg, 63.8%; greedy identical to baseline for both. Patch 1280 (forward-expand k-pool inputs) rejected as a mask. Plain -sm layer segfaults in warmup on both pristine and patched builds (separate upstream issue). Next: 192K + MTP layout (v9 OOM'd by 1.19 GiB on device 1), MTP depth/ngram sweep, consider reporting the converter mismatch to unsloth.
+
+2026-10-02 sweeps 1-3 (pristine c061, qsa4 sidecar, MTP --no-spec-draft-backend-sampling), greedy identical to baseline in every run. 8K: baseline -ts 3,3,2 425 pp / 28.3 tg; even -ts 1,1,1 431 / 28.0. MTP depth 3/4/5 at 3,3,2: 43.8/43.6/43.8 tg (acc 63.8/60.4/56.7%) -> depth 3. MTP3+ngram-mod 38.1 (worse). ABAB MTP3: 3,3,2 43.3/43.8 (acc 63.8%), even 45.6/45.8 (acc 70.5%) - acceptance differs between splits (deterministic numerics), so not a pure split-speed attribution, but end-to-end better. Draft on R9700 (-devd ROCm2) 41.7. BEST: even split on ROCm0-2 with MTP draft on the 6900 (-dev ROCm0,ROCm1,ROCm2 -devd ROCm3, HIP_VISIBLE 0-3): 401.9 pp / 48.5 tg, acc 70.9%; 6900 uses 3.7 GiB. 192K (-c 196608, q8_0 KV + q8_0 draft KV, -ts 2,2,3, draft on 6900): 391.9 pp / 45.1 tg, acc 74.7%, VRAM 20.2/20.5/31.6/4.9 GiB - 192K + MTP target met. 192K without 6900 draft OOMs at every split tried (2,2,3 / 3,3,4 / 5,5,6 / 5,5,7). -ts 5,5,6 with 6900 draft also OOMs.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -77,3 +81,12 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-01T06:24:16.813548+00:00 (updated-by): Updated: section:notes
 - 2026-10-01T07:45:50.591371+00:00 (updated-by): Updated: section:notes
 - 2026-10-01T08:31:56.666485+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261002_011157_llamacpp-updated-to-include-q_5054
+- 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T03:48:27.574308+00:00 (updated-by): Updated: section:notes
+- chg_20261002_034831_qwen38-flash-next-mtp-specula_9007
+- 2026-10-02T03:48:35.036254+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-02T05:23:42.872770+00:00 (updated-by): Updated: section:notes
