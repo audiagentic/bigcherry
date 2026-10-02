@@ -8,9 +8,10 @@
 # and -dev picks the target cards (a non-contiguous HIP+ROCR visible list drops the 6900).
 # Same per-layout measurement as tools/lab/flash-next/layout-probe.sh: ~1665-token prompt, 3 x 128 tokens,
 # greedy 64-token parity check against the plain (no draft) run.
-# Usage: probe-27b.sh <llama-server> <out-dir> [layout-name regex]
+# Usage: probe-27b.sh <llama-server> <out-dir> [layout-name regex] [timed requests per layout, default 3]
+#   Screening = 1 request (does it load, is greedy output identical, rough speed); detail = 3+.
 set -u
-bin=$1 out=$2 only=${3:-}
+bin=$1 out=$2 only=${3:-} reps=${4:-3}
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
@@ -29,22 +30,23 @@ probe() {
   done
   if [ "$ok" != 1 ]; then echo "$name: SERVER_FAILED"; tail -5 "$log"; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
   rocm-smi --showmeminfo vram 2>/dev/null | grep "Total Used" > "$out/$name.vram.txt"
-  python3 - "$port" "$name" "$out" <<'PY'
+  python3 - "$port" "$name" "$out" "$reps" <<'PY'
 import json, sys, urllib.request
 port, name, out = sys.argv[1:4]
+reps = int(sys.argv[4])
 def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=900).read())
 text = open("/mnt/data/bigcherry-work/corpus/kld-docs.txt", errors="replace").read()[:5000]
 post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 rows = []
-for i in range(3):
+for i in range(reps):
     t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False, "temperature": 0, "ignore_eos": True})["timings"]
     rows.append({k: t.get(k) for k in ("prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second", "draft_n", "draft_n_accepted")})
 greedy = post({"prompt": "List the first ten prime numbers and explain why 1 is not prime.", "n_predict": 64, "cache_prompt": False, "temperature": 0, "seed": 1})
 open(f"{out}/{name}.greedy.txt", "w").write(greedy["content"])
 json.dump(rows, open(f"{out}/{name}.timings.json", "w"), indent=1)
-pp = sum(r["prompt_per_second"] for r in rows) / 3; tg = sum(r["predicted_per_second"] for r in rows) / 3
+pp = sum(r["prompt_per_second"] for r in rows) / reps; tg = sum(r["predicted_per_second"] for r in rows) / reps
 acc = [r for r in rows if r.get("draft_n")]
 a = sum(r["draft_n_accepted"] for r in acc) / max(1, sum(r["draft_n"] for r in acc)) if acc else None
 print(f"{name}: prompt {rows[0]['prompt_n']} tok at {pp:.1f} t/s, decode {tg:.1f} t/s" + (f", draft acceptance {100*a:.1f}%" if a is not None else ""))
