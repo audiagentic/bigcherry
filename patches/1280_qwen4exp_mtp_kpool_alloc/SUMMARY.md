@@ -1,3 +1,8 @@
-# 1280 qwen4exp MTP k-pool alloc
+# 1280_qwen4exp_mtp_kpool_alloc
 
-Forward-expands the qwen4exp k-pool `k_idxs` input so the MTP draft graph (no QSA layer) still allocates it. Without it, `-sm tensor` + MTP aborts at load with `GGML_ASSERT(buffer)` in `set_input_k_idxs`. Plan: QFN01.
+**Status:** untested
+**Plan item:** QFN01
+
+## What it does
+
+Forward-expands the qwen4exp k-pool `k_idxs` and `new_pool_*` inputs so the MTP draft graph (no QSA layer) still allocates them. Without it, `-sm tensor` + MTP aborts at server load with `GGML_ASSERT(buffer)` in `set_input_k_idxs` / `set_input_kpool`.
