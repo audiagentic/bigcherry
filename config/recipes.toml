@@ -373,6 +373,10 @@ patches = ["1286_draft_local_shared_tensors"]
 # PRVP03 phase 0: default-off Vulkan meta communication provider (BIGCHERRY_VK_ALLREDUCE=host-f32).
 patches = ["1290_vulkan_allreduce_host_f32"]
 
+[experiment.ar-cpu-root]
+# QFN01 goal: --allreduce cpu-root (1291) on the production composition (which carries 0840/0860).
+patches = ["1291_ar_cpu_root"]
+
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
 # off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.

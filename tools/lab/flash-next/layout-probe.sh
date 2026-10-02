@@ -70,7 +70,16 @@ probe ar-butterfly 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 4,4
 probe ar-4card-host-nomtp 0,1,2,3 -sm tensor -ts 4,4,3,2 -ub 1024 -b 2048 --allreduce host
 probe ar-3card-ref-nomtp 0,1,2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048
 probe ar-auto-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
-for n in ar-ccl ar-host ar-adaptive-96k ar-adaptive-32k ar-adaptive-256k ar-adaptive-1m ar-butterfly ar-auto-b 8k-443-n3-ub512-d6900 8k-443-n3-ub1024-d6900 8k-443-n3-ub2048-d6900 8k-443-n2-d6900 8k-443-n4-d6900 8k-554-n3-d6900 192k-223-n3-ub1024-d6900 192k-223-n3-ub512b-d6900; do
-  [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
+probe cr-nomtp-auto-a 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048
+probe cr-nomtp-cpuroot-a 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 --allreduce cpu-root
+probe cr-mtp-auto-a 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cr-mtp-cpuroot-a 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 --allreduce cpu-root
+probe cr-mtp-cpuroot-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 --allreduce cpu-root
+probe cr-mtp-auto-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 -devd ROCm3 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+probe cr-nomtp-cpuroot-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048 --allreduce cpu-root
+probe cr-nomtp-auto-b 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048
+for n in cr-nomtp-cpuroot-a cr-mtp-auto-a cr-mtp-cpuroot-a cr-mtp-cpuroot-b cr-mtp-auto-b cr-nomtp-cpuroot-b cr-nomtp-auto-b ar-ccl ar-host ar-adaptive-96k ar-adaptive-32k ar-adaptive-256k ar-adaptive-1m ar-butterfly ar-auto-b 8k-443-n3-ub512-d6900 8k-443-n3-ub1024-d6900 8k-443-n3-ub2048-d6900 8k-443-n2-d6900 8k-443-n4-d6900 8k-554-n3-d6900 192k-223-n3-ub1024-d6900 192k-223-n3-ub512b-d6900; do
+  ref=cpu3-tensor; [ -f "$out/cr-nomtp-auto-a.greedy.txt" ] && ref=cr-nomtp-auto-a
+  [ -f "$out/$ref.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/$ref.greedy.txt" "$out/$n.greedy.txt" && echo "greedy $ref == $n" || echo "greedy $ref != $n"; }
 done
 echo PROBE_DONE
