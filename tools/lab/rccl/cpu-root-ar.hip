@@ -151,13 +151,11 @@ int main(int argc, char ** argv) {
                 (void) hipMemcpy(out.data(), d_buf[d], sizeof(float) * n, hipMemcpyDeviceToHost);
                 for (int i = 0; i < n; i++) {
                     float want = 0; for (int r = 0; r < nd; r++) want += in[r][i];
-                    if (out[i] != want) { printf("VERIFY FAIL call %d rank %d i %d got %g want %g
-", k, d, i, out[i], want); bad = 1; break; }
+                    if (out[i] != want) { printf("VERIFY FAIL call %d rank %d i %d got %g want %g\n", k, d, i, out[i], want); bad = 1; break; }
                 }
             }
         }
-        printf("ranks=%d elems=%d exact verification over 64 calls: %s
-", nd, n, bad ? "FAIL" : "PASS");
+        printf("ranks=%d elems=%d exact verification over 64 calls: %s\n", nd, n, bad ? "FAIL" : "PASS");
     }
     // values double every call (x -> sum over ranks); just check rank 0 equals rank 1.
     std::vector<float> a(n), b(n);
