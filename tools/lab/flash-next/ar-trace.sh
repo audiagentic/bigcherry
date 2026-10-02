@@ -9,7 +9,8 @@ bin=$1 out=$2; mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 md=(-md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 -devd ROCm3)
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 16 -ot '^per_layer_token_embd\.weight$=CPU'
-        -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048)
+        -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 4,4,3 -ub 1024 -b 2048
+        --allreduce adaptive --allreduce-switch-bytes 1048576)  # 1277 traces only inside the adaptive dispatcher
 arm() {
   local name=$1; shift
   local port=$((45000 + RANDOM % 2000)) log="$out/$name.server.log"
