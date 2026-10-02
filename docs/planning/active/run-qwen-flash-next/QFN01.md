@@ -84,6 +84,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-03 AllReduce census + microbenchmarks (goal: Flash-Next deployment/AllReduce). Census (1277 trace, adaptive dispatcher, -ts 4,4,3 ub1024): decode = 96 AllReduces/token (2 per layer x 48), f32 [2560 x ne1] = 10 KB (ne1=1) or 20-40 KB under MTP3 verify; all RCCL on 3 GPUs; prefill ~96 x 10.5 MB (+6.4 MB tail) per 1024-token ubatch. RCCL microbench (tools/lab/rccl/ar-latency.hip), stream-ordered chain: 2 ranks 10KB 22.4 us, 40KB 25.3, 10MB 1420 us; 3 ranks 10KB 33.1 us, 40KB 41.1, 640KB 270, 10MB 3604 us (~2.9 GB/s), 40MB 14.6 ms. Host-synchronised-per-call numbers (66.7 / 107.7 us) are dominated by launch+sync (empty-kernel floor 40 / 78 us). CPU-root one-shot (tools/lab/rccl/cpu-root-ar.hip: mapped pinned slots, per-rank epochs, AVX2 exact-f32 CPU sum, GPU spin on result epoch), stream-ordered: 3 ranks 10KB 13.8 us, 20KB 21.0, 40KB 35.5; 2 ranks 11.4 / 16.9 / 26.4. Estimates: decode no-MTP 96 x ~19 us = ~1.9 ms of 27.8 ms (~+7%); prefill AR ~350 ms of ~0.8 s per ubatch (~40%) -> a pipelined host/CPU-root path for 10 MB messages is the larger lever (+20-30% prefill if ~1-1.5 ms/10 MB).
 
+2026-10-03 large-message host AllReduce prototype (tools/lab/rccl/large-host-ar.hip, chunked copy-engine D2H, AVX2 CPU sum exact f32, per-chunk H2D): 10 MB 3 ranks best 2.63 ms (1 MB or 512 KB chunks, 2-6 threads; persistent pool no better) vs RCCL 3.60 ms (-27%); 2 ranks 1.45 ms vs RCCL 1.42 (tie). Link check (bidir-check.hip): XTX H2D 13.5 / D2H 14.2 / simultaneous 10.8 GB/s each way; R9700 6.7 / 7.0 / 6.2 each way (bidirectional overlap works); 6900 3.5 / 3.5 / 2.7. 10 MB floor on 3 ranks ~1.7 ms (R9700 x4). GPT (req_3f7154f755904a49) agrees: CPU-root copy-engine pipeline, 512 KiB-1 MiB chunks; RS/AG through host loses on this topology; bf16 prefill wire is not acceptance-neutral. Small-message path (cpu-root-ar.hip) 10 KB 13.8 us vs RCCL 33.1 us. Integrated provider: patch 1291_ar_cpu_root requested from GPT (req_dab269203605443f).
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -105,3 +107,4 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T13:16:39.643772+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T13:27:09.420054+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T14:35:13.352947+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T14:49:31.198618+00:00 (updated-by): Updated: section:notes
