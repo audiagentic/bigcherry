@@ -56,6 +56,9 @@ L / medium-high: driver differences and no-P2P communication can dominate result
 
 ## Notes
 
+2026-10-02 first screening (vk-27b-screen, stock Vulkan build b-vk-stock = vulkan-stock:vulkan-stock:vulkan-linux at c061, RADV/Mesa 26.1.3, stock kernel; Qwen3.8-27B Q8_0 ub2048, 1 timed request; greedy identical across all Vulkan layouts). Dual XTX -sm layer: 882 pp / 20.8 tg (HIP 1086 / 23.8). Dual XTX -sm tensor: 494 / 24.2 (HIP 1479 / 38.5) -- meta generic allreduce_fallback (no Vulkan comm provider). Layer + MTP5: 856 / 32.1 (acc 57.8%). Tensor + MTP5: 467 / 49.6 (HIP 1315 / 78.6). 3-card tensor -ts 3,3,2: 286 / 14.8. Single R9700 (-sm none, fits 32 GB): 1120 / 19.2. Reading: Vulkan per-device compute is close to HIP on layer split (-19% pp, -13% tg) but tensor split loses ~2/3 of prefill and ~37% decode to the host-fallback collective -- PRVP03 (1290 phase 0 queued, phase 1 mapped-host) is the gap. AMDVLK not installed on brutus yet.
+
 ## Change Log
 
 - 2026-10-02T12:35:03.462944+00:00 (created-by): Created by agent
+- 2026-10-02T12:46:59.538869+00:00 (updated-by): Updated: section:notes
