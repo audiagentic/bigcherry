@@ -364,11 +364,6 @@ patches = ["1279_moe_routing_dump"]
 # 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
 patches = ["1273_iq_mmvq_rdna_tuning"]
 
-[experiment.allreduce-base]
-# Promoted AllReduce closure only (0860 + 1225 + 0840), at the active pin: the production AllReduce
-# behaviour, used as the base for stock-kernel RCCL/adaptive tuning (2026-10-02).
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch"]
-
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
 # off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
