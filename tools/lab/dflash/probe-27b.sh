@@ -1,6 +1,7 @@
 #!/bin/bash
 # Qwen3.8-27B Q8_0 speculative-decoding probe on dual XTX (-sm tensor): MTP depth 5 (production) vs the
-# DFlash2 block drafter (Q8_0 / Q4_K_M, block size 8), each with the draft on the XTXs or on the 6900 XT
+# DFlash2 block drafter (Q8_0 / Q4_K_M, block size 8), unsloth's standalone MTP sidecar (Q4_0) and the
+# DSpark drafter (Anbeeld Q8_0), each with the draft on the XTXs or on the 6900 XT
 # (-devd; HIP_VISIBLE_DEVICES=0,1,3 makes the 6900 ROCm2). The R9700 (vLLM) is not used.
 # Same per-layout measurement as tools/lab/flash-next/layout-probe.sh: ~1665-token prompt, 3 x 128 tokens,
 # greedy 64-token parity check against the plain (no draft) run.
@@ -55,9 +56,13 @@ probe dflash-q8-n7 0,1 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-
 probe dflash-q8-n7-d6900 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
 probe dflash-q8-n4-d6900 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 4
 probe dflash-q4-n7-d6900 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q4_K_M.gguf --spec-type draft-dflash --spec-draft-n-max 7
+probe mtpside5 0,1 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe mtpside5-d6900 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/unsloth-mtp/mtp-Qwen3.8-27B-Q4_0.gguf --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
+probe dspark-q8-n7 0,1 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 7
+probe dspark-q8-n7-d6900 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dspark/Qwen3.8-27B-DSpark-Q8_0.gguf --spec-type draft-dspark --spec-draft-n-max 7
 probe mtp5-b 0,1 --spec-type draft-mtp --spec-draft-n-max 5 -ctkd q8_0 -ctvd q8_0
 probe dflash-q8-n7-d6900-b 0,1,3 -dev ROCm0,ROCm1 -devd ROCm2 -md /mnt/data/llm-models/qwen3.8-27b/gguf/dflash/Qwen3.8-27B-DFlash2-Q8_0.gguf --spec-type draft-dflash --spec-draft-n-max 7
-for n in mtp5 mtp5-d6900 dflash-q8-n7 dflash-q8-n7-d6900 dflash-q8-n4-d6900 dflash-q4-n7-d6900; do
+for n in mtp5 mtp5-d6900 mtpside5 mtpside5-d6900 dspark-q8-n7 dspark-q8-n7-d6900 dflash-q8-n7 dflash-q8-n7-d6900 dflash-q8-n4-d6900 dflash-q4-n7-d6900; do
   [ -f "$out/plain.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] && { cmp -s "$out/plain.greedy.txt" "$out/$n.greedy.txt" && echo "greedy plain == $n" || echo "greedy plain != $n"; }
 done
 echo PROBE_DONE
