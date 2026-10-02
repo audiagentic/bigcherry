@@ -82,6 +82,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-02 flashnext-ar-1 (production build, -ts 4,4,3 ub1024 MTP3 draft on 6900, 3 requests): auto 1132/67.9 and repeat 1136/68.5; ccl 1137/67.8; adaptive switch 32K/96K/256K/1M 1135-1138 / 67.0-69.1 (acceptance 73-75%, spread within noise); host-only 608/47.0; butterfly 608/47.5; 4-card incl. 6900 (-ts 4,4,3,2, host provider) no MTP 270/8.1; 3-card ref no MTP ub1024 1266/36.6. On 3 GPUs auto==adaptive==RCCL; the BigCherry host path does not scale to 3 devices (x4 R9700); the 6900 must stay out of the tensor split. Gains must come from structural changes (fewer/fused/overlapped reductions), not provider choice.
 
+2026-10-03 AllReduce census + microbenchmarks (goal: Flash-Next deployment/AllReduce). Census (1277 trace, adaptive dispatcher, -ts 4,4,3 ub1024): decode = 96 AllReduces/token (2 per layer x 48), f32 [2560 x ne1] = 10 KB (ne1=1) or 20-40 KB under MTP3 verify; all RCCL on 3 GPUs; prefill ~96 x 10.5 MB (+6.4 MB tail) per 1024-token ubatch. RCCL microbench (tools/lab/rccl/ar-latency.hip), stream-ordered chain: 2 ranks 10KB 22.4 us, 40KB 25.3, 10MB 1420 us; 3 ranks 10KB 33.1 us, 40KB 41.1, 640KB 270, 10MB 3604 us (~2.9 GB/s), 40MB 14.6 ms. Host-synchronised-per-call numbers (66.7 / 107.7 us) are dominated by launch+sync (empty-kernel floor 40 / 78 us). CPU-root one-shot (tools/lab/rccl/cpu-root-ar.hip: mapped pinned slots, per-rank epochs, AVX2 exact-f32 CPU sum, GPU spin on result epoch), stream-ordered: 3 ranks 10KB 13.8 us, 20KB 21.0, 40KB 35.5; 2 ranks 11.4 / 16.9 / 26.4. Estimates: decode no-MTP 96 x ~19 us = ~1.9 ms of 27.8 ms (~+7%); prefill AR ~350 ms of ~0.8 s per ubatch (~40%) -> a pipelined host/CPU-root path for 10 MB messages is the larger lever (+20-30% prefill if ~1-1.5 ms/10 MB).
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -102,3 +104,4 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T11:50:00.976519+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T13:16:39.643772+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T13:27:09.420054+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T14:35:13.352947+00:00 (updated-by): Updated: section:notes
