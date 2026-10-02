@@ -122,23 +122,26 @@ int main(int argc, char ** argv) {
         (void) hipHostMalloc((void **) &reduced, sizeof(uint32_t) * nchunks, hipHostMallocMapped | hipHostMallocPortable | hipHostMallocCoherent);
         memset((void *) arrived, 0, sizeof(uint32_t) * nd * nchunks); memset((void *) reduced, 0, sizeof(uint32_t) * nchunks);
         std::atomic<uint32_t> want_gen{0}; std::atomic<bool> stop{false};
-        std::thread worker([&] {
-            uint32_t gen = 1;
-            while (!stop.load()) {
-                if (want_gen.load() < gen) { _mm_pause(); continue; }
-                for (size_t c = 0; c < nchunks; c++) {
-                    for (int d = 0; d < nd; d++) { while (arrived[d * nchunks + c] < gen) { _mm_pause(); } }
-                    std::atomic_thread_fence(std::memory_order_acquire);
-                    const size_t off = c * chunk, n = std::min(chunk, elems - off);
-                    std::vector<float *> in(nd);
-                    for (int d = 0; d < nd; d++) in[d] = slot[d] + off;
-                    sum_range(result + off, in, 0, n);
-                    std::atomic_thread_fence(std::memory_order_release);
-                    reduced[c] = gen;
+        std::vector<std::thread> workers;
+        for (int t = 0; t < cpu_threads; t++) {
+            workers.emplace_back([&, t] {
+                uint32_t gen = 1;
+                while (!stop.load()) {
+                    if (want_gen.load() < gen) { _mm_pause(); continue; }
+                    for (size_t c = t; c < nchunks; c += cpu_threads) {
+                        for (int d = 0; d < nd; d++) { while (arrived[d * nchunks + c] < gen) { _mm_pause(); } }
+                        std::atomic_thread_fence(std::memory_order_acquire);
+                        const size_t off = c * chunk, n = std::min(chunk, elems - off);
+                        std::vector<float *> in(nd);
+                        for (int d = 0; d < nd; d++) in[d] = slot[d] + off;
+                        sum_range(result + off, in, 0, n);
+                        std::atomic_thread_fence(std::memory_order_release);
+                        reduced[c] = gen;
+                    }
+                    gen++;
                 }
-                gen++;
-            }
-        });
+            });
+        }
         uint32_t gen = 0;
         auto memop_call = [&]() {
             gen++;
@@ -166,12 +169,12 @@ int main(int argc, char ** argv) {
         auto m0 = std::chrono::steady_clock::now();
         for (int it = 0; it < iters; it++) memop_call();
         const double mus = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - m0).count() / iters;
-        stop = true; worker.join();
+        stop = true; for (auto & w : workers) w.join();
         std::vector<float> a(elems), b(elems);
         (void) hipSetDevice(0); (void) hipMemcpy(a.data(), dev[0], elems * sizeof(float), hipMemcpyDeviceToHost);
         (void) hipSetDevice(nd - 1); (void) hipMemcpy(b.data(), dev[nd - 1], elems * sizeof(float), hipMemcpyDeviceToHost);
-        printf("MEMOP ranks=%d bytes=%zu chunk_bytes=%zu  %.1f us/call  %.2f GB/s algbw  ranks agree: %s\n",
-               nd, elems * 4, chunk * 4, mus, elems * 4 / mus / 1e3, memcmp(a.data(), b.data(), elems * 4) == 0 ? "yes" : "NO");
+        printf("MEMOP ranks=%d bytes=%zu chunk_bytes=%zu threads=%d  %.1f us/call  %.2f GB/s algbw  ranks agree: %s\n",
+               nd, elems * 4, chunk * 4, cpu_threads, mus, elems * 4 / mus / 1e3, memcmp(a.data(), b.data(), elems * 4) == 0 ? "yes" : "NO");
         return 0;
     }
     const bool use_pool = argc > 4 && strcmp(argv[4], "pool") == 0;
