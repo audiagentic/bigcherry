@@ -56,3 +56,8 @@ sources check re-run with no unexplained findings; external-sources.toml snapsho
 ## Change Log
 
 - 2026-10-02T01:11:33.440268+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261002_011157_llamacpp-updated-to-include-q_5054
+- 2026-10-02T01:12:03.118991+00:00 (updated-by): Updated: section:ledger-events

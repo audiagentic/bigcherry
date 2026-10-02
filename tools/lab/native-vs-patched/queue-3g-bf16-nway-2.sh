@@ -10,11 +10,11 @@ L=tools/lab/native-vs-patched
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2 BUILD b-3g-nway ar-adaptive-nway gfx1100,gfx1201
+VIS=0,1,2 BUILD b-3g-nway bigcherry:stock:linux-multi ar-adaptive-nway gfx1100,gfx1201
 VIS=0,1,2 AB ab-3g-bf16-nway-2 $L/server-ab-3g-bf16-nway-2.json --pairs 6
 VIS=0,1,2 AB ab-3g-bf16-ts $L/server-ab-3g-bf16-ts.json --pairs 6
 VIS=0,1,2 SCRIPT host3-crash-1 $L/host3-crash-repro.sh @b-3g-nway /mnt/data/bigcherry-work/runs/host3-crash-1/out
-VIS=0,1,2,3 BUILD b-flash-4g - gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD b-flash-4g bigcherry:stock:linux-multi - gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT flashnext-probe-1 tools/lab/flash-next/layout-probe.sh @b-flash-4g /mnt/data/bigcherry-work/runs/flashnext-probe-1/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

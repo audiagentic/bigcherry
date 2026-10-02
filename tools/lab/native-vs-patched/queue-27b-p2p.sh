@@ -14,7 +14,7 @@ L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-p2p ar-p2p
+BUILD b-27b-p2p bigcherry:stock:linux-multi ar-p2p gfx1100
 PREFLIGHT pf-27b-p2p @b-27b-p2p $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1252_nro03 $SRV
 REQUIRES=pf-27b-p2p AB ab-27b-p2p $L/server-ab-p2p.json --pairs 6
 REQUIRES=pf-27b-p2p AB ab-27b-p2p-wire $L/server-ab-p2p-wire.json --pairs 6

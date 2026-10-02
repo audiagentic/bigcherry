@@ -10,7 +10,7 @@ D=tools/lab/quant-sweep
 SRV="-ngl 99 --fit off -c 8192 --flash-attn on"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-kquant-f32 kquant-f32
+BUILD b-kquant-f32 bigcherry:stock:linux-multi kquant-f32 gfx1100
 VIS=0 PREFLIGHT pf-kquant-q6 @b-kquant-f32 ${M}UD-Q6_K.gguf BIGCHERRY_PATCH_HIT.patch=1274_kquant_f32.*type=q6_k $SRV
 VIS=0 PREFLIGHT pf-kquant-q4 @b-kquant-f32 ${M}UD-Q4_K_M.gguf BIGCHERRY_PATCH_HIT.patch=1274_kquant_f32.*type=q4_k $SRV
 VIS=0 REQUIRES=pf-kquant-q6 AB ab-kquant-xtx1-q6 $D/kquant-f32-xtx1-q6_k.json --pairs 4

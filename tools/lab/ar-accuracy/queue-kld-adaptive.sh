@@ -14,7 +14,7 @@ R=/mnt/data/bigcherry-work/runs/kld-27b-reference.kld
 A="-- --allreduce adaptive"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD bp-27b-awl adaptive-wire-latency gfx1100 bin/llama-perplexity
+BUILD bp-27b-awl bigcherry:stock:linux-multi adaptive-wire-latency gfx1100 bin/llama-perplexity
 SCRIPT kld-awl-f32 $K @bp-27b-awl $BC_MODEL $C $R compare GGML_CUDA_AR_WIRE=f32 $A
 SCRIPT kld-awl-f32-fast $K @bp-27b-awl $BC_MODEL $C $R compare GGML_CUDA_AR_WIRE=f32 BIGCHERRY_AR_SLOT_SYNC=none BIGCHERRY_AR_SMALL_BLOCKS=1 $A
 SCRIPT kld-awl-bf16 $K @bp-27b-awl $BC_MODEL $C $R compare $A

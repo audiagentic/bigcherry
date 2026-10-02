@@ -10,8 +10,8 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-control -
-BUILD b-27b-adaptive allreduce-adaptive
+BUILD b-27b-control bigcherry:stock:linux-multi - gfx1100
+BUILD b-27b-adaptive bigcherry:stock:linux-multi allreduce-adaptive gfx1100
 AB ab-27b-rccl-proto $L/server-ab-rccl-proto.json --pairs 6
 AB ab-27b-rccl-adaptive $L/server-ab-rccl-adaptive.json --pairs 6
 JOBS

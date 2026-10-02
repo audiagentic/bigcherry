@@ -10,7 +10,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 L=tools/lab/native-vs-patched
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-awl adaptive-wire-latency
+BUILD b-27b-awl bigcherry:stock:linux-multi adaptive-wire-latency gfx1100
 AB ab-27b-adaptive-switch $L/server-ab-adaptive-switch.json --pairs 6
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

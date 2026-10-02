@@ -12,7 +12,7 @@ D=tools/lab/quant-sweep
 SRV="-ngl 99 --fit off -c 8192 --flash-attn on"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-iq-mmvq iq-mmvq gfx1100,gfx1201
+BUILD b-iq-mmvq bigcherry:stock:linux-multi iq-mmvq gfx1100,gfx1201
 VIS=0 PREFLIGHT pf-iq-mmvq-iq4 @b-iq-mmvq ${M}UD-IQ4_XS.gguf BIGCHERRY_PATCH_HIT.patch=1273_iq_mmvq.*type=iq4_xs.*arch=gfx1100 $SRV
 VIS=0 PREFLIGHT pf-iq-mmvq-iq3 @b-iq-mmvq ${M}UD-IQ3_XXS.gguf BIGCHERRY_PATCH_HIT.patch=1273_iq_mmvq.*type=iq3_xxs.*arch=gfx1100 $SRV
 VIS=0 REQUIRES=pf-iq-mmvq-iq4 AB ab-iq-mmvq-xtx1-iq4 $D/iq-mmvq-xtx1-iq4_xs.json --pairs 6

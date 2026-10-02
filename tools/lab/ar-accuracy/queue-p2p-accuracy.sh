@@ -15,7 +15,7 @@ R=/mnt/data/bigcherry-work/runs/kld-27b-p2p-reference.kld
 H="GGML_CUDA_ALLREDUCE=internal"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD bp-27b-p2p ar-p2p gfx1100 bin/llama-perplexity
+BUILD bp-27b-p2p bigcherry:stock:linux-multi ar-p2p gfx1100 bin/llama-perplexity
 SCRIPT kld-p2p-ref $K @bp-27b-p2p $BC_MODEL $C $R base $H GGML_CUDA_AR_WIRE=f32
 SCRIPT kld-p2p-f32 $K @bp-27b-p2p $BC_MODEL $C $R compare $H GGML_CUDA_AR_WIRE=f32 GGML_CUDA_AR_P2P=1
 SCRIPT kld-p2p-f32-repeat $K @bp-27b-p2p $BC_MODEL $C $R compare $H GGML_CUDA_AR_WIRE=f32 GGML_CUDA_AR_P2P=1

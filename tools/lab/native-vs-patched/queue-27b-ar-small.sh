@@ -11,7 +11,7 @@ L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-ar-small ar-small-latency
+BUILD b-27b-ar-small bigcherry:stock:linux-multi ar-small-latency gfx1100
 PREFLIGHT pf-27b-ar-small @b-27b-ar-small $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1275_ar_small.*blocks=1.*slot_sync=none $SRV
 REQUIRES=pf-27b-ar-small AB ab-27b-ar-small $L/server-ab-ar-small.json --pairs 6
 JOBS

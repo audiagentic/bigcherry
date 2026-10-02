@@ -4,10 +4,10 @@
 # Each non-comment line: <patch> <producer|-> <arch> <device> <run-name> [extra campaign args...]
 # PROFILE lines use: PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
 # Optional leading MODEL=, HIP= and VIS= tokens are supported for both.
-# BUILD <run-name> <experiment|-> [arch-list] [binary] builds bigcherry:stock:linux-multi
-#   (+ <experiment>) for arch-list (comma-separated, default gfx1100; e.g. gfx1100,gfx1201 for
-#   XTX+R9700), target binary default bin/llama-server (e.g. bin/llama-perplexity), and records
-#   BUILD_BINARY=<path>.
+# BUILD <run-name> <source:build:platform> <experiment|-> <arch-list|-> [binary] builds the explicit
+#   lane (+ <experiment>); arch-list is comma-separated (e.g. gfx1100,gfx1201 for XTX+R9700) and "-"
+#   leaves the platform target set unchanged (Vulkan rows: no AMDGPU_TARGETS-style compilation).
+#   Target binary defaults to bin/llama-server (e.g. bin/llama-bench); records BUILD_BINARY=<path>.
 # SCRIPT <run-name> <script> [args...] runs a repo script under the host + GPU locks; @<build-run>
 #   arguments are resolved to binaries. REQUIRES= gates it like AB rows.
 # AB <run-name> <server-config.json> [ab-benchmark args] runs a balanced server A/B.
@@ -106,10 +106,16 @@ resolve_binary() {
 }
 
 build_line() {
-    # BUILD <run-name> <experiment|-> [arch-list] [binary]   ("-" builds the plain lane with no experiment)
-    local run=$2 arch=${4:-gfx1100} target=${5:-bin/llama-server} log rc plan bin
-    local experiment_args=()
-    [ "$3" != - ] && experiment_args=(--experiment "$3")
+    # BUILD <run-name> <source:build:platform> <experiment|-> <arch-list|-> [binary]
+    local run=$2 lane=$3 experiment=$4 arch=${5:-} target=${6:-bin/llama-server} log rc plan bin
+    local experiment_args=() arch_args=()
+    case "$lane" in
+        *:*:*) ;;
+        *) echo "invalid BUILD lane '$lane' for $run: expected source:build:platform" >&2; return 2 ;;
+    esac
+    [ -n "$arch" ] || { echo "BUILD $run: arch-list (or -) is required" >&2; return 2; }
+    [ "$experiment" != - ] && experiment_args=(--experiment "$experiment")
+    [ "$arch" != - ] && arch_args=(--arch "$arch")
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^BUILD_EXIT=' "$log"; then
         echo "skip build $run (finished)"
@@ -117,12 +123,11 @@ build_line() {
         return $?
     fi
     echo "start build $run $(date -Is)"
-    # One build per (source, arch): always request llama-server so the build plan (and its
-    # directory) is the same whichever binary a row wants; every tool is built in the same tree
-    # (LLAMA_BUILD_TOOLS=ON), so the row's $target is resolved from it below.
+    # One build per (lane, experiment, arch): always request llama-server so the build plan (and its
+    # directory) is the same whichever binary a row wants; other tools are built in that tree below.
     ROCM_PATH=/opt/rocm PYTHONPATH="$root/tools" bash "$here/locked-run.sh" \
-        python3 -m bigcherry build --lane bigcherry:stock:linux-multi "${experiment_args[@]}" \
-        --arch "$arch" --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
+        python3 -m bigcherry build --lane "$lane" "${experiment_args[@]}" "${arch_args[@]}" \
+        --binary-relative-path bin/llama-server > "$log" 2>&1 < /dev/null
     rc=$?
     plan=$(sed -n 's/.*: ok build_plan_id=\([0-9a-f]*\).*/\1/p' "$log" | tail -1)
     bin=""

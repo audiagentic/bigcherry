@@ -14,7 +14,7 @@ R=/mnt/data/bigcherry-work/runs/kld-decode-reference.kld
 D="--chunks 8 --ubatch-size 1"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD bp-27b-awl adaptive-wire-latency gfx1100 bin/llama-perplexity
+BUILD bp-27b-awl bigcherry:stock:linux-multi adaptive-wire-latency gfx1100 bin/llama-perplexity
 SCRIPT kldd-ref $K @bp-27b-awl $BC_MODEL $C $R base GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_WIRE=f32 -- $D
 SCRIPT kldd-ref-repeat $K @bp-27b-awl $BC_MODEL $C $R compare GGML_CUDA_ALLREDUCE=internal GGML_CUDA_AR_WIRE=f32 -- $D
 SCRIPT kldd-rccl $K @bp-27b-awl $BC_MODEL $C $R compare -- $D --allreduce ccl

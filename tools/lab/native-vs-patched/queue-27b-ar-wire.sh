@@ -12,7 +12,7 @@ L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-ar-wire ar-wire
+BUILD b-27b-ar-wire bigcherry:stock:linux-multi ar-wire gfx1100
 PREFLIGHT pf-27b-ar-wire-q8 @b-27b-ar-wire $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1272_ar_wire.path=ar_wire_q8_0 $SRV
 REQUIRES=pf-27b-ar-wire-q8 AB ab-27b-ar-wire $L/server-ab-ar-wire.json --pairs 6
 REQUIRES=pf-27b-ar-wire-q8 AB ab-27b-ar-wire-q8 $L/server-ab-ar-wire-q8.json --pairs 6

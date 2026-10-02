@@ -585,8 +585,8 @@ variant-set = "full-max"
 needs = []
 
 [build.vulkan-stock]
-description = "Vulkan backend, no patches, no tuning (RE30 phase 1 stub)."
-options = { GGML_VULKAN = "ON" }
+description = "Pinned stock Vulkan baseline; no BigCherry patches or tuning (BRVP03)."
+options = { GGML_VULKAN = "ON", GGML_HIP = "OFF" }
 needs = []
 
 [platform.linux-multi]
@@ -607,7 +607,7 @@ c-compiler = "${HIP_PATH}/bin/clang.exe"
 cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
 [platform.vulkan-linux]
-description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
+description = "Linux Vulkan build on brutus; physical GPU architecture and ICD (RADV/AMDVLK) are runtime-qualified (BRVP03/RRVP02)."
 # "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
 # core/config.py's v2 parser requires a non-empty list for every platform
 # regardless of backend, so this is a placeholder, not a real GPU target --
@@ -615,7 +615,7 @@ description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/I
 # (see campaign_build._backend_configure_options). Replace with real
 # device/ICD identity in a later RE30 phase.
 targets = ["vulkan-stub"]
-options = { LLAMA_BUILD_TESTS = "ON" }
+options = { LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache" }
 
 # Backend software-stack profiles are request identities, separate from
 # machine/platform identities. Paths are deployment-specific and may be

@@ -11,10 +11,10 @@ L=tools/lab/native-vs-patched
 SRV="-sm tensor -ngl 99 --fit off -c 64000 --flash-attn on --spec-type draft-mtp --spec-draft-n-max 4"
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-BUILD b-27b-control -
-BUILD b-27b-adaptive allreduce-adaptive
-BUILD b-27b-rd12 rd12-only
-BUILD b-27b-nro10 nro10-only
+BUILD b-27b-control bigcherry:stock:linux-multi - gfx1100
+BUILD b-27b-adaptive bigcherry:stock:linux-multi allreduce-adaptive gfx1100
+BUILD b-27b-rd12 bigcherry:stock:linux-multi rd12-only gfx1100
+BUILD b-27b-nro10 bigcherry:stock:linux-multi nro10-only gfx1100
 AB ab-27b-allreduce $L/server-ab-allreduce.json --pairs 6
 AB ab-27b-adaptive $L/server-ab-adaptive.json --pairs 6
 PREFLIGHT pf-27b-rd12 @b-27b-rd12 $BC_MODEL BIGCHERRY_PATCH_HIT.patch=1205_rd12 $SRV
