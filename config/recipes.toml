@@ -352,9 +352,9 @@ patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", 
 patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
 
 [experiment.adaptive-size-trace]
-# Diagnostic: the adaptive closure (0860 + 1225 + 0840) + 1277's env-gated per-call AllReduce
-# size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>). Investigates adaptive's pp1024 -3.9%.
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1277_ar_size_trace"]
+# Diagnostic: 1277's env-gated per-call AllReduce size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>) on top
+# of the production composition (which now carries the adaptive closure 0860 + 1225 + 0840).
+patches = ["1277_ar_size_trace"]
 
 [experiment.qwen4exp-routing]
 # QFN02: full eval-callback tensor dump (1279) for the MoE routing profile (qwen4exp -sm tensor is native at c061df198).
