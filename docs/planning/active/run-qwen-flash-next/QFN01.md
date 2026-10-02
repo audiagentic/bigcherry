@@ -74,6 +74,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-02 sweeps 1-3 (pristine c061, qsa4 sidecar, MTP --no-spec-draft-backend-sampling), greedy identical to baseline in every run. 8K: baseline -ts 3,3,2 425 pp / 28.3 tg; even -ts 1,1,1 431 / 28.0. MTP depth 3/4/5 at 3,3,2: 43.8/43.6/43.8 tg (acc 63.8/60.4/56.7%) -> depth 3. MTP3+ngram-mod 38.1 (worse). ABAB MTP3: 3,3,2 43.3/43.8 (acc 63.8%), even 45.6/45.8 (acc 70.5%) - acceptance differs between splits (deterministic numerics), so not a pure split-speed attribution, but end-to-end better. Draft on R9700 (-devd ROCm2) 41.7. BEST: even split on ROCm0-2 with MTP draft on the 6900 (-dev ROCm0,ROCm1,ROCm2 -devd ROCm3, HIP_VISIBLE 0-3): 401.9 pp / 48.5 tg, acc 70.9%; 6900 uses 3.7 GiB. 192K (-c 196608, q8_0 KV + q8_0 draft KV, -ts 2,2,3, draft on 6900): 391.9 pp / 45.1 tg, acc 74.7%, VRAM 20.2/20.5/31.6/4.9 GiB - 192K + MTP target met. 192K without 6900 draft OOMs at every split tried (2,2,3 / 3,3,4 / 5,5,6 / 5,5,7). -ts 5,5,6 with 6900 draft also OOMs.
 
+2026-10-02 fit sweeps (MTP depth 3, qsa4 sidecar, greedy identical everywhere). Draft on the 6900 (-dev ROCm0,ROCm1,ROCm2 -devd ROCm3), 8K: -ts 1,1,1 48.6 tg (acc 70.9%), 3,3,2 44.4 (60.4%), 5,5,4 50.1 (73.1%), 4,4,3 50.3 (73.1%); 1,1,1 depth 2 47.8 (79.8%), depth 4 44.9 (61.2%); q8_0 draft KV 48.0 (no speed change). At 8K VRAM is ~identical across -ts; at 192K -ts clearly moves memory (KV/compute buffers follow -ts). 192K with 6900 draft: only 2,2,3 fits (47.0 tg, acc 74.7%, VRAM 20.2/20.5/31.6/4.9 GiB); 3,3,4 OOM at first request, 4,4,5 no result, 1,1,1 OOM at load. Draft R9700 vs 6900 at 4,4,3 8K, ABAB: R9700 48.0/48.3 (acc 72.5%) vs 6900 50.4/50.2 (73.1%) -> 6900 +4.5%. Max context with draft on R9700 (4,4,3): 32K/64K/96K/128K/160K all run at 46.0/45.9/45.7/45.8/45.6 tg (XTX 23.9 GiB at 160K); 176K at 4,4,3 and 192K at 4,4,3/3,3,4/2,2,3/4,4,5 all OOM. Preferred configs: 8K-160K: draft on 6900, -ts 4,4,3 (or draft on R9700 if the 6900 is needed elsewhere, max 160K); 192K: draft on 6900, -ts 2,2,3.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - chg_20261002_034831_qwen38-flash-next-mtp-specula_9007
 - 2026-10-02T03:48:35.036254+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T05:23:42.872770+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T07:20:01.905871+00:00 (updated-by): Updated: section:notes
