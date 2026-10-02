@@ -6,7 +6,9 @@
 // ar-latency.hip (10 MB 3 ranks: ~3.6 ms stream-ordered).
 // Build: hipcc -O2 -mavx2 --offload-arch=gfx1100,gfx1201 large-host-ar.hip -o large-host-ar -pthread
 #include <hip/hip_runtime.h>
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <thread>
@@ -109,6 +111,69 @@ int main(int argc, char ** argv) {
         }
         for (auto & x : th) x.join();
     };
+    // memop variant (integration shape): the MAIN thread enqueues everything without blocking:
+    //   per rank, per chunk: D2H copy -> hipStreamWriteValue32(arrived[r][c] = gen)
+    //   per rank, per chunk: hipStreamWaitValue32(reduced[c] >= gen) -> H2D copy   (second stream)
+    // a CPU worker polls arrived flags, sums each chunk, publishes reduced[c] = gen.
+    const bool use_memop = argc > 4 && strcmp(argv[4], "memop") == 0;
+    if (use_memop) {
+        volatile uint32_t * arrived; volatile uint32_t * reduced;
+        (void) hipHostMalloc((void **) &arrived, sizeof(uint32_t) * nd * nchunks, hipHostMallocMapped | hipHostMallocPortable | hipHostMallocCoherent);
+        (void) hipHostMalloc((void **) &reduced, sizeof(uint32_t) * nchunks, hipHostMallocMapped | hipHostMallocPortable | hipHostMallocCoherent);
+        memset((void *) arrived, 0, sizeof(uint32_t) * nd * nchunks); memset((void *) reduced, 0, sizeof(uint32_t) * nchunks);
+        std::atomic<uint32_t> want_gen{0}; std::atomic<bool> stop{false};
+        std::thread worker([&] {
+            uint32_t gen = 1;
+            while (!stop.load()) {
+                if (want_gen.load() < gen) { _mm_pause(); continue; }
+                for (size_t c = 0; c < nchunks; c++) {
+                    for (int d = 0; d < nd; d++) { while (arrived[d * nchunks + c] < gen) { _mm_pause(); } }
+                    std::atomic_thread_fence(std::memory_order_acquire);
+                    const size_t off = c * chunk, n = std::min(chunk, elems - off);
+                    std::vector<float *> in(nd);
+                    for (int d = 0; d < nd; d++) in[d] = slot[d] + off;
+                    sum_range(result + off, in, 0, n);
+                    std::atomic_thread_fence(std::memory_order_release);
+                    reduced[c] = gen;
+                }
+                gen++;
+            }
+        });
+        uint32_t gen = 0;
+        auto memop_call = [&]() {
+            gen++;
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                for (size_t c = 0; c < nchunks; c++) {
+                    const size_t off = c * chunk, n = std::min(chunk, elems - off);
+                    (void) hipMemcpyAsync(slot[d] + off, dev[d] + off, n * sizeof(float), hipMemcpyDeviceToHost, d2h[d]);
+                    (void) hipStreamWriteValue32(d2h[d], (void *) &arrived[d * nchunks + c], gen, 0);
+                }
+                for (size_t c = 0; c < nchunks; c++) {
+                    const size_t off = c * chunk, n = std::min(chunk, elems - off);
+                    (void) hipStreamWaitValue32(h2d[d], (void *) &reduced[c], gen, hipStreamWaitValueGte, 0xffffffff);
+                    (void) hipMemcpyAsync(dev[d] + off, result + off, n * sizeof(float), hipMemcpyHostToDevice, h2d[d]);
+                }
+            }
+            want_gen.store(gen);
+            for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(h2d[d]); }
+        };
+        memop_call();  // warmup
+        for (int d = 0; d < nd; d++) {
+            std::vector<float> init(elems, 1.0f);
+            (void) hipSetDevice(d); (void) hipMemcpy(dev[d], init.data(), elems * sizeof(float), hipMemcpyHostToDevice);
+        }
+        auto m0 = std::chrono::steady_clock::now();
+        for (int it = 0; it < iters; it++) memop_call();
+        const double mus = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - m0).count() / iters;
+        stop = true; worker.join();
+        std::vector<float> a(elems), b(elems);
+        (void) hipSetDevice(0); (void) hipMemcpy(a.data(), dev[0], elems * sizeof(float), hipMemcpyDeviceToHost);
+        (void) hipSetDevice(nd - 1); (void) hipMemcpy(b.data(), dev[nd - 1], elems * sizeof(float), hipMemcpyDeviceToHost);
+        printf("MEMOP ranks=%d bytes=%zu chunk_bytes=%zu  %.1f us/call  %.2f GB/s algbw  ranks agree: %s\n",
+               nd, elems * 4, chunk * 4, mus, elems * 4 / mus / 1e3, memcmp(a.data(), b.data(), elems * 4) == 0 ? "yes" : "NO");
+        return 0;
+    }
     const bool use_pool = argc > 4 && strcmp(argv[4], "pool") == 0;
     if (use_pool) {
         pool();  // warmup
