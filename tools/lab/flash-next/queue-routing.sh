@@ -8,7 +8,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-N
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 SCRIPT flashnext-routing-3 tools/lab/flash-next/routing-profile.sh @b-flash-routing /mnt/data/bigcherry-work/runs/flashnext-routing-3/out
+VIS=0,1,2,3 SCRIPT flashnext-routing-4 tools/lab/flash-next/routing-profile.sh @b-flash-routing /mnt/data/bigcherry-work/runs/flashnext-routing-4/out
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
