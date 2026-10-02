@@ -74,6 +74,58 @@ int main(int argc, char ** argv) {
         }
         for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(h2d[d]); }
     };
+    // Pool variant: T threads, each owns chunks c = t, t+T, ...; per chunk it waits for every rank's D2H
+    // event, sums, and issues that chunk's H2D on its own per-(thread, rank) stream, so the sum and the
+    // return copy of chunk k overlap the D2H of later chunks with no per-chunk thread creation.
+    std::vector<std::vector<hipStream_t>> h2d_t(cpu_threads, std::vector<hipStream_t>(nd));
+    for (int t = 0; t < cpu_threads; t++) for (int d = 0; d < nd; d++) {
+        (void) hipSetDevice(d); (void) hipStreamCreateWithFlags(&h2d_t[t][d], hipStreamNonBlocking);
+    }
+    auto pool = [&]() {
+        for (size_t c = 0; c < nchunks; c++) {
+            const size_t off = c * chunk, n = std::min(chunk, elems - off);
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                (void) hipMemcpyAsync(slot[d] + off, dev[d] + off, n * sizeof(float), hipMemcpyDeviceToHost, d2h[d]);
+                (void) hipEventRecord(ev[d][c], d2h[d]);
+            }
+        }
+        std::vector<std::thread> th;
+        for (int t = 0; t < cpu_threads; t++) {
+            th.emplace_back([&, t] {
+                for (size_t c = t; c < nchunks; c += cpu_threads) {
+                    const size_t off = c * chunk, n = std::min(chunk, elems - off);
+                    for (int d = 0; d < nd; d++) (void) hipEventSynchronize(ev[d][c]);
+                    std::vector<float *> in(nd);
+                    for (int d = 0; d < nd; d++) in[d] = slot[d] + off;
+                    sum_range(result + off, in, 0, n);
+                    for (int d = 0; d < nd; d++) {
+                        (void) hipSetDevice(d);
+                        (void) hipMemcpyAsync(dev[d] + off, result + off, n * sizeof(float), hipMemcpyHostToDevice, h2d_t[t][d]);
+                    }
+                }
+                for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(h2d_t[t][d]); }
+            });
+        }
+        for (auto & x : th) x.join();
+    };
+    const bool use_pool = argc > 4 && strcmp(argv[4], "pool") == 0;
+    if (use_pool) {
+        pool();  // warmup
+        for (int d = 0; d < nd; d++) {
+            std::vector<float> init(elems, 1.0f);
+            (void) hipSetDevice(d); (void) hipMemcpy(dev[d], init.data(), elems * sizeof(float), hipMemcpyHostToDevice);
+        }
+        auto p0 = std::chrono::steady_clock::now();
+        for (int it = 0; it < iters; it++) pool();
+        const double pus = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - p0).count() / iters;
+        std::vector<float> a(elems), b(elems);
+        (void) hipSetDevice(0); (void) hipMemcpy(a.data(), dev[0], elems * sizeof(float), hipMemcpyDeviceToHost);
+        (void) hipSetDevice(nd - 1); (void) hipMemcpy(b.data(), dev[nd - 1], elems * sizeof(float), hipMemcpyDeviceToHost);
+        printf("POOL ranks=%d bytes=%zu chunk_bytes=%zu cpu_threads=%d  %.1f us/call  %.2f GB/s algbw  ranks agree: %s\n",
+               nd, elems * 4, chunk * 4, cpu_threads, pus, elems * 4 / pus / 1e3, memcmp(a.data(), b.data(), elems * 4) == 0 ? "yes" : "NO");
+        return 0;
+    }
     one();  // warmup
     for (int d = 0; d < nd; d++) {  // reset to 1.0 so values stay finite (3^k grows fast)
         std::vector<float> init(elems, 1.0f);
