@@ -8,7 +8,9 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 SCRIPT dflash-27b-3 tools/lab/dflash/probe-27b.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dflash-27b-3/out
+VIS=0,1,2,3 BUILD b-27b-1286 draft-local-shared gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT dflash-27b-3 tools/lab/dflash/probe-27b.sh @b-flash-c061 /mnt/data/bigcherry-work/runs/dflash-27b-3/out (plain|mtp|dflash|dspark).*
+VIS=0,1,2,3 SCRIPT dflash-27b-3-1286 tools/lab/dflash/probe-27b.sh @b-27b-1286 /mnt/data/bigcherry-work/runs/dflash-27b-3-1286/out (plain|p1286-.*)
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"

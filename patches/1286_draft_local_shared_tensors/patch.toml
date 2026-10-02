@@ -1,0 +1,17 @@
+schema = 1
+id = "1286_draft_local_shared_tensors"
+order = 1286
+state = "untested"
+kind = "framework"
+origin = "local"
+backend = "hip"
+plan-ids = []
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["speculative", "meta-backend"]
+tags = []
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

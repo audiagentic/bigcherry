@@ -42,7 +42,7 @@ profiles=()
 campaigns=()
 while IFS= read -r line; do
     case "$line" in ''|'#'*) continue ;; esac
-    set -- $line
+    set -f; set -- $line; set +f  # no pathname expansion of job-line words (regex args)
     while :; do
         case "$1" in MODEL=*|HIP=*|VIS=*|REQUIRES=*) shift ;; *) break ;; esac
     done
@@ -51,7 +51,7 @@ done < "$jobs"
 
 parse_prefixes() {
     local line=$1
-    set -- $line
+    set -f; set -- $line; set +f  # no pathname expansion of job-line words (regex args)
     PARSED_MODEL=$BC_MODEL
     PARSED_HIP=$BC_HIP_PATH
     PARSED_VIS=""
