@@ -1,7 +1,7 @@
 schema = 1
 id = "1280_qwen4exp_mtp_kpool_alloc"
 order = 1280
-state = "untested"
+state = "rejected"
 kind = "framework"
 origin = "local"
 backend = "hip"
