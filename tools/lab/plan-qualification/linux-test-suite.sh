@@ -11,6 +11,8 @@ echo "testing $(git -C "$clone" log -1 --oneline)"
 # vendor/llama.cpp is gitignored, so a clean clone has none; tests that read the pinned source need it.
 # Link the workspace's vendor checkout (tests read pristine bytes via `git show HEAD:` where it matters).
 [ -e "$clone/vendor/llama.cpp" ] || { mkdir -p "$clone/vendor" && ln -s "$src/vendor/llama.cpp" "$clone/vendor/llama.cpp"; }
+# Host settings are never committed: use this host's config/environment.local.toml.
+[ -e "$clone/config/environment.local.toml" ] || ln -s "$src/config/environment.local.toml" "$clone/config/environment.local.toml"
 # pytest in a venv next to the clone (the host python has none); same runner as the Windows suite.
 venv=$clone.venv
 [ -x "$venv/bin/pytest" ] || { python3 -m venv "$venv" && "$venv/bin/pip" install -q pytest; }
