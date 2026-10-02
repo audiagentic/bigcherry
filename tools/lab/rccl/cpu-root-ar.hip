@@ -111,6 +111,22 @@ int main(int argc, char ** argv) {
         if (us < best) best = us;
         printf("ranks=%d elems=%d bytes=%d  %.1f us/call (rep %d, synchronised each call)\n", nd, n, n * 4, us, rep);
     }
+    // Stream-ordered chain: enqueue every call, sync once (the CPU worker keeps up via epochs).
+    {
+        auto t0 = std::chrono::steady_clock::now();
+        const unsigned int base = 3 * iters;
+        for (int it = 0; it < iters; it++) {
+            const unsigned int epoch = base + it + 1;
+            for (int d = 0; d < nd; d++) {
+                (void) hipSetDevice(d);
+                produce<<<blocks, threads, 0, st[d]>>>(d_buf[d], d_slot_base + (size_t) d * n, d_ep + d, epoch, n);
+                consume<<<blocks, threads, 0, st[d]>>>(d_buf[d], d_res, d_rep, epoch, n);
+            }
+        }
+        for (int d = 0; d < nd; d++) { (void) hipSetDevice(d); (void) hipStreamSynchronize(st[d]); }
+        printf("ranks=%d elems=%d  %.1f us/call (stream-ordered chain)\n", nd, n,
+               std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters);
+    }
     // values double every call (x -> sum over ranks); just check rank 0 equals rank 1.
     std::vector<float> a(n), b(n);
     (void) hipSetDevice(0); (void) hipMemcpy(a.data(), d_buf[0], sizeof(float) * n, hipMemcpyDeviceToHost);

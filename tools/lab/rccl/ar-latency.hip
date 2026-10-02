@@ -27,6 +27,18 @@ int main() {
             auto us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters;
             if (rep) printf("ranks=%d elems=%zu bytes=%zu  %.1f us/call (synchronised each call)\n", n, elems, elems * 4, us);
         }
+        // Stream-ordered chain, one sync at the end: how the graph issues back-to-back AllReduces.
+        {
+            auto t0 = std::chrono::steady_clock::now();
+            for (int it = 0; it < iters; it++) {
+                ncclGroupStart();
+                for (int i = 0; i < n; i++) ncclAllReduce(bufs[i], bufs[i], elems, ncclFloat, ncclSum, comms[i], streams[i]);
+                ncclGroupEnd();
+            }
+            for (int i = 0; i < n; i++) { hipSetDevice(i); hipStreamSynchronize(streams[i]); }
+            auto us = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count() / iters;
+            printf("ranks=%d elems=%zu bytes=%zu  %.1f us/call (stream-ordered chain)\n", n, elems, elems * 4, us);
+        }
     }
     for (int i = 0; i < n; i++) ncclCommDestroy(comms[i]);
     return 0;
