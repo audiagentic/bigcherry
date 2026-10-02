@@ -86,6 +86,8 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-03 large-message host AllReduce prototype (tools/lab/rccl/large-host-ar.hip, chunked copy-engine D2H, AVX2 CPU sum exact f32, per-chunk H2D): 10 MB 3 ranks best 2.63 ms (1 MB or 512 KB chunks, 2-6 threads; persistent pool no better) vs RCCL 3.60 ms (-27%); 2 ranks 1.45 ms vs RCCL 1.42 (tie). Link check (bidir-check.hip): XTX H2D 13.5 / D2H 14.2 / simultaneous 10.8 GB/s each way; R9700 6.7 / 7.0 / 6.2 each way (bidirectional overlap works); 6900 3.5 / 3.5 / 2.7. 10 MB floor on 3 ranks ~1.7 ms (R9700 x4). GPT (req_3f7154f755904a49) agrees: CPU-root copy-engine pipeline, 512 KiB-1 MiB chunks; RS/AG through host loses on this topology; bf16 prefill wire is not acceptance-neutral. Small-message path (cpu-root-ar.hip) 10 KB 13.8 us vs RCCL 33.1 us. Integrated provider: patch 1291_ar_cpu_root requested from GPT (req_dab269203605443f).
 
+2026-10-03 patch 1291_ar_cpu_root (--allreduce cpu-root, HIP): CPU-root one-shot AllReduce for f32 messages <= 64 KiB on the backend streams (pinned mapped slots, per-rank device-advanced epochs, persistent exact-f32 CPU worker), RCCL above. flashnext-cpuroot-4 ABBA vs auto, -ts 4,4,3 ub1024: no MTP decode 38.7/39.1 vs 36.5/36.6 (+6.4%); MTP3 draft-6900 70.5/70.4 vs 67.0/67.1 (+5.1%), acceptance 74.6 vs 73.0%; prefill unchanged; greedy identical in all arms. Root cause of earlier garbage: ranks whose node the meta backend left uncomputed must contribute zeros. New best Flash-Next 8K config: -ts 4,4,3 ub1024 MTP3 draft-6900 --allreduce cpu-root = ~1130 pp / 70.5 tg. Next: KLD + contract, large-message host path for prefill (prototype 2.63 ms vs RCCL 3.6 ms per 10 MB), HC-combine fusion.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -95,6 +97,7 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-01T08:31:56.666485+00:00 (updated-by): Updated: section:notes
 
 ## Ledger-events
+
 
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
@@ -108,3 +111,6 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T13:27:09.420054+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T14:35:13.352947+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T14:49:31.198618+00:00 (updated-by): Updated: section:notes
+- 2026-10-02T16:07:10.226148+00:00 (updated-by): Updated: section:notes
+- chg_20261002_160710_new---allreduce-cpu-root-optio_9249
+- 2026-10-02T16:07:13.385564+00:00 (updated-by): Updated: section:ledger-events
