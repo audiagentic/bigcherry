@@ -74,16 +74,16 @@ The planning component will automatically link the ledger event ID to those item
 Use the ag-planning MCP tools to manage plan items in docs/planning/.
 
 ## When to use
-- User asks to create a plan or work items 
+- User asks to create a plan or work items
 - Tracking multi-step implementation across sessions
 - Reviewing or updating the state of outstanding items
 
 ## Item lifecycle
-1. Create items with plan_create_item — lands in docs/planning/active/<plan>/
-2. Revise content with plan_update_item as work progresses; for a findings-driven correction (not routine progress), record a plan_create_review first, then close it once incorporated
-3. After review triage, close handled reviews with plan_set_review_state(review_id, 'closed')
-4. Mark done with plan_set_state(item_id, 'completed') only when implementation and validation are done
-5. Keep unfinished work pending or in terminal discard states (superseded, deprecated); remove stale items with plan_delete_item
+1. Create with plan_create_item; revise with plan_update_item.
+2. For findings-driven corrections, create a review before changing the item.
+3. Close handled reviews with plan_set_review_state(review_id, 'closed').
+4. Complete only after implementation, validation, non-empty Validation and Acceptance Criteria, and closed linked reviews.
+5. Keep unfinished work pending; use superseded/deprecated for terminal discard states and delete only stale items.
 
 ## Item ID convention
 Combine a short uppercase plan prefix with a sequence number: CC07, LSP01, ML01.
@@ -109,6 +109,7 @@ Choose a prefix matching the plan name (CC → code-cleanup, LSP → lsp-mcp-enh
 - files: Files to create/update
 - validation: How to validate the implementation
   (include comprehensive tests where possible)
+- acceptance_criteria: Observable conditions required before completion
 - effort_risk: Complexity and risk assessment
 - standards: Applicable standards/rules
 - notes: Key design principles and additional context
@@ -117,7 +118,7 @@ Choose a prefix matching the plan name (CC → code-cleanup, LSP → lsp-mcp-enh
 
 Execution profiles bind a provider to a specific model with optional
 execution parameters. They are stored in the canonical
-.audiagentic/config/agents.yaml document alongside prompts, roles,
+~/.audiagentic/config/agents.yaml document alongside prompts, roles,
 agent definitions, and triggers.
 
 ## When to use
