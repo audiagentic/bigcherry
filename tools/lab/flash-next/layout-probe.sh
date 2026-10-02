@@ -48,11 +48,11 @@ PY
   cat "$out/$name.vram.txt"
   kill -INT "$pid"; wait "$pid"
 }
-probe cpu3-layer 0,1,2 -sm layer -ts 3,3,2
+probe cpu3-layer 0,1,2 -sm layer -ts 1,1,1
 probe cpu3-tensor 0,1,2 -sm tensor -ts 3,3,2
-probe cpu3-layer-mtp2 0,1,2 -sm layer -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --no-spec-draft-backend-sampling --spec-draft-n-max 2
-probe cpu3-tensor-mtp2 0,1,2 -sm tensor -ts 3,3,2 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --no-spec-draft-backend-sampling --spec-draft-n-max 2 --spec-draft-ngl 0
-for n in cpu3-layer-mtp2 cpu3-tensor-mtp2; do
-  [ -f "$out/cpu3-tensor.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-tensor.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
+probe cpu3-layer-mtp2-devd 0,1,2 -sm layer -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --no-spec-draft-backend-sampling --spec-draft-n-max 2 -devd ROCm2
+probe cpu3-layer-mtp2 0,1,2 -sm layer -ts 1,1,1 -md /mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf --spec-type draft-mtp --no-spec-draft-backend-sampling --spec-draft-n-max 2
+for n in cpu3-layer-mtp2 cpu3-layer-mtp2-devd; do
+  [ -f "$out/cpu3-layer.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] &&     { cmp -s "$out/cpu3-layer.greedy.txt" "$out/$n.greedy.txt" && echo "greedy cpu3-tensor == $n" || echo "greedy cpu3-tensor != $n"; }
 done
 echo PROBE_DONE
