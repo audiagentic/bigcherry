@@ -139,7 +139,7 @@ note = "HIP-enable half native at b11126. P2P half ported to patches/1252_nro03_
 [[sources.tracked]]
 commit = "e06dcf6300718227cb8cfda9e61fb12ccb693418"
 title = "ggml: add Q8 wire, residual fusion, and AllReduce tracing"
-plan-item = "NRO01"
+plan-item = "NRO01/NRO02"
 status = "ported-untested"
 note = "2026-09-25: ported whole to patches/1250_nro01_allreduce_q8_wire with port_diff (stacked on 1252 as in the fork; 1251 scaffold removed). Q8 wire (--allreduce-wire q8) and residual fusion (GGML_CUDA_AR_FUSED_RESIDUAL) stay causally separable because each is its own default-off env switch, so NRO01 and NRO02 are measured as separate arms of one binary. Earlier: Compound commit; NRO01 owns only the Q8_0 wire-format quantization/transfer/dequant-reduction portion (block-Q8_0 quantizer, wire-size accounting, threshold selection, fallback to exact/BF16 paths) -- NRO02 owns residual fusion from the SAME commit, deliberately kept separate so Q8 compression can be evaluated causally. See NRO01's own plan item for the full extraction boundary. Initial materialized patch: 1250_nro01_allreduce_q8_wire, group nasone-rdna, state untested, requires 1001_hip_internal_allreduce. 2026-09-23: 1001 superseded at pin b11126 (upstream now contains its edits verbatim); 1250 no longer requires it."
 

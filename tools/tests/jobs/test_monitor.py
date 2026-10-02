@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,6 +36,7 @@ class MonitorPolicyTests(unittest.TestCase):
         self.assertIn("free_bytes=40 < 100", str(ctx.exception))
         self.assertIn("free_fraction=0.0400 < 0.0500", str(ctx.exception))
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "disk guards resolve POSIX roots on the Linux campaign host")
     def test_environment_disk_policy_guards_system_work_and_temp(self):
         with patch.object(monitor.tempfile, "gettempdir", return_value="/tmp-for-test"):
             guards = monitor.disk_guards_from_environment(
