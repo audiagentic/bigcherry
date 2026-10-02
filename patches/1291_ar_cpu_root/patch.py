@@ -59,7 +59,7 @@ struct bc_cpu_root {
 };
 
 static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float * slots2,
-        bc_cpu_root_line * ctr, bc_cpu_root_line * line, size_t max_elems, int n) {
+        bc_cpu_root_line * ctr, bc_cpu_root_line * line, size_t max_elems, int n, int contributes) {
     __shared__ uint32_t s_gen;
     if (threadIdx.x == 0) {
         s_gen = ((volatile bc_cpu_root_line *) ctr)->v + 1;
@@ -68,15 +68,23 @@ static __global__ void bc_cpu_root_produce(const float * __restrict__ src, float
     __syncthreads();
     const uint32_t gen = s_gen;
     float * slot = slots2 + (size_t) (gen & 1) * max_elems;
-    const bool aligned = ((((uintptr_t) src) | ((uintptr_t) slot)) & 15) == 0;
-    const int n4 = aligned ? n / 4 : 0;
-    const float4 * s4 = (const float4 *) src;
-    float4 * d4 = (float4 *) slot;
-    for (int i = threadIdx.x; i < n4; i += blockDim.x) {
-        d4[i] = s4[i];
-    }
-    for (int i = n4 * 4 + threadIdx.x; i < n; i += blockDim.x) {
-        slot[i] = src[i];
+    if (!contributes) {
+        // The meta backend left this rank's node uncomputed (zero-sized slice): contribute zeros,
+        // as the RCCL provider does with its memset.
+        for (int i = threadIdx.x; i < n; i += blockDim.x) {
+            slot[i] = 0.0f;
+        }
+    } else {
+        const bool aligned = ((((uintptr_t) src) | ((uintptr_t) slot)) & 15) == 0;
+        const int n4 = aligned ? n / 4 : 0;
+        const float4 * s4 = (const float4 *) src;
+        float4 * d4 = (float4 *) slot;
+        for (int i = threadIdx.x; i < n4; i += blockDim.x) {
+            d4[i] = s4[i];
+        }
+        for (int i = n4 * 4 + threadIdx.x; i < n; i += blockDim.x) {
+            slot[i] = src[i];
+        }
     }
     __syncthreads();
     if (threadIdx.x == 0) {
@@ -201,6 +209,9 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
 #endif // GGML_USE_NCCL
         return false;
     }
+    if (ggml_nelements(tensors[0]) == 0) {
+        return true;  // same as the RCCL provider (build_inp_out_ids can yield 0 elements)
+    }
     comm_ctx->provider_name = "cpu-root";
     // Every generation must reach every rank (the CPU waits for all arrivals): never launch a subset.
     GGML_ASSERT((int) n_ranks == cr->n);
@@ -211,7 +222,7 @@ static bool ggml_backend_cuda_comm_try_allreduce_cpu_root(
         cudaStream_t stream = cctx->stream();
         float * data = (float *) tensors[i]->data;
         bc_cpu_root_produce<<<1, 1024, 0, stream>>>(data, cr->slots + i * 2 * cr->max_elems,
-            cr->ctr + i, cr->arrive + i, cr->max_elems, n);
+            cr->ctr + i, cr->arrive + i, cr->max_elems, n, (tensors[i]->flags & GGML_TENSOR_FLAG_COMPUTE) != 0);
         bc_cpu_root_consume<<<1, 1024, 0, stream>>>(data, cr->result, cr->ctr + i, cr->done, cr->max_elems, n);
         CUDA_CHECK(cudaGetLastError());  // a partial launch would leave other ranks spinning: fail hard
     }
