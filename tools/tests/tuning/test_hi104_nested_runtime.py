@@ -36,6 +36,7 @@ def _generated_identity() -> tuple[str, str, str]:
     return revision, manifest_hash, descriptor_hash
 
 
+@unittest.skipUnless(HASH_HEADER.is_file(), "needs an applied vendor tree (`bigcherry apply` generates hip-autotune-build-hash.h)")
 class TestHi104BuildDescriptorParity(unittest.TestCase):
     def test_cpp_flush_hash_matches_offline_manifest_descriptor_hash(self):
         """The generated C++ descriptor JSON and Python manifest are one hash."""
@@ -83,6 +84,7 @@ class TestHi104BuildDescriptorParity(unittest.TestCase):
             self.assertIn(field, flush)
 
 
+@unittest.skipUnless(HASH_HEADER.is_file(), "needs an applied vendor tree (`bigcherry apply` generates hip-autotune-build-hash.h)")
 class TestHi104NestedRuntimeArtifact(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="bigcherry_hi104_")
