@@ -2,7 +2,8 @@
 # DeepSeek-V4-Flash-0731 UD-IQ3_XXS (deepseek4: 43 layers, 256 experts / 6 active + 1 shared, 97 GiB of which
 # 90 GiB routed experts) load + layout probe. The model does not fit in VRAM (96 GiB total over four cards),
 # so routed experts of some layers go to CPU RAM (--n-cpu-moe N = the first N layers) and, in the 4-card
-# layouts, a few layers' experts are pinned whole to the 6900 XT. Same measurement as layout-probe.sh.
+# layouts, a few layers' experts are pinned whole to the 6900 XT (kept out of the tensor split with -dev).
+# Layer split needs -ts proportional to VRAM. Same measurement as layout-probe.sh.
 # Usage: probe-v4-flash.sh <llama-server> <out-dir> [layout-name regex]
 set -u
 bin=$1 out=$2 only=${3:-}
@@ -47,10 +48,10 @@ PY
   cat "$out/$name.vram.txt"
   kill -INT "$pid"; wait "$pid"
 }
-probe t3-cmoe16 0,1,2 -sm tensor -ts 3,3,4 --n-cpu-moe 16
 probe t3-cmoe12 0,1,2 -sm tensor -ts 3,3,4 --n-cpu-moe 12
-probe t3-cmoe10 0,1,2 -sm tensor -ts 3,3,4 --n-cpu-moe 10
-probe l3-cmoe12 0,1,2 -sm layer -ts 3,3,4 --n-cpu-moe 12
-probe t4-cmoe6-6900 0,1,2,3 -sm tensor -ts 3,3,4,0 --n-cpu-moe 6 -ot 'blk\.(3[7-9]|4[0-2])\.ffn_(gate|up|down)_exps\.weight=ROCm3'
-probe l4-cmoe4 0,1,2,3 -sm layer -ts 3,3,4,2 --n-cpu-moe 4
+probe t3-cmoe11 0,1,2 -sm tensor -ts 3,3,4 --n-cpu-moe 11
+probe t3-cmoe6-6900x6 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,4 --n-cpu-moe 6 -ot 'blk\.(3[7-9]|4[0-2])\.ffn_(gate|up|down)_exps\.weight=ROCm3'
+probe t3-cmoe9-6900x3 0,1,2,3 -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 3,3,4 --n-cpu-moe 9 -ot 'blk\.(4[0-2])\.ffn_(gate|up|down)_exps\.weight=ROCm3'
+probe l3-cmoe12 0,1,2 -sm layer -ts 23,23,31 --n-cpu-moe 12
+probe l4-cmoe4 0,1,2,3 -sm layer -ts 22,22,30,14 --n-cpu-moe 4
 echo PROBE_DONE
