@@ -1,6 +1,6 @@
 # 1290_vulkan_allreduce_host_f32
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PRVP03
 
 ## What it does
