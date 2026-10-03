@@ -11,59 +11,121 @@ work: M
 priority: null
 ---
 
-# AMD-FUS-002: Fuse GEMV activation + elementwise MUL
+# AMD-FUS-002: Fuse literal GEMV -> UNARY -> MUL into the vector epilogue
 
 ## Description
 
-UPSTREAM-ABSORBED. This item's target (GEMV -> SiLU/activation -> elementwise MUL, e.g. SwiGLU gate*up) is the exact pattern b11126's native mul_mat fusion already covers -- same evidence as PRBE37 (ggml_cuda_mm_fusion_args_host/_device, ggml_cuda_should_fuse_mul_mat, fusion_data.gate/glu_op wired into mmvq.cu/mmvf.cu's has_fusion GEMV kernels computing `value *= silu(gate_value)`). PRBE38 explicitly described itself as depending on PRBE37's 'root identity' for the same matcher family, and that root identity is now confirmed native upstream, not a gap to fill. No separate implementation is needed beyond the same verification already scoped under PRBE37.
+PRBE38 is the canonical backend/correctness owner for **literal** vector `MUL_MAT[/ID] -> UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` topologies when production tracing proves that the gated pointwise work remains a separate launch after the GEMV/MMVQ/MMVF producer(s).
 
-TODO (reopened, GPT WRONG-confirmed). b11126 epilogue fusion only recognizes the canonical {MUL_MAT[/ID], MUL_MAT[/ID], GGML_OP_GLU} graph shape (gate_proj/up_proj feeding a single GGML_OP_GLU node with glu_op in {SWIGLU,GEGLU,SWIGLU_OAI,SWIGLU_CLAMP}, ggml-cuda.cu ~1673-1766, ~3736-3965). A literal GEMV -> UNARY(SILU) -> elementwise MUL graph (two separate ops, not one fused GGML_OP_GLU node) is NOT folded into the GEMV epilogue by this mechanism. b11126 does separately fuse UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL via ggml_cuda_op_unary_mul (a distinct, post-GEMV pointwise fusion, not part of the mul_mat_vec_* epilogue), which runs after the GEMV result tensor already exists in memory -- it saves one elementwise pass, not the GEMV epilogue write this item asked to eliminate. This item is not upstream-absorbed for the literal-UNARY+MUL topology; it survives as its own successor with a correctly scoped target.
+This is deliberately distinct from PRBE37 and from b11126's already-native canonical GLU fusion:
+- supported canonical `GGML_OP_GLU` / SWIGLU-family graphs are recognized by `ggml_cuda_should_fuse_mul_mat(...)` and feed `ggml_cuda_mm_fusion_args_host/_device` into `mul_mat_vec_q/f` epilogues;
+- literal `UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` is handled by `ggml_cuda_op_unary_mul`, a separate pointwise fusion path;
+- therefore `ggml_cuda_op_unary_mul` can save a unary+MUL elementwise pass without necessarily removing the preceding GEMV output store/reload or the post-GEMV pointwise launch.
 
-## Steps
+PRBE38 exists only for that remaining literal topology. It must not reimplement or broaden the already-fused canonical `GGML_OP_GLU` path. QFP13 supplies launch-gap prioritisation and the common performance gate; implementation semantics live here.
 
-1. This item's verification is the same as PRBE37's step 1 (ggml_cuda_should_fuse_mul_mat coverage check) -- do not duplicate that work; treat PRBE37's verification outcome as authoritative for this item too, since it is the same matcher/fusion_data mechanism applied to the same gate*up MUL pattern.
-2. If PRBE37's verification finds a genuine gap (SIGMOID unsupported, or a broadcast/alias shape this item's acceptance criteria cared about that upstream's matcher rejects), scope that as a narrow follow-up extending the existing native matcher -- not a new from-scratch fusion mechanism.
-3. No new patch package needed.
+## Ownership Boundary
 
-1. Grep b11126 ggml-cuda.cu for ggml_cuda_op_unary_mul call sites and confirm its dispatch conditions (topology it matches, which UNARY ops, contiguity/broadcast requirements) -- this is the actual native fusion covering literal GEMV->UNARY->MUL graphs, and it is a post-hoc pointwise fusion, not a GEMV-epilogue fusion.
-2. Restrict this item's acceptance criteria to: literal (non-GLU-node) GEMV -> UNARY(activation) -> elementwise-MUL graphs where the activation+MUL currently execute as two separate kernel launches AFTER the GEMV (i.e. cases ggml_cuda_op_unary_mul does NOT already cover, if any remain), or explicitly fold ggml_cuda_op_unary_mul's coverage into the GEMV epilogue itself (a genuine new optimization: skip writing the pre-activation GEMV output to global memory at all).
-3. If ggml_cuda_op_unary_mul already covers every topology this project's target models produce, close as covered-by-a-different-native-mechanism-than-assumed (not the GEMV-epilogue one originally claimed) with that evidence; otherwise scope the GEMV-epilogue-skip optimization as new kernel work with correctness/alias/broadcast guards per the original acceptance_criteria.
+PRBE38 owns:
+- mapping a trace-proven literal gated topology to current CUDA/HIP graph nodes;
+- eligibility/matcher logic for folding that topology into the existing vector fusion descriptor/epilogue where legal;
+- alias, broadcast, stride, dtype, consumer-count, and graph-elision correctness;
+- MMVQ/MMVF epilogue wiring and fail-closed fallback;
+- backend-op/production correctness tests and launch-count verification.
 
-## Detailed Solution & Technical Design
+PRBE38 does **not** own:
+- canonical `GGML_OP_GLU` capability or its separate SIGMOID/GEMM gaps (PRBE37);
+- generic launch prioritisation (QFP13);
+- residual VIEW+ADD (PRBE39);
+- paired K/V projection fusion (PRBE40);
+- Q8_1 activation caching (PRBE05).
 
-Fuse the post-activation multiply into the HIP GEMV epilogue so the intermediate activation is not written and reread. The matcher must prove the exact GEMV -> SiLU -> MUL topology, compatible broadcast semantics, contiguous/strided output constraints, and destination ownership. Keep a conservative fallback for every other MUL shape or aliasing arrangement. Preserve existing accumulation precision and backend guards; this is a dispatch-path optimization, not permission to change numerical semantics.
+## Stage 0 — Prove A Real Separate Launch
 
-Two distinct native mechanisms exist in b11126: (1) canonical GLU-node epilogue fusion inside mul_mat_vec_* (covers gate*up SwiGLU-family graphs, see PRBE37), and (2) ggml_cuda_op_unary_mul, a separate post-GEMV pointwise pass for literal UNARY->MUL graphs. Neither eliminates a GEMV's own epilogue write-then-reread for the literal-UNARY+MUL case if ggml_cuda_op_unary_mul still runs as its own kernel launch after the GEMV. Confirm via profiling/launch-count evidence (not source alone) whether (2) is truly a separate launch before treating this as a real, unaddressed optimization opportunity distinct from PRBE37.
+Before implementation:
+1. Use the QFP13 production n-gram/kernel census on gfx1100 and gfx1201 to identify the exact `MMVQ/MMVF -> unary_gated` (or equivalent) chain and frequency/token.
+2. Map the traced pointwise kernel to `ggml_cuda_op_unary_mul` and map its input producer(s) to the corresponding `GGML_OP_MUL_MAT[/ID]` vector dispatch.
+3. Prove the pointwise operation is a separate launch/global-memory round trip after the vector GEMV path. Source structure alone is insufficient.
+4. Prove the intermediate(s) may be elided: no extra consumer that requires the materialized pre-gated value, and compatible broadcast/layout/alias semantics.
 
-## Code Samples & Guidance
+Stop/park PRBE38 if current production graphs are already canonical `GGML_OP_GLU`, if `ggml_cuda_op_unary_mul` is not a separate launch for the traced topology, or if the measured occurrence rate cannot plausibly meet QFP13's acceptance gate.
 
-Trigger: GEMV -> SiLU -> MUL with the supported scalar/per-channel broadcast and output layout. Controls: alternate MUL broadcasting, non-contiguous or aliased outputs, unsupported activation/dtype, and graphs where the activation result is consumed elsewhere. Required negative result: no fusion and unchanged unfused dispatch.
+## Implementation Plan
 
-## Files
+1. Reuse the existing `ggml_cuda_mm_fusion_args_host/_device` path and `ggml_cuda_should_fuse_mul_mat(...)` infrastructure where its representation is semantically sufficient. Do not introduce a Flash-Next-specific fusion descriptor or new standalone kernel family.
+2. Extend graph matching only for the trace-proven literal topology. Resolve which vector producer supplies the value and which operand supplies the post-activation multiply using the real graph; do not assume operand order from kernel names.
+3. Require exact supported activation semantics. Start with the production-proven ops only; SILU/SIGMOID/SOFTPLUS are candidates because `ggml_cuda_op_unary_mul` supports them, not blanket permission to fuse every unary op.
+4. Fail closed for unsupported broadcast/stride/dtype, aliases, multiple consumers, non-vector/GEMM shapes, or graph/scheduler cases where the intermediate cannot legally be elided.
+5. Dispatch through the existing `mul_mat_vec_q/f(..., fusion_data)` vector path so activation/multiply happens before the final global-memory store. Keep `ggml_cuda_op_unary_mul` as the native fallback for non-GEMV and unsupported cases.
+6. Remove only special-case plumbing made unreachable for the accepted fused arm. Do not delete the generic pointwise path.
 
-Same as PRBE37: ggml/src/ggml-cuda/ggml-cuda.cu, mmvq.cu, mmvf.cu (evidence/verification only).
+## Technical Constraints
 
-ggml/src/ggml-cuda/ggml-cuda.cu (ggml_cuda_op_unary_mul call sites and dispatch conditions; evidence and possible edit site).
+The optimized arm must preserve:
+- the same accumulation precision as the native MMVQ/MMVF producer;
+- activation semantics and operation order;
+- output dtype conversion/rounding point unless equivalence is explicitly proven;
+- broadcast indexing and strides;
+- graph-capture legality and pointer lifetime;
+- CUDA/HIP behavior through the existing shared backend path.
+
+The desired dataflow is conceptually:
+
+`vector accumulation -> required activation -> required elementwise multiply -> final output store`
+
+instead of:
+
+`vector accumulation -> GEMV output store -> pointwise kernel reload -> activation/multiply -> second store`.
+
+Exact fusion-data fields must follow the current upstream structures. If the existing descriptor cannot express the literal topology without semantic ambiguity, stop and document that gap before adding fields or kernel variants.
+
+## Upstream Reference / Source Anchors
+
+Verified against llama.cpp b11126:
+- `ggml/src/ggml-cuda/ggml-cuda.cu`: `ggml_cuda_should_fuse_mul_mat(...)`, `ggml_cuda_mm_fusion_args_host/_device`, canonical GLU matching, and `ggml_cuda_op_unary_mul` dispatch/matcher sites;
+- `ggml/src/ggml-cuda/mmvq.cu`: quantized vector GEMV fusion-data consumer/epilogue;
+- `ggml/src/ggml-cuda/mmvf.cu`: floating vector GEMV fusion-data consumer/epilogue.
+
+The key source reconciliation is: native canonical GLU fusion and native literal `UNARY->MUL` pointwise fusion are two different mechanisms. PRBE38 targets only the launch/memory boundary that remains between a literal graph's vector producer and the separate pointwise mechanism.
 
 ## Validation
 
-See PRBE37's validation -- shared verification, no hardware run needed for this disposition.
+Offline/source:
+- verify all current b11126 matcher/dispatch conditions before editing;
+- add focused backend-op positive cases for every accepted literal activation/topology;
+- add negative controls for alternate broadcast, non-contiguous layouts, aliases, multiple consumers, unsupported activation/dtype, and non-vector/GEMM paths;
+- patch lint/rebase checks for the resulting BigCherry patch package.
 
-Offline: grep/read verification per steps 1-2. Launch-count evidence (kernel trace showing GEMV and unary_mul as separate launches) before any new fusion is designed. If a follow-up patch is written: test-backend-ops case for the literal UNARY+MUL topology, alias/broadcast negative controls, and hardware bit-identical + paired-perf evidence via validation_campaign (not run here).
-
-## Effort & Risk
-
-M; matcher and epilogue changes are localized but incorrect broadcast or alias assumptions can silently corrupt decode outputs. Fail-closed fallback and differential tests contain the risk.
-
-S for this item as written (evidence + scoping); a real epilogue-skip fusion would be M (new kernel variant, alias-safety proof).
-
-## Standards
-
-Preserve native-BF16/F32 accumulation guards, Q8_0 behavior, unsupported-hardware fallback, and the repository patch qualification/evidence rules.
+Hardware/profile-v2 ABBA on the existing XTX+XTX+R9700 tensor split:
+- shallow (~8-10K) and deep (~65-80K) context;
+- exact target adjacency and standalone pointwise launch count before/after;
+- total kernels/token and launch-gap ms/token;
+- MMVQ/MMVF duration/register/occupancy regression check;
+- target verify ms/step and effective TG;
+- deterministic/greedy output equivalence against unfused control on gfx1100 and gfx1201.
 
 ## Acceptance Criteria
 
-Acceptance requires exact GEMV->activation->MUL layout proof, independent output parity across supported dtypes/shapes, no fusion for unsupported broadcast/alias forms, and repeatable launch/TG or memory improvement versus unfused control; otherwise retain fallback.
+- Production trace proves a literal vector-producer -> gated pointwise topology and its frequency/token.
+- The accepted topology executes without the previously separate post-GEMV pointwise launch and without a compensating new launch.
+- No required intermediate value is incorrectly elided; aliases/broadcast/consumer-count guards are explicit and tested.
+- Unsupported cases continue through the native unfused/`ggml_cuda_op_unary_mul` path.
+- Canonical `GGML_OP_GLU` handling remains owned by the existing upstream mechanism/PRBE37 and is not duplicated.
+- No new standalone fusion kernel family is introduced for this target unless reuse of the current descriptor is proven impossible and separately justified.
+- QFP13's performance gate is met: >=0.5% end-to-end TG/ms-step improvement or >=0.10 ms/token measured serial launch-gap reduction without end-to-end regression. Otherwise park the item.
+
+## Effort & Risk
+
+M. Arithmetic is not novel; risk is proving graph identity, operand semantics, aliases/broadcast, and legal intermediate elision. A failed proof must fall back rather than widen the matcher.
+
+## Standards
+
+- Evidence before implementation.
+- Reuse upstream/native fusion infrastructure.
+- One canonical owner per topology.
+- Fail closed on semantic uncertainty.
+- Preserve numerical behavior and graph-capture safety.
+- Re-profile after the single local optimization before adding another fusion.
 
 ## Notes
 
@@ -71,36 +133,23 @@ Supersedes: RD46
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd46
 
-Supersedes RD46. Depends on PRBE37 (AMD-FUS-001). Related fusion work must not broaden this matcher without a separate acceptance decision.
+PRBE37 and PRBE38 are adjacent but not duplicates: PRBE37 covers canonical GLU epilogue capability/gaps; PRBE38 covers a trace-proven **literal** `UNARY->MUL` topology that remains a separate post-vector launch. QFP13 is the measurement/ranking umbrella and must not carry another copy of this implementation design.
 
-append
-
-2026-09-24 relevance at b11126: UPSTREAM-ABSORBED, same real anchors as PRBE37 (ggml-cuda.cu ~3750-3770, mmvq.cu ~599-758, mmvf.cu ~58-382) -- PRBE38's target (GEMV->SiLU->elementwise-MUL, i.e. SwiGLU gate*up) is literally the pattern that fusion_data.gate/glu_op implements; `value *= ggml_cuda_op_silu_single(gate_value)` in the GEMV epilogue is exactly this item's acceptance criterion. GPT design gateway unavailable this session (see PRBE32 notes); disposition written directly from verified source.
-
-2026-09-24 GPT review req_c18183e0a9034c94 applied: WRONG disproven -- b11126 only fuses canonical GGML_OP_GLU node graphs in the GEMV epilogue; literal UNARY->MUL is handled (if at all) by the separate ggml_cuda_op_unary_mul post-pass, not the GEMV epilogue; reopened to pending, narrowed accordingly.
+Historical 2026-09-24 disposition claiming PRBE38 was fully upstream-absorbed was corrected after reading b11126: the canonical GLU matcher does not by itself prove literal `UNARY->MUL` is folded into the GEMV epilogue. The separate `ggml_cuda_op_unary_mul` path is the relevant fallback/native pointwise mechanism.
 
 ## Change Log
 
 - 2026-09-09T10:56:05.203236+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:13:18.726737+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- 2026-09-24: Reopened after source reconciliation showed canonical GLU epilogue fusion does not establish literal `UNARY->MUL` GEMV-epilogue fusion.
+- 2026-10-04 (agent): Removed contradictory upstream-absorbed/reopened instructions; made PRBE38 the single backend owner for trace-proven literal vector `MUL_MAT[/ID] -> UNARY -> MUL`; moved duplicate implementation ownership out of QFP13.
 
 ## Ledger-events
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.301853+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:43.057267+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T03:02:34.325623+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - chg_20260910_030318_repaired-three-patching-succes_9681
-- 2026-09-10T03:03:18.963781+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T03:05:27.878265+00:00 (updated-by): Updated: section:acceptance_criteria
 - chg_20260910_030619_removed-migration-placeholder_7703
-- 2026-09-10T03:06:19.279192+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:31:39.283002+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:notes
-- 2026-09-24T02:31:59.126993+00:00 (updated-by): Updated: section:notes
-- 2026-09-24T02:32:19.601706+00:00 (state-transition): State: pending → superseded
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
-- 2026-09-24T02:36:23.519042+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T04:35:22.931353+00:00 (state-transition): State: superseded → pending
-- 2026-09-24T04:36:36.775413+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk
-- 2026-09-24T04:36:55.897312+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T02:32:19.601706+00:00 (state-transition): State: pending -> superseded
+- 2026-09-24T04:35:22.931353+00:00 (state-transition): State: superseded -> pending
