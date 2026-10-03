@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -28,7 +28,7 @@ run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
   done
   if [ "$ok" != 1 ]; then echo "$name: SERVER_FAILED"; tail -5 "$log"; kill "$pid" 2>/dev/null; wait "$pid"; return; fi
   rocm-smi --showmeminfo vram 2>/dev/null | grep "Total Used" > "$out/$name.vram.txt"
-  CACHE=${CACHE:-} DECODE_N=${DECODE_N:-128} python3 - "$port" "$name" "$out" "$@" <<'PY'
+  SERVER_PID=$pid PERF_OUT=${PERF_OUT:-} CACHE=${CACHE:-} DECODE_N=${DECODE_N:-128} python3 - "$port" "$name" "$out" "$@" <<'PY'
 import json, sys, urllib.request
 port, name, out = sys.argv[1:4]; depths = [int(d) for d in sys.argv[4:]]
 def post(body):
@@ -43,8 +43,17 @@ for d in depths:
     cache = os.environ.get("CACHE") == "1"
     if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
         post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})
+    perf = None
+    if os.environ.get("PERF_OUT"):  # host-side sampling of the server during the timed decode only
+        import subprocess
+        perf = subprocess.Popen(["/usr/lib/linux-tools/6.8.0-142-generic/perf", "record", "-F", "499", "-g",
+                                 "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": int(os.environ["DECODE_N"]),
               "cache_prompt": cache, "temperature": 0, "ignore_eos": True})["timings"]
+    if perf is not None:
+        import signal
+        perf.send_signal(signal.SIGINT); perf.wait()
     r = {k: t.get(k) for k in ("prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second", "draft_n", "draft_n_accepted")}
     rows.append(r)
     print(f"{name}: prompt {r['prompt_n']} tok at {r['prompt_per_second']:.1f} t/s, decode {r['predicted_per_second']:.1f} t/s, accepted {r['draft_n_accepted']}/{r['draft_n']}", flush=True)
@@ -61,6 +70,12 @@ mode=${3:-full}
 if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
+  DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode 65536
+  p=/usr/lib/linux-tools/6.8.0-142-generic/perf
+  $p report -i "$out/decode.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -15
+  $p report -i "$out/decode.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -50
+  exit 0
 else  # decode: cached ~96K-token prompt, then a long decode, so decode at depth dominates the trace
   DECODE_N=1024 CACHE=1 WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass decode 65536
 fi
