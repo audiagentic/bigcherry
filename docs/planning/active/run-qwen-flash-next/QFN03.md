@@ -60,3 +60,5 @@ Evidence: flashnext-long-ctx-fit-1, flashnext-ctx-fit-2, flashnext-ub-sweep-1 (u
 ## Change Log
 
 - 2026-10-03T05:45:51.897055+00:00 (created-by): Created by agent
+
+2026-10-03 PRODUCTION RISK (top QFN03 item): at -c 196608 -ts 2,2,3, a 131K-deep request (164K tokens filled) OOMs in hipGraphInstantiate on device 2 (R9700) -- base-b (production build) as well as both 1295 arms (flashnext-gather-ab-2/d131072). Cause: HIP graph instances (one per new graph shape) take device memory late, after KV/compute buffers fill the R9700. Fix options: cap/evict cached graph instances (LRU, or free on OOM and retry), reserve headroom for instantiation, or fall back to eager launch for that shape on hipErrorOutOfMemory instead of aborting (graphs-off costs ~6% decode). 1295's 192K OOM is this, not its gather workspace.
