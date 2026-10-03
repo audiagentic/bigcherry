@@ -19,6 +19,7 @@ STEP = 8192
 MAX_TRIES = 6
 SHIFT = 0.02  # share moved away from the OOM device per retry
 CAP_GB = [25.75, 25.75, 34.2]  # XTX0, XTX1, R9700 usable VRAM
+MIN_PREFILL_TPS = 500  # QFN04: below this the config is paging (healthy 8K-deep prefill is ~1100 t/s)
 
 
 def run(bin_, out, ts, ctx, ctk, ctv, ub):
@@ -38,6 +39,14 @@ def run(bin_, out, ts, ctx, ctk, ctv, ub):
         oom_dev = int(d[-1]) if d else None
     vram = [float(x) / 1e9 for x in re.findall(r"VRAM Total Used Memory \(B\): (\d+)", r.stdout)]
     timing = [l for l in r.stdout.splitlines() if l.startswith("timing:")]
+    # QFN04: a config that loads but leaves the R9700 within ~150 MB of full pages, and prefill collapses
+    # (~1100 -> ~85 t/s) while decode survives. Count that as a failure on the fullest device.
+    pf = [float(x) for x in re.findall(r"fill prefill \d+ tok at ([\d.]+) t/s", r.stdout)]
+    if ok and pf and pf[-1] < MIN_PREFILL_TPS:
+        ok = False
+        if oom_dev is None and len(vram) >= 3:
+            oom_dev = max(range(3), key=lambda i: vram[i] / CAP_GB[i])
+        timing.append(f"prefill collapse {pf[-1]:.0f} t/s < {MIN_PREFILL_TPS} (paging)")
     return ok, oom_dev, vram, timing
 
 
