@@ -15,7 +15,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "rejected"
 
 FATTN = FilePatch(
     path="ggml/src/ggml-cuda/fattn.cu",
