@@ -19,7 +19,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "evaluated"
 
 _GATHER = """    // BigCherry 1295: small batches over a large cache attend over the gathered n_sel cells, not the masked n_kv
     if (bc_qsa_idx != nullptr && n_tokens <= 8 && bc_qsa_gather_enabled() &&
