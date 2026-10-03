@@ -7,7 +7,7 @@ created-at: '2026-10-03T17:03:36.365732+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P0
+priority: P3
 work: S
 ---
 
@@ -53,6 +53,10 @@ ms/step ABBA; greedy/KLD vs mirrored; VRAM per GPU after load; activation via BI
 
 Related: RNX10 (shared-expert launch fusion), PRBE34/101 (shared expert on an aux stream - with the split, the per-GPU shared-expert work is smaller, changing that trade-off), QFP09 (per-class balance).
 
+2026-10-04 screens (flashnext-v2-1306-d24k/-d80k, profile v2 240K f16, same binary): ~24K 47.2 vs 46.0/46.6 ms/step (+1.9%), acceptance 169/254 vs 175/240; ~80K 53.6 vs 53.3/53.4 (neutral), acceptance 166/266 vs 170/255. VRAM freed small: -185 MB per XTX, -135 MB R9700 (shared expert ~0.5 GB total). Activation proven (PATCH_HIT patch=1306_shexp_split). Verdict: neutral-to-negative; parked. The mirrored shared expert is small enough that the redundant compute is cheap, and splitting changes summation order (lower acceptance) and likely adds a per-layer combine around the sigmoid-gated shexp output. Not adopted.
+
 ## Change Log
 
 - 2026-10-03T17:03:36.365732+00:00 (created-by): Created by agent
+- 2026-10-03T17:21:20.454741+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T17:21:23.551814+00:00 (updated-by): Updated: priority='P3'
