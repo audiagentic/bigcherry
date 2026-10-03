@@ -76,6 +76,8 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-25: IMPLEMENTED inside patches/1250 (e06dcf63 is atomic: meta-backend reshape->ADD matcher, fused_add comm API, fused finish kernels). Opt-in GGML_CUDA_AR_FUSED_RESIDUAL; marker patch=1250_nro02 logged only when the fused path succeeds. 1251 scaffold removed. Must be exact vs unfused; measured as its own arm, separate from Q8.
 
+2026-10-04 consolidation: owner item for residual-ADD fusion into AllReduce. PGC06 (--allreduce-fuse residual CLI over 1250/1251) is merged here and superseded: the CLI exposure is a sub-step once a real reduction->RESHAPE->ADD matcher and residual-carrying comm API exist. Flash-Next angle (RV4214/RV4215): with CPU-root (1291, QFP01) the residual add can be folded into the result write; AITER fused_allreduce_rmsnorm is a reference for AR+residual+RMSNorm(+quant) epilogues. GPT estimate +1-2.5% decode.
+
 ## Change Log
 
 - 2026-09-09T10:52:07.096423+00:00 (created-by): Created by capability-rebaseline-v3
@@ -95,3 +97,4 @@ Migration: capability-rebaseline-v3-2026-09
 - chg_20260925_111345_real-ports-of-the-nasone-allre_4524
 - 2026-09-25T11:13:51.471143+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-25T11:14:06.579185+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:21:45.220306+00:00 (updated-by): Updated: section:notes

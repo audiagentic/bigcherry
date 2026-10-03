@@ -2,7 +2,7 @@
 id: PNRO01
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: superseded
 created-at: '2026-09-09T10:52:01.168387+00:00'
 breadth: ''
 skill: advanced
@@ -79,6 +79,8 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 
 2026-09-25: IMPLEMENTED (commits bd2fc067/45219a0d). patches/1250 now ports e06dcf63 whole (requires 1252). Q8 wire opt-in via GGML_CUDA_AR_WIRE=q8_0; marker patch=1250_nro01. Lossy: correctness arm is full-vocab divergence vs unset. Campaign needs --common-patches 1252.
 
+2026-10-04 superseded by PGC11 (single owner item for AllReduce wire formats). Carried over: 1250 is a Q8 scaffold only (and FAILED_NEEDS_RECONCILIATION at c061df198); a real quantize->transport->dequant path must be written and qualified there.
+
 ## Change Log
 
 - 2026-09-09T10:52:01.168387+00:00 (created-by): Created by capability-rebaseline-v3
@@ -102,3 +104,5 @@ REAL FINDING 2026-09-12: this draft had never been built before. First real hard
 - chg_20260925_111345_real-ports-of-the-nasone-allre_4524
 - 2026-09-25T11:13:48.596655+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-25T11:14:03.641721+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:22:07.339534+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:22:23.039515+00:00 (state-transition): State: pending → superseded

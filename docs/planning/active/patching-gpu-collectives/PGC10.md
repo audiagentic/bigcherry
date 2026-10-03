@@ -61,8 +61,11 @@ The 3-GPU Q8_0 27B runs slower than the dual-XTX host path (tg512 95.5), so Q8_0
 
 2026-10-01 1275 A/B on the dual-XTX host path (27B Q8_0 MTP, 6 balanced rounds, ab-27b-ar-small): BIGCHERRY_AR_SLOT_SYNC=none vs pristine tg512 +0.04% (CI -0.16..+0.23), tg2048 -0.01%, pp4096 -0.24% -> neutral; BIGCHERRY_AR_SMALL_BLOCKS=1 vs pristine tg512 -8.56%, tg2048 -8.47%, pp4096 -2.39% -> strongly worse. MTP acceptance identical (82.22%). Conclusion: the fixed 8x256 small-AR grid is not oversized and host slot syncs are not the decode bottleneck; the design review's fixed-latency hypothesis for these two knobs is refuted. 1275 stays untested (no gain); next question is whether MORE than 8 blocks helps (needs the arrival-ring layout widened).
 
+2026-10-04 status: realised for Flash-Next by patch 1291_ar_cpu_root (--allreduce cpu-root): CPU-root one-shot AR for <= 64 KiB f32 messages on 3 GPUs (2x XTX + R9700), RCCL above; +5-7% decode vs RCCL, prefill unchanged; the large-message host path lost to RCCL and is off. Detail and follow-ups in patching-qwen-flash-next QFP01. Remaining scope here: generalising the adaptive root/RCCL policy to other models.
+
 ## Change Log
 
 - 2026-09-30T05:20:19.155660+00:00 (created-by): Created by agent
 - 2026-09-30T06:29:06.022444+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T14:44:36.752908+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:21:51.445491+00:00 (updated-by): Updated: section:notes

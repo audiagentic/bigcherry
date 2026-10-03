@@ -2,7 +2,7 @@
 id: PRBE13
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:54:22.843182+00:00'
 breadth: ''
 skill: advanced
@@ -66,6 +66,8 @@ Supersedes: RD15 (closed historical predecessor). Preserve source identities 31e
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: corrected the PRBE19 dependency -- PRBE19 is process/provenance guidance only (compare against reviewed 9e46e1fd... vs snapshot c8af5361...), it does not deliver a materialized post-fix source state, so PRBE13 is not blocked waiting on a PRBE19 output. Real blocker is still locating the exact six-node b11126 anchor and authoring the final package; item stays pending with the concrete next action (locate anchor, verify provenance equivalence directly).
 
+2026-10-04 superseded by RNX10 (owner item for shared-expert launch fusion). Carried over: real anchor still to be located; shared-expert stream concurrency stays in PRBE34/PRBE101.
+
 ## Change Log
 
 - 2026-09-09T10:54:22.843182+00:00 (created-by): Created by capability-rebaseline-v3
@@ -85,3 +87,5 @@ Supersedes: RD15 (closed historical predecessor). Preserve source identities 31e
 - 2026-09-12T09:55:06.224060+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:35:24.747448+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:39:12.650965+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-10-03T15:22:16.811574+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:22:32.443599+00:00 (state-transition): State: pending → superseded

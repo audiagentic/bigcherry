@@ -2,7 +2,7 @@
 id: PNRO12
 order: 0
 plan: patching-nasone-rdna-optimizations
-state: pending
+state: superseded
 created-at: '2026-09-09T10:53:04.447530+00:00'
 breadth: ''
 skill: advanced
@@ -71,6 +71,8 @@ Successor key: patching-nasone-rdna-optimizations-nro13
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: corrected the misinterpretation of the Vulkan reference -- ggml_vk_can_fuse_topk_qsa/ggml_vk_topk_qsa fuse indexer score-expansion->TOP_K only, they do not gather K/V or shrink FlashAttention's KV length (verified build_attn_qsa at qwen4exp.cpp:695/841 still feeds full K/V+mask). Moved the real compaction work to build_attn_qsa() itself, after get_k/get_v; rescoped any indexer-TOP_K-fusion port to dispatch via the verified real ggml_cuda_try_fuse (ggml-cuda.cu:3432) into the existing top-k.cu/.cuh files rather than a new file the patcher cannot integrate; removed the unsourced n_kv>=4*width rule in favor of a measured crossover.
 
+2026-10-04 superseded by patching-qwen-flash-next QFP04: the gather-based sparse QSA decode was implemented as patch 1295_qsa_gather_decode (evaluated: -3.7% @80K, -12% @160K, more accurate than the masked path), with 1296 (typed gather, FA dequant-on-load) as its next step. All further work is tracked in QFP04.
+
 ## Change Log
 
 - 2026-09-09T10:53:04.447530+00:00 (created-by): Created by capability-rebaseline-v3
@@ -88,3 +90,5 @@ Successor key: patching-nasone-rdna-optimizations-nro13
 - 2026-09-24T02:35:47.115828+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
 - 2026-09-24T02:36:56.930450+00:00 (updated-by): Updated: section:effort_risk, section:notes
 - 2026-09-24T04:50:47.897561+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-10-03T15:21:54.562327+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:22:35.552797+00:00 (state-transition): State: pending → superseded
