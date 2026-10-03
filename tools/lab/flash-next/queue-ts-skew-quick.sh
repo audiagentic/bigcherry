@@ -9,7 +9,7 @@ export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.
 export BIGCHERRY_DRAFT_VOCAB_N=65536 TS=2,2,3 CTX=${CTX:-131072}  # both arms at reduced context so heavier splits fit
 base=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1616483f7592d564a3882e8f17330996/f08f543aee27491e58d23986fbfb08bb/bin/llama-server
 docker stop radiance-vllm >/dev/null 2>&1
-for ts in 2,2,3.4 2.1,2.1,2.8 1.9,2.1,3 2,2,3.8 2.2,2.2,2.6; do
+for ts in ${TS_LIST:-2,2,3.4 2.1,2.1,2.8 1.9,2.1,3 2,2,3.8 2.2,2.2,2.6}; do
   echo "== ts $ts"
   bash tools/lab/flash-next/quick-ab.sh $base $base /mnt/data/bigcherry-work/runs/flashnext-ts-${ts//,/_} TS=$ts
 done
