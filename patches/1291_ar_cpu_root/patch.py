@@ -225,6 +225,20 @@ static void bc_cpu_root_free(bc_cpu_root * cr) {
     if (cr == nullptr) {
         return;
     }
+    // Drain every device before stopping the worker: an in-flight bc_cpu_root_consume spins until the CPU
+    // worker publishes its generation, so stopping first could hang it or let it read freed mapped memory
+    // (GPT review req_6fe4bcfeef9645a7). Teardown-only cost.
+    {
+        int ndev = 0, cur = 0;
+        if (hipGetDeviceCount(&ndev) == hipSuccess && hipGetDevice(&cur) == hipSuccess) {
+            for (int d = 0; d < ndev; d++) {
+                if (hipSetDevice(d) == hipSuccess) {
+                    (void) hipDeviceSynchronize();
+                }
+            }
+            (void) hipSetDevice(cur);
+        }
+    }
     cr->stop.store(true);
     if (cr->worker.joinable()) {
         cr->worker.join();
