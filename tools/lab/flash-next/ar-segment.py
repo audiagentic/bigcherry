@@ -60,7 +60,28 @@ def main():
                 prev_end = e
         segs[agent] = out
     agents = sorted(segs)
-    n = min(len(segs[a]) for a in agents)
+    # Align ARs across GPUs by time, not ordinal: the decode window can start mid-cycle on one GPU, and an
+    # off-by-one ordinal shift turns every comparison into garbage. Segment k on each GPU ends at its produce
+    # start; match each reference segment to the other GPUs' segment whose arrival is nearest.
+    import bisect
+    ref = agents[0]
+    arrivals = {a: [s[0] for s in segs[a]] for a in agents}
+    aligned = {a: [] for a in agents}
+    for k, (ts, _, _) in enumerate(segs[ref]):
+        picks = {}
+        for a in agents[1:]:
+            i = bisect.bisect_left(arrivals[a], ts)
+            cand = [j for j in (i - 1, i) if 0 <= j < len(arrivals[a])]
+            j = min(cand, key=lambda j: abs(arrivals[a][j] - ts)) if cand else None
+            if j is None or abs(arrivals[a][j] - ts) > 2_000_000:  # > 2 ms apart: not the same AR
+                break
+            picks[a] = j
+        else:
+            aligned[ref].append(segs[ref][k])
+            for a in agents[1:]:
+                aligned[a].append(segs[a][picks[a]])
+    segs = aligned
+    n = len(segs[ref])
     blame = collections.Counter()
     blame_idle = 0
     by_type = collections.defaultdict(lambda: [0, 0, collections.Counter()])
