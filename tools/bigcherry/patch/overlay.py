@@ -37,13 +37,12 @@ def copy_overlay(
         text = source.read_text(encoding="utf-8")
         # Read raw bytes so a stale CRLF target is not mistaken for an
         # equivalent LF-only overlay by universal-newline translation.
-        if target.is_file() and target.read_bytes().decode("utf-8") == text:
+        original = target.read_bytes().decode("utf-8") if target.is_file() else None
+        if original == text:
             continue
         relative_str = str(relative).replace("\\", "/")
         if backup is not None and relative_str not in backup:
-            backup[relative_str] = (
-                target.read_text(encoding="utf-8") if target.is_file() else None
-            )
+            backup[relative_str] = original
         if sim_texts is not None:
             sim_texts[relative_str] = text
         if not dry_run:
