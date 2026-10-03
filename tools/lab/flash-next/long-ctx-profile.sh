@@ -50,7 +50,10 @@ for d in depths:
                                  "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": int(os.environ["DECODE_N"]),
-              "cache_prompt": cache, "temperature": 0, "ignore_eos": True})["timings"]
+              "cache_prompt": cache, "temperature": 0, "ignore_eos": True})
+    # temperature 0: the decoded text is the greedy output at this depth, compared across A/B arms
+    open(f"{out}/{name}.{d}.greedy.txt", "w").write(t["content"])
+    t = t["timings"]
     if perf is not None:
         import signal
         perf.send_signal(signal.SIGINT); perf.wait()
@@ -71,10 +74,10 @@ if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
-  DECODE_N=512 CACHE=1 run_pass timing 65536
+  DECODE_N=512 CACHE=1 run_pass timing ${DEPTH:-65536}
   exit 0
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
-  DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode 65536
+  DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode ${DEPTH:-65536}
   p=/usr/lib/linux-tools/6.8.0-142-generic/perf
   $p report -i "$out/decode.perf.data" --no-children --sort comm --stdio 2>/dev/null | grep -E "^ +[0-9]" | head -15
   $p report -i "$out/decode.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -50
