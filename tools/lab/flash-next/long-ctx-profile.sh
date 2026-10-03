@@ -11,13 +11,13 @@ bin=$1 out=$2
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
-args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
-      -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 2,2,3
+args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} --flash-attn on --parallel 1 --threads 16 -lv 4
+      -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts ${TS:-2,2,3}
       -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
       -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 --allreduce ${AR:-cpu-root})
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
-  args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
-        -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 2,2,3
+  args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} --flash-attn on --parallel 1 --threads 16 -lv 4
+        -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts ${TS:-2,2,3}
         -ctk q8_0 -ctv q8_0 --allreduce ${AR:-cpu-root})
 fi
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
