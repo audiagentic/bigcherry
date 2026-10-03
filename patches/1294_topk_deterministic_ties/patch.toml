@@ -1,7 +1,7 @@
 schema = 1
 id = "1294_topk_deterministic_ties"
 order = 1294
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
