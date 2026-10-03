@@ -418,6 +418,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # 192K deep-fill robustness: deployment candidate + 1302 (graph-instantiate OOM evicts other cached graphs, retries).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict"]
 
+[experiment.deploy-plus-1302-1303]
+# Long-context fit: deployment candidate + 1302 (graph OOM evict) + 1303 (separate attention/KV split, env-gated).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
