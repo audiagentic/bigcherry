@@ -1,0 +1,16 @@
+schema = 1
+id = "1297_draft_vocab_trim"
+order = 1297
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["QFN01"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+tags = ["mtp", "speculative-decoding", "optimization"]
+hardware = []
+validation-architectures = ["gfx1030", "gfx1100", "gfx1201"]
