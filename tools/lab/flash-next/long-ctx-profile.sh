@@ -14,7 +14,7 @@ draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash
 args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} --flash-attn on --parallel 1 --threads 16 -lv 4
       -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts ${TS:-2,2,3}
       -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
-      -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTK:-q8_0} -ctvd ${CTV:-q8_0} --allreduce ${AR:-cpu-root})
+      -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTKD:-${CTK:-q8_0}} -ctvd ${CTVD:-${CTV:-q8_0}} --allreduce ${AR:-cpu-root})
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} --flash-attn on --parallel 1 --threads 16 -lv 4
         -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts ${TS:-2,2,3}
@@ -131,7 +131,7 @@ elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at d
   $p report -i "$out/decode.perf.data" --no-children --sort comm,dso,sym --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | head -50
   exit 0
 else  # decode: cached ~96K-token prompt, then a long decode, so decode at depth dominates the trace
-  DECODE_N=1024 CACHE=1 WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass decode 65536
+  DECODE_N=1024 CACHE=1 WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass decode ${DEPTH:-65536}
 fi
 python3 - "$out/rocprof" <<'PY'
 import csv, glob, sys, collections
