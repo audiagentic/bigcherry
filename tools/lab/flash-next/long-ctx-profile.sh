@@ -17,8 +17,9 @@ args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b 2048 --f
       -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTKD:-${CTK:-q8_0}} -ctvd ${CTVD:-${CTV:-q8_0}} --allreduce ${AR:-cpu-root})
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b 2048 --flash-attn on --parallel 1 --threads 16 -lv 4
-        -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts ${TS:-2,2,3}
+        -ot '^per_layer_token_embd\.weight$=CPU' -dev ${DEVS:-ROCm0,ROCm1,ROCm2} -sm tensor -ts ${TS:-2,2,3}
         -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} --allreduce ${AR:-cpu-root})
+  [ -n "${EXTRA_OT:-}" ] && args+=(-ot "$EXTRA_OT")
 fi
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
 run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
