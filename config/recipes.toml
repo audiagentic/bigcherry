@@ -438,6 +438,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # QFP12: production profile v2 + 1306 Qwen4Exp shared-expert split (BIGCHERRY_SHEXP_SPLIT, env-gated).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1306_qwen4exp_shexp_split"]
 
+[experiment.deploy-v2-plus-1307]
+# QFP13/PRBE05: production profile v2 + 1235 Q8_1 cache foundation + 1307 MMVQ wiring (GGML_HIP_Q8_1_CACHE_MODE=on).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]

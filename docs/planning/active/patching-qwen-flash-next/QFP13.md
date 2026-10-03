@@ -53,6 +53,9 @@ Kernels/token down (rank-census.py), gap time/token down, ms/step ABBA on profil
 
 This re-ranks the fusion backlog: individually each looked like 1-3%, but together they attack the single largest measured cost (~4.7 ms/token of gaps). Also check whether HIP graph launch latency itself can be reduced (e.g. hipGraph dispatch tuning / fewer nodes per graph). Earlier: AMD-Ecosystem Set 4 MMV epilogue fusions cut 1263->1103 launches/token for +1.4% tg on a different model. Related: QFP06 (graph working set), QFP11 (AR boundaries are only ~25 us), QFP09 (split balance at diminishing returns).
 
+2026-10-04 fusion census (XTX0, ~10K, per generated token): top kernels quantize_q8_1 183, mul_mat_vec_q 154, unary_op 102, k_bin_bcast 98, scale_f32 98, mul_mat_vec_f 82, rms_norm 79, __amd_rocclr_copyBufferRectAligned 55 + __amd_rocclr_copyBuffer 53 (HIP runtime copy kernels inside the graph: 108/token, origin unknown - find via apitrace), unary_gated 30, dsv4_hc_pre/post 30 each, cpu_root produce/consume 30 each, mmvq_moe 30. Top adjacent pairs: quantize_q8_1->mul_mat_vec_q 154 (dedupe/reuse q8_1 across consumers of the same activation, PRBE05/1235, or F32-act), scale_f32->unary_op 60, copyBufferRect<->copyBuffer 80, rms_norm->quantize 41 (PRBE06), mmvq->scale 30 / mmvf->scale 30 (PRBE37/38 epilogues), scale->dsv4_hc_post 30, mmvq->dsv4_hc_pre 30 (RNX04), unary_gated->quantize 30. Next: apitrace to attribute the 108 runtime copies; then quantize dedupe.
+
 ## Change Log
 
 - 2026-10-03T17:26:47.771591+00:00 (created-by): Created by agent
+- 2026-10-03T17:27:37.409987+00:00 (updated-by): Updated: section:notes
