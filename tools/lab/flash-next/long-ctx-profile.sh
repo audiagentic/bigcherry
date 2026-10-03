@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|apitrace]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -87,6 +87,29 @@ mode=${3:-full}
 if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+elif [ "$mode" = apitrace ]; then  # RNX01: HIP API cost of decode (graph launches vs kernel launches, copies)
+  DECODE_N=256 CACHE=1 WRAP="rocprofv3 --hip-runtime-trace --kernel-trace --memory-copy-trace --output-format csv -d $out/rocprof --" run_pass apitrace ${DEPTH:-8192}
+  python3 - "$out/rocprof" "$out/apitrace.timings.json" <<'PY'
+import csv, glob, json, sys, collections
+t = json.load(open(sys.argv[2]))[-1]
+n = t["predicted_n"]; win = n / t["predicted_per_second"] * 1e9
+steps = max(1, n - (t.get("draft_n_accepted") or 0))
+path = sorted(glob.glob(f"{sys.argv[1]}/**/*hip_api_trace.csv", recursive=True))[0]
+rows = list(csv.DictReader(open(path)))
+end = max(int(r["End_Timestamp"]) for r in rows)
+agg = collections.defaultdict(lambda: [0, 0]); per_tid = collections.Counter()
+for r in rows:
+    s = int(r["Start_Timestamp"])
+    if s < end - win: continue
+    a = agg[r["Function"]]; a[0] += 1; a[1] += int(r["End_Timestamp"]) - s
+    per_tid[r.get("Thread_Id", "?")] += int(r["End_Timestamp"]) - s
+print(f"apitrace decode window {win/1e9:.1f} s, {n} tokens, {steps} steps")
+for f, (c, ns) in sorted(agg.items(), key=lambda kv: -kv[1][1])[:20]:
+    print(f"  {f:40s} {c/steps:8.1f} calls/step {ns/1e6/steps:8.3f} ms/step  {ns/max(c,1)/1e3:7.2f} us/call")
+for tid, ns in per_tid.most_common(6):
+    print(f"  thread {tid}: {ns/1e6/steps:.2f} ms/step in HIP API ({100*ns/win:.0f}% of wall)")
+PY
+  exit 0
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit 0
