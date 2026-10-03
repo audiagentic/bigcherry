@@ -11,5 +11,4 @@ echo "VIS=0,1,2,3 SCRIPT flashnext-long-ctx-fit-1 tools/lab/flash-next/long-ctx-
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-docker start radiance-vllm >/dev/null && docker update --restart unless-stopped radiance-vllm >/dev/null && echo "VLLM_RESTARTED $(date -Is)"
 echo ALL_JOBS_DONE
