@@ -13,10 +13,10 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-v2-1307 bigcherry:stock:linux-multi deploy-v2-plus-1307 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT v2-1307-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v2-1307 @b-v2-1307 $R/flashnext-v2-1307-d24k GGML_HIP_Q8_1_CACHE_MODE=on
-VIS=0,1,2,3 SCRIPT v2-1307-d80k tools/lab/flash-next/quick-ab-depth.sh 65536 @b-v2-1307 @b-v2-1307 $R/flashnext-v2-1307-d80k GGML_HIP_Q8_1_CACHE_MODE=on
-VIS=0,1,2,3 SCRIPT v2-1307-census tools/lab/flash-next/census-run.sh @b-v2-1307 $R/flashnext-v2-1307-census GGML_HIP_Q8_1_CACHE_MODE=on
+VIS=0,1,2,3 BUILD b-v2-1307b bigcherry:stock:linux-multi deploy-v2-plus-1307 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT v2-1307-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v2-1307b @b-v2-1307 $R/flashnext-v2-1307-d24k GGML_HIP_Q8_1_CACHE_MODE=on
+VIS=0,1,2,3 SCRIPT v2-1307-d80k tools/lab/flash-next/quick-ab-depth.sh 65536 @b-v2-1307b @b-v2-1307 $R/flashnext-v2-1307-d80k GGML_HIP_Q8_1_CACHE_MODE=on
+VIS=0,1,2,3 SCRIPT v2-1307-census tools/lab/flash-next/census-run.sh @b-v2-1307b $R/flashnext-v2-1307-census GGML_HIP_Q8_1_CACHE_MODE=on
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
