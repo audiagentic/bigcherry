@@ -11,61 +11,96 @@ work: M
 priority: null
 ---
 
-# AMD-FUS-001: Fuse GEMV epilogue activation
+# AMD-FUS-001: Canonical GLU GEMV epilogue coverage gaps
 
 ## Description
 
-UPSTREAM-ABSORBED. b11126 already implements pattern-matched GEMV/GEMM epilogue activation fusion natively via ggml_cuda_mm_fusion_args_host/_device threaded into mul_mat_vec_f/mul_mat_vec_q. The graph-level matcher in ggml-cuda.cu (multiple `ggml_cuda_mm_fusion_args_host fusion_data{}` sites, e.g. ~3750-3770) detects gate_proj+up_proj+GLU (SiLU/etc.) graphs, calls ggml_cuda_should_fuse_mul_mat(...) to prove eligibility, and populates fusion_data.gate/x_bias/gate_bias/x_scale/gate_scale/glu_op/glu_limit before dispatching a single fused mul_mat_vec_q/mul_mat_vec_f call (mmvq.cu ~599-758, mmvf.cu ~58-382) that computes `value *= silu(gate_value)` (or the matched glu_op) inline in the epilogue -- exactly the pattern-matched SILU/activation GEMV epilogue fusion this item describes, with fail-closed fallback (falls through to unfused dispatch when ggml_cuda_should_fuse_mul_mat returns false). This applies to both dense and MUL_MAT_ID (MoE) graphs since the matcher reads up_n->src[2] as an optional ids tensor.
+PRBE37 is the canonical owner for **canonical `GGML_OP_GLU` epilogue capability/gaps**. It is not the owner for literal `UNARY -> MUL` graphs; that distinct topology belongs to PRBE38.
 
-TODO (reopened, GPT WRONG-confirmed). b11126's native GEMV epilogue fusion (ggml_cuda_should_fuse_mul_mat, ggml-cuda.cu:1673-1766) restricts glu_op to `valid_glu_ops = {SWIGLU, GEGLU, SWIGLU_OAI, SWIGLU_CLAMP}` (line 1754) -- SIGMOID is NOT in that list. The fused dispatch is also exclusively through the vector paths ggml_cuda_should_fuse_mul_mat_vec_f/_q (lines 1767, 1794) feeding mul_mat_vec_f/mul_mat_vec_q (mmvq.cu/mmvf.cu), i.e. GEMV/decode-shape dispatch only -- not general GEMM/prefill matmul. This item's original closure premise (SILU+SIGMOID coverage, GEMV+GEMM coverage) is false; the item is not fully upstream-absorbed and survives as a narrower successor covering the uncovered activation ops and dispatch paths.
+Verified against llama.cpp b11126: supported canonical GLU vector graphs are already fused natively. `ggml_cuda_should_fuse_mul_mat(...)` recognizes the eligible gate/up/`GGML_OP_GLU` shape, populates `ggml_cuda_mm_fusion_args_host/_device`, and the `mul_mat_vec_q/f` vector kernels consume that fusion data so the supported GLU operation executes in the GEMV epilogue.
 
-## Steps
+The remaining PRBE37 question is narrower: whether production target models use a canonical GLU operation or non-vector dispatch path that current upstream does **not** cover. At b11126, the validated vector allow-list is SWIGLU/GEGLU-family (`SWIGLU`, `GEGLU`, `SWIGLU_OAI`, `SWIGLU_CLAMP`); the prior plan's assumption that SIGMOID and general GEMM/prefill were already covered was false. That does not by itself justify a patch: actual target-model graph usage must be proven first.
 
-1. Verify at the current pin: git -C work/upstream/llama.cpp.git grep -n "ggml_cuda_should_fuse_mul_mat\|fusion_data.glu_op" b11126 -- ggml/src/ggml-cuda/ggml-cuda.cu, and read ggml_cuda_should_fuse_mul_mat's full body (not yet read in full this session) to confirm it covers SIGMOID as well as SILU, and confirm whether it covers only prefill (MUL_MAT) or also decode (mul_mat_vec) dispatch paths.
-2. If verification in step 1 confirms full coverage (SILU+SIGMOID, both GEMV and GEMM), close this item as superseded with that as the final evidence and no further action.
-3. If a real gap is found (e.g. SIGMOID unsupported, or only prefill covered), scope a narrow follow-up item extending ggml_cuda_should_fuse_mul_mat's glu_op allow-list or wiring the same fusion_data plumbing into the currently-uncovered dispatch path -- do not silently fold that gap into PRBE38.
+## Ownership Boundary
 
-1. Confirm scope of the gap: grep b11126 ggml-cuda.cu for every GGML_GLU_OP_* case actually used in ffn/glu dispatch (~2201-2213, ~5179-5183) to enumerate which ops exist in the graph builder versus which are in valid_glu_ops; SIGMOID-gated GLU (if any model uses it) never reaches ggml_cuda_should_fuse_mul_mat.
-2. Confirm GEMM (prefill, non-vector mul_mat) dispatch has no equivalent epilogue-fusion path: grep ggml-cuda.cu for mul_mat (non-vec) call sites near the same fusion_data-populated blocks (~3736-3965) and confirm they only ever reach the mat-vec fused paths for decode-shape (`m==1` style) dispatch.
-3. If a real, currently-used SIGMOID-gated GLU model shape exists in this project's target models, scope a follow-up patch extending valid_glu_ops (with correctness proof: SIGMOID glu semantics match ggml_cuda_op_glu_unary's SIGMOID case) and/or extending fusion to the GEMM path. If no such model/shape is in scope, narrow this item's acceptance criteria to explicitly exclude SIGMOID/GEMM and close as no-op-needed with that evidence.
+PRBE37 owns:
+- current-upstream coverage of canonical `GGML_OP_GLU` graph forms;
+- proving whether an unsupported canonical GLU op is actually emitted by target models;
+- proving whether a target-model canonical GLU path selects GEMM/prefill rather than the already-fused vector GEMV path;
+- a narrowly scoped extension only after that production gap is demonstrated.
 
-## Detailed Solution & Technical Design
+PRBE37 does **not** own:
+- literal `MUL_MAT[/ID] -> UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` graphs (PRBE38);
+- launch-frequency ranking (QFP13);
+- generic new GEMM epilogue architecture without a target-model trace proving need.
 
-Capability owner: patching
+## Stage 0 — Prove A Target-Model Coverage Gap
 
-Split assessment: One independent boundary; Build/Run support is a dependency.
+1. Re-read the current pinned `ggml_cuda_should_fuse_mul_mat(...)` and every accepted `GGML_GLU_OP_*` value; record the exact canonical GLU allow-list and vector dispatch constraints.
+2. Trace/inspect the production target model graph and identify every canonical `GGML_OP_GLU` op actually emitted during the relevant decode/prefill paths.
+3. Classify each real occurrence as:
+   - already fused vector GLU: no PRBE37 work;
+   - unsupported canonical GLU op on vector path: candidate narrow allow-list/semantic extension;
+   - canonical GLU on GEMM/non-vector path: separate larger candidate requiring a design pass;
+   - literal UNARY+MUL rather than `GGML_OP_GLU`: hand to PRBE38.
+4. Record frequency/token or frequency/request and predicted removable launch/memory cost for each uncovered real occurrence.
 
-Overlap assessment: No duplicate boundary found; related items are prerequisites or adjacent evidence.
+Stop/close PRBE37 as no-op-needed if target models do not exercise a material unsupported canonical GLU path. Do not patch an unused theoretical gap.
 
-Native fusion_data plumbing (ggml_cuda_mm_fusion_args_host/_device) already handles SWIGLU-family GEMV epilogues. A correct extension must (a) verify SIGMOID glu semantics numerically match what ggml_cuda_should_fuse_mul_mat's existing bias/scale handling assumes before adding it to valid_glu_ops, and (b) recognize that GEMM-path fusion is architecturally different (multi-row epilogue, different kernel family entirely -- mul_mat_q/mul_mat, not mul_mat_vec_*) so it cannot simply reuse the vector fusion_data struct; it would need its own design pass, not a one-line allow-list change.
+## Implementation Rules
 
-## Code Samples & Guidance
+For an unsupported canonical GLU op on the existing vector path:
+- extend the current native matcher/allow-list only after proving its numerical semantics match the existing fusion-data bias/scale/gate handling;
+- reuse `ggml_cuda_mm_fusion_args_host/_device` and current `mul_mat_vec_q/f` epilogue machinery;
+- retain fail-closed fallback for unsupported shapes/dtypes/ops.
 
+For a real GEMM/prefill coverage gap:
+- do not pretend the vector fusion descriptor/kernel can be wired in with a one-line allow-list change;
+- first document the selected non-vector kernel family, epilogue/store point, graph topology, expected launch reduction, and numerical/output-layout constraints;
+- only then decide whether that larger work remains PRBE37 or should be split into a new implementation item. No split is warranted until a real production gap is observed.
 
+## Source Anchors
 
-## Files
+Verified b11126 anchors:
+- `ggml/src/ggml-cuda/ggml-cuda.cu`: `ggml_cuda_should_fuse_mul_mat(...)`, `valid_glu_ops`, fusion-data population and vector dispatch sites;
+- `ggml/src/ggml-cuda/mmvq.cu`: fused quantized vector epilogue;
+- `ggml/src/ggml-cuda/mmvf.cu`: fused floating vector epilogue.
 
-ggml/src/ggml-cuda/ggml-cuda.cu (ggml_cuda_should_fuse_mul_mat and the fusion_data{} call sites, evidence/verification only); ggml/src/ggml-cuda/mmvq.cu, mmvf.cu (evidence only).
-
-ggml/src/ggml-cuda/ggml-cuda.cu (valid_glu_ops at ~1754, fusion call sites ~3736-3965; evidence, and edit site if a follow-up patch is scoped); ggml/src/ggml-cuda/mmvq.cu, mmvf.cu (evidence).
+The already-native supported vector GLU path is evidence, not work to reimplement.
 
 ## Validation
 
-Offline only: grep/read verification per step 1 above. No hardware run needed for this disposition; if step 1 finds a real gap, downgrade disposition to TODO in a follow-up pass rather than here.
+Stage-0/source:
+- exact upstream allow-list and dispatch coverage;
+- target-model graph evidence for any claimed uncovered canonical GLU op/path;
+- QFP13 frequency/launch evidence when the candidate affects decode launch count.
 
-Offline: grep verification per steps 1-2. If a follow-up patch is written, it needs patch-lint, patch-rebase-check, and a test-backend-ops GLU/mul_mat_vec case per SIGMOID or GEMM addition, plus bit-identical/paired-perf hardware evidence via validation_campaign (not run here).
+If a vector coverage extension is implemented:
+- focused backend-op positive case for the newly accepted canonical GLU op;
+- negative/fallback controls;
+- deterministic output parity;
+- launch-count and paired performance evidence on gfx1100/gfx1201.
 
-## Effort & Risk
-
-S for this item as written (evidence + scoping only); any actual GEMM-path fusion follow-up would be L (new kernel family design).
-
-## Standards
-
-Pattern-matched only; correctness before launch reduction; preserve fallback; no broad epilogue fusion.
+If GEMM/prefill work is proven necessary, define its own correctness/perf matrix before implementation; do not reuse vector acceptance evidence.
 
 ## Acceptance Criteria
 
-Eligible paths fuse correctly and show repeatable TG benefit with non-target paths unchanged; unsupported patterns fall back; PRBE38 depends on this validated root.
+- No work is performed for canonical GLU vector cases already fused by upstream b11126/current pin.
+- Any implemented extension corresponds to a production target-model graph that upstream currently leaves unfused.
+- Numerical semantics for the newly accepted op/path are explicitly proven; unsupported cases fall back unchanged.
+- PRBE38 remains the sole owner for literal UNARY->MUL graphs.
+- A launch/memory/performance benefit is measured for the real target path; otherwise close/park the uncovered theoretical gap.
+
+## Effort & Risk
+
+S for Stage-0 coverage proof. M for a narrow vector-op extension. A real GEMM/prefill epilogue design may be L and must be re-estimated after the source/trace proof.
+
+## Standards
+
+- Do not reimplement upstream-supported canonical GLU fusion.
+- Production usage before theoretical capability work.
+- One owner per graph representation.
+- Preserve fallback and numerical semantics.
 
 ## Notes
 
@@ -73,31 +108,22 @@ Supersedes: RD45
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd45
 
-append
+Historical 2026-09-24 closure as fully upstream-absorbed was too broad: it assumed SIGMOID and general GEMM coverage without proving either. The subsequent reopening correctly identified those possible gaps, but mixed them with already-covered behavior. This revision retains only the unresolved **canonical GLU** coverage question and explicitly routes literal `UNARY->MUL` to PRBE38.
 
-2026-09-24 relevance at b11126: UPSTREAM-ABSORBED. Verified real anchors: ggml/src/ggml-cuda/ggml-cuda.cu ~3750-3770 (ggml_cuda_mm_fusion_args_host fusion_data{} populated with gate/x_bias/gate_bias/x_scale/gate_scale/glu_op/glu_limit after ggml_cuda_should_fuse_mul_mat(...) proves the gate_proj+up_proj+GLU topology, dispatching ggml_cuda_mul_mat_vec_q with &fusion_data); mmvq.cu ~599-758 and mmvf.cu ~58-382 (has_fusion-templated GEMV kernels compute value *= silu(gate_value) inline). This is native upstream pattern-matched GEMV epilogue activation fusion, not fork-derived. Not independently confirmed whether SIGMOID (vs only SILU/SwiGLU-family glu_op) and both GEMV+GEMM paths are fully covered -- flagged as the one remaining verification step in this item's own steps section rather than assumed. GPT design gateway was unavailable this session (rejected submissions, see PRBE32 notes); disposition written directly from verified source since evidence was strong enough not to need design synthesis.
-
-2026-09-24 GPT review req_c18183e0a9034c94 applied: WRONG disproven -- valid_glu_ops (ggml-cuda.cu:1754) has no SIGMOID, and fusion only reaches mul_mat_vec_f/_q (GEMV/decode), not GEMM; reopened to pending, narrowed to the SIGMOID/GEMM gap.
+Related: PRBE38 (literal unary-gated topology), QFP13 (launch ranking).
 
 ## Change Log
 
 - 2026-09-09T10:56:01.682197+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:13:15.050723+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- 2026-09-24: Reopened after source review disproved blanket SIGMOID/GEMM coverage.
+- 2026-10-04 (agent): Removed contradictory upstream-absorbed/reopened instructions; retained PRBE37 only as the canonical GLU coverage-gap owner and separated literal UNARY->MUL ownership to PRBE38.
 
 ## Ledger-events
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.296126+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:43.050932+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T02:59:52.821708+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_030005_amd-streamfus-successors-prbe_8761
-- 2026-09-10T03:00:05.781141+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:31:11.004582+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:notes
-- 2026-09-24T02:31:15.820226+00:00 (updated-by): Updated: section:notes
-- 2026-09-24T02:31:20.271685+00:00 (state-transition): State: pending → superseded
 - chg_20260924_023553_re-scoped-11-rdna-boost-planni_1625
-- 2026-09-24T02:36:19.155839+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T04:35:14.220144+00:00 (state-transition): State: superseded → pending
-- 2026-09-24T04:36:22.208099+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk
-- 2026-09-24T04:36:47.670030+00:00 (updated-by): Updated: section:notes
+- 2026-09-24T02:31:20.271685+00:00 (state-transition): State: pending -> superseded
+- 2026-09-24T04:35:14.220144+00:00 (state-transition): State: superseded -> pending
