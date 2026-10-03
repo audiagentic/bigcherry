@@ -77,6 +77,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 1308 (rollback snapshots without CONT, BIGCHERRY_ROLLBACK_NO_CONT=1; source: qwen4exp.cpp [TAG_RECURRENT_ROLLBACK_SPLITS], n_rs_seq+1 = 4 slots per recurrent layer, each CONT + CPY = 8 runtime copy kernels per layer, ~89 of ~108 copies/token): with 1307 on in both arms, greedy output IDENTICAL; kernels/token 1270 -> 1212 (cumulative with 1307: 1307 -> 1212, -7%); quick screens ~24K 46.0 vs 46.8/46.1 ms/step (neutral), ~80K 52.2 vs 54.3/53.3 (~-3%, outside both baselines). Next: full ABBA profile v2 vs v2+1307+1308 at 10K/80K for adoption.
 
+2026-10-04 ownership-map update for the 'Runtime copyBuffer* pair (~108 kernels/token) - unassigned evidence task' row: ATTRIBUTED and IMPLEMENTED. Kernel-neighbourhood attribution on flashnext-v2-profile/d8192 (no API trace needed): ~89 of ~108 copies/token are runs of 8 copies after concat_non_cont, from qwen4exp.cpp [TAG_RECURRENT_ROLLBACK_SPLITS] (n_rs_seq+1 = 4 rollback slots per recurrent layer, each ggml_cpy(ggml_cont(tail), dst) = 2 copies). Owner: patch 1308_qwen4exp_rollback_copy_no_cont (BIGCHERRY_ROLLBACK_NO_CONT=1, copies the strided tail directly). Evidence: greedy IDENTICAL; kernels/token 1270 -> 1212 on top of 1307; ~80K quick screen ~-3% ms/step. Adoption ABBA (v2 vs v2+1307+1308, flashnext-v2-fusion-ab-2): ~10K decode 73.8/73.6 -> 76.0/75.7 t/s (+3%, complete separation); ~80K pending. Remaining ~19 copies/token: singleton copies before k_bin_bcast (unary/get_rows/cpy_scalar neighbours) - unassigned.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -160,3 +162,4 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-03T20:00:05.640046+00:00 (updated-by): Updated: section:notes
 - 2026-10-04 (agent): Consolidated QFP13 as the profiling/ranking/acceptance umbrella; removed duplicate PRBE38 backend design; assigned canonical owners; separated opportunity counts from proven reusable launches.
 - 2026-10-03T20:26:08.405034+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T20:32:18.645038+00:00 (updated-by): Updated: section:notes
