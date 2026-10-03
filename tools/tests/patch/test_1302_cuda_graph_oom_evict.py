@@ -59,6 +59,8 @@ class Patch1302Mechanics(unittest.TestCase):
                             out.index("static void ggml_cuda_graph_update_executable("))
             self.assertIn("err == cudaErrorMemoryAllocation", out)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1302_graph_oom_evict", out)
+            # The format string's newline must stay a C escape, not a raw newline inside the literal.
+            self.assertIn('evicted=%zu\\n", cuda_ctx->device, evicted);', out)
 
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
