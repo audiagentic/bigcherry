@@ -127,6 +127,7 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 ## Ledger-events
 
 
+
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T03:48:27.574308+00:00 (updated-by): Updated: section:notes
@@ -157,6 +158,7 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 - chg_20261003_104706_faster-long-context-decoding-f_1057
 - 2026-10-03T10:47:23.068845+00:00 (updated-by): Updated: section:ledger-events
 
+- chg_20261003_151601_flash-next-now-runs-240k-conte_5065
 ## Reviews
 
 - RV4214
@@ -171,3 +173,4 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 2026-10-04 PROFILE ABBA (flashnext-profile-ab-1, 512 decode tokens): production (b-flash-deploy-1, q8_0/q8_0, -c 196608, -ts 2,2,3) vs 1303 profile (b-deploy-1303 = deploy + 1302 + 1303: f16/f16, -c 245760, BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0, -ts 0.31,0.27,0.42, -b 512, token_embd on CPU). ~10K: pp 1032/1038 -> 1065/1058 (+2.5%), tg 68.5/69.6 -> 73.3/74.0 (+6.5%), ms/step 44.8/44.3 -> 43.4/43.5 (-2.5%; rest is acceptance 345-346 -> 351-353 of ~490). ~80K: pp 835/847 -> 903/902 (+7.4%), tg 50.0/49.7 -> 52.9/53.7 (+7%), ms/step 56.9/56.9 -> 54.1/53.6 (-5.4%), acceptance equal (331-334). Complete separation on every metric at both depths. Draft (6900) ~6.5 ms per 3-token draft at 10K, ~9.2 ms at 80K (15-17% of step), unchanged between profiles.
 
 PRODUCTION PROFILE v2 (Flash-Next, 240K, f16 KV): build b-deploy-1303 (experiment deploy-plus-1302-1303: 1291, 1292, 1294, 1297, 1302, 1303). Env: BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 BIGCHERRY_DRAFT_VOCAB_N=65536. llama-server -m Qwen3.8-Flash-Next-UD-IQ4_XS -ngl 99 --fit off -c 245760 -ub 512 -b 512 --flash-attn on -ot '^per_layer_token_embd\.weight$=CPU' -ot '^token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 0.31,0.27,0.42 -md mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf --spec-type draft-mtp --spec-draft-n-max 3 --no-spec-draft-backend-sampling -ctk f16 -ctv f16 -ctkd f16 -ctvd f16 --allreduce cpu-root. Deep fill to 228K tokens verified (593 pp / 44.6 tg). Do not exceed 240K: 248K loads but prefill collapses to ~85 t/s.
+- 2026-10-03T15:16:07.855086+00:00 (updated-by): Updated: section:ledger-events

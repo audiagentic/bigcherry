@@ -1,3 +1,69 @@
+---
+id: RNX06
+order: 6
+plan: patching-r9700-cross-rdna
+state: pending
+created-at: '2026-10-03T01:33:14.272453+00:00'
+breadth: ''
+skill: advanced
+created-by: codex
+work: L
+priority: P1
+---
+
+# R9X06 — Routed-expert residency cache and pinned-host backing
+
+## Description
+
+Evaluate a llama.cpp-native VRAM hot-expert cache backed by pinned system memory as a conceptual transplant of the r9700 LRU design, preserving ggml tensor ownership, quant layout, split semantics, and allocator lifetime.
+
+## Steps
+
+- Trace Qwen4Exp expert weights through graph construction, loading, buffer placement, MUL_MAT_ID/MMQ dispatch, and meta/tensor-split ownership.
+- Use 1279 routing dumps to simulate static placement and LRU hit-rate/capacity curves before implementation.
+- Define per-layer/per-rank resident slots, deterministic replacement, no eviction during dispatch, explicit capacity/disable control, stream dependencies, native quant representation, and hit/miss/bytes/eviction counters.
+- Compare static-frequency placement before accepting dynamic LRU complexity; test pinned host versus staged DMA on poor mapped-host systems.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+- r9700_vllm/moe/cache.py
+- kernels/third_party/davetha/r4d_lru.hip
+- tuning/lru_gather_bench.py
+- src/models/qwen4exp.cpp
+- ggml/src/ggml-cuda/mmq.cuh
+
+## Validation
+
+Forced hit/miss/eviction, all-zero/one-hot/Zipf/uniform routes, context reset, MTP, tensor split, exact logits/tokens, PCIe bytes/token, E2E, allocator/lifetime integrity, and realistic VRAM-budget comparisons.
+
+## Effort & Risk
+
+
+
+## Standards
+
+No unsafe GGUF mutation or cross-rank implicit sharing; preserve Apache-2.0 provenance for davetha code if adapted.
+
+## Acceptance Criteria
+
+- Reject early if realistic capacity cannot reduce host traffic.
+- Promotion requires a documented VRAM-budget E2E win and no lifetime corruption.
+- Prefer static top-N placement when it matches LRU results.
+
+## Notes
+
+Original source alias is R9X06. Status remains feasibility-gated. Related owners 1235, 1280, 1286, 1292. Review ownership overlap with MET01–MET06 before reconciling.
+
+Verbatim legacy source retained during R9X→RNX migration:
+
 # R9X06 — Routed-expert residency cache and pinned-host backing
 
 Status: planned / feasibility-gated
@@ -5,6 +71,10 @@ Proposed patch: `1307_r9x_moe_expert_cache`
 Depends on: R9X01; routing census from 1279
 External source: `r9700_vllm/moe/cache.py`, `kernels/third_party/davetha/r4d_lru.hip`, `tuning/lru_gather_bench.py`
 Related BigCherry memory work: 1235, 1280, 1286, 1292
+
+
+
+GPT design pass (req_83e7cdc000be4b9e): keep blocked pending MET ownership resolution. RNX06 and QFN02 both consume the 1279 routing evidence and propose placement changes; resolve ownership and the authoritative placement contract before coding.
 
 ## Goal
 
@@ -41,3 +111,13 @@ This idea is mostly `common`; its benefit is governed by PCIe/system-memory band
 First use `1279_moe_routing_dump` to measure per-layer working-set/hit-rate curves and simulate LRU capacities offline. Reject 1307 early if realistic capacities cannot remove enough host traffic. Then test exact logits/tokens under forced hits/misses/evictions, all-zero/one-hot/Zipf/uniform routes, context reset, MTP, and tensor split. Benchmark PCIe bytes/token and E2E, not cache-manager kernel time alone.
 
 Promotion requires an E2E win at a documented VRAM budget and no allocator/lifetime corruption. If a static top-N placement gives the same result, prefer the simpler design.
+
+## Change Log
+
+- 2026-10-03T01:33:14.272453+00:00 (created-by): Created by codex
+- 2026-10-03T01:38:55.959835+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T02:18:23.490372+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4211

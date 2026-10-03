@@ -1,3 +1,71 @@
+---
+id: RNX05
+order: 5
+plan: patching-r9700-cross-rdna
+state: pending
+created-at: '2026-10-03T01:33:08.311145+00:00'
+breadth: ''
+skill: advanced
+created-by: codex
+work: L
+priority: P3
+---
+
+# R9X05 — MXFP4/FP8 grouped MoE and skinny GEMM extraction
+
+## Description
+
+Determine whether OCP-MXFP4-weight × FP8-activation grouped MoE and skinny FP8 GEMM concepts have a deployable llama.cpp quantized model path. Keep format work separate from ordinary MMQ tile tuning.
+
+## Steps
+
+- Review 1237, 1273, and 1274 plus current quant type/conversion code before inventing a GGML type.
+- Answer whether GGUF can represent weights/scales, conversion is offline/load-time, FP8 activation is usable per target, and bandwidth reduction offsets conversion/portability cost.
+- Implement 1305 only with real type/storage and expert-map integration; implement 1306 only after shared format helpers exist and traces show a separate skinny hotspot.
+- Retain existing compact-grid ownership and provenance/attribution for adapted source.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+- kernels/r9k_moe_mxfp4a8.hip
+- kernels/r9k_gemm_fp8.hip
+- r9700_vllm/kernels/moe.py
+- tools/gen_kmag.py
+- tests/test_fold_mxfp4.py
+- ggml/src/ggml-cuda/mmq.cuh
+- ggml/src/ggml-cuda/mmvq.cu
+
+## Validation
+
+Bit/ULP unpack, scales, padding, expert-boundary and output tests; hostile routing; M crossover; 1/2/3-GPU split; conversion/load cost, VRAM bytes, kernel/E2E speed, and source-license provenance.
+
+## Effort & Risk
+
+
+
+## Standards
+
+RDNA4 is reference; RDNA3 distinguishes algorithm portability from native datatype support; RDNA2 uses existing Q4/Q8 or FP16/BF16 concepts.
+
+## Acceptance Criteria
+
+- Acceptance requires a real GGUF/model path and repeatable E2E win.
+- If native format is not deployable, port only layout/epilogue ideas into existing Q/IQ kernels and close the format-specific experiment.
+- Do not software-emulate FP8 for its own sake on unsupported generations.
+
+## Notes
+
+Original source alias is R9X05. Existing owners: 1203, 1208, 1237, 1241, 1245, 1262, 1265, 1267, 1273, 1274. Proposed slots 1305 and 1306.
+
+Verbatim legacy source retained during R9X→RNX migration:
+
 # R9X05 — MXFP4/FP8 grouped MoE and skinny GEMM extraction
 
 Status: planned
@@ -35,3 +103,10 @@ RDNA4: native FP8/MXFP4 path is the reference. RDNA3: distinguish algorithm port
 Bit/ULP tests for unpack, scales, padding rows, expert boundaries and output; hostile routing distributions; all M crossover points; 1/2/3-GPU split. Measure conversion/load cost and VRAM bytes as well as kernel/E2E speed. Validate source license/provenance: retain required attribution for adapted source and do not silently copy third-party code with different provenance.
 
 Acceptance requires a real GGUF/model path and E2E win. A synthetic FP8 GEMM win without a deployable storage/conversion path is insufficient.
+
+
+
+## Change Log
+
+- 2026-10-03T01:33:08.311145+00:00 (created-by): Created by codex
+- 2026-10-03T01:38:49.432431+00:00 (updated-by): Updated: section:notes

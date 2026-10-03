@@ -2,6 +2,7 @@
 
 Status: active planning group
 Prefix: `R9X`
+Planning API IDs: `RNX01`–`RNX11` (the original `R9X##` values remain aliases in titles and evidence notes)
 Source baseline: `bkvargyas/r9700-stack@8dfda41f25f8ff6837cce48bd52b7fd249648f0e`
 BigCherry branch at plan creation: `patch-refactor`
 BigCherry patch high-water mark at plan creation: `1292_kpool_tail_truncate`
