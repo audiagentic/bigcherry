@@ -53,6 +53,9 @@ ms/step ABBA at matched context; no context loss.
 
 Split screens 2026-10-03 (QFN01 notes): 2,2,3.4 49.3; 2,2,3.8 49.1; 1.9,2.1,3 48.1; 2.1,2.1,2.8 48.0; 2.2,2.2,2.6 47.4; 2.3,2.3,2.4 46.8; 2.4,2.4,2.2 46.8 ms/step vs ~48.3. Global skew loses context (2.3,2.3,2.4 fits only 160K q8). GPT RV4215 rank #4. Tools: tools/lab/flash-next/long-ctx-profile.sh perf/timing/synctrace modes, sync-tracer.c.
 
+2026-10-04 profile v2 decode census (flashnext-v2-profile, rocprofv3, tools/lab/flash-next/rank-census.py; per generated token, profiler-slowed). GPUs are busy only 39-44% of wall at every depth: ~56-61% of each token has no kernel running (host scheduling/sync/launch gaps) - the largest single lever. Slow rank flips with depth because 1303 put all attention on the two XTX: ~10K: R9700 slowest (moe-mmvq 1.42 vs 0.85 ms/tok on XTX at 42% vs 27-31% expert share), XTX wait ~1 ms/tok more in allreduce. ~80K: XTX flash-attn 1.46-1.53 ms/tok, R9700 now waits (allreduce 3.17 vs 2.5-2.75). ~160K: XTX flash-attn 3.4-3.7 ms/tok, R9700 allreduce wait 5.7 vs 2.2-3.0 ms/tok -> ~3 ms/tok of R9700 idle. Kernels/token ~1300-1410 per GPU (elementwise ~370-400, quantize ~180-200, mmvq ~150-166). Draft (6900): 1.2 ms/tok at 10K, 3.1 at 160K (attention 1.5). Next: (a) synctrace/apitrace modes on profile v2 to attribute the idle gaps; (b) depth-aware attention placement (QFP07): give the R9700 attention share at long context (rotated heads), trading memory headroom; (c) expert share off the R9700 at short context where VRAM allows.
+
 ## Change Log
 
 - 2026-10-03T15:21:02.481672+00:00 (created-by): Created by agent
+- 2026-10-03T16:05:27.527362+00:00 (updated-by): Updated: section:notes
