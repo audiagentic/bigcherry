@@ -39,8 +39,12 @@ post({"prompt": "Hello", "n_predict": 8, "cache_prompt": False})
 rows = []
 for d in depths:
     text = (corpus * (1 + 4 * d // max(1, len(corpus))))[: 4 * d]  # ~4 chars/token
-    t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 128, "cache_prompt": False,
-              "temperature": 0, "ignore_eos": True})["timings"]
+    import os
+    cache = os.environ.get("CACHE") == "1"
+    if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
+        post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})
+    t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": int(os.environ["DECODE_N"]),
+              "cache_prompt": cache, "temperature": 0, "ignore_eos": True})["timings"]
     r = {k: t.get(k) for k in ("prompt_n", "prompt_per_second", "predicted_n", "predicted_per_second", "draft_n", "draft_n_accepted")}
     rows.append(r)
     print(f"{name}: prompt {r['prompt_n']} tok at {r['prompt_per_second']:.1f} t/s, decode {r['predicted_per_second']:.1f} t/s, accepted {r['draft_n_accepted']}/{r['draft_n']}", flush=True)
@@ -85,4 +89,22 @@ for path in sorted(glob.glob(f"{sys.argv[1]}/**/*memory_copy_trace.csv", recursi
     print("device-to-device copies by (src, dst, stream): calls, total ms")
     for k, (n, ms) in sorted(groups.items(), key=lambda kv: -kv[1][1])[:15]:
         print(f"  {k}: {n} calls, {ms:.1f} ms")
+PY
+[ "$mode" = decode ] && python3 - "$out/rocprof" "$out/decode.timings.json" <<'PY'
+# Decode-window kernel table: rocprof traces the whole process (including the cache-fill prefill), so keep only
+# kernels in the final predicted_n / predicted_per_second seconds of the trace.
+import csv, glob, json, sys, collections
+t = json.load(open(sys.argv[2]))[-1]
+win_ns = t["predicted_n"] / t["predicted_per_second"] * 1e9
+path = sorted(glob.glob(f"{sys.argv[1]}/**/*kernel_trace.csv", recursive=True))[0]
+rows = list(csv.DictReader(open(path)))
+end = max(int(r["End_Timestamp"]) for r in rows)
+agg = collections.defaultdict(lambda: [0, 0])
+for r in rows:
+    if int(r["Start_Timestamp"]) >= end - win_ns:
+        a = agg[r["Kernel_Name"]]; a[0] += 1; a[1] += int(r["End_Timestamp"]) - int(r["Start_Timestamp"])
+total = sum(v[1] for v in agg.values())
+print(f"decode window {win_ns/1e9:.1f} s ({t['predicted_n']} tokens): kernel total {total/1e6:.1f} ms")
+for k, (n, ns) in sorted(agg.items(), key=lambda kv: -kv[1][1])[:25]:
+    print(f"{100*ns/total:5.1f}% {n:7d} {ns/1e6/t['predicted_n']:7.3f} ms/tok  {k[:100]}")
 PY
