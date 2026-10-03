@@ -131,9 +131,11 @@ _HEAD = """            nullptr, nullptr, il);
 
     if (cparams.bc_out_trim != nullptr) {
         // BigCherry 1297: draft logits over the trimmed vocabulary, scattered into -inf full-vocabulary logits
-        const int64_t n_out   = cur->ne[1];
+        // flatten whatever leading layout the head input has to [n_embd, n_out]
+        const int64_t n_out   = ggml_nelements(cur) / cur->ne[0];
         const int64_t n_trim  = cparams.bc_out_trim->ne[1];
         const int64_t n_vocab = model.output->ne[1];
+        cur = ggml_reshape_2d(ctx0, ggml_cont(ctx0, cur), cur->ne[0], n_out);
         ggml_tensor * small = ggml_mul_mat(ctx0, cparams.bc_out_trim, cur); // [n_trim, n_out]
         ggml_tensor * idx = cparams.bc_out_trim_ids;
         for (int64_t t = 1; t < n_out; ++t) {
