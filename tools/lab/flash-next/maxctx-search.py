@@ -16,8 +16,9 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILE = os.path.join(HERE, "long-ctx-profile.sh")
 STEP = 8192
-MAX_TRIES = 5
-SHIFT = 0.04  # share moved away from the OOM device per retry
+MAX_TRIES = 6
+SHIFT = 0.02  # share moved away from the OOM device per retry
+CAP_GB = [25.75, 25.75, 34.2]  # XTX0, XTX1, R9700 usable VRAM
 
 
 def run(bin_, out, ts, ctx, ctk, ctv, ub):
@@ -37,29 +38,40 @@ def run(bin_, out, ts, ctx, ctk, ctv, ub):
     return ok, oom_dev, vram, timing
 
 
-def shift(ts, dev):
+def shift(ts, dev, free):
+    """Move SHIFT of split share off the OOM device onto the device with the most free VRAM last time
+    a config loaded (falls back to the other two equally)."""
     if dev is None or dev > 2:
         return None
     w = list(ts)
     take = min(SHIFT, w[dev] * 0.5)
     w[dev] -= take
     others = [i for i in range(3) if i != dev]
-    for i in others:
-        w[i] += take / len(others)
+    if free:
+        w[max(others, key=lambda i: free[i])] += take
+    else:
+        for i in others:
+            w[i] += take / len(others)
     return w
 
 
+LAST_FREE = []
+
+
 def try_ctx(bin_, root, ts0, ctx, ctk, ctv, ub):
+    global LAST_FREE
     ts = list(ts0)
     for attempt in range(MAX_TRIES):
         out = os.path.join(root, f"c{ctx}-t{attempt}")
         ok, dev, vram, timing = run(bin_, out, ts, ctx, ctk, ctv, ub)
         tag = ",".join(f"{w:.3f}" for w in ts)
         if ok:
+            if len(vram) >= 3:
+                LAST_FREE = [CAP_GB[i] - vram[i] for i in range(3)]
             print(f"  ctx {ctx} ts {tag}: OK  vram {vram}  {' | '.join(timing)}", flush=True)
             return ts
         print(f"  ctx {ctx} ts {tag}: FAIL (oom device {dev})", flush=True)
-        ts = shift(ts, dev)
+        ts = shift(ts, dev, LAST_FREE)
         if ts is None:
             return None
     return None
@@ -71,7 +83,7 @@ def main():
     hi = int(sys.argv[7]) if len(sys.argv) > 7 else 262144
     os.makedirs(root, exist_ok=True)
     print(f"== K {ctk} V {ctv} ub {ub}: search {lo}..{hi}", flush=True)
-    best_ts = [0.30, 0.30, 0.40]
+    best_ts = [0.31, 0.27, 0.42]  # XTX1 carries ~4 GB of unsplit data, so it gets less
     good = try_ctx(bin_, root, best_ts, lo, ctk, ctv, ub)
     if good is None:
         print(f"== K {ctk} V {ctv} ub {ub}: even {lo} fails", flush=True)
