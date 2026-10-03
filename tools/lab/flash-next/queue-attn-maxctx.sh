@@ -2,6 +2,8 @@
 # 1303: f16-K/q8_0-V max context with KV heads pinned (unrotated) to each device pair; -ts adapts to fill VRAM.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
+export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
+export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
