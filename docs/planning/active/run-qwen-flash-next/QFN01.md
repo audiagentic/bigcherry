@@ -126,6 +126,7 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 
 ## Ledger-events
 
+
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T03:48:27.574308+00:00 (updated-by): Updated: section:notes
@@ -153,3 +154,11 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 - chg_20261003_084245_faster-mtp-speculative-decodin_6706
 - 2026-10-03T08:42:48.723602+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-03T09:09:44.321472+00:00 (updated-by): Updated: section:notes
+- chg_20261003_104706_faster-long-context-decoding-f_1057
+- 2026-10-03T10:47:23.068845+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4214
+
+2026-10-03 split skew + PRBE115 quick screens (ABA, 24K depth, deployment candidate). Tensor split at 128K ctx vs 2,2,3 (~48.3 ms/step): 2,2,3.4 49.3; 2,2,3.8 49.1; 1.9,2.1,3 48.1; 2.1,2.1,2.8 48.0; 2.2,2.2,2.6 47.4; 2.3,2.3,2.4 46.8; 2.4,2.4,2.2 46.8 -> R9700 is the slow rank, gain saturates at ~-3% from 2.3,2.3,2.4. That split fits only 160K q8_0/q8_0 (176K/192K fail; f16-K/q8_0-V fails at 160K) -> middle tier, neither max context (2,2,3 @192K) nor max speed (4,4,3 tiers); owner: not useful, dropped. 1301 (PRBE115, Q8_0 F32-act at MTP widths 2-4, activation proven): neutral (48.8 vs 48.3/49.3; +RDNA4 48.2 vs 49.3/48.3), acceptance slightly lower -> parked. 1205 / 1206 quick screens: neutral. 6900 draft at 24K: ~7.4 ms per 3-token draft (~15% of step).
