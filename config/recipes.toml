@@ -422,6 +422,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # Long-context fit: deployment candidate + 1302 (graph OOM evict) + 1303 (separate attention/KV split, env-gated).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split"]
 
+[experiment.deploy-v2-plus-1295]
+# 1295 QSA gather decode screened on production profile v2 (deploy + 1302 + 1303, f16/f16 240K).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1295_qsa_gather_decode"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
