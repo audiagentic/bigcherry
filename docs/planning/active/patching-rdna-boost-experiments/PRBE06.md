@@ -8,81 +8,103 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P0
 ---
 
-# Evaluate RMS norm direct Q8_1 production
+# Eliminate RMSNorm -> Q8_1 quantize launches for MMVQ consumers
 
 ## Description
 
-TODO, hard-dependent on PRBE05. Evaluate direct Q8_1 production in RMS-norm's own kernel, publishing straight into PRBE05's cache instead of relying on a later separate quantize kernel. Must not be evaluated until PRBE05's cache correctness and capture lifecycle are proven.
+PRBE06 is the next QFP13 quantization target after the 1307/PRBE05 reuse experiment. 1307 reduced `quantize_q8_1` from ~183 to ~149/token on each XTX (-19%) and total kernels from ~1307 to ~1270/token, but decode was only neutral to ~1-2% better in drift-limited screens. The remaining trace contains ~41 `rms_norm -> quantize_q8_1` adjacencies/token, large enough to justify a producer-side launch-elimination experiment.
 
-## Steps
+This item does **not** extend the Q8_1 cache. It removes a producer->quantizer boundary when the exact RMSNorm result is immediately consumed as Q8_1 by MMVQ. Prefer a narrow extension of existing RMSNorm/MMVQ helpers over a new cache subsystem or kernel family. Native F32 RMSNorm output remains available whenever the graph requires it.
 
-1. Do not start until PRBE05's adversarial correctness matrix and capture-lifecycle gates pass -- this item compares B+PRBE05 against B+PRBE05+PRBE06, never against raw baseline B.
-2. Add an exact graph-level eligibility selector BEFORE enabling direct production: ggml_cuda_op_rms_norm (norm.cu:478) has no visibility into its downstream consumer, so gate direct-Q8_1 production on an explicit check that the RMS-norm (or RMS-norm+MUL fused, norm.cu:502) output tensor is consumed by an eligible MMVQ dispatch (matching shape/dtype/stride the MMVQ seam in PRBE05 requires) -- do not quantize eagerly based on shape alone, since ggml_cuda_op_rms_norm's output may feed unrelated non-MMVQ consumers.
-3. "Quantize immediately after the RMS kernel enqueue" is still a second, separate quantization kernel launch, not direct in-kernel Q8_1 production -- treat it as such (a scheduling/fusion optimization, not literal single-launch production) unless implementing a genuine fused kernel per step 4.
-4. If pursuing true direct production: extend rms_norm_f32_cuda (norm.cu:304) and its templated rms_norm_f32<block,fused,...> launches (norm.cu:311-401) with a new template variant that emits Q8_1 blocks using the exact same semantics as quantize_row_q8_1_cuda, writing into PRBE05's cache via its reserve/publish API in the same kernel launch. If instead supporting ggml_cuda_op_rms_norm_fused (norm.cu:502), cache the actual mul_tensor->data (post-MUL) output, not the pre-MUL RMS intermediate -- the two are different tensors and only the actually-consumed one may be cached.
-5. Restrict to qualifying patterns only (explicit output shape/stride/dtype checks, proven downstream MMVQ consumer per step 2); any nonqualifying pattern uses the existing native path unchanged.
-6. Verify direct-output equivalence against the standalone quantizer/reference path via independent re-quantize + byte-compare.
-7. Cover graph/non-graph execution and native fallback; measure quantization launch counts, memory, and graph effects.
-8. Compare B+PRBE05 vs B+PRBE05+PRBE06 with balanced repeats; record rejection explicitly if the marginal effect is not a statistically supported positive.
+## Stage 0 — Prove The Exact 41/token Topology
 
-## Detailed Solution & Technical Design
+Before editing production code:
+1. Extend/use QFP13 n-gram attribution to map the ~41/token `rms_norm -> quantize_q8_1` transitions to graph tensors and `ggml_cuda_mul_mat_vec_q` calls.
+2. For each class record whether the RMSNorm output has one consumer or multiple consumers, whether the F32 output must remain materialized, dimensions/strides, and which device executes it.
+3. Separate plain RMSNorm from `ggml_cuda_op_rms_norm_fused` (RMSNorm+MUL). For the fused form the candidate value is the **post-MUL output** actually consumed by MMVQ, not the pre-MUL RMS intermediate.
+4. Predict the maximum removable launches/token. Continue only if >=20 launches/token are legally removable on the production path; otherwise return the item to QFP13 for re-ranking.
 
-This is a dependent producer optimization, not a cache redesign: RMS-norm's kernel template already exists at multiple specializations (rms_norm_f32<256,false>, rms_norm_f32<256,true> for the fused-with-mul variant, at norm.cu:311/319/366/374/393/401) -- the direct-Q8_1 output path should be a new templated variant or a post-kernel step that reuses the already-computed F32 values while they're still warm, publishing via PRBE05's cache API rather than requiring a second kernel launch to re-read from global memory.
+## Implementation Plan
 
-## Code Samples & Guidance
+1. Add one graph-level eligibility decision at the existing CUDA/HIP dispatch layer, where both producer and consumer relationships are visible. Do not make `ggml_cuda_op_rms_norm()` guess downstream use from shape.
+2. Eligible fast path requires: vector/decode MMVQ consumer; exact supported contiguous/stride layout; F32 producer semantics; Q8_1 dimensions compatible with the native quantizer; no alias/lifetime ambiguity; and a graph topology that permits the standalone quantize node to be elided.
+3. Reuse the existing RMSNorm kernel/template and the existing Q8_1 block math. Factor the smallest device-side Q8_1 block primitive out of the standalone quantizer if necessary so direct production and `quantize_row_q8_1_cuda` share one implementation. **Do not copy Q8_1 scale/round/packing arithmetic into `norm.cu`.** The code-size gate is no duplicated quantizer implementation and no new `.cu/.cuh` kernel family.
+4. Add an optional Q8_1 destination to the qualifying RMSNorm launch. Each qualifying producer writes the normal F32 destination when required and Q8_1 blocks in the same launch. If source mapping proves the F32 value is dead after MMVQ consumption, allow a later follow-up to suppress the F32 store; do not combine that semantic change with the first experiment.
+5. Feed the direct Q8_1 pointer into the existing `mul_mat_vec_q_switch_type(...)` path and suppress only the corresponding standalone `quantize_row_q8_1_cuda` launch. PRBE05 cache lookup remains for other activations/repeated consumers; direct producer output must not require a cache lookup to be useful.
+6. For multi-consumer RMSNorm outputs, either publish the direct Q8_1 value through PRBE05's already-proven stable storage/lifetime mechanism or fall back. Do not add a second ownership/lifetime system.
+7. Unsupported graph, layout, capture, allocation, or identity cases execute the current RMSNorm + standalone quantize path unchanged.
 
-Real anchors verified in b11126 (re-copy exact literal text before authoring Edit() anchors):
-- ggml/src/ggml-cuda/norm.cu:478 `void ggml_cuda_op_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst)`.
-- ggml/src/ggml-cuda/norm.cu:502 `void ggml_cuda_op_rms_norm_fused(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * mul_tensor)` -- the fused RMS-norm+MUL producer, the more likely integration point since its output already feeds a downstream consumer.
-- ggml/src/ggml-cuda/norm.cu:304 `static void rms_norm_f32_cuda(...)` and the templated `rms_norm_f32<block, fused, ...>` kernel launches at norm.cu:311-401.
-patch.toml sketch: schema=1, id="12xx_rd10_rms_norm_direct_q81", state="untested", kind="enhancement", backend="hip", experiment-contract="RD10-RMSNORM-DIRECT-Q81", requires=["12xx_rd09_q81_activation_cache_foundation"], validation-architectures=["gfx1100","gfx1201","gfx1030"].
+## Code / Reuse Guidance
+
+Verified b11126 planning anchors:
+- `ggml/src/ggml-cuda/norm.cu`: `rms_norm_f32_cuda(...)` around 304 and `rms_norm_f32<block, fused, ...>` launches around 311-401.
+- `ggml/src/ggml-cuda/norm.cu`: `ggml_cuda_op_rms_norm(...)` around 478.
+- `ggml/src/ggml-cuda/norm.cu`: `ggml_cuda_op_rms_norm_fused(...)` around 502.
+- `ggml/src/ggml-cuda/mmvq.cu`: `ggml_cuda_mul_mat_vec_q(...)` around 1421, `quantize_row_q8_1_cuda(...)` around 1506, and `mul_mat_vec_q_switch_type(...)` around 1531.
+
+Preferred source shape is one shared Q8_1 block conversion primitive used by both the native standalone quantizer and the RMSNorm direct-output specialization. If current quantizer structure cannot be shared without a broad refactor, keep the experiment narrow and document the blocker rather than cloning arithmetic.
+
+Pseudo-interface only; exact signature follows current source:
+
+```cpp
+// shared device primitive; native quantizer and producer path both call it
+q8_1_block make_q8_1_block(float values[QK8_1]);
+
+// existing RMSNorm template gains an optional direct-Q8 destination
+rms_norm_f32<block, fused, emit_q81>(..., float * dst_f32, block_q8_1 * dst_q81);
+```
+
+The direct path must preserve the standalone quantizer's exact scale, rounding, sum/metadata, packing, and block ordering. If byte identity cannot be preserved, reject the path.
 
 ## Files
 
-ggml/src/ggml-cuda/norm.cu (RMS-norm producer seam); PRBE05's hip-q81-cache API (consumed, not modified); Q8 block/reference fixtures; patches/12xx_rd10_rms_norm_direct_q81/{patch.toml,patch.py}; graph/non-graph campaign artifacts.
+Expected production anchors only:
+- `ggml/src/ggml-cuda/norm.cu` — producer specialization/direct Q8_1 output.
+- existing Q8_1 quantizer implementation/header used by `mmvq.cu` — factor/reuse block conversion only if required.
+- `ggml/src/ggml-cuda/mmvq.cu` — consume pre-produced Q8_1 and skip native quantize for the eligible arm.
+- `ggml/src/ggml-cuda/ggml-cuda.cu` only if graph-level producer/consumer eligibility cannot be expressed at the existing dispatch seam.
+- one BigCherry patch package plus focused backend-op/campaign evidence.
+
+No new cache subsystem and no new CUDA/HIP source file for this experiment.
 
 ## Validation
 
-Offline: `PYTHONPATH=tools python -m bigcherry patch-lint`, `patch-rebase-check --focal-overlay 12xx_rd10_rms_norm_direct_q81 --source bigcherry-tuning` (must declare `requires` on PRBE05's patch id). Hardware (Brutus, not run here): numerical equality + exact Q8 block identity vs standalone quantizer; graph/non-graph; fallback-pattern coverage; launch/memory accounting; causal B+PRBE05 vs B+PRBE05+PRBE06 balanced-repeat performance on gfx1100/gfx1201/gfx1030.
+Correctness first:
+- independently run the native standalone `quantize_row_q8_1_cuda` over the same RMSNorm F32 result and byte-compare every Q8_1 block;
+- plain RMSNorm and RMSNorm+MUL positive cases;
+- multi-consumer, non-contiguous/strided, alias, unsupported dimension/dtype, graph/non-graph, capture/replay, and fallback controls;
+- deterministic/greedy output equality on gfx1100 and gfx1201.
 
-## Effort & Risk
+Performance/profile-v2 ABBA, shallow (~8-10K) and deep (~65-80K):
+- exact `rms_norm -> quantize_q8_1` count before/after;
+- `quantize_q8_1` and total kernels/token;
+- RMSNorm kernel duration/register/occupancy change;
+- serial launch-gap ms/token and GPU busy share;
+- verify ms/step and effective TG;
+- source LOC delta for touched production code.
 
-M effort -- straightforward producer addition once PRBE05 exists; risk is entirely inherited from PRBE05's cache correctness, hence the hard prerequisite ordering.
-
-## Standards
-
-Dependent causal arm; fallback preservation; exact output evidence; fail closed on cache or numerical uncertainty.
+Compare against the current PRBE05/1307 arm, not the pre-cache baseline, so the marginal benefit is causal.
 
 ## Acceptance Criteria
 
-No direct producer is enabled before PRBE05 passes; all qualifying outputs match reference and unsupported patterns fall back; only a statistically supported marginal improvement without quality or memory regression can be promoted.
+- Stage 0 proves >=20 removable standalone quantization launches/token on the production path.
+- Direct Q8_1 blocks are byte-identical to the existing standalone quantizer.
+- The predicted standalone launches disappear with no compensating kernel launch.
+- Existing Q8_1 arithmetic is shared, not copied; no new kernel family/cache subsystem is introduced.
+- Net production LOC should remain small; any >~100 net-line increase requires evidence that sharing/factoring cannot express the path.
+- Unsupported cases fall back unchanged.
+- No material RMSNorm occupancy/register regression that erases the launch saving.
+- Meet QFP13 gate: >=0.5% end-to-end improvement or >=0.10 ms/token measured serial launch-gap reduction without end-to-end regression. Otherwise park/supersede.
+
+## Effort & Risk
+
+M/advanced. Main risk is register/shared-memory pressure from combining normalization reduction with Q8_1 block reduction/packing. Main correctness risk is subtle non-identity with the native Q8_1 quantizer. The shared-primitive and byte-compare gates contain both risks.
 
 ## Notes
 
-Supersedes: RD10
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd10
+Supersedes RD10. PRBE05 remains the canonical Q8_1 reuse owner; PRBE06 owns only producer-side RMSNorm quantization launch elimination. QFP13 measured ~41 RMSNorm->quantize adjacencies/token after identifying ~150 remaining quantizations/token that 1307 reuse cannot remove.
 
-2026-09-24 relevance at b11126: TODO, blocked on PRBE05. Real anchors verified (norm.cu:478/502/304 + kernel templates 311-401). GPT design request submitted (req_5e0e57d9e29f44b0, batched with PRBE05/PRBE10); gateway congested at submission -- authored directly against verified anchors as a fallback.
-
-2026-09-24 GPT review req_7f4dea253b7247f0 applied: added an explicit graph-level producer/consumer eligibility selector (ggml_cuda_op_rms_norm has no downstream-consumer visibility, so shape-only gating would eagerly quantize unrelated outputs); clarified that post-enqueue quantization is a second kernel launch, not true direct production, unless a genuine fused template variant is built; corrected the fused-variant caching target to mul_tensor->data (post-MUL), not the RMS intermediate.
-
-## Change Log
-
-- 2026-09-09T10:53:51.286520+00:00 (created-by): Created by capability-rebaseline-v3
-- 2026-09-09T11:10:56.565121+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
-
-## Ledger-events
-
-- chg_20260909_115759_created-and-populated-the-192_2958
-- 2026-09-09T11:58:01.152218+00:00 (updated-by): Updated: section:ledger-events
-- chg_20260910_001436_completed-the-planning-rebasel_5794
-- 2026-09-10T00:14:42.829930+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-10T02:32:14.424353+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
-- chg_20260910_023232_the-next-three-rdna-successors_5807
-- 2026-09-10T02:32:32.993441+00:00 (updated-by): Updated: section:ledger-events
-- 2026-09-24T02:33:16.031005+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
-- 2026-09-24T04:36:43.619023+00:00 (updated-by): Updated: section:steps, section:notes
+2026-10-04: promoted to P0 after 1307 showed exact activation reuse removes only ~19% of Q8_1 quantizations. Re-scoped from cache-dependent direct publication to a narrower producer/consumer launch-elimination experiment, with shared quantizer arithmetic and a code-size gate.
