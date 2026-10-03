@@ -14,6 +14,5 @@ activity_lock_exclusive_acquire "$work"
 gpu_lock_acquire "$work" 0,1,2,3
 printf '%s\n' "$pw" | bash "$here/pcie-link-check.sh" --retrain
 rc=$?
-docker start radiance-vllm >/dev/null && docker update --restart unless-stopped radiance-vllm >/dev/null && echo "VLLM_RESTARTED $(date -Is)"
 echo "RETRAIN_EXIT=$rc"
 exit $rc
