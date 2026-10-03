@@ -62,9 +62,12 @@ Design requested from dev-gpt-agent deep-dive session ses_9811a27a734746c3.
 
 2026-10-02 recorded (run finished overnight, log ~/bc-runs/queue-kld-decode-0225.log): decode-mode KLD (ubatch 1, 8 chunks, own decode-mode host-f32 reference), 27B Q8_0 dual XTX. ref repeat: mean 0.000000, p99 0.00003, same-top 99.99%. RCCL: 0.000000 / 0.00003 / 99.99% (decode-size reductions are below RCCL's bf16 threshold, so f32). host bf16: 0.000020 / 0.00017 / 99.74%. host f16: 0.000003 / 0.00008 / 99.94%. adaptive f32: 0.000000 / 0.00003 / 99.99%. adaptive bf16: 0.000020 / 0.00017 / 99.74%. All PASS the KLD gate, but the MTP acceptance A/B (ab-27b-awl-1) already fails bf16 (82.17% vs 84.28%) and f16 (78.56%), so acceptance, not KLD, is the binding gate. Conclusion unchanged: f32 stays the adaptive host wire; safe-f16 (scaled) is the only remaining low-precision candidate (unbuilt). Note f16 has lower KLD than bf16 yet the worst acceptance and tg2048 (-7.27%) - KLD at decode size does not predict MTP acceptance here.
 
+2026-10-04 consolidation: owner item for all AllReduce wire-format work. Merged here (now superseded): PGC07 (bf16/fp8 wire on --allreduce-wire), PNRO01 (Q8_0 wire for the internal HIP AllReduce; patch 1250 is a scaffold only and currently FAILED_NEEDS_RECONCILIATION), RNX07 (WHT + low-bit compression over existing providers, CPU-root/SHM on no-P2P). Keep their constraints: correctness/work-equivalence evidence before speed; do not port r9700 P2P/IPC transport. Flash-Next context (QFP01, RV4214): decode ARs are 10-40 KB and already on CPU-root (1291); the wire-format lever is large prefill ARs (~96 x 10.5 MB per 1024-token ubatch, ~30-40% of prefill). Online: TensorRT-LLM AllReduceStrategy.LOWPRECISION for PCIe without NVLink; block-FP8/int8 with Scale+Hadamard ~3.5-4.5x byte reduction; fuse pack into the producer epilogue. GPT estimate +7-14% prefill. Gate: a standalone 3-rank F32->BF16->RCCL->F32 3.3 MB replay must beat ~0.9 ms vs 1.34 ms before model integration.
+
 ## Change Log
 
 - 2026-09-30T14:04:38.045766+00:00 (created-by): Created by agent
 - 2026-09-30T16:25:35.929349+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T17:27:22.793498+00:00 (updated-by): Updated: section:notes
 - 2026-10-02T05:34:08.182339+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:21:42.101340+00:00 (updated-by): Updated: section:notes

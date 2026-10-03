@@ -70,6 +70,8 @@ Successor key: patching-rdna-boost-experiments-rd83
 
 2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- disproved 'no shape/topology awareness' premise (ggml_cuda_graph_update_required already does full node/src property memcmp, verified at ggml-cuda.cu ~2591-2635); narrowed real gap to the cgraph->uid==graph->uid fast path that skips comparison; corrected FA KV length field to node->src[1]->ne[1] (K), not node->ne[1].
 
+2026-10-04 cross-link (memory, not correctness): patching-qwen-flash-next QFP06 / patch 1302_cuda_graph_oom_evict - graph-instantiate OOM evicts other cached graphs; 193 live graph instances observed on one GPU at 164K context. Any graph-key or recapture change here should be checked against QFP06's eviction/LRU behaviour.
+
 ## Change Log
 
 - 2026-09-09T10:58:09.575084+00:00 (created-by): Created by capability-rebaseline-v3
@@ -87,3 +89,4 @@ Successor key: patching-rdna-boost-experiments-rd83
 - 2026-09-24T02:34:02.491568+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:46:44.582934+00:00 (updated-by): Updated: section:description, section:steps
 - 2026-09-24T04:46:52.924870+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T15:21:57.697593+00:00 (updated-by): Updated: section:notes
