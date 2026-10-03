@@ -4,7 +4,7 @@
 # Usage: quick-ab.sh <base llama-server> <new llama-server> <out-root> [new-arm env, e.g. BIGCHERRY_X=1]
 #   Same binary for both arms + an env string screens env-gated options.
 set -u
-base=$1 new=$2 root=$3 newenv=${4:-}
+base=$1 new=$2 root=$3 newenv="${*:4}"  # all remaining args form the new-arm env
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 export CTKD=f16 CTVD=f16 DECODE_N=256 DEPTH=${QUICK_DEPTH:-24576}
 for arm in base-a new base-b; do

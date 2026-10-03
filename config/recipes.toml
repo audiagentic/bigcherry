@@ -409,6 +409,11 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # Quick screen: deployment candidate + RD13 mul_mat + add view fusion (1206).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1206_rd13_mul_mat_add_view_fusion"]
 
+[experiment.deploy-plus-1301]
+# PRBE115 screen: deployment candidate + 1301 (Q8_0 F32-act at MTP verify widths; env-gated, so one binary
+# serves both arms: BIGCHERRY_Q8_F32_MAXCOLS=1 is 1241 behaviour, =4 covers MTP3 verify; _RDNA4=1 adds gfx1201).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1301_prbe115_q8_f32_mtp_widths"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
