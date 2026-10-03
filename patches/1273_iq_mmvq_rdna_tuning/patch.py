@@ -171,57 +171,39 @@ static void bigcherry_iq_mmvq_trace(
 
 '''
 
-_KERNEL_HEAD_OLD = """template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>
-__launch_bounds__(calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)*ggml_cuda_get_physical_warp_size(), 1)
-static __global__ void mul_mat_vec_q(
-"""
+_KERNEL_HEAD_OLD = """template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false,
+          bool halve_iters = false, int nwarps_explicit = 0, int rows_per_block_explicit = 0,
+          bool f32_act = false>
+__launch_bounds__("""
 
-_KERNEL_HEAD_NEW = """template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false,
-          int iq_vdr = 0, int iq_nwarps = 0>
-__launch_bounds__((iq_nwarps > 0 ? iq_nwarps : calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters))*ggml_cuda_get_physical_warp_size(), 1)
-static __global__ void mul_mat_vec_q(
-"""
+_KERNEL_HEAD_NEW = """template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false,
+          bool halve_iters = false, int nwarps_explicit = 0, int rows_per_block_explicit = 0,
+          bool f32_act = false, int iq_vdr = 0>
+__launch_bounds__("""
 
-_KERNEL_CONSTS_OLD = """    constexpr int qk  = ggml_cuda_type_traits<type>::qk;
-    constexpr int qi  = ggml_cuda_type_traits<type>::qi;
-    constexpr int vdr = get_vdr_mmvq(type);
+_KERNEL_CONSTS_OLD = """    constexpr int vdr = get_vdr_mmvq(type);
     constexpr mmvq_parameter_table_id table_id = get_device_table_id();
-    constexpr int nwarps = calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
-    constexpr int rows_per_cuda_block = calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
-    constexpr int warp_size = ggml_cuda_get_physical_warp_size();
-
-    constexpr vec_dot_q_cuda_t vec_dot_q_cuda = get_vec_dot_q_cuda(type);
+    constexpr int nwarps = nwarps_explicit != 0
 """
 
-_KERNEL_CONSTS_NEW = """    constexpr int qk  = ggml_cuda_type_traits<type>::qk;
-    constexpr int qi  = ggml_cuda_type_traits<type>::qi;
-    constexpr int vdr = iq_vdr > 0 ? iq_vdr : get_vdr_mmvq(type);
+_KERNEL_CONSTS_NEW = """    constexpr int vdr = iq_vdr > 0 ? iq_vdr : get_vdr_mmvq(type);
     constexpr mmvq_parameter_table_id table_id = get_device_table_id();
-    constexpr int nwarps = iq_nwarps > 0 ? iq_nwarps : calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
-    constexpr int rows_per_cuda_block = calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
-    constexpr int warp_size = ggml_cuda_get_physical_warp_size();
-
-    constexpr vec_dot_q_cuda_t vec_dot_q_cuda = bigcherry_iq_vec_dot_q_cuda<type, vdr>();
+    constexpr int nwarps = nwarps_explicit != 0
 """
 
-_SWITCH_FUSION_HEAD_OLD = """template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false>
-static void mul_mat_vec_q_switch_fusion(
-"""
+_SWITCH_FUSION_HEAD_OLD = """template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false,
+         int nwarps_explicit = 0, int rows_per_block_explicit = 0, bool f32_act = false>
+static void mul_mat_vec_q_switch_fusion("""
 
 _SWITCH_FUSION_HEAD_NEW = """template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false,
-         int iq_vdr = 0, int iq_nwarps = 0>
-static void mul_mat_vec_q_switch_fusion(
-"""
+         int nwarps_explicit = 0, int rows_per_block_explicit = 0, bool f32_act = false, int iq_vdr = 0>
+static void mul_mat_vec_q_switch_fusion("""
 
-_FUSED_LAUNCH_OLD = """            ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters>, launch_params,
-"""
-_FUSED_LAUNCH_NEW = """            ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters, iq_vdr, iq_nwarps>, launch_params,
-"""
+_FUSED_LAUNCH_OLD = """            ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act>, launch_params,"""
+_FUSED_LAUNCH_NEW = """            ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act, iq_vdr>, launch_params,"""
 
-_PLAIN_LAUNCH_OLD = """    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters>, launch_params,
-"""
-_PLAIN_LAUNCH_NEW = """    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters, iq_vdr, iq_nwarps>, launch_params,
-"""
+_PLAIN_LAUNCH_OLD = """    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act>, launch_params,"""
+_PLAIN_LAUNCH_NEW = """    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act, iq_vdr>, launch_params,"""
 
 _CASE1_ANCHOR = """        case 1: {
             // static, else MSVC lambda capture breaks the constexpr uses below
@@ -242,7 +224,7 @@ _CASE1_TUNING = r'''
                         const dim3 block_nums(nrows_x, nchannels_dst, nsamples_dst);
                         const dim3 block_dims(warp_size, c_nwarps, 1);
                         bigcherry_iq_mmvq_trace(type, table_id, tune_vdr, tune_nwarps);
-                        mul_mat_vec_q_switch_fusion<type, c_ncols_dst, false, false, c_vdr, c_nwarps>(
+                        mul_mat_vec_q_switch_fusion<type, c_ncols_dst, false, false, c_nwarps, 0, false, c_vdr>(
                             vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
                             channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst, sample_ratio_fd,
                             stride_sample_x, stride_sample_y, stride_sample_dst, block_nums, block_dims, 0, ids_stride,
@@ -340,7 +322,7 @@ PATCHES = [
                 anchor=re.escape(_KERNEL_HEAD_OLD),
                 mode="replace",
                 text=_KERNEL_HEAD_NEW,
-                guard=r"template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false,\n          int iq_vdr = 0, int iq_nwarps = 0>\n__launch_bounds__",
+                guard=r"bool f32_act = false, int iq_vdr = 0>\n__launch_bounds__",
                 rationale="Compile explicit VDR/nwarps variants without changing the default template instantiation used by pristine callers.",
                 expect_matches=1,
                 max_span_lines=4,
@@ -350,17 +332,34 @@ PATCHES = [
                 anchor=re.escape(_KERNEL_CONSTS_OLD),
                 mode="replace",
                 text=_KERNEL_CONSTS_NEW,
-                guard=r"bigcherry_iq_vec_dot_q_cuda<type, vdr>",
-                rationale="Make K-loop stride, reduction width and vec-dot entry point follow the selected compile-time variant; zero overrides preserve pristine constants.",
+                guard=r"constexpr int vdr = iq_vdr > 0 \? iq_vdr : get_vdr_mmvq\(type\);",
+                rationale="K-loop stride follows the selected compile-time VDR; iq_vdr == 0 keeps the native value (the warp count comes from 0600's nwarps_explicit).",
                 expect_matches=1,
                 max_span_lines=12,
+            ),
+            Edit(
+                id="iq-mmvq-kernel-vec-dot",
+                anchor=re.escape(
+                    "                  \"bigcherry: MMVQ rows_per_block must be at least 1\");\n"
+                    "    constexpr int warp_size = ggml_cuda_get_physical_warp_size();\n"
+                    "\n"
+                    "    constexpr vec_dot_q_cuda_t vec_dot_q_cuda = get_vec_dot_q_cuda(type);\n"),
+                mode="replace",
+                text=(
+                    "                  \"bigcherry: MMVQ rows_per_block must be at least 1\");\n"
+                    "    constexpr int warp_size = ggml_cuda_get_physical_warp_size();\n"
+                    "\n"
+                    "    constexpr vec_dot_q_cuda_t vec_dot_q_cuda = bigcherry_iq_vec_dot_q_cuda<type, vdr>();\n"),
+                guard=r"bigcherry_iq_vec_dot_q_cuda<type, vdr>\(\);",
+                expect_matches=1,
+                rationale="Generic mul_mat_vec_q only (the one following 0600's geometry static_asserts): the vec-dot entry follows the VDR variant.",
             ),
             Edit(
                 id="iq-mmvq-switch-fusion-template",
                 anchor=re.escape(_SWITCH_FUSION_HEAD_OLD),
                 mode="replace",
                 text=_SWITCH_FUSION_HEAD_NEW,
-                guard=r"template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false,\n         int iq_vdr = 0, int iq_nwarps = 0>",
+                guard=r"bool f32_act = false, int iq_vdr = 0>\nstatic void mul_mat_vec_q_switch_fusion",
                 rationale="Thread compile-time IQ overrides through the existing fusion-preserving launch wrapper.",
                 expect_matches=1,
                 max_span_lines=3,
@@ -370,7 +369,7 @@ PATCHES = [
                 anchor=re.escape(_FUSED_LAUNCH_OLD),
                 mode="replace",
                 text=_FUSED_LAUNCH_NEW,
-                guard=r"mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters, iq_vdr, iq_nwarps>",
+                guard=r"mul_mat_vec_q<type, c_ncols_dst, true, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act, iq_vdr>",
                 rationale="Pass IQ overrides to the fused ncols=1 kernel instantiation.",
                 expect_matches=1,
                 max_span_lines=2,
@@ -380,7 +379,7 @@ PATCHES = [
                 anchor=re.escape(_PLAIN_LAUNCH_OLD),
                 mode="replace",
                 text=_PLAIN_LAUNCH_NEW,
-                guard=r"mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters, iq_vdr, iq_nwarps>",
+                guard=r"mul_mat_vec_q<type, c_ncols_dst, false, small_k, halve_iters, nwarps_explicit, rows_per_block_explicit, f32_act, iq_vdr>",
                 rationale="Pass IQ overrides to the ordinary MMVQ kernel instantiation.",
                 expect_matches=1,
                 max_span_lines=2,

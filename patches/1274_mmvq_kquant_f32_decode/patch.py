@@ -20,7 +20,7 @@ STATE = "untested"
 _TEMPLATE_1241 = (
     "template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false,\n"
     "          bool halve_iters = false, int nwarps_explicit = 0, int rows_per_block_explicit = 0,\n"
-    "          bool f32_act = false>"
+    "          bool f32_act = false"
 )
 
 _KQUANT_HELPERS = r"""
@@ -167,7 +167,7 @@ PATCHES = [
                 mode="insert_before",
                 text=_KQUANT_HELPERS,
                 guard=r"static __device__ __forceinline__ float vec_dot_q6_K_f32\(",
-                rationale="Attach to 1241's post-patch f32_act template header so the dependency is explicit and fail-closed.",
+                rationale="Attach to 1241's post-patch f32_act template header (without its closing >, which 1273 extends with iq_vdr) so the dependency is explicit and fail-closed.",
                 expect_matches=1,
                 max_span_lines=3,
             ),

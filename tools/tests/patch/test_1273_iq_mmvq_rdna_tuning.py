@@ -16,10 +16,22 @@ _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1273_iq_mmvq_rdna_tuning/patch.py"
 _VENDOR = _REPO / "tools/lab/iq-mmvq/vendor-b11233"
 
-_spec = importlib.util.spec_from_file_location("patch_1273", _PATCH_FILE)
-assert _spec is not None and _spec.loader is not None
-_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_module)
+
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_module = _load("patch_1273", _PATCH_FILE)
+# 1273 requires 0600 (explicit geometry) and 1241 (f32_act); apply both to the fixture first.
+_PREREQS = [
+    _load("patch_0600", _REPO / "patches/0600_mmvq_geometry/patch.py").PATCH,
+    *_load("patch_1241", _REPO / "patches/1241_rd33_mmvq_q8_0_f32_decode/patch.py").PATCHES,
+]
 
 
 class Patch1273Mechanics(unittest.TestCase):
@@ -30,6 +42,8 @@ class Patch1273Mechanics(unittest.TestCase):
         cuda.mkdir(parents=True)
         for name in ("mmvq.cu", "mmvq.cuh", "vecdotq.cuh"):
             shutil.copy2(_VENDOR / name, cuda / name)
+        prereq = apply_all(_PREREQS, root)
+        assert all(r.ok for r in prereq), [e.detail for r in prereq for e in r.failed]
         return td, root, cuda / "mmvq.cu", cuda / "vecdotq.cuh"
 
     def test_iq4_xs_vdr2_halves_reuse_the_pristine_group_scale_and_lanes(self):
@@ -116,8 +130,8 @@ class Patch1273Mechanics(unittest.TestCase):
             pristine_mmvq = mmvq_path.read_text(encoding="utf-8")
             pristine_vecdot = vecdot_path.read_text(encoding="utf-8")
             broken = pristine_mmvq.replace(
-                "template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>\n",
-                "template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = true>\n",
+                "          bool f32_act = false>\n__launch_bounds__(",
+                "          bool f32_act = true>\n__launch_bounds__(",
                 1,
             )
             self.assertNotEqual(pristine_mmvq, broken)
