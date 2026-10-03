@@ -88,6 +88,28 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 
 2026-10-03 patch 1291_ar_cpu_root (--allreduce cpu-root, HIP): CPU-root one-shot AllReduce for f32 messages <= 64 KiB on the backend streams (pinned mapped slots, per-rank device-advanced epochs, persistent exact-f32 CPU worker), RCCL above. flashnext-cpuroot-4 ABBA vs auto, -ts 4,4,3 ub1024: no MTP decode 38.7/39.1 vs 36.5/36.6 (+6.4%); MTP3 draft-6900 70.5/70.4 vs 67.0/67.1 (+5.1%), acceptance 74.6 vs 73.0%; prefill unchanged; greedy identical in all arms. Root cause of earlier garbage: ranks whose node the meta backend left uncomputed must contribute zeros. New best Flash-Next 8K config: -ts 4,4,3 ub1024 MTP3 draft-6900 --allreduce cpu-root = ~1130 pp / 70.5 tg. Next: KLD + contract, large-message host path for prefill (prototype 2.63 ms vs RCCL 3.6 ms per 10 MB), HC-combine fusion.
 
+
+
+2026-10-03 (later) patch and tuning status - every patch below is a package in patches/, committed on patch-refactor:
+- 1291_ar_cpu_root (evaluated): small path keeps decode +5-7%. Large-message host path (prefill) added then made opt-in default off: in-model it lost to RCCL at every chunk size (1/2/4/8 MiB: 1057/1057/1027/937 vs ~1450 t/s prefill, -ts 4,4,3 ub1024); 4 SIMD sum workers changed nothing. Not graph-capture safe (host generation) - RNX11 RV4210.
+- 1292_kpool_tail_truncate (evaluated): Qwen4Exp kpool layout rebuilt O(n_ctx) every MTP step (seq_rm of rejected drafts); truncate instead. -14% ms/MTP step at ~80K (77 -> 65.5-66.4), -2..3% at 10K, two ABBAs; greedy byte-identical at 10K and 80K without MTP on the 1294 base.
+- 1293_sched_single_input_sync (untested, neutral): scheduler syncs an event-less split backend once per split; hipStreamSynchronize -18% but ms/step unchanged; not deployed.
+- 1294_topk_deterministic_ties (evaluated): HIP radix TOP_K picked tied QSA cells in atomic order (ReLU-sum scores, many exact zeros) -> long-context greedy differed between server starts; lowest-index tie-break makes 32K/80K output identical across starts; speed neutral.
+- 1295_qsa_gather_decode (untested): QSA attention on HIP reads the whole cache (upstream sparse FA is NVIDIA-only; attention 0.44 -> 3.36 ms/token target, 0.18 -> 1.41 draft, 10K -> 80K). Gathers each token's selected cells for n_tokens <= 8. A/B run 1 invalid (parallel queues OOMed); rerun flashnext-gather-ab-2 serial; GPT review req_bb197fcc0e734bf3.
+- 1296 (not written): HIP sparse flash attention. Prefill uses the WMMA kernel (flash_attn_ext_f16), verify the tile kernel, draft the vec kernel; a tile port only duplicates 1295, so 1296 = sparse WMMA for long-prompt prefill, scheduled after 1295 results. RNX02 RV4213.
+- 1297_draft_vocab_trim (untested, opt-in BIGCHERRY_DRAFT_VOCAB_N): MTP draft output.weight (Q8_0, 675 MB) read per draft token = ~31% of 6900 draft time at 80K; trimmed head + -inf scatter. A/B rerun flashnext-trim-ab-2 (serial).
+- RNX10 shared-expert gate fusion: not written (upstream already fuses sigmoid*mul; ~96 launches/step, ~1%); GPT requests died in gateway restarts.
+
+Config findings (all MTP3, draft on 6900, cpu-root, ~10K cached prompt unless noted):
+- f16 draft KV (-ctkd f16 -ctvd f16): -8.8% ms/step at 80K, -2.5% at 10K (ABBA) -> adopt everywhere.
+- RCCL NCCL_ALGO=Tree NCCL_PROTO=Simple: +2.0% prefill at -ts 4,4,3 ub1024 (ABBA, complete separation); neutral at -ts 2,2,3 ub512.
+- MTP depth 2/3/4 at 192K: within noise; keep 3.
+- Rank balance at 32K ctx: -ts 3,3,2 / 4,4,3 47.5-47.8 ms/step vs 2,2,3 50.1-50.4 (~6%); prefill ~1105-1110 vs ~1068.
+- Context tiers (ub512; ub1024 OOMs at every long tier; ub256 costs ~28% prefill, not a RAM spill - prefill flat across context): up to 96K f16/f16 -ts 4,4,3 ~71.7 tg; up to 144K f16-K/q8_0-V -ts 0.31,0.27,0.42 ~1051 pp; up to 160K q8_0 -ts 4,4,3 or 3,3,2 ~68-69 tg ~1100 pp; up to 192K q8_0 -ts 2,2,3 ~64 tg ~1070 pp. f16-K/q8_0-V at ub384 reaches 160K (~901 pp). XTX1 carries ~4 GB more than XTX0 at equal share (unsplit data), so XTX1-light splits fit more. Owner: KV never q4.
+- Best prefill measured: ~1477 t/s (-ts 4,4,3 ub1024, no MTP, Tree+Simple, 1.7K prompt); MTP costs ~15%.
+- Decode at depth is GPU/launch bound: ~4176 kernels per MTP step per tensor-split GPU (1283 elementwise, 576 quantize_q8_1), cpu_root consume ~121 us x 96 (rank imbalance); HIP graphs active (graphs off +6% step time). VRAM overhead plan: QFN03.
+- Queue lesson: parallel queue scripts overlapped (one's servers/vLLM took the R9700) -> use tools/lab/flash-next/chain-serial.sh; queues no longer restart vLLM (owner).
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -97,7 +119,6 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-01T08:31:56.666485+00:00 (updated-by): Updated: section:notes
 
 ## Ledger-events
-
 
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
@@ -114,3 +135,12 @@ Owner 2026-10-01: link widths: 2x 7900 XTX on PCIe 4.0 x8 each (~13 GB/s effecti
 - 2026-10-02T16:07:10.226148+00:00 (updated-by): Updated: section:notes
 - chg_20261002_160710_new---allreduce-cpu-root-optio_9249
 - 2026-10-02T16:07:13.385564+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261003_004922_cpu-root-allreduce-keeps-its-d_3316
+- 2026-10-03T00:49:25.615827+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261003_004925_faster-long-context-decode-wit_4394
+- 2026-10-03T00:49:28.688991+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261003_004928_profiling-and-sweep-tooling-fo_2428
+- 2026-10-03T00:49:31.768304+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261003_040726_long-context-qwen4exp-decode-w_8449
+- 2026-10-03T04:07:32.984347+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-03T06:40:44.684261+00:00 (updated-by): Updated: section:notes
