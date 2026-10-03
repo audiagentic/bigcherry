@@ -1,7 +1,7 @@
 schema = 1
 id = "1292_kpool_tail_truncate"
 order = 1292
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

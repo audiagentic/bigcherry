@@ -19,7 +19,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "evaluated"
 
 _TIE_KERNEL = """// BigCherry 1294: deterministic tie-break - the rank lowest-index columns equal to the cut, one block per row.
 template<int BLOCK_SIZE>
