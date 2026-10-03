@@ -1,10 +1,11 @@
 #!/bin/bash
 # One short traced decode (BIGCHERRY_Q81_TRACE=1) and a summary of Q8_1 cache publishes vs MMVQ misses.
-# Usage: q81-trace-run.sh <llama-server> <out-dir>
+# Usage: q81-trace-run.sh <llama-server> <out-dir> [env assignments...]
 set -u
 bin=$1 out=$2
+shift 2
 here=$(cd "$(dirname "$0")" && pwd)
-BIGCHERRY_Q81_TRACE=1 DEPTH=8192 DECODE_N=32 bash "$here/long-ctx-profile.sh" "$bin" "$out" timing 2>&1 | grep -E "^timing"
+env "$@" BIGCHERRY_Q81_TRACE=1 DEPTH=8192 DECODE_N=32 bash "$here/long-ctx-profile.sh" "$bin" "$out" timing 2>&1 | grep -E "^timing"
 log=$out/timing.server.log
 echo "publish-rms: $(grep -c 'BIGCHERRY_Q81 publish-rms' $log)  publish-act: $(grep -c 'BIGCHERRY_Q81 publish-act' $log)  misses: $(grep -c 'BIGCHERRY_Q81 miss' $log)"
 echo "== sample publish-rms"; grep -m 4 'BIGCHERRY_Q81 publish-rms' $log | cut -c1-220

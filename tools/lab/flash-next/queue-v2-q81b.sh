@@ -18,9 +18,9 @@ VIS=0,1,2,3 BUILD b-v2-q81b bigcherry:stock:linux-multi deploy-v2-plus-1310 gfx1
 VIS=0,1,2,3 SCRIPT v2-q81b-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v2-q81b @b-v2-q81b $R/flashnext-v2-q81b-d24k BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1
 VIS=0,1,2,3 SCRIPT v2-q81b-d80k tools/lab/flash-next/quick-ab-depth.sh 65536 @b-v2-q81b @b-v2-q81b $R/flashnext-v2-q81b-d80k BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1
 VIS=0,1,2,3 SCRIPT v2-q81b-census tools/lab/flash-next/census-run.sh @b-v2-q81b $R/flashnext-v2-q81b-census BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1
-VIS=0,1,2,3 SCRIPT v2-q81b-trace tools/lab/flash-next/q81-trace-run.sh @b-v2-q81b $R/flashnext-v2-q81b-trace
+VIS=0,1,2,3 SCRIPT v2-q81b-trace tools/lab/flash-next/q81-trace-run.sh @b-v2-q81b $R/flashnext-v2-q81b-trace BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1
 JOBS
-BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 bash tools/lab/plan-qualification/queue.sh "$jobs"
+bash tools/lab/plan-qualification/queue.sh "$jobs"  # flags only via the new-arm args: base arm must stay off
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 for j in v2-q81b-d24k v2-q81b-d80k; do echo "== $j"; grep -E "^base-|^new|SERVER_FAILED" $R/$j.log; done
