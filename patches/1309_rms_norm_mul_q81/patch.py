@@ -110,6 +110,12 @@ _FUSED_GATE = r"""#if defined(GGML_USE_HIP)
                     init_fastdiv_values(mul_ncols), init_fastdiv_values(mul_nrows),
                     init_fastdiv_values(mul_nchannels), init_fastdiv_values(mul_nsamples), eps);
                 ggml_hip_q81_cache_publish(q81, key, r);
+                if (getenv("BIGCHERRY_Q81_TRACE") != nullptr) {  // pair with 1307's miss trace
+                    GGML_LOG_WARN("BIGCHERRY_Q81 publish-rms gen=%llu node=%p(%s) data=%p ne=%lld,%lld,%lld,%lld\n",
+                        (unsigned long long) ggml_hip_q81_cache_current_generation(q81), (const void *) mul_tensor,
+                        mul_tensor->name, mul_tensor->data, (long long) ne00, (long long) ne01, (long long) ne02,
+                        (long long) ne03);
+                }
                 static std::atomic<bool> bigcherry_1309_logged{false};  // one context per GPU thread
                 if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr && !bigcherry_1309_logged.exchange(true)) {
                     GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1309_rms_norm_mul_q81 ncols=%d rows=%d\n",
