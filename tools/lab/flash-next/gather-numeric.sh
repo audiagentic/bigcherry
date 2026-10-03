@@ -5,8 +5,8 @@
 set -u
 bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
-export NO_MTP=1 REPEAT=1 DECODE_N=16
-for depth in 8192 65536; do
+export NO_MTP=1 REPEAT=1 DECODE_N=16 CTK=${CTK:-q8_0} CTV=${CTV:-q8_0}
+for depth in ${DEPTHS:-8192 65536}; do
   for g in 0 1; do
     BIGCHERRY_QSA_GATHER=$g DEPTH=$depth bash "$s" "$bin" "$root/d$depth/g$g" timing | grep -E "^timing: prompt"
   done
