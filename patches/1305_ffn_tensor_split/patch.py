@@ -66,10 +66,13 @@ _FFN_SELECT = r"""    // bigcherry 1305: optional separate split vector for the 
         std::regex_match(tensor_name, pattern_ffn_gate_shexp_weight)  ||
         std::regex_match(tensor_name, pattern_ffn_down_shexp_weight));
     if (bigcherry_use_ffn_split) {
-        static bool bigcherry_ffn_split_logged = false;
-        if (!bigcherry_ffn_split_logged) {
-            bigcherry_ffn_split_logged = true;
-            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1305_ffn_ts ffn_ts=%s\n", std::getenv("BIGCHERRY_FFN_TS"));
+        static std::atomic<bool> bigcherry_ffn_split_logged{false};  // split-state calls can be concurrent
+        if (!bigcherry_ffn_split_logged.exchange(true)) {
+            std::string bigcherry_ffn_raw;
+            for (size_t i = 0; i < bigcherry_ffn_split.size(); i++) {
+                bigcherry_ffn_raw += (i ? "," : "") + std::to_string(bigcherry_ffn_split[i]);
+            }
+            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1305_ffn_ts ffn_ts=%s\n", bigcherry_ffn_raw.c_str());
         }
     }
 """
