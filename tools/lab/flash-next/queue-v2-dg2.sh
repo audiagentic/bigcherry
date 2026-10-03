@@ -31,4 +31,5 @@ echo "== trace"; grep -E "^publish|misses in|miss ops" $R/v2-dg2-trace.log
 BIN=$(ls -td /mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/*/*/bin/llama-server | head -1)
 echo "smoke binary $BIN"
 bash tools/lab/flash-next/smoke-models.sh "$BIN" $R/smoke-models-dg2
+bash tools/lab/flash-next/gemma-iso.sh "$BIN" $R/gemma-iso-dg2
 echo ALL_JOBS_DONE
