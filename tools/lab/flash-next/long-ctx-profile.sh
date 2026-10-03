@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|apitrace]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|apitrace|synctrace]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -49,6 +49,8 @@ for d in depths:
     if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
         fill = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})["timings"]
         print(f"{name}: fill prefill {fill['prompt_n']} tok at {fill['prompt_per_second']:.1f} t/s", flush=True)
+    if os.environ.get("ARM_FILE"):  # sync-tracer.so starts counting once this file exists
+        open(os.environ["ARM_FILE"], "w").close()
     perf = None
     if os.environ.get("PERF_OUT"):  # host-side sampling of the server during the timed decode only
         import subprocess
@@ -87,6 +89,15 @@ mode=${3:-full}
 if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+elif [ "$mode" = synctrace ]; then  # RNX01: call sites of hipStreamSynchronize during decode
+  here=$(cd "$(dirname "$0")" && pwd)
+  gcc -O2 -shared -fPIC "$here/sync-tracer.c" -o "$out/sync-tracer.so" -ldl
+  rm -f "$out/arm"
+  ARM_FILE=$out/arm DECODE_N=256 CACHE=1 \
+    WRAP="env LD_PRELOAD=$out/sync-tracer.so SYNC_TRACER_ARM=$out/arm SYNC_TRACER_OUT=$out/sync-sites.txt" \
+    run_pass synctrace ${DEPTH:-8192}
+  head -120 "$out/sync-sites.txt" 2>/dev/null || echo "no sync-sites.txt (server did not exit cleanly)"
+  exit 0
 elif [ "$mode" = apitrace ]; then  # RNX01: HIP API cost of decode (graph launches vs kernel launches, copies)
   DECODE_N=256 CACHE=1 WRAP="rocprofv3 --hip-runtime-trace --kernel-trace --memory-copy-trace --output-format csv -d $out/rocprof --" run_pass apitrace ${DEPTH:-8192}
   python3 - "$out/rocprof" "$out/apitrace.timings.json" <<'PY'
