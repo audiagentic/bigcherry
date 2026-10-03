@@ -14,9 +14,9 @@ promotion.py -- no orchestration logic is reimplemented here.
 Usage (device 2 = gfx1201 on Brutus; NEVER 0/1, those carry production
 traffic -- check `rocm-smi --showuse` first):
     python -m bigcherry.re15_acceptance_run \
-        --upstream-repo /mnt/vault/development/bc-branch/vendor/llama.cpp \
+        --upstream-repo "$BC_REPO/vendor/llama.cpp" \
         --arch gfx1201 \
-        --model /mnt/vault/llm-models/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
+        --model "$BC_MODEL_ROOT"/qwen3.5-0.8B/gguf/Qwen3.5-0.8B-UD-Q5_K_XL.gguf \
         --hip-visible-devices 2
 """
 

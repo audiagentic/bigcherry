@@ -86,7 +86,7 @@ python -m bigcherry.patch.validation_campaign \
 The command above is build-server qualification infrastructure, not a
 portable repository interface. Resolve the paths with
 `source tools/env/bigcherry-env.sh` (see [ENVIRONMENT.md](../ENVIRONMENT.md));
-on another host, change `config/environment.toml` rather than this command. A run contributes
+on another host, change `config/environment.local.toml` rather than this command. A run contributes
 qualification evidence only when the campaign persists the required contract
 identity, measurements, provenance, and verdict through the canonical evidence
 path.
@@ -283,7 +283,7 @@ builds may be reused; never alter those build trees by hand.
 | Build | Runtime role | Diagnostic content | Interpretation |
 | --- | --- | --- | --- |
 | stock, llama-native source | native | no BC dispatch | genuine upstream baseline |
-| native, bigcherry-native source | native | tuner/dispatch diagnostics OFF | framework-only production-shaped baseline |
+| native, bigcherry-serving-base source (PA29 cutover) | native | tuner/dispatch diagnostics OFF | serving-core-only production-shaped baseline |
 | control | native | AUTOTUNE implies diagnostics | instrumented control, not production native |
 | record | record | tuner and recording/diagnostics | signature observation, not production timing |
 | tune | tune | tuner, diagnostics, workspace metrics | tuning observations, not production timing |
@@ -293,9 +293,9 @@ builds may be reused; never alter those build trees by hand.
 
 The new `native` build has an inventory-only native catalog. Do not substitute
 it for the native arm of a same-binary replay comparison. Source composition
-(`bigcherry-native` framework vs `bigcherry` release) remains separate from
-build type and runtime mode. Differences against stock describe the whole
-composition; they do not isolate one patch.
+(`bigcherry-serving-base` serving-core vs `bigcherry` release, PA29 cutover)
+remains separate from build type and runtime mode. Differences against stock
+describe the whole composition; they do not isolate one patch.
 
 Inspect every candidate build without starting hardware:
 

@@ -109,7 +109,11 @@ otherwise-unexplained `copyBufferRectAligned` cost:
 - Enable with `GGML_HIP_REDUCE_TELEMETRY=<path>` (writes one JSONL event
   per reduction) plus the `hi134-meta-stage-trace` experiment patch
   (`[experiment.hi134-meta-stage-trace]` in `config/recipes.toml`, requires
-  `0830_split_reduce_telemetry`, which is already in every default build).
+  `0830_split_reduce_telemetry`). PA29 cutover: 0830 lives in
+  `patch-set.qualification-support`, not `serving-core`, so a build using
+  this experiment must select `--source bigcherry-qualification` (or another
+  source explicitly composing qualification-support) -- it is no longer in
+  every default build.
 - Each JSONL event's `meta_trace.stages[]` records every `FOLD`/
   `BUTTERFLY`/`COPY_BACK` transfer META submits: phase, step, source/dest
   logical rank, byte count, and tensor shape/strides — a bounded,

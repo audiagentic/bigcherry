@@ -7,6 +7,7 @@ rearranged without a grep-and-replace.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 # tools/bigcherry/paths.py -> tools/bigcherry -> tools -> <repo root>
@@ -76,3 +77,31 @@ def generate_cu_files_py(root: Path) -> Path:
 def artifact_dir(revision: str) -> Path:
     """Per-revision artifact directory, e.g. ``artifacts/22dc605/``."""
     return ARTIFACTS / revision[:12]
+
+
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def evidence_dir(run_id: str, *, create: bool = True) -> Path:
+    """Raw/large evidence for one run, at ``artifacts/<run_id>/``.
+
+    ``run_id`` must be the plan-item ID that owns the run (``HI65``, ``PA04``),
+    optionally with a short free-text suffix (``HI65-pass2``,
+    ``2026-08-21-HI35-HI36-27b-r9700``) — never a free-text name with no
+    traceable plan-item link. See docs/reference/tooling/TOOLING.md's
+    "Evidence and acceptance boundaries" section: this is the raw/machine-local
+    counterpart to ``docs/evidence/<run_id>/``'s compact, git-tracked record,
+    and is what ``bigcherry check``'s ``TR14.ARTIFACT_UNTRACEABLE_RUN`` finding
+    validates against. Do not invent a new top-level ``artifacts/`` naming
+    scheme — call this helper instead so the convention is enforced in one
+    place.
+    """
+    if not _RUN_ID_RE.match(run_id):
+        raise ValueError(
+            f"evidence_dir: run_id {run_id!r} must start with a letter/digit and "
+            "contain only letters, digits, '.', '_', '-' (no path separators)"
+        )
+    path = ARTIFACTS / run_id
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    return path

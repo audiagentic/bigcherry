@@ -68,8 +68,8 @@ class TestRegistryStructure(unittest.TestCase):
         by_item = {}
         for entry in rdna["tracked"]:
             by_item.setdefault(entry.get("plan-item"), []).append(entry)
-        # The SSM pre-scan chain supersedes both RD14 and RD16.
-        rd24 = by_item.get("RD24", [])
+        # The SSM pre-scan chain supersedes both RD14 and RD16 (legacy RD24, now owned by PRBE18).
+        rd24 = by_item.get("PRBE18", [])
         self.assertEqual(len(rd24), 1)
         superseded = {
             e["plan-item"] for e in rdna["tracked"] if e["status"] == "superseded"
@@ -134,13 +134,17 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # "ported-validated" promotion (gpt-dev-agent PROMOTE verdict, session
     # ses_866bf44313864664, 2026-08-23) -- see the patch's own README.md
     # for the full real evidence. Corrected here to match, not a new claim.
-    VALIDATED_RDNA_PATCHES = frozenset({"1200_rd19_single_gpu_meta_bypass"})
+    # 1237 (RD30) promoted 2026-09-26: 4-session PASS on gfx1100.
+    VALIDATED_RDNA_PATCHES = frozenset({
+        "1200_rd19_single_gpu_meta_bypass", "1237_rd30_moe_mmq_compact_grid",
+        "1241_rd33_mmvq_q8_0_f32_decode",  # promoted fb2e75a7 (gfx1100 dual-XTX dense Q8_0 decode)
+    })
     # Patches actually composed into [patch-set.validated-enhancements],
     # which [source.bigcherry] builds on top of framework -- so the release
     # build genuinely runs them. Shipping is a separate, deliberate axis
     # from VALIDATED_RDNA_PATCHES above, taken only after the evidence axis
     # was satisfied. Currently empty for the same reason as above.
-    SHIPPED_RDNA_PATCHES = frozenset()
+    SHIPPED_RDNA_PATCHES = frozenset({"1237_rd30_moe_mmq_compact_grid", "1241_rd33_mmvq_q8_0_f32_decode"})
 
     # Patches retired from the first-sweep pool, either because upstream
     # shipped the same fix independently (STATE = "superseded" -- the patch
@@ -167,6 +171,13 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
         # integrated=false HIP's own unconditional default) -- see
         # patches/1209_rd22_integrated_gpu_host_buffer_backout/SUMMARY.md.
         "1209_rd22_integrated_gpu_host_buffer_backout",
+        # Rejected 2026-09-23 on measured contract FAILs -- see each patch's
+        # SUMMARY.md DEMOTION section.
+        "1203_rd050607_rdna4_wmma_fa_q6k_mmq",
+        "1204_rd08_q6k_mmvq_vdr2",
+        # Rejected 2026-09-26 (4-session contract FAILs; see SUMMARY.md).
+        "1207_rd17_moe_topk_down_fold",
+        "1215_rd394041_amd_stream_moe_overlap",
     })
 
     def test_rdna_patches_are_untested_and_in_their_own_group(self):

@@ -1,0 +1,17 @@
+schema = 1
+id = "1292_kpool_tail_truncate"
+order = 1292
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["QFN01"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["kv-cache", "speculative"]
+tags = ["kv-cache", "mtp", "speculative-decoding", "optimization"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]

@@ -1,0 +1,109 @@
+{
+ "arm_config": [
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf",
+   "name": "q8_0",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+   "name": "q4_k_m",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q4_0.gguf",
+   "name": "q4_0",
+   "server_args": null
+  }
+ ],
+ "arms": {
+  "q4_0": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 702.65,
+    "tg128_tps": 45.41
+   },
+   "n": 6
+  },
+  "q4_k_m": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 745.89,
+    "tg128_tps": 45.73
+   },
+   "n": 6
+  },
+  "q8_0": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 918.59,
+    "tg128_tps": 35.98
+   },
+   "n": 6
+  }
+ },
+ "comparisons": {
+  "q4_0_vs_q8_0": {
+   "pp512_tps": {
+    "ci95": [
+     -25.76,
+     -21.58
+    ],
+    "effect_pct": -23.52
+   },
+   "tg128_tps": {
+    "ci95": [
+     26.0,
+     26.44
+    ],
+    "effect_pct": 26.2
+   }
+  },
+  "q4_k_m_vs_q8_0": {
+   "pp512_tps": {
+    "ci95": [
+     -21.57,
+     -16.51
+    ],
+    "effect_pct": -18.88
+   },
+   "tg128_tps": {
+    "ci95": [
+     26.67,
+     27.56
+    ],
+    "effect_pct": 27.09
+   }
+  }
+ },
+ "kind": "ab",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf",
+ "run": "qs-xtx2-g2",
+ "schedule_seed": 0,
+ "server_args": [
+  "-sm",
+  "tensor",
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ]
+}

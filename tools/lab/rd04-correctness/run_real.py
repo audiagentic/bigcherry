@@ -24,7 +24,7 @@ from bigcherry.patch import validation_campaign as vc  # noqa: E402
 HIP_PATH = Path("/home/audumla/rocm-shim")
 ARCHITECTURES = ("gfx1100", "gfx1201", "gfx1030")
 DEVICE_INDEX_BY_ARCH = {"gfx1100": "0", "gfx1201": "2", "gfx1030": "3"}
-MODEL = Path("/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
+MODEL = Path("/mnt/data/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
 CORPUS = Path("/tmp/wikitext2-small-slice.txt")
 
 

@@ -1,9 +1,9 @@
 """The host environment must be loadable, complete, and fail closed.
 
-These are contract tests over the REAL config/environment.toml, not a
-fixture: the point of the file is that this project's actual host facts are
-resolvable from config rather than hardcoded in prose, so a test against a
-synthetic document would not check the thing that matters.
+Contract tests run over the tracked template (config/environment.example.toml),
+which must document every key and load cleanly. Host-specific values live only
+in the untracked config/environment.local.toml (or $BIGCHERRY_ENVIRONMENT); when
+that file is present it is checked for the same contract.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from bigcherry.core import environment as env
 class EnvironmentContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.env = env.load(env.default_path(ROOT))
+        cls.env = env.load(env.example_path(ROOT))
         cls.host = cls.env.host()
 
     def test_default_host_resolves(self):
@@ -59,19 +59,12 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(idx, sorted(idx))
         self.assertEqual(len(idx), len(set(idx)))
 
-    def test_devices_have_real_verified_pci_locators(self):
-        # PRBE111: every real Brutus device's PCI BDF was independently
-        # verified via `rocm-smi --showbus`/`--showproductname` on the real
-        # host (2026-09-13) -- required for llama-server-based attestation
-        # (parse_llama_server_attestation()) to positively confirm which
-        # physical card ran a measurement, not just its architecture.
-        expected = {
-            0: "0000:03:00.0", 1: "0000:06:00.0",
-            2: "0000:09:00.0", 3: "0000:17:00.0",
-        }
+    def test_devices_have_pci_locators(self):
+        # PRBE111: llama-server attestation needs each device's real PCI BDF;
+        # the loader already rejects malformed ones, so presence is the contract.
         for d in self.host.devices:
             with self.subTest(index=d.index):
-                self.assertEqual(d.locator, expected[d.index])
+                self.assertTrue(d.locator)
 
     def test_gpu_visibility_env_rejects_an_unknown_ordinal(self):
         # Fail closed: a typo in a device list must not silently produce a
@@ -122,8 +115,35 @@ class EnvironmentContractTests(unittest.TestCase):
                            ("BC_BENCH_HARNESS", self.host.bench_harness)):
             with self.subTest(var=var):
                 self.assertIn(var, text)
-        self.assertIn("environment.toml", text,
+        self.assertIn("environment.local.toml", text,
                       "the shell script must read the same config, not restate it")
+
+
+@unittest.skipUnless(env.default_path(ROOT).is_file(), "no host-local environment configured")
+class LocalEnvironmentTests(unittest.TestCase):
+    """The machine's real (untracked) host file obeys the same contract."""
+
+    def test_local_environment_loads_with_devices_and_locators(self):
+        host = env.load(env.default_path(ROOT)).host()
+        self.assertTrue(host.devices)
+        for d in host.devices:
+            with self.subTest(index=d.index):
+                self.assertTrue(d.locator)
+
+
+class EnvironmentOverrideTests(unittest.TestCase):
+    def test_bigcherry_host_env_overrides_scalar(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"BIGCHERRY_HOST_MODEL_ROOT": "/override/models"}):
+            host = env.load(env.example_path(ROOT)).host()
+        self.assertEqual(host.model_root, "/override/models")
+
+    def test_bigcherry_environment_selects_file(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"BIGCHERRY_ENVIRONMENT": "/elsewhere/env.toml"}):
+            self.assertEqual(env.default_path(ROOT), Path("/elsewhere/env.toml"))
 
 
 class GpuVisibilityPairTests(unittest.TestCase):
@@ -154,7 +174,7 @@ class GpuVisibilityPairTests(unittest.TestCase):
     def test_host_method_and_pure_function_agree(self):
         # Host.gpu_visibility_env validates against real device inventory
         # then delegates to gpu_visibility_pair -- same output either way.
-        loaded = env.load(env.default_path(ROOT))
+        loaded = env.load(env.example_path(ROOT))
         host = loaded.host()
         idx = host.devices[-1].index
         self.assertEqual(host.gpu_visibility_env(idx), env.gpu_visibility_pair((idx,)))

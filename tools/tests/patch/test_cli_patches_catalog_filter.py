@@ -58,10 +58,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
         self.assertNotIn("1200_rd19_single_gpu_meta_bypass", out)
         self.assertIn(f"({_real_catalog_total()} total in catalog)", out)
 
-    def test_backend_vulkan_currently_matches_nothing(self):
-        # Real state of the catalog today: zero Vulkan patches exist (RE30
-        # phase 3 hasn't started). The filter must say so plainly, not
-        # silently print an empty table indistinguishable from an error.
+    def test_backend_vulkan_lists_the_vulkan_patches(self):
         code, out, _ = _run(
             [
                 "patches",
@@ -70,9 +67,7 @@ class PatchesCatalogFilterTests(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
-        self.assertIn(
-            "no patches match the given --kind/--backend/--origin filter", out
-        )
+        self.assertIn("1269_prbe55_vk_smalln_dmmv", out)
 
     def test_backend_hip_matches_every_current_patch(self):
         code, out, _ = _run(

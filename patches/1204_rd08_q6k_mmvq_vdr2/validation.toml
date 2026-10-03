@@ -15,7 +15,7 @@ required = true
 [[check]]
 id = "correctness"
 capability = "correctness"
-validator = "autotune-campaign"
+validator = "correctness-summary"
 required = true
 
 [[check]]
@@ -28,18 +28,18 @@ marker-regex = "BIGCHERRY_PATCH_HIT patch=1204_rd08 path=q6k_mmvq_vdr2"
 [[check]]
 id = "performance"
 capability = "performance"
-validator = "autotune-campaign"
+validator = "benchmark"
 required = true
 # PVPS02: generic --run-performance-benchmark wiring (docs/planning/
 # active/patching-validation-package-standard/PVPS02.md). RD08's real
 # lane commands have never carried extra flags on this call path
-# (rd08_validation_lane_commands' extra_flags stays empty) -- kept
-# empty here to match, not because the field is unsupported.
+# (the shared _paired_llama_bench_command runtime_args stay empty) --
+# kept empty here to match, not because the field is unsupported.
 benchmark-executor = "paired-llama-bench-v1"
 benchmark-extra-args = []
 
 [[check]]
 id = "controls"
 capability = "controls"
-validator = "autotune-campaign"
+validator = "benchmark"
 required = true

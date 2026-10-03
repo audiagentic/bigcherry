@@ -133,10 +133,20 @@ _DETECT_BLOCK = """    // Dual-output mmvq fusion: two matmuls over the same act
                     continue;
                 }
                 if (mid->op != GGML_OP_MUL_MAT || !(mid->flags & GGML_TENSOR_FLAG_COMPUTE) ||
-                        mid->src[1] != mm_a->src[1] || mid->ne[0] != mm_a->ne[0] ||
-                        mid->ne[1] != mm_a->ne[1] || mid->ne[2] != mm_a->ne[2] ||
+                        mid->src[1] != mm_a->src[1] ||
+                        // bigcherry PRBE40: the kernel writes dst_gate with mm_a's strides,
+                        // so the full shape (ne[0..3]) AND strides (nb[0..3]) must match
+                        // and both outputs must be F32 (the fork compared ne[0..2] only).
+                        !ggml_are_same_shape(mid, mm_a) || !ggml_are_same_stride(mid, mm_a) ||
+                        mid->type != GGML_TYPE_F32 || mm_a->type != GGML_TYPE_F32 ||
                         mid->src[0] == mm_a->src[0] || mid->src[0]->type != mm_a->src[0]->type ||
                         !ggml_cuda_should_fuse_mul_mat_vec_q(mid)) {
+                    break;
+                }
+                // bigcherry PRBE40: neither output may alias an input of the fused
+                // span (upstream's shared overlap proof used by the other fusions).
+                const int rd12_out_nodes[2] = { i, j };
+                if (!ggml_cuda_check_fusion_memory_ranges(cgraph, i, j - i + 1, rd12_out_nodes, 2)) {
                     break;
                 }
                 ggml_cuda_mm_fusion_args_host fusion_data{};
@@ -156,7 +166,8 @@ _DETECT_BLOCK = """    // Dual-output mmvq fusion: two matmuls over the same act
                         // behind llama-bench's own --verbose flag, causing a
                         // real false-negative activation finding this
                         // session. WARN matches RD08's precedent.
-                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion\\n");
+                        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1205_rd12 path=dual_output_mmvq_fusion a=%s b=%s\\n",
+                                      mm_a->src[0]->name, mid->src[0]->name);
                     }
                 }
                 ggml_cuda_mul_mat_vec_q(*cuda_ctx, mm_a->src[0], mm_a->src[1], mm_a->src[2], mm_a, &fusion_data);

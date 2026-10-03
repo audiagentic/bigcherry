@@ -15,31 +15,63 @@ priority: null
 
 ## Description
 
-Use Composable Kernel offline profiling as an oracle for captured hot GEMM signatures without adding CK as a broad runtime dependency.
+TODO. No patch/upstream item implements a Composable Kernel offline oracle; no tools/lab/ck-oracle/ directory exists yet. Still relevant for identifying tile/algorithm choices on gfx1100/gfx1201 dense+MoE GEMM. Pure tooling/process, deliberately kept out of the runtime dependency graph.
 
 ## Steps
 
-Select top dense/MoE signatures ranked by time*calls; run CK profiler and native MMQ/MMVQ/hipBLASLt controls with numerical parity; record throughput/resource use; if CK wins, reproduce only the useful specialization in ggml or evaluate a narrow integration.
+1. Create tools/lab/ck-oracle/manifests/ with a JSON schema capturing hot signatures: {"shape": {"m":..,"n":..,"k":..,"batch":..}, "dtype_a":..,"dtype_b":.., "op": "gemm|moe_gemm", "source": "llama-bench-op-timing", "time_ms_total":.., "calls":..}. Populate it by running llama-bench with GGML_CUDA_OP_TIMING=1 (existing env var, see patch 1203's op-timing instrumentation precedent in patches/1203_rd050607_rdna4_wmma_fa_q6k_mmq/patch.py) against representative dense (qwen35-27B shapes, already used in 1203's test-backend-ops perf cases) and MoE workloads, sorting by time*calls, and taking the top N signatures.
+2. Write tools/lab/ck-oracle/run_ck.py: shells out to `${CK_PROFILER_PATH:-ckProfiler}` per manifest entry with the matching CK profiler subcommand (gemm/grouped_gemm for MoE) and the exact M/N/K/batch/dtype, capturing stdout (throughput, best instance/tile config) into tools/lab/ck-oracle/results/<signature-id>.json.
+3. Write tools/lab/ck-oracle/run_native.py: runs the SAME signatures through existing native controls -- MMQ/MMVQ (test-backend-ops perf harness, same shapes) and hipBLASLt (if available) -- recording throughput for direct comparison, plus a correctness check (max abs/rel diff) between CK's output and the F32 reference for the same shape (small dedicated correctness run, not the profiler's own perf-only mode).
+4. Write tools/lab/ck-oracle/DECISIONS.md documenting, per signature where CK wins: (a) is the winning tile/algorithm choice reproducible in ggml-cuda's own kernel structure without vendoring CK itself (state yes/no and why), (b) if yes, file a new plan item referencing the CK evidence for the narrow specialization (out of scope here); if no, record explicit no-port disposition with the throughput delta and reasoning.
+5. Never add CK as a build dependency of the main project; ckProfiler is assumed pre-built and referenced only via env var path, entirely offline/optional tooling.
+
+1. Create tools/lab/ck-oracle/manifests/ with a JSON schema capturing hot signatures: {"shape": {"m":..,"n":..,"k":..,"batch":..}, "dtype_a":..,"dtype_b":.., "op": "gemm|moe_gemm", "source": "llama-bench-op-timing", "time_ms_total":.., "calls":..}. Write a concrete PARSER (tools/lab/ck-oracle/parse_op_timing.py) that reads GGML_CUDA_OP_TIMING's actual stdout/log format (run `GGML_CUDA_OP_TIMING=1 ./build/bin/llama-bench ...` once and capture real sample output first -- do not assume its format) and converts matching MUL_MAT/MUL_MAT_ID lines into manifest JSON entries, sorted by time*calls, top N.
+2. Write tools/lab/ck-oracle/run_ck.py: shells out to `${CK_PROFILER_PATH:-ckProfiler}` per manifest entry. Before finalizing the command template, run `ckProfiler gemm --help` (or the installed CK build's real subcommand) and record its ACTUAL flag syntax in this file's code_samples -- the placeholder positional-arg command below is NOT confirmed against a real CK build and must not be used verbatim.
+3. Write tools/lab/ck-oracle/run_native.py: runs the SAME signatures through existing native controls (MMQ/MMVQ via test-backend-ops perf harness, same shapes) and hipBLASLt (if available), recording throughput for direct comparison. Define the CK-vs-F32 correctness mechanism concretely: run each CK profiler invocation's OWN verification mode if it has one (check `--help` for a verify/check flag), and separately run a small dedicated correctness harness that feeds CK's exposed compute (if a library-call mode exists beyond the profiler CLI) or, if the profiler CLI has no accessible raw-output mode, explicitly document that only the profiler's own internal verification is available and record that as the correctness evidence's actual (limited) scope -- do not invent an external byte-comparison mechanism that the profiler CLI cannot support.
+4. Write tools/lab/ck-oracle/DECISIONS.md documenting, per signature where CK wins: (a) is the winning tile/algorithm choice reproducible in ggml-cuda's own kernel structure without vendoring CK itself, (b) if yes, file a new plan item; if no, record explicit no-port disposition.
+5. Never add CK as a build dependency of the main project.
 
 ## Detailed Solution & Technical Design
 
-CK is an offline vendor/architecture oracle. Keep exact-signature benchmarking and provenance separate from runtime dependencies; use it to identify tile/algorithm choices BigCherry can implement or deliberately decline.
+The oracle's job is comparative offline benchmarking only, producing evidence that feeds separate, later, narrowly-scoped ggml-cuda patches -- it is not itself a patch and never becomes one. Manifest -> CK run -> native run -> decision is a strict one-way data pipeline; committing to CK's tile choice happens only via reproducing the SPECIFIC winning config as ordinary ggml-cuda C++/HIP, never by linking against CK.
 
 ## Code Samples & Guidance
 
+run_ck.py skeleton:
+```python
+import json, os, subprocess, pathlib
 
+CK_PROFILER = os.environ.get("CK_PROFILER_PATH", "ckProfiler")
+MANIFEST_DIR = pathlib.Path("tools/lab/ck-oracle/manifests")
+RESULTS_DIR = pathlib.Path("tools/lab/ck-oracle/results")
+
+def run_one(sig: dict) -> dict:
+    cmd = [CK_PROFILER, "gemm" if sig["op"] == "gemm" else "grouped_gemm",
+           str(sig["dtype_a"]), "0",  # layout/verify flags per CK's own CLI -- confirm against installed CK version's --help
+           str(sig["shape"]["m"]), str(sig["shape"]["n"]), str(sig["shape"]["k"])]
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    return {"signature": sig, "stdout": out.stdout, "returncode": out.returncode}
+
+if __name__ == "__main__":
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    for f in MANIFEST_DIR.glob("*.json"):
+        sig = json.loads(f.read_text())
+        result = run_one(sig)
+        (RESULTS_DIR / f"{f.stem}.ck.json").write_text(json.dumps(result, indent=2))
+```
+(the exact ckProfiler CLI flags must be confirmed against the installed CK build's own --help before this is runnable -- placeholder above.)
 
 ## Files
 
-Offline CK profiling tooling, captured signature manifests, native-control comparison and evidence.
+tools/lab/ck-oracle/manifests/*.json; tools/lab/ck-oracle/run_ck.py; tools/lab/ck-oracle/run_native.py; tools/lab/ck-oracle/results/*.json; tools/lab/ck-oracle/DECISIONS.md.
 
 ## Validation
 
-Numerical parity; kernel throughput and resource use against native winners.
+Numerical parity (CK output vs F32 reference, max abs/rel diff) recorded per signature; throughput/resource-use comparison table CK vs native winners in DECISIONS.md. No BigCherry patch-lint/rebase-check applies since no patches/ package is produced by this item itself.
 
 ## Effort & Risk
 
-
+S-M; mostly scripting, gated on CK being buildable/available on Brutus (external dependency for the offline tool only, never for the shipped binary).
 
 ## Standards
 
@@ -55,13 +87,16 @@ Supersedes: RD88
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-rdna-boost-experiments-rd88
 
+2026-09-24 relevance at b11126: TODO, no existing tooling directory or patch. GPT design request: gateway rejected all submissions this session (VAL-AGW-025 / EXT-GPTAUTO-003); plan authored directly, referencing existing GGML_CUDA_OP_TIMING precedent in patch 1203 -- no GPT request id.
+
+2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- added concrete GGML_CUDA_OP_TIMING output parser step (must capture real sample output first, not assume format); required ckProfiler --help to be run before finalizing CLI syntax; defined CK-vs-F32 correctness mechanism's actual achievable scope instead of an undefined byte-comparison.
+
 ## Change Log
 
 - 2026-09-09T10:58:27.196577+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:15:38.618139+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.444745+00:00 (updated-by): Updated: section:ledger-events
@@ -70,3 +105,6 @@ Successor key: patching-rdna-boost-experiments-rd88
 - 2026-09-10T03:20:07.380935+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032047_repaired-five-more-active-succ_6361
 - 2026-09-10T03:20:47.919311+00:00 (updated-by): Updated: section:ledger-events
+- 2026-09-24T02:34:41.598269+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
+- 2026-09-24T04:48:37.038568+00:00 (updated-by): Updated: section:steps
+- 2026-09-24T04:48:42.852623+00:00 (updated-by): Updated: section:notes

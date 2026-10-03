@@ -1,0 +1,105 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
+    "strict": true,
+    "summary": {
+      "errors": 1,
+      "passed": 33,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "fd752aaab7dc0a6d9289276e03f936414d002723",
+  "first_seen": "2026-09-28T21:55:50.436532+00:00",
+  "manifest_hash": "",
+  "notes": "source audit failed: overlay.vendor_sync",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "applied",
+        "hip-autotune-validation": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "nro04-gdn_dispatch-01": "applied",
+        "nro04-gdn_dispatch-02": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh": {
+        "nro04-header-01": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu": {
+        "nro04-bf16_gfx12-01": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu": {
+        "nro04-bf16_gfx11-01": "applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "blas-coverage-count": "applied",
+        "blas-coverage-include": "applied",
+        "ggml_hip_family_blas-diagnostics-only-count": "applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-dispatch.cu": {
+        "rd30-workspace-moe": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd30b-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "ggml_hip_family_mmvq-diagnostics-only-count": "applied",
+        "mmvq-coverage-count": "applied",
+        "mmvq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "nro04-tests-01": "applied",
+        "nro04-tests-02": "applied",
+        "nro04-tests-03": "applied",
+        "nro04-tests-04": "applied",
+        "nro04-tests-05": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "b11233",
+  "revision": "d77dd0806dc26fc418273ef99f88da11239ca41b",
+  "stage": "patched",
+  "tree_state": "466adc31d3e24ac9",
+  "updated_at": "2026-09-28T23:52:06.715866+00:00"
+}

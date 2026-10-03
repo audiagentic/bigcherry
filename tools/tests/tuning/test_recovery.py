@@ -508,6 +508,40 @@ class EnsureCorrectnessEvidenceTests(unittest.TestCase):
             # Budget was exhausted BEFORE a third real generation call.
             self.assertEqual(mock_gen.call_count, 2)
 
+    def test_signature_digest_verifier_defaults_to_none_when_not_supplied(self):
+        # Constructing an AssignmentExecutor without a signature_digest_
+        # verifier (e.g. an older/direct caller) must still work -- the
+        # field is optional so this stays a real, valid construction.
+        self.assertIsNone(self.executor.signature_digest_verifier)
+
+    def test_signature_digest_verifier_is_forwarded_to_generate_for_candidate(self):
+        # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+        # once the mandatory HI121/HI125 preflight was generalized, lazy
+        # recovery-alternative qualification inherited the same record-
+        # capability bug real winner evidence had -- the campaign's own
+        # memoized verifier must reach hi80.generate_for_candidate() here
+        # too, not just workflow.py's own _stage_correctness_evidence loop.
+        sentinel_verifier = lambda canonical: "cafef00d" * 4
+        workdir = Path(self._tmp.name)
+        measurements_path = workdir / "promoted.jsonl"
+        executor = rec.AssignmentExecutor(
+            binary_path=Path("llama-server"), model_path=Path("model.gguf"), devices="0",
+            common_args=(), measurements_path=measurements_path,
+            manifest_path=workdir / "manifest.json", ggml_h_path=workdir / "ggml.h",
+            workdir=workdir, dispatch_db=workdir / "tune.sqlite",
+            correctness_binary_path=Path("test-backend-ops"), vendor_root=workdir,
+            max_new_correctness_candidates=2, signature_digest_verifier=sentinel_verifier,
+        )
+        self.addCleanup(lambda: executor._dispatch_db_conn and executor._dispatch_db_conn.close())
+        result = hi80.EvidenceGenerationResult(
+            evidence_id=1, status="generated", dispatchable=True, subprocess_runs=6,
+        )
+        with patch.object(hi80, "generate_for_candidate", return_value=result) as mock_gen:
+            executor.ensure_correctness_evidence("d0", "family:alt2:v1")
+        self.assertIs(
+            mock_gen.call_args.kwargs["signature_digest_verifier"], sentinel_verifier,
+        )
+
 
 class AssignmentExecutorEvaluateRealVectorMatchingTests(unittest.TestCase):
     """HTR01 (2026-08-30): a real, severe bug -- vectors_to_run held real

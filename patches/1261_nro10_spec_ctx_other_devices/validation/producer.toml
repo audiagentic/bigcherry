@@ -1,0 +1,36 @@
+schema = 1
+
+# 1261's (PNRO10-SPEC-CTX-OTHER-DEVICES) patch-local producer. The patch
+# adds ctx_other's model devices to the draft/MTP context's scheduler
+# backend list so shared tensors between the draft and target contexts can
+# be scheduled -- unconditional whenever a draft context is created
+# (src/llama-context.cpp: common_speculative_init_result always sets
+# cparams.ctx_other = ctx_tgt), so the real-world trigger is an ordinary
+# dual-GPU -sm tensor MTP deployment (the same shape 1252/1241/1269 already
+# exercise), not a bespoke CLI flag -- llama.cpp's --spec-draft-device path
+# is a separate, unrelated mechanism (a genuinely separate draft model on
+# its own device) that this project's MTP (draft-mtp, same-model draft
+# head) does not use.
+#
+# correctness (greedy_parity): a fixed temperature-0, top_k=1, seeded
+# completion under MTP on the dual-gfx1100 -sm tensor server must return the
+# identical token sequence on control and subject -- 1261 must not change
+# what tokens are ultimately emitted, only whether the scheduler can find a
+# backend for the shared ctx_other tensors.
+#
+# No activation check: the fix has no opt-in marker/env toggle to probe.
+#
+# performance (positive) + controls: same tierA-qwen4b-q6k model for both
+# per the contract (positive.workloads=["mtp_verify"], controls.workloads=
+# ["decode"]) -- no separate --producer-input control_model needed.
+[producer.nro10]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro10-correctness.json",
+  "nro10-performance.json",
+]

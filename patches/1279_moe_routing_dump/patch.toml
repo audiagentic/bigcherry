@@ -1,0 +1,17 @@
+schema = 1
+id = "1279_moe_routing_dump"
+order = 1279
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "hip"
+plan-ids = ["QFN02"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["moe"]
+tags = []
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

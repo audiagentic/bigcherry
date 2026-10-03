@@ -1,0 +1,15 @@
+schema = 1
+
+[producer.prbe110-rd07]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "prbe110-rd07-correctness.json",
+  "prbe110-rd07-performance.json",
+  "prbe110-rd07-subject.log",
+  "prbe110-rd07-control.log",
+]

@@ -112,13 +112,13 @@ def build_report(context: ProjectContext | None = None) -> dict[str, object]:
         },
         "source_plans": recipes_report,
         "pin_status": _pin_status_section(context),
-        "known_aliases": {
-            "bigcherry-native_vs_bigcherry": {
-                "legacy_selector_equal": True,
-                "effective_source_identity": "not-yet-materialized",
-                "reporting_rule": "do-not-claim-a-source-difference",
-            }
-        },
+        # PA29 cutover (GPT design review req_964ec5fc21c14848): removed the
+        # old "known_aliases: bigcherry-native_vs_bigcherry legacy_selector_
+        # equal=True" claim. It is no longer true -- source.bigcherry now
+        # composes serving-core (a real subset of the old framework
+        # patch-set) plus validated-enhancements, while bigcherry-native
+        # still composes the full framework set; asserting selector equality
+        # here would contradict PA29's explicit no-alias/no-shim design.
         "roots": {
             "work": str(context.work_root),
             "artifacts": str(context.artifacts_root),
@@ -164,9 +164,6 @@ def main(*, as_json: bool = False, context: ProjectContext | None = None) -> int
         )
         print(f"Patch modules: {len(patch_rows)}")
         print("Promoted enhancement set: none (owner/reviewer classification required)")
-        print(
-            "bigcherry-native vs bigcherry: legacy selectors equal; no source delta claimed"
-        )
         pin_status_report = cast("dict[str, object]", report["pin_status"])
         verdict = pin_status_report["verdict"]
         vendor = str(pin_status_report["vendor_head"] or "none")[:12]

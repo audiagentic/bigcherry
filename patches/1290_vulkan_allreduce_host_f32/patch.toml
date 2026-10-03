@@ -1,0 +1,17 @@
+schema = 1
+id = "1290_vulkan_allreduce_host_f32"
+order = 1290
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "vulkan"
+plan-ids = ["PRVP03"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "tensor-parallel", "vulkan"]
+tags = ["allreduce", "tensor-parallel", "meta-backend"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
+backends = ["vulkan"]

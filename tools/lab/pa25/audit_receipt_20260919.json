@@ -1,0 +1,745 @@
+{
+  "audit": "PA25",
+  "bigcherry_revision": "434ddbbc0e30522e897670681e503b797c12b7c1",
+  "evidence_root": "None",
+  "llama_cpp_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+  "patch_catalog_snapshot": "H:\\development\\projects\\bigcherry\\patches\\catalog.toml",
+  "patches": {
+    "0840_hybrid_allreduce_dispatch": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    },
+    "1001_hip_internal_allreduce": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "composition": [
+            "0100_cmake_options",
+            "0110_campaign_tune_record_build",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+            "0800_server_shutdown_endpoint",
+            "0810_replay_hit_diagnostics",
+            "0820_measurement_signature_shapes",
+            "0900_pool_workspace_metrics",
+            "1001_hip_internal_allreduce"
+          ],
+          "g4": {
+            "authority": "patch.catalog",
+            "detail": [
+              "no current qualifying HI83 validation record"
+            ],
+            "phase": "evidence",
+            "status": "FAIL"
+          },
+          "g7": {
+            "authority": null,
+            "detail": [],
+            "phase": null,
+            "status": "NOT_RUN"
+          },
+          "selector": {
+            "module_hashes": [
+              [
+                "0100_cmake_options",
+                "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+              ],
+              [
+                "0110_campaign_tune_record_build",
+                "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+              ],
+              [
+                "0200_dispatch_hook",
+                "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+              ],
+              [
+                "0300_mmq_forced_j",
+                "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+              ],
+              [
+                "0400_mmvf_forced_block",
+                "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+              ],
+              [
+                "0500_mmf_forced_nwarps",
+                "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+              ],
+              [
+                "0600_mmvq_geometry",
+                "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+              ],
+              [
+                "0650_mmvq_native_variant",
+                "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+              ],
+              [
+                "0700_coverage_counters",
+                "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+              ],
+              [
+                "0800_server_shutdown_endpoint",
+                "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+              ],
+              [
+                "0810_replay_hit_diagnostics",
+                "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+              ],
+              [
+                "0820_measurement_signature_shapes",
+                "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+              ],
+              [
+                "0900_pool_workspace_metrics",
+                "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+              ],
+              [
+                "1001_hip_internal_allreduce",
+                "4cab1aa7c74ad76ac35141588eeae92ba3a9a0493d55273d7faae89c71960f3e"
+              ]
+            ],
+            "patch_ids": [
+              "0100_cmake_options",
+              "0110_campaign_tune_record_build",
+              "0200_dispatch_hook",
+              "0300_mmq_forced_j",
+              "0400_mmvf_forced_block",
+              "0500_mmf_forced_nwarps",
+              "0600_mmvq_geometry",
+              "0650_mmvq_native_variant",
+              "0700_coverage_counters",
+              "0800_server_shutdown_endpoint",
+              "0810_replay_hit_diagnostics",
+              "0820_measurement_signature_shapes",
+              "0900_pool_workspace_metrics",
+              "1001_hip_internal_allreduce"
+            ],
+            "patch_set_id": "336012426e1e81977e64dbe7d88d5d3b",
+            "schema_version": 2,
+            "selector_kind": "experiment",
+            "selector_name": "experiment:hip-internal-allreduce-only",
+            "source_name": "bigcherry-tuning",
+            "source_ref": "b10901"
+          },
+          "state": "EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    },
+    "1002_hip_unsafe_math_opt_in": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "composition": [
+            "0100_cmake_options",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+            "1002_hip_unsafe_math_opt_in"
+          ],
+          "g4": {
+            "authority": "patch.catalog",
+            "detail": [
+              "no current qualifying HI83 validation record",
+              "stale/ineligible: 28187858a6ea: patch_validation_subject_digest='67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2', expected '301d24a8c0edac0f19b731cf733b4563249f25f10394b46fba2eeb19461ffed4'; base_ref='b10502', expected 'b10901'; validation_disposition='incomplete', expected 'validated'; eligible_for_validated_state=False, expected True; base_revision='0adcc3bb571011bff8b91335d0728a82845c421b' does not match the currently resolved pin '28ff0958291ce3465fabd7bd679d4b0edd742bd9'; activation is not executed+activation-verified; correctness did not pass"
+            ],
+            "phase": "evidence",
+            "status": "FAIL"
+          },
+          "g7": {
+            "authority": null,
+            "detail": [],
+            "phase": null,
+            "status": "NOT_RUN"
+          },
+          "selector": {
+            "module_hashes": [
+              [
+                "0100_cmake_options",
+                "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+              ],
+              [
+                "0200_dispatch_hook",
+                "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+              ],
+              [
+                "0300_mmq_forced_j",
+                "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+              ],
+              [
+                "0400_mmvf_forced_block",
+                "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+              ],
+              [
+                "0500_mmf_forced_nwarps",
+                "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+              ],
+              [
+                "0600_mmvq_geometry",
+                "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+              ],
+              [
+                "0650_mmvq_native_variant",
+                "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+              ],
+              [
+                "0700_coverage_counters",
+                "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+              ],
+              [
+                "1002_hip_unsafe_math_opt_in",
+                "67d6ce6ab9f1b47a884a6847e3710e50cc0cba9cda98c0a71f0718d3ffb81be2"
+              ]
+            ],
+            "patch_ids": [
+              "0100_cmake_options",
+              "0200_dispatch_hook",
+              "0300_mmq_forced_j",
+              "0400_mmvf_forced_block",
+              "0500_mmf_forced_nwarps",
+              "0600_mmvq_geometry",
+              "0650_mmvq_native_variant",
+              "0700_coverage_counters",
+              "1002_hip_unsafe_math_opt_in"
+            ],
+            "patch_set_id": "02a835ae19cf90859731770b05e8308f",
+            "schema_version": 2,
+            "selector_kind": "focal-overlay",
+            "selector_name": "focal:1002_hip_unsafe_math_opt_in",
+            "source_name": "bigcherry",
+            "source_ref": "b10901"
+          },
+          "state": "EVALUATED"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    },
+    "1200_rd19_single_gpu_meta_bypass": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "composition": [
+            "0100_cmake_options",
+            "0110_campaign_tune_record_build",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+            "0800_server_shutdown_endpoint",
+            "0810_replay_hit_diagnostics",
+            "0820_measurement_signature_shapes",
+            "0900_pool_workspace_metrics",
+            "1200_rd19_single_gpu_meta_bypass"
+          ],
+          "g4": {
+            "authority": "patch.catalog",
+            "detail": [
+              "no current qualifying HI83 validation record",
+              "missing architecture(s): gfx1030, gfx1100, gfx1201"
+            ],
+            "phase": "evidence",
+            "status": "FAIL"
+          },
+          "g7": {
+            "authority": null,
+            "detail": [],
+            "phase": null,
+            "status": "NOT_RUN"
+          },
+          "selector": {
+            "module_hashes": [
+              [
+                "0100_cmake_options",
+                "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+              ],
+              [
+                "0110_campaign_tune_record_build",
+                "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+              ],
+              [
+                "0200_dispatch_hook",
+                "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+              ],
+              [
+                "0300_mmq_forced_j",
+                "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+              ],
+              [
+                "0400_mmvf_forced_block",
+                "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+              ],
+              [
+                "0500_mmf_forced_nwarps",
+                "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+              ],
+              [
+                "0600_mmvq_geometry",
+                "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+              ],
+              [
+                "0650_mmvq_native_variant",
+                "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+              ],
+              [
+                "0700_coverage_counters",
+                "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+              ],
+              [
+                "0800_server_shutdown_endpoint",
+                "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+              ],
+              [
+                "0810_replay_hit_diagnostics",
+                "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+              ],
+              [
+                "0820_measurement_signature_shapes",
+                "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+              ],
+              [
+                "0900_pool_workspace_metrics",
+                "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+              ],
+              [
+                "1200_rd19_single_gpu_meta_bypass",
+                "7dcc260926ef2de85fbbe625d1184f9cd41bcf3068b2b2533d9645b2378ab5dd"
+              ]
+            ],
+            "patch_ids": [
+              "0100_cmake_options",
+              "0110_campaign_tune_record_build",
+              "0200_dispatch_hook",
+              "0300_mmq_forced_j",
+              "0400_mmvf_forced_block",
+              "0500_mmf_forced_nwarps",
+              "0600_mmvq_geometry",
+              "0650_mmvq_native_variant",
+              "0700_coverage_counters",
+              "0800_server_shutdown_endpoint",
+              "0810_replay_hit_diagnostics",
+              "0820_measurement_signature_shapes",
+              "0900_pool_workspace_metrics",
+              "1200_rd19_single_gpu_meta_bypass"
+            ],
+            "patch_set_id": "57700cd4dc13711d873935fabb4d166e",
+            "schema_version": 2,
+            "selector_kind": "experiment",
+            "selector_name": "experiment:rd19-only",
+            "source_name": "bigcherry-tuning",
+            "source_ref": "b10901"
+          },
+          "state": "EVALUATED"
+        }
+      }
+    },
+    "1224_hi18_reduce_correctness_probe": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "composition": [
+            "0100_cmake_options",
+            "0110_campaign_tune_record_build",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+            "0800_server_shutdown_endpoint",
+            "0810_replay_hit_diagnostics",
+            "0820_measurement_signature_shapes",
+            "0900_pool_workspace_metrics",
+            "1224_hi18_reduce_correctness_probe"
+          ],
+          "g4": {
+            "authority": "patch.catalog",
+            "detail": [
+              "no current qualifying HI83 validation record"
+            ],
+            "phase": "evidence",
+            "status": "FAIL"
+          },
+          "g7": {
+            "authority": null,
+            "detail": [],
+            "phase": null,
+            "status": "NOT_RUN"
+          },
+          "selector": {
+            "module_hashes": [
+              [
+                "0100_cmake_options",
+                "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+              ],
+              [
+                "0110_campaign_tune_record_build",
+                "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+              ],
+              [
+                "0200_dispatch_hook",
+                "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+              ],
+              [
+                "0300_mmq_forced_j",
+                "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+              ],
+              [
+                "0400_mmvf_forced_block",
+                "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+              ],
+              [
+                "0500_mmf_forced_nwarps",
+                "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+              ],
+              [
+                "0600_mmvq_geometry",
+                "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+              ],
+              [
+                "0650_mmvq_native_variant",
+                "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+              ],
+              [
+                "0700_coverage_counters",
+                "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+              ],
+              [
+                "0800_server_shutdown_endpoint",
+                "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+              ],
+              [
+                "0810_replay_hit_diagnostics",
+                "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+              ],
+              [
+                "0820_measurement_signature_shapes",
+                "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+              ],
+              [
+                "0900_pool_workspace_metrics",
+                "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+              ],
+              [
+                "1224_hi18_reduce_correctness_probe",
+                "213f57d089f4d923318d6b9d32ff6d8e228ec8e9767eeba871c251b09b3a6866"
+              ]
+            ],
+            "patch_ids": [
+              "0100_cmake_options",
+              "0110_campaign_tune_record_build",
+              "0200_dispatch_hook",
+              "0300_mmq_forced_j",
+              "0400_mmvf_forced_block",
+              "0500_mmf_forced_nwarps",
+              "0600_mmvq_geometry",
+              "0650_mmvq_native_variant",
+              "0700_coverage_counters",
+              "0800_server_shutdown_endpoint",
+              "0810_replay_hit_diagnostics",
+              "0820_measurement_signature_shapes",
+              "0900_pool_workspace_metrics",
+              "1224_hi18_reduce_correctness_probe"
+            ],
+            "patch_set_id": "175694bd30c7b2a42c3932bad6a7c8e5",
+            "schema_version": 2,
+            "selector_kind": "experiment",
+            "selector_name": "experiment:hi18-reduce-probe",
+            "source_name": "bigcherry-tuning",
+            "source_ref": "b10901"
+          },
+          "state": "EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    },
+    "1225_hi85_nccl_heterogeneous_arch_guard": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    },
+    "1232_hi81_windows_cxx_hipcc_flags_reach_compile": {
+      "artifact_hashes": {},
+      "blockers": [],
+      "evidence": {
+        "authority": "patch.catalog",
+        "state": "validated"
+      },
+      "g4_g7": {
+        "focal-overlay-1002": {
+          "reason": "focal overlay is for a different patch",
+          "state": "NOT_APPLICABLE"
+        },
+        "focal-overlay-1232": {
+          "composition": [
+            "0100_cmake_options",
+            "0200_dispatch_hook",
+            "0300_mmq_forced_j",
+            "0400_mmvf_forced_block",
+            "0500_mmf_forced_nwarps",
+            "0600_mmvq_geometry",
+            "0650_mmvq_native_variant",
+            "0700_coverage_counters",
+            "1232_hi81_windows_cxx_hipcc_flags_reach_compile"
+          ],
+          "g4": {
+            "authority": "patch.catalog",
+            "detail": [
+              "framework PROMOTE requires the prospective canonical-composition seam"
+            ],
+            "phase": "evidence",
+            "status": "BLOCKED"
+          },
+          "g7": {
+            "authority": null,
+            "detail": [],
+            "phase": null,
+            "status": "NOT_RUN"
+          },
+          "selector": {
+            "module_hashes": [
+              [
+                "0100_cmake_options",
+                "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+              ],
+              [
+                "0200_dispatch_hook",
+                "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+              ],
+              [
+                "0300_mmq_forced_j",
+                "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+              ],
+              [
+                "0400_mmvf_forced_block",
+                "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+              ],
+              [
+                "0500_mmf_forced_nwarps",
+                "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+              ],
+              [
+                "0600_mmvq_geometry",
+                "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+              ],
+              [
+                "0650_mmvq_native_variant",
+                "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+              ],
+              [
+                "0700_coverage_counters",
+                "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+              ],
+              [
+                "1232_hi81_windows_cxx_hipcc_flags_reach_compile",
+                "c83422e7f391a8d842273cbde8b3932c7c0860c6753b794c53a6917793e9fc3f"
+              ]
+            ],
+            "patch_ids": [
+              "0100_cmake_options",
+              "0200_dispatch_hook",
+              "0300_mmq_forced_j",
+              "0400_mmvf_forced_block",
+              "0500_mmf_forced_nwarps",
+              "0600_mmvq_geometry",
+              "0650_mmvq_native_variant",
+              "0700_coverage_counters",
+              "1232_hi81_windows_cxx_hipcc_flags_reach_compile"
+            ],
+            "patch_set_id": "788b9f4a97a4bc9ebf66b023953092bb",
+            "schema_version": 2,
+            "selector_kind": "focal-overlay",
+            "selector_name": "focal:1232_hi81_windows_cxx_hipcc_flags_reach_compile",
+            "source_name": "bigcherry",
+            "source_ref": "b10901"
+          },
+          "state": "EVALUATED"
+        },
+        "hi155-hybrid-allreduce-gate": {
+          "reason": "0840_hybrid_allreduce_dispatch requires explicitly selected module(s): 0830_split_reduce_telemetry, 1225_hi85_nccl_heterogeneous_arch_guard",
+          "state": "ERROR"
+        },
+        "hi18-reduce-probe": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "hip-internal-allreduce-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        },
+        "rd19-only": {
+          "reason": "patch not in selection",
+          "state": "NOT_EVALUATED"
+        }
+      }
+    }
+  },
+  "schema_version": 1
+}

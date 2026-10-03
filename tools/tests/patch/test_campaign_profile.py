@@ -1,0 +1,142 @@
+"""PVPS10 profiler wiring (offline: builds and rocprofv3 mocked)."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from bigcherry.patch.campaign import profile
+
+
+class ProfileWiringTests(unittest.TestCase):
+    def test_both_arms_traced_with_workload_and_env(self) -> None:
+        calls = []
+
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            calls.append((list(command), dict(env or {})))
+            if command[0] == "rocprofv3":
+                trace_dir = Path(command[command.index("-d") + 1])
+                (trace_dir / "host").mkdir(parents=True, exist_ok=True)
+                (trace_dir / "host" / "trace_kernel_trace.csv").write_text("x\n", encoding="utf-8")
+            else:
+                Path(command[command.index("--output") + 1]).write_text("{}", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins), \
+                 mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out), "--env", "GGML_CUDA_DQ_MMV=1",
+                ])
+            self.assertEqual(rc, 0)
+            traced = [c for c in calls if c[0][0] == "rocprofv3"]
+            self.assertEqual([c[0][c[0].index("--") + 1] for c in traced], [str(bins["control"]), str(bins["subject"])])
+            for command, env in traced:
+                self.assertIn("-n", command)
+                self.assertEqual(command[command.index("-n") + 1], "128")
+                self.assertEqual(env["HIP_VISIBLE_DEVICES"], "2")
+                self.assertEqual(env["GGML_CUDA_DQ_MMV"], "1")
+                self.assertEqual(env["BIGCHERRY_PATCH_TRACE"], "1")
+                self.assertNotIn("ROCR_VISIBLE_DEVICES", env)
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(doc["arms"]), {"control", "subject"})
+
+    def test_wrapper_crash_after_measurement_does_not_discard_a_real_trace(self) -> None:
+        # Reproduced 2026-09-27 (fully isolated): rocprofv3 can SIGSEGV in its
+        # own __cxa_finalize AFTER writing a complete, valid trace -- the
+        # measurement is real even though the wrapper process's exit code is
+        # not 0. Discarding it lost good evidence to a benign post-hoc crash.
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            if command[0] == "rocprofv3":
+                trace_dir = Path(command[command.index("-d") + 1])
+                (trace_dir / "host").mkdir(parents=True, exist_ok=True)
+                (trace_dir / "host" / "trace_kernel_trace.csv").write_text("x\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, -11)  # SIGSEGV at exit, trace already written
+            Path(command[command.index("--output") + 1]).write_text("{}", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins), \
+                 mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 0, "a real trace + report must not be discarded over the wrapper's exit code")
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertEqual(arm["returncode"], -11)
+                self.assertTrue(arm["report"])
+                self.assertTrue(arm["wrapper_crashed_after_measurement"])
+
+    def test_kernel_fraction_failure_is_not_masked_by_a_stale_report(self) -> None:
+        # GPT review req_5c9284ea25b04ddd: "a report file exists" alone was
+        # not enough -- a STALE report left over from a PREVIOUS run of the
+        # same out/ dir would be indistinguishable from a fresh success if
+        # kernel-fraction fails (or is never invoked) on THIS run.
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            if command[0] == "rocprofv3":
+                trace_dir = Path(command[command.index("-d") + 1])
+                (trace_dir / "host").mkdir(parents=True, exist_ok=True)
+                (trace_dir / "host" / "trace_kernel_trace.csv").write_text("x\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+            # kernel-fraction fails but (as some real failures do) still
+            # leaves partial content at --output before erroring.
+            Path(command[command.index("--output") + 1]).write_text("{\"partial\": true}", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            (out / "control").mkdir(parents=True)
+            # A stale report from an earlier run of this exact directory.
+            (out / "control" / "kernel-fraction.json").write_text('{"stale": true}', encoding="utf-8")
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins),                  mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 1, "kernel-fraction's own failure must fail the job, stale report or not")
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertFalse(arm["report"])
+            # The stale file itself was removed, not silently kept as "the" report.
+            self.assertEqual((out / "control" / "kernel-fraction.json").read_text(encoding="utf-8"), '{"partial": true}')
+
+    def test_crash_before_any_trace_is_still_a_real_failure(self) -> None:
+        def fake_run(command, stdout=None, stderr=None, env=None, check=False):
+            # rocprofv3 fails outright: no trace directory is ever populated.
+            return subprocess.CompletedProcess(command, 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            bins = {"control": Path(tmp) / "c" / "llama-bench", "subject": Path(tmp) / "s" / "llama-bench"}
+            with mock.patch.object(profile, "build_pair", return_value=bins), \
+                 mock.patch.object(profile.subprocess, "run", side_effect=fake_run):
+                rc = profile.main([
+                    "--patch", "p", "--arch", "gfx1100", "--device", "2", "--model", "m.gguf",
+                    "--workload", "decode", "--hip-path", "/rocm", "--worktree-root", tmp,
+                    "--build-root", tmp, "--out", str(out),
+                ])
+            self.assertEqual(rc, 1)
+            doc = json.loads((out / "profile.json").read_text(encoding="utf-8"))
+            for arm in doc["arms"].values():
+                self.assertFalse(arm["traces"])
+                self.assertFalse(arm["report"])
+                self.assertFalse(arm["wrapper_crashed_after_measurement"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -25,10 +25,15 @@ are in [TEST.md — reusable campaign build matrix](../testing/TEST.md#reusable-
 Framework configuration qualification is a prerequisite build/evidence
 operation, not a substitute for this production performance comparison.
 
+Patch qualification campaigns and A/Bs on the build server run through the
+queue, with a firing pre-flight: see
+[Queued qualification campaigns](#queued-qualification-campaigns-and-the-firing-pre-flight).
+
 ## Environment — the build server
 
 Host facts (address, paths, toolchain, ports, device inventory) live in
-[`config/environment.toml`](../../../config/environment.toml); `source
+`config/environment.local.toml` (gitignored; created from
+[`config/environment.example.toml`](../../../config/environment.example.toml)); `source
 tools/bigcherry-env.sh` exports them as `$BC_*`. See
 [ENVIRONMENT.md](../ENVIRONMENT.md).
 
@@ -72,6 +77,111 @@ not either doc, and fix whichever doc is behind.)
   scp "$BC_HOST:/tmp/thing.md" docs/reference/THING.md   # run from Windows
   ```
 
+## Queued qualification campaigns and the firing pre-flight
+
+Run every patch qualification campaign through `tools/lab/plan-qualification/queue.sh`,
+not ad hoc. The queue gives content-addressed, ccache-backed builds (stock, base,
+control and subject builds are reused across patches and sessions, never rebuilt per
+run), a host-exclusive activity lock plus per-GPU locks, and restartable runs
+(a job whose log already ends in `CAMPAIGN_EXIT=` or `PREFLIGHT_EXIT=` is skipped).
+Working files live under the work root (`/mnt/data/bigcherry-work` on Brutus,
+`runs/<run-name>.log` and `runs/<run-name>/campaign/`).
+
+### Job file
+
+One row per job, run in file order. Rows are plain text; `#` starts a comment.
+
+```
+[MODEL=<gguf>] [HIP=<rocm prefix>] [VIS=<devices>] [REQUIRES=<preflight-run>] <patch> <producer|-> <arch> <device> <run-name> [campaign args...]
+PROFILE <patch> <arch> <device> <prefill|decode> <run-name> [args...]
+PREFLIGHT <run-name> <binary|@build-run> <model> <marker-regex> [server args...]
+[VIS=<gpus>] BUILD <run-name> <source:build:platform> <experiment|-> <arch-list|-> [binary]
+[VIS=<gpus>] [REQUIRES=<preflight-run>] AB <run-name> <server-config.json> [ab-benchmark args...]
+```
+
+- `BUILD` builds the explicit lane (e.g. `bigcherry:stock:linux-multi` for HIP, or
+  `vulkan-stock:vulkan-stock:vulkan-linux` for Vulkan) plus the named `[experiment.*]` from
+  `config/recipes.toml` (`-` = no experiment). HIP rows pass an `arch-list` (e.g.
+  `gfx1100,gfx1201,gfx1030`); Vulkan rows pass `-` (c061 Vulkan shaders are not specialised by
+  AMDGPU targets; device architecture and ICD are runtime evidence). The optional `binary`
+  (default `bin/llama-server`, e.g. `bin/llama-bench`) is built in the same tree; the row records
+  `BUILD_BINARY=<path>` in its log. Vulkan device selection at run time is
+  `GGML_VK_VISIBLE_DEVICES`; the ICD is chosen with `VK_DRIVER_FILES`.
+- `AB` runs `bigcherry ab-benchmark --server-config` (balanced, order-rotated, 2-3 arms;
+  `--pairs` a multiple of arm-count factorial). Any `"@<build-run>"` string in the
+  config is replaced with that BUILD row's binary, so configs never hard-code build
+  hashes. Arms may set dispatch/tuning and AllReduce env (`GGML_CUDA_ALLREDUCE`,
+  `GGML_CUDA_AR_*`); topology (`HIP_VISIBLE_DEVICES`) belongs to the shared block.
+- `VIS=` selects the GPU set a BUILD/AB/PREFLIGHT row locks (and a preflight runs on);
+  default `0,1`. Every row holds the host-exclusive lock, so builds never overlap a
+  timed run.
+- Worked examples: `tools/lab/native-vs-patched/queue-27b-remaining.sh` (dual XTX) and
+  `queue-27b-3gpu.sh` (XTX x2 + R9700).
+
+- `MODEL=` and `HIP=` override `BC_MODEL` and `BC_HIP_PATH` for that row. Set
+  `BC_HIP_PATH` (Brutus: `/mnt/vault/tmp/bc-rocm`) and `BC_MODEL` before starting.
+- Producer arguments: `--producer-input control_model=<gguf>` (the model that must
+  NOT fire the patch), `--producer-corpus <jsonl>`, `--common-patches <id>` for
+  prerequisite patches.
+- Multi-GPU models (the 27B Q8_0 does not fit one 24 GB card) use the multi-GPU
+  producer pattern: no single device, `ROCR_VISIBLE_DEVICES` unset, `-sm tensor`.
+- Timed campaign sessions are serialized; PROFILE rows fan out first. Sessions
+  need a cooldown gap (PA35): back-to-back sessions can show GPU clock instability.
+
+Start it detached and read the log:
+
+```
+cd /mnt/vault/development/projects/bigcherry/workspaces/main
+nohup bash tools/lab/plan-qualification/queue.sh jobs.txt > ~/bc-runs/batch.log 2>&1 &
+tail -f ~/bc-runs/batch.log        # start/done lines per job; ends "queue completed ..."
+```
+
+A worked example that builds and runs a 12-job batch is
+`tools/lab/native-vs-patched/queue-gfx1100-batch.sh`.
+
+### Prove the patch fires before timing it
+
+A "flat" result is uninterpretable unless the patch's code path is shown to have run
+on that model. Every patch needs, before any timed run:
+
+1. the **target model and configuration that can fire it** (the contract-defined
+   positive model; a control model that does not fire it);
+2. a **marker** printed under `BIGCHERRY_PATCH_TRACE=1`
+   (`BIGCHERRY_PATCH_HIT patch=<id> path=<name>`);
+3. a **pre-flight** showing the marker at least once on that model.
+
+Queue it, and block the campaign on it:
+
+```
+PREFLIGHT pf-1206-4b /path/to/llama-server /path/to/model.gguf patch=1206_rd13
+REQUIRES=pf-1206-4b MODEL=<gguf> 1206_rd13_mul_mat_add_view_fusion 1206_rd13_mul_mat_add_view_fusion/rd13 gfx1100 0 t-1206-s1 --producer-input control_model=<control gguf>
+```
+
+A row with `REQUIRES=<run>` is refused (`blocked campaign ...`, counted as a failure)
+unless that preflight logged `PREFLIGHT_EXIT=0`. For a one-off check outside a
+queue, run `tools/lab/native-vs-patched/preflight-fire.sh BINARY MODEL PATTERN
+[server args]` directly: it takes the same locks, so it waits for a running
+campaign rather than disturbing it. `activation-check.sh` (same arguments) is the
+lock-free primitive underneath; use it only when nothing else holds the GPUs.
+
+Known firing constraints (verify against the patch before planning a run):
+
+| Patch | Fires when | Notes |
+|---|---|---|
+| 1241 rd33 | Q8_0, `ne1==1` decode, RDNA3 | MTP verify batches (ncols>1) stay stock |
+| 1245 gp11 | MTP verify width 6 (`n_max=5`), Q8_0 | cannot fire at `n_max=4`; has no trace marker yet |
+| 1206 rd13 | dense + GDN models | contract positive model is the 4B |
+| 1263 prbe41 | single GPU only | aborts under `-sm tensor` (meta-backend assert) |
+| 1254 nro05 | GDN MoE + MTP | needs `--common-patches 1253_nro04_gfx1100_bf16_chunked_gdn` |
+
+Producers still decide activation themselves after their timed lanes; moving that
+check ahead of the timed lanes is tracked in PVPS15. Until then, the queue-level
+`PREFLIGHT` / `REQUIRES=` gate is the required guard.
+
+Rules: bench scripts live under `tools/lab/<topic>/` in the repo (never `/tmp` on
+the build server), do not edit a script while the queue is executing it, and do not
+start builds or extra jobs on a host that is mid-campaign.
+
 ## Sources — the normal way to build
 
 `$BC` = `$BC_REPO` on the build server.
@@ -82,7 +192,7 @@ A **source** (`[source.<name>]` in `recipes.toml`) names one complete patch comp
 
 | Axis | Meaning | Scope | Examples |
 |------|---------|-------|----------|
-| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-native`, `bigcherry` |
+| **Source** | One exact, curated patch composition | Global; names a row in `[source.*]` | `llama-native`, `bigcherry-serving-base`, `bigcherry` |
 | **Build** | A cmake variant set | Named independently, composed per-lane | `record` (measures signatures), `tune` (tunes candidates), `replay` (applies winners) |
 | **Platform** | GPU target(s) and compile flags | Named independently, composed per-lane | `linux-multi` (3 GPUs on the build server), `windows-gfx1100` (workstation) |
 | **Patch state** | Patch acceptance status | Per-patch metadata, informational only under v2 | `validated`, `untested`, `rejected` |
@@ -111,7 +221,7 @@ Under v2, patch state is informational metadata on the patch itself, not a selec
 
 A selection's effective tree state is a 16-character hex digest of the ref, the resolved `patch_set_id`, and the overlay digest (when the source has `overlay = true`). This fingerprint covers *only what changes the source tree* — builds, platforms, and variant-sets are cmake arguments and generated output, excluded deliberately so back-to-back builds don't flip the tree unnecessarily.
 
-**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-native` + `bigcherry`) resolves to only 2 distinct tree states: `llama-native` is unpatched, the other two apply the framework patch-set -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
+**Why it matters:** the 3-source default set (`llama-native` + `bigcherry-serving-base` + `bigcherry`) resolves to 3 distinct tree states as of the PA31 cutover -- `llama-native` is unpatched, `bigcherry-serving-base` applies serving-core+upstream-fixes, and `bigcherry` additionally applies validated-enhancements -- relevant to `apply`/`patches`, which still share one mutable checkout across sources. `build` (below) does not use this mechanism at all: each lane materialises its own isolated, content-addressed source, so there is no shared tree to reset.
 
 ### The bootstrap dependency chain
 
@@ -165,7 +275,7 @@ Note `build.control` produces `llama-bench` and the shared libraries but NOT
 `llama-server`; a lane needing the server must say so via
 `--binary-relative-path bin/llama-server`.
 
-### The patch-qualification profile (4 arms)
+### The patch-qualification profile (3 arms, PA29 cutover)
 
 `[campaign.standard]` varies the BUILD variant -- it is the autotune
 record/tune/replay pipeline. `[campaign.patch-qualification]` varies the patch
@@ -174,13 +284,23 @@ COMPOSITION instead, which is the axis a patch is actually judged on:
 | arm | source | carries the patch | answers |
 |---|---|---|---|
 | 1 | `llama-native` | no | what everything is ultimately measured against |
-| 2 | `bigcherry-native` | no | control for the isolated A/B; vs arm 1, our framework's own cost |
-| 3 | `bigcherry-native` | yes | the patch's ISOLATED effect |
-| 4 | `bigcherry` | yes | the patch IN SITU, on top of everything already shipped |
+| 2 | `bigcherry-tuning` | no | control for the isolated A/B; vs arm 1, our framework's own cost |
+| 3 | `bigcherry-tuning` | yes | the patch's ISOLATED effect |
 
-Arm 4 exists because a patch worth +2% alone can be neutral or negative once
-composed with the rest of the release set. Arms 3 and 4 answer different
-questions and neither substitutes for the other.
+PA29 cutover (GPT design review req_964ec5fc21c14848): `build.control`
+requires `0110_campaign_tune_record_build`'s plumbing, which only
+`bigcherry-tuning` composes among the semantic sources -- and
+`bigcherry-tuning` deliberately excludes `validated-enhancements`. The old
+arm 4 ("the patch IN SITU, on top of everything already shipped", source
+`bigcherry`) can therefore no longer be expressed under `build.control`
+without silently dropping `validated-enhancements` from what it measures,
+so it was removed from the checked-in profile rather than left pointing at
+a composition its own name no longer implies (see `config/recipes.toml`'s
+own PA29 comment on `[campaign.patch-qualification]`). A real in-situ
+release-comparison arm needs a source that composes serving-core +
+campaign-support + upstream-fixes + validated-enhancements together, which
+does not exist yet -- tracked as follow-up work, not silently reintroduced
+here.
 
 ```bash
 python3 -m bigcherry build --profile patch-qualification --arch gfx1100
@@ -192,8 +312,8 @@ comparison its meaning -- and it is why a campaign lane may declare its own
 `experiment`:
 
 ```toml
-{ source = "bigcherry-native", build = "control", platform = "linux-multi" },
-{ source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only" },
+{ source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
+{ source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only" },
 ```
 
 A request-level `--experiment` applies to EVERY lane, so it cannot express a

@@ -32,6 +32,7 @@ import tomllib
 from pathlib import Path
 
 from ..core import paths
+from ..core.context import ProjectContext
 from .. import recipes
 from ..patch import registry as _patch_reg
 
@@ -247,10 +248,19 @@ def _status() -> int:
 
 
 def _git(cwd: str, *argv: str, timeout: int) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", "-C", cwd, *argv],
-        capture_output=True, text=True, timeout=timeout, check=False,
-    )
+    # Explicit UTF-8: the platform default (cp1252 on Windows) cannot decode
+    # arbitrary commit content. A timeout is returned as a failed result so
+    # one slow operation on a large fork is a finding, not a crash.
+    try:
+        return subprocess.run(
+            ["git", "-C", cwd, *argv],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(
+            ["git", "-C", cwd, *argv], 124, "", f"timed out after {timeout}s",
+        )
 
 
 # RD95 (external patch-management review, 2026-08-20): "merged-upstream"
@@ -498,7 +508,9 @@ def _check(args: argparse.Namespace) -> int:
         sid = source["id"]
         print(f"== {sid} ==  {source['repo']}  locator={source['locator']}")
         active = next(s for s in source["snapshots"] if s.get("active"))
-        with tempfile.TemporaryDirectory(prefix="bc-src-") as tmp:
+        scratch = ProjectContext.resolve().work_root / "tmp"
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="bc-src-", dir=scratch) as tmp:
             clone = subprocess.run(
                 ["git", "clone", "--filter=blob:none", "--no-checkout",
                  "--single-branch", "--branch", source["locator"],
@@ -546,6 +558,11 @@ def _check(args: argparse.Namespace) -> int:
                 else:
                     mainline_tip = _git(tmp, "rev-parse", "mainline/master", timeout=60).stdout.strip()
                     cherry = _git(tmp, "cherry", "-v", "mainline/master", tip, timeout=timeout)
+                    if cherry.returncode != 0:
+                        findings += 1
+                        print("  FINDING mainline-check-incomplete: git cherry failed "
+                              f"({cherry.stderr.strip()[:120]}); merged-upstream status "
+                              "unknown -- rerun with a larger --timeout")
                     merged = {line.split()[1] for line in cherry.stdout.splitlines()
                               if line.startswith("- ")}
                     print(f"  mainline tip: {mainline_tip[:9]}")

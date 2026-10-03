@@ -36,6 +36,7 @@ def _generated_identity() -> tuple[str, str, str]:
     return revision, manifest_hash, descriptor_hash
 
 
+@unittest.skipUnless(HASH_HEADER.is_file(), "needs an applied vendor tree (`bigcherry apply` generates hip-autotune-build-hash.h)")
 class TestHi104BuildDescriptorParity(unittest.TestCase):
     def test_cpp_flush_hash_matches_offline_manifest_descriptor_hash(self):
         """The generated C++ descriptor JSON and Python manifest are one hash."""
@@ -73,17 +74,17 @@ class TestHi104BuildDescriptorParity(unittest.TestCase):
         source = TUNER_SOURCE.read_text(encoding="utf-8")
         flush = source[source.index("void ggml_hip_tuner_flush()"):]
         for field in (
-            r'\"transform_schema_version\":1',
-            r'\"hardware_provenance\":{\"digest\":\"%s\",\"architecture\":\"%s\"}',
-            r'\"build_provenance\":{\"source_revision\":\"%s\",',
-            r'\"manifest_hash\":\"%s\",\"build_descriptor_hash\":\"%s\"}',
-            r'\"evidence_references\":[\"%s\"]',
+            r'\"artifact_version\":%d',
+            r'\"build_descriptor_hash\":\"%s\"',
+            r'\"producer_capabilities\":\"%016llx%016llx\"',
+            r'\"kind\":\"result\"',
+            r'\"kind\":\"transform-attempt\"',
+            r'\"kind\":\"transform-gap\"',
         ):
             self.assertIn(field, flush)
-        self.assertIn("runtime_build_descriptor_hash()", source)
-        self.assertNotIn(r'\"original_sig\":\"%s\",\"hardware\":\"%s\"', flush)
 
 
+@unittest.skipUnless(HASH_HEADER.is_file(), "needs an applied vendor tree (`bigcherry apply` generates hip-autotune-build-hash.h)")
 class TestHi104NestedRuntimeArtifact(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="bigcherry_hi104_")

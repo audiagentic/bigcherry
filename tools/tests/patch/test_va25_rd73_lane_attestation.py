@@ -1,11 +1,17 @@
 """VA25 golden-thread test: RD73's three server-driven lanes
-(run_rd73_mtp_server_lane, run_rd73_decode_control_lane,
-run_rd73_resource_burst_session) were the named P0 coverage gap -- the
-underlying attestation.py machinery (ExecutionIdentity/
-compare_execution_identity/parse_llama_server_attestation) already
-existed, but nothing joined it to these three functions. That is exactly
-the recurring defect shape this plan item's own notes name ("a field or
-check exists at one end and nothing joins it to the path that needs it").
+(_run_mtp_server_lane, _run_decode_control_lane, _run_resource_burst)
+were the named P0 coverage gap -- the underlying attestation.py
+machinery (ExecutionIdentity/compare_execution_identity/
+parse_llama_server_attestation) already existed, but nothing joined it
+to these three functions. That is exactly the recurring defect shape
+this plan item's own notes name ("a field or check exists at one end
+and nothing joins it to the path that needs it").
+
+PA36 RD73 legacy compatibility retirement: the three lane functions
+moved from shared validation_campaign.py into RD73's producer
+(patches/1233_rd73_stable_graph_cache_key/validation/producer.py), so
+this golden-thread test now verifies the SAME structural property on
+the producer-side lane functions.
 
 This test does not re-verify attestation CONTENT correctness (that is
 test_attested_server_session.py and test_execution_attestation.py's job).
@@ -27,12 +33,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 ROOT = Path(__file__).resolve().parents[3]
-VALIDATION_CAMPAIGN_PATH = ROOT / "tools" / "bigcherry" / "patch" / "validation_campaign.py"
+RD73_PRODUCER_PATH = ROOT / "patches" / "1233_rd73_stable_graph_cache_key" / "validation" / "producer.py"
 
 _RD73_SERVER_LANE_FUNCTIONS = (
-    "run_rd73_mtp_server_lane",
-    "run_rd73_decode_control_lane",
-    "run_rd73_resource_burst_session",
+    "_run_mtp_server_lane",
+    "_run_decode_control_lane",
+    "_run_resource_burst",
 )
 
 
@@ -44,8 +50,8 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        source = VALIDATION_CAMPAIGN_PATH.read_text(encoding="utf-8")
-        cls.tree = ast.parse(source, filename=str(VALIDATION_CAMPAIGN_PATH))
+        source = RD73_PRODUCER_PATH.read_text(encoding="utf-8")
+        cls.tree = ast.parse(source, filename=str(RD73_PRODUCER_PATH))
         cls.functions_by_name = {
             node.name: node
             for node in ast.walk(cls.tree)
@@ -67,7 +73,7 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
         # would silently stop covering it -- fail loudly instead.
         for name in _RD73_SERVER_LANE_FUNCTIONS:
             with self.subTest(function=name):
-                self.assertIn(name, self.functions_by_name, f"{name} not found in validation_campaign.py")
+                self.assertIn(name, self.functions_by_name, f"{name} not found in the RD73 producer")
 
     def test_no_rd73_server_lane_constructs_a_raw_server_runner(self) -> None:
         for name in _RD73_SERVER_LANE_FUNCTIONS:
@@ -128,9 +134,9 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
                     value = env_unset_kw.value
                     if isinstance(value, ast.Name):
                         self.assertEqual(
-                            value.id, "_ROCR_VISIBLE_DEVICES_UNSET",
-                            f"{name}: env_unset references {value.id!r}, not the shared "
-                            "_ROCR_VISIBLE_DEVICES_UNSET constant -- verify it separately "
+                            value.id, "_ROCR_UNSET",
+                            f"{name}: env_unset references {value.id!r}, not the producer "
+                            "_ROCR_UNSET constant -- verify it separately "
                             "names ROCR_VISIBLE_DEVICES",
                         )
                     elif isinstance(value, (ast.Tuple, ast.List)):
@@ -151,17 +157,20 @@ class Rd73LaneAttestationGoldenThreadTests(unittest.TestCase):
                         )
 
     def test_rocr_visible_devices_unset_constant_actually_names_it(self) -> None:
-        # The structural check above trusts _ROCR_VISIBLE_DEVICES_UNSET by
-        # name when a call references it -- verify that trust is warranted.
-        source = VALIDATION_CAMPAIGN_PATH.read_text(encoding="utf-8")
-        module = ast.parse(source, filename=str(VALIDATION_CAMPAIGN_PATH))
+        # The structural check above trusts _ROCR_UNSET by name when a
+        # call references it -- verify that trust is warranted.
+        source = RD73_PRODUCER_PATH.read_text(encoding="utf-8")
+        module = ast.parse(source, filename=str(RD73_PRODUCER_PATH))
         assigns = [
             node for node in ast.walk(module)
-            if isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.target.id == "_ROCR_VISIBLE_DEVICES_UNSET"
+            if ((isinstance(node, ast.AnnAssign)
+                 and isinstance(node.target, ast.Name)
+                 and node.target.id == "_ROCR_UNSET")
+                or (isinstance(node, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "_ROCR_UNSET"
+                           for t in node.targets)))
         ]
-        self.assertTrue(assigns, "_ROCR_VISIBLE_DEVICES_UNSET constant not found")
+        self.assertTrue(assigns, "_ROCR_UNSET constant not found")
         value = assigns[0].value
         self.assertIsInstance(value, ast.Tuple)
         literal_strings = {

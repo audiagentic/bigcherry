@@ -1,0 +1,1139 @@
+{
+  "patch_id": "0810_replay_hit_diagnostics",
+  "records": [
+    {
+      "artifact_hashes": {
+        "artifacts/diagnostic-build.json": "38c4be0a73af8ff70d1dda14153bc78cb0710fac0a121689e0fe9ef1cf055932",
+        "artifacts/generated-tree.json": "d577e6a223cb23640850c66ae1a66506037805bcae683473bb468abe2d3d365c",
+        "artifacts/production-build.json": "163741939e60b5c2c946431063520da4da1305d3a6accb45434456cbe7a3bbf1",
+        "artifacts/source-tree.json": "b285cc6b1cd165db3c4189a084c8a57c3567bd7dd6d507232efaeb0adc2b6356"
+      },
+      "base_ref": "b10901",
+      "base_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+      "builds": {
+        "diagnostic": {
+          "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+          "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+          "effective_build_id": "4fbcb0028494c18ba377ae4026a18a88",
+          "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "5efb25d45019f8285c8261fdc6309a158672f7fcd713b2c077c1341524e4abf7",
+            "libggml-hip.so.0.23.0": "faf77958645dea827d6d07fefb7f9d7a8ab91568f89f2830c2bfb31ea1a436a8",
+            "libggml.so.0.23.0": "30132f0c6eab51362b25e89cfbb4b91c60d784f1d921fe8689b40f2ea018f0eb",
+            "libllama-common.so.0.4.0": "452bd658e823692b4912b8f6484ed2f635cc6783e51919e73479615e6203c765",
+            "libllama-server-impl.so": "9f2a1c37f256407834a958753f3949d613c083aeecd72392c6ec4513807470ee",
+            "libllama.so.0.4.0": "919daa0c538f98ec16ddd8e47bb2dfe783697c14d8618fcdc685cf1148a67936",
+            "libmtmd.so.0.4.0": "f4cbb69c89c46085f033c8636dc3417eac7cc07b635d406c7b661d4cce34a7fa",
+            "llama-server": "1e3708ae5e6c661b39667838eb9796076f03dd030fa18239ffb00a6502a5e5bf"
+          },
+          "runtime_bundle_hash": "d88601668a41afe021191b8a4a1357ab"
+        },
+        "production": {
+          "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+          "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+          "effective_build_id": "f90d82d0a0acccb7fdc780f8e4e88afa",
+          "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "361a2575df0aacdd18b3bbf2a529a122be2e9a8237e89f513cabc6889f576c31",
+            "libggml-hip.so.0.23.0": "dd1d3a7ebcfb2d9da7e0ae5c14d90501d2b5b5f68709e38b6688e9bb40af73f0",
+            "libggml.so.0.23.0": "5b8936747a3d2c4068b576c363a0775e8b23493659858ab1b4e4817c29730958",
+            "libllama-common.so.0.4.0": "5dccc72b849673c5e0acc640ec106d4149633d1f309a7bb41eee2c63a66df6b2",
+            "libllama-server-impl.so": "0d09ad5bbe420c9a559f53db9bf1b97ee43b0c2ba6745b8fc7a44a0984d578b6",
+            "libllama.so.0.4.0": "b2671d705c6389a9fb83e2727ce6f6982753803a473d96f7a0913838c7e8ce36",
+            "libmtmd.so.0.4.0": "7e82fa4249d6f244ead8fc9e99887713a94c76e0f9bc0d5e30b649747aeaa067",
+            "llama-server": "13b1f10a61917ffcb5d4c526c6119bd60fd57dc7fe51eef917e4b31dd56094bd"
+          },
+          "runtime_bundle_hash": "8326878a4c29e9a018de99496d734532"
+        }
+      },
+      "campaign_identity": "15f4b7e07ebcbbb6013327e67217af2c3dff5f5174bb1f555b4c1d4ae56a6456",
+      "campaign_identity_digest": "15f4b7e07ebcbbb6013327e67217af2c3dff5f5174bb1f555b4c1d4ae56a6456",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run4/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "check_results": {
+        "apply": {
+          "artifacts": [
+            {
+              "name": "apply",
+              "path": "artifacts/source-tree.json",
+              "sha256": "b285cc6b1cd165db3c4189a084c8a57c3567bd7dd6d507232efaeb0adc2b6356"
+            }
+          ],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "pass",
+          "summary": "single framework composition apply and idempotence are verified"
+        },
+        "build": {
+          "artifacts": [
+            {
+              "name": "production",
+              "path": "artifacts/production-build.json",
+              "sha256": "163741939e60b5c2c946431063520da4da1305d3a6accb45434456cbe7a3bbf1"
+            },
+            {
+              "name": "diagnostic",
+              "path": "artifacts/diagnostic-build.json",
+              "sha256": "38c4be0a73af8ff70d1dda14153bc78cb0710fac0a121689e0fe9ef1cf055932"
+            }
+          ],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "pass",
+          "summary": "completed production and diagnostic framework builds are verified"
+        }
+      },
+      "claim_scope": "configuration-only",
+      "compiled_targets": [
+        "gfx1100"
+      ],
+      "compiler_observations": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "4fbcb0028494c18ba377ae4026a18a88",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "5efb25d45019f8285c8261fdc6309a158672f7fcd713b2c077c1341524e4abf7",
+              "libggml-hip.so.0.23.0": "faf77958645dea827d6d07fefb7f9d7a8ab91568f89f2830c2bfb31ea1a436a8",
+              "libggml.so.0.23.0": "30132f0c6eab51362b25e89cfbb4b91c60d784f1d921fe8689b40f2ea018f0eb",
+              "libllama-common.so.0.4.0": "452bd658e823692b4912b8f6484ed2f635cc6783e51919e73479615e6203c765",
+              "libllama-server-impl.so": "9f2a1c37f256407834a958753f3949d613c083aeecd72392c6ec4513807470ee",
+              "libllama.so.0.4.0": "919daa0c538f98ec16ddd8e47bb2dfe783697c14d8618fcdc685cf1148a67936",
+              "libmtmd.so.0.4.0": "f4cbb69c89c46085f033c8636dc3417eac7cc07b635d406c7b661d4cce34a7fa",
+              "llama-server": "1e3708ae5e6c661b39667838eb9796076f03dd030fa18239ffb00a6502a5e5bf"
+            },
+            "runtime_bundle_hash": "d88601668a41afe021191b8a4a1357ab"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 150,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 150,
+            "GGML_HIP_DISPATCH_REPLAY": 150,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": true,
+          "hip_compile_command_count": 150,
+          "issues": []
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "f90d82d0a0acccb7fdc780f8e4e88afa",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "361a2575df0aacdd18b3bbf2a529a122be2e9a8237e89f513cabc6889f576c31",
+              "libggml-hip.so.0.23.0": "dd1d3a7ebcfb2d9da7e0ae5c14d90501d2b5b5f68709e38b6688e9bb40af73f0",
+              "libggml.so.0.23.0": "5b8936747a3d2c4068b576c363a0775e8b23493659858ab1b4e4817c29730958",
+              "libllama-common.so.0.4.0": "5dccc72b849673c5e0acc640ec106d4149633d1f309a7bb41eee2c63a66df6b2",
+              "libllama-server-impl.so": "0d09ad5bbe420c9a559f53db9bf1b97ee43b0c2ba6745b8fc7a44a0984d578b6",
+              "libllama.so.0.4.0": "b2671d705c6389a9fb83e2727ce6f6982753803a473d96f7a0913838c7e8ce36",
+              "libmtmd.so.0.4.0": "7e82fa4249d6f244ead8fc9e99887713a94c76e0f9bc0d5e30b649747aeaa067",
+              "llama-server": "13b1f10a61917ffcb5d4c526c6119bd60fd57dc7fe51eef917e4b31dd56094bd"
+            },
+            "runtime_bundle_hash": "8326878a4c29e9a018de99496d734532"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 149,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+            "GGML_HIP_DISPATCH_REPLAY": 149,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": false,
+          "hip_compile_command_count": 149,
+          "issues": []
+        }
+      },
+      "eligible_for_validated_state": true,
+      "generated_inputs": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "4fbcb0028494c18ba377ae4026a18a88",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "5efb25d45019f8285c8261fdc6309a158672f7fcd713b2c077c1341524e4abf7",
+              "libggml-hip.so.0.23.0": "faf77958645dea827d6d07fefb7f9d7a8ab91568f89f2830c2bfb31ea1a436a8",
+              "libggml.so.0.23.0": "30132f0c6eab51362b25e89cfbb4b91c60d784f1d921fe8689b40f2ea018f0eb",
+              "libllama-common.so.0.4.0": "452bd658e823692b4912b8f6484ed2f635cc6783e51919e73479615e6203c765",
+              "libllama-server-impl.so": "9f2a1c37f256407834a958753f3949d613c083aeecd72392c6ec4513807470ee",
+              "libllama.so.0.4.0": "919daa0c538f98ec16ddd8e47bb2dfe783697c14d8618fcdc685cf1148a67936",
+              "libmtmd.so.0.4.0": "f4cbb69c89c46085f033c8636dc3417eac7cc07b635d406c7b661d4cce34a7fa",
+              "llama-server": "1e3708ae5e6c661b39667838eb9796076f03dd030fa18239ffb00a6502a5e5bf"
+            },
+            "runtime_bundle_hash": "d88601668a41afe021191b8a4a1357ab"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "cb7932c8264501fa1c8db20bb8957c9c65ecb6a948eb68ff4e15404f37c2f09d",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "f90d82d0a0acccb7fdc780f8e4e88afa",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "361a2575df0aacdd18b3bbf2a529a122be2e9a8237e89f513cabc6889f576c31",
+              "libggml-hip.so.0.23.0": "dd1d3a7ebcfb2d9da7e0ae5c14d90501d2b5b5f68709e38b6688e9bb40af73f0",
+              "libggml.so.0.23.0": "5b8936747a3d2c4068b576c363a0775e8b23493659858ab1b4e4817c29730958",
+              "libllama-common.so.0.4.0": "5dccc72b849673c5e0acc640ec106d4149633d1f309a7bb41eee2c63a66df6b2",
+              "libllama-server-impl.so": "0d09ad5bbe420c9a559f53db9bf1b97ee43b0c2ba6745b8fc7a44a0984d578b6",
+              "libllama.so.0.4.0": "b2671d705c6389a9fb83e2727ce6f6982753803a473d96f7a0913838c7e8ce36",
+              "libmtmd.so.0.4.0": "7e82fa4249d6f244ead8fc9e99887713a94c76e0f9bc0d5e30b649747aeaa067",
+              "llama-server": "13b1f10a61917ffcb5d4c526c6119bd60fd57dc7fe51eef917e4b31dd56094bd"
+            },
+            "runtime_bundle_hash": "8326878a4c29e9a018de99496d734532"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "cb7932c8264501fa1c8db20bb8957c9c65ecb6a948eb68ff4e15404f37c2f09d",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        }
+      },
+      "hardware_execution_qualified": false,
+      "patch_id": "0810_replay_hit_diagnostics",
+      "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+      "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
+      "qualification_kind": "framework-configuration-v1",
+      "record_digest": "1989099e241622cf9cdcd5c83c779f2dd604a2f94270515cf6a2c9620c6c4ca1",
+      "record_schema_version": 5,
+      "runtime_performance_qualified": false,
+      "source_composition": [
+        {
+          "digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
+          "id": "0100_cmake_options"
+        },
+        {
+          "digest": "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4",
+          "id": "0110_campaign_tune_record_build"
+        },
+        {
+          "digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
+          "id": "0200_dispatch_hook"
+        },
+        {
+          "digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
+          "id": "0300_mmq_forced_j"
+        },
+        {
+          "digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
+          "id": "0400_mmvf_forced_block"
+        },
+        {
+          "digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
+          "id": "0500_mmf_forced_nwarps"
+        },
+        {
+          "digest": "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925",
+          "id": "0600_mmvq_geometry"
+        },
+        {
+          "digest": "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10",
+          "id": "0650_mmvq_native_variant"
+        },
+        {
+          "digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
+          "id": "0700_coverage_counters"
+        },
+        {
+          "digest": "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3",
+          "id": "0800_server_shutdown_endpoint"
+        },
+        {
+          "digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+          "id": "0810_replay_hit_diagnostics"
+        },
+        {
+          "digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
+          "id": "0820_measurement_signature_shapes"
+        },
+        {
+          "digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
+          "id": "0830_split_reduce_telemetry"
+        },
+        {
+          "digest": "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146",
+          "id": "0900_pool_workspace_metrics"
+        },
+        {
+          "digest": "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c",
+          "id": "1000_rdna4_mmq_q2k_q6k_fix"
+        },
+        {
+          "digest": "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb",
+          "id": "1100_hi70_direct_op_evidence"
+        }
+      ],
+      "source_identity": {
+        "composition": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0820_measurement_signature_shapes",
+            "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+          ],
+          [
+            "0830_split_reduce_telemetry",
+            "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1000_rdna4_mmq_q2k_q6k_fix",
+            "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c"
+          ],
+          [
+            "1100_hi70_direct_op_evidence",
+            "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb"
+          ]
+        ],
+        "materialization_plan_id": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8",
+        "overlay_digest": "d5ee90bf65e95a35dc16082d6924d31cef6867676738513d49bf32a8146173a6",
+        "patch_application_semantics_version": 1,
+        "resolved_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+        "schema": "bigcherry-patch-source-v2",
+        "source_key": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8"
+      },
+      "source_name": "bigcherry-native",
+      "source_slice_id": "4da8833b09223861a369c1c133d67d5e",
+      "source_tree": "8814b1dd68f2a643c7a76a73ed7e23ada09e0628",
+      "validation_digest": "55f571aee96278def5815dac83408c0dd945374c53bb8c4a1d9eb2715e5166ef"
+    },
+    {
+      "artifact_hashes": {
+        "artifacts/generated-tree.json": "027ebd1d1d4ad924055fa172b1a05b77428386d0ff32d001f6202dee26a5b0ad"
+      },
+      "base_ref": "b10901",
+      "base_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+      "builds": {
+        "diagnostic": {
+          "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+          "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+          "effective_build_id": "66c7e163ece30fd5e5ba70bd93ddf986",
+          "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "52eb548a6f6bc3de51c44db4f832b08fdef973c07d6f18d5a959fec201336954",
+            "libggml-hip.so.0.23.0": "1f67fbe1a1d9f18e0f8e607768a756dd6e7eb698391773cacf11a9ca6449e9e8",
+            "libggml.so.0.23.0": "2001e8d8ec582d054cc9e520628a0cf4a112aab8f83b9b62afec189eeb351b7b",
+            "libllama-common.so.0.4.0": "7c0d7ad079f77885f72483e48b4d476ea85c511d1c300191bbc4137aa8262aa5",
+            "libllama-server-impl.so": "0b889df84d9fa8b5ee4ecb9b8d96991697a7746aaacb0968e838bf5b66ee1154",
+            "libllama.so.0.4.0": "e6a963afffbf83afa04d9dc78cf4643c63ef643f31abbf769f1b293c471158b1",
+            "libmtmd.so.0.4.0": "97e216648d7c9ea1cb93e0064bc83ba383b6dfe32bd3979fc58dba28a6f9231d",
+            "llama-server": "06ae35606fb7287b01b06fc42e7a57a99405f97b9c8a3453e0387fbab8516796"
+          },
+          "runtime_bundle_hash": "a3ca0b3876007fd61836290f0cad6ac8"
+        },
+        "production": {
+          "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+          "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+          "effective_build_id": "7207fd0b5edff5b69d82d5f59b57c15c",
+          "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "f2b1cf6de8f5af75be26649e7b2330996b742cfdae96e8a9d5d05a7e1624cfbe",
+            "libggml-hip.so.0.23.0": "02b71b35ad69519e78758066a1d238ab555e0dd6f8f252259be6cf9803596ab1",
+            "libggml.so.0.23.0": "3322a6e2ac7f2ab3a4d9b1f21df352607616cc88f454a3b9b325be3944383940",
+            "libllama-common.so.0.4.0": "a6da351df398b7ab2d76b63931cee1e9a0878e8631ddf0dc2efb6686289a44ce",
+            "libllama-server-impl.so": "f750da7a9d73c3c10942dde4becae78fb63bce5621d62915f7869a23e78a0cc4",
+            "libllama.so.0.4.0": "0bcf76179931ed7b32646d1bb8e9eb66df29d4383c19dac52ac6e6cc7af70274",
+            "libmtmd.so.0.4.0": "de0c0850ce2c044127eb7adb96735afff169c9fd55a846ebb3847964d5c13144",
+            "llama-server": "030ee4e00af5121a350925dfe167087969ef0cc6a71e693daf29986dd2594f41"
+          },
+          "runtime_bundle_hash": "683b4756334a0eaf25564bbce0411961"
+        }
+      },
+      "campaign_identity": "f01c51c11e634d195423d8886fb03143ca8834e4b4adb2273e272170e1b48987",
+      "campaign_identity_digest": "f01c51c11e634d195423d8886fb03143ca8834e4b4adb2273e272170e1b48987",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run3/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "check_results": {
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "blocked",
+          "summary": "control and subject sources are required for apply evidence"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "blocked",
+          "summary": "verified build evidence is missing for: control, subject"
+        }
+      },
+      "claim_scope": "configuration-only",
+      "compiled_targets": [
+        "gfx1100"
+      ],
+      "compiler_observations": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "66c7e163ece30fd5e5ba70bd93ddf986",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "52eb548a6f6bc3de51c44db4f832b08fdef973c07d6f18d5a959fec201336954",
+              "libggml-hip.so.0.23.0": "1f67fbe1a1d9f18e0f8e607768a756dd6e7eb698391773cacf11a9ca6449e9e8",
+              "libggml.so.0.23.0": "2001e8d8ec582d054cc9e520628a0cf4a112aab8f83b9b62afec189eeb351b7b",
+              "libllama-common.so.0.4.0": "7c0d7ad079f77885f72483e48b4d476ea85c511d1c300191bbc4137aa8262aa5",
+              "libllama-server-impl.so": "0b889df84d9fa8b5ee4ecb9b8d96991697a7746aaacb0968e838bf5b66ee1154",
+              "libllama.so.0.4.0": "e6a963afffbf83afa04d9dc78cf4643c63ef643f31abbf769f1b293c471158b1",
+              "libmtmd.so.0.4.0": "97e216648d7c9ea1cb93e0064bc83ba383b6dfe32bd3979fc58dba28a6f9231d",
+              "llama-server": "06ae35606fb7287b01b06fc42e7a57a99405f97b9c8a3453e0387fbab8516796"
+            },
+            "runtime_bundle_hash": "a3ca0b3876007fd61836290f0cad6ac8"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 150,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 150,
+            "GGML_HIP_DISPATCH_REPLAY": 150,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": true,
+          "hip_compile_command_count": 150,
+          "issues": []
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "7207fd0b5edff5b69d82d5f59b57c15c",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "f2b1cf6de8f5af75be26649e7b2330996b742cfdae96e8a9d5d05a7e1624cfbe",
+              "libggml-hip.so.0.23.0": "02b71b35ad69519e78758066a1d238ab555e0dd6f8f252259be6cf9803596ab1",
+              "libggml.so.0.23.0": "3322a6e2ac7f2ab3a4d9b1f21df352607616cc88f454a3b9b325be3944383940",
+              "libllama-common.so.0.4.0": "a6da351df398b7ab2d76b63931cee1e9a0878e8631ddf0dc2efb6686289a44ce",
+              "libllama-server-impl.so": "f750da7a9d73c3c10942dde4becae78fb63bce5621d62915f7869a23e78a0cc4",
+              "libllama.so.0.4.0": "0bcf76179931ed7b32646d1bb8e9eb66df29d4383c19dac52ac6e6cc7af70274",
+              "libmtmd.so.0.4.0": "de0c0850ce2c044127eb7adb96735afff169c9fd55a846ebb3847964d5c13144",
+              "llama-server": "030ee4e00af5121a350925dfe167087969ef0cc6a71e693daf29986dd2594f41"
+            },
+            "runtime_bundle_hash": "683b4756334a0eaf25564bbce0411961"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 149,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+            "GGML_HIP_DISPATCH_REPLAY": 149,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": false,
+          "hip_compile_command_count": 149,
+          "issues": []
+        }
+      },
+      "eligible_for_validated_state": false,
+      "generated_inputs": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "66c7e163ece30fd5e5ba70bd93ddf986",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "52eb548a6f6bc3de51c44db4f832b08fdef973c07d6f18d5a959fec201336954",
+              "libggml-hip.so.0.23.0": "1f67fbe1a1d9f18e0f8e607768a756dd6e7eb698391773cacf11a9ca6449e9e8",
+              "libggml.so.0.23.0": "2001e8d8ec582d054cc9e520628a0cf4a112aab8f83b9b62afec189eeb351b7b",
+              "libllama-common.so.0.4.0": "7c0d7ad079f77885f72483e48b4d476ea85c511d1c300191bbc4137aa8262aa5",
+              "libllama-server-impl.so": "0b889df84d9fa8b5ee4ecb9b8d96991697a7746aaacb0968e838bf5b66ee1154",
+              "libllama.so.0.4.0": "e6a963afffbf83afa04d9dc78cf4643c63ef643f31abbf769f1b293c471158b1",
+              "libmtmd.so.0.4.0": "97e216648d7c9ea1cb93e0064bc83ba383b6dfe32bd3979fc58dba28a6f9231d",
+              "llama-server": "06ae35606fb7287b01b06fc42e7a57a99405f97b9c8a3453e0387fbab8516796"
+            },
+            "runtime_bundle_hash": "a3ca0b3876007fd61836290f0cad6ac8"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "2466309b8bcb5c78839417a87fd01fd374e10fbe7ce0c640a8db22b4e37f7cf7",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "7207fd0b5edff5b69d82d5f59b57c15c",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "f2b1cf6de8f5af75be26649e7b2330996b742cfdae96e8a9d5d05a7e1624cfbe",
+              "libggml-hip.so.0.23.0": "02b71b35ad69519e78758066a1d238ab555e0dd6f8f252259be6cf9803596ab1",
+              "libggml.so.0.23.0": "3322a6e2ac7f2ab3a4d9b1f21df352607616cc88f454a3b9b325be3944383940",
+              "libllama-common.so.0.4.0": "a6da351df398b7ab2d76b63931cee1e9a0878e8631ddf0dc2efb6686289a44ce",
+              "libllama-server-impl.so": "f750da7a9d73c3c10942dde4becae78fb63bce5621d62915f7869a23e78a0cc4",
+              "libllama.so.0.4.0": "0bcf76179931ed7b32646d1bb8e9eb66df29d4383c19dac52ac6e6cc7af70274",
+              "libmtmd.so.0.4.0": "de0c0850ce2c044127eb7adb96735afff169c9fd55a846ebb3847964d5c13144",
+              "llama-server": "030ee4e00af5121a350925dfe167087969ef0cc6a71e693daf29986dd2594f41"
+            },
+            "runtime_bundle_hash": "683b4756334a0eaf25564bbce0411961"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "2466309b8bcb5c78839417a87fd01fd374e10fbe7ce0c640a8db22b4e37f7cf7",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        }
+      },
+      "hardware_execution_qualified": false,
+      "patch_id": "0810_replay_hit_diagnostics",
+      "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+      "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
+      "qualification_kind": "framework-configuration-v1",
+      "record_digest": "69915e197e78202845b61bf7caa70b4eb3ee0be1987b9a8b5b63bb733c0d6e36",
+      "record_schema_version": 5,
+      "runtime_performance_qualified": false,
+      "source_composition": [
+        {
+          "digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
+          "id": "0100_cmake_options"
+        },
+        {
+          "digest": "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4",
+          "id": "0110_campaign_tune_record_build"
+        },
+        {
+          "digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
+          "id": "0200_dispatch_hook"
+        },
+        {
+          "digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
+          "id": "0300_mmq_forced_j"
+        },
+        {
+          "digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
+          "id": "0400_mmvf_forced_block"
+        },
+        {
+          "digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
+          "id": "0500_mmf_forced_nwarps"
+        },
+        {
+          "digest": "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925",
+          "id": "0600_mmvq_geometry"
+        },
+        {
+          "digest": "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10",
+          "id": "0650_mmvq_native_variant"
+        },
+        {
+          "digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
+          "id": "0700_coverage_counters"
+        },
+        {
+          "digest": "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3",
+          "id": "0800_server_shutdown_endpoint"
+        },
+        {
+          "digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+          "id": "0810_replay_hit_diagnostics"
+        },
+        {
+          "digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
+          "id": "0820_measurement_signature_shapes"
+        },
+        {
+          "digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
+          "id": "0830_split_reduce_telemetry"
+        },
+        {
+          "digest": "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146",
+          "id": "0900_pool_workspace_metrics"
+        },
+        {
+          "digest": "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c",
+          "id": "1000_rdna4_mmq_q2k_q6k_fix"
+        },
+        {
+          "digest": "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb",
+          "id": "1100_hi70_direct_op_evidence"
+        }
+      ],
+      "source_identity": {
+        "composition": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0820_measurement_signature_shapes",
+            "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+          ],
+          [
+            "0830_split_reduce_telemetry",
+            "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1000_rdna4_mmq_q2k_q6k_fix",
+            "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c"
+          ],
+          [
+            "1100_hi70_direct_op_evidence",
+            "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb"
+          ]
+        ],
+        "materialization_plan_id": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8",
+        "overlay_digest": "d5ee90bf65e95a35dc16082d6924d31cef6867676738513d49bf32a8146173a6",
+        "patch_application_semantics_version": 1,
+        "resolved_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+        "schema": "bigcherry-patch-source-v2",
+        "source_key": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8"
+      },
+      "source_name": "bigcherry-native",
+      "source_slice_id": "4da8833b09223861a369c1c133d67d5e",
+      "source_tree": "8814b1dd68f2a643c7a76a73ed7e23ada09e0628",
+      "validation_digest": "5977904640cbcd1860c17b46f053ea13bbd3f69977059b8f46806484baed460e"
+    },
+    {
+      "artifact_hashes": {
+        "artifacts/generated-tree.json": "f34e9006536bc3bd0649dea4eaa6c30a3701e35bcffe3a743fc211b30f444c5c"
+      },
+      "base_ref": "b10901",
+      "base_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+      "builds": {
+        "diagnostic": {
+          "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+          "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+          "effective_build_id": "002c97a4087754e4544eb42d21fa8545",
+          "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "ddea93f905f86048cf63723f70a1f2ca409f2f7cfc8b22ac4f6430cb9223d792",
+            "libggml-hip.so.0.23.0": "9a31ebde469771ee3c70eda1d6948b8b24926312b6d3d473513b4711d2e206ba",
+            "libggml.so.0.23.0": "313db2608a4dfb81fccfa4bae0076be5faa27d8df16919253dfaa25456a68e46",
+            "libllama-common.so.0.4.0": "11853fde0b6dd30ed2521402fc9335c0d36616ce2212e79b4bf6c0211b53594c",
+            "libllama-server-impl.so": "52a8e4c0561b1c203f40b527d7dcdcec9dac40dce77a8a72c801fdff2d7a3532",
+            "libllama.so.0.4.0": "658ceee228f36e125cb96c395ef6bc40a40c5c7e4846caee4ab17789087c6dcc",
+            "libmtmd.so.0.4.0": "f6f37b4473aa818870c6a307632b9fa6e525080ee1d15e3f2c445519c9800007",
+            "llama-server": "356e78d17295730c453176c00a4394819f5999a1b1ddb3f00cb24119eecee913"
+          },
+          "runtime_bundle_hash": "99540514e92fce4314fa4b80ec5e578d"
+        },
+        "production": {
+          "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+          "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+          "effective_build_id": "0ac75a504968ea515bc20aabc7356a8b",
+          "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+          "runtime_artifacts": {
+            "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+            "libggml-cpu.so.0.23.0": "0a9b6824ce2299c6e3ed0387cefe317f01c912835f609ba4db4c046833e6b6b6",
+            "libggml-hip.so.0.23.0": "b2df4a7ccab1dd6f0f58605b0306b3fb136f0403b2279b09925b5e6e776a41bf",
+            "libggml.so.0.23.0": "ca270ff5260afdf00228c67e7852de2be301f0edc423a8688c7595744622474b",
+            "libllama-common.so.0.4.0": "103044d2ce7580d1b4f2f9194c25e5f2e03c9d69755bd1869ef5b446fb7e687e",
+            "libllama-server-impl.so": "8846e9adcee2c6611411af706a6f89dc6b120a11daad309ac93db472e1915225",
+            "libllama.so.0.4.0": "f06f1308bf875f05a5951f6b8fd9e65f0d645958d6149686b2c1185543937aea",
+            "libmtmd.so.0.4.0": "ebfebb08727248943cf6c6d34e61207858c466229616530c475d13f69580235a",
+            "llama-server": "b47f23bebb8d29849b3aa2e57e481e0a501f0a6122c0e549f6221643f57ccf39"
+          },
+          "runtime_bundle_hash": "7a7b506e252e3013218022d209d27354"
+        }
+      },
+      "campaign_identity": "fffdeb372892a3e60ceff77b098d96718d9953590661e209463a2c5bc3552b9b",
+      "campaign_identity_digest": "fffdeb372892a3e60ceff77b098d96718d9953590661e209463a2c5bc3552b9b",
+      "campaign_workdir": "/home/audumla/pa26-evidence-run2/0810_replay_hit_diagnostics/framework/0810_replay_hit_diagnostics",
+      "check_results": {
+        "apply": {
+          "artifacts": [],
+          "capability": "apply",
+          "check_id": "apply",
+          "details": [],
+          "status": "blocked",
+          "summary": "control and subject sources are required for apply evidence"
+        },
+        "build": {
+          "artifacts": [],
+          "capability": "build",
+          "check_id": "build",
+          "details": [],
+          "status": "blocked",
+          "summary": "verified build evidence is missing for: control, subject"
+        }
+      },
+      "claim_scope": "configuration-only",
+      "compiled_targets": [
+        "gfx1100"
+      ],
+      "compiler_observations": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "002c97a4087754e4544eb42d21fa8545",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "ddea93f905f86048cf63723f70a1f2ca409f2f7cfc8b22ac4f6430cb9223d792",
+              "libggml-hip.so.0.23.0": "9a31ebde469771ee3c70eda1d6948b8b24926312b6d3d473513b4711d2e206ba",
+              "libggml.so.0.23.0": "313db2608a4dfb81fccfa4bae0076be5faa27d8df16919253dfaa25456a68e46",
+              "libllama-common.so.0.4.0": "11853fde0b6dd30ed2521402fc9335c0d36616ce2212e79b4bf6c0211b53594c",
+              "libllama-server-impl.so": "52a8e4c0561b1c203f40b527d7dcdcec9dac40dce77a8a72c801fdff2d7a3532",
+              "libllama.so.0.4.0": "658ceee228f36e125cb96c395ef6bc40a40c5c7e4846caee4ab17789087c6dcc",
+              "libmtmd.so.0.4.0": "f6f37b4473aa818870c6a307632b9fa6e525080ee1d15e3f2c445519c9800007",
+              "llama-server": "356e78d17295730c453176c00a4394819f5999a1b1ddb3f00cb24119eecee913"
+            },
+            "runtime_bundle_hash": "99540514e92fce4314fa4b80ec5e578d"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 150,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 150,
+            "GGML_HIP_DISPATCH_REPLAY": 150,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": true,
+          "hip_compile_command_count": 150,
+          "issues": []
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "0ac75a504968ea515bc20aabc7356a8b",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "0a9b6824ce2299c6e3ed0387cefe317f01c912835f609ba4db4c046833e6b6b6",
+              "libggml-hip.so.0.23.0": "b2df4a7ccab1dd6f0f58605b0306b3fb136f0403b2279b09925b5e6e776a41bf",
+              "libggml.so.0.23.0": "ca270ff5260afdf00228c67e7852de2be301f0edc423a8688c7595744622474b",
+              "libllama-common.so.0.4.0": "103044d2ce7580d1b4f2f9194c25e5f2e03c9d69755bd1869ef5b446fb7e687e",
+              "libllama-server-impl.so": "8846e9adcee2c6611411af706a6f89dc6b120a11daad309ac93db472e1915225",
+              "libllama.so.0.4.0": "f06f1308bf875f05a5951f6b8fd9e65f0d645958d6149686b2c1185543937aea",
+              "libmtmd.so.0.4.0": "ebfebb08727248943cf6c6d34e61207858c466229616530c475d13f69580235a",
+              "llama-server": "b47f23bebb8d29849b3aa2e57e481e0a501f0a6122c0e549f6221643f57ccf39"
+            },
+            "runtime_bundle_hash": "7a7b506e252e3013218022d209d27354"
+          },
+          "compiled_definition_counts": {
+            "GGML_HIP_AUTOTUNE": 0,
+            "GGML_HIP_AUTOTUNE_RECORD": 0,
+            "GGML_HIP_DISPATCH": 149,
+            "GGML_HIP_DISPATCH_DIAGNOSTICS": 0,
+            "GGML_HIP_DISPATCH_REPLAY": 149,
+            "GGML_HIP_REPLAY_DIAGNOSTICS": 0,
+            "GGML_HIP_WORKSPACE_METRICS": 0
+          },
+          "coverage_translation_unit": false,
+          "hip_compile_command_count": 149,
+          "issues": []
+        }
+      },
+      "eligible_for_validated_state": false,
+      "generated_inputs": {
+        "diagnostic": {
+          "build_identity": {
+            "compile_commands_digest": "90db80e989f23b4ddcc66dbbef6368b917f82d4329a384a99d96de83e3c0454b",
+            "compile_verification_id": "233123f7c205a9cc5fe50f0666bd76ab",
+            "effective_build_id": "002c97a4087754e4544eb42d21fa8545",
+            "hip_compile_commands_digest": "77dbaa37dff59975e00e6bb96ee51a6017ddddb5fcbbf8c4f87e9f24b04bc537",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "ddea93f905f86048cf63723f70a1f2ca409f2f7cfc8b22ac4f6430cb9223d792",
+              "libggml-hip.so.0.23.0": "9a31ebde469771ee3c70eda1d6948b8b24926312b6d3d473513b4711d2e206ba",
+              "libggml.so.0.23.0": "313db2608a4dfb81fccfa4bae0076be5faa27d8df16919253dfaa25456a68e46",
+              "libllama-common.so.0.4.0": "11853fde0b6dd30ed2521402fc9335c0d36616ce2212e79b4bf6c0211b53594c",
+              "libllama-server-impl.so": "52a8e4c0561b1c203f40b527d7dcdcec9dac40dce77a8a72c801fdff2d7a3532",
+              "libllama.so.0.4.0": "658ceee228f36e125cb96c395ef6bc40a40c5c7e4846caee4ab17789087c6dcc",
+              "libmtmd.so.0.4.0": "f6f37b4473aa818870c6a307632b9fa6e525080ee1d15e3f2c445519c9800007",
+              "llama-server": "356e78d17295730c453176c00a4394819f5999a1b1ddb3f00cb24119eecee913"
+            },
+            "runtime_bundle_hash": "99540514e92fce4314fa4b80ec5e578d"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "885686018f7df8e9f5ab4bdfeb94fc52bfa0374df3870dea187a35eee42e7a6b",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        },
+        "production": {
+          "build_identity": {
+            "compile_commands_digest": "d6d3595efbcd7b25a55d71c0cf3c3dbdb8574f7def2b2d061d1dc12cbec1ee0e",
+            "compile_verification_id": "271f6b603db3ee0bf161f86c37f65d80",
+            "effective_build_id": "0ac75a504968ea515bc20aabc7356a8b",
+            "hip_compile_commands_digest": "574fc87199ec02c1925eebfb13536c394c95e65745f7fe23275e2eec9ec257a4",
+            "runtime_artifacts": {
+              "libggml-base.so.0.23.0": "39830023d6b59663e0c93488880a40f29120e285af4ef83e2615ae5a5d9eb32c",
+              "libggml-cpu.so.0.23.0": "0a9b6824ce2299c6e3ed0387cefe317f01c912835f609ba4db4c046833e6b6b6",
+              "libggml-hip.so.0.23.0": "b2df4a7ccab1dd6f0f58605b0306b3fb136f0403b2279b09925b5e6e776a41bf",
+              "libggml.so.0.23.0": "ca270ff5260afdf00228c67e7852de2be301f0edc423a8688c7595744622474b",
+              "libllama-common.so.0.4.0": "103044d2ce7580d1b4f2f9194c25e5f2e03c9d69755bd1869ef5b446fb7e687e",
+              "libllama-server-impl.so": "8846e9adcee2c6611411af706a6f89dc6b120a11daad309ac93db472e1915225",
+              "libllama.so.0.4.0": "f06f1308bf875f05a5951f6b8fd9e65f0d645958d6149686b2c1185543937aea",
+              "libmtmd.so.0.4.0": "ebfebb08727248943cf6c6d34e61207858c466229616530c475d13f69580235a",
+              "llama-server": "b47f23bebb8d29849b3aa2e57e481e0a501f0a6122c0e549f6221643f57ccf39"
+            },
+            "runtime_bundle_hash": "7a7b506e252e3013218022d209d27354"
+          },
+          "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+          "proof": "compiled-copy-v1",
+          "tree_manifest": {
+            "compile_inputs": [
+              "hip-autotune-arch.h",
+              "hip-autotune-build-hash.h",
+              "hip-autotune-mmvq-instances.inc",
+              "hip-autotune-registry.inc"
+            ],
+            "compile_inputs_hash": "95f810d3e631fabf621f84b12e9ae98bbcab79973111aa88701bcdef4141fdd8",
+            "files": {
+              "hip-autotune-arch.h": "b258715646fd8cb5d53d45508e11faf07d10bf4c2e3ee3dabe173092498a4105",
+              "hip-autotune-build-descriptor.json": "481badfb773e047255e1aa5df32349dfd43103cf95c882a72cf0ebece392290a",
+              "hip-autotune-build-hash.h": "646e6cca158e0e9d676a36125cef9fa0c699b67d4970a8033f384c0dd1944007",
+              "hip-autotune-manifest.json": "885686018f7df8e9f5ab4bdfeb94fc52bfa0374df3870dea187a35eee42e7a6b",
+              "hip-autotune-mmvq-instances.inc": "5db317b27747fdf855d45ab604d720b1a3cd5cf7af60da6595466667c83410e0",
+              "hip-autotune-registry.inc": "84f6c5d090b83c656c9c66fe06e20d0ae7910b162357506b4e6cd59d9c46c27d"
+            },
+            "schema_version": 1
+          }
+        }
+      },
+      "hardware_execution_qualified": false,
+      "patch_id": "0810_replay_hit_diagnostics",
+      "patch_implementation_digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+      "patch_validation_subject_digest": "ba6f831b5f43625543b7cfd1b542e592138116d058d62d7b330b8c5a08c70178",
+      "qualification_kind": "framework-configuration-v1",
+      "record_digest": "7184b25157f8d18f8dc8f1ba1f8c323cdf8a1a5c8fe66b6b9a880b66f34f8c04",
+      "record_schema_version": 5,
+      "runtime_performance_qualified": false,
+      "source_composition": [
+        {
+          "digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
+          "id": "0100_cmake_options"
+        },
+        {
+          "digest": "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4",
+          "id": "0110_campaign_tune_record_build"
+        },
+        {
+          "digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
+          "id": "0200_dispatch_hook"
+        },
+        {
+          "digest": "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593",
+          "id": "0300_mmq_forced_j"
+        },
+        {
+          "digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
+          "id": "0400_mmvf_forced_block"
+        },
+        {
+          "digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
+          "id": "0500_mmf_forced_nwarps"
+        },
+        {
+          "digest": "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925",
+          "id": "0600_mmvq_geometry"
+        },
+        {
+          "digest": "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10",
+          "id": "0650_mmvq_native_variant"
+        },
+        {
+          "digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
+          "id": "0700_coverage_counters"
+        },
+        {
+          "digest": "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3",
+          "id": "0800_server_shutdown_endpoint"
+        },
+        {
+          "digest": "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e",
+          "id": "0810_replay_hit_diagnostics"
+        },
+        {
+          "digest": "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809",
+          "id": "0820_measurement_signature_shapes"
+        },
+        {
+          "digest": "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba",
+          "id": "0830_split_reduce_telemetry"
+        },
+        {
+          "digest": "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146",
+          "id": "0900_pool_workspace_metrics"
+        },
+        {
+          "digest": "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c",
+          "id": "1000_rdna4_mmq_q2k_q6k_fix"
+        },
+        {
+          "digest": "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb",
+          "id": "1100_hi70_direct_op_evidence"
+        }
+      ],
+      "source_identity": {
+        "composition": [
+          [
+            "0100_cmake_options",
+            "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+          ],
+          [
+            "0110_campaign_tune_record_build",
+            "0d08d689d9736a79041a6ff2e319db6339778dd8c56cbcf4ae2b394006564dc4"
+          ],
+          [
+            "0200_dispatch_hook",
+            "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+          ],
+          [
+            "0300_mmq_forced_j",
+            "ceeb00a9e9a13fa87129eb8b49bf47588c016ee78c402ecf91bd09ccc0e1f593"
+          ],
+          [
+            "0400_mmvf_forced_block",
+            "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+          ],
+          [
+            "0500_mmf_forced_nwarps",
+            "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+          ],
+          [
+            "0600_mmvq_geometry",
+            "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+          ],
+          [
+            "0650_mmvq_native_variant",
+            "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+          ],
+          [
+            "0700_coverage_counters",
+            "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+          ],
+          [
+            "0800_server_shutdown_endpoint",
+            "ed5ceffa2e49926339d40591e7871cb8099b7494ea25909ae029bcd5881df9d3"
+          ],
+          [
+            "0810_replay_hit_diagnostics",
+            "c8f757610c37c3f9c41a161a6894af268b5d7ae9a2dfabc2b0c9e0c246c8b43e"
+          ],
+          [
+            "0820_measurement_signature_shapes",
+            "cae6be126c0fe9dce3e580513d3a3a80d70a1b010659487f5e3e3832d2349809"
+          ],
+          [
+            "0830_split_reduce_telemetry",
+            "a62f64e16168a3bfe276cf01f08e7897c496e59f4339cbc9932700ed0c69d7ba"
+          ],
+          [
+            "0900_pool_workspace_metrics",
+            "ce9ad20dbbf383d6c4ce97e012485421be1208d995a317194c9b3ddb11d72146"
+          ],
+          [
+            "1000_rdna4_mmq_q2k_q6k_fix",
+            "48480217ed000d667239f2141807db4acbcdbb6d27ffd0d0ad70a6a93a536d8c"
+          ],
+          [
+            "1100_hi70_direct_op_evidence",
+            "d30c9694f680e0995a57215783e1db51db6c6236ef726a8e0ff4367d72a0bbfb"
+          ]
+        ],
+        "materialization_plan_id": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8",
+        "overlay_digest": "d5ee90bf65e95a35dc16082d6924d31cef6867676738513d49bf32a8146173a6",
+        "patch_application_semantics_version": 1,
+        "resolved_revision": "28ff0958291ce3465fabd7bd679d4b0edd742bd9",
+        "schema": "bigcherry-patch-source-v2",
+        "source_key": "0681b52cb9b6b23fea372caa88ccd1d086962e4f6e285e6aa921f779998738a8"
+      },
+      "source_name": "bigcherry-native",
+      "source_slice_id": "4da8833b09223861a369c1c133d67d5e",
+      "source_tree": "8814b1dd68f2a643c7a76a73ed7e23ada09e0628",
+      "validation_digest": "5977904640cbcd1860c17b46f053ea13bbd3f69977059b8f46806484baed460e"
+    }
+  ],
+  "schema_version": 5
+}

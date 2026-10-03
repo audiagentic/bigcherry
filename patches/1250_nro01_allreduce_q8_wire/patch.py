@@ -1,126 +1,428 @@
-"""NRO01 draft: Q8_0 wire primitives for the internal AllReduce.
+"""1250: P2P Q8 wire + fused residual overlay on shared 1272 codec/finish.
 
-This is intentionally a compile-time/scaffolding draft, not a live selector.
-It creates the source primitives required for a correctness fixture before a
-lossy wire format can become reachable. NRO02 owns residual fusion.
+Requires 1252 (P2P provider) and 1272 (wire codec/host paths). This package
+owns no Q8 codec, wire parser, or Q8 finish kernels: it extends the 1252 P2P
+provider to call 1272's shared finish helper, routes 1272 Q8 copy-engine work
+over P2P when available, and retains PNRO02's meta-backend residual fusion.
 """
 
 import re as _re
 
 from bigcherry.patcher import Edit, FilePatch
 
-DRAFT_SOURCE_CONTEXT = {
-    "repo": "https://github.com/nasone32/llama.cpp-RDNA3-7900xtx-opt",
-    "commit": "e06dcf6300718227cb8cfda9e61fb12ccb693418",
-    "title": "ggml: add Q8 wire, residual fusion, and AllReduce tracing",
-    "pin": "b10705",
-    "scope": "Q8_0 wire primitives only; residual fusion split to NRO02",
+PROVENANCE = {
+    "source-id": "nasone-rdna-optimizations",
+    "plan-item": "NRO01/NRO02",
+    "fork-commit": "e06dcf6300718227cb8cfda9e61fb12ccb693418",
+    "port-mode": "migrated overlay: 1252 transport + 1272 shared codec/fused finish",
 }
 
-_Q8_KERNELS = r'''
+_BACKEND_TYPEDEF_ANCHOR = """    typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);
+"""
+_BACKEND_TYPEDEF_INSERT = """    typedef bool   (*ggml_backend_comm_allreduce_tensor_fused_add_t)(
+        void * comm_ctx, struct ggml_tensor ** tensors, struct ggml_tensor ** residuals, struct ggml_tensor ** outputs);
+"""
 
-// BIGCHERRY_NRO01_Q8_SCAFFOLD_BEGIN
-// Draft only: these kernels are deliberately not dispatched until NRO01's
-// synthetic numerical fixture and tolerance policy are committed.
-static __global__ void bigcherry_nro01_quantize_q8_0_kernel(
-        const float * __restrict__ src,
-        block_q8_0 * __restrict__ dst,
-        int64_t ne,
-        int64_t nblocks) {
-    const int lane = threadIdx.x % QK8_0;
-    const int64_t warp = ((int64_t) blockIdx.x * blockDim.x + threadIdx.x) / QK8_0;
-    const int64_t nwarps = ((int64_t) gridDim.x * blockDim.x) / QK8_0;
-    for (int64_t ib = warp; ib < nblocks; ib += nwarps) {
-        const int64_t i = ib * QK8_0 + lane;
-        const float x = i < ne ? src[i] : 0.0f;
-        const float amax = warp_reduce_max<QK8_0>(fabsf(x));
-        const float d = amax / 127.0f;
-        const float id = d != 0.0f ? 1.0f / d : 0.0f;
-        dst[ib].qs[lane] = (int8_t) roundf(x * id);
-        if (lane == 0) {
-            dst[ib].d = d;
-        }
-    }
-}
-
-static __global__ void bigcherry_nro01_q8_0_add_kernel(
-        float * __restrict__ dst,
-        const block_q8_0 * __restrict__ rank0,
-        const block_q8_0 * __restrict__ rank1,
-        int count) {
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    const int nt = gridDim.x * blockDim.x;
-    for (int i = tid; i < count; i += nt) {
-        const int ib = i / QK8_0;
-        const int iq = i % QK8_0;
-        dst[i] = (float) rank0[ib].d * (float) rank0[ib].qs[iq]
-               + (float) rank1[ib].d * (float) rank1[ib].qs[iq];
-    }
-}
-// BIGCHERRY_NRO01_Q8_SCAFFOLD_END
-'''
-
-PATCHES = [
-    FilePatch(
-        path="ggml/src/ggml-cuda/allreduce.cu",
-        description="add disabled Q8_0 AllReduce wire primitives and policy state",
-        edits=(
-            Edit(
-                # Real bug found on real hardware (2026-09-12, gfx1201 build
-                # attempt): the anchor previously ended at the `=` sign, mid-
-                # statement -- insert_after splices immediately after the
-                # MATCHED TEXT, not after the enclosing line/statement, so
-                # this corrupted `... DEFAULT =\n<inserted>\n1024 * 1024;`
-                # into unparseable C++. The real source is one line
-                # (`... DEFAULT = 1024 * 1024; // 1 MB`); anchor through the
-                # trailing `;` so the insertion lands after the complete
-                # statement. The `// 1 MB` comment starts after the `;` so
-                # no comment/string-literal noise-stripping concern here.
-                id="q8-threshold-constant",
-                anchor=r"^static constexpr size_t GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT = 1024 \* 1024;",
-                mode="insert_after",
-                text="\n// BigCherry NRO01: 0 keeps the draft Q8 path unreachable until qualified.\nstatic constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;",
-                guard=r"^static constexpr size_t BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT = 0;$",
-                rationale="anchor through the complete single-line statement (not just up to '='), so insert_after lands after the full declaration instead of splicing mid-expression",
-            ),
-            Edit(
-                id="q8-kernel-primitives",
-                anchor=r"^struct ggml_cuda_ar_pipeline \{$",
-                mode="insert_before",
-                text=_Q8_KERNELS + "\n",
-                guard=r"BIGCHERRY_NRO01_Q8_SCAFFOLD_BEGIN",
-                rationale="insert Q8 primitives immediately before the provider state structure using a code anchor",
-            ),
-            Edit(
-                id="q8-pipeline-field",
-                anchor=r"^    size_t   bf16_threshold;",
-                mode="insert_after",
-                text="\n    size_t   nro01_q8_threshold; // draft: 0 disables Q8 wire dispatch",
-                guard=r"nro01_q8_threshold",
-                rationale="keep Q8 threshold in the provider instance alongside BF16 threshold",
-            ),
-            Edit(
-                # Same real bug class as q8-threshold-constant above: the
-                # anchor ended at `=`, mid-statement, corrupting
-                # `p->bf16_threshold   =\n<inserted>\nggml_cuda_ar_env_u64(...)`.
-                # The real source is one line:
-                # `p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);`
-                # -- it contains a string literal, which the patcher blanks
-                # before matching, so the LITERAL-placeholder technique
-                # (patches/1222, patches/1225) is used: write the anchor
-                # template with a placeholder token in place of the string,
-                # then replace the escaped placeholder with a loose
-                # same-line match.
-                id="q8-init-policy",
-                anchor=(
-                    _re.escape('    p->bf16_threshold   = ggml_cuda_ar_env_u64(LITERAL1, 1);')
-                    .replace(_re.escape('LITERAL1'), r'[^\n]*')
-                ),
-                mode="insert_after",
-                text="\n    p->nro01_q8_threshold = ggml_cuda_ar_env_u64(\"GGML_CUDA_AR_Q8_THRESHOLD\", BIGCHERRY_NRO01_Q8_THRESHOLD_DEFAULT);",
-                guard=r"p->nro01_q8_threshold = ggml_cuda_ar_env_u64",
-                rationale="anchor through the complete single-line assignment (not just up to '='), using the LITERAL-placeholder technique to cross the noise-stripped string literal, so insert_after lands after the full statement instead of splicing mid-call",
-            ),
+PATCH_BACKEND_H = FilePatch(
+    path="ggml/include/ggml-backend.h",
+    description="1250: expose fused AllReduce+ADD communication hook",
+    language="none",
+    edits=(
+        Edit(
+            id="nro01-shared-backend-fused-typedef",
+            anchor=_re.escape(_BACKEND_TYPEDEF_ANCHOR),
+            mode="insert_after",
+            text=_BACKEND_TYPEDEF_INSERT,
+            guard=r"ggml_backend_comm_allreduce_tensor_fused_add_t",
+            rationale="Retain PNRO02's optional fused residual communication entry point while wire ownership moves to 1272.",
+            expect_matches=1,
+            max_span_lines=2,
         ),
     ),
-]
+)
+
+_META_CTX_ANCHOR = """    void *                               comm_ctx       = nullptr;
+    ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+
+    ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {
+"""
+_META_CTX_TEXT = """    void *                               comm_ctx       = nullptr;
+    ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+    ggml_backend_comm_allreduce_tensor_fused_add_t comm_allreduce_fused_add = nullptr;
+
+    ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {
+"""
+_META_PROC_ANCHOR = """                    ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
+            GGML_ASSERT(comm_allreduce != nullptr);
+        }
+    }
+"""
+_META_PROC_TEXT = """                    ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
+            GGML_ASSERT(comm_allreduce != nullptr);
+            comm_allreduce_fused_add = (ggml_backend_comm_allreduce_tensor_fused_add_t)
+                ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
+                    ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor_fused_add");
+        }
+    }
+"""
+_META_LOOP_ANCHOR = """    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
+"""
+_META_COMPUTE_ANCHOR = """            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+"""
+_META_COMPUTE_TEXT = """            ggml_cgraph * cgraph_compute = bcj.cgraphs[i].cgraph_main;
+            uint32_t flags = 0;
+            if (skip_node >= 0) {
+                GGML_ASSERT(skip_node < cgraph_compute->n_nodes);
+                flags = cgraph_compute->nodes[skip_node]->flags;
+                cgraph_compute->nodes[skip_node]->flags &= ~GGML_TENSOR_FLAG_COMPUTE;
+            }
+            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, cgraph_compute);
+            if (skip_node >= 0) {
+                cgraph_compute->nodes[skip_node]->flags = flags;
+            }
+"""
+_META_NEXT_ANCHOR = """        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
+"""
+_META_AR_ANCHOR = """                backend_allreduce_success = backend_ctx->comm_allreduce(backend_ctx->comm_ctx, nodes.data());
+"""
+_META_AR_TEXT = """
+                bool try_fused_add = backend_ctx->comm_allreduce_fused_add != nullptr &&
+                    getenv("GGML_CUDA_AR_FUSED_RESIDUAL") != nullptr;
+                std::vector<ggml_tensor *> residuals;
+                std::vector<ggml_tensor *> outputs;
+                const int i_next = backend_ctx->backend_configs[0].cgraphs[i + 1].offset;
+                int i_add = i_next;
+                if (try_fused_add) {
+                    ggml_tensor * node = cgraph->nodes[i_next - 1];
+                    const int i_next_end = i_next + backend_ctx->backend_configs[0].cgraphs[i + 1].cgraph_main->n_nodes;
+                    while (i_add < i_next_end && cgraph->nodes[i_add]->op == GGML_OP_RESHAPE &&
+                            cgraph->nodes[i_add]->src[0] == node && ggml_node_get_use_count(cgraph, i_add - 1) == 1) {
+                        node = cgraph->nodes[i_add++];
+                    }
+                    try_fused_add = i_add < i_next_end;
+                    ggml_tensor * add = try_fused_add ? cgraph->nodes[i_add] : nullptr;
+                    try_fused_add = try_fused_add && add->op == GGML_OP_ADD && ggml_node_get_use_count(cgraph, i_add - 1) == 1 &&
+                        ggml_are_same_shape(node, add) && node->type == GGML_TYPE_F32 && add->type == GGML_TYPE_F32 &&
+                        (add->src[0] == node || add->src[1] == node);
+                    if (try_fused_add) {
+                        ggml_tensor * residual = add->src[0] == node ? add->src[1] : add->src[0];
+                        try_fused_add = residual != nullptr && residual->type == GGML_TYPE_F32 &&
+                            ggml_are_same_shape(node, residual) &&
+                            ggml_backend_meta_get_split_state(residual, false).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&
+                            ggml_backend_meta_get_split_state(add, false).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED;
+                    }
+                }
+                if (try_fused_add) {
+                    residuals.reserve(n_backends);
+                    outputs.reserve(n_backends);
+                    for (size_t j = 0; j < n_backends; j++) {
+                        auto & bcj = backend_ctx->backend_configs[j];
+                        ggml_cgraph * next = bcj.cgraphs[i + 1].cgraph_main;
+                        const int i_add_next = i_add - i_next;
+                        ggml_tensor * add = next->nodes[i_add_next];
+                        ggml_tensor * reduced = i_add_next == 0 ? nodes[j] : next->nodes[i_add_next - 1];
+                        ggml_tensor * residual = add->src[0] == reduced ? add->src[1] : add->src[0];
+                        if (add->op != GGML_OP_ADD || residual == nullptr ||
+                            !(add->src[0] == reduced || add->src[1] == reduced)) {
+                            try_fused_add = false;
+                            break;
+                        }
+                        residuals.push_back(residual);
+                        outputs.push_back(add);
+                    }
+                }
+                if (try_fused_add) {
+                    backend_allreduce_success = backend_ctx->comm_allreduce_fused_add(
+                        backend_ctx->comm_ctx, nodes.data(), residuals.data(), outputs.data());
+                    skip_node = backend_allreduce_success ? i_add - i_next : -1;
+                }
+                if (!backend_allreduce_success) {
+                    backend_allreduce_success = backend_ctx->comm_allreduce(backend_ctx->comm_ctx, nodes.data());
+                }
+"""
+
+PATCH_META = FilePatch(
+    path="ggml/src/ggml-backend-meta.cpp",
+    description="1250: retain PNRO02 meta-backend ADD fusion around shared 1272 wire implementation",
+    language="none",
+    edits=(
+        Edit(id="nro02-meta-context", anchor=_re.escape(_META_CTX_ANCHOR), mode="replace", text=_META_CTX_TEXT,
+             guard=r"comm_allreduce_fused_add = nullptr;", rationale="Store optional fused communication hook.", expect_matches=1, max_span_lines=6),
+        Edit(id="nro02-meta-proc", anchor=_re.escape(_META_PROC_ANCHOR), mode="replace", text=_META_PROC_TEXT,
+             guard=r"comm_allreduce_fused_add = \(ggml_backend_comm_allreduce_tensor_fused_add_t\)", rationale="Resolve optional fused hook beside normal AllReduce.", expect_matches=1, max_span_lines=6),
+        Edit(id="nro02-meta-skip-state", anchor=_re.escape(_META_LOOP_ANCHOR), mode="insert_before", text="    int skip_node = -1;\n",
+             guard=r"int skip_node = -1;", rationale="Track the next-subgraph ADD node suppressed after successful fusion.", expect_matches=1, max_span_lines=2),
+        Edit(id="nro02-meta-compute-skip", anchor=_re.escape(_META_COMPUTE_ANCHOR), mode="replace", text=_META_COMPUTE_TEXT,
+             guard=r"ggml_cgraph \* cgraph_compute = bcj\.cgraphs\[i\]\.cgraph_main;", rationale="Temporarily clear compute on the fused ADD node.", expect_matches=1, max_span_lines=3),
+        Edit(id="nro02-meta-reset-skip", anchor=_re.escape(_META_NEXT_ANCHOR), mode="insert_before", text="        skip_node = -1;\n\n",
+             guard=r"skip_node = -1;\n\n        if \(n_backends > 1", rationale="Reset fusion skip state once each subgraph has executed.", expect_matches=1, max_span_lines=2),
+        Edit(id="nro02-meta-fuse", anchor=_re.escape(_META_AR_ANCHOR), mode="replace", text=_META_AR_TEXT,
+             guard=r"bool try_fused_add = backend_ctx->comm_allreduce_fused_add != nullptr", rationale="Fuse a single-use mirrored F32 ADD into the communication finish and fall back atomically if unavailable.", expect_matches=1, max_span_lines=2),
+    ),
+)
+
+_P2P_SIG_ANCHOR = """template <typename T_src, typename T_dst>
+static bool ggml_cuda_ar_allreduce_p2p_impl(
+        ggml_cuda_ar_pipeline * p,
+        ggml_backend_t        * backends,
+        T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],
+        T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],
+        const bool              compute[GGML_CUDA_MAX_DEVICES],
+        int64_t                 ne,
+        size_t                  nbytes) {
+"""
+_P2P_SIG_TEXT = """template <typename T_src, typename T_dst>
+static bool ggml_cuda_ar_allreduce_p2p_impl(
+        ggml_cuda_ar_pipeline * p,
+        ggml_backend_t        * backends,
+        T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],
+        T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],
+        const bool              compute[GGML_CUDA_MAX_DEVICES],
+        int64_t                 ne,
+        size_t                  nbytes,
+        T_dst * const           residual_buf[GGML_CUDA_MAX_DEVICES] = nullptr) {
+"""
+_P2P_FINISH_ANCHOR = """        const int block_size = 256;
+        int n_blocks = (int) ((ne + block_size - 1) / block_size);
+        if (n_blocks > 1024) {
+            n_blocks = 1024;
+        }
+        ggml_cuda_ar_add_kernel<T_dst, T_src><<<n_blocks, block_size, 0, cuda_ctx[i]->stream()>>>(
+            dst_buf[i], reinterpret_cast<const T_src *>(p->dev_tmp[i]), (int) ne);
+        CUDA_CHECK(cudaGetLastError());
+"""
+_P2P_FINISH_TEXT = """        ggml_cuda_ar_launch_finish(
+            src_buf[i], dst_buf[i], reinterpret_cast<const T_src *>(p->dev_tmp[i]),
+            residual_buf ? residual_buf[i] : nullptr, i, ne, cuda_ctx[i]->stream());
+        CUDA_CHECK(cudaGetLastError());
+"""
+_Q8_WIRE_ANCHOR = """template <typename T_dst>
+static bool ggml_cuda_ar_allreduce_wire_q8(
+"""
+_Q8_P2P_HELPER = r'''template <typename T_dst>
+static bool ggml_cuda_ar_allreduce_p2p_q8_outer(
+        ggml_cuda_ar_pipeline * p,
+        ggml_backend_t        * backends,
+        block_q8_0 * const      src_buf[GGML_CUDA_MAX_DEVICES],
+        T_dst * const            dst_buf[GGML_CUDA_MAX_DEVICES],
+        T_dst * const            residual_buf[GGML_CUDA_MAX_DEVICES],
+        int64_t                  ne) {
+    GGML_ASSERT(p->p2p_enabled);
+    const int64_t outer_max_blocks = (int64_t) (p->copy_bytes / sizeof(block_q8_0));
+    GGML_ASSERT(outer_max_blocks > 0);
+    const int64_t outer_max_elems = outer_max_blocks * QK8_0;
+    bool compute[GGML_CUDA_MAX_DEVICES] = { true, true };
+
+    if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+        static std::once_flag logged;
+        std::call_once(logged, [] {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1250_nro01 path=allreduce_q8_0_p2p_shared\n");
+        });
+    }
+
+    bool ok = true;
+    for (int64_t outer_start = 0; outer_start < ne && ok; outer_start += outer_max_elems) {
+        const int64_t outer_ne = std::min(outer_max_elems, ne - outer_start);
+        const int64_t outer_blocks = (outer_ne + QK8_0 - 1) / QK8_0;
+        const size_t outer_nbytes = (size_t) outer_blocks * sizeof(block_q8_0);
+        block_q8_0 * src[GGML_CUDA_MAX_DEVICES] = {};
+        T_dst * dst[GGML_CUDA_MAX_DEVICES] = {};
+        T_dst * residual[GGML_CUDA_MAX_DEVICES] = {};
+        for (int i = 0; i < p->n_devices; ++i) {
+            src[i] = src_buf[i] + outer_start / QK8_0;
+            dst[i] = dst_buf[i] + outer_start;
+            residual[i] = residual_buf ? residual_buf[i] + outer_start : nullptr;
+        }
+        ok = ggml_cuda_ar_allreduce_p2p_impl<block_q8_0, T_dst>(
+            p, backends, src, dst, compute, outer_ne, outer_nbytes,
+            residual_buf ? residual : nullptr);
+    }
+    return ok;
+}
+
+'''
+_Q8_HOST_RETURN = """        return ggml_cuda_ar_allreduce_copy_q8_outer<T_dst>(p, backends, src, dst, nullptr, ne);
+"""
+_Q8_PROVIDER_RETURN = """        if (p->p2p_enabled) {
+            return ggml_cuda_ar_allreduce_p2p_q8_outer<T_dst>(p, backends, src, dst, nullptr, ne);
+        }
+        return ggml_cuda_ar_allreduce_copy_q8_outer<T_dst>(p, backends, src, dst, nullptr, ne);
+"""
+_MUSA_ANCHOR = """#else // defined(GGML_USE_MUSA)
+"""
+_FUSED_API = r'''bool ggml_cuda_ar_allreduce_fused_add(
+        ggml_cuda_ar_pipeline * p,
+        ggml_backend_t        * backends,
+        ggml_tensor           ** tensors,
+        ggml_tensor           ** residuals,
+        ggml_tensor           ** outputs) {
+    if (p == nullptr || p->n_devices != 2 ||
+            p->wire_override != ggml_cuda_ar_wire_override::q8_0) {
+        return false;
+    }
+
+    const int64_t ne = ggml_nelements(tensors[0]);
+    if (ne <= 0 || ne > std::numeric_limits<int>::max()) {
+        return false;
+    }
+    for (int i = 0; i < p->n_devices; ++i) {
+        if (tensors[i] == nullptr || residuals[i] == nullptr || outputs[i] == nullptr ||
+                tensors[i]->type != GGML_TYPE_F32 || residuals[i]->type != GGML_TYPE_F32 || outputs[i]->type != GGML_TYPE_F32 ||
+                ggml_nelements(tensors[i]) != ne || ggml_nelements(residuals[i]) != ne || ggml_nelements(outputs[i]) != ne) {
+            return false;
+        }
+    }
+
+    const int64_t q8_blocks = (ne + QK8_0 - 1) / QK8_0;
+    const size_t q8_nbytes = (size_t) q8_blocks * sizeof(block_q8_0);
+    if (p->copy_threshold == 0 || q8_nbytes < p->copy_threshold) {
+        return false;
+    }
+
+    ggml_cuda_pool_alloc<block_q8_0> q8_tmp[GGML_CUDA_MAX_DEVICES];
+    block_q8_0 * src[GGML_CUDA_MAX_DEVICES] = {};
+    float * dst[GGML_CUDA_MAX_DEVICES] = {};
+    float * residual[GGML_CUDA_MAX_DEVICES] = {};
+    const int block_size = 256;
+    int n_blocks = (int) ((q8_blocks * QK8_0 + block_size - 1) / block_size);
+    n_blocks = std::min(n_blocks, 1024);
+
+    for (int i = 0; i < p->n_devices; ++i) {
+        auto * cuda_ctx = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
+        GGML_ASSERT(cuda_ctx->device == p->devices[i]);
+        ggml_cuda_set_device(p->devices[i]);
+        q8_tmp[i].pool = &cuda_ctx->pool();
+        q8_tmp[i].alloc(q8_blocks);
+        src[i] = q8_tmp[i].get();
+        dst[i] = static_cast<float *>(outputs[i]->data);
+        residual[i] = static_cast<float *>(residuals[i]->data);
+        if ((tensors[i]->flags & GGML_TENSOR_FLAG_COMPUTE) != 0) {
+            ggml_cuda_ar_quantize_q8_0_kernel<float><<<n_blocks, block_size, 0, cuda_ctx->stream()>>>(
+                static_cast<const float *>(tensors[i]->data), src[i], ne, q8_blocks);
+            CUDA_CHECK(cudaGetLastError());
+        } else {
+            CUDA_CHECK(cudaMemsetAsync(src[i], 0, q8_nbytes, cuda_ctx->stream()));
+        }
+    }
+
+    if (p->p2p_enabled) {
+        return ggml_cuda_ar_allreduce_p2p_q8_outer<float>(p, backends, src, dst, residual, ne);
+    }
+    return ggml_cuda_ar_allreduce_copy_q8_outer<float>(p, backends, src, dst, residual, ne);
+}
+
+'''
+_MUSA_STUB_ANCHOR = """bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **) {
+    return false;
+}
+"""
+_MUSA_STUB_INSERT = """bool ggml_cuda_ar_allreduce_fused_add(
+        ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **, ggml_tensor **, ggml_tensor **) {
+    return false;
+}
+"""
+
+PATCH_ALLREDUCE = FilePatch(
+    path="ggml/src/ggml-cuda/allreduce.cu",
+    description="1250: route 1272 Q8 wire through 1252 P2P and reuse 1272 shared finish for optional residual fusion",
+    language="none",
+    edits=(
+        Edit(id="nro01-p2p-shared-finish-signature", anchor=_re.escape(_P2P_SIG_ANCHOR), mode="replace", text=_P2P_SIG_TEXT,
+             guard=r"residual_buf\[GGML_CUDA_MAX_DEVICES\] = nullptr", rationale="Extend the provider finish with an optional residual pointer without changing existing callers.", expect_matches=1, max_span_lines=12),
+        Edit(id="nro01-p2p-shared-finish-launch", anchor=_re.escape(_P2P_FINISH_ANCHOR), mode="replace", text=_P2P_FINISH_TEXT,
+             guard=r"ggml_cuda_ar_launch_finish\(\n\s+src_buf\[i\], dst_buf\[i\], reinterpret_cast<const T_src", rationale="Reuse 1272's shared native/Q8 fused finish instead of owning a duplicate add/dequant kernel.", expect_matches=1, max_span_lines=10),
+        Edit(id="nro01-p2p-q8-outer", anchor=_re.escape(_Q8_WIRE_ANCHOR), mode="insert_before", text=_Q8_P2P_HELPER,
+             guard=r"static bool ggml_cuda_ar_allreduce_p2p_q8_outer\(", rationale="Slice block-Q8 wire buffers and feed them through the source-current 1252 P2P provider.", expect_matches=1, max_span_lines=3),
+        Edit(id="nro01-q8-provider-route", anchor=_re.escape(_Q8_HOST_RETURN), mode="replace", text=_Q8_PROVIDER_RETURN,
+             guard=r"return ggml_cuda_ar_allreduce_p2p_q8_outer<T_dst>", rationale="Select P2P for 1272 Q8 copy-engine traffic when the provider probe succeeded; retain host staging fallback.", expect_matches=1, max_span_lines=2),
+        Edit(id="nro02-fused-api", anchor=_re.escape(_MUSA_ANCHOR), mode="insert_before", text=_FUSED_API,
+             guard=r"bool ggml_cuda_ar_allreduce_fused_add\(", rationale="Quantize once with 1272's codec and finish Q8 transport directly into output+residual, over P2P or host staging.", expect_matches=1, max_span_lines=2),
+        Edit(id="nro02-musa-stub", anchor=_re.escape(_MUSA_STUB_ANCHOR), mode="insert_after", text=_MUSA_STUB_INSERT,
+             guard=r"ggml_cuda_ar_pipeline \*, ggml_backend_t \*, ggml_tensor \*\*, ggml_tensor \*\*, ggml_tensor \*\*", rationale="Keep the fused API link-complete on MUSA while returning unsupported.", expect_matches=1, max_span_lines=4),
+    ),
+)
+
+_CUH_ANCHOR = """bool ggml_cuda_ar_allreduce(
+    ggml_cuda_ar_pipeline * pipeline,
+    ggml_backend_t        * backends,
+    ggml_tensor           ** tensors);
+"""
+_CUH_INSERT = """
+bool ggml_cuda_ar_allreduce_fused_add(
+    ggml_cuda_ar_pipeline * pipeline,
+    ggml_backend_t        * backends,
+    ggml_tensor           ** tensors,
+    ggml_tensor           ** residuals,
+    ggml_tensor           ** outputs);
+"""
+PATCH_CUH = FilePatch(
+    path="ggml/src/ggml-cuda/allreduce.cuh",
+    description="1250: declare fused AllReduce+ADD entry point",
+    language="none",
+    edits=(
+        Edit(id="nro02-cuh-fused", anchor=_re.escape(_CUH_ANCHOR), mode="insert_after", text=_CUH_INSERT,
+             guard=r"bool ggml_cuda_ar_allreduce_fused_add\(", rationale="Expose PNRO02 fused finish to the CUDA communication dispatcher.", expect_matches=1, max_span_lines=5),
+    ),
+)
+
+_CUDA_DISPATCH_ANCHOR = """    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    return comm_ctx->try_allreduce(comm_ctx, tensors);
+}
+
+"""
+_CUDA_DISPATCH_INSERT = r'''static bool ggml_backend_cuda_comm_allreduce_tensor_fused_add(
+        void * comm_ctx_v, struct ggml_tensor ** tensors, struct ggml_tensor ** residuals, struct ggml_tensor ** outputs) {
+    if (comm_ctx_v == nullptr || getenv("GGML_CUDA_AR_FUSED_RESIDUAL") == nullptr) {
+        return false;
+    }
+    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    if (comm_ctx->ar_pipeline == nullptr) {
+        return false;
+    }
+
+    const size_t n_backends = comm_ctx->backends.size();
+    for (size_t i = 0; i < n_backends; ++i) {
+        if (tensors[i] == nullptr || residuals[i] == nullptr || outputs[i] == nullptr ||
+            tensors[i]->type != GGML_TYPE_F32 || residuals[i]->type != GGML_TYPE_F32 || outputs[i]->type != GGML_TYPE_F32 ||
+            !ggml_are_same_shape(tensors[i], residuals[i]) || !ggml_are_same_shape(tensors[i], outputs[i]) ||
+            !ggml_is_contiguously_allocated(tensors[i]) || !ggml_is_contiguously_allocated(residuals[i]) ||
+            !ggml_is_contiguously_allocated(outputs[i])) {
+            return false;
+        }
+    }
+    const bool fused = ggml_cuda_ar_allreduce_fused_add(
+        comm_ctx->ar_pipeline, comm_ctx->backends.data(), tensors, residuals, outputs);
+    if (fused && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+        static std::once_flag bigcherry_nro02_logged;
+        std::call_once(bigcherry_nro02_logged, [] {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1250_nro02 path=allreduce_fused_residual\n");
+        });
+    }
+    return fused;
+}
+
+'''
+_CUDA_PROC_ANCHOR = """        return (void *)ggml_backend_cuda_comm_allreduce_tensor;
+    }
+    if (strcmp(name, "ggml_backend_register_host_buffer") == 0) {
+"""
+_CUDA_PROC_TEXT = """        return (void *)ggml_backend_cuda_comm_allreduce_tensor;
+    }
+    if (strcmp(name, "ggml_backend_comm_allreduce_tensor_fused_add") == 0) {
+        return (void *)ggml_backend_cuda_comm_allreduce_tensor_fused_add;
+    }
+    if (strcmp(name, "ggml_backend_register_host_buffer") == 0) {
+"""
+PATCH_CUDA = FilePatch(
+    path="ggml/src/ggml-cuda/ggml-cuda.cu",
+    description="1250: expose fused residual AllReduce through CUDA comm proc registry",
+    language="none",
+    edits=(
+        Edit(id="nro02-cuda-fused-dispatch", anchor=_re.escape(_CUDA_DISPATCH_ANCHOR), mode="insert_after", text=_CUDA_DISPATCH_INSERT,
+             guard=r"static bool ggml_backend_cuda_comm_allreduce_tensor_fused_add\(", rationale="Validate F32 contiguous inputs and execute the shared fused finish only when explicitly enabled.", expect_matches=1, max_span_lines=5),
+        Edit(id="nro02-cuda-fused-proc", anchor=_re.escape(_CUDA_PROC_ANCHOR), mode="replace", text=_CUDA_PROC_TEXT,
+             guard=r'if \(strcmp\(name, "ggml_backend_comm_allreduce_tensor_fused_add"\) == 0\)', rationale="Publish the optional fused communication symbol to the meta backend.", expect_matches=1, max_span_lines=5),
+    ),
+)
+
+PATCHES = [PATCH_BACKEND_H, PATCH_META, PATCH_ALLREDUCE, PATCH_CUH, PATCH_CUDA]

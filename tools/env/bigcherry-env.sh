@@ -1,12 +1,12 @@
 #!/bin/bash
-# Export the build host's environment from config/environment.toml.
+# Export the build host's environment from config/environment.local.toml.
 #
 #   source tools/bigcherry-env.sh              # default host
 #   source tools/bigcherry-env.sh build-server # a named host
 #
 # Exists so commands in docs and scripts can say $BC_MODEL_ROOT rather than
 # hardcoding one person's paths. Everything machine-specific lives in
-# config/environment.toml; this only reads it.
+# config/environment.local.toml; this only reads it.
 #
 # Sets: BC_HOST BC_ADDRESS BC_HOME BC_REPO BC_CACHE BC_SHARE BC_MODEL_ROOT
 #       BC_BENCH_HARNESS BC_ROCM BC_ROCM_SHIM BC_BENCH_PORT BC_PRODUCTION_PORT
@@ -22,10 +22,10 @@ _bc_env_root() {
 _bc_env_load() {
     local root cfg host
     root="$(_bc_env_root)"
-    cfg="$root/config/environment.toml"
+    cfg="${BIGCHERRY_ENVIRONMENT:-$root/config/environment.local.toml}"
     host="${1:-}"
     if [ ! -f "$cfg" ]; then
-        echo "bigcherry-env: no $cfg" >&2
+        echo "bigcherry-env: no $cfg (copy config/environment.example.toml to config/environment.local.toml, or set BIGCHERRY_ENVIRONMENT)" >&2
         return 1
     fi
     # tomllib rather than grep/sed: the file is TOML and parsing it as text

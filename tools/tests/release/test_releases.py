@@ -513,7 +513,8 @@ class ReleaseLifecycleTests(unittest.TestCase):
             revision="abc123", release_tag="b1234", stage="validated",
             tree_state="", manifest_hash="dead" * 8, audit={"passed": True},
         )
-        failed_edit = SimpleNamespace(edit_id="E1")
+        from bigcherry.patch.apply import EditResult
+        failed_edit = EditResult("E1", "failed", "anchor not found")
         patch_result = SimpleNamespace(
             path="src/example.cpp", results=[], failed=[failed_edit],
             changed=False, ok=False,

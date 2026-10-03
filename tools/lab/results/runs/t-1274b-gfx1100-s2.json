@@ -1,0 +1,69 @@
+{
+ "correctness": [
+  {
+   "check": "backend_reference",
+   "contract_id": "RD74-MMVQ-Q6_K-F32-DECODE",
+   "control_marker_ncols": [],
+   "detail": "Q6_K MUL_MAT test-backend-ops: control 13/13, subject 13/13 within CPU-reference tolerance",
+   "passed": true,
+   "subject_marker_ncols": [
+    1
+   ]
+  }
+ ],
+ "kind": "campaign",
+ "performance": [
+  {
+   "contract_id": "RD74-MMVQ-Q6_K-F32-DECODE",
+   "control": {
+    "effect": {
+     "ci95_high_pct": 0.11088386550182072,
+     "ci95_low_pct": -0.11856161422164613,
+     "decision": null,
+     "geometric_effect_pct": -0.010350677601045355,
+     "metric": "tg128",
+     "pair_ratios": [
+      1.0036157024793388,
+      0.9987090111025045,
+      0.9987129987129986,
+      0.9971671388101984,
+      0.9994841372194996,
+      1.0018059855521155,
+      1.0007737941707504,
+      1.0007735946364105,
+      0.9979392065945389,
+      1.0
+     ],
+     "paired_rounds": 10,
+     "role": "control"
+    },
+    "metric": "tg128"
+   },
+   "positive": {
+    "effect": {
+     "ci95_high_pct": 4.371226147496166,
+     "ci95_low_pct": 4.162308024051931,
+     "decision": null,
+     "geometric_effect_pct": 4.27002495711577,
+     "metric": "tg128",
+     "pair_ratios": [
+      1.0398067188219051,
+      1.0410911602209945,
+      1.0405249827308312,
+      1.0424256398432097,
+      1.0447088724584104,
+      1.0447778418926716,
+      1.0424375578168363,
+      1.044488097989369,
+      1.043598936047184,
+      1.0431563114659261
+     ],
+     "paired_rounds": 10,
+     "role": "positive"
+    },
+    "metric": "tg128"
+   }
+  }
+ ],
+ "run": "t-1274b-gfx1100-s2"
+}

@@ -2,7 +2,7 @@
 
 import importlib.util
 from pathlib import Path
-import shutil
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -44,7 +44,8 @@ def _copy_sources(tmp_path: Path) -> tuple[Path, Path]:
     for relative in paths:
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(vendor / relative, target)
+        # Pristine pinned bytes from git: the working vendor tree may already carry applied patches.
+        target.write_bytes(subprocess.check_output(["git", "-C", str(vendor), "show", f"HEAD:{relative}"]))
         targets.append(target)
     return tuple(targets)  # type: ignore[return-value]
 

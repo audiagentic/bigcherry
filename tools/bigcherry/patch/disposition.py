@@ -157,7 +157,9 @@ def compute_coverage(
         status = entry.get("status")
         if status in CLEAN_STATUSES:
             continue
-        if patch_id in recipe_patch_ids:
+        # Upstream already carries the patch: retire it via lifecycle; a
+        # known_broken disposition cannot excuse it for any patch.
+        if patch_id in recipe_patch_ids or status == "UPSTREAM_ABSORBED":
             uncovered.append(patch_id)
             continue
         disposition = dispositions.get(patch_id)

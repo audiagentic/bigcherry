@@ -1,0 +1,107 @@
+{
+ "arm_config": [
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+   "name": "q4_k_m",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ4_XS.gguf",
+   "name": "iq4_xs",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ3_XXS.gguf",
+   "name": "iq3_xxs",
+   "server_args": null
+  }
+ ],
+ "arms": {
+  "iq3_xxs": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 767.74,
+    "tg128_tps": 44.95
+   },
+   "n": 6
+  },
+  "iq4_xs": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 786.1,
+    "tg128_tps": 41.18
+   },
+   "n": 6
+  },
+  "q4_k_m": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 771.41,
+    "tg128_tps": 37.87
+   },
+   "n": 6
+  }
+ },
+ "comparisons": {
+  "iq3_xxs_vs_q4_k_m": {
+   "pp512_tps": {
+    "ci95": [
+     -0.73,
+     -0.22
+    ],
+    "effect_pct": -0.48
+   },
+   "tg128_tps": {
+    "ci95": [
+     18.47,
+     18.94
+    ],
+    "effect_pct": 18.7
+   }
+  },
+  "iq4_xs_vs_q4_k_m": {
+   "pp512_tps": {
+    "ci95": [
+     1.54,
+     2.3
+    ],
+    "effect_pct": 1.9
+   },
+   "tg128_tps": {
+    "ci95": [
+     8.52,
+     8.93
+    ],
+    "effect_pct": 8.74
+   }
+  }
+ },
+ "kind": "ab",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+ "run": "qs-xtx1-g3",
+ "schedule_seed": 0,
+ "server_args": [
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ]
+}

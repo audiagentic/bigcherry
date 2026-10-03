@@ -152,11 +152,48 @@ dependency/conflict metadata, and a focal ID in `known_good_patch_ids`.
 Report generation does not mutate lifecycle state or the shared vendor
 checkout.
 
+## Exact selector identity (PA34)
+
+Every rebase report and gate context is bound to one immutable
+`SelectorIdentity` value object owned by `campaign.resolution`. It is the
+single authority for the serializable selection: `selector_kind`, a
+deterministic `selector_name`, `source_name`/`source_ref` where applicable,
+`patch_set_id` where applicable, and the exact ordered `patch_ids` with their
+ordered `module_hashes`. `CanonicalSelection` carries this object and exposes
+source/ref/patch-set/IDs only as read-only projections of it. There is exactly
+one serializer/validator (`SelectorIdentity.to_payload()` / `from_payload()`) and
+one comparison path; a mismatch in kind, name, ref, **order**, or hash is
+rejected by that shared path. No rebase/gates/validation consumer assembles its
+own selector dictionary -- a structural test enforces this.
+
+Three selector kinds share one payload shape, with non-applicable fields
+explicitly null rather than ad-hoc variants:
+
+- **source** -- `--source <name>`; the plain source selection.
+- **named experiment** -- `--source <name> --experiment <name>`; layers a named
+  `[experiment.<name>]` over the source. Selector name is `experiment:<name>`.
+- **focal overlay** -- the focal patch's own `REQUIRES` closure layered over the
+  source. The base is resolved first, the closure is expanded, IDs already in the
+  base are removed, and only the remaining dependency-complete overlay is applied.
+  Selector name is `focal:<patch-id>`. It is never an arbitrary user patch list.
+- **all-patches** -- `--all`; the coverage report. This is coverage identity, not
+  a claim that mutually conflicting patches form one production composition.
+
+Rebase reports are **schema 2**: the report carries the canonical `selector`
+payload (the `to_payload()` dict) rather than a hand-built `selection` dict.
+Older reports fail freshness.
+
 Use the canonical configured source name, not a filesystem placeholder:
 
 ```bash
 PYTHONPATH=tools python -m bigcherry patch-rebase-check \
   --source <source-name> --json <fresh-report.json>
+# Named experiment selector (mutually exclusive with --focal-overlay):
+PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+  --source <source-name> --experiment <experiment-name> --json <fresh-report.json>
+# Deterministic focal-overlay selector (takes the overlay PATCH_ID):
+PYTHONPATH=tools python -m bigcherry patch-rebase-check \
+  --source <source-name> --focal-overlay <patch-id> --json <fresh-report.json>
 PYTHONPATH=tools python -m bigcherry apply --source <source-name> --dry-run
 ```
 
@@ -173,11 +210,47 @@ PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --sou
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent rebase --source <source-name> \
   --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
+# Named experiment (mutually exclusive with --focal-overlay): layer [experiment.<name>] over --source.
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+  --experiment <experiment-name> --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
+# Focal overlay: the <patch-id> is the overlay patch (a boolean flag, not a PATCH_ID arg).
+PYTHONPATH=tools python -m bigcherry patch-gates <patch-id> --intent build --source <source-name> \
+  --focal-overlay --rebase-report <fresh-report> --all-report <fresh-all-patches-report>
 ```
 
 Build and rebase need the canonical `--source` selection and the fresh
 all-patches report because they also evaluate G6. A stale or identity-mismatched
 report is not made current by applying it.
+
+G2 (`evaluate_rebase_gate`) delegates exact matching and freshness to
+`patch.rebase.require_fresh_report(...)`, which takes exactly one binding:
+
+- **Named selection** (`expected_selector=...`): the report's `selector`
+  payload must equal the context's expected `SelectorIdentity`, not merely be
+  fresh for the same checkout. Used by every `--source`/`--experiment`/
+  `--focal-overlay` evaluation.
+- **No-source** (`required_module_hashes=...`): the no-source validate/promote
+  path evaluates the focal's own dependency closure and has no named selector
+  to bind an exact identity against. Rather than invent a 5th selector kind, it
+  binds by the composition's exact ordered `(patch_id, content_hash)` pairs:
+  the report's resolved modules must contain them as an **order-preserving
+  subsequence** (the report may have resolved a larger selection), and an
+  all-patches report is rejected outright -- it is evidence for the whole
+  registry, not for a focal's closure. The two bindings are mutually exclusive
+  (passing both is an error).
+
+The gate JSON embeds the canonical `SelectorIdentity.to_payload()` for a named
+selection (never duplicate selector fields beside it); on the no-source path it
+embeds the rebase report's `selector` payload, the only selector in evidence.
+
+`patch-gates` reports a top-level `selection_status`:
+
+- **`"EVALUATED"`** -- the focal was in the resolved selection (or the no-source
+  closure) and the gate matrix ran.
+- **`"NOT_EVALUATED"`** -- the focal patch is **not** in a successfully resolved
+  selector; `patch-gates` returns this **before** any gate runs (exit code 1).
+  This does not synthesize a G7 `NA` or overload `GateStatus` -- the gate matrix
+  is simply not evaluated for an unselected focal.
 
 ## G3 — Validation definition and package
 
@@ -225,6 +298,33 @@ and code disagree:
 
 - `tools/bigcherry/patch/validation_campaign.py` builds isolated
   control/validation-subject trees, runs campaign lanes, and writes evidence.
+- **Four arms (PVPS03).** Control is *validated BC*: the baseline source plus
+  every patch in `[patch-set.validated-enhancements]` (the set the production
+  `[source.bigcherry]` ships), excluding the focal patch. Subject is control +
+  the focal patch, so every verdict answers "does this patch help on top of
+  what ships". The scaffold also builds *stock* llama.cpp and *base BC* (the
+  baseline source alone; the same binary as control while the promoted set is
+  empty). After the verdict, a reference ladder
+  (`tools/bigcherry/patch/campaign/ladder.py`) measures llama-bench
+  tg128/pp512 on all four arms in rotated order and writes
+  `campaign/reference-ladder.json`. The ladder is reference evidence only and
+  never changes the verdict.
+- **Re-examining a retired patch (`--allow-rejected`).** `validation_campaign`
+  and `bigcherry.patch.campaign.profile` accept `--allow-rejected` to build and
+  measure a rejected/superseded patch that is named explicitly (the focal
+  `--patch` or a `--common-patches` entry), e.g. to profile why it failed or to
+  test a reworked variant. Any retired patch reaching the composition another way
+  still fails closed. The run is exploratory evidence: the patch's lifecycle
+  state stays `rejected` until a deliberate lifecycle decision changes it.
+- **Production dual-GPU lane (PVPS05, `--production-lane`).** Runs validated
+  BC vs validated BC + patch on the production serving shape (two gfx1100,
+  `-sm tensor`, MTP draft decode, fresh llama-server per request, paired and
+  interleaved; `tools/bigcherry/patch/campaign/production_lane.py`). Model and
+  devices come from `${BIGCHERRY_PRODUCTION_MODEL}` /
+  `${BIGCHERRY_PRODUCTION_DEVICES}`. Passes when the 95% interval of the
+  wall-clock tokens/s effect stays above -1%; mean draft acceptance per arm is
+  recorded so arms that did different work are visible. Result:
+  `campaign/production-lane.json`.
 - `tools/bigcherry/experiment/` provides paired execution, contract
   aggregation, correctness/resource/trigger gates, and promotion evaluation.
 - `tools/bigcherry/patch/validation.py` validates adapter packages and
@@ -261,8 +361,14 @@ automatically a `ported-validated` proof.
 
 For packaged local framework patches without RD or Experiment Contract
 bindings, use the explicit configuration mode. It builds the exact named
-`bigcherry-native` composition once per role; it does not pretend the focal
-framework patch can be removed to form a causal CONTROL.
+`bigcherry-qualification-tuning` composition once per role (this specific
+"framework configuration" evidence mode is scoped to `kind="framework"`
+patches; PA31 migrated it from the deleted `bigcherry-native` identity to
+`bigcherry-qualification-tuning`, the canonical semantic replacement for
+the old framework+upstream-fixes composition -- see
+`verify_framework_configuration_patch` in `tools/bigcherry/patch/
+evidence.py`); it does not pretend the focal framework patch can be removed
+to form a causal CONTROL.
 
 ```bash
 source tools/env/bigcherry-env.sh
@@ -306,6 +412,26 @@ For focal patch `X`, define and record:
 6. **Environment:** record model digest, target architectures, GPU/toolchain,
    visibility/topology, active processes, VRAM headroom, source pin, and exact
    commands/environment.
+
+## Pin bumps: hard mechanical validity, performance on request
+
+After a pin bump, two things are **hard** gates and two are not:
+
+- **Hard:** every selected patch applies without conflict (anchor/rebase
+  failures stop the bump), and no patch has been absorbed upstream.
+  `patch-rebase-check` compares each already-applied guard against the
+  pristine pin source: all edits present upstream is `UPSTREAM_ABSORBED`
+  (retire the patch via lifecycle); some edits present is
+  `FAILED_NEEDS_RECONCILIATION` (drop the absorbed edits). No `known_broken`
+  disposition can excuse either.
+- **Soft:** qualification/performance evidence that is stale only because
+  the pin or surrounding composition moved is `carried-forward` by patch
+  admission when an eligible record exists for the same
+  `patch_implementation_digest`; builds proceed with a warning and
+  re-benching is an explicit request. A changed patch implementation (e.g. a
+  conflict fix) or no eligible record at all remains a hard failure.
+
+The post-bump real-hardware build + smoke remains mandatory.
 
 ## G4 — Current evidence qualification
 

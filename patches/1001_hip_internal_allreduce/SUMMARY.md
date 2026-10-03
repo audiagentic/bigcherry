@@ -1,6 +1,6 @@
 # 1001_hip_internal_allreduce: Upstream backport: enable the internal (non-RCCL) AllReduce on HIP
 
-**Status:** validated
+**Status:** superseded
 **Plan item:** none
 
 ## What it does
@@ -9,7 +9,7 @@ Removes the `GGML_USE_HIP` compile-out guard on `allreduce.cu`'s pinned-host-
 memory AllReduce, substitutes `__builtin_amdgcn_s_sleep(4)` for CUDA's
 `__nanosleep(100)` in the cross-GPU spin-wait, and maps the four HIP
 host-mapped pinned-memory alloc APIs (`hipHostMalloc` etc.) the
-implementation needs in `vendors/hip.h`. `GGML_CUDA_ALLREDUCE=internal`
+implementation needs in `vendors/hip.h`. `--allreduce host`
 (already present in the pinned base) selects this path over RCCL at
 runtime.
 
@@ -32,11 +32,11 @@ bit-identical output digests) -- PASS.
 
 **Performance** (fresh single-session, back-to-back 3-arm paired
 completion-bench, 24 prompts, same binary, only env vars varied):
-- A, `GGML_CUDA_ALLREDUCE=nccl` (control): 59.19 TPS
-- B, `GGML_CUDA_ALLREDUCE=internal` + `GGML_CUDA_AR_BF16_THRESHOLD=0`
+- A, `--allreduce ccl` (control): 59.19 TPS
+- B, `--allreduce host` + `GGML_CUDA_AR_BF16_THRESHOLD=0`
   (exact FP32 wire): 69.31 TPS -- **B vs A = +17.33%, 95% CI
   [+13.41%, +21.25%]**
-- C, `GGML_CUDA_ALLREDUCE=internal` with BF16 wire at its upstream
+- C, `--allreduce host` with BF16 wire at its upstream
   default (`GGML_CUDA_AR_BF16_THRESHOLD=1`): 63.78 TPS -- C vs A =
   +8.52%, 95% CI [+4.37%, +12.66%]; **C vs B = -7.27%, 95% CI
   [-10.56%, -3.99%]**
@@ -67,7 +67,7 @@ the workload is decode-dominated (interactive serving, long generations
 relative to prompt length):
 
 ```
-GGML_CUDA_ALLREDUCE=internal
+--allreduce host
 GGML_CUDA_AR_BF16_THRESHOLD=0
 ```
 
@@ -89,7 +89,7 @@ reduction) and text-generation (small reduction) sizes:
 | pp4096  |      1431.77 |                     972.08 |  -32.11% |
 | tg128   |        33.69 |                      36.01 |   +6.88% |
 
-**Do not set `GGML_CUDA_ALLREDUCE=internal` globally or for any
+**Do not set `--allreduce host` globally or for any
 prompt-processing/prefill-heavy workload** -- it is ~32-34% slower than
 RCCL there, a severe regression, not a minor tradeoff. The internal
 path's win is real but decode-only; RCCL remains clearly better for
@@ -106,3 +106,17 @@ https://github.com/ggml-org/llama.cpp/pull/27825. Scoped to the two
 functional edits only; the PR's comment-only wording changes were not
 ported (no runtime effect, and awkward to anchor against this project's
 comment-blanking patch matcher).
+
+## SUPERSEDED (2026-09-23, b11126)
+
+Upstream llama.cpp b11126 (b1ff4ca23630) contains all three of this
+patch's edits verbatim: the `allreduce.cu` HIP compile-guard removal
+(`enable-hip-compile-guard`), the `__builtin_amdgcn_s_sleep` spin-wait
+substitution (`spin-wait-hip-sleep-intrinsic`), and the four host-mapped
+alloc API mappings in `vendors/hip.h` (`map-host-alloc-apis`);
+`patch-rebase-check` classified it UPSTREAM_ABSORBED. The retirement
+condition above ("remove when PR #27825 or an equivalent fix lands in
+the pinned base") is met. State set to `superseded`; `patch.py` is left
+untouched and all evidence above is preserved. Dependents (0840, 1244,
+1250, 1252) no longer require this patch: the capability is part of
+the base source.

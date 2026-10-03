@@ -228,8 +228,10 @@ class RealRecipesTomlCampaignStandardTests(unittest.TestCase):
     """Cross-checks the real recipes.toml campaign.standard profile added
     for RE19 against the actual current default=true recipe/build coverage
     (confirmed by direct inspection before writing it, not assumed) --
-    upstream/stock, bigcherry-native/native (aliased to the real v2 build
-    "control"), bigcherry/{record,tune,replay}."""
+    upstream/stock, bigcherry-tuning/{control,record,tune} (PA29 cutover:
+    control/record/tune all need 0110's campaign plumbing, which moved out
+    of source.bigcherry to bigcherry-tuning), bigcherry/replay (the real
+    release composition, GPT design review req_964ec5fc21c14848)."""
 
     def test_standard_profile_covers_the_same_roles_as_default_recipes(self):
         from bigcherry.core import paths
@@ -238,9 +240,9 @@ class RealRecipesTomlCampaignStandardTests(unittest.TestCase):
         lane_pairs = {(lane.source, lane.build) for lane in profile.lanes}
         self.assertEqual(lane_pairs, {
             ("llama-native", "stock"),
-            ("bigcherry-native", "control"),
-            ("bigcherry", "record"),
-            ("bigcherry", "tune"),
+            ("bigcherry-tuning", "control"),
+            ("bigcherry-tuning", "record"),
+            ("bigcherry-tuning", "tune"),
             ("bigcherry", "replay"),
         })
         self.assertTrue(all(lane.platform == "linux-multi" for lane in profile.lanes))

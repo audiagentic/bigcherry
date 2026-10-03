@@ -292,6 +292,40 @@ class CollectSeedEvidenceTests(unittest.TestCase):
         self.assertIn("not in the binary's compiled candidate registry", message)
         self.assertIn("not a correctness failure", message)
 
+    def test_ineligible_candidate_raises_a_distinct_diagnosis(self):
+        # A second, separate GGML_HIP_FORCE_CANDIDATE_STRICT abort path
+        # (hip-autotune-dispatch.cu, can_execute() hard-eligibility check) --
+        # the candidate IS in the registry but its own eligibility gate
+        # rejects the exact requested signature. Before this test/detection
+        # existed, this folded into the same opaque generic "failed" status
+        # as a real numerical correctness bug (PA26, 2026-09-15: found while
+        # investigating a real tune-campaign correctness-evidence failure
+        # where every candidate failed with no other diagnostic).
+        native_stderr = _digest_line(digest="abc123") + _metric_line(err="1e-05", max_abs="0.001")
+        candidate_stderr = (
+            _digest_line(digest="abc123")
+            + "hip-autotune-dispatch.cu:1166: bigcherry: "
+            "GGML_HIP_FORCE_CANDIDATE=mmq:q8_0:j64:fb0:t128:o1:i64:sram-q8_0:k256:sk0:v1 "
+            "is not eligible for this signature (t t t m=2560 n=512 k=9216) "
+            "(GGML_HIP_FORCE_CANDIDATE_STRICT=1 -- failing closed instead of "
+            "silently falling back to normal resolution)\n"
+        )
+        runner, _ = self._runner_pair(native_stderr, candidate_stderr, candidate_rc=134)
+
+        with self.assertRaises(ce.EvidenceError) as ctx:
+            ce.collect_seed_evidence(
+                Path("/bin/x"), op_filter="m=1,n=1,k=1", target_tensor="dst",
+                candidate_stable_name="mmq:q8_0:j64:fb0:t128:o1:i64:sram-q8_0:k256:sk0:v1",
+                seed=3, runner=runner,
+            )
+        message = str(ctx.exception)
+        self.assertIn("mmq:q8_0:j64:fb0:t128:o1:i64:sram-q8_0:k256:sk0:v1", message)
+        self.assertIn("IS in the binary's registry", message)
+        self.assertIn("m=2560", message)
+        self.assertIn("n=512", message)
+        self.assertIn("k=9216", message)
+        self.assertIn("NOT a numerical correctness failure", message)
+
 
 class AggregateSeedEvidenceTests(unittest.TestCase):
     def _row(self, seed, *, e_n=1e-05, e_c=2e-05, max_abs_n=0.001, max_abs_c=0.0012, native_status="ok", candidate_status="ok", threshold_t=5e-4):

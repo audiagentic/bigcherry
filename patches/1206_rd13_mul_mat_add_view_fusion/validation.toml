@@ -20,13 +20,12 @@ required = true
 marker-regex = "BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)"
 
 # RD13-MUL-MAT-ADD-VIEW-FUSION requires correctness.backend_reference.
-# run_rd13_ppl_check() (tools/bigcherry/patch/validation_campaign.py) is a
-# real whole-model PPL comparison standing in for backend_reference --
+# The 1206 patch-local producer (validation/producer.py, reachable via
+# --validation-producer 1206_rd13_mul_mat_add_view_fusion/rd13) is the
+# real whole-model full-vocabulary logprob backend_reference producer --
 # this project's only real whole-model correctness signal, the same
-# reasoning RD04 and RD13's own producer docstring both use. correctness-
-# summary is mechanism-agnostic and consumes whatever disposition a real
-# producer binds. No CLI wiring to this producer exists yet (tracked
-# separately) -- declared honestly; stays BLOCKED until it does.
+# reasoning RD04's producer uses. correctness-summary is mechanism-
+# agnostic and consumes the disposition the producer binds.
 [[check]]
 id = "correctness"
 capability = "correctness"

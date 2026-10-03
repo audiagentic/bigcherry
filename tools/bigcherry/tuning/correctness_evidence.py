@@ -64,6 +64,23 @@ _REGISTRY_MISMATCH_RE = re.compile(
     r"GGML_HIP_FORCE_CANDIDATE=(?P<candidate>\S+) not found in registry"
 )
 
+# hip-autotune-dispatch.cu has TWO distinct GGML_HIP_FORCE_CANDIDATE_STRICT
+# abort paths, not one: the registry-mismatch case above (candidate not
+# compiled into this binary at all), and this second, separate one --
+# `can_execute(candidate, sig, hw)` returned false for a candidate that IS
+# registered but is not architecturally/type eligible for the exact
+# requested signature. Before this pattern existed, this second abort's
+# SIGABRT (nonzero exit, no BIGCHERRY_CORRECTNESS_METRIC line) was
+# indistinguishable from a real numerical correctness failure once folded
+# into collect_candidate_seed_evidence's generic "failed" execution_status
+# -- the same class of misdiagnosis HI106 fixed for the registry-mismatch
+# case, now given the same treatment for its sibling.
+_INELIGIBLE_CANDIDATE_RE = re.compile(
+    r"GGML_HIP_FORCE_CANDIDATE=(?P<candidate>\S+) is not eligible for this "
+    r"signature \((?P<src0>\S) (?P<src1>\S) (?P<dst>\S) m=(?P<m>-?\d+) "
+    r"n=(?P<n>-?\d+) k=(?P<k>-?\d+)\)"
+)
+
 _METRIC_RE = re.compile(
     r"BIGCHERRY_CORRECTNESS_METRIC op=(?P<op>\S+) tensor=(?P<tensor>\S+) "
     r"backend1=(?P<backend1>\S+) backend2=(?P<backend2>\S+) "
@@ -324,6 +341,24 @@ def collect_candidate_seed_evidence(
             f"from a different --inventory than the tune run being evidenced. "
             f"Rebuild test-backend-ops scoped to the SAME inventory as the "
             f"measurements being evidenced (this is not a correctness failure)."
+        )
+    ineligible = _INELIGIBLE_CANDIDATE_RE.search(candidate_run.stderr)
+    if ineligible is not None:
+        raise EvidenceError(
+            f"seed {seed}: candidate {ineligible['candidate']!r} IS in the "
+            f"binary's registry, but its own can_execute() (hard eligibility --"
+            f" architecture/type/shape, standards 12.4) rejected the exact "
+            f"requested signature (src0={ineligible['src0']} "
+            f"src1={ineligible['src1']} dst={ineligible['dst']} "
+            f"m={ineligible['m']} n={ineligible['n']} k={ineligible['k']}). "
+            f"Root cause not yet established here -- possibilities include the "
+            f"selection stage (record/tune/promotion) evaluating a different "
+            f"effective device/hardware identity than this evidence-generation "
+            f"subprocess resolves (neither path currently sets "
+            f"HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES explicitly), or a genuine "
+            f"gap between the promotion pipeline's own eligibility checking and "
+            f"can_execute()'s. This is NOT a numerical correctness failure and "
+            f"must not be conflated with one."
         )
 
     candidate_digest = find_digest_for_tensor(candidate_run.stderr, digest_tensor)

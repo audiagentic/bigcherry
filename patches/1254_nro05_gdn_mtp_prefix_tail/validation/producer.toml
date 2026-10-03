@@ -1,0 +1,18 @@
+schema = 1
+
+# PNRO05: standard scaffold pair with --common-patches 1253 (1254 requires
+# it): full-vocab MTP backend_reference + activation on llama-server, MTP
+# server lane (mtp_wall_tps) positive, tg128 control. Needs --producer-corpus.
+[producer.nro05]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro05-backend-reference.json",
+  "nro05-performance.json",
+  "nro05-subject-server.log",
+  "nro05-control-server.log",
+]

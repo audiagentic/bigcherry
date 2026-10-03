@@ -8,6 +8,7 @@ on-disk state, phase advancement, structured stop context, and resume path.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -18,8 +19,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.release import pin_bump  # noqa: E402
 from bigcherry.patch import disposition as patch_disposition  # noqa: E402
+from bigcherry.release import pin_bump  # noqa: E402
 
 
 def _git(root: Path, *args: str) -> None:
@@ -40,10 +41,17 @@ class PinBumpStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             state = pin_bump.PinBumpState(
-                schema_version=1, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
-                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
-                tree_name="local", tree_path="/some/path",
-                completed_phases=["preflight", "declare"], next_phase="pull",
+                schema_version=1,
+                run_id="run-1",
+                from_ref="b10502",
+                from_sha="a" * 40,
+                to_ref="b10680",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
+                tree_path="/some/path",
+                completed_phases=["preflight", "declare"],
+                next_phase="pull",
             )
             state.save(state_dir)
             loaded = pin_bump.PinBumpState.load(state_dir)
@@ -81,30 +89,55 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 apply_calls.append(1)
                 if len(apply_calls) == 1:
                     raise pin_bump.PinBumpStop(
-                        "apply", "TEST_STOP", "synthetic recoverable stop",
+                        "apply",
+                        "TEST_STOP",
+                        "synthetic recoverable stop",
                     )
                 return pin_bump.patch_rebase.ApplyKnownGoodResult(
-                    ok=True, selected_patch_ids=(), known_good_patch_ids=(), partial=False,
+                    ok=True,
+                    selected_patch_ids=(),
+                    known_good_patch_ids=(),
+                    partial=False,
                 )
 
-            with patch.object(pin_bump, "acquire_maintenance_lock", return_value=nullcontext()), \
-                 patch.object(pin_bump, "run_phase_preflight", return_value=("b10502", "b" * 40)), \
-                 patch.object(pin_bump, "run_phase_declare", return_value="c" * 40), \
-                 patch.object(pin_bump, "_selector_patch_ids", return_value=("0100_x",)), \
-                 patch.object(pin_bump, "_sync_campaign_mirror_best_effort"), \
-                 patch("bigcherry.cli.source.cmd_pull", return_value=0), \
-                 patch("bigcherry.source.audit.audit", return_value=clean_report), \
-                 patch("bigcherry.source.audit.passed", return_value=True), \
-                 patch.object(pin_bump.releases, "record_for_checkout", return_value=record), \
-                 patch.object(pin_bump.patch_rebase, "run_rebase_check", return_value=clean_report), \
-                 patch.object(pin_bump.patch_rebase, "apply_known_good", side_effect=apply_once_then_resume), \
-                 patch.object(pin_bump, "enforce_all_patches_clean_or_dispositioned", return_value={"ok": True}), \
-                 patch.object(pin_bump, "_write_release_doc_best_effort"), \
-                 patch.object(pin_bump, "_commit_release_records"):
+            with (
+                patch.object(
+                    pin_bump, "acquire_maintenance_lock", return_value=nullcontext()
+                ),
+                patch.object(
+                    pin_bump, "run_phase_preflight", return_value=("b10502", "b" * 40)
+                ),
+                patch.object(pin_bump, "run_phase_declare", return_value="c" * 40),
+                patch.object(pin_bump, "_selector_patch_ids", return_value=("0100_x",)),
+                patch.object(pin_bump, "_sync_campaign_mirror_best_effort"),
+                patch("bigcherry.cli.source.cmd_pull", return_value=0),
+                patch("bigcherry.source.audit.audit", return_value=clean_report),
+                patch("bigcherry.source.audit.passed", return_value=True),
+                patch.object(
+                    pin_bump.releases, "record_for_checkout", return_value=record
+                ),
+                patch.object(
+                    pin_bump.patch_rebase, "run_rebase_check", return_value=clean_report
+                ),
+                patch.object(
+                    pin_bump.patch_rebase,
+                    "apply_known_good",
+                    side_effect=apply_once_then_resume,
+                ),
+                patch.object(
+                    pin_bump,
+                    "enforce_all_patches_clean_or_dispositioned",
+                    return_value={"ok": True},
+                ),
+                patch.object(pin_bump, "_write_release_doc_best_effort"),
+                patch.object(pin_bump, "_commit_release_records"),
+            ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump.run(
-                        target_ref="b10680", root=root,
-                        dispositions_dir=dispositions, report_dir=report_dir,
+                        target_ref="b10680",
+                        root=root,
+                        dispositions_dir=dispositions,
+                        report_dir=report_dir,
                     )
                 self.assertEqual(stopped.exception.code, "TEST_STOP")
                 self.assertTrue((report_dir / "state.json").is_file())
@@ -113,8 +146,11 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 self.assertIn("coverage", saved.completed_phases)
 
                 result = pin_bump.run(
-                    target_ref="b10680", root=root,
-                    dispositions_dir=dispositions, report_dir=report_dir, resume=True,
+                    target_ref="b10680",
+                    root=root,
+                    dispositions_dir=dispositions,
+                    report_dir=report_dir,
+                    resume=True,
                 )
 
             self.assertTrue(result.ok)
@@ -123,22 +159,84 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
             self.assertEqual(len(apply_calls), 2)
 
 
-class SchemaTwoRoundTripTests(unittest.TestCase):
+class SchemaThreeRoundTripTests(unittest.TestCase):
     def test_selector_fields_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             state = pin_bump.PinBumpState(
-                schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
-                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
-                tree_name="local", tree_path="/some/path",
-                completed_phases=["preflight", "declare"], next_phase="pull",
-                selector_kind="source", selector_name="bigcherry",
+                schema_version=3,
+                run_id="run-1",
+                from_ref="b10502",
+                from_sha="a" * 40,
+                to_ref="b10680",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
+                tree_path="/some/path",
+                completed_phases=["preflight", "declare"],
+                next_phase="pull",
+                selector_kind="source",
+                selector_name="bigcherry",
                 selector_patch_ids=("0100_x", "0200_y"),
                 coverage_report_sha256="deadbeef",
             )
             state.save(state_dir)
             loaded = pin_bump.PinBumpState.load(state_dir)
             self.assertEqual(loaded, state)
+            # PA34 (dev-gpt-agent req_41a3133e657340c7 Q3): the persisted
+            # membership freeze is NOT the canonical selector identity --
+            # it persists under its own key and never as "selector".
+            on_disk = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(on_disk["schema_version"], 3)
+            self.assertIn("selection_freeze", on_disk)
+            self.assertNotIn("selector", on_disk)
+
+    def test_legacy_schema_two_state_migrates_on_load(self):
+        # A real in-flight schema-2 state.json (pre-PA34) carries the old
+        # "selector" key. load() must read it AND migrate to schema 3 in
+        # memory, so the next save persists "selection_freeze" (never both).
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "run_id": "run-legacy",
+                        "target": {
+                            "from_ref": "b10502",
+                            "from_sha": "a" * 40,
+                            "to_ref": "b10680",
+                            "to_sha": "b" * 40,
+                        },
+                        "transition_commit": "c" * 40,
+                        "tree": {"name": "local", "path": "/some/path"},
+                        "resume": {
+                            "completed_phases": ["preflight"],
+                            "next_phase": "declare",
+                        },
+                        "selector": {
+                            "kind": "source",
+                            "name": "bigcherry",
+                            "patch_ids": ["0100_x"],
+                        },
+                        "coverage_report_sha256": "deadbeef",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            loaded = pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(loaded.schema_version, 3)
+            self.assertEqual(loaded.selector_kind, "source")
+            self.assertEqual(loaded.selector_name, "bigcherry")
+            self.assertEqual(loaded.selector_patch_ids, ("0100_x",))
+            loaded.save(state_dir)
+            on_disk = json.loads((state_dir / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(on_disk["schema_version"], 3)
+            self.assertEqual(
+                on_disk["selection_freeze"],
+                {"kind": "source", "name": "bigcherry", "patch_ids": ["0100_x"]},
+            )
+            self.assertNotIn("selector", on_disk)
 
     def test_schema_one_state_loads_with_empty_selector_not_a_crash(self):
         # A real schema-1 state.json on disk (written before this plan)
@@ -146,15 +244,111 @@ class SchemaTwoRoundTripTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             state = pin_bump.PinBumpState(
-                schema_version=1, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
-                to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
-                tree_name="local", tree_path="/some/path",
-                completed_phases=["preflight"], next_phase="declare",
+                schema_version=1,
+                run_id="run-1",
+                from_ref="b10502",
+                from_sha="a" * 40,
+                to_ref="b10680",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
+                tree_path="/some/path",
+                completed_phases=["preflight"],
+                next_phase="declare",
             )
             state.save(state_dir)
             loaded = pin_bump.PinBumpState.load(state_dir)
             self.assertEqual(loaded.selector_kind, "")
             self.assertEqual(loaded.selector_patch_ids, ())
+
+    def _schema_two_payload(self, **selector_override):
+        payload = {
+            "schema_version": 2,
+            "run_id": "run-legacy",
+            "target": {
+                "from_ref": "b10502",
+                "from_sha": "a" * 40,
+                "to_ref": "b10680",
+                "to_sha": "b" * 40,
+            },
+            "transition_commit": "c" * 40,
+            "tree": {"name": "local", "path": "/some/path"},
+            "resume": {"completed_phases": ["preflight"], "next_phase": "declare"},
+            "coverage_report_sha256": "deadbeef",
+        }
+        if "selector" in selector_override:
+            payload["selector"] = selector_override["selector"]
+        return payload
+
+    def test_schema_two_missing_selector_key_fails_closed(self):
+        # PA34 Q3 (dev-gpt-agent req_1d02cb052310446c): promoting a
+        # schema-2 state to schema 3 before checking its "selector" shape
+        # would let a state with no selector binding at all slip past the
+        # schema<2 legacy-unbound guard as an already-schema-3 state.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(self._schema_two_payload()), encoding="utf-8"
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_schema_two_malformed_selector_shape_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(selector={"kind": "source"})
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_schema_two_non_source_kind_fails_closed(self):
+        # dev-gpt-agent round-3 (req_ab94edd31aa04419 Q3): schema-2 state
+        # only ever represented SOURCE selectors -- a malformed/foreign
+        # kind like "experiment" must not be promoted, since
+        # _selector_patch_ids() ignores selector_kind entirely and always
+        # resolves selector_name as a source.
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(
+                        selector={
+                            "kind": "experiment",
+                            "name": "bigcherry",
+                            "patch_ids": ["0100_x"],
+                        }
+                    )
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
+
+    def test_schema_two_non_string_patch_ids_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    self._schema_two_payload(
+                        selector={
+                            "kind": "source",
+                            "name": "bigcherry",
+                            "patch_ids": [1, 2],
+                        }
+                    )
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+                pin_bump.PinBumpState.load(state_dir)
+            self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
 
 
 class ValidateResumeTests(unittest.TestCase):
@@ -164,11 +358,19 @@ class ValidateResumeTests(unittest.TestCase):
 
     def _state(self, **overrides) -> pin_bump.PinBumpState:
         base = dict(
-            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
-            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path=str(Path("/some/path")),
-            completed_phases=["preflight"], next_phase="declare",
-            selector_kind="source", selector_name="bigcherry",
+            schema_version=2,
+            run_id="run-1",
+            from_ref="b10502",
+            from_sha="a" * 40,
+            to_ref="b10680",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path=str(Path("/some/path")),
+            completed_phases=["preflight"],
+            next_phase="declare",
+            selector_kind="source",
+            selector_name="bigcherry",
             selector_patch_ids=("0100_x",),
         )
         base.update(overrides)
@@ -178,7 +380,9 @@ class ValidateResumeTests(unittest.TestCase):
         state = self._state(schema_version=1)
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._validate_resume(
-                state, target_ref="b10680", vendor_root=Path("/some/path"),
+                state,
+                target_ref="b10680",
+                vendor_root=Path("/some/path"),
             )
         self.assertEqual(ctx.exception.code, "LEGACY_STATE_SELECTOR_UNBOUND")
 
@@ -186,7 +390,9 @@ class ValidateResumeTests(unittest.TestCase):
         state = self._state()
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._validate_resume(
-                state, target_ref="b99999", vendor_root=Path("/some/path"),
+                state,
+                target_ref="b99999",
+                vendor_root=Path("/some/path"),
             )
         self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
 
@@ -194,25 +400,37 @@ class ValidateResumeTests(unittest.TestCase):
         state = self._state()
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._validate_resume(
-                state, target_ref="b10680", vendor_root=Path("/different/path"),
+                state,
+                target_ref="b10680",
+                vendor_root=Path("/different/path"),
             )
         self.assertEqual(ctx.exception.code, "RESUME_TREE_MISMATCH")
 
     def test_matching_target_and_tree_passes(self):
         state = self._state()
         pin_bump._validate_resume(
-            state, target_ref="b10680", vendor_root=Path("/some/path"),
+            state,
+            target_ref="b10680",
+            vendor_root=Path("/some/path"),
         )  # no raise
 
 
 class ResumeSelectorTests(unittest.TestCase):
     def _state(self, **overrides) -> pin_bump.PinBumpState:
         base = dict(
-            schema_version=2, run_id="run-1", from_ref="b10502", from_sha="a" * 40,
-            to_ref="b10680", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path="/some/path",
-            completed_phases=["preflight"], next_phase="declare",
-            selector_kind="source", selector_name="bigcherry",
+            schema_version=2,
+            run_id="run-1",
+            from_ref="b10502",
+            from_sha="a" * 40,
+            to_ref="b10680",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/some/path",
+            completed_phases=["preflight"],
+            next_phase="declare",
+            selector_kind="source",
+            selector_name="bigcherry",
             selector_patch_ids=("0100_x",),
         )
         base.update(overrides)
@@ -238,31 +456,56 @@ class ResumeSelectorTests(unittest.TestCase):
 class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
     def test_unchanged_membership_passes(self):
         state = pin_bump.PinBumpState(
-            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
-            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
-            selector_kind="source", selector_name="bigcherry-native",
-            selector_patch_ids=tuple(sorted(
-                pin_bump.patch_rebase._selection_patch_ids(
-                    source_name="bigcherry-native", all_patches=False,
+            schema_version=2,
+            run_id="r",
+            from_ref="a",
+            from_sha="a" * 40,
+            to_ref="b",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/p",
+            completed_phases=[],
+            next_phase="coverage",
+            selector_kind="source",
+            selector_name="bigcherry-serving-base",
+            selector_patch_ids=tuple(
+                sorted(
+                    pin_bump.patch_rebase._selection_patch_ids(
+                        source_name="bigcherry-serving-base",
+                        all_patches=False,
+                    )
                 )
-            )),
+            ),
         )
         pin_bump._require_selector_membership_unchanged(
-            state, selector_kind="source", selector_name="bigcherry-native",
+            state,
+            selector_kind="source",
+            selector_name="bigcherry-serving-base",
         )  # no raise -- real catalog, unchanged since state was built above
 
     def test_drifted_membership_fails_closed(self):
         state = pin_bump.PinBumpState(
-            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
-            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path="/p", completed_phases=[], next_phase="coverage",
-            selector_kind="source", selector_name="bigcherry-native",
+            schema_version=2,
+            run_id="r",
+            from_ref="a",
+            from_sha="a" * 40,
+            to_ref="b",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/p",
+            completed_phases=[],
+            next_phase="coverage",
+            selector_kind="source",
+            selector_name="bigcherry-serving-base",
             selector_patch_ids=("this_patch_id_does_not_exist_anymore",),
         )
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump._require_selector_membership_unchanged(
-                state, selector_kind="source", selector_name="bigcherry-native",
+                state,
+                selector_kind="source",
+                selector_name="bigcherry-serving-base",
             )
         self.assertEqual(ctx.exception.code, "RESUME_SELECTION_CHANGED")
 
@@ -270,13 +513,18 @@ class RequireSelectorMembershipUnchangedTests(unittest.TestCase):
 class FailureEnvelopeTests(unittest.TestCase):
     def test_envelope_has_the_documented_shape(self):
         exc = pin_bump.PinBumpStop(
-            "coverage", "PATCH_QUARANTINED", "patch_b became invalid",
+            "coverage",
+            "PATCH_QUARANTINED",
+            "patch_b became invalid",
             evidence={"patch_id": "patch_b", "status": "QUARANTINED"},
             recommended_actions=["reconcile", "rerun with --resume"],
         )
         envelope = pin_bump.failure_envelope(
-            "run-1", {"from_ref": "b10502", "to_ref": "b10680"}, "c" * 40,
-            {"name": "local", "path": "/x"}, exc,
+            "run-1",
+            {"from_ref": "b10502", "to_ref": "b10680"},
+            "c" * 40,
+            {"name": "local", "path": "/x"},
+            exc,
         )
         self.assertEqual(envelope["schema_version"], 1)
         self.assertEqual(envelope["operation"], "pin-bump")
@@ -285,24 +533,31 @@ class FailureEnvelopeTests(unittest.TestCase):
         self.assertEqual(envelope["failure"]["code"], "PATCH_QUARANTINED")
         self.assertTrue(envelope["failure"]["human_required"])
         self.assertEqual(envelope["failure"]["evidence"]["patch_id"], "patch_b")
-        self.assertEqual(envelope["failure"]["recommended_actions"], ["reconcile", "rerun with --resume"])
+        self.assertEqual(
+            envelope["failure"]["recommended_actions"],
+            ["reconcile", "rerun with --resume"],
+        )
 
 
 class OverlaySelfHealTests(unittest.TestCase):
     def test_not_safe_when_other_checks_also_failed(self):
-        report = {"checks": [
-            {"id": "overlay.vendor_sync", "ok": False, "actual": ["a.cpp"]},
-            {"id": "mmq.types", "ok": False},
-        ]}
+        report = {
+            "checks": [
+                {"id": "overlay.vendor_sync", "ok": False, "actual": ["a.cpp"]},
+                {"id": "mmq.types", "ok": False},
+            ]
+        }
         safe, drifted = pin_bump.check_overlay_self_heal(report)
         self.assertFalse(safe)
         self.assertEqual(drifted, [])
 
     def test_safe_when_overlay_vendor_sync_is_the_only_failure(self):
-        report = {"checks": [
-            {"id": "overlay.vendor_sync", "ok": False, "actual": ["a.cpp", "b.cu"]},
-            {"id": "mmq.types", "ok": True},
-        ]}
+        report = {
+            "checks": [
+                {"id": "overlay.vendor_sync", "ok": False, "actual": ["a.cpp", "b.cu"]},
+                {"id": "mmq.types", "ok": True},
+            ]
+        }
         safe, drifted = pin_bump.check_overlay_self_heal(report)
         self.assertTrue(safe)
         self.assertEqual(drifted, ["a.cpp", "b.cu"])
@@ -314,18 +569,30 @@ class OverlaySelfHealTests(unittest.TestCase):
             report_dir = root / "report"
             vendor_root.mkdir()
             record = type(
-                "Record", (), {
-                    "stage": "audited", "audit": {}, "notes": "",
+                "Record",
+                (),
+                {
+                    "stage": "audited",
+                    "audit": {},
+                    "notes": "",
                     "save": lambda self: None,
                 },
             )()
             state = pin_bump.PinBumpState(
-                schema_version=2, run_id="run-1", from_ref="b1", from_sha="a" * 40,
-                to_ref="b2", to_sha="b" * 40, transition_commit="c" * 40,
-                tree_name="local", tree_path=str(vendor_root),
+                schema_version=2,
+                run_id="run-1",
+                from_ref="b1",
+                from_sha="a" * 40,
+                to_ref="b2",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
+                tree_path=str(vendor_root),
                 completed_phases=["preflight", "declare", "pull"],
-                next_phase="audit", selector_kind="source",
-                selector_name="bigcherry", selector_patch_ids=(),
+                next_phase="audit",
+                selector_kind="source",
+                selector_name="bigcherry",
+                selector_patch_ids=(),
             )
             failed_report = {
                 "checks": [{"id": "overlay.vendor_sync", "ok": False}],
@@ -333,18 +600,38 @@ class OverlaySelfHealTests(unittest.TestCase):
             }
             clean_report = {"checks": [], "summary": {}}
 
-            with patch.object(pin_bump, "acquire_maintenance_lock", return_value=nullcontext()), \
-                 patch("bigcherry.source.audit.audit", side_effect=[failed_report, clean_report]), \
-                 patch("bigcherry.source.audit.passed", side_effect=[False, True, True]), \
-                 patch.object(pin_bump, "check_overlay_self_heal", return_value=(True, ["a.cpp"])), \
-                 patch.object(pin_bump.patch_overlay, "copy_overlay", return_value=[]) as copy_overlay, \
-                 patch.object(pin_bump.releases, "record_for_checkout", return_value=record), \
-                 patch("bigcherry.patch.catalog.cross_check", return_value=["stop after self-heal"]):
+            with (
+                patch.object(
+                    pin_bump, "acquire_maintenance_lock", return_value=nullcontext()
+                ),
+                patch(
+                    "bigcherry.source.audit.audit",
+                    side_effect=[failed_report, clean_report],
+                ),
+                patch("bigcherry.source.audit.passed", side_effect=[False, True, True]),
+                patch.object(
+                    pin_bump, "check_overlay_self_heal", return_value=(True, ["a.cpp"])
+                ),
+                patch.object(
+                    pin_bump.patch_overlay, "copy_overlay", return_value=[]
+                ) as copy_overlay,
+                patch.object(
+                    pin_bump.releases, "record_for_checkout", return_value=record
+                ),
+                patch(
+                    "bigcherry.patch.catalog.cross_check",
+                    return_value=["stop after self-heal"],
+                ),
+            ):
                 with self.assertRaises(pin_bump.PinBumpStop) as stopped:
                     pin_bump._run_phases(
-                        state=state, target_ref="b2", selector_kind="source",
-                        selector_name="bigcherry", repo_root=root,
-                        vendor_root=vendor_root, dispositions_dir=root / "dispositions",
+                        state=state,
+                        target_ref="b2",
+                        selector_kind="source",
+                        selector_name="bigcherry",
+                        repo_root=root,
+                        vendor_root=vendor_root,
+                        dispositions_dir=root / "dispositions",
                         report_dir=report_dir,
                     )
 
@@ -363,33 +650,55 @@ class SyncCampaignMirrorBestEffortTests(unittest.TestCase):
         from unittest import mock
         from bigcherry.core.context import ProjectContext
 
-        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+        with (
+            tempfile.TemporaryDirectory() as work,
+            tempfile.TemporaryDirectory() as project,
+        ):
             fake_context = ProjectContext(
-                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
-                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
-                upstream_repo=Path(work) / "upstream" / "llama.cpp.git",  # never created
-                overlay_root=Path(project) / "src", patches_root=Path(project) / "patches",
+                project_root=Path(project),
+                config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts",
+                work_root=Path(work),
+                upstream_repo=Path(work)
+                / "upstream"
+                / "llama.cpp.git",  # never created
+                overlay_root=Path(project) / "src",
+                patches_root=Path(project) / "patches",
             )
-            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
-                pin_bump._sync_campaign_mirror_best_effort(target_ref="b99999", revision="a" * 40)
+            with mock.patch.object(
+                ProjectContext, "resolve", return_value=fake_context
+            ):
+                pin_bump._sync_campaign_mirror_best_effort(
+                    target_ref="b99999", revision="a" * 40
+                )
                 # must not raise -- that is the entire test
 
     def test_never_raises_on_a_broken_mirror(self):
         from unittest import mock
         from bigcherry.core.context import ProjectContext
 
-        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+        with (
+            tempfile.TemporaryDirectory() as work,
+            tempfile.TemporaryDirectory() as project,
+        ):
             mirror = Path(work) / "upstream" / "llama.cpp.git"
             mirror.mkdir(parents=True)
             (mirror / "HEAD").write_text("not a real git dir\n", encoding="utf-8")
             fake_context = ProjectContext(
-                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
-                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
-                upstream_repo=mirror, overlay_root=Path(project) / "src",
+                project_root=Path(project),
+                config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts",
+                work_root=Path(work),
+                upstream_repo=mirror,
+                overlay_root=Path(project) / "src",
                 patches_root=Path(project) / "patches",
             )
-            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
-                pin_bump._sync_campaign_mirror_best_effort(target_ref="b99999", revision="a" * 40)
+            with mock.patch.object(
+                ProjectContext, "resolve", return_value=fake_context
+            ):
+                pin_bump._sync_campaign_mirror_best_effort(
+                    target_ref="b99999", revision="a" * 40
+                )
 
 
 class WriteReleaseDocBestEffortTests(unittest.TestCase):
@@ -401,7 +710,8 @@ class WriteReleaseDocBestEffortTests(unittest.TestCase):
         pin_bump._write_release_doc_best_effort(
             repo_root=Path("H:/development/projects/bigcherry"),
             vendor_root=Path("does-not-exist"),
-            selector_kind="source", selector_name="not-a-real-recipe-name",
+            selector_kind="source",
+            selector_name="not-a-real-recipe-name",
             target_ref="b99999",
         )  # must not raise -- that is the entire test
 
@@ -413,11 +723,21 @@ class RequireCoverageReportTests(unittest.TestCase):
 
     def _state(self, **overrides) -> pin_bump.PinBumpState:
         base = dict(
-            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
-            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
-            selector_kind="source", selector_name="bigcherry",
-            selector_patch_ids=("0100_x",), coverage_report_sha256="",
+            schema_version=2,
+            run_id="r",
+            from_ref="a",
+            from_sha="a" * 40,
+            to_ref="b",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/p",
+            completed_phases=[],
+            next_phase="apply",
+            selector_kind="source",
+            selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+            coverage_report_sha256="",
         )
         base.update(overrides)
         return pin_bump.PinBumpState(**base)
@@ -477,7 +797,8 @@ class LoadStateOrStopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             (state_dir / "state.json").write_text(
-                '{"schema_version": 2}', encoding="utf-8",  # missing run_id, target, etc.
+                '{"schema_version": 2}',
+                encoding="utf-8",  # missing run_id, target, etc.
             )
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump._load_state_or_stop(state_dir)
@@ -487,11 +808,19 @@ class LoadStateOrStopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_dir = Path(directory)
             state = pin_bump.PinBumpState(
-                schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
-                to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
-                tree_name="local", tree_path="/p",
-                completed_phases=[], next_phase="declare",
-                selector_kind="source", selector_name="bigcherry",
+                schema_version=3,
+                run_id="r",
+                from_ref="a",
+                from_sha="a" * 40,
+                to_ref="b",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
+                tree_path="/p",
+                completed_phases=[],
+                next_phase="declare",
+                selector_kind="source",
+                selector_name="bigcherry",
                 selector_patch_ids=("0100_x",),
             )
             state.save(state_dir)
@@ -507,11 +836,21 @@ class RequireCoverageReportIOErrorTests(unittest.TestCase):
 
     def _state(self, **overrides) -> pin_bump.PinBumpState:
         base = dict(
-            schema_version=2, run_id="r", from_ref="a", from_sha="a" * 40,
-            to_ref="b", to_sha="b" * 40, transition_commit="c" * 40,
-            tree_name="local", tree_path="/p", completed_phases=[], next_phase="apply",
-            selector_kind="source", selector_name="bigcherry",
-            selector_patch_ids=("0100_x",), coverage_report_sha256="deadbeef",
+            schema_version=2,
+            run_id="r",
+            from_ref="a",
+            from_sha="a" * 40,
+            to_ref="b",
+            to_sha="b" * 40,
+            transition_commit="c" * 40,
+            tree_name="local",
+            tree_path="/p",
+            completed_phases=[],
+            next_phase="apply",
+            selector_kind="source",
+            selector_name="bigcherry",
+            selector_patch_ids=("0100_x",),
+            coverage_report_sha256="deadbeef",
         )
         base.update(overrides)
         return pin_bump.PinBumpState(**base)
@@ -524,7 +863,9 @@ class RequireCoverageReportIOErrorTests(unittest.TestCase):
             report_path.write_text("{}", encoding="utf-8")
             state = self._state()
             with mock.patch.object(
-                pin_bump, "_sha256_file", side_effect=FileNotFoundError("gone"),
+                pin_bump,
+                "_sha256_file",
+                side_effect=FileNotFoundError("gone"),
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                     pin_bump._require_coverage_report(state, report_path)
@@ -538,7 +879,8 @@ class RequireCoverageReportIOErrorTests(unittest.TestCase):
             report_path.write_text("{}", encoding="utf-8")
             state = self._state()
             with mock.patch.object(
-                pin_bump, "_sha256_file",
+                pin_bump,
+                "_sha256_file",
                 side_effect=PermissionError("denied"),
             ):
                 with self.assertRaises(pin_bump.PinBumpStop) as ctx:
@@ -577,7 +919,9 @@ class RunResumeStateMissingTests(unittest.TestCase):
             report_dir = Path(directory) / "resume-b99999"  # never created
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
-                    target_ref="b99999", resume=True, report_dir=report_dir,
+                    target_ref="b99999",
+                    resume=True,
+                    report_dir=report_dir,
                 )
             self.assertEqual(ctx.exception.code, "RESUME_STATE_MISSING")
             # gpt-dev-agent review P2: even this early failure must carry
@@ -586,7 +930,9 @@ class RunResumeStateMissingTests(unittest.TestCase):
             # this asserts the placeholder path itself still populates all
             # three fields rather than leaving any unset/None.
             self.assertEqual(ctx.exception.run_id, "unresolved")
-            self.assertEqual(ctx.exception.target, {"from_ref": "?", "to_ref": "b99999"})
+            self.assertEqual(
+                ctx.exception.target, {"from_ref": "?", "to_ref": "b99999"}
+            )
             self.assertIsNotNone(ctx.exception.tree)
 
     def test_resume_with_mismatched_target_retains_loaded_state_context(self):
@@ -598,24 +944,34 @@ class RunResumeStateMissingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report_dir = Path(directory) / "resume-b10680"
             state = pin_bump.PinBumpState(
-                schema_version=2, run_id="real-run-id", from_ref="b10502",
-                from_sha="a" * 40, to_ref="b10680", to_sha="b" * 40,
-                transition_commit="c" * 40, tree_name="local",
+                schema_version=3,
+                run_id="real-run-id",
+                from_ref="b10502",
+                from_sha="a" * 40,
+                to_ref="b10680",
+                to_sha="b" * 40,
+                transition_commit="c" * 40,
+                tree_name="local",
                 tree_path=str(Path("/some/path")),
-                completed_phases=["preflight"], next_phase="declare",
-                selector_kind="source", selector_name="bigcherry",
+                completed_phases=["preflight"],
+                next_phase="declare",
+                selector_kind="source",
+                selector_name="bigcherry",
                 selector_patch_ids=("0100_x",),
             )
             state.save(report_dir)
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.run(
                     target_ref="b99999-WRONG",  # deliberate mismatch
-                    resume=True, report_dir=report_dir,
+                    resume=True,
+                    report_dir=report_dir,
                     root=Path("/some/path"),
                 )
             self.assertEqual(ctx.exception.code, "RESUME_TARGET_MISMATCH")
             self.assertEqual(ctx.exception.run_id, "real-run-id")
-            self.assertEqual(ctx.exception.target, {"from_ref": "b10502", "to_ref": "b10680"})
+            self.assertEqual(
+                ctx.exception.target, {"from_ref": "b10502", "to_ref": "b10680"}
+            )
 
 
 class WriteReleaseDocReportBindingTests(unittest.TestCase):
@@ -634,7 +990,8 @@ class WriteReleaseDocReportBindingTests(unittest.TestCase):
                 pin_bump._write_release_doc_best_effort(
                     repo_root=Path("H:/development/projects/bigcherry"),
                     vendor_root=Path("does-not-exist"),
-                    selector_kind="source", selector_name="bigcherry",
+                    selector_kind="source",
+                    selector_name="bigcherry",
                     target_ref="b99999",
                     report_dir=report_dir,
                 )  # must not raise
@@ -654,12 +1011,18 @@ class CommitReleaseRecordsTests(unittest.TestCase):
             _init_repo(root)
             head_before = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout.strip()
-            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")  # must not raise
+            pin_bump._commit_release_records(
+                repo_root=root, target_ref="b99999"
+            )  # must not raise
             head_after = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout.strip()
             self.assertEqual(head_before, head_after)  # no commit made
 
@@ -668,25 +1031,37 @@ class CommitReleaseRecordsTests(unittest.TestCase):
             root = Path(directory)
             _init_repo(root)
             (root / "releases").mkdir()
-            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "b99999.json").write_text(
+                '{"x": 1}\n', encoding="utf-8"
+            )
             (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
-            (root / "releases" / "b99999-patches.md").write_text("# doc\n", encoding="utf-8")
+            (root / "releases" / "b99999-patches.md").write_text(
+                "# doc\n", encoding="utf-8"
+            )
             # Simulate a concurrent, unrelated uncommitted change on this
             # shared working tree -- must survive untouched and unstaged.
-            (root / "unrelated.txt").write_text("someone else's work\n", encoding="utf-8")
+            (root / "unrelated.txt").write_text(
+                "someone else's work\n", encoding="utf-8"
+            )
 
             pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
 
             status = subprocess.run(
                 ["git", "-C", str(root), "status", "--porcelain"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout
             self.assertIn("?? unrelated.txt", status)
-            self.assertNotIn("releases", status)  # the owned paths are now committed, not staged
+            self.assertNotIn(
+                "releases", status
+            )  # the owned paths are now committed, not staged
 
             log = subprocess.run(
                 ["git", "-C", str(root), "show", "--stat", "HEAD"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout
             self.assertIn("b99999.json", log)
             self.assertIn("index.json", log)
@@ -698,38 +1073,56 @@ class CommitReleaseRecordsTests(unittest.TestCase):
             root = Path(directory)
             _init_repo(root)
             (root / "releases").mkdir()
-            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "b99999.json").write_text(
+                '{"x": 1}\n', encoding="utf-8"
+            )
             (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
 
             pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
             head_after_first = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout.strip()
 
-            pin_bump._commit_release_records(repo_root=root, target_ref="b99999")  # must not raise
+            pin_bump._commit_release_records(
+                repo_root=root, target_ref="b99999"
+            )  # must not raise
             head_after_second = subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout.strip()
-            self.assertEqual(head_after_first, head_after_second)  # no empty second commit
+            self.assertEqual(
+                head_after_first, head_after_second
+            )  # no empty second commit
 
     def test_never_touches_pin_transition_marker(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             _init_repo(root)
             (root / "releases").mkdir()
-            (root / "releases" / "b99999.json").write_text('{"x": 1}\n', encoding="utf-8")
+            (root / "releases" / "b99999.json").write_text(
+                '{"x": 1}\n', encoding="utf-8"
+            )
             (root / "releases" / "index.json").write_text("[]\n", encoding="utf-8")
-            (root / "releases" / "pin-transition.json").write_text('{"tag": "b99999"}\n', encoding="utf-8")
+            (root / "releases" / "pin-transition.json").write_text(
+                '{"tag": "b99999"}\n', encoding="utf-8"
+            )
 
             pin_bump._commit_release_records(repo_root=root, target_ref="b99999")
 
             status = subprocess.run(
                 ["git", "-C", str(root), "status", "--porcelain"],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
             ).stdout
-            self.assertIn("pin-transition.json", status)  # still uncommitted -- untouched
+            self.assertIn(
+                "pin-transition.json", status
+            )  # still uncommitted -- untouched
 
 
 class AcquireMaintenanceLockTests(unittest.TestCase):
@@ -742,14 +1135,22 @@ class AcquireMaintenanceLockTests(unittest.TestCase):
         from bigcherry.core.context import ProjectContext
         from unittest import mock
 
-        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory() as project:
+        with (
+            tempfile.TemporaryDirectory() as work,
+            tempfile.TemporaryDirectory() as project,
+        ):
             fake_context = ProjectContext(
-                project_root=Path(project), config_path=Path(project) / "config" / "recipes.toml",
-                artifacts_root=Path(project) / "artifacts", work_root=Path(work),
-                upstream_repo=Path(work) / "upstream", overlay_root=Path(project) / "src",
+                project_root=Path(project),
+                config_path=Path(project) / "config" / "recipes.toml",
+                artifacts_root=Path(project) / "artifacts",
+                work_root=Path(work),
+                upstream_repo=Path(work) / "upstream",
+                overlay_root=Path(project) / "src",
                 patches_root=Path(project) / "patches",
             )
-            with mock.patch.object(ProjectContext, "resolve", return_value=fake_context):
+            with mock.patch.object(
+                ProjectContext, "resolve", return_value=fake_context
+            ):
                 lock = pin_bump.acquire_maintenance_lock(Path(project))
                 self.assertFalse(lock.path.is_dir())
                 with lock:  # must not raise -- __enter__ does the one real acquire
@@ -779,7 +1180,9 @@ class StopOnBadRebaseStatusTests(unittest.TestCase):
     def test_failed_needs_reconciliation_maps_to_the_right_code(self):
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump.stop_on_bad_rebase_status(
-                phase="coverage", report={}, patch_id="0300_x",
+                phase="coverage",
+                report={},
+                patch_id="0300_x",
                 entry={"status": "FAILED", "requires": ()},
             )
         self.assertEqual(ctx.exception.code, "PATCH_FAILED_NEEDS_RECONCILIATION")
@@ -787,7 +1190,9 @@ class StopOnBadRebaseStatusTests(unittest.TestCase):
     def test_quarantined_maps_to_the_right_code(self):
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump.stop_on_bad_rebase_status(
-                phase="coverage", report={}, patch_id="0400_y",
+                phase="coverage",
+                report={},
+                patch_id="0400_y",
                 entry={"status": "QUARANTINED", "requires": ("0300_x",)},
             )
         self.assertEqual(ctx.exception.code, "PATCH_QUARANTINED")
@@ -796,7 +1201,9 @@ class StopOnBadRebaseStatusTests(unittest.TestCase):
     def test_blocked_by_dependency_maps_to_the_right_code(self):
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
             pin_bump.stop_on_bad_rebase_status(
-                phase="coverage", report={}, patch_id="0400_y",
+                phase="coverage",
+                report={},
+                patch_id="0400_y",
                 entry={"status": "BLOCKED_BY_DEPENDENCY", "requires": ()},
             )
         self.assertEqual(ctx.exception.code, "PATCH_BLOCKED_BY_DEPENDENCY")
@@ -808,9 +1215,15 @@ class CoverageGateDelegationTests(unittest.TestCase):
             dispositions_dir = Path(directory)
             with self.assertRaises(pin_bump.PinBumpStop) as ctx:
                 pin_bump.enforce_all_patches_clean_or_dispositioned(
-                    all_report={"patches": [
-                        {"patch_id": "1206_x", "status": "FAILED", "implementation_digest": "d1"},
-                    ]},
+                    all_report={
+                        "patches": [
+                            {
+                                "patch_id": "1206_x",
+                                "status": "FAILED",
+                                "implementation_digest": "d1",
+                            },
+                        ]
+                    },
                     recipe_report={"patches": []},
                     catalog_states={"1206_x": "untested"},
                     dispositions_dir=dispositions_dir,
@@ -822,15 +1235,29 @@ class CoverageGateDelegationTests(unittest.TestCase):
     def test_passes_through_when_a_matching_disposition_covers_it(self):
         with tempfile.TemporaryDirectory() as directory:
             dispositions_dir = Path(directory)
-            patch_disposition.save_disposition(dispositions_dir, patch_disposition.Disposition(
-                patch_id="1206_x", target_revision="rev-a", patch_digest="d1",
-                disposition="known_broken", failure_status="FAILED_NEEDS_RECONCILIATION",
-                reason="upstream removed anchor", owner="rd", tracking_item="RD13",
-            ))
+            patch_disposition.save_disposition(
+                dispositions_dir,
+                patch_disposition.Disposition(
+                    patch_id="1206_x",
+                    target_revision="rev-a",
+                    patch_digest="d1",
+                    disposition="known_broken",
+                    failure_status="FAILED_NEEDS_RECONCILIATION",
+                    reason="upstream removed anchor",
+                    owner="rd",
+                    tracking_item="RD13",
+                ),
+            )
             result = pin_bump.enforce_all_patches_clean_or_dispositioned(
-                all_report={"patches": [
-                    {"patch_id": "1206_x", "status": "FAILED", "implementation_digest": "d1"},
-                ]},
+                all_report={
+                    "patches": [
+                        {
+                            "patch_id": "1206_x",
+                            "status": "FAILED",
+                            "implementation_digest": "d1",
+                        },
+                    ]
+                },
                 recipe_report={"patches": []},
                 catalog_states={"1206_x": "untested"},
                 dispositions_dir=dispositions_dir,

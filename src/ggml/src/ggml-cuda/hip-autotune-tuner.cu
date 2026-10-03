@@ -3207,7 +3207,8 @@ static const ggml_hip_candidate_descriptor * ggml_hip_tuner_resolve_impl(
             const bool fb = (sig.ne0[1] % 128) != 0;
             const int j_best = ggml_cuda_mmq_native_j_best(
                 (ggml_type) sig.src0_type, fb,
-                (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1]);
+                (sig.flags & GGML_HIP_SIG_HAS_IDS) ? sig.ned[2] : sig.ned[1],
+                /*prec_src1 =*/ GGML_PREC_Q8);
             if (j_best != 0) {
                 for (Measurement * m : finalists) {
                     // The synthetic replicate is not a forced-J candidate; it

@@ -29,7 +29,6 @@ class PatchExplainCliTests(unittest.TestCase):
         code, out, _ = _run(["patch-explain", "1217_rd44_graph_opt_default_rdna35"])
         self.assertEqual(code, 0)
         self.assertIn("kind:           enhancement", out)
-        self.assertIn("1215_rd394041_amd_stream_moe_overlap", out)
         self.assertIn("1216_rd43_concurrent_join_fusion_guard", out)
         self.assertIn("plan item:      RD44", out)
         self.assertIn("selected by experiments: rd44-only", out)
@@ -50,9 +49,8 @@ class PatchGraphCliTests(unittest.TestCase):
     def test_graph_with_roots_shows_real_dependency_closure(self):
         code, out, _ = _run(["patch-graph", "--roots", "1217_rd44_graph_opt_default_rdna35"])
         self.assertEqual(code, 0)
-        self.assertIn("1215_rd394041_amd_stream_moe_overlap", out)
         self.assertIn("1216_rd43_concurrent_join_fusion_guard", out)
-        self.assertIn("requires -> 1215_rd394041_amd_stream_moe_overlap", out)
+        self.assertIn("requires -> 1216_rd43_concurrent_join_fusion_guard", out)
 
     def test_graph_no_roots_shows_the_known_conflict_pair(self):
         code, out, _ = _run(["patch-graph"])
@@ -80,7 +78,7 @@ class PatchCatalogExplainUnitTests(unittest.TestCase):
             "1217_rd44_graph_opt_default_rdna35", snapshot, cfg=None)
         self.assertEqual(info.selected_by_patch_sets, ())
         self.assertEqual(info.selected_by_experiments, ())
-        self.assertIn("1215_rd394041_amd_stream_moe_overlap", info.requires)
+        self.assertIn("1216_rd43_concurrent_join_fusion_guard", info.requires)
 
 
 if __name__ == "__main__":

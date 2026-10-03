@@ -1,0 +1,187 @@
+"""PGC09 (0840 + 0860 + 1225): patch-local validation producer.
+
+ALLREDUCE-ADAPTIVE-DUAL-GFX1100, dual gfx1100 only; control = validated BC
+(RCCL, no adaptive closure), subject = validated BC + 0860 + 1225 + 0840. With
+the CLI provider left at ``auto`` the subject selects adaptive (host path below
+1 MiB, RCCL at or above) for exactly two RDNA3 devices under a tensor split, so
+both arms run the same server arguments.
+
+- correctness (``bit_identical``): a fixed temperature-0 request on a
+  dual-gfx1100 ``-sm tensor`` llama-server WITHOUT speculative decoding must give
+  byte-identical full-vocabulary logprobs and tokens on both arms. The prompt is
+  kept to a few tokens so every AllReduce stays below RCCL's hard-coded bf16
+  switch (32768 elements for two devices, i.e. 6 tokens at hidden 5120): both
+  arms then sum two f32 partials exactly (0840's host path reduces in f32).
+- activation: the subject server log carries 0860's provider marker with
+  ``provider=adaptive``; the control build has no 0860 and cannot.
+- performance (positive): paired llama-bench plain decode tg128 on the production
+  model across both gfx1100 (-sm tensor). Decode ARs (20 KB) take the exact-f32
+  host path below the 96 KiB switch. MTP verify ARs (120 KB) go to RCCL, so
+  speculative decode is a no-regression check (lab A/B), not the positive lane.
+- controls: paired llama-bench pp512 on the same model across both gfx1100
+  (-sm tensor): prompt processing must not regress (prefill AllReduces are
+  >= 1 MiB and stay on RCCL).
+
+Run with --device-map gfx1100=0,1 and HIP_VISIBLE_DEVICES=0,1 (queue VIS=0,1).
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import re
+from pathlib import Path
+
+from bigcherry.experiment import contract as experiment_contract
+from bigcherry.experiment import execution as experiment_execution
+from bigcherry.experiment import full_vocab
+from bigcherry.experiment.attestation import ExecutionIdentity
+from bigcherry.experiment.server_execution import AttestedServerSession
+from bigcherry.patch import producer_support as support
+from bigcherry.patch import validation_producer as vp
+from bigcherry.patch.activation import ActivationEvidence
+
+_LABEL = "pgc09"
+_ARCHITECTURE = "gfx1100"
+_CONTRACT_ID = "ALLREDUCE-ADAPTIVE-DUAL-GFX1100"
+_MODEL_REF = "tierL-qwen27b-q8"
+_MARKER = re.compile(r"BIGCHERRY_PATCH_HIT patch=0860_allreduce_provider_cli provider=adaptive")
+_TENSOR_ARGS = ("-ngl", "99", "-c", "4096", "--parallel", "1", "-sm", "tensor", "--fit", "off")
+_N_PREDICT = 32
+_PROMPT = "The capital of France is"
+_ROUNDS = support.contract_paired_rounds(_CONTRACT_ID)
+
+_CORRECTNESS_ARTIFACT = "pgc09-correctness.json"
+_PERFORMANCE_ARTIFACT = "pgc09-performance.json"
+_SUBJECT_TRACE_ARTIFACT = "pgc09-subject-server.log"
+_CONTROL_TRACE_ARTIFACT = "pgc09-control-server.log"
+
+
+def _fail(message: str) -> vp.ValidationProducerError:
+    return vp.ValidationProducerError(f"{_LABEL}: {message}")
+
+
+def run(ctx: vp.ProducerContext) -> vp.ProducerResult:
+    if ctx.fat_targets.targets != (_ARCHITECTURE,):
+        raise _fail(f"{_CONTRACT_ID} is scoped to gfx1100; got {ctx.fat_targets.targets!r}")
+    if ctx.model is None:
+        raise _fail("the dual-GPU contract model (--model) is required")
+    identity = support.model_identity(ctx.model, model_id=_MODEL_REF, label=_LABEL)
+
+    visibility = experiment_execution.require_device_visibility(
+        context=f"{ctx.patch_id}: PGC09 preflight", exact_count=2, env=ctx.build_env
+    )
+    servers = {role: ctx.validation_binaries.get(role, {}).get("llama-server") for role in ("control", "subject")}
+    benches = {role: ctx.validation_binaries.get(role, {}).get("llama-bench") for role in ("control", "subject")}
+    if not all(isinstance(b, Path) and b.is_file() for b in (*servers.values(), *benches.values())):
+        raise _fail("standard scaffold llama-server/llama-bench pair is missing")
+
+    pair_env = {"HIP_VISIBLE_DEVICES": ",".join(str(d) for d in visibility.device_ids)}
+    server_env = {**pair_env, "BIGCHERRY_PATCH_TRACE": "1"}
+    expected = ExecutionIdentity(backend="rocm", architectures=(_ARCHITECTURE, _ARCHITECTURE))
+
+    # ---- correctness + activation: bit-identical full-vocab on -sm tensor ----
+    logs = ctx.workdir / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    preflights = support.tensor_split_preflights(
+        servers, model=ctx.model, server_args=_TENSOR_ARGS, env=server_env, workdir=logs, label=_LABEL
+    )
+    server_logs = {role: logs / f"pgc09-{role}-server.log" for role in servers}
+
+    def _factory(role: str):
+        def _open():
+            return AttestedServerSession(
+                binary=servers[role], model=ctx.model, expected=expected, extra_args=_TENSOR_ARGS,
+                log_path=server_logs[role], env_overrides=server_env, env_unset=("ROCR_VISIBLE_DEVICES",),
+                tensor_split_preflight=preflights[role],
+            )
+        return _open
+
+    try:
+        comparison = full_vocab.compare_servers(
+            control_session=_factory("control"), subject_session=_factory("subject"),
+            prompt=_PROMPT, n_predict=_N_PREDICT, criterion=full_vocab.BIT_IDENTICAL,
+            scratch_dir=ctx.workdir / "scratch" / "pgc09",
+        )
+    except full_vocab.FullVocabError as exc:
+        raise _fail(f"bit_identical: {exc}") from exc
+    bit_identical = experiment_contract.CorrectnessResult(
+        check="bit_identical", passed=comparison.passed,
+        detail=f"dual-gfx1100 -sm tensor, provider auto (adaptive on subject, RCCL on control): {comparison.detail}",
+    )
+
+    subject_text = server_logs["subject"].read_text(encoding="utf-8", errors="replace")
+    control_text = server_logs["control"].read_text(encoding="utf-8", errors="replace")
+    subject_hit = _MARKER.search(subject_text) is not None
+    control_hit = _MARKER.search(control_text) is not None
+    trigger_hit = subject_hit and not control_hit
+    activation = ActivationEvidence(
+        status="executed" if trigger_hit else ("unobservable" if subject_hit else "not_executed"),
+        mechanism="trace_marker",
+        detail=(f"marker {_MARKER.pattern!r} subject_hit={subject_hit} control_hit={control_hit}"
+                + ("" if subject_hit else " (auto did not select adaptive: see the subject server log)")),
+    )
+    subject_trace_ref = ctx.runtime.write_text_artifact(name=_SUBJECT_TRACE_ARTIFACT, text=support.compact_log(subject_text))
+    control_trace_ref = ctx.runtime.write_text_artifact(name=_CONTROL_TRACE_ARTIFACT, text=support.compact_log(control_text))
+    ctx.runtime.write_artifact(
+        name=_CORRECTNESS_ARTIFACT,
+        payload={"schema_version": 1, "contract_id": _CONTRACT_ID, "check": "bit_identical",
+                 "passed": comparison.passed, "detail": bit_identical.detail, "model_identity": identity,
+                 "comparison": comparison.document()},
+    )
+
+    # ---- performance: plain decode on both gfx1100 ----
+    positive_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=benches["control"], subject_binary=benches["subject"], model=ctx.model,
+        workloads=("decode",), pairs=_ROUNDS, log_context="pgc09-positive", device=None,
+        env_unset=("ROCR_VISIBLE_DEVICES",), runtime_args=("-sm", "tensor"),
+    )
+    positive_effect, positive_run = support.lane_effect(
+        positive_outcome, workload="decode", metric="tg128", role="positive", rounds=_ROUNDS, label=_LABEL
+    )
+    # ---- control: prompt processing on the same model and topology ----
+    control_outcome = ctx.runtime.run_paired_llama_benchmark(
+        control_binary=benches["control"], subject_binary=benches["subject"], model=ctx.model,
+        workloads=("prefill",), pairs=_ROUNDS, log_context="pgc09-control", device=None,
+        env_unset=("ROCR_VISIBLE_DEVICES",), runtime_args=("-sm", "tensor"),
+    )
+    control_effect, control_run = support.lane_effect(
+        control_outcome, workload="prefill", metric="pp512", role="control", rounds=_ROUNDS, label=_LABEL
+    )
+    performance_ref = ctx.runtime.write_artifact(
+        name=_PERFORMANCE_ARTIFACT,
+        payload={
+            "passed": True,
+            "metrics": support.performance_metrics(positive_effect, control_effect),
+            "schema_version": 1,
+            "contract_id": _CONTRACT_ID,
+            "positive_model_identity": identity,
+            "control_model_identity": identity,
+            "build_identities": {r: dict(i) for r, i in ctx.validation_build_identities.items()},
+            "positive": {"metric": "tg128", "effect": dataclasses.asdict(positive_effect),
+                         "runs": list(positive_run.runs), "stats": dict(positive_run.stats)},
+            "control": {"metric": "pp512", "effect": dataclasses.asdict(control_effect),
+                        "runs": list(control_run.runs), "stats": dict(control_run.stats)},
+        },
+    )
+    trigger_evidence = experiment_execution.trigger_evidence_from_marker_probe(
+        lane_id="pgc09-server-subject", role="positive", positive_hit=trigger_hit
+    )
+    return vp.ProducerResult(
+        correctness={"disposition": "passed" if comparison.passed else "failed",
+                     "mechanism": "pgc09-dual-gfx1100-full-vocab-bit-identical", "detail": bit_identical.detail},
+        validation_build_identities=ctx.validation_build_identities,
+        activation_evidence=activation,
+        performance_evidence={"artifact": {"path": performance_ref.path, "sha256": performance_ref.sha256}},
+        trace_evidence={
+            "positive": {"artifact": {"path": subject_trace_ref.path, "sha256": subject_trace_ref.sha256}},
+            "negative": {"artifact": {"path": control_trace_ref.path, "sha256": control_trace_ref.sha256}},
+        },
+        check_results=(),
+        lane_effects=(),
+        contract_correctness_results=(bit_identical,),
+        promotion_lane_effects={_CONTRACT_ID: (positive_effect, control_effect)},
+        promotion_target_metric={_CONTRACT_ID: "tg128"},
+        promotion_trigger_evidence={_CONTRACT_ID: (trigger_evidence,)},
+        emitted_artifacts=frozenset(
+            {_CORRECTNESS_ARTIFACT, _PERFORMANCE_ARTIFACT, _SUBJECT_TRACE_ARTIFACT, _CONTROL_TRACE_ARTIFACT}),
+    )

@@ -1,0 +1,22 @@
+schema = 1
+
+# PRBE14: standard scaffold pair (control = baseline, subject = + 1207):
+# full-vocab backend_reference and activation on llama-server, tg128 MoE
+# positive and dense control lanes on llama-bench.
+[producer.rd17]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd17-backend-reference.json",
+  "rd17-performance.json",
+  "rd17-subject-server.log",
+  "rd17-control-server.log",
+]
+
+[producer.rd17.input.control_model]
+type = "path"
+required = true

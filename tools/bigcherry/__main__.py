@@ -4,15 +4,14 @@ One command per stage of taking a new llama.cpp release into production:
 
     pull -> audit -> apply -> generate -> build
 
-Stages are idempotent, and each refuses to run on a tree that has not passed
-the stage before it. That ordering is the whole point: patches are only
-meaningful against a tree whose shape has been verified, and a build is only
-meaningful against a manifest generated from that same tree.
+The durable job-control plane is available as ``bigcherry jobs ...`` and
+accepted/discovered hardware operations as ``bigcherry hardware ...``.
 """
 
 from __future__ import annotations
 
 import importlib
+import sys
 from typing import Any, cast
 
 from .cli.diagnostics import cmd_check, cmd_doctor, cmd_status  # noqa: F401
@@ -62,12 +61,18 @@ _restore_overlay = _patch_cli._restore_overlay
 _apply_exact_selection = _patch_cli._apply_exact_selection
 _record_for = _release_records.record_for_checkout
 
-def main(argv: list[str] | None = None) -> int:
-    """Delegate the package entrypoint to the canonical CLI bootstrap."""
-    from importlib import import_module
 
-    cli_main = cast(Any, import_module("bigcherry.cli.main").main)
-    return int(cli_main(argv))
+def main(argv: list[str] | None = None) -> int:
+    """Delegate package entrypoint; route durable control-plane domains."""
+    effective = list(sys.argv[1:] if argv is None else argv)
+    if effective[:1] == ["jobs"]:
+        jobs_main = cast(Any, importlib.import_module("bigcherry.cli.jobs").main)
+        return int(jobs_main(effective[1:]))
+    if effective[:1] == ["hardware"]:
+        hardware_main = cast(Any, importlib.import_module("bigcherry.cli.hardware").main)
+        return int(hardware_main(effective[1:]))
+    cli_main = cast(Any, importlib.import_module("bigcherry.cli.main").main)
+    return int(cli_main(effective))
 
 
 if __name__ == "__main__":

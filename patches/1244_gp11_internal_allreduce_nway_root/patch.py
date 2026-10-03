@@ -1,7 +1,8 @@
 """GP11 (preliminary): extend the internal pinned-host AllReduce pipeline to
 support a 3-device fused reduce-to-root + broadcast path.
 
-Patch 1001_hip_internal_allreduce's pipeline (allreduce.cu) hard-requires
+The internal AllReduce pipeline (allreduce.cu; HIP-enabled upstream since
+pin b11126, formerly via the now-superseded patch 1001) hard-requires
 ``n_devices == 2`` -- a real pairwise ping-pong scheme, not a general N-way
 algorithm. This project's own base-level test harness
 (tools/lab/gp10-collective-harness/nway_star_allreduce.cpp) found, on real

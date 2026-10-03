@@ -1,0 +1,107 @@
+{
+ "arm_config": [
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf",
+   "name": "q8_0",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ4_XS.gguf",
+   "name": "iq4_xs",
+   "server_args": null
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1a7bddb4d5b3dc6f156f25212fb68790/cfb91b5fe932f285cb43289b576d3863/bin/llama-server",
+   "environment": null,
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ3_XXS.gguf",
+   "name": "iq3_xxs",
+   "server_args": null
+  }
+ ],
+ "arms": {
+  "iq3_xxs": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 763.57,
+    "tg128_tps": 35.91
+   },
+   "n": 6
+  },
+  "iq4_xs": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 957.36,
+    "tg128_tps": 33.48
+   },
+   "n": 6
+  },
+  "q8_0": {
+   "acceptance_pct": null,
+   "mean": {
+    "pp512_tps": 975.69,
+    "tg128_tps": 19.8
+   },
+   "n": 6
+  }
+ },
+ "comparisons": {
+  "iq3_xxs_vs_q8_0": {
+   "pp512_tps": {
+    "ci95": [
+     -26.75,
+     -18.56
+    ],
+    "effect_pct": -21.91
+   },
+   "tg128_tps": {
+    "ci95": [
+     81.04,
+     81.64
+    ],
+    "effect_pct": 81.32
+   }
+  },
+  "iq4_xs_vs_q8_0": {
+   "pp512_tps": {
+    "ci95": [
+     -7.93,
+     1.2
+    ],
+    "effect_pct": -2.07
+   },
+   "tg128_tps": {
+    "ci95": [
+     68.95,
+     69.2
+    ],
+    "effect_pct": 69.07
+   }
+  }
+ },
+ "kind": "ab",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf",
+ "run": "qs-r9700-g3",
+ "schedule_seed": 0,
+ "server_args": [
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ]
+}

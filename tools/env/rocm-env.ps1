@@ -20,7 +20,7 @@ if ($List -or -not $Version) {
     $versions = Get-VendoredRocmVersions
     if (-not $versions) {
         Write-Host "No vendored ROCm installs found under $RocmVendorRoot"
-        Write-Host "Populate one with: robocopy 'C:\Program Files\AMD\ROCm\<ver>' '$RocmVendorRoot\<ver>' /E"
+        Write-Host "Populate one with: robocopy '$env:ProgramFiles\AMD\ROCm\<ver>' '$RocmVendorRoot\<ver>' /E"
     } else {
         Write-Host "Vendored ROCm versions under $RocmVendorRoot :"
         $versions | ForEach-Object {

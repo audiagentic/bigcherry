@@ -1,0 +1,12 @@
+# EXAMPLE ONLY. /etc/slurm/gres.conf is generated from accepted RCD12 inventory.
+# Type is architecture only; File is the current operational render-node binding.
+# Stable GPU UUID/device_id remains BigCherry identity and is never encoded in Type.
+#
+# Name=gpu Type=gfx1100 File=/dev/dri/renderD128 Flags=amd_gpu_env
+# Name=gpu Type=gfx1100 File=/dev/dri/renderD129 Flags=amd_gpu_env
+# Name=gpu Type=gfx1201 File=/dev/dri/renderD130 Flags=amd_gpu_env
+# Name=gpu Type=gfx1030 File=/dev/dri/renderD131 Flags=amd_gpu_env
+#
+# AutoDetect=rsmi may be used as a diagnostic cross-check, but generated explicit
+# File= records are the operational source so inventory/BDF/render-node drift can
+# be fenced and acknowledged deliberately.

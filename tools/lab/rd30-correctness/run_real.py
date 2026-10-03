@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from bigcherry.patch import validation_campaign as vc  # noqa: E402
+from bigcherry.patch.campaign import build as campaign_build  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
 AMDGPU_TARGETS = "gfx1100"
@@ -45,7 +46,7 @@ def main() -> int:
         amdgpu_targets=AMDGPU_TARGETS,
         worktree_root=worktree_root,
         build_root=build_root,
-        build_env=vc._hip_env(HIP_PATH),
+        build_env=campaign_build._hip_env(HIP_PATH),
         run_dir=run_dir,
     )
     bit_identical = result["results"]["bit_identical"]

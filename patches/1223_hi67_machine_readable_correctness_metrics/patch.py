@@ -79,10 +79,11 @@ PATCH = FilePatch(
     edits=(
         Edit(
             id="hi67-correctness-metric-line",
-            anchor=r"double err = ud->tc->err\(f1\.data\(\), f2\.data\(\), f1\.size\(\)\);",
+            anchor=r"                ud->ok = false;\n            \}\n",
             mode="insert_after",
-            rationale="right after err (NMSE) is computed in the graph-compare callback, "
-            "before the pass/fail check that follows it",
+            rationale="right after the graph-compare callback's pass/fail block, where err "
+            "(NMSE) is still in scope; the err line and the check itself stay untouched so "
+            "patches that anchor on them (e.g. 1253's test hunks) compose with this one",
             text=_METRIC_LINE,
             guard=r"bigcherry \(HI67 slice 2b\): err here is NMSE",
             max_span_lines=5,

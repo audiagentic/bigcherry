@@ -28,7 +28,7 @@ from bigcherry.patch import validation_campaign as vc  # noqa: E402
 
 HIP_PATH = Path("/home/audumla/rocm-shim")
 AMDGPU_TARGETS = "gfx1100"
-MODEL = Path("/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
+MODEL = Path("/mnt/data/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf")
 
 
 def main() -> int:

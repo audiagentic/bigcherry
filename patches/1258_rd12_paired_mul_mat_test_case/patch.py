@@ -124,14 +124,16 @@ _CLASS_ANCHOR = _re.escape(
     "struct test_mul_mat_vec_fusion : public test_case {"
 )
 
+# b11126 added an n_hc parameter to test_dsv4_hc_pre; its first registration
+# (n_embd=1, n_tokens=1) is now spelled test_dsv4_hc_pre(1, 4, 1).
 _REGISTRATION_ANCHOR_SOURCE = (
-    "    test_cases.emplace_back(new test_dsv4_hc_pre(1, 1));"
+    "    test_cases.emplace_back(new test_dsv4_hc_pre(1, 4, 1));"
 )
 _REGISTRATION_ANCHOR = _re.escape(
     _csource.strip_noise(_REGISTRATION_ANCHOR_SOURCE, "c")
 )
 
-_REGISTRATION_REPLACEMENT = r'''    test_cases.emplace_back(new test_dsv4_hc_pre(1, 1));
+_REGISTRATION_REPLACEMENT = r'''    test_cases.emplace_back(new test_dsv4_hc_pre(1, 4, 1));
 
     // bigcherry (RD12 correctness): contract-tier Q6_K decode K/V-like
     // projection pair. n=1 deliberately selects the decode/MMVQ path.

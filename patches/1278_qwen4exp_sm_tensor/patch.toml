@@ -1,0 +1,17 @@
+schema = 1
+id = "1278_qwen4exp_sm_tensor"
+order = 1278
+state = "superseded"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["QFN01"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["tensor-parallel", "model-arch"]
+tags = ["tensor-parallel"]
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

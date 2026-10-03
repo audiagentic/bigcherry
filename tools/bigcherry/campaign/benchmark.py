@@ -10,7 +10,7 @@ Example::
 
     python -m bigcherry ab-benchmark --cache dispatch.cache --output artifacts/tuning-runs/ab-2026-08-08 \
       --pairs 3 --metric "pp256=pp256.*?([0-9.]+)" -- \
-      /home/audumla/bc-build/bin/llama-bench -m model.gguf -p 256 -n 0 -r 5 -ngl 99
+      work/build/bin/llama-bench -m model.gguf -p 256 -n 0 -r 5 -ngl 99
 """
 
 from __future__ import annotations
@@ -846,19 +846,32 @@ def run_server_comparison_capture(
         for key in tuple(env):
             if key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_AUTOTUNE_", "GGML_HIP_TUNE_", "GGML_HIP_FORCE_")):
                 env.pop(key)
+            elif key not in supplied_env and (
+                    key == "GGML_CUDA_ALLREDUCE" or key.startswith(("GGML_CUDA_AR_", "BIGCHERRY_", "NCCL_", "RCCL_"))):
+                env.pop(key)
         if mode != "stock":
             env["GGML_HIP_DISPATCH_MODE"] = mode
         # Only explicitly supplied arm controls survive ambient sanitization.
         controls = {key: os.path.expandvars(value) for key, value in arm.get("environment", {}).items()}
-        if any(not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_")) for key in controls):
-            raise ValueError("arm-specific environment is limited to dispatch/tuning controls; topology belongs to the shared environment")
+        if any(
+            key != "GGML_CUDA_ALLREDUCE"
+            and not key.startswith(("GGML_HIP_DISPATCH_", "GGML_HIP_TUNE_", "GGML_HIP_AUTOTUNE_", "GGML_CUDA_AR_",
+                                    "NCCL_", "RCCL_"))
+            and not (key.startswith("BIGCHERRY_") and key != "BIGCHERRY_PATCH_TRACE")
+            for key in controls
+        ):
+            raise ValueError("arm-specific environment is limited to dispatch/tuning/allreduce/RCCL and BigCherry patch controls (not tracing); topology belongs to the shared environment")
         if "GGML_HIP_DISPATCH_MODE" in controls:
             raise ValueError("arm environment cannot override the declared dispatch mode")
         env.update(controls)
         if mode == "replay" and not Path(env.get("GGML_HIP_DISPATCH_CACHE", "")).is_file():
             raise ValueError("replay arm requires an existing explicit cache")
+        arm_args = tuple(os.path.expandvars(value) for value in arm.get("server_args", []))
+        if any(value.split("=", 1)[0] in ("-m", "--model", "--host", "--port") for value in arm_args):
+            raise ValueError(f"{arm['name']}: server_args cannot override the managed model or endpoint")
         prepared[arm["name"]] = {
-            "binary": binary, "env": env, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
+            "binary": binary, "env": env, "extra_args": (*extra_args, *arm_args),
+            "model": Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model, "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
             "provenance": {"campaign_metadata": metadata, "observed_runtime_artifacts": runtime,
                            "compiler_observation": observation,
@@ -880,6 +893,7 @@ def run_server_comparison_capture(
             "replay activation, if applicable, requires separate admission",
         ],
         "configuration": config, "model_sha256": binary_hash(model),
+        "arm_model_sha256": {name: binary_hash(arm["model"]) for name, arm in prepared.items() if arm["model"] != model},
         "arm_provenance": {name: value["provenance"] for name, value in prepared.items()},
         "schedule": run_schedule, "schedule_seed": seed, "settle_seconds": settle_seconds,
         "runs": [],
@@ -906,7 +920,7 @@ def run_server_comparison_capture(
                     return 1
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
             result = run_server_arm_capture(
-                binary=arm["binary"], model=model, extra_args=extra_args, output=output,
+                binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], output=output,
                 pair=pair, side=name, position=position, env=arm["env"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, shutdown_method=arm["shutdown_method"],

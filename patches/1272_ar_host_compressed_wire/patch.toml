@@ -1,0 +1,17 @@
+schema = 1
+id = "1272_ar_host_compressed_wire"
+order = 1272
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["PGC07"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "tensor-parallel", "quantization"]
+tags = ["optimization", "allreduce", "tensor-parallel", "quantization"]
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

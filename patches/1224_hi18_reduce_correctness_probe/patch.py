@@ -50,7 +50,10 @@ CMAKE = FilePatch(
     edits=(
         Edit(
             id="hi18-reduce-probe-executable",
-            anchor=(r"^if \(NOT GGML_BACKEND_DL\)$"
+            # b11126 narrowed upstream's direct-backend test block to
+            # `NOT GGML_BACKEND_DL AND GGML_CPU`; the probe's own block keeps
+            # its own condition and still lands immediately after it.
+            anchor=(r"^if \(NOT GGML_BACKEND_DL AND GGML_CPU\)$"
                     r"\n(?:.*\n)*?"
                     r"^endif\(\)$"),
             mode="insert_after",

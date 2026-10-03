@@ -1,0 +1,22 @@
+schema = 1
+
+# PNRO03: standard scaffold pair; dual-gfx1100 -sm tensor server for
+# bit-identical correctness + activation and the MTP positive lane; dense
+# single-GPU control lane.
+[producer.nro03]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "nro03-correctness.json",
+  "nro03-performance.json",
+  "nro03-subject-server.log",
+  "nro03-control-server.log",
+]
+
+[producer.nro03.input.control_model]
+type = "path"
+required = true

@@ -5,12 +5,12 @@
 
 ## What it does
 
-Adds a disabled P2P request flag and a source-current peer-copy helper. No AllReduce dispatch uses it yet.
+Opt-in (`GGML_CUDA_AR_P2P=1`) two-GPU peer-to-peer copy path for the internal HIP AllReduce, replacing host staging when a startup probe proves both directions copy correctly.
 
 ## Why
 
-The source fork's fixed issuer is unsafe for BigCherry's observed gfx1100 directionality. The draft encodes source-current push semantics before transport scheduling is implemented.
+Host-staged AllReduce crosses PCIe twice; direct peer copies cross once.
 
 ## Upstream
 
-Local correctness-first adaptation of nasone commit `7c5bb5cb991670676b89cddc5077c9456c5cf70e`.
+Port of nasone `7c5bb5cb`, adapted: no fixed issuer device, source-current push per direction, content-checked startup probe.

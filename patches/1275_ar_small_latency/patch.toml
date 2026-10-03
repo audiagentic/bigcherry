@@ -1,0 +1,17 @@
+schema = 1
+id = "1275_ar_small_latency"
+order = 1275
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["PGC10"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "tensor-parallel"]
+tags = ["optimization", "allreduce", "tensor-parallel"]
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

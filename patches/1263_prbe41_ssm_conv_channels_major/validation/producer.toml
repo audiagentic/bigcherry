@@ -1,0 +1,22 @@
+schema = 1
+
+# PRBE41: standard scaffold pair (control = baseline, subject = + 1263):
+# full-vocab backend_reference and activation on llama-server, pp512 GDN
+# positive and non-SSM tg128 control lanes on llama-bench.
+[producer.prbe41]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "prbe41-backend-reference.json",
+  "prbe41-performance.json",
+  "prbe41-subject-server.log",
+  "prbe41-control-server.log",
+]
+
+[producer.prbe41.input.control_model]
+type = "path"
+required = true

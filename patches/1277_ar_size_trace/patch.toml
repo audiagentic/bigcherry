@@ -1,0 +1,17 @@
+schema = 1
+id = "1277_ar_size_trace"
+order = 1277
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "hip"
+plan-ids = ["PGC09"]
+requires = ["0840_hybrid_allreduce_dispatch"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "tensor-parallel"]
+tags = ["allreduce", "tensor-parallel"]
+hardware = []
+validation-architectures = ["gfx1100"]
+backends = ["hip"]

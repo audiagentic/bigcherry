@@ -1,0 +1,29 @@
+{
+  "withdrawn": [
+    {
+      "reason": "run set aside (rerun-dup-1815)",
+      "record_digest": "63dad35a8613917376572e1f579bf62c5db2930870e551482b6c935b312a3ff0",
+      "run": "t-1263-gfx1100-s1.rerun-dup-1815"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "31859debf735a213a099b75127aff1b3cc44dead8a96f4e1acdf5522e38fb7c5",
+      "run": "t-1263s2-gfx1100-s1.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "3bd9dd19d711dccff65e3dc6fefc6d2dab8943552163fb2cb397e65756693bbd",
+      "run": "t-1263s2-gfx1100-s3.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "a4124441754e7717e5d59a77b8af957d035ff7f340e1ce1a0dbb35fe82ab6d0a",
+      "run": "t-1263s2-gfx1100-s4.parallel"
+    },
+    {
+      "reason": "measured while another GPU job ran concurrently",
+      "record_digest": "eb583942c6acf4176c446356277c7f97965c3b1901951ef74e16f00a0eef9b1e",
+      "run": "t-1263s2-gfx1100-s2.parallel"
+    }
+  ]
+}

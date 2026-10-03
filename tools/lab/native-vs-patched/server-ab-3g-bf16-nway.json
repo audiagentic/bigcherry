@@ -1,0 +1,81 @@
+{
+ "schema_version": 1,
+ "evidence_role": "production",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/BF16/Qwen3.8-27B-BF16-00001-of-00002.gguf",
+ "server_args": [
+  "-sm",
+  "tensor",
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ],
+ "environment": {
+  "ROCR_VISIBLE_DEVICES": "0,1,2",
+  "HIP_VISIBLE_DEVICES": "0,1,2"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1100",
+   "gfx1100",
+   "gfx1201"
+  ],
+  "locators": [
+   "0000:03:00.0",
+   "0000:06:00.0",
+   "0000:09:00.0"
+  ]
+ },
+ "bench_configs": "default",
+ "required_metrics": [
+  "pp512_tps",
+  "tg128_tps"
+ ],
+ "repetitions": 1,
+ "arms": [
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "ccl",
+   "binary": "@b-3g-nway",
+   "server_args": [
+    "--allreduce",
+    "ccl"
+   ]
+  },
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "adaptive",
+   "binary": "@b-3g-nway",
+   "server_args": [
+    "--allreduce",
+    "adaptive"
+   ]
+  },
+  {
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "name": "host",
+   "binary": "@b-3g-nway",
+   "server_args": [
+    "--allreduce",
+    "host"
+   ]
+  }
+ ]
+}

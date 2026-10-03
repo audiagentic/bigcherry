@@ -97,3 +97,33 @@ def is_shallow(root: Path) -> bool:
         return _git(root, "rev-parse", "--is-shallow-repository", timeout=30).strip() == "true"
     except UpstreamError:
         return False
+
+
+def sync_mirror_ref(mirror: Path, ref: str, revision: str | None = None) -> str | None:
+    """Make ``ref`` resolvable in the campaign build mirror.
+
+    Builds resolve the pin only against refs already present (RE13), so the
+    deliberate pin-update step (``pull``/``pin-bump``) must bring the new tag
+    into the mirror as well as the vendor checkout. Returns ``None`` when the
+    ref resolves (or there is no mirror yet), otherwise a warning message --
+    never raises, so a network problem cannot fail an already-verified pull.
+    """
+    if not (mirror / "HEAD").is_file() and not (mirror / ".git").exists():
+        return None
+    if _has_ref(mirror, ref):
+        return None
+    errors: list[str] = []
+    try:
+        ensure_ref(mirror, ref)
+    except UpstreamError as exc:
+        errors.append(str(exc))
+    if not _has_ref(mirror, ref) and revision and _RELEASE_TAG.match(ref):
+        try:
+            _git(mirror, "fetch", "--no-tags", "--depth", "1", "origin", revision)
+            _git(mirror, "tag", ref, "FETCH_HEAD")
+        except UpstreamError as exc:
+            errors.append(str(exc))
+    if _has_ref(mirror, ref):
+        return None
+    detail = "; ".join(errors) or "ref still unresolvable after fetch"
+    return f"campaign mirror {mirror} still lacks {ref!r}: {detail}"

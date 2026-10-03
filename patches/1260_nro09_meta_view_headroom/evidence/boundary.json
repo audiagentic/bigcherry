@@ -1,0 +1,46 @@
+{
+  "test": "PNRO09/1260 hardware-free Meta-context view-headroom boundary test",
+  "fixture": "patches/1260_nro09_meta_view_headroom/validation/meta_boundary_test.cpp",
+  "mechanism": {
+    "binding_constraint": "ggml object pool (ggml_new_object enforces ctx->mem_size); the headroom bounds tensor-object METADATA, not model data (per PNRO09 plan note)",
+    "stc_compute_mem_size": "compute_headroom * ggml_get_mem_size(user_ctx)",
+    "per_view_object": "one fixed GGML_TENSOR_SIZE metadata object (simple tensor in stc_compute context, no_alloc=true -> obj_alloc_size=0)",
+    "capacity": "N views fit iff N * GGML_TENSOR_SIZE <= compute_headroom * S  =>  N_max = compute_headroom * S / GGML_TENSOR_SIZE (proportional to headroom)",
+    "test_design": "static leaf t (size S) in USER ctx -> stc_static; N between-eval view tensors of t in a separate ctx (pool sized N*(S+2048) so its own pool is not the binding constraint) registered via buf->iface.init_tensor -> stc_compute[0]; probe N to find N_max"
+  },
+  "builds": {
+    "A_unpatched": {
+      "headroom": 16,
+      "source": "vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp (pinned, unpatched)",
+      "source_sha256": "d79fb0da6c694d3a8892acd25e381368c762fade2b1dc8858168e1f5e009e2eb",
+      "build_dir": "/mnt/h/development/projects/bc-nro09-build",
+      "cmake": "Release, GPU off (METAL/CUDA/HIP/VULKAN/SYCL=OFF), tools/examples/server/common/tests/app=OFF, static libs"
+    },
+    "B_patched": {
+      "headroom": 80,
+      "source": "1260 patch applied (compute_headroom 16 -> 80)",
+      "source_sha256": "b7995c58cd125b0e3deffd912dbe7ecaefa6b37bc13b4302350f59a99551aaea",
+      "build_dir": "/mnt/h/development/projects/bc-nro09-buildB",
+      "cmake": "same as A (identical config)"
+    }
+  },
+  "observations": [
+    { "s_bytes": 1024, "A_n_max": 44, "B_n_max": 222, "ratio": 5.045, "note": "A: 44 fit, 45 fail; B: 222 fit, 223 fail" },
+    { "s_bytes": 2048, "A_n_max": 89, "B_n_max": 445, "ratio": 5.0,   "note": "A: 89 fit, 90 fail; B: 445 fit, 446 fail (needed 164128 > available 163840 = 80*2048)" }
+  ],
+  "implied_ggml_tensor_size": {
+    "from_s1024": 366.4,
+    "from_s2048": 366.7,
+    "note": "N_max = headroom*S/obj_size; both S values imply obj_size ~ 366 bytes (the fixed metadata object)"
+  },
+  "results": {
+    "boundary_proportional_to_headroom": true,
+    "ratio_patched_over_unpatched": "~5.0 (80/16), confirmed at two independent S values",
+    "safe_failure_on_capacity_exceeded": true,
+    "safe_failure_evidence": "ggml_new_object: not enough space in the context's memory pool (needed 164128, available 163840) -- the bounded safe-failure abort when the compute container is exceeded",
+    "metadata_cost": "stc_compute mem_size = compute_headroom * S; 80x vs 16x the static mem_size (bounded, linear in headroom; metadata objects only, no model data)"
+  },
+  "conclusion": "The 1260 patch (compute_headroom 16 -> 80) increases the Meta compute-container view capacity by a factor of ~5 (80/16), confirmed by the observed N_max at two independent S values (ratio 5.045 and 5.0), with a bounded, linear metadata cost and a safe abort on capacity exceedance. This is a capacity (correctness-scoped) result, not a performance claim.",
+  "generated_at": "2026-09-23T00:30:00Z",
+  "generated_by": "pi (hardware-free C++ boundary test, CPU + Meta backend, no GPU)"
+}

@@ -1,0 +1,18 @@
+schema = 1
+
+# RD30B (1265), adapted from 1237's PRBE25: bit_identical test-backend-ops pair (own build_pair with the
+# deterministic evidence patches) plus the standard scaffold llama-bench
+# pair for activation and the pp512 positive / tg128 control lanes.
+[producer.rd30b]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd30b-correctness.json",
+  "rd30b-performance.json",
+  "rd30b-subject-trace.log",
+  "rd30b-control-trace.log",
+]

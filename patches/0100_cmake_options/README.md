@@ -1,14 +1,20 @@
 # 0100 framework validation
 
-HI168 owns this package's diagnostic-isolation review. This local framework
-adapter has no Experiment Contract: it checks build plumbing, not a claimed
-kernel speedup. Historical `validated` state is not current qualification.
+PA27 narrowed this package to the replay/serving half of the former
+0100_cmake_options; the campaign tune/record/coverage half moved to
+0110_campaign_tune_record_build. HI168 owns the diagnostic-isolation review
+this inherits. This local framework adapter has no Experiment Contract: it
+checks build plumbing, not a claimed kernel speedup. Historical `validated`
+state is not current qualification.
 
-`coverage-source-selection` applies the actual package upgrade to its emitted
-CMake source-list fixture, checks idempotence, and executes CMake for production,
-diagnostic, record and tune selection. The result is host CMake configuration
-proof only. It does not establish a completed HIP build, a gfx architecture,
-runtime activation, numerical correctness or throughput parity.
+`serving-source-selection` applies the actual package edit to its emitted
+CMake source-list fixture, checks idempotence, and executes CMake to prove
+the common dispatch/transform/telemetry/signature/blake2b sources are always
+selected, the replay-only source is selected iff GGML_HIP_DISPATCH_REPLAY,
+and none of 0110's tuner/record/coverage sources ever appear here. The
+result is host CMake configuration proof only. It does not establish a
+completed HIP build, a gfx architecture, runtime activation, numerical
+correctness or throughput parity.
 
 The universal apply and build checks remain required. Missing source/build
 evidence keeps the full adapter ineligible even if the fixture check passes.

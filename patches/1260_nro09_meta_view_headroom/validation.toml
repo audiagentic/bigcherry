@@ -1,0 +1,28 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# PNRO09/1260: capacity (correctness-scoped) check. The 1260 patch-local
+# producer (validation/producer.py, reachable via
+# --validation-producer 1260_nro09_meta_view_headroom/nro09) is a
+# CAPACITY producer, not a performance contract lane. It builds the
+# control (headroom=16) and subject (headroom=80) meta-backend
+# variants, runs the C++ boundary fixture against each to probe N_max
+# at two independent S values, asserts the ~5x N_max ratio, and records
+# the boundary + real-graph evidence. correctness-summary is
+# mechanism-agnostic and consumes the disposition the producer binds.
+[[check]]
+id = "capacity"
+capability = "correctness"
+validator = "correctness-summary"
+required = true

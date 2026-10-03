@@ -1,0 +1,31 @@
+schema = 1
+
+# 1005's (PROMPT-CACHE-CHECKPOINT-SELECTION) patch-local producer.
+#
+# correctness (greedy_parity): turn A primes context checkpoints under
+# --cache-ram 512; turn C shares only a shorter common prefix and must both
+# (a) produce a server-side "restored context checkpoint" record whose
+# n_tokens/pos_max are below A's newest primed checkpoint, proving the target
+# reuse path actually executed, and (b) exactly match a fresh --cache-ram 0
+# greedy reference.
+#
+# On a mismatch the producer conditionally emits top-2 token IDs/logprobs at
+# the first divergent prediction across the original pair plus three fresh
+# warm/cold repeat pairs. This is diagnostic only; greedy_parity stays exact.
+#
+# The paired tg128 lane is auxiliary no-regression evidence, not the
+# correctness gate and not checkpoint-path activation evidence.
+[producer.prompt-cache-checkpoint-selection]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "pccs-activation.json",
+  "pccs-correctness.json",
+  "pccs-performance.json",
+  # Conditionally emitted only when greedy_parity diverges.
+  "pccs-divergence-diagnostic.json",
+]

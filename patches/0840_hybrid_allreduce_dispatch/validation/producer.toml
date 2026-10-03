@@ -1,0 +1,19 @@
+schema = 1
+
+# PGC09: standard scaffold pair (+ --common-patches 0860,1225); dual-gfx1100 -sm tensor server for
+# bit-identical correctness + activation and the MTP positive lane; dense
+# -sm tensor prompt-processing control lane on the same model.
+[producer.pgc09]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "pgc09-correctness.json",
+  "pgc09-performance.json",
+  "pgc09-subject-server.log",
+  "pgc09-control-server.log",
+]
+

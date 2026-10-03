@@ -1,0 +1,16 @@
+schema = 1
+id = "1294_topk_deterministic_ties"
+order = 1294
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["RNX02"]
+requires = []
+conflicts = ["1256_nro07_topk_hybrid"]
+requires-options = []
+forbids-options = []
+tags = ["top-k", "split-tensor"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]

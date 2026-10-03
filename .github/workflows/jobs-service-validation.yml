@@ -1,0 +1,42 @@
+name: Jobs service validation
+
+on:
+  push:
+    branches: [patch-refactor]
+    paths:
+      - 'tools/bigcherry/jobs/**'
+      - 'tools/bigcherry/hardware/**'
+      - 'tools/bigcherry/core/host_lock.py'
+      - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/patch/campaign/profile.py'
+      - 'tools/bigcherry/cli/jobs.py'
+      - 'tools/bigcherry/cli/hardware.py'
+      - 'tools/bigcherry/__main__.py'
+      - 'tools/lab/plan-qualification/**'
+      - 'tools/admin/**'
+      - 'tools/tests/jobs/**'
+      - 'config/jobs/**'
+      - 'config/slurm/**'
+      - '.github/workflows/jobs-service-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-control-plane:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile implementation
+        env:
+          PYTHONPATH: tools
+        run: python -m compileall -q tools/bigcherry/jobs tools/bigcherry/hardware tools/bigcherry/experiment/bundle.py tools/bigcherry/patch/campaign/profile.py tools/bigcherry/cli/jobs.py tools/bigcherry/cli/hardware.py tools/admin
+      - name: Job service unit and integration mocks
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest discover -s tools/tests/jobs -p 'test_*.py' -v

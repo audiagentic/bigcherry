@@ -9,11 +9,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.experiment import contract as ec # noqa: E402
+from bigcherry.experiment import contract as ec  # noqa: E402
 
 
 def _write(text: str) -> Path:
-    handle = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8")
+    handle = tempfile.NamedTemporaryFile(
+        "w", suffix=".toml", delete=False, encoding="utf-8"
+    )
     with handle:
         handle.write(text)
     return Path(handle.name)
@@ -38,7 +40,10 @@ def _base_doc(**overrides: object) -> dict:
             "architectures": ["gfx1100", "gfx1201"],
             "weight_types": ["q8_0"],
         },
-        "positive": {"models": ["recipe/model"], "workloads": ["small_m", "mtp_verify"]},
+        "positive": {
+            "models": ["recipe/model"],
+            "workloads": ["small_m", "mtp_verify"],
+        },
         "controls": {"models": ["control-recipe"], "workloads": ["decode", "prefill"]},
         "boundary": {"dimensions": {"physical_m": [1, 2, 3, 4, 8, 16, 32, 64, 128]}},
         "correctness": {"backend_reference": "required", "greedy_parity": "required"},
@@ -57,7 +62,9 @@ class ParseContractTests(unittest.TestCase):
         contract = ec.parse_contract(_base_doc(), contract_id="RDNA-EXT-001")
         self.assertEqual(contract.id, "RDNA-EXT-001")
         self.assertEqual(contract.hypothesis.family, "mmq")
-        self.assertEqual(contract.correctness.required_checks, ("backend_reference", "greedy_parity"))
+        self.assertEqual(
+            contract.correctness.required_checks, ("backend_reference", "greedy_parity")
+        )
         self.assertEqual(
             contract.boundary.dimensions,
             (("physical_m", (1, 2, 3, 4, 8, 16, 32, 64, 128)),),
@@ -95,7 +102,9 @@ class ParseContractTests(unittest.TestCase):
     def test_missing_regression_budget_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = {"target_kernel_gain_pct": 5}
-        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "max_control_regression_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_correctness_only_contract_is_valid(self):
@@ -127,8 +136,10 @@ class ParseContractTests(unittest.TestCase):
         doc = _base_doc()
         doc["positive"] = {"models": ["shared-model"], "workloads": ["decode"]}
         doc["controls"] = {"models": ["shared-model"], "workloads": ["decode"]}
-        with self.assertRaisesRegex(ec.ExperimentContractError,
-                                    r"shared-model/decode.*BOTH positive and controls"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError,
+            r"shared-model/decode.*BOTH positive and controls",
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_partial_lane_overlap_rejected_naming_only_the_shared_lanes(self):
@@ -157,31 +168,41 @@ class ParseContractTests(unittest.TestCase):
     def test_negative_gain_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=-5)
-        with self.assertRaisesRegex(ec.ExperimentContractError, "target_kernel_gain_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "target_kernel_gain_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_negative_regression_budget_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = {"max_control_regression_pct": -1}
-        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "max_control_regression_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_nan_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=float("nan"))
-        with self.assertRaisesRegex(ec.ExperimentContractError, "target_kernel_gain_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "target_kernel_gain_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_infinite_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = {"max_control_regression_pct": float("inf")}
-        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "max_control_regression_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_negative_infinite_threshold_rejected(self):
         doc = _base_doc()
         doc["acceptance"] = {"max_control_regression_pct": float("-inf")}
-        with self.assertRaisesRegex(ec.ExperimentContractError, "max_control_regression_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "max_control_regression_pct"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
 
@@ -196,7 +217,9 @@ class TargetClassificationTests(unittest.TestCase):
 
     def test_legacy_shape_missing_hypothesis_family_rejected(self):
         doc = _base_doc()
-        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        doc["hypothesis"] = {
+            k: v for k, v in doc["hypothesis"].items() if k != "family"
+        }
         with self.assertRaisesRegex(ec.ExperimentContractError, "hypothesis.family"):
             ec.parse_contract(doc, contract_id="X")
 
@@ -222,7 +245,9 @@ class TargetClassificationTests(unittest.TestCase):
 
     def test_non_kernel_family_target_drops_hypothesis_family_requirement(self):
         doc = _base_doc()
-        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        doc["hypothesis"] = {
+            k: v for k, v in doc["hypothesis"].items() if k != "family"
+        }
         doc["target"] = {"kind": "attention"}
         contract = ec.parse_contract(doc, contract_id="X")
         self.assertEqual(contract.target.kind, "attention")
@@ -241,12 +266,16 @@ class TargetClassificationTests(unittest.TestCase):
         # hypothesis.family="mmq" is still present from _base_doc() -- must
         # be explicitly removed for a non-kernel_family target, not silently
         # ignored (that would let a contract carry conflicting classification).
-        with self.assertRaisesRegex(ec.ExperimentContractError, "hypothesis.family must be absent"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "hypothesis.family must be absent"
+        ):
             ec.parse_contract(doc, contract_id="X")
 
     def test_unknown_target_kind_rejected(self):
         doc = _base_doc()
-        doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+        doc["hypothesis"] = {
+            k: v for k, v in doc["hypothesis"].items() if k != "family"
+        }
         doc["target"] = {"kind": "not_a_real_kind"}
         with self.assertRaisesRegex(ec.ExperimentContractError, "target.kind"):
             ec.parse_contract(doc, contract_id="X")
@@ -258,7 +287,9 @@ class TargetClassificationTests(unittest.TestCase):
                 if kind == "kernel_family":
                     doc["target"] = {"kind": kind, "family": "mmq"}
                 else:
-                    doc["hypothesis"] = {k: v for k, v in doc["hypothesis"].items() if k != "family"}
+                    doc["hypothesis"] = {
+                        k: v for k, v in doc["hypothesis"].items() if k != "family"
+                    }
                     doc["target"] = {"kind": kind}
                 contract = ec.parse_contract(doc, contract_id="X")
                 self.assertEqual(contract.target.kind, kind)
@@ -272,6 +303,7 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
 
     def test_all_five_existing_contracts_still_parse(self):
         from bigcherry.core import paths as _paths
+
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
         expected = {
             "RD07-Q6K-MMQ-PREFILL-FOLD": "mmq",
@@ -287,20 +319,25 @@ class ExistingBackfilledContractsRegressionTests(unittest.TestCase):
                 self.assertEqual(contract.target.family, family)
                 self.assertEqual(contract.hypothesis.family, family)
 
-    def test_all_nineteen_contracts_in_the_real_registry_parse(self):
-        # EC17 regression proof: adding [source-evidence] as an optional
-        # section must not break any of the 5 original (EC02) or 12
-        # EC16-backfilled contracts already committed to
-        # config/experiment-contracts.toml, plus VA05's
-        # RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE (18th) and VA06's
-        # RD73-STABLE-GRAPH-CACHE-KEY (19th). GPT review
-        # (req_3616cc1d90dc4512): keep this an exact count, not a lower
-        # bound -- a >= assertion silently stops catching a contract that
-        # fails to load/register at all, which is exactly the regression
-        # this test exists to guard against.
+    def test_every_declared_contract_in_the_real_registry_loads(self):
+        # EC17 regression proof: every contract declared in
+        # config/experiment-contracts.toml must load into the registry. GPT
+        # review (req_3616cc1d90dc4512) required an exact check, not a lower
+        # bound, so a contract that silently fails to register is caught.
+        # The expected set is derived from the file itself (every
+        # [contract.<id>] table) instead of a hand-maintained count, so adding
+        # or retiring a contract needs no test edit, and a failure names the
+        # missing or unexpected contract IDs.
+        import tomllib
+
         from bigcherry.core import paths as _paths
+
+        declared = set(
+            tomllib.loads(_paths.EXPERIMENT_CONTRACTS.read_text(encoding="utf-8")).get("contract", {})
+        )
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
-        self.assertEqual(len(registry.contracts), 19)
+        self.assertTrue(declared, "no [contract.*] tables found")
+        self.assertEqual(set(registry.contracts), declared)
 
 
 class SourceEvidenceTests(unittest.TestCase):
@@ -315,8 +352,10 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_source_evidence_parses_when_present(self):
         doc = _base_doc()
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 7.4,
-            "hardware": "gfx1151", "workload": "Qwen3.6-35B-A3B Q4_K_M",
+            "metric": "tg128",
+            "value_pct": 7.4,
+            "hardware": "gfx1151",
+            "workload": "Qwen3.6-35B-A3B Q4_K_M",
         }
         contract = ec.parse_contract(doc, contract_id="X")
         self.assertIsNotNone(contract.source_evidence)
@@ -328,8 +367,11 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_source_evidence_unknown_field_rejected(self):
         doc = _base_doc()
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 7.4, "hardware": "gfx1151",
-            "workload": "w", "bogus": "x",
+            "metric": "tg128",
+            "value_pct": 7.4,
+            "hardware": "gfx1151",
+            "workload": "w",
+            "bogus": "x",
         }
         with self.assertRaisesRegex(ec.ExperimentContractError, "bogus"):
             ec.parse_contract(doc, contract_id="X")
@@ -337,8 +379,10 @@ class SourceEvidenceTests(unittest.TestCase):
     def test_source_evidence_non_finite_value_rejected(self):
         doc = _base_doc()
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": float("nan"),
-            "hardware": "gfx1151", "workload": "w",
+            "metric": "tg128",
+            "value_pct": float("nan"),
+            "hardware": "gfx1151",
+            "workload": "w",
         }
         with self.assertRaises(ec.ExperimentContractError):
             ec.parse_contract(doc, contract_id="X")
@@ -349,8 +393,10 @@ class SourceEvidenceTests(unittest.TestCase):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=10)
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 5.0,
-            "hardware": "gfx1100", "workload": "w",
+            "metric": "tg128",
+            "value_pct": 5.0,
+            "hardware": "gfx1100",
+            "workload": "w",
         }
         contract = ec.parse_contract(doc, contract_id="X")
         warning = ec.source_evidence_mismatch_warning(contract)
@@ -361,8 +407,10 @@ class SourceEvidenceTests(unittest.TestCase):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=1)
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 10.0,
-            "hardware": "gfx1100", "workload": "w",
+            "metric": "tg128",
+            "value_pct": 10.0,
+            "hardware": "gfx1100",
+            "workload": "w",
         }
         contract = ec.parse_contract(doc, contract_id="X")
         warning = ec.source_evidence_mismatch_warning(contract)
@@ -373,8 +421,10 @@ class SourceEvidenceTests(unittest.TestCase):
         doc = _base_doc()
         doc["acceptance"] = dict(doc["acceptance"], target_kernel_gain_pct=4)
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 5.0,
-            "hardware": "gfx1100", "workload": "w",
+            "metric": "tg128",
+            "value_pct": 5.0,
+            "hardware": "gfx1100",
+            "workload": "w",
         }
         contract = ec.parse_contract(doc, contract_id="X")
         self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
@@ -384,8 +434,10 @@ class SourceEvidenceTests(unittest.TestCase):
         doc = _base_doc()
         doc["acceptance"] = {"max_control_regression_pct": 1}
         doc["source-evidence"] = {
-            "metric": "tg128", "value_pct": 5.0,
-            "hardware": "gfx1100", "workload": "w",
+            "metric": "tg128",
+            "value_pct": 5.0,
+            "hardware": "gfx1100",
+            "workload": "w",
         }
         contract = ec.parse_contract(doc, contract_id="X")
         self.assertIsNone(ec.source_evidence_mismatch_warning(contract))
@@ -395,6 +447,7 @@ class SourceEvidenceTests(unittest.TestCase):
         # were set to the SAME real documented number (~+0.6% decode) --
         # must not spuriously warn.
         from bigcherry.core import paths as _paths
+
         registry = ec.load_contracts(_paths.EXPERIMENT_CONTRACTS)
         contract = registry["RD21-GFX1151-MMVQ-NWARPS"]
         self.assertIsNotNone(contract.source_evidence)
@@ -482,11 +535,13 @@ max_control_regression_pct = 1
 
     def test_known_source_id_accepted(self):
         path = _write(self.TOML)
-        registry = ec.load_contracts(path, known_source_ids=frozenset({"stew675-rdna-boosts"}))
+        registry = ec.load_contracts(
+            path, known_source_ids=frozenset({"stew675-rdna-boosts"})
+        )
         self.assertEqual(len(registry), 1)
 
     def test_unknown_top_level_field_rejected(self):
-        path = _write('bogus = true\n' + self.TOML)
+        path = _write("bogus = true\n" + self.TOML)
         with self.assertRaisesRegex(ec.ExperimentContractError, "bogus"):
             ec.load_contracts(path)
 
@@ -581,6 +636,7 @@ max_control_regression_pct = 1
         # registry (EC02's backfill populates it with real [contract.*]
         # entries; this stays true before and after that population).
         from bigcherry.core import paths
+
         registry = ec.load_contracts(
             paths.EXPERIMENT_CONTRACTS,
             known_source_ids=ec.known_source_ids_from_external_sources(),
@@ -614,12 +670,15 @@ active = true
         with self.assertRaises(ec.ExperimentContractError):
             ec.known_source_ids_from_external_sources("/no/such/external-sources.toml")
 
-    def test_load_contracts_rejects_shipped_registry_against_real_sources_if_broken(self):
+    def test_load_contracts_rejects_shipped_registry_against_real_sources_if_broken(
+        self,
+    ):
         # Cross-checking the shipped registry (used above) proves the two
         # files stay mutually consistent -- this test documents *why*:
         # a contract citing a source_id that isn't registered would be
         # caught here, not silently accepted.
         from bigcherry.core import paths
+
         registry = ec.load_contracts(
             paths.EXPERIMENT_CONTRACTS,
             known_source_ids=ec.known_source_ids_from_external_sources(),
@@ -698,8 +757,11 @@ mtp = false
             ec.known_model_ids_from_models_registry("/no/such/models.toml")
 
     def test_unregistered_positive_model_rejected(self):
-        path = _write(_MODEL_CHECK_TOML.format(
-            positive="no-such-model", controls="tierA-qwen4b-q6k"))
+        path = _write(
+            _MODEL_CHECK_TOML.format(
+                positive="no-such-model", controls="tierA-qwen4b-q6k"
+            )
+        )
         with self.assertRaises(ec.ExperimentContractError) as caught:
             ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
         self.assertIn("no-such-model", str(caught.exception))
@@ -708,8 +770,11 @@ mtp = false
     def test_unregistered_control_model_rejected(self):
         # Controls matter as much as positives: an unresolvable control lane
         # means the regression budget is measured against nothing.
-        path = _write(_MODEL_CHECK_TOML.format(
-            positive="tierA-qwen4b-q6k", controls="no-such-model"))
+        path = _write(
+            _MODEL_CHECK_TOML.format(
+                positive="tierA-qwen4b-q6k", controls="no-such-model"
+            )
+        )
         with self.assertRaises(ec.ExperimentContractError) as caught:
             ec.load_contracts(path, known_model_ids=frozenset({"tierA-qwen4b-q6k"}))
         self.assertIn("controls", str(caught.exception))
@@ -717,12 +782,16 @@ mtp = false
     def test_check_is_opt_in_and_skipped_when_not_requested(self):
         # Callers building a contract in isolation must not be forced to
         # maintain a models.toml fixture -- same contract as the source-id check.
-        path = _write(_MODEL_CHECK_TOML.format(
-            positive="anything-at-all", controls="tierA-qwen4b-q6k"))
+        path = _write(
+            _MODEL_CHECK_TOML.format(
+                positive="anything-at-all", controls="tierA-qwen4b-q6k"
+            )
+        )
         self.assertEqual(len(ec.load_contracts(path)), 1)
 
     def test_shipped_registry_cross_checks_clean(self):
         from bigcherry.core import paths
+
         known = ec.known_model_ids_from_models_registry()
         registry = ec.load_contracts(paths.EXPERIMENT_CONTRACTS, known_model_ids=known)
         for contract in registry:
@@ -840,8 +909,16 @@ class ImprovementNoRegressionPolicyTests(unittest.TestCase):
 
     CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
 
-    def _gate(self, *, low, high, sessions=5, regression=0.0, regression_high=0.0,
-              contract=None):
+    def _gate(
+        self,
+        *,
+        low,
+        high,
+        sessions=5,
+        regression=0.0,
+        regression_high=0.0,
+        contract=None,
+    ):
         return ec.evaluate_promotion_gate(
             contract or _asymmetric_contract(),
             correctness_gate=self.CORRECTNESS,
@@ -882,13 +959,17 @@ class ImprovementNoRegressionPolicyTests(unittest.TestCase):
         # If the rig systematically reads +0.4%, a +0.3% "win" is an artifact.
         contract = _asymmetric_contract(min_evidence_effect_pct=0.4)
         self.assertEqual(
-            self._gate(low=0.3, high=0.9, contract=contract)["status"], "fail")
+            self._gate(low=0.3, high=0.9, contract=contract)["status"], "fail"
+        )
         self.assertEqual(
-            self._gate(low=0.5, high=1.1, contract=contract)["status"], "pass")
+            self._gate(low=0.5, high=1.1, contract=contract)["status"], "pass"
+        )
 
     def test_regression_over_budget_fails_however_good_the_gain(self):
         self.assertEqual(
-            self._gate(low=3.0, high=4.0, regression=2.0, regression_high=2.0)["status"],
+            self._gate(low=3.0, high=4.0, regression=2.0, regression_high=2.0)[
+                "status"
+            ],
             "fail",
         )
 
@@ -905,7 +986,8 @@ class ImprovementNoRegressionPolicyTests(unittest.TestCase):
 
     def test_missing_session_count_is_invalid(self):
         result = ec.evaluate_promotion_gate(
-            _asymmetric_contract(), correctness_gate=self.CORRECTNESS,
+            _asymmetric_contract(),
+            correctness_gate=self.CORRECTNESS,
             aggregated_effects={
                 "end_to_end_gain_pct": 1.5,
                 "end_to_end_gain_pct_ci95_low": 1.2,
@@ -951,15 +1033,25 @@ class AggregateSessionEffectsTests(unittest.TestCase):
     def _record(self, *percents, role="positive", metric=None, arch="gfx1100"):
         # Real records carry gpu_architectures; the aggregator filters on it,
         # so a fixture without one is not a realistic record.
-        return {"gpu_architectures": [arch], "lane_effects": [{
-            "role": role, "metric": metric or self.METRIC,
-            "pair_ratios": [1.0 + pct / 100.0 for pct in percents],
-        }]}
+        return {
+            "gpu_architectures": [arch],
+            "lane_effects": [
+                {
+                    "role": role,
+                    "metric": metric or self.METRIC,
+                    "pair_ratios": [1.0 + pct / 100.0 for pct in percents],
+                }
+            ],
+        }
 
     def _aggregate(self, records):
         return ec.aggregate_session_effects(
-            records, field="gain", role="positive", metric=self.METRIC,
-            architectures=["gfx1100"])
+            records,
+            field="gain",
+            role="positive",
+            metric=self.METRIC,
+            architectures=["gfx1100"],
+        )
 
     def test_reports_session_count_even_when_it_cannot_estimate(self):
         # The gate must be able to say how many were found and how many more
@@ -987,20 +1079,29 @@ class AggregateSessionEffectsTests(unittest.TestCase):
         # Counting it as zero-effect would quietly drag the estimate toward
         # zero while looking like more evidence.
         records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
-        with_empty = records + [{"gpu_architectures": ["gfx1100"], "lane_effects": []}, {}]
+        with_empty = records + [
+            {"gpu_architectures": ["gfx1100"], "lane_effects": []},
+            {},
+        ]
         self.assertEqual(
             self._aggregate(with_empty)["gain_sessions"],
             self._aggregate(records)["gain_sessions"],
         )
         self.assertAlmostEqual(
-            self._aggregate(with_empty)["gain"], self._aggregate(records)["gain"], places=9
+            self._aggregate(with_empty)["gain"],
+            self._aggregate(records)["gain"],
+            places=9,
         )
 
     def test_every_valid_session_contributes_regardless_of_order(self):
         # Selecting or reordering sessions is exactly what the frozen re-run
         # policy forbids, so the estimate must not depend on it.
-        records = [self._record(3.0, 2.0), self._record(0.5, 0.2),
-                   self._record(1.5, 1.0), self._record(2.5, 2.0)]
+        records = [
+            self._record(3.0, 2.0),
+            self._record(0.5, 0.2),
+            self._record(1.5, 1.0),
+            self._record(2.5, 2.0),
+        ]
         forward = self._aggregate(records)
         backward = self._aggregate(list(reversed(records)))
         self.assertEqual(forward["gain_sessions"], backward["gain_sessions"])
@@ -1016,19 +1117,29 @@ class AggregateSessionEffectsTests(unittest.TestCase):
         gfx1100 = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
         gfx1201 = [self._record(40.0, 40.0, arch="gfx1201") for _ in range(3)]
         result = ec.aggregate_session_effects(
-            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
-            architectures=["gfx1100"])
+            gfx1100 + gfx1201,
+            field="gain",
+            role="positive",
+            metric=self.METRIC,
+            architectures=["gfx1100"],
+        )
         self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
         # ~2%, not dragged toward the 40% foreign sessions.
         self.assertAlmostEqual(result["gain"], 2.0, delta=0.05)
 
     def test_the_other_architecture_aggregates_on_its_own(self):
         gfx1100 = [self._record(2.0, 2.0) for _ in range(3)]
-        gfx1201 = [self._record(5.0, 5.0, arch="gfx1201")
-                   for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
+        gfx1201 = [
+            self._record(5.0, 5.0, arch="gfx1201")
+            for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)
+        ]
         result = ec.aggregate_session_effects(
-            gfx1100 + gfx1201, field="gain", role="positive", metric=self.METRIC,
-            architectures=["gfx1201"])
+            gfx1100 + gfx1201,
+            field="gain",
+            role="positive",
+            metric=self.METRIC,
+            architectures=["gfx1201"],
+        )
         self.assertEqual(result["gain_sessions"], ec.MIN_BOOTSTRAP_SESSIONS)
         self.assertAlmostEqual(result["gain"], 5.0, delta=0.05)
 
@@ -1036,36 +1147,57 @@ class AggregateSessionEffectsTests(unittest.TestCase):
         # Pre-RV99 records carry no lane_effects anyway, but a record whose
         # hardware is unknown must never be assumed to match.
         records = [self._record(2.0, 2.0) for _ in range(ec.MIN_BOOTSTRAP_SESSIONS)]
-        unknown = {"lane_effects": [{
-            "role": "positive", "metric": self.METRIC, "pair_ratios": [1.4, 1.4]}]}
+        unknown = {
+            "lane_effects": [
+                {"role": "positive", "metric": self.METRIC, "pair_ratios": [1.4, 1.4]}
+            ]
+        }
         self.assertEqual(
             ec.aggregate_session_effects(
-                records + [unknown], field="gain", role="positive",
-                metric=self.METRIC, architectures=["gfx1100"])["gain_sessions"],
+                records + [unknown],
+                field="gain",
+                role="positive",
+                metric=self.METRIC,
+                architectures=["gfx1100"],
+            )["gain_sessions"],
             ec.MIN_BOOTSTRAP_SESSIONS,
         )
 
     def test_empty_architecture_filter_is_rejected(self):
         with self.assertRaises(ec.ExperimentContractError):
             ec.aggregate_session_effects(
-                [self._record(2.0)], field="gain", role="positive",
-                metric=self.METRIC, architectures=[])
+                [self._record(2.0)],
+                field="gain",
+                role="positive",
+                metric=self.METRIC,
+                architectures=[],
+            )
 
     def test_result_feeds_the_session_gate_directly(self):
         # The aggregator's output keys must be exactly what the stopping rule
         # reads -- otherwise the two halves never meet.
         records = [self._record(2.0, 1.8) for _ in range(5)]
         aggregated = ec.aggregate_session_effects(
-            records, field="end_to_end_gain_pct", role="positive", metric=self.METRIC,
-            architectures=["gfx1100"])
-        aggregated.update({
-            "max_control_regression_pct": 0.0,
-            "max_control_regression_pct_ci95_high": 0.0,
-            "max_control_regression_pct_paired_rounds": 10,
-        })
+            records,
+            field="end_to_end_gain_pct",
+            role="positive",
+            metric=self.METRIC,
+            architectures=["gfx1100"],
+        )
+        aggregated.update(
+            {
+                "max_control_regression_pct": 0.0,
+                "max_control_regression_pct_ci95_high": 0.0,
+                "max_control_regression_pct_paired_rounds": 10,
+            }
+        )
         result = ec.evaluate_promotion_gate(
             _session_contract(end_to_end_gain_pct=0.5),
-            correctness_gate={"passed": True, "missing_checks": [], "failed_checks": []},
+            correctness_gate={
+                "passed": True,
+                "missing_checks": [],
+                "failed_checks": [],
+            },
             aggregated_effects=aggregated,
         )
         self.assertIn(result["status"], {"pass", "fail"})  # decided, not invalid
@@ -1090,9 +1222,12 @@ class SessionEvidencePolicyParsingTests(unittest.TestCase):
         for missing in ("min_sessions", "max_sessions", "max_ci95_width_pct"):
             with self.subTest(missing=missing):
                 acceptance = {
-                    "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
+                    "end_to_end_gain_pct": 1.0,
+                    "max_control_regression_pct": 1.0,
                     "effect_evidence_policy": "session_ci95_threshold_bound_v1",
-                    "min_paired_rounds": 10, "min_sessions": 4, "max_sessions": 8,
+                    "min_paired_rounds": 10,
+                    "min_sessions": 4,
+                    "max_sessions": 8,
                     "max_ci95_width_pct": 1.0,
                 }
                 del acceptance[missing]
@@ -1113,10 +1248,13 @@ class SessionEvidencePolicyParsingTests(unittest.TestCase):
         # A declared-but-unconsulted stopping rule is worse than none: it
         # reads as though the run was governed when nothing enforced it.
         with self.assertRaises(ec.ExperimentContractError) as caught:
-            _minimal_contract(acceptance={
-                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
-                "min_sessions": 4,
-            })
+            _minimal_contract(
+                acceptance={
+                    "end_to_end_gain_pct": 1.0,
+                    "max_control_regression_pct": 1.0,
+                    "min_sessions": 4,
+                }
+            )
         self.assertIn("min_sessions", str(caught.exception))
 
     def test_valid_session_contract_parses(self):
@@ -1193,7 +1331,8 @@ class SessionStoppingRuleGateTests(unittest.TestCase):
 
     def test_missing_session_count_is_invalid(self):
         result = ec.evaluate_promotion_gate(
-            _session_contract(), correctness_gate=self.CORRECTNESS,
+            _session_contract(),
+            correctness_gate=self.CORRECTNESS,
             aggregated_effects={
                 "end_to_end_gain_pct": 1.5,
                 "end_to_end_gain_pct_ci95_low": 1.2,
@@ -1215,7 +1354,11 @@ def _minimal_contract(**overrides) -> ec.ExperimentContract:
     doc = {
         "title": "t",
         "source": {"source_id": "s", "commits": ["c"], "atomic_part": "p"},
-        "hypothesis": {"family": "mmq", "expected_effect": "performance", "rationale": "r"},
+        "hypothesis": {
+            "family": "mmq",
+            "expected_effect": "performance",
+            "rationale": "r",
+        },
         "scope": {"backend": "hip", "architectures": ["gfx1100"]},
         "positive": {"models": ["m"], "workloads": ["decode"]},
         # Deliberately a different workload from the positive lane: a lane
@@ -1230,14 +1373,19 @@ def _minimal_contract(**overrides) -> ec.ExperimentContract:
 
 class EvidenceBindingTests(unittest.TestCase):
     FAKE_PROVENANCE = {
-        "schema_version": 2, "project": {}, "source": {}, "build": {},
-        "workload": {}, "campaign": {},
+        "schema_version": 2,
+        "project": {},
+        "source": {},
+        "build": {},
+        "workload": {},
+        "campaign": {},
     }
 
     def test_evidence_ref_carries_contract_identity_not_runtime_identity(self):
         contract = _minimal_contract()
         evidence = ec.evidence_ref_for_lane(
-            contract, role="positive", workload_tag="decode", model_ref="m")
+            contract, role="positive", workload_tag="decode", model_ref="m"
+        )
         self.assertEqual(evidence.contract_id, "X")
         self.assertEqual(evidence.contract_hash, contract.contract_hash)
         self.assertEqual(evidence.optimization_id, "p")
@@ -1249,7 +1397,9 @@ class EvidenceBindingTests(unittest.TestCase):
 
     def test_attach_does_not_mutate_or_overwrite_caller_document(self):
         contract = _minimal_contract()
-        evidence = ec.evidence_ref_for_lane(contract, role="control", workload_tag="decode")
+        evidence = ec.evidence_ref_for_lane(
+            contract, role="control", workload_tag="decode"
+        )
         original = dict(self.FAKE_PROVENANCE)
         attached = ec.attach_to_document(original, evidence)
         self.assertEqual(original, self.FAKE_PROVENANCE)  # untouched
@@ -1261,8 +1411,12 @@ class EvidenceBindingTests(unittest.TestCase):
 
     def test_double_attach_rejected(self):
         contract = _minimal_contract()
-        evidence = ec.evidence_ref_for_lane(contract, role="boundary", boundary_dimension="physical_m",
-                                            boundary_value="4")
+        evidence = ec.evidence_ref_for_lane(
+            contract,
+            role="boundary",
+            boundary_dimension="physical_m",
+            boundary_value="4",
+        )
         attached = ec.attach_to_document(dict(self.FAKE_PROVENANCE), evidence)
         with self.assertRaisesRegex(ec.ExperimentContractError, "contract_evidence"):
             ec.attach_to_document(attached, evidence)
@@ -1270,7 +1424,11 @@ class EvidenceBindingTests(unittest.TestCase):
     def test_read_from_document_round_trips(self):
         contract = _minimal_contract()
         evidence = ec.evidence_ref_for_lane(
-            contract, role="boundary", boundary_dimension="physical_m", boundary_value="8")
+            contract,
+            role="boundary",
+            boundary_dimension="physical_m",
+            boundary_value="8",
+        )
         attached = ec.attach_to_document(dict(self.FAKE_PROVENANCE), evidence)
         readback = ec.read_from_document(attached)
         self.assertEqual(readback, evidence)
@@ -1334,17 +1492,38 @@ class AggregateContractEffectsTests(unittest.TestCase):
         self.assertEqual(result["target_kernel_gain_pct"], 5.0)
         self.assertEqual(result["max_control_regression_pct"], 2.0)
 
-    def test_missing_positive_effects_rejected(self):
-        contract = _minimal_contract()
+    def test_missing_positive_effects_rejected_when_gain_claimed(self):
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+        # a contract that DOES declare a gain threshold still requires a
+        # positive lane (an empty set is not evidence of a gain).
+        contract = _minimal_contract(
+            acceptance={"max_control_regression_pct": 1, "target_kernel_gain_pct": 3.0}
+        )
         effects = [ec.LaneEffect(role="control", metric="tg", geometric_effect_pct=1.0)]
         with self.assertRaisesRegex(ec.ExperimentContractError, "positive"):
             ec.aggregate_contract_effects(contract, effects, target_metric="tg")
+
+    def test_control_only_valid_when_no_gain_claimed(self):
+        # RD58 (PA36 migration #4, dev-gpt-agent req_82fbbafe52c0472d Q6):
+        # a contract that declares NO gain threshold (both gain fields
+        # None) legally has only a control lane -- it promotes on the
+        # correctness gate + the regression budget alone, so an empty
+        # positive_target is valid there.
+        contract = _minimal_contract()
+        effects = [
+            ec.LaneEffect(role="control", metric="tg", geometric_effect_pct=-2.0)
+        ]
+        result = ec.aggregate_contract_effects(contract, effects, target_metric="tg")
+        self.assertIsNone(result["target_kernel_gain_pct"])
+        self.assertEqual(result["max_control_regression_pct"], 2.0)
 
     def test_missing_control_effects_rejected_not_reported_as_zero(self):
         # The whole point: an empty control set must never silently read
         # as "no regression" (0.0) -- it must fail loudly instead.
         contract = _minimal_contract()
-        effects = [ec.LaneEffect(role="positive", metric="tg", geometric_effect_pct=5.0)]
+        effects = [
+            ec.LaneEffect(role="positive", metric="tg", geometric_effect_pct=5.0)
+        ]
         with self.assertRaisesRegex(ec.ExperimentContractError, "control"):
             ec.aggregate_contract_effects(contract, effects, target_metric="tg")
 
@@ -1360,30 +1539,38 @@ class AggregateContractEffectsTests(unittest.TestCase):
     def test_end_to_end_metric_when_named_separately(self):
         contract = _minimal_contract()
         effects = [
-            ec.LaneEffect(role="positive", metric="kernel_us", geometric_effect_pct=20.0),
+            ec.LaneEffect(
+                role="positive", metric="kernel_us", geometric_effect_pct=20.0
+            ),
             ec.LaneEffect(role="positive", metric="pp512", geometric_effect_pct=1.5),
             ec.LaneEffect(role="control", metric="kernel_us", geometric_effect_pct=0.0),
         ]
         result = ec.aggregate_contract_effects(
-            contract, effects, target_metric="kernel_us", end_to_end_metric="pp512")
+            contract, effects, target_metric="kernel_us", end_to_end_metric="pp512"
+        )
         self.assertEqual(result["target_kernel_gain_pct"], 20.0)
         self.assertEqual(result["end_to_end_gain_pct"], 1.5)
 
     def test_end_to_end_gain_is_none_when_metric_never_measured(self):
         contract = _minimal_contract()
         effects = [
-            ec.LaneEffect(role="positive", metric="kernel_us", geometric_effect_pct=20.0),
+            ec.LaneEffect(
+                role="positive", metric="kernel_us", geometric_effect_pct=20.0
+            ),
             ec.LaneEffect(role="control", metric="kernel_us", geometric_effect_pct=0.0),
         ]
         result = ec.aggregate_contract_effects(
-            contract, effects, target_metric="kernel_us", end_to_end_metric="pp512")
+            contract, effects, target_metric="kernel_us", end_to_end_metric="pp512"
+        )
         self.assertIsNone(result["end_to_end_gain_pct"])
 
 
 class CorrectnessGateTests(unittest.TestCase):
     def test_passes_when_every_required_check_passes(self):
         contract = _minimal_contract(correctness={"greedy_parity": "required"})
-        results = {"greedy_parity": ec.CorrectnessResult(check="greedy_parity", passed=True)}
+        results = {
+            "greedy_parity": ec.CorrectnessResult(check="greedy_parity", passed=True)
+        }
         gate = ec.evaluate_correctness_gate(contract, results)
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["missing_checks"], [])
@@ -1391,15 +1578,22 @@ class CorrectnessGateTests(unittest.TestCase):
 
     def test_fails_when_a_required_check_is_missing(self):
         contract = _minimal_contract(
-            correctness={"greedy_parity": "required", "bit_identical": "required"})
-        results = {"greedy_parity": ec.CorrectnessResult(check="greedy_parity", passed=True)}
+            correctness={"greedy_parity": "required", "bit_identical": "required"}
+        )
+        results = {
+            "greedy_parity": ec.CorrectnessResult(check="greedy_parity", passed=True)
+        }
         gate = ec.evaluate_correctness_gate(contract, results)
         self.assertFalse(gate["passed"])
         self.assertEqual(gate["missing_checks"], ["bit_identical"])
 
     def test_fails_when_a_required_check_failed(self):
         contract = _minimal_contract(correctness={"greedy_parity": "required"})
-        results = {"greedy_parity": ec.CorrectnessResult(check="greedy_parity", passed=False, detail="diverged")}
+        results = {
+            "greedy_parity": ec.CorrectnessResult(
+                check="greedy_parity", passed=False, detail="diverged"
+            )
+        }
         gate = ec.evaluate_correctness_gate(contract, results)
         self.assertFalse(gate["passed"])
         self.assertEqual(gate["failed_checks"], ["greedy_parity"])
@@ -1423,10 +1617,15 @@ class CorrectnessGateTests(unittest.TestCase):
 class GeneralisationHandoffTests(unittest.TestCase):
     def test_floor_matches_generalise_py_required_thresholds(self):
         from bigcherry import generalise
-        self.assertEqual(ec.generalisation_floor(), dict(generalise.REQUIRED_THRESHOLDS))
+
+        self.assertEqual(
+            ec.generalisation_floor(), dict(generalise.REQUIRED_THRESHOLDS)
+        )
 
     def test_none_returns_the_floor_unchanged(self):
-        self.assertEqual(ec.require_generalisation_policy(None), ec.generalisation_floor())
+        self.assertEqual(
+            ec.require_generalisation_policy(None), ec.generalisation_floor()
+        )
 
     def test_stricter_min_threshold_accepted(self):
         floor = ec.generalisation_floor()
@@ -1438,7 +1637,9 @@ class GeneralisationHandoffTests(unittest.TestCase):
         floor = ec.generalisation_floor()
         stricter = {"max_median_regret_pct": floor["max_median_regret_pct"] / 2}
         result = ec.require_generalisation_policy(stricter)
-        self.assertEqual(result["max_median_regret_pct"], floor["max_median_regret_pct"] / 2)
+        self.assertEqual(
+            result["max_median_regret_pct"], floor["max_median_regret_pct"] / 2
+        )
 
     def test_looser_min_threshold_rejected(self):
         floor = ec.generalisation_floor()
@@ -1449,12 +1650,16 @@ class GeneralisationHandoffTests(unittest.TestCase):
     def test_looser_max_threshold_rejected(self):
         floor = ec.generalisation_floor()
         looser = {"max_median_regret_pct": floor["max_median_regret_pct"] + 1}
-        with self.assertRaisesRegex(ec.ExperimentContractError, "max_median_regret_pct"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "max_median_regret_pct"
+        ):
             ec.require_generalisation_policy(looser)
 
     def test_partial_override_keeps_other_thresholds_at_floor(self):
         floor = ec.generalisation_floor()
-        result = ec.require_generalisation_policy({"min_holdout_calls": floor["min_holdout_calls"] + 1})
+        result = ec.require_generalisation_policy(
+            {"min_holdout_calls": floor["min_holdout_calls"] + 1}
+        )
         for name, value in floor.items():
             if name == "min_holdout_calls":
                 continue
@@ -1463,16 +1668,22 @@ class GeneralisationHandoffTests(unittest.TestCase):
 
 class TriggerEvidenceTests(unittest.TestCase):
     def test_requires_at_least_one_count_field(self):
-        with self.assertRaisesRegex(ec.ExperimentContractError, "candidate_launches.*expected_route_selected"):
+        with self.assertRaisesRegex(
+            ec.ExperimentContractError, "candidate_launches.*expected_route_selected"
+        ):
             ec.TriggerEvidence(role="positive", lane_id="lane-a")
 
     def test_accepts_launches_only(self):
-        evidence = ec.TriggerEvidence(role="positive", lane_id="lane-a", candidate_launches=5)
+        evidence = ec.TriggerEvidence(
+            role="positive", lane_id="lane-a", candidate_launches=5
+        )
         self.assertEqual(evidence.candidate_launches, 5)
         self.assertIsNone(evidence.expected_route_selected)
 
     def test_accepts_route_selected_only(self):
-        evidence = ec.TriggerEvidence(role="positive", lane_id="lane-a", expected_route_selected=3)
+        evidence = ec.TriggerEvidence(
+            role="positive", lane_id="lane-a", expected_route_selected=3
+        )
         self.assertEqual(evidence.expected_route_selected, 3)
 
     def test_rejects_negative_launches(self):
@@ -1481,7 +1692,9 @@ class TriggerEvidenceTests(unittest.TestCase):
 
     def test_rejects_bool_as_launches(self):
         with self.assertRaisesRegex(ec.ExperimentContractError, "non-negative"):
-            ec.TriggerEvidence(role="positive", lane_id="lane-a", candidate_launches=True)
+            ec.TriggerEvidence(
+                role="positive", lane_id="lane-a", candidate_launches=True
+            )
 
 
 class TriggerProofTests(unittest.TestCase):
@@ -1497,15 +1710,21 @@ class TriggerProofTests(unittest.TestCase):
         self.assertEqual(result["untriggered_lanes"], [])
 
     def test_passes_via_route_selected_alone(self):
-        evidence = [ec.TriggerEvidence(role="positive", lane_id="a", expected_route_selected=2)]
+        evidence = [
+            ec.TriggerEvidence(role="positive", lane_id="a", expected_route_selected=2)
+        ]
         result = ec.evaluate_trigger_proof(evidence)
         self.assertTrue(result["passed"])
 
     def test_fails_when_a_positive_lane_has_zero_launches_and_zero_routes(self):
         evidence = [
             ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10),
-            ec.TriggerEvidence(role="positive", lane_id="b", candidate_launches=0,
-                                expected_route_selected=0),
+            ec.TriggerEvidence(
+                role="positive",
+                lane_id="b",
+                candidate_launches=0,
+                expected_route_selected=0,
+            ),
         ]
         result = ec.evaluate_trigger_proof(evidence)
         self.assertFalse(result["passed"])
@@ -1540,16 +1759,30 @@ class TriggerProofTests(unittest.TestCase):
 
 class PromotionGateTests(unittest.TestCase):
     PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
-    FAILING_CORRECTNESS = {"passed": False, "missing_checks": ["greedy_parity"], "failed_checks": []}
+    FAILING_CORRECTNESS = {
+        "passed": False,
+        "missing_checks": ["greedy_parity"],
+        "failed_checks": [],
+    }
 
     def test_performance_contract_promotes_when_all_thresholds_met(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1, "max_control_regression_pct": 1,
-        })
-        effects = {"target_kernel_gain_pct": 6.0, "end_to_end_gain_pct": 1.5,
-                   "max_control_regression_pct": 0.5}
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 5,
+                "end_to_end_gain_pct": 1,
+                "max_control_regression_pct": 1,
+            }
+        )
+        effects = {
+            "target_kernel_gain_pct": 6.0,
+            "end_to_end_gain_pct": 1.5,
+            "max_control_regression_pct": 0.5,
+        }
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["reasons"], [])
 
@@ -1562,15 +1795,31 @@ class PromotionGateTests(unittest.TestCase):
         from E_ci95_high. Using the effect's upper bound would report the most
         OPTIMISTIC case as the worst case.
         """
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
-                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=2.0,
+                ci95_low_pct=1.5,
+                ci95_high_pct=2.5,
+                paired_rounds=10,
+            ),
             # effect CI [-0.9, +0.4] -> worst plausible regression is 0.9,
             # which comes from the LOW end. Taking the high end would give 0.0.
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
-                          ci95_low_pct=-0.9, ci95_high_pct=0.4, paired_rounds=10),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=-0.2,
+                ci95_low_pct=-0.9,
+                ci95_high_pct=0.4,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertAlmostEqual(agg["max_control_regression_pct_ci95_high"], 0.9)
@@ -1579,15 +1828,37 @@ class PromotionGateTests(unittest.TestCase):
         """Independent per-lane 95% bounds are not a 95% FAMILY guarantee, and
         no contract in the registry exercises K>1 yet, so the correction is
         deliberately unimplemented rather than untested-and-shipped."""
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
-                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c1", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c2", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=2.0,
+                ci95_low_pct=1.5,
+                ci95_high_pct=2.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c1",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.3,
+                ci95_high_pct=0.3,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c2",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.3,
+                ci95_high_pct=0.3,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertNotIn("max_control_regression_pct_ci95_high", agg)
@@ -1595,19 +1866,41 @@ class PromotionGateTests(unittest.TestCase):
     def test_multi_positive_bootstraps_the_fixed_composite_mean(self):
         """Two fixed positive lanes now yield an aggregate interval, computed
         by resampling WITHIN each lane -- never resampling lane identity."""
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
-        lane_a = tuple([1.03] * 10)   # ~+3%
-        lane_b = tuple([1.01] * 10)   # ~+1%
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
+        lane_a = tuple([1.03] * 10)  # ~+3%
+        lane_b = tuple([1.01] * 10)  # ~+1%
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
-                          ci95_low_pct=3.0, ci95_high_pct=3.0, paired_rounds=10,
-                          pair_ratios=lane_a),
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
-                          ci95_low_pct=1.0, ci95_high_pct=1.0, paired_rounds=10,
-                          pair_ratios=lane_b),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=3.0,
+                ci95_low_pct=3.0,
+                ci95_high_pct=3.0,
+                paired_rounds=10,
+                pair_ratios=lane_a,
+            ),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.0,
+                ci95_low_pct=1.0,
+                ci95_high_pct=1.0,
+                paired_rounds=10,
+                pair_ratios=lane_b,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.2,
+                ci95_high_pct=0.2,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertIn("target_kernel_gain_pct_ci95_low", agg)
@@ -1617,31 +1910,75 @@ class PromotionGateTests(unittest.TestCase):
         self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 10)
 
     def test_multi_positive_rounds_is_the_weakest_contributor(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
-                          ci95_low_pct=3.0, ci95_high_pct=3.0, paired_rounds=10,
-                          pair_ratios=tuple([1.03] * 10)),
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
-                          ci95_low_pct=1.0, ci95_high_pct=1.0, paired_rounds=4,
-                          pair_ratios=tuple([1.01] * 4)),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=3.0,
+                ci95_low_pct=3.0,
+                ci95_high_pct=3.0,
+                paired_rounds=10,
+                pair_ratios=tuple([1.03] * 10),
+            ),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.0,
+                ci95_low_pct=1.0,
+                ci95_high_pct=1.0,
+                paired_rounds=4,
+                pair_ratios=tuple([1.01] * 4),
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.2,
+                ci95_high_pct=0.2,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertEqual(agg["target_kernel_gain_pct_paired_rounds"], 4)
 
     def test_multi_positive_without_ratios_yields_no_interval(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=3.0,
-                          ci95_low_pct=2.5, ci95_high_pct=3.5, paired_rounds=10),
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
-                          ci95_low_pct=0.5, ci95_high_pct=1.5, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.2, ci95_high_pct=0.2, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=3.0,
+                ci95_low_pct=2.5,
+                ci95_high_pct=3.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.0,
+                ci95_low_pct=0.5,
+                ci95_high_pct=1.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.2,
+                ci95_high_pct=0.2,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
@@ -1653,45 +1990,84 @@ class PromotionGateTests(unittest.TestCase):
         looks: run_paired_lane() accepts pairs=1, whose bootstrap yields a
         degenerate interval that can look arbitrarily significant."""
         with self.assertRaises(ec.ExperimentContractError) as caught:
-            _minimal_contract(acceptance={
-                "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
-                "effect_evidence_policy": "ci95_threshold_bound_v1"})
+            _minimal_contract(
+                acceptance={
+                    "end_to_end_gain_pct": 1.0,
+                    "max_control_regression_pct": 1.0,
+                    "effect_evidence_policy": "ci95_threshold_bound_v1",
+                }
+            )
         self.assertIn("min_paired_rounds", str(caught.exception))
 
     def test_rounds_floor_applies_to_the_control_lane_too(self):
         """A regression budget from one usable pair is as untrustworthy as a
         gain from one; the floor must not be gain-only."""
         gate = self._ci_gate(
-            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2,
-            max_control_regression_pct_paired_rounds=1)
+            end_to_end_gain_pct=1.855,
+            end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.2,
+            max_control_regression_pct_paired_rounds=1,
+        )
         self.assertEqual(gate["status"], "invalid", gate)
         self.assertTrue(any("control interval" in r for r in gate["reasons"]), gate)
 
     def test_inverted_source_interval_is_rejected_before_regression_derivation(self):
         """max(0, -effect) can hide an inverted source interval, so the
         LaneEffect must be validated atomically before the transform."""
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
-                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=2.0,
+                ci95_low_pct=1.5,
+                ci95_high_pct=2.5,
+                paired_rounds=10,
+            ),
             # low > point: incoherent, and the regression transform would
             # otherwise still yield a plausible non-negative bound.
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
-                          ci95_low_pct=0.9, ci95_high_pct=1.5, paired_rounds=10),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=-0.2,
+                ci95_low_pct=0.9,
+                ci95_high_pct=1.5,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertNotIn("max_control_regression_pct_ci95_high", agg)
 
     def test_point_estimate_outside_interval_is_not_usable(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=9.0,
-                          ci95_low_pct=1.0, ci95_high_pct=2.0, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0,
-                          ci95_low_pct=-0.3, ci95_high_pct=0.3, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=9.0,
+                ci95_low_pct=1.0,
+                ci95_high_pct=2.0,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=0.0,
+                ci95_low_pct=-0.3,
+                ci95_high_pct=0.3,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)
@@ -1699,13 +2075,29 @@ class PromotionGateTests(unittest.TestCase):
     # ------------- VA24: interval plumbing through aggregation -------------
 
     def test_single_lane_interval_is_carried_through_exactly(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.855,
-                          ci95_low_pct=1.482, ci95_high_pct=2.169, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
-                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.855,
+                ci95_low_pct=1.482,
+                ci95_high_pct=2.169,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=-0.2,
+                ci95_low_pct=-0.6,
+                ci95_high_pct=0.3,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         self.assertEqual(agg["target_kernel_gain_pct_ci95_low"], 1.482)
@@ -1721,41 +2113,92 @@ class PromotionGateTests(unittest.TestCase):
         number, aggregation omits the interval entirely for multi-lane
         contracts; the gate then reports "invalid" under an interval policy.
         """
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
-                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.0,
-                          ci95_low_pct=0.5, ci95_high_pct=1.5, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=-0.2,
-                          ci95_low_pct=-0.6, ci95_high_pct=0.3, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=2.0,
+                ci95_low_pct=1.5,
+                ci95_high_pct=2.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.0,
+                ci95_low_pct=0.5,
+                ci95_high_pct=1.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=-0.2,
+                ci95_low_pct=-0.6,
+                ci95_high_pct=0.3,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
-        self.assertEqual(agg["target_kernel_gain_pct"], 1.5)          # point estimate still averaged
-        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)      # interval withheld
+        self.assertEqual(
+            agg["target_kernel_gain_pct"], 1.5
+        )  # point estimate still averaged
+        self.assertNotIn("target_kernel_gain_pct_ci95_low", agg)  # interval withheld
 
     def test_multi_lane_under_interval_policy_is_invalid_not_pass(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0,
-            "effect_evidence_policy": "ci95_threshold_bound_v1",
-            "min_paired_rounds": 10})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+                "effect_evidence_policy": "ci95_threshold_bound_v1",
+                "min_paired_rounds": 10,
+            }
+        )
         effects = [
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0,
-                          ci95_low_pct=1.5, ci95_high_pct=2.5, paired_rounds=10),
-            ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=1.8,
-                          ci95_low_pct=1.4, ci95_high_pct=2.2, paired_rounds=10),
-            ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.1,
-                          ci95_low_pct=-0.2, ci95_high_pct=0.4, paired_rounds=10),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=2.0,
+                ci95_low_pct=1.5,
+                ci95_high_pct=2.5,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="positive",
+                metric="m",
+                geometric_effect_pct=1.8,
+                ci95_low_pct=1.4,
+                ci95_high_pct=2.2,
+                paired_rounds=10,
+            ),
+            ec.LaneEffect(
+                role="control",
+                metric="c",
+                geometric_effect_pct=0.1,
+                ci95_low_pct=-0.2,
+                ci95_high_pct=0.4,
+                paired_rounds=10,
+            ),
         ]
         agg = ec.aggregate_contract_effects(contract, effects, target_metric="m")
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=agg)
+            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=agg
+        )
         self.assertEqual(gate["status"], "invalid", gate)
 
     def test_lane_effects_without_intervals_omit_them(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 1.0, "max_control_regression_pct": 1.0})
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 1.0,
+                "max_control_regression_pct": 1.0,
+            }
+        )
         effects = [
             ec.LaneEffect(role="positive", metric="m", geometric_effect_pct=2.0),
             ec.LaneEffect(role="control", metric="c", geometric_effect_pct=0.0),
@@ -1767,17 +2210,23 @@ class PromotionGateTests(unittest.TestCase):
     # ---------------- VA24: ci95_threshold_bound_v1 ----------------
 
     CI_ACCEPT = {
-        "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0,
-        "effect_evidence_policy": "ci95_threshold_bound_v1", "min_paired_rounds": 10,
+        "end_to_end_gain_pct": 1.0,
+        "max_control_regression_pct": 1.0,
+        "effect_evidence_policy": "ci95_threshold_bound_v1",
+        "min_paired_rounds": 10,
     }
 
     def _ci_gate(self, **effects):
-        base = {"end_to_end_gain_pct_paired_rounds": 10,
-                "max_control_regression_pct_paired_rounds": 10}
+        base = {
+            "end_to_end_gain_pct_paired_rounds": 10,
+            "max_control_regression_pct_paired_rounds": 10,
+        }
         base.update(effects)
         return ec.evaluate_promotion_gate(
             _minimal_contract(acceptance=dict(self.CI_ACCEPT)),
-            correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=base)
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=base,
+        )
 
     def test_ci_policy_requires_lower_bound_to_reach_the_threshold(self):
         """The BOUND must be established, not merely positivity.
@@ -1787,22 +2236,30 @@ class PromotionGateTests(unittest.TestCase):
         of a "CI excludes zero" rule (dev-gpt-agent req_cd86e5fd4a3b4328).
         """
         gate = self._ci_gate(
-            end_to_end_gain_pct=1.1, end_to_end_gain_pct_ci95_low=0.1,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.2)
+            end_to_end_gain_pct=1.1,
+            end_to_end_gain_pct_ci95_low=0.1,
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.2,
+        )
         self.assertEqual(gate["status"], "fail", gate)
         self.assertTrue(any("ci95_low" in r for r in gate["reasons"]), gate)
 
     def test_ci_policy_passes_when_lower_bound_clears_the_threshold(self):
         # RD73's real shape: point 1.855, ci95_low 1.482, threshold 1.0.
         gate = self._ci_gate(
-            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+            end_to_end_gain_pct=1.855,
+            end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.3,
+        )
         self.assertEqual(gate["status"], "pass", gate)
 
     def test_ci_policy_missing_interval_is_invalid_not_fail(self):
         gate = self._ci_gate(
             end_to_end_gain_pct=1.855,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.3,
+        )
         self.assertEqual(gate["status"], "invalid", gate)
         self.assertFalse(gate["passed"])
 
@@ -1811,39 +2268,58 @@ class PromotionGateTests(unittest.TestCase):
         arbitrarily significant; a rounds floor is what makes the interval
         policy actually stronger than the point estimate."""
         gate = self._ci_gate(
-            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
+            end_to_end_gain_pct=1.855,
+            end_to_end_gain_pct_ci95_low=1.482,
             end_to_end_gain_pct_paired_rounds=1,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.3,
+        )
         self.assertEqual(gate["status"], "invalid", gate)
         self.assertTrue(any("paired rounds" in r for r in gate["reasons"]), gate)
 
     def test_ci_policy_incoherent_interval_is_invalid(self):
         gate = self._ci_gate(
-            end_to_end_gain_pct=1.0, end_to_end_gain_pct_ci95_low=2.0,
-            max_control_regression_pct=0.0, max_control_regression_pct_ci95_high=0.3)
+            end_to_end_gain_pct=1.0,
+            end_to_end_gain_pct_ci95_low=2.0,
+            max_control_regression_pct=0.0,
+            max_control_regression_pct_ci95_high=0.3,
+        )
         self.assertEqual(gate["status"], "invalid", gate)
         self.assertTrue(any("incoherent" in r for r in gate["reasons"]), gate)
 
     def test_ci_policy_regression_upper_bound_must_sit_inside_budget(self):
         """Noise absorbed, uncertain over-budget regression rejected."""
         ok = self._ci_gate(
-            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
-            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=0.4)
+            end_to_end_gain_pct=1.855,
+            end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2,
+            max_control_regression_pct_ci95_high=0.4,
+        )
         self.assertEqual(ok["status"], "pass", ok)
         bad = self._ci_gate(
-            end_to_end_gain_pct=1.855, end_to_end_gain_pct_ci95_low=1.482,
-            max_control_regression_pct=-0.2, max_control_regression_pct_ci95_high=1.2)
+            end_to_end_gain_pct=1.855,
+            end_to_end_gain_pct_ci95_low=1.482,
+            max_control_regression_pct=-0.2,
+            max_control_regression_pct_ci95_high=1.2,
+        )
         self.assertEqual(bad["status"], "fail", bad)
         self.assertTrue(any("ci95_high" in r for r in bad["reasons"]), bad)
 
     def test_legacy_contracts_keep_point_estimate_behaviour(self):
-        contract = _minimal_contract(acceptance={
-            "end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0})
-        self.assertEqual(contract.acceptance.effect_evidence_policy, "point_estimate_v1")
+        contract = _minimal_contract(
+            acceptance={"end_to_end_gain_pct": 1.0, "max_control_regression_pct": 1.0}
+        )
+        self.assertEqual(
+            contract.acceptance.effect_evidence_policy, "point_estimate_v1"
+        )
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS,
-            aggregated_effects={"end_to_end_gain_pct": 1.5,
-                                "max_control_regression_pct": 0.5})
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects={
+                "end_to_end_gain_pct": 1.5,
+                "max_control_regression_pct": 0.5,
+            },
+        )
         self.assertEqual(gate["status"], "pass", gate)
 
     def test_nan_effect_does_not_satisfy_any_threshold(self):
@@ -1857,14 +2333,23 @@ class PromotionGateTests(unittest.TestCase):
         regression check and produced a PASS from malformed evidence.
         """
         nan = float("nan")
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1,
-            "max_control_regression_pct": 1,
-        })
-        effects = {"target_kernel_gain_pct": nan, "end_to_end_gain_pct": nan,
-                   "max_control_regression_pct": nan}
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 5,
+                "end_to_end_gain_pct": 1,
+                "max_control_regression_pct": 1,
+            }
+        )
+        effects = {
+            "target_kernel_gain_pct": nan,
+            "end_to_end_gain_pct": nan,
+            "max_control_regression_pct": nan,
+        }
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"], gate)
         joined = " ".join(gate["reasons"])
         self.assertIn("target_kernel_gain_pct", joined)
@@ -1875,23 +2360,35 @@ class PromotionGateTests(unittest.TestCase):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": float("-inf")}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"], gate)
 
     def test_bool_is_not_accepted_as_a_measured_effect(self):
         """bool is a subclass of int; True must not be read as 1.0."""
-        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 0.5,
-                                                 "max_control_regression_pct": 1})
+        contract = _minimal_contract(
+            acceptance={"target_kernel_gain_pct": 0.5, "max_control_regression_pct": 1}
+        )
         effects = {"target_kernel_gain_pct": True, "max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"], gate)
 
     def test_fails_when_target_gain_below_threshold(self):
-        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        contract = _minimal_contract(
+            acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1}
+        )
         effects = {"target_kernel_gain_pct": 3.0, "max_control_regression_pct": 0.5}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"])
         self.assertTrue(any("target_kernel_gain_pct" in r for r in gate["reasons"]))
 
@@ -1899,15 +2396,23 @@ class PromotionGateTests(unittest.TestCase):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 2.5}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"])
         self.assertTrue(any("max_control_regression_pct" in r for r in gate["reasons"]))
 
     def test_fails_when_correctness_gate_failed_even_with_great_performance(self):
-        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        contract = _minimal_contract(
+            acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1}
+        )
         effects = {"target_kernel_gain_pct": 50.0, "max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.FAILING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.FAILING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertFalse(gate["passed"])
         self.assertTrue(any("correctness gate failed" in r for r in gate["reasons"]))
 
@@ -1917,64 +2422,94 @@ class PromotionGateTests(unittest.TestCase):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.2}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertTrue(gate["passed"])
 
     def test_missing_generalisation_proof_blocks_when_supplied_and_failed(self):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            generalisation_result={"passed": False})
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            generalisation_result={"passed": False},
+        )
         self.assertFalse(gate["passed"])
 
     def test_generalisation_proof_absent_does_not_block(self):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            generalisation_result=None)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            generalisation_result=None,
+        )
         self.assertTrue(gate["passed"])
 
     def test_passing_gate_reports_status_pass(self):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertEqual(gate["status"], "pass")
 
     def test_failing_gate_reports_status_fail(self):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 5.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         self.assertEqual(gate["status"], "fail")
 
-    def test_missing_trigger_proof_short_circuits_to_invalid_even_with_perfect_effects(self):
+    def test_missing_trigger_proof_short_circuits_to_invalid_even_with_perfect_effects(
+        self,
+    ):
         # EC18: a benchmark whose target code path never ran cannot be
         # evidence of pass OR fail, regardless of how good the numbers
         # otherwise look -- trigger proof is checked before anything else.
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 5, "max_control_regression_pct": 1,
-        })
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 5,
+                "max_control_regression_pct": 1,
+            }
+        )
         effects = {"target_kernel_gain_pct": 50.0, "max_control_regression_pct": 0.0}
         trigger_proof = ec.evaluate_trigger_proof(
-            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)])
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)]
+        )
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            trigger_proof=trigger_proof)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            trigger_proof=trigger_proof,
+        )
         self.assertEqual(gate["status"], "invalid")
         self.assertFalse(gate["passed"])
-        self.assertTrue(any("never exercised" in r or "positive-role" in r for r in gate["reasons"]))
+        self.assertTrue(
+            any("never exercised" in r or "positive-role" in r for r in gate["reasons"])
+        )
 
     def test_passing_trigger_proof_does_not_block_a_real_pass(self):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         trigger_proof = ec.evaluate_trigger_proof(
-            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10)])
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=10)]
+        )
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            trigger_proof=trigger_proof)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            trigger_proof=trigger_proof,
+        )
         self.assertEqual(gate["status"], "pass")
         self.assertTrue(gate["passed"])
 
@@ -1982,8 +2517,11 @@ class PromotionGateTests(unittest.TestCase):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         gate = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            trigger_proof=None)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            trigger_proof=None,
+        )
         self.assertEqual(gate["status"], "pass")
 
 
@@ -1991,36 +2529,71 @@ class RenderReportTests(unittest.TestCase):
     PASSING_CORRECTNESS = {"passed": True, "missing_checks": [], "failed_checks": []}
 
     def test_report_has_all_nine_sections_for_a_promoted_contract(self):
-        contract = _minimal_contract(acceptance={
-            "target_kernel_gain_pct": 5, "end_to_end_gain_pct": 1, "max_control_regression_pct": 1,
-        })
-        effects = {"target_kernel_gain_pct": 6.0, "end_to_end_gain_pct": 1.5,
-                   "max_control_regression_pct": 0.2}
+        contract = _minimal_contract(
+            acceptance={
+                "target_kernel_gain_pct": 5,
+                "end_to_end_gain_pct": 1,
+                "max_control_regression_pct": 1,
+            }
+        )
+        effects = {
+            "target_kernel_gain_pct": 6.0,
+            "end_to_end_gain_pct": 1.5,
+            "max_control_regression_pct": 0.2,
+        }
         correctness = self.PASSING_CORRECTNESS
         promotion = ec.evaluate_promotion_gate(
-            contract, correctness_gate=correctness, aggregated_effects=effects)
+            contract, correctness_gate=correctness, aggregated_effects=effects
+        )
         report = ec.render_report(
-            contract, correctness_gate=correctness, aggregated_effects=effects,
-            promotion_gate=promotion)
-        for heading in ("Hypothesis", "Source", "Scope", "Winners", "Non-trigger",
-                        "Controls", "Correctness", "Generalised rule", "Promotion decision"):
+            contract,
+            correctness_gate=correctness,
+            aggregated_effects=effects,
+            promotion_gate=promotion,
+        )
+        for heading in (
+            "Hypothesis",
+            "Source",
+            "Scope",
+            "Winners",
+            "Non-trigger",
+            "Controls",
+            "Correctness",
+            "Generalised rule",
+            "Promotion decision",
+        ):
             self.assertIn(heading, report)
         self.assertIn("passed: True", report)
 
     def test_report_renders_fully_even_for_a_rejected_contract(self):
         # guide section 12 step 12: rejected optimizations are useful
         # evidence -- the report must not short-circuit.
-        contract = _minimal_contract(acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1})
+        contract = _minimal_contract(
+            acceptance={"target_kernel_gain_pct": 5, "max_control_regression_pct": 1}
+        )
         effects = {"target_kernel_gain_pct": 1.0, "max_control_regression_pct": 3.0}
         correctness = self.PASSING_CORRECTNESS
         promotion = ec.evaluate_promotion_gate(
-            contract, correctness_gate=correctness, aggregated_effects=effects)
+            contract, correctness_gate=correctness, aggregated_effects=effects
+        )
         self.assertFalse(promotion["passed"])
         report = ec.render_report(
-            contract, correctness_gate=correctness, aggregated_effects=effects,
-            promotion_gate=promotion)
-        for heading in ("Hypothesis", "Source", "Scope", "Winners", "Non-trigger",
-                        "Controls", "Correctness", "Generalised rule", "Promotion decision"):
+            contract,
+            correctness_gate=correctness,
+            aggregated_effects=effects,
+            promotion_gate=promotion,
+        )
+        for heading in (
+            "Hypothesis",
+            "Source",
+            "Scope",
+            "Winners",
+            "Non-trigger",
+            "Controls",
+            "Correctness",
+            "Generalised rule",
+            "Promotion decision",
+        ):
             self.assertIn(heading, report)
         self.assertIn("blocked by:", report)
         self.assertIn(contract.id, report)
@@ -2029,13 +2602,20 @@ class RenderReportTests(unittest.TestCase):
         contract = _minimal_contract(acceptance={"max_control_regression_pct": 1})
         effects = {"max_control_regression_pct": 0.0}
         trigger_proof = ec.evaluate_trigger_proof(
-            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)])
+            [ec.TriggerEvidence(role="positive", lane_id="a", candidate_launches=0)]
+        )
         promotion = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            trigger_proof=trigger_proof)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            trigger_proof=trigger_proof,
+        )
         report = ec.render_report(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            promotion_gate=promotion)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            promotion_gate=promotion,
+        )
         self.assertIn("status: invalid", report)
         self.assertIn("INVALID", report)
 
@@ -2046,9 +2626,15 @@ class RenderReportTests(unittest.TestCase):
         )
         effects = {"max_control_regression_pct": 0.0}
         promotion = ec.evaluate_promotion_gate(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+        )
         report = ec.render_report(
-            contract, correctness_gate=self.PASSING_CORRECTNESS, aggregated_effects=effects,
-            promotion_gate=promotion)
+            contract,
+            correctness_gate=self.PASSING_CORRECTNESS,
+            aggregated_effects=effects,
+            promotion_gate=promotion,
+        )
         self.assertIn("physical_m", report)
         self.assertIn("1, 2, 4", report)

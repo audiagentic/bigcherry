@@ -1,5 +1,9 @@
 # RD13: mul_mat + RESHAPE + add fusion
 
+## Current package status (2026-09-21)
+
+The patch is contract-bound through `patch.toml` and `validation.toml`. The current patch-local producer supplies the required full-vocabulary `backend_reference` correctness evidence, while the generic scaffold supplies activation evidence. The producer manifest explicitly forbids the generic performance-benchmark CLI and the producer returns no performance/controls metrics; RD13 therefore remains **BLOCKED** for promotion until an authorized scope decision or a reviewed producer implementation adds those lanes. The historical sections below are retained as provenance and do not override this disposition.
+
 ## Real backend_reference correctness evidence (2026-09-13, gfx1100)
 
 RD13's contract requires a `backend_reference` correctness check
@@ -42,11 +46,7 @@ resolvable architecture string (observed: `architecture="<unknown>"`,
 other real `AttestedServerSession` caller
 (`tools/bigcherry/campaign/benchmark.py`).
 
-Contract still not bound in `patch.toml` -- this establishes the
-correctness leg only; performance/trigger evidence against the
-contract's acceptance gates (`target_kernel_gain_pct=0.5`,
-`max_control_regression_pct=1`, `ci95_threshold_bound_v1`,
-`min_paired_rounds=10`) remains separate, not-yet-gathered work.
+At the time of this historical run, the contract had not yet been bound. That statement is superseded: the current package binds the contract and has a real backend-reference producer, but its performance/controls lanes remain intentionally unsatisfied as described in the current package-status section above.
 
 ## Scope
 
@@ -64,17 +64,11 @@ every layer ran a separate `add` kernel instead of the fused epilogue.
 ## Upstream / provenance
 
 Ported from `stew675-rdna-boosts` fork commit `0153d580d`
-(https://github.com/stew675/llama.cpp). Not merged into `ggml-org/llama.cpp` master.
+(<https://github.com/stew675/llama.cpp>). Not merged into `ggml-org/llama.cpp` master.
 
 ## Validation package
 
-`validation.toml` wires three required checks: `apply`, `build`, and `activation`
-(trace-marker regex `BIGCHERRY_PATCH_HIT patch=1206_rd13
-path=mul_mat_add_view_fusion_(?:f|q)`). There is no `correctness` or `performance`
-check bound in `validation.toml` -- this patch has no declared Experiment Contract
-(see "Known limitations" below), so `require_execution_package()`'s
-`is_framework_configuration_patch` path applies rather than a contract-driven
-capability set.
+`validation.toml` currently wires six required checks: `apply`, `build`, `activation`, `correctness`, `performance`, and `controls`. The activation check uses the trace-marker regex `BIGCHERRY_PATCH_HIT patch=1206_rd13 path=mul_mat_add_view_fusion_(?:f|q)`, while the patch-local producer supplies full-vocabulary `backend_reference` correctness. Performance and controls remain unsatisfied because `producer.toml` explicitly forbids the generic performance-benchmark CLI; this is the documented reason the current full-campaign row remains BLOCKED.
 
 ## Real hardware evidence (2026-09-11)
 
@@ -192,17 +186,12 @@ its hash, voiding the legacy point-estimate waiver (VA24); migrated to
 `ci95_threshold_bound_v1` with `min_paired_rounds=10` in the same
 change.
 
-**Still not bound in `patch.toml`**: the contract's required correctness
-check is `backend_reference` (full-vocab logprob comparison), but this
-patch's only existing correctness producer
-(`run_rd13_ppl_check()`) implements `ppl_equality`, a different check
-type. Binding the contract into `patch.toml` requires either building a
-real `backend_reference` producer for RD13 (following RD43's pattern:
-`llama-server`'s `/completion` endpoint with `n_probs=<vocab_size>`) or
-a deliberate contract-design decision to accept `ppl_equality` instead
-(matching RD26/RD58's precedent) -- neither done yet. The model-binding
-fix above is complete and correct regardless of which path is chosen
-next.
+**Historical migration note (superseded; contract is now bound)**: The historical PPL-only producer did not satisfy the now-bound
+`backend_reference` check; the current patch-local producer does. The current producer supplies that full-vocabulary evidence, while
+performance and controls remain intentionally unsatisfied under the
+current producer manifest. The model-binding fix and contract binding are
+complete; promotion remains blocked until the missing lanes receive an
+authorized scope decision.
 
 ## Known limitations
 
@@ -212,10 +201,4 @@ next.
   run (that is what the `activation` trace-marker check in `validation.toml`
   is for, run separately) -- the PPL check and the activation check are
   complementary, not substitutes for each other.
-- No Experiment Contract is bound for RD13 in `patch.toml`. One exists,
-  unreferenced, in `config/experiment-contracts.toml`
-  (`RD13-MUL-MAT-ADD-VIEW-FUSION`) from an earlier metadata migration, but
-  binding it requires wiring every one of its required capabilities to a real
-  producer in `validation.toml` first -- binding without that breaks
-  `build_plan_for_patch()` (confirmed by reverting an earlier attempt across
-  9 patches in this same campaign). Left unbound deliberately.
+- The RD13 Experiment Contract is now bound in `patch.toml` and its required correctness/activation evidence is implemented. Performance and controls remain intentionally unsatisfied because the current producer manifest forbids generic performance-benchmark execution; the patch remains BLOCKED and must not be promoted until those lanes are added by an authorized, reviewed scope change or the contract is explicitly re-dispositioned.

@@ -1,0 +1,117 @@
+schema = 1
+
+# PA37: plural-contract validation plan for RD05/RD06/RD07 (patch 1203).
+# Every scoped check is explicitly scoped via contracts=[...] -- unscoped
+# checks do not satisfy plural contract-derived requirements (PA37.md
+# step 3); "apply"/"build" are the two universal exceptions (UNIVERSAL_
+# REQUIREMENTS applies to every patch regardless of contract count).
+# All twelve checks are producer-supplied at runtime by
+# validation/producer.py (producer id "rd050607", see
+# validation/producer.toml); the callables below are the
+# framework-required fallback only (evaluate_check() is reached when the
+# check is run WITHOUT --validation-producer) and deliberately return
+# FAIL, not a fabricated PASS, per this patch's fail-closed correctness/
+# performance/activation/controls claims (see validation/checks.py).
+#
+# PA39 real-hardware-acceptance fix (2026-09-16): apply/build/activation/
+# controls were missing entirely, so require_execution_package() failed
+# closed at plan resolution before any real hardware work could start
+# (PA39.md's 2026-09-16 "real-hardware acceptance attempt #1" note). RD05
+# needs no activation check (bind_contract() only requires 'activation'
+# for a performance-claiming contract; RD05 is correctness-only with no
+# target_kernel_gain_pct/end_to_end_gain_pct) -- it does need a controls
+# check, since its own contract still declares a real [controls] block.
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "custom"
+required = true
+callable = "validation/checks.py:apply_check"
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "custom"
+required = true
+callable = "validation/checks.py:build_check"
+
+[[check]]
+id = "rd05-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD05-WMMA-FA-CORRECTNESS-BARRIERS"]
+callable = "validation/checks.py:rd05_backend_reference"
+
+[[check]]
+id = "rd06-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_backend_reference"
+
+[[check]]
+id = "rd05-controls"
+capability = "controls"
+validator = "custom"
+required = true
+contracts = ["RD05-WMMA-FA-CORRECTNESS-BARRIERS"]
+callable = "validation/checks.py:rd05_controls"
+
+[[check]]
+id = "rd06-activation"
+capability = "activation"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_activation"
+
+[[check]]
+id = "rd06-performance"
+capability = "performance"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_performance"
+
+[[check]]
+id = "rd06-controls"
+capability = "controls"
+validator = "custom"
+required = true
+contracts = ["RD06-RDNA4-WMMA-FA-CONFIG"]
+callable = "validation/checks.py:rd06_controls"
+
+[[check]]
+id = "rd07-backend-reference"
+capability = "correctness"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_backend_reference"
+
+[[check]]
+id = "rd07-activation"
+capability = "activation"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_activation"
+
+[[check]]
+id = "rd07-performance"
+capability = "performance"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_performance"
+
+[[check]]
+id = "rd07-controls"
+capability = "controls"
+validator = "custom"
+required = true
+contracts = ["RD07-Q6K-MMQ-PREFILL-FOLD"]
+callable = "validation/checks.py:rd07_controls"

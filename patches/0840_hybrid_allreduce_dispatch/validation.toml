@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject dual-gfx1100 -sm tensor server (provider auto) logs provider=adaptive; control (RCCL) cannot.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=0860_allreduce_provider_cli provider=adaptive"
+
+# bit_identical: full-vocab logprobs on dual-gfx1100 -sm tensor, short prompt (all ARs f32 on both providers), adaptive vs RCCL.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# llama-bench tg128 plain decode on tierL-qwen27b-q8, dual gfx1100, -sm tensor (10 pairs).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# pp512 on tierL-qwen27b-q8, dual gfx1100 -sm tensor (prefill stays on RCCL; max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

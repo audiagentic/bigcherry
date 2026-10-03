@@ -1,0 +1,66 @@
+{
+ "schema_version": 1,
+ "evidence_role": "production",
+ "execution_evidence": "observe",
+ "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf",
+ "server_args": [
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "8192",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1"
+ ],
+ "environment": {
+  "ROCR_VISIBLE_DEVICES": "0",
+  "HIP_VISIBLE_DEVICES": "0"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1100"
+  ],
+  "locators": [
+   "0000:03:00.0"
+  ]
+ },
+ "bench_configs": "default",
+ "required_metrics": [
+  "pp512_tps",
+  "tg128_tps"
+ ],
+ "repetitions": 1,
+ "arms": [
+  {
+   "name": "q4_k_m",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "@b-3g-control",
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-Q4_K_M.gguf"
+  },
+  {
+   "name": "iq4_xs",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "@b-3g-control",
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ4_XS.gguf"
+  },
+  {
+   "name": "iq3_xxs",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "@b-3g-control",
+   "model": "/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-UD-IQ3_XXS.gguf"
+  }
+ ]
+}

@@ -81,15 +81,21 @@ void ggml_hip_reduce_telemetry_fallback(
         size_t fallback_depth);
 
 // Resolve the selected CUDA communication provider and device topology from
-// the opaque communication context before recording a meta fallback.
+// the opaque communication context before recording a meta fallback. Defined
+// by patch 0830 in ggml-cuda.cu (which owns the context type); the overlay
+// never calls it, so builds without 0830 have no unresolved reference.
 bool ggml_hip_reduce_telemetry_context_snapshot(
         void * comm_ctx,
         const int ** devices,
         size_t * device_count,
         const char ** requested_provider);
 
+// Record a meta fallback for a snapshot the caller already resolved.
 void ggml_hip_reduce_telemetry_fallback_context(
         void * comm_ctx,
+        const int * devices,
+        size_t device_count,
+        const char * requested_provider,
         ggml_tensor ** tensors,
         const char * handoff,
         size_t fallback_depth);

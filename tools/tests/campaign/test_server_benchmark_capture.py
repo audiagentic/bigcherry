@@ -179,6 +179,84 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         advisories = json.loads((self.output / "advisories.json").read_text())
         self.assertIn("AB_NOT_ADMITTED", [item["id"] for item in advisories["findings"]])
 
+    def test_arm_environment_admits_allreduce_controls_but_not_topology(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        arms = [dict(self.arms[0], environment={"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_COPY_THRESHOLD": "65536",
+                                                "NCCL_PROTO": "LL"}), self.arms[1]]
+        self.write_config(arms=arms)
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        env = next(item["env"] for item in captured if item["side"] == self.arms[0]["name"])
+        self.assertEqual(env["GGML_CUDA_ALLREDUCE"], "internal")
+        self.assertEqual(env["GGML_CUDA_AR_COPY_THRESHOLD"], "65536")
+        self.assertEqual(env["NCCL_PROTO"], "LL")
+        self.write_config(arms=[dict(self.arms[0], environment={"BIGCHERRY_PATCH_TRACE": "1"}), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "not tracing"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "trace", rounds=2, seed=0, settle_seconds=0)
+        self.write_config(arms=[dict(self.arms[0], environment={"HIP_VISIBLE_DEVICES": "0"}), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "topology belongs"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
+
+    def test_arm_server_args_are_appended_to_that_arm_only(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        arms = [dict(self.arms[0], server_args=["--spec-draft-n-min-adaptive", "1"]), self.arms[1]]
+        self.write_config(arms=arms)
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["extra_args"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]], ("-sm", "tensor", "--spec-draft-n-min-adaptive", "1"))
+        self.assertEqual(by_side[self.arms[1]["name"]], ("-sm", "tensor"))
+        self.write_config(arms=[dict(self.arms[0], server_args=["--port", "1"]), self.arms[1]])
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, "managed model or endpoint"):
+            benchmark.run_server_comparison_capture(self.config, self.output / "bad", rounds=2, seed=0, settle_seconds=0)
+
+    def test_arm_model_overrides_the_shared_model_for_that_arm(self):
+        other = self.root / "other.gguf"
+        other.write_bytes(b"other")
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        self.write_config(arms=[dict(self.arms[0], model=str(other)), self.arms[1]])
+        with self.patches_for_preflight(), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["model"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]], other.resolve())
+        self.assertEqual(by_side[self.arms[1]["name"]], self.model.resolve())
+        summary = json.loads((self.output / "run.json").read_text())
+        self.assertEqual(list(summary["arm_model_sha256"]), [self.arms[0]["name"]])
+
+    def test_ambient_patch_and_allreduce_controls_do_not_leak_into_arms(self):
+        captured = []
+        def fake_capture(**kwargs):
+            captured.append(kwargs)
+            return {"pair": kwargs["pair"] + 1, "mode": kwargs["side"], "position": kwargs["position"], "returncode": 0, "metrics": {"tg128_tps": 30.0}}
+        self.write_config(arms=[dict(self.arms[0], environment={"GGML_CUDA_AR_WIRE": "bf16"}), self.arms[1]])
+        ambient = {"GGML_CUDA_ALLREDUCE": "internal", "GGML_CUDA_AR_WIRE": "q8_0",
+                   "BIGCHERRY_IQ_MMVQ_VDR": "1", "BIGCHERRY_PATCH_TRACE": "1", "NCCL_ALGO": "Tree"}
+        with self.patches_for_preflight(), patch.dict("os.environ", ambient), patch(
+            "bigcherry.campaign.benchmark.run_server_arm_capture", side_effect=fake_capture,
+        ):
+            self.assertEqual(benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0), 0)
+        by_side = {item["side"]: item["env"] for item in captured}
+        self.assertEqual(by_side[self.arms[0]["name"]].get("GGML_CUDA_AR_WIRE"), "bf16")
+        for env in by_side.values():
+            for key in ("GGML_CUDA_ALLREDUCE", "BIGCHERRY_IQ_MMVQ_VDR", "BIGCHERRY_PATCH_TRACE", "NCCL_ALGO"):
+                self.assertNotIn(key, env)
+        self.assertNotIn("GGML_CUDA_AR_WIRE", by_side[self.arms[1]["name"]])
+
     def test_production_role_rejects_instrumented_build(self):
         self.write_config()
         with self.patches_for_preflight(instrumented=True), patch(

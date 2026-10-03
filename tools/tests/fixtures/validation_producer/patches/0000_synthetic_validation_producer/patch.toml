@@ -1,0 +1,7 @@
+schema = 1
+id = "0000_synthetic_validation_producer"
+order = 0
+state = "untested"
+kind = "framework"
+origin = "local"
+backend = "hip"

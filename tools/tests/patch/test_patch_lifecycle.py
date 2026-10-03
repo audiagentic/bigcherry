@@ -25,7 +25,8 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         self.assertTrue(s.source_pinned)
         self.assertTrue(s.materialized)
         self.assertIn("1204_rd08_q6k_mmvq_vdr2", s.patch_ids)
-        self.assertEqual(s.build_state, "untested")
+        # Rejected 2026-09-23 on a measured contract FAIL (see 1204's SUMMARY.md).
+        self.assertEqual(s.build_state, "rejected")
         self.assertTrue(s.contracted)
         self.assertIn("RD08-Q6K-MMVQ-VDR2", s.contract_ids)
 

@@ -1,0 +1,9 @@
+{
+  "withdrawn": [
+    {
+      "reason": "run set aside (rerun-dup-1815)",
+      "record_digest": "95c78e74fddac2d075ef126774cc730d417559a1c6f769ca600e2ff912f84e35",
+      "run": "t-1253-gfx1100-s1.rerun-dup-1815"
+    }
+  ]
+}

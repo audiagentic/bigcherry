@@ -1,0 +1,36 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# The subject llama-server log under GGML_CUDA_GRAPH_OPT=1 and
+# BIGCHERRY_PATCH_TRACE=1 must show the fusion horizon was capped at a join.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1216_rd43 path=join_fusion_cap"
+
+# backend_reference: full-vocabulary logprob equality, 1215 vs 1215+1216.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# Paired decode llama-bench, 10 rounds, max 1% control regression.
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

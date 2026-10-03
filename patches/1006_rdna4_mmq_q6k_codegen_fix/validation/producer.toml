@@ -1,0 +1,34 @@
+schema = 1
+
+# 1006's (RDNA4-MMQ-Q6K-CODEGEN) patch-local producer. Single-GPU gfx1201.
+#
+# correctness (backend_reference): test-backend-ops MUL_MAT type_a=q6_K
+# cases must pass the CPU-reference tolerance on BOTH arms (mirrors
+# 1241/RD33's own precedent: filter by type only, accept the full built-in
+# shape sweep test-backend-ops generates for that type, not an isolated
+# single m/n/k case -- test-backend-ops has no CLI shape-selection knob).
+#
+# activation: the edit itself lives inside a __device__ kernel body (no
+# host I/O possible there), so the marker instead instruments the HOST
+# dispatch switch (ggml_cuda_mul_mat_q_switch_type's case GGML_TYPE_Q6_K:,
+# mmq.cu) under BIGCHERRY_PATCH_TRACE=1 during the correctness run --
+# mirrors 1267/RD07's own precedent at the same dispatch site.
+#
+# performance (positive) + controls: tierA-qwen4b-q6k (a real Q6_K-
+# quantized model, naturally exercising this kernel) -- prefill for the
+# positive lane (closer to the original n=512-batch evidence shape than
+# single-token decode), decode for controls (ordinary-use no-regression
+# check). Plain paired llama-bench, no server session needed.
+[producer.rdna4-mmq-q6k]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "mmq-q6k-correctness.json",
+  "mmq-q6k-performance.json",
+  "mmq-q6k-subject-trace.log",
+  "mmq-q6k-control-trace.log",
+]

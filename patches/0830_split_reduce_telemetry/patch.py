@@ -64,7 +64,7 @@ CUDA = FilePatch(
         Edit(
             id="reduce-telemetry-plan-helper",
             anchor=r'^static bool ggml_backend_cuda_comm_allreduce_tensor\(void \* comm_ctx_v, struct ggml_tensor \*\* tensors\) \{$',
-            rationale="select an explicit reduction plan per call without mutating the shared communication context",
+            rationale="select an explicit reduction plan per call and record the provider actually executed",
             mode="insert_before",
             text=(
                 '#ifdef GGML_HIP_DISPATCH\n'
@@ -89,6 +89,7 @@ CUDA = FilePatch(
                 '    if (strcmp(plan, "rccl") == 0) {\n'
                 '#ifdef GGML_USE_NCCL\n'
                 '        if (comm_ctx->comms.size() == comm_ctx->backends.size()) {\n'
+                '            comm_ctx->provider_name = "rccl";\n'
                 '            return ggml_backend_cuda_comm_allreduce_nccl(comm_ctx, tensors);\n'
                 '        }\n'
                 '#endif\n'
@@ -211,8 +212,16 @@ CUDA = FilePatch(
                 'static void ggml_backend_cuda_comm_telemetry_fallback(\n'
                 '        void * comm_ctx, ggml_tensor ** tensors, const char * handoff,\n'
                 '        size_t fallback_depth) {\n'
+                '    const int * devices = nullptr;\n'
+                '    size_t device_count = 0;\n'
+                '    const char * requested_provider = nullptr;\n'
+                '    if (!ggml_hip_reduce_telemetry_context_snapshot(\n'
+                '            comm_ctx, &devices, &device_count, &requested_provider)) {\n'
+                '        return;\n'
+                '    }\n'
                 '    ggml_hip_reduce_telemetry_fallback_context(\n'
-                '        comm_ctx, tensors, handoff, fallback_depth);\n'
+                '        comm_ctx, devices, device_count, requested_provider,\n'
+                '        tensors, handoff, fallback_depth);\n'
                 '}\n'
                 '#endif\n\n'
             ),

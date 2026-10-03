@@ -70,58 +70,43 @@ import re as _re
 
 from bigcherry.patcher import Edit, FilePatch, csource as _csource
 
-_NEW_BODY = '''static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats) {
+# b11126: upstream split the ids generation out of init_mul_mat_id_tensors()
+# into its own init_mul_mat_id_ids(ctx, n_mats) (called by
+# init_mul_mat_id_tensors() and by test_mul_mat_id::reinit_perf_iter()), and
+# init_mul_mat_id_tensors() itself now only initializes the non-I32 tensors
+# before delegating. The std::random_device site this patch targets therefore
+# lives in init_mul_mat_id_ids(); the edit is re-anchored there with the same
+# deterministic branch and the upstream loop preserved verbatim as the else.
+_NEW_BODY = '''static void init_mul_mat_id_ids(ggml_context * ctx, int n_mats) {
     std::random_device rd;
     std::default_random_engine rng(rd());
     for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
-        if (t->type == GGML_TYPE_I32) {
-            if (ggml_is_view_op(t->op)) { continue; }
-            // ids
-            if (bigcherry_deterministic_mode()) {
-                // bigcherry (HI119): deterministic, full-range expert routing --
-                // see patches/1238_hi119_deterministic_init_mul_mat_id_tensors/patch.py.
-                // Reuses patch 1222's helpers (this file's init_tensor_uniform,
-                // defined earlier, already declares them).
-                for (int64_t r = 0; r < ggml_nrows(t); r++) {
-                    const uint64_t call_index = bigcherry_next_call_index();
-                    const uint64_t call_seed = bigcherry_deterministic_seed()
-                        ^ (call_index * 0x9E3779B97F4A7C15ull);
-                    std::default_random_engine det_gen(static_cast<unsigned>(call_seed));
-                    std::vector<int32_t> pool(n_mats);
-                    for (int i = 0; i < n_mats; i++) {
-                        pool[i] = (int32_t) i;
-                    }
-                    std::shuffle(pool.begin(), pool.end(), det_gen);
-                    std::vector<int32_t> data(pool.begin(), pool.begin() + t->ne[0]);
-                    ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
-                    const uint64_t digest = bigcherry_fnv1a(data.data(), data.size() * sizeof(int32_t));
-                    fprintf(stderr, "BIGCHERRY_REF_DIGEST name=%s call_index=%llu digest=%016llx nels=%zu\\n",
-                            ggml_get_name(t), (unsigned long long) call_index,
-                            (unsigned long long) digest, data.size());
+        if (t->type != GGML_TYPE_I32 || ggml_is_view_op(t->op)) {
+            continue;
+        }
+        if (bigcherry_deterministic_mode()) {
+            // bigcherry (HI119): deterministic, full-range expert routing --
+            // see patches/1238_hi119_deterministic_init_mul_mat_id_tensors/patch.py.
+            // Reuses patch 1222's helpers (this file's init_tensor_uniform,
+            // defined earlier, already declares them).
+            for (int64_t r = 0; r < ggml_nrows(t); r++) {
+                const uint64_t call_index = bigcherry_next_call_index();
+                const uint64_t call_seed = bigcherry_deterministic_seed()
+                    ^ (call_index * 0x9E3779B97F4A7C15ull);
+                std::default_random_engine det_gen(static_cast<unsigned>(call_seed));
+                std::vector<int32_t> pool(n_mats);
+                for (int i = 0; i < n_mats; i++) {
+                    pool[i] = (int32_t) i;
                 }
-            } else {
-                for (int64_t r = 0; r < ggml_nrows(t); r++) {
-                    std::vector<int32_t> data(t->ne[0]);
-                    for (int i = 0; i < t->ne[0]; i++) {
-                        data[i] = i % n_mats;
-                    }
-                    std::shuffle(data.begin(), data.end(), rng);
-                    ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
-                }
+                std::shuffle(pool.begin(), pool.end(), det_gen);
+                std::vector<int32_t> data(pool.begin(), pool.begin() + t->ne[0]);
+                ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
+                const uint64_t digest = bigcherry_fnv1a(data.data(), data.size() * sizeof(int32_t));
+                fprintf(stderr, "BIGCHERRY_REF_DIGEST name=%s call_index=%llu digest=%016llx nels=%zu\\n",
+                        ggml_get_name(t), (unsigned long long) call_index,
+                        (unsigned long long) digest, data.size());
             }
         } else {
-            init_tensor_uniform(t);
-        }
-    }
-}'''
-
-_ORIGINAL_BODY = '''static void init_mul_mat_id_tensors(ggml_context * ctx, int n_mats) {
-    std::random_device rd;
-    std::default_random_engine rng(rd());
-    for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
-        if (t->type == GGML_TYPE_I32) {
-            if (ggml_is_view_op(t->op)) { continue; }
-            // ids
             for (int64_t r = 0; r < ggml_nrows(t); r++) {
                 std::vector<int32_t> data(t->ne[0]);
                 for (int i = 0; i < t->ne[0]; i++) {
@@ -130,8 +115,24 @@ _ORIGINAL_BODY = '''static void init_mul_mat_id_tensors(ggml_context * ctx, int 
                 std::shuffle(data.begin(), data.end(), rng);
                 ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
             }
-        } else {
-            init_tensor_uniform(t);
+        }
+    }
+}'''
+
+_ORIGINAL_BODY = '''static void init_mul_mat_id_ids(ggml_context * ctx, int n_mats) {
+    std::random_device rd;
+    std::default_random_engine rng(rd());
+    for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+        if (t->type != GGML_TYPE_I32 || ggml_is_view_op(t->op)) {
+            continue;
+        }
+        for (int64_t r = 0; r < ggml_nrows(t); r++) {
+            std::vector<int32_t> data(t->ne[0]);
+            for (int i = 0; i < t->ne[0]; i++) {
+                data[i] = i % n_mats;
+            }
+            std::shuffle(data.begin(), data.end(), rng);
+            ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(int32_t));
         }
     }
 }'''

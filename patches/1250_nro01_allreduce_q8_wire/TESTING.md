@@ -1,21 +1,5 @@
-# Testing — NRO01 Q8 AllReduce wire
+# Testing — 1250 (PNRO01 P2P Q8 wire, PNRO02 fused residual)
 
-## Static gates
+Offline mechanics: `PYTHONPATH=tools python -m unittest tools.tests.patch.test_1250_nro01_allreduce_q8_wire tools.tests.patch.test_1272_ar_host_compressed_wire`. The composition test applies pristine b11233 -> 1252 -> 1272 -> 1250, checks idempotence, checks a single codec/parser definition, and proves the P2P provider calls 1272's shared finish.
 
-1. `patch-lint --json` and package discovery.
-2. Dependency closure must include `1001_hip_internal_allreduce`.
-3. Apply on pin `b10705`; second apply must be `already-applied`.
-4. HIP build with threshold unset/0 must behave exactly as pre-NRO01.
-5. Non-HIP compile must remain valid because the internal code remains behind existing backend guards.
-
-## Required correctness fixture before live dispatch
-
-Generate two independent FP32 rank arrays and compare Q8 reduction against CPU FP32 reference for: all-zero, nonzero asymmetric ramps, alternating signs, random normal, high dynamic range, repeated extrema, and element counts `{1,31,32,33,255,256,257}` plus real collective sizes. Validate both ranks and verify padded Q8 tail bytes cannot affect valid elements.
-
-Record max absolute error, zero-safe relative error, MSE/NMSE and any model-level quality metric. Tolerance must be registered before throughput measurements.
-
-## Hardware campaign prerequisites
-
-Only after the fixture passes: wire Q8 into the copy path; add activation marker/counters for logical bytes, Q8 blocks and wire bytes; compare exact/BF16/Q8 on dual gfx1100 across decode and prefill. Prefill is mandatory because exact internal already has a known large-message regression.
-
-`PASS` requires correctness + activation + paired performance. An environment variable or faster wall clock alone is not activation evidence.
+Hardware: Brutus 2x gfx1100, `-sm tensor`, Qwen3.8-27B Q8_0 (MTP) plus a dense control. For PNRO01 compare the same 1272 Q8 binary with P2P provider enabled/disabled; require `patch=1272_ar_wire path=ar_wire_q8_0`, and require `patch=1250_nro01 path=allreduce_q8_0_p2p_shared` only in the P2P arm. Report greedy agreement/full-vocab divergence and decode/prefill throughput. For PNRO02 toggle only `GGML_CUDA_AR_FUSED_RESIDUAL=1`; require `patch=1250_nro02 path=allreduce_fused_residual` only in the subject and compare output plus ADD-kernel count.

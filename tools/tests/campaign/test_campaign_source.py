@@ -88,7 +88,7 @@ class CampaignSourceTests(unittest.TestCase):
         # keep the strict gate (covered by
         # test_bigcherry_source_composes_patch_sets_via_resolve_lane).
         plan = source_plan_for(
-            self.cfg, "bigcherry-native", catalog=self.catalog,
+            self.cfg, "bigcherry-tuning", catalog=self.catalog,
             experiment="rd19-only")
         self.assertEqual(plan.classification, "experimental")
         self.assertIsNone(plan.required_state)

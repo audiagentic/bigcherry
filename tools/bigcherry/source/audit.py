@@ -213,7 +213,10 @@ def check_mmq_j(ctx: AuditContext) -> None:
 
     where = "patched" if patched else "pristine"
     values = csource.int_captures(
-        switch_body, r"launch_mul_mat_q<\s*type\s*,\s*(\d+)\s*,\s*fallback\s*>")
+        switch_body,
+        # b11233 threads the src1 precision (GGML_PREC_Q8 / Blackwell W4A4 Q4)
+        # through every launch: `launch_mul_mat_q<type, J, fallback, prec_src1>`.
+        r"launch_mul_mat_q<\s*type\s*,\s*(\d+)\s*,\s*fallback\s*,\s*prec_src1\s*>")
     ctx.compare("mmq.j_switch_values", MMQ_J_VALUES, values,
                 f"MMQ J switch cases ({where} tree)")
 
@@ -514,6 +517,7 @@ def check_overlay_sync(ctx: AuditContext) -> None:
         return
 
     drifted: list[str] = []
+    patched: list[str] = []
     compared = 0
     for source in sorted(overlay_root.rglob("*")):
         if not source.is_file():
@@ -523,8 +527,13 @@ def check_overlay_sync(ctx: AuditContext) -> None:
         if not target.is_file():
             continue  # not yet applied -- normal in-progress state, not drift
         compared += 1
-        if source.read_bytes() != target.read_bytes():
-            drifted.append(str(relative).replace("\\", "/"))
+        if source.read_bytes() == target.read_bytes():
+            continue
+        rel = str(relative).replace("\\", "/")
+        if _overlay_plus_applied_patches(ctx.root, rel, source, target):
+            patched.append(rel)
+        else:
+            drifted.append(rel)
 
     if drifted:
         ctx.fail(
@@ -539,8 +548,39 @@ def check_overlay_sync(ctx: AuditContext) -> None:
         ctx.ok(
             "overlay.vendor_sync",
             f"{compared} overlay file(s) mirrored onto the checkout match "
-            "byte-for-byte",
+            f"byte-for-byte ({len(patched)} after re-applying the registered "
+            "patches that edit them"
+            + (": " + ", ".join(patched) if patched else "") + ")",
         )
+
+
+def _overlay_plus_applied_patches(root: Path, relative: str, source: Path, target: Path) -> bool:
+    """True when ``target`` is exactly the overlay ``source`` plus the registered
+    patches that edit ``relative`` and are applied in the compiled tree.
+
+    Some patches legitimately edit an overlay file after ``apply`` mirrors it
+    (e.g. 1237 extends hip-autotune-dispatch.cu), so a byte comparison alone
+    reports drift that is really the applied patch set. A patch counts as
+    applied when every one of its edits' guards matches the compiled file;
+    those patches are re-applied in registry order, in memory, to the overlay
+    text. Any other difference is still drift.
+    """
+    from ..patch import apply as patch_apply
+    from ..patch import registry as patch_registry
+
+    compiled = target.read_text(encoding="utf-8")
+    registry = patch_registry.load_registry()
+    texts = {relative: source.read_text(encoding="utf-8")}
+    for descriptor in registry.descriptors:
+        for file_patch in patch_registry.load_implementation(descriptor):
+            if file_patch.path != relative:
+                continue
+            if not all(re.search(e.guard_pattern(), compiled, re.MULTILINE) for e in file_patch.edits):
+                continue
+            result = patch_apply.apply_patch(file_patch, root, dry_run=True, texts=texts)
+            if not result.ok:
+                return False
+    return texts[relative] == compiled
 
 
 def check_build(ctx: AuditContext) -> None:

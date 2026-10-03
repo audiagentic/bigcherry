@@ -1,0 +1,172 @@
+{
+ "arm_config": [
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e4f746fa3e02701ca32283357c9bae5e/87d865ff21a5309b50650263ce0f0640/bin/llama-server",
+   "environment": null,
+   "model": null,
+   "name": "switch_256k",
+   "server_args": [
+    "--allreduce",
+    "adaptive",
+    "--allreduce-switch-bytes",
+    "262144"
+   ]
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e4f746fa3e02701ca32283357c9bae5e/87d865ff21a5309b50650263ce0f0640/bin/llama-server",
+   "environment": null,
+   "model": null,
+   "name": "switch_1m",
+   "server_args": [
+    "--allreduce",
+    "adaptive",
+    "--allreduce-switch-bytes",
+    "1048576"
+   ]
+  },
+  {
+   "binary": "/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/e4f746fa3e02701ca32283357c9bae5e/87d865ff21a5309b50650263ce0f0640/bin/llama-server",
+   "environment": null,
+   "model": null,
+   "name": "switch_4m",
+   "server_args": [
+    "--allreduce",
+    "adaptive",
+    "--allreduce-switch-bytes",
+    "4194304"
+   ]
+  }
+ ],
+ "arms": {
+  "switch_1m": {
+   "acceptance_pct": 82.17,
+   "mean": {
+    "pp1024_tps": 996.5,
+    "pp256_tps": 650.04,
+    "pp4096_tps": 1245.54,
+    "tg128_tps": 80.91,
+    "tg2048_tps": 104.44,
+    "tg512_tps": 95.32
+   },
+   "n": 6
+  },
+  "switch_256k": {
+   "acceptance_pct": 82.04,
+   "mean": {
+    "pp1024_tps": 994.36,
+    "pp256_tps": 660.04,
+    "pp4096_tps": 1245.06,
+    "tg128_tps": 81.18,
+    "tg2048_tps": 104.27,
+    "tg512_tps": 95.38
+   },
+   "n": 6
+  },
+  "switch_4m": {
+   "acceptance_pct": 82.06,
+   "mean": {
+    "pp1024_tps": 994.41,
+    "pp256_tps": 651.28,
+    "pp4096_tps": 1244.87,
+    "tg128_tps": 79.8,
+    "tg2048_tps": 104.34,
+    "tg512_tps": 95.28
+   },
+   "n": 6
+  }
+ },
+ "comparisons": {
+  "switch_1m_vs_switch_256k": {
+   "pp1024_tps": {
+    "ci95": [
+     -0.09,
+     0.45
+    ],
+    "effect_pct": 0.22
+   },
+   "pp4096_tps": {
+    "ci95": [
+     -0.05,
+     0.13
+    ],
+    "effect_pct": 0.04
+   },
+   "tg2048_tps": {
+    "ci95": [
+     -0.16,
+     0.41
+    ],
+    "effect_pct": 0.16
+   },
+   "tg512_tps": {
+    "ci95": [
+     -0.29,
+     0.19
+    ],
+    "effect_pct": -0.07
+   }
+  },
+  "switch_4m_vs_switch_256k": {
+   "pp1024_tps": {
+    "ci95": [
+     -0.2,
+     0.25
+    ],
+    "effect_pct": 0.01
+   },
+   "pp4096_tps": {
+    "ci95": [
+     -0.14,
+     0.1
+    ],
+    "effect_pct": -0.02
+   },
+   "tg2048_tps": {
+    "ci95": [
+     -0.34,
+     0.5
+    ],
+    "effect_pct": 0.07
+   },
+   "tg512_tps": {
+    "ci95": [
+     -0.31,
+     0.11
+    ],
+    "effect_pct": -0.1
+   }
+  }
+ },
+ "kind": "ab",
+ "model": "/mnt/vault/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+ "run": "ab-27b-adaptive-sweep",
+ "schedule_seed": 0,
+ "server_args": [
+  "-sm",
+  "tensor",
+  "-ngl",
+  "99",
+  "--fit",
+  "off",
+  "-c",
+  "64000",
+  "--flash-attn",
+  "on",
+  "--ubatch-size",
+  "512",
+  "--batch-size",
+  "2048",
+  "--threads",
+  "8",
+  "--parallel",
+  "1",
+  "--spec-type",
+  "draft-mtp",
+  "--spec-draft-n-max",
+  "4",
+  "-ctkd",
+  "q8_0",
+  "-ctvd",
+  "q8_0"
+ ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "nro09-1260-hardware-d-20260923",
+  "date": "2026-09-23",
+  "hardware": {
+    "host": "Brutus (10.10.100.10)",
+    "devices": ["gfx1100 7900 XTX device 0", "gfx1100 7900 XTX device 1"],
+    "env": "HSA_ENABLE_SYSFIX=1 ROCR_VISIBLE_DEVICES=0,1"
+  },
+  "model": {
+    "name": "tierA-qwen4b-q6k (MTP)",
+    "gguf": "/mnt/vault/llm-models/qwen3.5-4B/gguf/mtp/Qwen3.5-4B-UD-Q6_K_XL.gguf",
+    "ftype": "Q6_K",
+    "args": "--prompt 'Say hello.' --n-predict 8 --n-gpu-layers 99 --threads 8 --spec-type draft-mtp --spec-draft-n-max 4"
+  },
+  "builds": {
+    "patched": {
+      "tree": "/home/audumla/nro09-hw (copy of bc-pa-work, headroom 16 -> 80 applied)",
+      "build": "cmake -DGGML_HIP=ON + make llama-cli (MAKE_EXIT=0)",
+      "build_tag": "b10901-28ff09582"
+    },
+    "unpatched": {
+      "tree": "/home/audumla/nro09-hw-unpatched (copy, headroom reverted to 16)",
+      "build": "cmake -DGGML_HIP=ON + make llama-cli (MAKE_EXIT=0)",
+      "build_tag": "b10901-28ff09582"
+    }
+  },
+  "observations": [
+    {
+      "variant": "patched (headroom=80)",
+      "result": "MTP decode ran to completion, NO abort",
+      "perf": {"prompt_tps": 21.9, "gen_tps": 98.3},
+      "verdict": "72 between-eval views FIT"
+    },
+    {
+      "variant": "unpatched (headroom=16)",
+      "result": "MTP decode ran to completion, NO abort",
+      "perf": {"prompt_tps": 18.6, "gen_tps": 76.5},
+      "verdict": "72 between-eval views ALSO fit at headroom=16"
+    }
+  ],
+  "conclusion": "For the 4B MTP workload, the between-eval view count (and their metadata footprint) fits even within the stock 16-view headroom. The 16->80 increase therefore does not change the pass/fail outcome for this specific workload; it widens the capacity margin (consistent with the (C) boundary test's ~5x N_max ratio: 44->222 @S=1024, 89->445 @S=2048). The patch is a headroom increase that raises the ceiling for larger/more views; the 4B MTP graph's ~72 views are small enough to fit under the stock bound. No perf regression from the patch (patched is actually faster: 98.3 vs 76.5 gen t/s).",
+  "residual": "A workload with a larger per-view metadata footprint (or a larger view count) would be the case where the 16-view bound is binding. The (C) hardware-free boundary test is the direct capacity proof; the (D) hardware lane confirms the patch is benign (no regression, no correctness issue) on a real recurrent/MTP graph and that the 4B MTP workload is not the binding case."
+}

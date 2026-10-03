@@ -1094,5 +1094,222 @@ class StageSignatureVerifierTests(unittest.TestCase):
         self.assertEqual(captured["env"]["GGML_HIP_DISPATCH_DB"], "/x")
 
 
+class StageCorrectnessEvidenceTests(unittest.TestCase):
+    """RHA15: _stage_correctness_evidence's per-row loop must attempt every
+    row independently (matching hi80_generate_correctness_evidence.py's own
+    CLI main() loop), not abort on the first EvidenceError/CliError -- a
+    real production tune-campaign hit exactly that shape, with a single
+    early-row failure reported as "FAILED at the correctness-evidence
+    stage" and every later row left undetermined rather than independently
+    attempted and reported."""
+
+    def _run(self, *, rows, outcomes, seeds=(1, 2, 3), signature_digest_verifier=None,
+             lane_source_slice_id="slice-abc", verifier_source_slice_id="slice-abc"):
+        from unittest.mock import MagicMock, patch
+        import sqlite3
+        import tempfile
+
+        calls: list[str] = []
+        captured_kwargs: list[dict] = []
+
+        def fake_generate_for_row(conn, row, **kwargs):
+            calls.append(row["dispatch"])
+            captured_kwargs.append(kwargs)
+            outcome = outcomes[row["dispatch"]]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        lane_result = MagicMock()
+        lane_result.binary_ref.path = Path("/fake/binary")
+        lane_result.source_root = Path("/fake/source-root")
+        lane_result.source_slice_id = lane_source_slice_id
+
+        signature_verifier_result = MagicMock()
+        signature_verifier_result.source_slice_id = verifier_source_slice_id
+
+        verifier = signature_digest_verifier or (lambda canonical: "0" * 32)
+
+        with tempfile.TemporaryDirectory() as directory:
+            dispatch_db = Path(directory) / "dispatch.sqlite"
+            sqlite3.connect(str(dispatch_db)).close()
+            measurements = Path(directory) / "tune.measurements.jsonl"
+            measurements.write_text("", encoding="utf-8")
+
+            with (
+                patch.object(workflow, "_plan_and_run_one_lane", return_value=lane_result),
+                patch.object(workflow.hi80, "_read_measurements", return_value=({}, [])),
+                patch.object(workflow.hi80, "find_candidate_rows", return_value=rows),
+                patch.object(workflow.hi80, "generate_for_row", side_effect=fake_generate_for_row),
+            ):
+                result = None
+                error = None
+                try:
+                    result = workflow._stage_correctness_evidence(
+                        context=MagicMock(), cfg=MagicMock(), store=MagicMock(),
+                        run_id="correctness-run", platform_name="linux-multi",
+                        source_name="bigcherry", inventory_path=Path("/fake/inventory.json"),
+                        tune_measurements=measurements, dispatch_db=dispatch_db,
+                        seeds=seeds, signature_digest_verifier=verifier,
+                        signature_verifier_result=signature_verifier_result, devices="0",
+                    )
+                except workflow.TuneCampaignError as exc:
+                    error = exc
+        return calls, result, error, captured_kwargs
+
+    def test_every_row_is_attempted_even_after_an_earlier_evidence_error(self):
+        from bigcherry.tuning import correctness_evidence as ce
+
+        rows = [
+            {"dispatch": "row1", "provisional_winner": "cand1"},
+            {"dispatch": "row2", "provisional_winner": "cand2"},
+            {"dispatch": "row3", "provisional_winner": "cand3"},
+        ]
+        outcomes = {
+            "row1": ce.EvidenceError("seed=1 native=ok candidate=failed"),
+            "row2": "wrote evidence_id=x (dispatchable)",
+            "row3": "wrote evidence_id=y (dispatchable)",
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        # The whole point of RHA15's fix: row2/row3 must still be attempted
+        # even though row1 raised first.
+        self.assertEqual(calls, ["row1", "row2", "row3"])
+        self.assertIsNotNone(error)
+        self.assertIn("1/3 row(s)", str(error))
+        self.assertIn("dispatch=row1", str(error))
+        self.assertIn("candidate=cand1", str(error))
+
+    def test_all_rows_failing_reports_every_one(self):
+        from bigcherry.tuning import correctness_evidence as ce
+
+        rows = [
+            {"dispatch": "row1", "provisional_winner": "cand1"},
+            {"dispatch": "row2", "provisional_winner": "cand2"},
+        ]
+        outcomes = {
+            "row1": ce.EvidenceError("boom1"),
+            "row2": ce.EvidenceError("boom2"),
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertEqual(calls, ["row1", "row2"])
+        self.assertIsNotNone(error)
+        self.assertIn("2/2 row(s)", str(error))
+        self.assertIn("dispatch=row1", str(error))
+        self.assertIn("dispatch=row2", str(error))
+
+    def test_no_failures_returns_lane_result_normally(self):
+        rows = [{"dispatch": "row1"}, {"dispatch": "row2"}]
+        outcomes = {
+            "row1": "wrote evidence_id=a (dispatchable)",
+            "row2": "wrote evidence_id=b (dispatchable)",
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertEqual(calls, ["row1", "row2"])
+        self.assertIsNone(error)
+        self.assertIsNotNone(result)
+
+    def test_signature_mapping_error_is_still_a_silent_skip_not_a_failure(self):
+        from bigcherry.tuning import signature_mapping as scm
+
+        rows = [{"dispatch": "row1"}, {"dispatch": "row2"}]
+        outcomes = {
+            "row1": scm.SignatureMappingError("unsupported op"),
+            "row2": "wrote evidence_id=b (dispatchable)",
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertEqual(calls, ["row1", "row2"])
+        self.assertIsNone(error)
+        self.assertIsNotNone(result)
+
+    def test_correctness_gate_error_is_caught_like_evidence_error(self):
+        from bigcherry.tuning import promotion_gate as gate
+
+        rows = [{"dispatch": "row1"}, {"dispatch": "row2"}]
+        outcomes = {
+            "row1": gate.CorrectnessGateError("gate boom"),
+            "row2": "wrote evidence_id=b (dispatchable)",
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertEqual(calls, ["row1", "row2"])
+        self.assertIsNotNone(error)
+        self.assertIn("1/2 row(s)", str(error))
+
+    def test_cli_error_from_the_new_signature_preflight_is_caught_too(self):
+        # The 4a1939d0 diagnostic hardening raises hi80.CliError (not
+        # ce.EvidenceError) when the observed-signature preflight mismatches
+        # -- must be caught by the same per-row handling, not just
+        # EvidenceError specifically.
+        rows = [{"dispatch": "row1"}, {"dispatch": "row2"}]
+        outcomes = {
+            "row1": workflow.hi80.CliError("observed dispatch signature mismatch"),
+            "row2": "wrote evidence_id=b (dispatchable)",
+        }
+        calls, result, error, _kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertEqual(calls, ["row1", "row2"])
+        self.assertIsNotNone(error)
+        self.assertIn("1/2 row(s)", str(error))
+
+    def test_unclassified_exception_still_aborts_immediately(self):
+        # GPT design review (req_7e5ae686e055404e): do NOT widen to generic
+        # Exception -- an unexpected SQLite/programming/infrastructure
+        # failure must still propagate immediately, not be swallowed as
+        # merely "row failed" and reported alongside real row failures.
+        rows = [{"dispatch": "row1"}, {"dispatch": "row2"}]
+        outcomes = {
+            "row1": RuntimeError("unexpected infrastructure failure"),
+            "row2": "wrote evidence_id=b (dispatchable)",
+        }
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(rows=rows, outcomes=outcomes)
+        self.assertNotIsInstance(ctx.exception, workflow.TuneCampaignError)
+        self.assertIn("unexpected infrastructure failure", str(ctx.exception))
+
+    def test_signature_digest_verifier_is_forwarded_to_generate_for_row(self):
+        # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+        # the record-capable verifier _stage_signature_verifier() already
+        # built must reach hi80.generate_for_row() for every row -- without
+        # it, the mandatory HI121/HI125 preflight re-derives its own
+        # record-mode probe against the tune-lane binary, which generally
+        # lacks GGML_HIP_AUTOTUNE_RECORD capability (the real RHA15 root
+        # cause: every row's EvidenceError -- "this build cannot record").
+        rows = [{"dispatch": "row1", "provisional_winner": "cand1"}]
+        outcomes = {"row1": "wrote evidence_id=a (dispatchable)"}
+        sentinel_verifier = lambda canonical: "deadbeef" * 4
+        calls, result, error, captured_kwargs = self._run(
+            rows=rows, outcomes=outcomes, signature_digest_verifier=sentinel_verifier,
+        )
+        self.assertIsNone(error)
+        self.assertEqual(len(captured_kwargs), 1)
+        self.assertIs(captured_kwargs[0]["signature_digest_verifier"], sentinel_verifier)
+
+    def test_gpu_scoped_candidate_runner_is_forwarded_not_bare_subprocess_run(self):
+        # RHA15 secondary gap: the candidate replay run must inherit this
+        # campaign's own real device selection (not silently depend on
+        # physical GPU 0), via the same _gpu_scoped_test_backend_ops_runner
+        # already used for the signature verifier.
+        rows = [{"dispatch": "row1", "provisional_winner": "cand1"}]
+        outcomes = {"row1": "wrote evidence_id=a (dispatchable)"}
+        calls, result, error, captured_kwargs = self._run(rows=rows, outcomes=outcomes)
+        self.assertIsNone(error)
+        runner = captured_kwargs[0]["runner"]
+        self.assertIsNot(runner, workflow.subprocess.run)
+
+    def test_source_composition_mismatch_between_tune_and_verifier_fails_closed(self):
+        # GPT design review: the correctness (tune) lane and the signature
+        # verifier (record) lane must share the same real source
+        # composition before their evidence is combined, or a silent
+        # mismatch would mean the preflight verifies a signature against
+        # code the correctness run itself never actually executed.
+        rows = [{"dispatch": "row1", "provisional_winner": "cand1"}]
+        outcomes = {"row1": "wrote evidence_id=a (dispatchable)"}
+        calls, result, error, captured_kwargs = self._run(
+            rows=rows, outcomes=outcomes,
+            lane_source_slice_id="slice-tune", verifier_source_slice_id="slice-record-DIFFERENT",
+        )
+        self.assertEqual(calls, [])  # never even reached the per-row loop
+        self.assertIsNotNone(error)
+        self.assertIn("source compositions differ", str(error))
+
+
 if __name__ == "__main__":
     unittest.main()

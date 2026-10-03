@@ -1,0 +1,43 @@
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+# Subject test-backend-ops TOP_K logs at least one hybrid route.
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1257_nro08 path=topk_"
+
+# backend_reference: TOP_K test-backend-ops passes on both arms.
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+# tg128 decode on the 256-expert MoE model (4 sessions).
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+# tg128 decode on a dense model (max 1% regression).
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true

@@ -1,0 +1,132 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [
+      "overlay.vendor_sync"
+    ],
+    "passed": false,
+    "strict": true,
+    "summary": {
+      "errors": 1,
+      "passed": 33,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "8b31cda55f2bfa6fa66b49a6b25f2321f35133b7",
+  "first_seen": "2026-10-02T00:37:49.960517+00:00",
+  "manifest_hash": "",
+  "notes": "source audit failed: overlay.vendor_sync\n\n2026-10-02 pin bump b11233 -> c061df198 (Qwen4Exp MTP, PR #29761) complete. Triage: 1278 superseded; known_broken (c061df1 + digest) for non-recipe 1250/1268/1273/1275; 16/16 bigcherry-source patches clean on Brutus. overlay.vendor_sync audit FAIL is a false positive (1237 edits the hip-autotune-dispatch.cu overlay). Smoke (Brutus GPU0, 4B Q6_K): pp512 4746.7, tg128 102.2. pin-status --complete --all-remotes:\npin-status: local\n  pin           c061df19838ff60970faf54fd7e414953590125d -> c061df19838f\n  vendor HEAD   c061df19838f  [16 modified, 42 untracked]\n  releases      0adcc3bb5710 broken, 22dc605c4ead patched, 2578138397d7 generated, 28ff0958291c patched, 370cb12e8bb7 patched, 434ddbbc0e30 patched, 50182a53fa2c generated, 6ea215d171fd patched, 91f6a6cf3613 patched, abc123 validated, b1ff4ca23630 patched, c061df19838f broken, c841aeeb8bb2 patched, d77dd0806dc2 patched, d7bd3bfcad3e patched\n  descriptors   0adcc3bb5710, 2578138397d7, 28ff0958291c, 370cb12e8bb7, 4801e3c567d5, c061df19838f, c841aeeb8bb2, d59d455fd8ea, d77dd0806dc2, d7bd3bfcad3e\n  bigcherry     5c6ec9ae8948\n  marker        d77dd0806dc2 -> c061df19838f (c061df19838ff60970faf54fd7e414953590125d) [committed-clean]\n  VERDICT       consistent  (content-unverified: 16 tracked file(s) modified (expected after patch application; verified by audit, not here))\n\npin-status: brutus (remote)\n  vendor HEAD   c061df19838f\n  pin           c061df19838ff60970faf54fd7e414953590125d -> c061df19838f\n  bigcherry     5c6ec9ae8948\n  VERDICT       consistent\n\nAGGREGATE  converged\n\nCOMPLETION  PASS\n",
+  "patches": {
+    "applied_cleanly": false,
+    "failed_edits": [
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-kernel-template",
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-switch-fusion-template",
+      "ggml/src/ggml-cuda/mmvq.cu:mmvq-kernel-forward",
+      "ggml/src/ggml-cuda/mmvq.cu:rd33-loop-body",
+      "ggml/src/ggml-cuda/mmvq.cu:rd33-switch-fusion-false-and-launcher"
+    ],
+    "files": {
+      "common/arg.cpp": {
+        "allreduce-cli-options": "already-applied",
+        "allreduce-config-apply": "already-applied",
+        "allreduce-config-helper": "already-applied"
+      },
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "already-applied",
+        "hip-autotune-validation": "already-applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cu": {
+        "ar-bf16-threshold-setter-def": "already-applied",
+        "ar-bf16-threshold-setter-musa-stub": "already-applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cuh": {
+        "ar-bf16-threshold-setter-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "nro04-gdn_dispatch-01": "already-applied",
+        "nro04-gdn_dispatch-02": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh": {
+        "nro04-header-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu": {
+        "nro04-bf16_gfx12-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu": {
+        "nro04-bf16_gfx11-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "adaptive-auto-default": "already-applied",
+        "adaptive-provider-available": "already-applied",
+        "adaptive-provider-init": "already-applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-dispatch.cu": {
+        "rd30-workspace-moe": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "already-applied",
+        "mmf-coverage-count": "already-applied",
+        "mmf-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "already-applied",
+        "mmf-dispatcher-forward": "already-applied",
+        "mmf-dispatcher-params": "already-applied",
+        "mmf-instantiation-macro": "already-applied",
+        "mmf-nwarps-apply": "already-applied",
+        "mmf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "already-applied",
+        "mmq-coverage-count": "already-applied",
+        "mmq-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd30b-gate": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "already-applied",
+        "mmvf-coverage-count": "already-applied",
+        "mmvf-coverage-include": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "kquant-f32-eligibility-gate": "already-applied",
+        "kquant-f32-gate-dispatch": "already-applied",
+        "kquant-f32-generic-launcher": "already-applied",
+        "kquant-f32-helpers": "already-applied",
+        "kquant-f32-q8-launch-call": "already-applied",
+        "kquant-f32-vx-dispatch": "already-applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "already-applied",
+        "mmvq-cuh-signature": "already-applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "hip-autotune-definitions": "already-applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "nro04-tests-01": "already-applied",
+        "nro04-tests-02": "already-applied",
+        "nro04-tests-03": "already-applied",
+        "nro04-tests-04": "already-applied",
+        "nro04-tests-05": "already-applied"
+      },
+      "tools/llama-bench/llama-bench.cpp": {
+        "bench-allreduce-apply": "already-applied",
+        "bench-allreduce-config-helper": "already-applied",
+        "bench-allreduce-parser": "already-applied",
+        "bench-allreduce-usage": "already-applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "",
+  "revision": "c061df19838ff60970faf54fd7e414953590125d",
+  "stage": "broken",
+  "tree_state": "",
+  "updated_at": "2026-10-02T00:47:35.829000+00:00"
+}

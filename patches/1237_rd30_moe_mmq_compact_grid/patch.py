@@ -224,7 +224,7 @@ _KERNEL_SIG_NEW = (
 )
 
 _BODY_DERIVE_OLD = (
-    "    if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback)) {\n"
+    "    if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback, prec_src1)) {\n"
     "        const uint2 tmp2 = fast_div_modulo(blockIdx.z, nchannels_y);\n"
     "        const int wt = tmp2.x;\n"
     "        const int zt = tmp2.y;\n"
@@ -233,7 +233,7 @@ _BODY_DERIVE_OLD = (
 )
 
 _BODY_DERIVE_NEW = (
-    "    if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback)) {\n"
+    "    if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback, prec_src1)) {\n"
     "        int wt;\n"
     "        int zt;\n"
     "        int jt;\n"
@@ -266,8 +266,8 @@ _BODY_DERIVE_NEW = (
 )
 
 _LAUNCH_NONSTREAMK_OLD = (
-    "    if (!ggml_cuda_mmq_get_stream_k(type, J, fallback, cc)) {\n"
-    "        mul_mat_q<type, J, fallback>"
+    "    if (!config.stream_k) {\n"
+    "        mul_mat_q<type, J, fallback, prec_src1>"
     "<<<block_nums_xy_tiling, block_dims, nbytes_shared, stream>>>\n"
     "            (args.x, args.y, args.ids_dst, args.expert_bounds, "
     "args.dst, nullptr, args.y_scale,\n"
@@ -283,7 +283,7 @@ _LAUNCH_NONSTREAMK_OLD = (
 )
 
 _LAUNCH_NONSTREAMK_NEW = (
-    "    if (!ggml_cuda_mmq_get_stream_k(type, J, fallback, cc)) {\n"
+    "    if (!config.stream_k) {\n"
     "        dim3 block_nums = block_nums_xy_tiling;\n"
     "\n"
     "        const int32_t * rd30_block_expert_ptr = nullptr;\n"
@@ -336,10 +336,19 @@ _LAUNCH_NONSTREAMK_NEW = (
     "\n"
     "                block_nums = dim3(nty, (unsigned int) "
     "rd30_max_m_blocks, 1);\n"
+    "\n"
+    "                // bigcherry PRBE25: activation evidence (compact grid taken).\n"
+    "                if (getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
+    "                    static std::once_flag rd30_logged;\n"
+    "                    std::call_once(rd30_logged, [] {\n"
+    "                        GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1237_rd30 "
+    "path=moe_mmq_compact_grid\\n\");\n"
+    "                    });\n"
+    "                }\n"
     "            }\n"
     "        }\n"
     "\n"
-    "        mul_mat_q<type, J, fallback>"
+    "        mul_mat_q<type, J, fallback, prec_src1>"
     "<<<block_nums, block_dims, nbytes_shared, stream>>>\n"
     "            (args.x, args.y, args.ids_dst, args.expert_bounds, "
     "args.dst, nullptr, args.y_scale,\n"
@@ -357,7 +366,7 @@ _LAUNCH_NONSTREAMK_NEW = (
 )
 
 _LAUNCH_STREAMK_OLD = (
-    "    mul_mat_q<type, J, fallback>"
+    "    mul_mat_q<type, J, fallback, prec_src1>"
     "<<<block_nums_stream_k, block_dims, nbytes_shared, stream>>>\n"
     "        (args.x, args.y, args.ids_dst, args.expert_bounds, args.dst, "
     "tmp_fixup.ptr, args.y_scale,\n"
@@ -371,7 +380,7 @@ _LAUNCH_STREAMK_OLD = (
 )
 
 _LAUNCH_STREAMK_NEW = (
-    "    mul_mat_q<type, J, fallback>"
+    "    mul_mat_q<type, J, fallback, prec_src1>"
     "<<<block_nums_stream_k, block_dims, nbytes_shared, stream>>>\n"
     "        (args.x, args.y, args.ids_dst, args.expert_bounds, args.dst, "
     "tmp_fixup.ptr, args.y_scale,\n"
@@ -402,7 +411,10 @@ MMQ_CUH_PATCH = FilePatch(
             # fallback would no longer be in scope inside the function body
             # (caught by a real gfx1100 compile: "undeclared identifier
             # 'type'/'J'/'fallback'" throughout launch_mul_mat_q).
-            anchor=r"^template <ggml_type type, int J, bool fallback>\n"
+            # b11233: the template line gained `ggml_prec prec_src1 =
+            # GGML_PREC_Q8` (Blackwell W4A4 src1 precision).
+            anchor=r"^template <ggml_type type, int J, bool fallback, "
+                   r"ggml_prec prec_src1 = GGML_PREC_Q8>\n"
                    r"static void launch_mul_mat_q\(ggml_backend_cuda_context & ctx, "
                    r"const mmq_args & args, cudaStream_t stream\) \{$",
             rationale="insert the compact-map helpers and prep kernel "
@@ -494,7 +506,8 @@ _WORKSPACE_MOE_RETURN_NEW = (
     "            int rd30_effective_J = self->variant.primary;\n"
     "            if (rd30_effective_J == 0) {\n"
     "                rd30_effective_J = ggml_cuda_mmq_native_j_best("
-    "type, fallback, sig.ne1[2]);\n"
+    "type, fallback, sig.ne1[2],\n"
+    "                    /*prec_src1 =*/ GGML_PREC_Q8);\n"
     "            }\n"
     "\n"
     "            if (rd30_effective_J > 0 &&\n"

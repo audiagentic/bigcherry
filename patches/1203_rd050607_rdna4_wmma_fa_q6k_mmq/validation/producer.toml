@@ -1,0 +1,41 @@
+schema = 1
+
+# PA37: 1203's patch-local plural-contract producer (RD05/RD06/RD07).
+# Migrated off validation_campaign.py's run_rd05_contract_correctness/
+# run_rd06_contract_correctness/run_rd07_contract_correctness/
+# _run_1203_backend_reference_contract_correctness (deleted from shared
+# code in the same change -- no compatibility layer, per the project's
+# migrate-up doctrine).
+[producer.rd050607]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "skip"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+    "apply.json",
+    "build.json",
+    "rd0506-backend-reference.json",
+    "rd05-controls.json",
+    "rd06-activation.json",
+    "rd06-performance.json",
+    "rd07-activation.json",
+    "rd07-backend-reference.json",
+    "rd07-performance.json",
+]
+
+# PA37 defect #3 fix: RD06's contract declares a control model
+# (tierM-gptoss20b-q6k) DIFFERENT from its positive model
+# (tierA-qwen4b-q6k, supplied generically via --model/ctx.model). That
+# control model is not something an operator picks per-invocation -- it is
+# fixed by RD06's own contract -- but this producer must never import
+# validation_campaign.py, so it cannot resolve a model id from
+# config/models.toml itself. Instead the resolved model PATH is supplied
+# via the existing generic --producer-input mechanism (no new CLI flag).
+# required = true: RD06's ci95_threshold_bound_v1 bound cannot be
+# truthfully evaluated without it (PA39 defect #3) -- a missing value must
+# fail closed at resolution time, not silently skip the control lane.
+[producer.rd050607.input.control_model]
+type = "path"
+required = true

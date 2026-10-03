@@ -1,0 +1,48 @@
+schema = 1
+
+# PA36 migration #4 (dev-gpt-agent req_82fbbafe52c0472d): 1234's
+# (RD58-PIN-STATE-BUFFER-MULTIGPU-RESTORE) patch-local producer.
+# Mechanically migrated off validation_campaign.py's
+# run_rd58_state_restore_evidence() (the real test-save-load-state
+# state-restore evidence producer) and the --run-rd58-state-restore
+# CLI path. Both are DELETED from shared code in the same change (no
+# compatibility layer, per the project's migrate-up doctrine).
+#
+# standard_campaign = "run": the generic five-build standard scaffold
+# runs first (providing the decode llama-bench pair for the promotion
+# lane); the isolated test-save-load-state pair is the producer's own
+# build_pair() domain (singleton gfx1100, bigcherry baseline, parity
+# asserted).
+#
+# trace_probe = "skip": RD58 declares a real activation check (the
+# "pinned state buffer (... bytes) for restore" marker). The producer
+# itself runs the subject/control state-restore under the real
+# -sm tensor topology and returns the raw per-arm trace artifacts --
+# the plan-declared trace-marker check (its marker-regex is owned by
+# validation.toml, injected by the shared binder) re-reads both logs
+# and re-verifies the marker itself.
+#
+# correctness_evidence_cli / performance_benchmark_cli = "forbid":
+# --correctness-evidence and --run-performance-benchmark are ambiguous
+# with this producer's own authoritative evidence. The producer owns
+# the correctness gate (state_restore_integrity) and the controls
+# artifact (performance.json -- the repeated state-restore execution
+# record).
+#
+# One contract architecture per run: the operator names it via
+# --amdgpu-targets (singleton gfx1100, NOT fat-3); the artifact
+# allowlist is the static 5-artifact set.
+[producer.rd58]
+entrypoint = "producer.py"
+callable = "run"
+trace_probe = "skip"
+standard_campaign = "run"
+correctness_evidence_cli = "forbid"
+performance_benchmark_cli = "forbid"
+artifacts = [
+  "rd58-correctness.json",
+  "rd58-trigger-subject.log",
+  "rd58-trigger-control.log",
+  "rd58-trigger.json",
+  "performance.json",
+]

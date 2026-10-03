@@ -1,0 +1,17 @@
+schema = 1
+id = "1291_ar_cpu_root"
+order = 1291
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["QFN01"]
+requires = ["0840_hybrid_allreduce_dispatch", "0860_allreduce_provider_cli"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["allreduce", "tensor-parallel"]
+tags = ["allreduce", "tensor-parallel", "meta-backend"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]

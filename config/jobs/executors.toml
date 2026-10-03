@@ -1,0 +1,18 @@
+# BigCherry execution targets. Scientific series bind to one target/inventory
+# before submission; adding a remote target does not mix its evidence with Brutus.
+
+[executor.brutus]
+kind = "slurm"
+host_id = "brutus"
+platform_family = "linux-rocm"
+default = true
+build_partition = "bc-build"
+measure_partition = "bc-measure"
+
+# Windows example (enable in a host-local override after OpenSSH/worker setup):
+# [executor.windows-rdna3]
+# kind = "remote"
+# host_id = "windows-rdna3"
+# platform_family = "windows-hip"
+# ssh_host = "bigcherry@windows-rdna3"
+# worker_command = "py -3 -m bigcherry.jobs.worker"

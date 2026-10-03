@@ -1,0 +1,16 @@
+schema = 1
+id = "1273_iq_mmvq_rdna_tuning"
+order = 1273
+state = "evaluated"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+requires = ["0600_mmvq_geometry", "1241_rd33_mmvq_q8_0_f32_decode"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["mmvq", "quantization"]
+hardware = ["amd"]
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["optimization", "tuning", "gfx1100", "gfx1201", "mmvq", "quantization"]

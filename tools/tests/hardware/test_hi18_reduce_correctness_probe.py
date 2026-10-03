@@ -176,7 +176,7 @@ def test_probe_reports_the_shape_preserving_k1_generalized_encoding_it_relies_on
 
 def test_probe_valid_requires_full_signature_identity_not_just_shape():
     # A same-shaped collective on a DIFFERENT topology is a different real
-    # production signature (verified: tools/bigcherry/telemetry.py's key
+    # production signature (verified: tools/bigcherry/tuning/telemetry.py's key
     # includes topology_key) -- shape agreement alone must not pass.
     assert "make_reduction_signature_key(" in PROBE
     assert 'expected_topology = c.manifest.at("topology_key")' in PROBE

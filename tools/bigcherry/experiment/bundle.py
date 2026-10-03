@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -14,7 +15,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from ..telemetry import console_telemetry
+from ..core.telemetry import console_telemetry
 from ..tuning.journal import atomic_write, canonical
 
 SCHEMA_VERSION = 1
@@ -102,6 +103,44 @@ def write_document(path: Path, document: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(output, sort_keys=True, indent=2).encode("ascii") + b"\n")
 
 
+def _terminate_process_tree(process: subprocess.Popen[bytes], *, grace_seconds: float = 5.0) -> None:
+    """Best-effort bounded process-tree termination for host interruption."""
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ("taskkill", "/PID", str(process.pid), "/T"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=grace_seconds)
+        return
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ("taskkill", "/PID", str(process.pid), "/T", "/F"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def run_managed(
     root: Path,
     command: list[str],
@@ -139,37 +178,79 @@ def run_managed(
         "capabilities": [],
     }
     document_path = root / "experiment.json"
-    write_document(document_path, intent)  # intent is durable before child start
+    write_document(document_path, intent)  # durable before child start
     stdout = root / "stdout.log"
     stderr = root / "stderr.log"
     started = time.monotonic_ns()
-    stdout_bytes = b""
-    stderr_bytes = b""
-    with console_telemetry(session_id=experiment_id, command=command, environment=environment) as telemetry:
-        try:
-            completed = subprocess.run(command, text=False, capture_output=True, env=env)
-            stdout_bytes = completed.stdout
-            stderr_bytes = completed.stderr
-            state = "completed" if completed.returncode == 0 else "failed"
-            returncode = completed.returncode
-        except KeyboardInterrupt:
-            stderr_bytes = b"interrupted by host\n"
-            state, returncode = "interrupted", 130
-        except OSError as exc:
-            stderr_bytes = f"process launch failed: {exc}\n".encode("utf-8", "backslashreplace")
-            state, returncode = "failed", 127
+    state = "failed"
+    returncode = 127
+    process: subprocess.Popen[bytes] | None = None
+    creationflags = 0
+    popen_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_kwargs["start_new_session"] = True
+    with console_telemetry(
+        session_id=experiment_id, command=command, environment=environment
+    ) as telemetry:
+        # File handles are opened before Popen so output never resides in Python
+        # memory and even launch failure has durable intended artifact paths.
+        with stdout.open("wb", buffering=0) as stdout_handle, stderr.open(
+            "wb", buffering=0
+        ) as stderr_handle:
+            try:
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    env=env,
+                    creationflags=creationflags,
+                    **popen_kwargs,
+                )
+                returncode = process.wait()
+                state = "completed" if returncode == 0 else "failed"
+            except KeyboardInterrupt:
+                if process is not None:
+                    _terminate_process_tree(process)
+                stderr_handle.write(b"interrupted by host\n")
+                state, returncode = "interrupted", 130
+            except OSError as exc:
+                stderr_handle.write(
+                    f"process launch failed: {exc}\n".encode(
+                        "utf-8", "backslashreplace"
+                    )
+                )
+                state, returncode = "failed", 127
+            finally:
+                stdout_handle.flush()
+                stderr_handle.flush()
+                os.fsync(stdout_handle.fileno())
+                os.fsync(stderr_handle.fileno())
         telemetry["returncode"] = returncode
-        telemetry["output_summary"] = f"stdout={len(stdout_bytes)}B stderr={len(stderr_bytes)}B"
-    stdout.write_bytes(stdout_bytes)
-    stderr.write_bytes(stderr_bytes)
+        telemetry["output_summary"] = (
+            f"stdout={stdout.stat().st_size}B stderr={stderr.stat().st_size}B"
+        )
     final = dict(intent)
     final.update(
-        state=state, returncode=returncode,
+        state=state,
+        returncode=returncode,
         host_finished_ns=time.time_ns(),
         monotonic_duration_ns=time.monotonic_ns() - started,
         artifacts=[
-            {"role": "stdout", "path": relative_artifact(root, stdout), "bytes": stdout.stat().st_size, "hash": file_hash(stdout)},
-            {"role": "stderr", "path": relative_artifact(root, stderr), "bytes": stderr.stat().st_size, "hash": file_hash(stderr)},
+            {
+                "role": "stdout",
+                "path": relative_artifact(root, stdout),
+                "bytes": stdout.stat().st_size,
+                "hash": file_hash(stdout),
+            },
+            {
+                "role": "stderr",
+                "path": relative_artifact(root, stderr),
+                "bytes": stderr.stat().st_size,
+                "hash": file_hash(stderr),
+            },
         ],
         capabilities=["process_evidence"],
     )

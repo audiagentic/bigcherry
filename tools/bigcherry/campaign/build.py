@@ -57,7 +57,10 @@ class CampaignBuildError(RuntimeError):
 #: state (terminal colors, unrelated app config) with no bearing on the
 #: build, and would leak local machine details into a supposedly portable
 #: identity.
-_BUILD_RELEVANT_ENV_VARS = ("PATH", "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH")
+# Compile-affecting environment. VULKAN_SDK / CMAKE_PREFIX_PATH select the Vulkan headers and glslc;
+# ICD selection (VK_DRIVER_FILES, VK_ICD_FILENAMES, RADV_PERFTEST, GGML_VK_VISIBLE_DEVICES) is runtime
+# identity, not compile identity.
+_BUILD_RELEVANT_ENV_VARS = ("PATH", "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH", "CMAKE_PREFIX_PATH", "VULKAN_SDK")
 
 
 def resolve_build_environment() -> tuple[tuple[str, str], ...]:
@@ -100,6 +103,8 @@ def toolchain_request_for_platform(
     --c-compiler) produces two genuinely separate, side-by-side comparable
     build directories instead of one overwriting the other.
     """
+    campaign_config.require_resolved(platform.c_compiler, f"platform.{platform.name}.c-compiler")
+    campaign_config.require_resolved(platform.cxx_compiler, f"platform.{platform.name}.cxx-compiler")
     values: dict[str, str] = {"CMAKE_GENERATOR": "Ninja"}
     if platform.c_compiler:
         values["CMAKE_C_COMPILER"] = platform.c_compiler
@@ -284,6 +289,8 @@ def cmake_configure_args(
             options["GGML_HIP_AUTOTUNE_GENERATED_DIR"] = str(generated_root.resolve())
         if inventory is not None:
             options["GGML_HIP_AUTOTUNE_SIGNATURE_FILE"] = str(inventory.resolve())
+    campaign_config.require_resolved(c_compiler, "c-compiler")
+    campaign_config.require_resolved(cxx_compiler, "cxx-compiler")
     if c_compiler:
         options["CMAKE_C_COMPILER"] = c_compiler
     if cxx_compiler:

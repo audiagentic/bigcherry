@@ -13,4 +13,4 @@ Last item in the AMD-STREAM chain (RD39->RD44): the fork measured +7.3% tg128 an
 
 ## Upstream / provenance
 
-Ported from AMD-Ecosystem/llama.cpp PR #56 (merge commit 6e9f948a0, https://github.com/AMD-Ecosystem/llama.cpp), with a bug fix (found in review) so the architecture check isn't wrongly cached process-wide across multiple GPU architectures. Depends on patches 1215/1216 (RD39-RD43) for correctness once triggered.
+Ported from AMD-Ecosystem/llama.cpp PR #56 (merge commit 6e9f948a0, https://github.com/AMD-Ecosystem/llama.cpp), with a bug fix (found in review) so the architecture check isn't wrongly cached process-wide across multiple GPU architectures. Requires 1216 (RD43) for correctness once graph-opt is on; separated from the rejected 1215 on 2026-09-26 (graph-opt concurrency is upstream's own).

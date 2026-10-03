@@ -62,9 +62,26 @@ def _write_fixture_vendor(tmp_path: Path) -> Path:
     return vendor
 
 
-def _fake_runner_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_runner_factory(
+    *, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=SIGNATURE_HEX,
+):
+    """Handles all GGML_HIP_DISPATCH_MODE values generate_for_row's ordinary
+    (non-GLU) MUL_MAT/MUL_MAT_ID branch now drives, mirroring
+    _fake_glu_runner_factory below: "record" (PA26's observed-signature
+    preflight gate, extended from GLU-only to this branch too -- writes a
+    JSONL observation row to env["GGML_HIP_DISPATCH_DB"]) and
+    "native"/"replay" (the actual correctness comparison)."""
+
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             # HI80 (2026-08-23): the --test-file/test_generic_op path's
@@ -222,6 +239,72 @@ class GenerateForRowTests(_Base):
                 runner=_fake_runner_factory(),
             )
 
+    def test_signature_digest_verifier_receives_the_canonical_signature_dict(self):
+        # RHA15 (2026-09-15, dev-gpt-agent design review req_f7f5a793c0ce4244):
+        # when a caller supplies a signature_digest_verifier, it must be
+        # invoked with THIS row's own canonical signature dict (the same
+        # thing _observed_signature_hex's fallback would otherwise derive
+        # from), not called with something else or skipped.
+        received = []
+
+        def spy_verifier(canonical):
+            received.append(canonical)
+            return SIGNATURE_HEX
+
+        cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=_fake_runner_factory(), signature_digest_verifier=spy_verifier,
+        )
+        self.assertEqual(len(received), 1)
+        self.assertEqual(received[0], CANONICAL_SIGNATURE)
+
+    def test_observed_signature_hex_fallback_is_not_used_when_verifier_supplied(self):
+        # The runner must never see GGML_HIP_DISPATCH_MODE=record (the
+        # ad hoc preflight _observed_signature_hex would otherwise run
+        # against `binary`) once a signature_digest_verifier is supplied --
+        # this is the actual RHA15 fix: that ad hoc probe is what fails
+        # against a non-record-capable tune-lane binary.
+        modes_seen = []
+        inner_runner = _fake_runner_factory()
+
+        def spying_runner(argv, capture_output, text, env):
+            modes_seen.append(env.get("GGML_HIP_DISPATCH_MODE"))
+            return inner_runner(argv, capture_output, text, env)
+
+        cli.generate_for_row(
+            self.conn, self.row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=spying_runner, signature_digest_verifier=lambda canonical: SIGNATURE_HEX,
+        )
+        self.assertNotIn("record", modes_seen)
+
+    def test_forced_candidate_execution_still_uses_the_supplied_tune_binary(self):
+        # Even with a signature_digest_verifier supplied for the preflight,
+        # the actual native/candidate correctness comparison legs must
+        # still run against the `binary` this call was given (the tune/
+        # workload-max evidence binary) -- the verifier only replaces the
+        # preflight probe, never the real correctness execution.
+        seen_argv = []
+        inner_runner = _fake_runner_factory()
+
+        def spying_runner(argv, capture_output, text, env):
+            seen_argv.append(argv[0])
+            return inner_runner(argv, capture_output, text, env)
+
+        tune_binary = Path("tune-lane/bin/test-backend-ops")
+        cli.generate_for_row(
+            self.conn, self.row, binary=tune_binary, vendor_root=self.vendor,
+            seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
+            contract_version=ce.CONTRACT_VERSION, tool_version="test",
+            runner=spying_runner, signature_digest_verifier=lambda canonical: SIGNATURE_HEX,
+        )
+        self.assertTrue(seen_argv)
+        for argv0 in seen_argv:
+            self.assertEqual(argv0, str(tune_binary))
+
     def test_non_mul_mat_signature_raises_signature_mapping_error(self):
         # op=1 is GGML_OP_ADD in the fixture vendor tree -- signature_to_
         # op_filter is MUL_MAT-only this slice (HI80's own documented scope
@@ -291,7 +374,7 @@ class HI112BatchedSrc1PipelineTests(_Base):
             self.conn, self.batched_row, binary=Path("test-backend-ops"), vendor_root=self.vendor,
             seeds=(1, 2, 3), headroom_fraction=ce.DEFAULT_HEADROOM_FRACTION,
             contract_version=ce.CONTRACT_VERSION, tool_version="test",
-            runner=_fake_runner_factory(),
+            runner=_fake_runner_factory(observed_hex=self.BATCHED_SIGNATURE_HEX),
         )
         self.assertIn("wrote evidence_id=", outcome)
         identity = gate.resolve_promotion_identity(
@@ -347,9 +430,19 @@ def _write_fixture_vendor_with_mul_mat_id(tmp_path: Path) -> Path:
     return vendor
 
 
-def _fake_mul_mat_id_runner_factory(*, digest="deadc0de", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_mul_mat_id_runner_factory(
+    *, digest="deadc0de", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=MUL_MAT_ID_SIGNATURE_HEX,
+):
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             # HI105: digest_tensor is "leaf_2" (the ids/routing tensor) for
@@ -666,9 +759,19 @@ class GluGenerateForRowTests(unittest.TestCase):
         self.assertIn("0 distinct signature(s)", str(ctx.exception))
 
 
-def _fake_runner_with_digests_factory(*, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004):
+def _fake_runner_with_digests_factory(
+    *, digest="cafebabe", threshold=5e-4, e_c=1e-5, max_abs_c=0.0004,
+    observed_hex=SIGNATURE_HEX,
+):
     def runner(argv, capture_output, text, env):
         mode = env.get("GGML_HIP_DISPATCH_MODE")
+        if mode == "record":
+            db_path = Path(env["GGML_HIP_DISPATCH_DB"])
+            db_path.write_text(
+                json.dumps({"kind": "observation", "signature": observed_hex, "canonical": {}}) + "\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         tensor = "out"
         stderr = (
             f"BIGCHERRY_REF_DIGEST name=leaf_0 call_index=0 digest={digest} nels=16\n"
@@ -749,8 +852,10 @@ class GenerateForCandidateTests(_Base):
             origin=ce.EvidenceOrigin(reason="promotion_winner"),
             native_seed_cache=cache, runner=_fake_runner_factory(),
         )
-        # First candidate for this signature: 3 native + 3 candidate runs.
-        self.assertEqual(first.subprocess_runs, 6)
+        # First candidate for this signature: 1 observed-signature preflight
+        # + 3 native + 3 candidate runs (PA26: the preflight, previously
+        # GLU-only, now also runs for this ordinary MUL_MAT branch).
+        self.assertEqual(first.subprocess_runs, 7)
         self.assertEqual(len(cache), 3)
 
         second = cli.generate_for_candidate(
@@ -761,9 +866,10 @@ class GenerateForCandidateTests(_Base):
             origin=ce.EvidenceOrigin(reason="recovery_alternative"),
             native_seed_cache=cache, runner=_fake_runner_factory(),
         )
-        # Second candidate, same signature, native already cached: 3
-        # candidate runs only -- HTR01's whole cost-amortization point.
-        self.assertEqual(second.subprocess_runs, 3)
+        # Second candidate, same signature, native already cached: 1
+        # preflight + 3 candidate runs -- HTR01's cost-amortization point
+        # covers the native leg only, not the (per-candidate) preflight.
+        self.assertEqual(second.subprocess_runs, 4)
 
     def test_output_digests_are_persisted_on_the_seed_rows(self):
         result = cli.generate_for_candidate(

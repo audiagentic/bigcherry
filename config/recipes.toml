@@ -1,9 +1,26 @@
 # BigCherry campaign configuration v2.
 # All CLI commands resolve exclusively through source/build/patch-set objects.
 version = 2
-pinned = "b10901"
+pinned = "c061df19838ff60970faf54fd7e414953590125d"
 
-[patch-set.framework]
+# serving-core is PA26's real-hardware-proven serving boundary, confirmed
+# behaviorally equivalent for production replay by PA26's real two-arm
+# hardware comparison (EVALUATED, equivalent=true, 0 differences, two
+# independent runs).
+[patch-set.serving-core]
+# GPT design-review consult (dev-gpt-agent, req_d9bf628dc9954595, 2026-09-15):
+# PA26's own notes flagged that 0700_coverage_counters is not purely
+# diagnostic -- its family-entry block calls ggml_hip_dispatch_family(...)
+# under GGML_HIP_DISPATCH outside the diagnostics-only counter guard, i.e.
+# real serving-relevant dispatch-interception plumbing, not just coverage
+# instrumentation. Splitting 0700 into a serving hook half and a
+# diagnostics-counter half is real patch-authoring work, out of scope for
+# PA28's additive/config-only pass. GPT's approved minimal-safe fallback
+# (bigcherry-tuning already composes serving-core, so nothing is lost for
+# tuning consumers either way): keep 0700 WHOLE, and place it here in
+# serving-core rather than campaign-support, so no serving-relevant code can
+# ever be omitted by a source that only requests serving-core. Revisit when
+# 0700 is actually split (separate plan item).
 patches = [
   "0100_cmake_options",
   "0200_dispatch_hook",
@@ -13,11 +30,29 @@ patches = [
   "0600_mmvq_geometry",
   "0650_mmvq_native_variant",
   "0700_coverage_counters",
+]
+required-state = "validated"
+
+# The PA27 tune/record half (0110) plus the shutdown-endpoint/hit-log/
+# measurement/pool-metrics modules PA28 step 2 assigns here -- 0800/0810/
+# 0900 (0820 superseded 2026-09-24: its edits already live in the overlay). 0700 moved to serving-core above (GPT review, see its comment);
+# 0830 goes to qualification-support below per GPT's PA26-flagged
+# serving-boundary adjudication, not here.
+[patch-set.campaign-support]
+patches = [
+  "0110_campaign_tune_record_build",
   "0800_server_shutdown_endpoint",
   "0810_replay_hit_diagnostics",
-  "0820_measurement_signature_shapes",
-  "0830_split_reduce_telemetry",
   "0900_pool_workspace_metrics",
+]
+required-state = "validated"
+
+# 0830 (split-reduce telemetry, touching the GGML_HIP_REDUCE_PLAN seam) and
+# 1100 (HI70 direct-op evidence corpus) -- PA28 step 3's qualification-only
+# half of the removed-module set.
+[patch-set.qualification-support]
+patches = [
+  "0830_split_reduce_telemetry",
   "1100_hi70_direct_op_evidence",
 ]
 required-state = "validated"
@@ -25,17 +60,47 @@ required-state = "validated"
 [patch-set.upstream-fixes]
 # Correctness backports for real upstream bugs, temporary by design (each
 # carries upstream-ref + retirement in its own patch.toml). Composed into
-# BOTH bigcherry-native and bigcherry below -- a correctness fix is never
+# every serving-relevant source below -- a correctness fix is never
 # optional the way a performance enhancement is (PPS03).
-patches = [
-  "1000_rdna4_mmq_q2k_q6k_fix",
-]
+#
+# Membership here is SEMANTIC: correctness/behavior fixes only. Upstream
+# provenance (kind = "upstream-backport") alone does not qualify a patch
+# for this set -- a performance-optimization patch that happens to be an
+# upstream cherry-pick belongs in validated-enhancements once qualified,
+# not here.
+#
+# REJECTED 2026-09-16 (PA35, docs/planning/active/patching-patch-system/PA35.md):
+# 1000_rdna4_mmq_q2k_q6k_fix was mis-slotted here -- its own SUMMARY.md
+# justification is literally the upstream PR's reported performance numbers
+# (Q6_K 1.90x, Q2_K 28.2x at n=512), an optimization claim, not a described
+# correctness/output-mismatch bug. Real hardware evidence (gfx1201/RDNA4,
+# exact-shape backend-ops paired A/B, 5 rounds, correctness PASS both arms
+# both dtypes) measured Q6_K 1.365x [CI95 1.362x-1.367x] (real gain, below
+# claim) and Q2_K 0.959x [CI95 0.954x-0.963x] (real, statistically
+# significant REGRESSION, directly contradicting the claimed 28.2x gain).
+# GPT design-review (dev-gpt-agent, req_24ceb64100cb41dd) confirmed: the
+# combined package cannot remain validated once it contains a measured
+# regression; the two fixes are structurally independent edits, so the
+# correct action is to reject the combined 1000 package (original evidence
+# and claim preserved verbatim in
+# patches/1000_rdna4_mmq_q2k_q6k_fix/SUMMARY.md and
+# patches/1000_rdna4_mmq_q2k_q6k_fix/evidence/validation.json, not erased)
+# and extract the independently-real Q6_K gain into a new patch
+# (1006_rdna4_mmq_q6k_codegen_fix, currently untested pending its own
+# fresh Q6-only hardware A/B before promotion -- the combined-package
+# measurement is not reused as sufficient evidence for the new composition
+# identity). No production patch currently exists for the Q2_K change.
+# patch.toml state set validated -> rejected accordingly, following the
+# same append-only-evidence / deliberate-separate-decision pattern as
+# RD73's 2026-09-09 demotion (see [patch-set.validated-enhancements]
+# comment below).
+patches = []
 required-state = "validated"
 
 [patch-set.validated-enhancements]
 # The production/release enhancement set: performance patches that have
-# ACTUALLY qualified, composed on top of `framework` by [source.bigcherry].
-# This is what separates a release build from bigcherry-native.
+# ACTUALLY qualified, composed on top of `serving-core` by [source.bigcherry].
+# This is what separates a release build from the plain serving-core sources.
 #
 # Entry bar is deliberately higher than `required-state = "validated"` alone.
 # STATE is a durable lifecycle label; it does NOT mean current qualifying
@@ -70,12 +135,112 @@ required-state = "validated"
 # later, better-controlled measurement is trusted over the earlier one.
 # patch.toml state set validated -> rejected accordingly. Demotion is this
 # deliberate act, not an automatic consequence of either benchmark.
-patches = []
+#
+# PROMOTED 2026-09-26: 1237_rd30_moe_mmq_compact_grid (RD30), gfx1100 only
+# (its declared validation-architectures). Contract RD30-MOE-MMQ-COMPACT-GRID
+# PASS over 4 sessions at pin b11126 (improvement_no_regression_v1): pp512
+# +7.44/+7.44/+7.44/+7.32% on Qwen3.6-35B-A3B MoE, control tg128 -0.07..-0.10%,
+# 6 256-expert MUL_MAT_ID shape/seed pairs byte-identical. Owner-approved;
+# GPT review req_4d131e8b7c1c452d concurred. NOT covered: gfx1201 (not
+# measured; the patch is runtime-gated to cc == GGML_CUDA_CC_RDNA3 exactly,
+# so it is inert elsewhere), the dual-XTX production lane (PVPS05, not yet run).
+#
+# PROMOTED 2026-09-26 (auto-promotion of a clear winner, owner-authorized):
+# 1253_nro04_gfx1100_bf16_chunked_gdn (NRO04), gfx1100 + gfx1201 (its contract
+# scope). Contract NRO04-GDN-CHUNKED-BF16 PASS over 4 sessions on EACH arch at
+# pin b11126: pp512 +8.2/+8.8/+7.7/+9.3% (gfx1100) and +10.4/+11.8/+10.6/+11.0%
+# (gfx1201) on the hybrid GDN model, control tg128 flat; GATED_DELTA_NET
+# test-backend-ops within the CPU reference both arms, every session. NOT
+# covered: RDNA3.5 (the runtime gate GGML_CUDA_CC_IS_RDNA3 also admits
+# gfx1151, never measured here); dual-XTX production lane (PVPS05, not run).
+# Near-lossless, not bit-exact (bf16 operands, fp32 accumulation).
+#
+# PROMOTED 2026-09-27 (auto-promotion of a clear winner, owner-authorized),
+# DEMOTED 2026-09-27 (implementation changed after promotion, pending
+# re-verification -- not a new scientific finding):
+# 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 (RD30B), gfx1201 + gfx1030 (its
+# contract scope). Contract RD30B-MOE-MMQ-COMPACT-GRID-RDNA4-RDNA2 PASS over 4
+# ISOLATED sessions on EACH arch at pin b11126: pp512 +8.42/+8.46/+8.51/+9.10%
+# (gfx1201) and +1.24/+1.03/+1.03/+1.03% (gfx1030, gpt-oss-20B), control tg128
+# flat; bit-identical test-backend-ops correctness every session. Sessions measured
+# while another GPU job ran concurrently are withdrawn (evidence/withdrawn.json).
+# NOT covered: dual-XTX production lane (gate is RDNA4/RDNA2; gfx1100 keeps 1237).
+# This original promotion evidence is PRESERVED (patches/1265.../evidence/), not
+# erased. Later the same day the patch's runtime gate was narrowed from open
+# RDNA4/RDNA2 family ranges to exact cc==gfx1201||cc==gfx1030, changing 1265's
+# implementation digest -- a changed implementation invalidates prior evidence
+# (project re-promotion doctrine) and the new digest has no qualifying evidence
+# yet. Concretely, keeping 1265 in this set also made it impossible for 1265's
+# own validation producer to build a control/subject pair at all: baseline_source
+# "bigcherry" (this patch-set) already contained it as a named member, so
+# resolve_source_composition's focal-uniqueness check failed closed with "focal
+# patch already in source's named composition" (t-1265b-gfx1201-s1, 2026-09-27).
+# Demoted pending 8 fresh isolated sessions (t-1265b-*, gfx1201 x4 + gfx1030 x4)
+# against the narrowed-gate digest; re-promote only if they pass.
+#
+# RE-PROMOTED 2026-09-28 (owner-authorized): all 8 pending sessions passed
+# against the narrowed-gate digest (t-1265b-gfx1030-s3/s4, t-1265b-gfx1201-s3/s4,
+# t-1265c-gfx1030-s1/s2, t-1265c-gfx1201-s1/s2; CAMPAIGN_EXIT=0 throughout).
+# pp512 CI95 stayed entirely above zero on every session; tg128 control flat
+# (-0.07%..+0.02%): gfx1030 +1.02/+1.04/+1.06/+1.08% (CI lows 1.00-1.03, matches
+# the original gfx1030 promotion evidence of +1.03-1.24%); gfx1201 +1.17/+1.18/
+# +1.19/+1.24% (CI lows 1.00-1.09). NOTE: these gfx1201 sessions ran gpt-oss-20B,
+# not the Qwen3.6-35B-A3B used for the original gfx1201 evidence (+8.42-9.10%) --
+# this re-promotion is supported by the +1.17-1.24% gpt-oss-20B gfx1201 result
+# actually measured against the current digest, not a reconfirmation of the
+# larger original-digest number on the original model. If the +8-9% gfx1201
+# claim needs reconfirming against this digest, that requires a further
+# Qwen3.6-35B-A3B gfx1201 session, not yet run.
+#
+# PROMOTED 2026-09-30 (owner-directed: "promote that to the prod build"):
+# 1241_rd33_mmvq_q8_0_f32_decode (RD33), gfx1100. Contract
+# RD33-MMVQ-Q8_0-F32-DECODE PASS in 4 fresh sessions at pin b11233
+# (t-1241n2-gfx1100-s1..s4; patch-verify-evidence: validated-evidence):
+# tierL-qwen27b-q8 dual 7900 XTX -sm tensor tg128 +4.64/+4.62/+4.38/+4.60%
+# (CI95 lows 4.08-4.50%); the tierA-qwen4b-q6k non-firing control moved
+# +1.3..+1.6% in every session (build-layout effect, as in the b11126
+# sessions), so the control-adjusted decode gain is about +3%. Earlier
+# b11126 evidence is preserved. NOT covered: other architectures (runtime
+# gate is gfx1100 only), MoE, non-Q8_0 weights, ncols_dst > 1 (MTP verify
+# and prefill keep the stock path). Its producer's baseline_source is
+# "bigcherry", which now contains 1241, so a future re-validation must use a
+# baseline source without this set (same issue 1265 hit on 2026-09-27).
+#
+# PROMOTED 2026-10-01 (owner: "promote clear winners"): 1274_mmvq_kquant_f32_decode,
+# gfx1100. Contract RD74-MMVQ-Q6_K-F32-DECODE PASS in 4 fresh sessions at pin b11233
+# (t-1274b-gfx1100-s1..s4): tierB-qwen9b-q6k single-card tg128 +4.28/+4.27/+4.17/+4.22%
+# (CI95 lows 4.08-4.21%); tierL-qwen27b-q8 -sm tensor control (no Q6_K weights)
+# -0.01/-0.01/-0.03/0.00%. Correctness 13/13 Q6_K MUL_MAT vs CPU reference both arms;
+# marker on subject ncols=1 only. Requires 1241 (in this set). NOT covered: other
+# architectures, other K-quants, MoE, ncols_dst > 1.
+#
+# PROMOTED 2026-10-02 (owner: "promote clear winners"): adaptive AllReduce closure
+# 0860_allreduce_provider_cli + 1225_hi85_nccl_heterogeneous_arch_guard +
+# 0840_hybrid_allreduce_dispatch, dual gfx1100 tensor split. Contract
+# ALLREDUCE-ADAPTIVE-DUAL-GFX1100 PASS in 4 fresh RCCL-linked sessions at b11233
+# (t-0840e-gfx1100-s1..s4): plain decode tg128 +3.87/+3.92/+3.97/+3.98% (CI95 lows
+# 3.73-3.88%), pp512 control +0.02..+0.04%, full-vocab bit-identical to RCCL on a
+# <=6-token prompt. Design (reviewer-gpt-agent req_8a6eb42b): exact-f32 host path below
+# the 96 KiB switch (decode/draft), RCCL at or above (MTP verify, prefill); MTP depth 5
+# exploratory +0.3% (identical outputs/acceptance). Auto default only for exactly two
+# RDNA3 devices with RCCL admission; elsewhere unchanged. Known limitation (PGC12):
+# a 4-token prompt tail (80 KB) takes the host path (plain-decode pp1024 cost at
+# ubatch 512); phase-aware routing tracked there.
+patches = [
+    "0860_allreduce_provider_cli",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+    "1237_rd30_moe_mmq_compact_grid",
+    "1241_rd33_mmvq_q8_0_f32_decode",
+    "1253_nro04_gfx1100_bf16_chunked_gdn",
+    "1274_mmvq_kquant_f32_decode",
+    "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+]
 required-state = "validated"
 
 # RD-prefixed experimental patches (rdna-boost-experiments plan): each gets
 # its own [experiment.<name>] entry so `bigcherry build --experiment <name>`
-# adds those patches on top of a source's normal framework patch-set
+# adds those patches on top of a source's normal serving-relevant patch-sets
 # (resolve_lane's experiment= is additive, not a replacement -- see
 # campaign_resolution.py) -- the isolated single-patch(-chain)-vs-native
 # bench unit. Most entries below are still exactly one patch, so benching
@@ -123,15 +288,14 @@ patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 [experiment.rd39-42-only]
 patches = ["1215_rd394041_amd_stream_moe_overlap"]
 
+# 2026-09-26: 1216/1217 separated from 1215 (rejected). 1216 guards upstream's
+# own GGML_CUDA_GRAPH_OPT concurrent regions (stream_ctx.concurrent_events);
+# 1215 only added more of them.
 [experiment.rd43-only]
-patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
-  "1216_rd43_concurrent_join_fusion_guard",
-]
+patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
 [experiment.rd44-only]
 patches = [
-  "1215_rd394041_amd_stream_moe_overlap",
   "1216_rd43_concurrent_join_fusion_guard",
   "1217_rd44_graph_opt_default_rdna35",
 ]
@@ -157,28 +321,179 @@ patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
 [experiment.rd33-only]
 patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
 
-[experiment.hip-internal-allreduce-only]
-patches = ["1001_hip_internal_allreduce"]
+[experiment.nro05-only]
+patches = ["1254_nro05_gdn_mtp_prefix_tail"]
+
+[experiment.dense-decode-combo]
+patches = ["1241_rd33_mmvq_q8_0_f32_decode", "1206_rd13_mul_mat_add_view_fusion", "1245_gp11_mmvq_fusion_ncols_gate"]
+
+[experiment.allreduce-cli]
+patches = ["0860_allreduce_provider_cli"]
+
+[experiment.nro10-only]
+patches = ["1261_nro10_spec_ctx_other_devices"]
+
+[experiment.ar-wire]
+# 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
+patches = ["1272_ar_host_compressed_wire"]
+
+[experiment.kquant-f32]
+# 1274 alone (1241, which it requires, is in validated-enhancements): Q6_K/Q4_K F32-activation ncols=1 decode.
+patches = ["1274_mmvq_kquant_f32_decode"]
+
+[experiment.ar-p2p]
+# 1252 P2P internal AllReduce (opt-in GGML_CUDA_AR_P2P=1, content-probed; falls back to host staging)
+# + 1272 wire codec + 1250 q8 wire over P2P. Needs the P2P-enabled Brutus kernel.
+patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", "1250_nro01_allreduce_q8_wire"]
+
+[experiment.adaptive-wire-latency]
+# Promotion candidates combined: adaptive closure (0860 + 1225 + 0840) + 1272 wire formats + 1275
+# small-AllReduce latency switches, so f32/bf16/f16 x latency-fix arms run on one binary.
+patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
+
+[experiment.adaptive-size-trace]
+# Diagnostic: 1277's env-gated per-call AllReduce size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>) on top
+# of the production composition (which now carries the adaptive closure 0860 + 1225 + 0840).
+patches = ["1277_ar_size_trace"]
+
+[experiment.qwen4exp-routing]
+# QFN02: full eval-callback tensor dump (1279) for the MoE routing profile (qwen4exp -sm tensor is native at c061df198).
+patches = ["1279_moe_routing_dump"]
+
+[experiment.iq-mmvq]
+# 1273 alone: opt-in IQ4_XS/IQ3_XXS MMVQ VDR/nwarps variants (BIGCHERRY_IQ_MMVQ_VDR/_NWARPS).
+patches = ["1273_iq_mmvq_rdna_tuning"]
+
+[experiment.draft-local-shared]
+# 1286: DFlash/DSpark drafts get draft-local copies of target tensors held in the tensor-split buffer,
+# so they run with a -sm tensor target (27B draft x deployment matrix, 2026-10-02).
+patches = ["1286_draft_local_shared_tensors"]
+
+[experiment.vulkan-allreduce-host-f32]
+# PRVP03 phase 0: default-off Vulkan meta communication provider (BIGCHERRY_VK_ALLREDUCE=host-f32).
+patches = ["1290_vulkan_allreduce_host_f32"]
+
+[experiment.ar-cpu-root]
+# QFN01 goal: --allreduce cpu-root (1291) on the production composition (which carries 0840/0860).
+patches = ["1291_ar_cpu_root"]
+
+[experiment.ar-cpu-root-kpool]
+# QFN01: 1291 + kpool tail truncation (1292); A/B against ar-cpu-root for decode at long context with MTP.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate"]
+
+[experiment.ar-cpu-root-kpool-topk-gather]
+# RNX02: 1291 + 1292 + 1294 + QSA gathered-cell decode attention (1295); A/B vs ar-cpu-root-kpool-topk.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode"]
+
+[experiment.ar-cpu-root-kpool-topk-gather-trim]
+# QFN01: + opt-in trimmed MTP draft head (1297, BIGCHERRY_DRAFT_VOCAB_N); one binary serves all A/B arms.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode", "1297_draft_vocab_trim"]
+
+[experiment.ar-cpu-root-kpool-topk-vecq]
+# RNX02: 1291 + 1292 + 1294 + quantized-KV vector kernel for MTP verify (1298); A/B vs ar-cpu-root-kpool-topk.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1298_fattn_vec_quant_verify"]
+
+[experiment.ar-cpu-root-kpool-topk-trim]
+# QFN01 deployment candidate: 1291 + 1292 + 1294 + 1297 (no 1295 until its parity is resolved).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim"]
+
+[experiment.ar-cpu-root-kpool-topk-trim-gather]
+# RNX02: deployment candidate + QSA gathered-cell decode attention v2 (1295, threshold 32K cells).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode", "1297_draft_vocab_trim"]
+
+[experiment.deploy-plus-1205]
+# Quick screen: deployment candidate + RD12 paired K/V projection MMVQ (1205).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1205_rd12_paired_mmvq_dual_output"]
+
+[experiment.deploy-plus-1206]
+# Quick screen: deployment candidate + RD13 mul_mat + add view fusion (1206).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1206_rd13_mul_mat_add_view_fusion"]
+
+[experiment.deploy-plus-1301]
+# PRBE115 screen: deployment candidate + 1301 (Q8_0 F32-act at MTP verify widths; env-gated, so one binary
+# serves both arms: BIGCHERRY_Q8_F32_MAXCOLS=1 is 1241 behaviour, =4 covers MTP3 verify; _RDNA4=1 adds gfx1201).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1301_prbe115_q8_f32_mtp_widths"]
+
+[experiment.deploy-plus-1302]
+# 192K deep-fill robustness: deployment candidate + 1302 (graph-instantiate OOM evicts other cached graphs, retries).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict"]
+
+[experiment.deploy-plus-1302-1303]
+# Long-context fit: deployment candidate + 1302 (graph OOM evict) + 1303 (separate attention/KV split, env-gated).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split"]
+
+[experiment.deploy-v2-plus-1295]
+# 1295 QSA gather decode screened on production profile v2 (deploy + 1302 + 1303, f16/f16 240K).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1295_qsa_gather_decode"]
+
+[experiment.deploy-v2-plus-1304]
+# QFP06: production profile v2 + 1304 graph-cache LRU cap / per-instance memory log (both env-gated).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1304_cuda_graph_lru_cap"]
+
+[experiment.deploy-v2-plus-1305]
+# QFP09: production profile v2 + 1305 FFN/MoE split vector (BIGCHERRY_FFN_TS, env-gated; same binary both arms).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1305_ffn_tensor_split"]
+
+[experiment.deploy-v2-plus-1306]
+# QFP12: production profile v2 + 1306 Qwen4Exp shared-expert split (BIGCHERRY_SHEXP_SPLIT, env-gated).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1306_qwen4exp_shexp_split"]
+
+[experiment.ar-cpu-root-topk]
+# 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
+patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
+
+[experiment.ar-cpu-root-kpool-topk]
+# RNX02: 1291 + 1292 + deterministic radix TOP_K ties (1294); determinism + A/B vs ar-cpu-root-kpool.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties"]
+
+[experiment.ar-cpu-root-kpool-sync]
+# QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1293_sched_single_input_sync"]
+
+[experiment.adaptive-mtp]
+# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
+# off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.
+patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
+
+[experiment.allreduce-root3]
+# 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
+patches = ["1244_gp11_internal_allreduce_nway_root"]
+
+[experiment.allreduce-adaptive]
+# 0840 with its REQUIRES (0830 telemetry, 0860 --allreduce CLI, 1225 NCCL arch guard), no 1224
+# probe. 0840 is selected with --allreduce adaptive, so one binary serves every provider arm.
+patches = [
+    "0830_split_reduce_telemetry",
+    "0860_allreduce_provider_cli",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+]
+
+[experiment.ar-adaptive-nway]
+# 1276 composes adaptive N=3: root3 below the CLI switch, RCCL at/above it.
+# Experiments are exact compositions (REQUIRES are never auto-added), so the closure is listed.
+patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"]
+
+[experiment.allreduce-adaptive-wire]
+# Adaptive dispatcher plus 1272's host-wire codec; exact dependency-complete composition.
+patches = [
+    "0830_split_reduce_telemetry",
+    "0860_allreduce_provider_cli",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+    "1272_ar_host_compressed_wire",
+]
 
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
 
-[experiment.hip-internal-allreduce-correctness-gate]
-# Combines 1001 (the AllReduce implementation under test) with 1224 (the
-# SPLIT_REDUCE correctness probe) in one build so test-hip-reduce can
-# actually exercise 1001's HIP-enabled code path -- neither patch alone
-# is enough: 1001 without 1224 has no probe binary to run it through,
-# 1224 without 1001 can only reach RCCL/meta (the internal path stays
-# compiled out). One-off validation build, not a permanent recipe.
-patches = ["1001_hip_internal_allreduce", "1224_hi18_reduce_correctness_probe"]
-
 [experiment.hi155-hybrid-allreduce-gate]
-# 0840 (the hybrid dispatcher) depends on 1001 (the internal pipeline it
-# dispatches into); 1224 (the SPLIT_REDUCE correctness probe) is included
+# 0840 (the hybrid dispatcher) dispatches into the HIP internal AllReduce
+# pipeline, which upstream provides natively since b11126 (formerly the
+# now-superseded patch 1001); 1224 (the SPLIT_REDUCE correctness probe) is included
 # so test-hip-reduce can exercise both sides of the dispatch threshold.
 # One-off validation build, not a permanent recipe.
 patches = [
-    "1001_hip_internal_allreduce",
     "0840_hybrid_allreduce_dispatch",
     "1224_hi18_reduce_correctness_probe",
 ]
@@ -229,15 +544,65 @@ overlay = false
 patch-sets = []
 backend = "vulkan"
 
-[source.bigcherry-native]
-ref = "pinned"
-overlay = true
-patch-sets = ["framework", "upstream-fixes"]
-
 [source.bigcherry]
 ref = "pinned"
 overlay = true
-patch-sets = ["framework", "upstream-fixes", "validated-enhancements"]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): release composition
+# resolves through serving-core (PA26 hardware-proven equivalent to the
+# old aggregate framework composition, removed by PA31). Role/name are
+# unchanged -- this is still THE release source -- only the internal
+# composition narrows to the serving-relevant modules.
+patch-sets = ["serving-core", "upstream-fixes", "validated-enhancements"]
+
+# PA28: additive, transitional semantic sources composed from the new
+# serving-core/campaign-support/qualification-support patch-sets above.
+# None of these are wired into any campaign profile yet and `source.bigcherry`
+# remains the production release owner -- PA29 cuts real consumers over.
+
+# The serving control composition: serving-core + upstream-fixes only. No
+# tune/record/diagnostic/qualification plumbing at all.
+[source.bigcherry-serving-base]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "upstream-fixes"]
+
+# Tuning/campaign composition: serving-core + campaign-support (tune/record/
+# coverage/diagnostics) + upstream-fixes. Enhancements/experiments remain
+# explicit overlays (--experiment), never implicit additions.
+[source.bigcherry-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "upstream-fixes"]
+
+# Qualification composition: serving-core + qualification-support (0830 +
+# 1100) + upstream-fixes. A campaign that also needs campaign-support must
+# request that composition explicitly -- this source does not imply it.
+[source.bigcherry-qualification]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "qualification-support", "upstream-fixes"]
+
+# Originally added for PA30 gate 5/1100: 1100's deterministic test_mul_mat
+# corpus only produces real tuner candidate/correctness evidence when run in
+# GGML_HIP_DISPATCH_MODE=tune, which needs campaign-support's tune/record
+# build plumbing -- bigcherry-qualification intentionally omits
+# campaign-support, so there is no truthful invocation of 1100's tune
+# evidence path through bigcherry-qualification alone (GPT design review,
+# PA30 gate 5).
+#
+# PA31 (GPT design review, PA31 disposition) widened this source's role: it
+# is now also the canonical semantic replacement for the deleted aggregate
+# `framework`+`upstream-fixes` composition (serving-core + campaign-support
+# + qualification-support + upstream-fixes is the literal union PA28 carved
+# `framework` into) -- used by evidence.py's
+# verify_framework_configuration_patch() and validation_campaign.py's
+# --framework-configuration baseline, and by tests asserting the old
+# aggregate composition's full module membership. Not wired into any
+# campaign profile; select it explicitly.
+[source.bigcherry-qualification-tuning]
+ref = "pinned"
+overlay = true
+patch-sets = ["serving-core", "campaign-support", "qualification-support", "upstream-fixes"]
 
 [build.stock]
 description = "Unpatched-behaviour baseline: no dispatch layer at all."
@@ -290,7 +655,7 @@ needs = ["inventory", "promoted-winners"]
 # what ships.
 [build.replay-diagnostic]
 description = "Replay with per-dispatch hit-log attribution -- validation only, not what ships."
-options = { GGML_HIP_DISPATCH_REPLAY = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
+options = { GGML_HIP_AUTOTUNE = "ON", GGML_HIP_REPLAY_DIAGNOSTICS = "ON", GGML_HIP_DISPATCH_DIAGNOSTICS = "ON" }
 variant-set = "replay-full"
 needs = ["inventory", "promoted-winners"]
 
@@ -301,26 +666,29 @@ variant-set = "full-max"
 needs = []
 
 [build.vulkan-stock]
-description = "Vulkan backend, no patches, no tuning (RE30 phase 1 stub)."
-options = { GGML_VULKAN = "ON" }
+description = "Pinned stock Vulkan baseline; no BigCherry patches or tuning (BRVP03)."
+options = { GGML_VULKAN = "ON", GGML_HIP = "OFF" }
 needs = []
 
 [platform.linux-multi]
 description = "brutus, all GPUs. RCCL on -- required for anything multi-GPU."
 targets = ["gfx1100", "gfx1201", "gfx1030"]
-options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON" }
-c-compiler = "/opt/rocm/llvm/bin/clang"
-cxx-compiler = "/opt/rocm/llvm/bin/clang++"
+options = { GGML_HIP = "ON", GGML_HIP_RCCL = "ON", LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache", CMAKE_HIP_COMPILER_LAUNCHER = "ccache" }
+# Host-specific install locations are never committed: ${VAR} references
+# are expanded from the environment (tools/env/rocm-env.sh sets ROCM_PATH).
+c-compiler = "${ROCM_PATH}/llvm/bin/clang"
+cxx-compiler = "${ROCM_PATH}/llvm/bin/clang++"
 
 [platform.windows-gfx1100]
 description = "Local workstation, single card."
 targets = ["gfx1100"]
 options = { GGML_HIP = "ON", LLAMA_BUILD_TESTS = "ON" }
-c-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang.exe"
-cxx-compiler = "C:/Program Files/AMD/ROCm/7.1/bin/clang++.exe"
+# HIP_PATH is set by the AMD HIP SDK installer (or tools/env/rocm-env.ps1).
+c-compiler = "${HIP_PATH}/bin/clang.exe"
+cxx-compiler = "${HIP_PATH}/bin/clang++.exe"
 
 [platform.vulkan-linux]
-description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/ICD identity TBD, needs real Vulkan hardware evidence)."
+description = "Linux Vulkan build on brutus; physical GPU architecture and ICD (RADV/AMDVLK) are runtime-qualified (BRVP03/RRVP02)."
 # "targets" is a HIP/AMDGPU_TARGETS concept and does not apply to Vulkan;
 # core/config.py's v2 parser requires a non-empty list for every platform
 # regardless of backend, so this is a placeholder, not a real GPU target --
@@ -328,7 +696,7 @@ description = "Vulkan-capable Linux platform (RE30 phase 1 stub -- real device/I
 # (see campaign_build._backend_configure_options). Replace with real
 # device/ICD identity in a later RE30 phase.
 targets = ["vulkan-stub"]
-options = { LLAMA_BUILD_TESTS = "ON" }
+options = { LLAMA_BUILD_TESTS = "ON", LLAMA_BUILD_TOOLS = "ON", LLAMA_BUILD_SERVER = "ON", CMAKE_C_COMPILER_LAUNCHER = "ccache", CMAKE_CXX_COMPILER_LAUNCHER = "ccache" }
 
 # Backend software-stack profiles are request identities, separate from
 # machine/platform identities. Paths are deployment-specific and may be
@@ -339,17 +707,17 @@ required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-2]
 backend = "hip"
-sdk-root = "/opt/rocm-7.2"
+sdk-root = "${BIGCHERRY_ROCM_7_2_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-7-14]
 backend = "hip"
-sdk-root = "/opt/rocm-7.14"
+sdk-root = "${BIGCHERRY_ROCM_7_14_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.rocm-10]
 backend = "hip"
-sdk-root = "/opt/rocm-10"
+sdk-root = "${BIGCHERRY_ROCM_10_ROOT}"
 required-providers = ["hip", "rocblas"]
 
 [stack.vulkan-radv]
@@ -363,11 +731,22 @@ backend = "vulkan"
 # means the same production build roles `build --all` always covered, not
 # a silently narrower set.
 [campaign.standard]
+# PA29 cutover (GPT design review req_964ec5fc21c14848): source.bigcherry no
+# longer carries 0110_campaign_tune_record_build (it moved to serving-core's
+# sibling campaign-support patch-set), and build.control/record/tune all
+# require 0110's plumbing (0110 fails closed when it is absent) -- so these
+# three lanes move to bigcherry-tuning (serving-core+campaign-support+
+# upstream-fixes), NOT bigcherry-serving-base (control-only, no
+# campaign-support) and NOT plain bigcherry (no campaign-support at all).
+# build.replay is what actually ships, so it alone stays on source=bigcherry
+# (now serving-core+upstream-fixes+validated-enhancements -- the real
+# release composition). Tuning lanes deliberately exclude
+# validated-enhancements per PA29's release/campaign semantic split.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi" },
-  { source = "bigcherry", build = "record", platform = "linux-multi" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi" },
   { source = "bigcherry", build = "replay", platform = "linux-multi" },
 ]
 
@@ -379,14 +758,19 @@ lanes = [
 # audit/full-max remains opt-in: compiling every candidate is unnecessary for
 # an end-to-end workload-specific comparison.
 [campaign.e2e-build-matrix]
+# PA29 cutover: build.native is serving-only (no tuner/diagnostics), so its
+# lane moves to bigcherry-serving-base. control/record/tune/replay-diagnostic
+# all need 0110's campaign plumbing (see campaign.standard's comment above),
+# so they move to bigcherry-tuning. build.replay is the only lane that stays
+# on source=bigcherry (the real release composition).
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-serving-base", build = "native", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "record", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "replay-diagnostic", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
 # VA26: the repeatable patch-qualification matrix. `standard` above varies the
@@ -397,7 +781,7 @@ lanes = [
 #
 #   llama-native        upstream, unpatched -- what everything is ultimately
 #                       measured against
-#   bc-native           framework only -- the control for the isolated
+#   bc-native           serving-core only -- the control for the isolated
 #                       comparison, and (vs llama-native) the cost of our own
 #                       instrumentation
 #   bc-native + patch   the patch's ISOLATED effect
@@ -424,31 +808,45 @@ lanes = [
 # (Brutus bench runner)") drives a running llama-server via
 # bench/run_bench.py --bench-type server-bench, with the `mtp-dual` config.
 #
-# ARM 4 AND ALREADY-SHIPPED PATCHES. Arm 4 is the release composition WITH the
-# patch. How it is written depends on whether the patch has already shipped:
+# ARM 4 AND ALREADY-SHIPPED PATCHES -- PA29 NOTE (GPT design review
+# req_964ec5fc21c14848 approved the lane-source mapping below, but did not
+# catch this consequence; found by actually resolving the profile with
+# tools/tests/campaign/test_campaign_resolution.py::PerLaneExperimentTests,
+# not asserted from theory): arm 4 ("the patch IN SITU, on top of
+# everything already shipped") required source=bigcherry specifically
+# BECAUSE that was the only source carrying validated-enhancements. Every
+# control-family lane (control/record/tune/replay-diagnostic) now requires
+# 0110's campaign plumbing, which only bigcherry-tuning carries among the
+# PA28 sources -- and bigcherry-tuning deliberately EXCLUDES
+# validated-enhancements (PA29's release/campaign semantic split). There is
+# currently no source that composes serving-core + campaign-support +
+# upstream-fixes + validated-enhancements, so arm 4 can no longer be
+# expressed as "release, in-situ, under the instrumented control build" --
+# doing so would silently drop validated-enhancements from what it measures.
 #
-#   not yet shipped -> source = "bigcherry", experiment = "<patch>-only"
-#   already shipped -> source = "bigcherry" alone; the release set already
-#                      contains it, and adding the experiment is rejected with
-#                      "experiment repeats a base patch module" (correctly).
-#
-# RD73 is already in validated-enhancements, so arm 4 carries no experiment
-# here. Note the consequence honestly: RD73 is currently the ONLY promoted
-# enhancement, so arm 4's composition is IDENTICAL to arm 3's (framework +
-# RD73). That makes arm 4 a consistency check -- it proves the release set
-# really does contain the patch -- rather than an independent data point. Once
-# a second enhancement ships, the two diverge and arm 4 starts measuring
-# genuine composition effects.
+# Until a real "instrumented release" source exists (tracked as follow-up
+# work, not created here), arm 4's original degenerate case -- source=
+# bigcherry, build=control, no experiment, from back when validated-
+# enhancements was empty and arm 4 == arm 2's composition anyway -- is
+# removed from this checked-in profile rather than left as a literal
+# duplicate-selector lane (bigcherry-tuning:control:linux-multi would
+# otherwise collide with arm 2). Re-add a real arm 4 explicitly, scoped to
+# the specific campaign that needs an in-situ release comparison, once that
+# source exists; do not resurrect the plain-bigcherry control lane, it no
+# longer resolves the composition its own name implies.
 #
 # `binary` is load-bearing rather than cosmetic: cmake_targets is DERIVED from
 # it, so a lane left at the default publishes -- and therefore builds -- only
 # llama-bench, and produces no server to measure at all.
 [campaign.patch-qualification]
+# PA29 cutover: build.control requires 0110's campaign plumbing (GPT design
+# review req_964ec5fc21c14848), so every control/tune/replay-diagnostic arm
+# here moves to bigcherry-tuning; only the release-composition replay arm (if
+# ever added) would stay on source=bigcherry.
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-native", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
-  { source = "bigcherry", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
   # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
   # so comparing it against llama-native measures our instrumentation, not our
   # optimisations. replay is "applies stored winners without measuring -- what
@@ -459,7 +857,7 @@ lanes = [
   # These carry `needs` (tune: inventory; replay: inventory + promoted-winners),
   # so a bare `build --profile patch-qualification` cannot satisfy them --
   # supply --inventory/--winners, or select the control-only lanes explicitly.
-  { source = "bigcherry", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
+  { source = "bigcherry-tuning", build = "tune", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry", build = "replay", platform = "linux-multi", binary = "bin/llama-server" },
 ]
 
@@ -589,7 +987,15 @@ required = false
 [[trees]]
 name = "brutus"
 alias = "brutus"
-path = "/mnt/vault/development/projects/bigcherry/workspaces/main"
+# Remote checkout location is host-specific: set BIGCHERRY_BRUTUS_TREE.
+path = "${BIGCHERRY_BRUTUS_TREE}"
 role = "campaign"
 required = true
 expected-tooling-revision = ""
+
+[experiment.ssm-conv-channels-major]
+patches = ["1263_prbe41_ssm_conv_channels_major"]
+
+[experiment.ar-small-latency]
+# 1275 alone: small mapped-host AllReduce slot-sync and launch-geometry controls; defaults preserve pristine behavior.
+patches = ["1275_ar_small_latency"]

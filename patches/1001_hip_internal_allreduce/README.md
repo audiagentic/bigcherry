@@ -6,7 +6,7 @@ Removes the `GGML_USE_HIP` compile-out guard on `allreduce.cu`'s
 pinned-host-memory AllReduce, substitutes `__builtin_amdgcn_s_sleep(4)` for
 CUDA's `__nanosleep(100)` in the cross-GPU spin-wait, and maps the four HIP
 host-mapped pinned-memory alloc APIs the implementation needs.
-`GGML_CUDA_ALLREDUCE=internal` selects this path over RCCL at runtime.
+`--allreduce host` selects this path over RCCL at runtime.
 
 ## Why / evidence
 
@@ -29,7 +29,7 @@ https://github.com/ggml-org/llama.cpp/pull/27825.
 this patch is tagged `optimization` and carries `state = "validated"`,
 with unusually thorough real-hardware A/B/C evidence (see SUMMARY.md) --
 but every prior comparison arm was BigCherry-internal
-(`GGML_CUDA_ALLREDUCE=nccl` was still BigCherry's own RCCL path, not
+(`--allreduce ccl` was still BigCherry's own RCCL path, not
 unmodified upstream llama.cpp). Re-ran a genuine 3-arm sweep same day.
 
 **Real 3-arm sweep (2026-09-11, Brutus, dual gfx1100 `HIP_VISIBLE_DEVICES=0,1`,
