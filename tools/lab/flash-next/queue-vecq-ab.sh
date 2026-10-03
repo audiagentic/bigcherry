@@ -9,7 +9,7 @@ docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radi
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
 VIS=0,1,2,3 BUILD b-flash-vecq-1 bigcherry:stock:linux-multi ar-cpu-root-kpool-topk-vecq gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-vecq-ab-1 tools/lab/flash-next/vecq-ab.sh $base @b-flash-vecq-1 /mnt/data/bigcherry-work/runs/flashnext-vecq-ab-1
+VIS=0,1,2,3 SCRIPT flashnext-vecq-quick-1 tools/lab/flash-next/quick-ab.sh $base @b-flash-vecq-1 /mnt/data/bigcherry-work/runs/flashnext-vecq-quick-1
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
