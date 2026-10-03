@@ -110,6 +110,12 @@ Config findings (all MTP3, draft on 6900, cpu-root, ~10K cached prompt unless no
 - Decode at depth is GPU/launch bound: ~4176 kernels per MTP step per tensor-split GPU (1283 elementwise, 576 quantize_q8_1), cpu_root consume ~121 us x 96 (rank imbalance); HIP graphs active (graphs off +6% step time). VRAM overhead plan: QFN03.
 - Queue lesson: parallel queue scripts overlapped (one's servers/vLLM took the R9700) -> use tools/lab/flash-next/chain-serial.sh; queues no longer restart vLLM (owner).
 
+
+
+2026-10-03 END-TO-END (flashnext-combined-ab-1, ABBA, 192K deployment flags, q8_0 target KV): this morning's deployment (1291, Q8_0 MTP draft, q8_0 draft KV) vs candidate (1291+1292+1294+1297, Q5_K_M draft, f16 draft KV, BIGCHERRY_DRAFT_VOCAB_N=65536). 10K: 66.8/60.4 t/s (52.1/52.3 ms/step) -> 70.3/69.8 t/s (44.1/44.2) = +10% t/s, -15% ms/step. 80K: 39.6/39.4 (77.0/77.3) -> 49.9/50.0 (57.0/56.3) = +26.5% t/s, -26% ms/step. Prefill unchanged (~1050-1070 at 10K, ~850 at 80K). Complete separation at both depths; acceptance slightly lower (~331 vs 344 accepted per 512 at 80K) but more than offset.
+
+PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root-kpool-topk-trim (1291_ar_cpu_root, 1292_kpool_tail_truncate, 1294_topk_deterministic_ties, 1297_draft_vocab_trim). llama-server -m Qwen3.8-Flash-Next-UD-IQ4_XS -ngl 99 --fit off -c 196608 -ub 512 -b 2048 --flash-attn on -ot 'per_layer_token_embd\.weight=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 2,2,3 -md mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf --spec-type draft-mtp --spec-draft-n-max 3 --no-spec-draft-backend-sampling -ctk q8_0 -ctv q8_0 -ctkd f16 -ctvd f16 --allreduce cpu-root; env BIGCHERRY_DRAFT_VOCAB_N=65536. Shorter-context tiers: up to 96K f16/f16 -ts 4,4,3; up to 144K f16-K/q8_0-V -ts 0.31,0.27,0.42; up to 160K q8_0 -ts 4,4,3. Q5_K_M sidecar = llama-quantize --allow-requantize of mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf.
+
 ## Change Log
 
 - 2026-10-01T06:20:09.091717+00:00 (created-by): Created by agent
@@ -144,3 +150,6 @@ Config findings (all MTP3, draft on 6900, cpu-root, ~10K cached prompt unless no
 - chg_20261003_040726_long-context-qwen4exp-decode-w_8449
 - 2026-10-03T04:07:32.984347+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-03T06:40:44.684261+00:00 (updated-by): Updated: section:notes
+- chg_20261003_084245_faster-mtp-speculative-decodin_6706
+- 2026-10-03T08:42:48.723602+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-03T09:09:44.321472+00:00 (updated-by): Updated: section:notes
