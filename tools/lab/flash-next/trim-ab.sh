@@ -7,7 +7,7 @@ bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 export CTKD=f16 CTVD=f16
 for depth in 8192 65536; do
-  for arm in full-a n32k-a n16k-a n64k-a n64k-b n16k-b n32k-b full-b; do
+  for arm in full-a n64k-a n64k-b full-b; do
     n=${arm%-*}; n=${n#n}
     case $n in full) envs=;; 16k) envs=BIGCHERRY_DRAFT_VOCAB_N=16384;; 32k) envs=BIGCHERRY_DRAFT_VOCAB_N=32768;; 64k) envs=BIGCHERRY_DRAFT_VOCAB_N=65536;; esac
     echo "== d$depth $arm ${envs:-<full vocab>}"
