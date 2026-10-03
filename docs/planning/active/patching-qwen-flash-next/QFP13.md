@@ -79,6 +79,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 ownership-map update for the 'Runtime copyBuffer* pair (~108 kernels/token) - unassigned evidence task' row: ATTRIBUTED and IMPLEMENTED. Kernel-neighbourhood attribution on flashnext-v2-profile/d8192 (no API trace needed): ~89 of ~108 copies/token are runs of 8 copies after concat_non_cont, from qwen4exp.cpp [TAG_RECURRENT_ROLLBACK_SPLITS] (n_rs_seq+1 = 4 rollback slots per recurrent layer, each ggml_cpy(ggml_cont(tail), dst) = 2 copies). Owner: patch 1308_qwen4exp_rollback_copy_no_cont (BIGCHERRY_ROLLBACK_NO_CONT=1, copies the strided tail directly). Evidence: greedy IDENTICAL; kernels/token 1270 -> 1212 on top of 1307; ~80K quick screen ~-3% ms/step. Adoption ABBA (v2 vs v2+1307+1308, flashnext-v2-fusion-ab-2): ~10K decode 73.8/73.6 -> 76.0/75.7 t/s (+3%, complete separation); ~80K pending. Remaining ~19 copies/token: singleton copies before k_bin_bcast (unary/get_rows/cpy_scalar neighbours) - unassigned.
 
+2026-10-04 Q8_1 producer stack result (flashnext-v2-q81c, profile v2 + 1307 cache + 1308, new arm adds 1309 BIGCHERRY_RMS_Q81 + 1310 BIGCHERRY_ACT_Q81; 1307 now also looks up a contiguous padding-free RESHAPE under its view_src's key): greedy IDENTICAL; quantize_q8_1 per token per XTX 183 (v2) -> 149 (1307) -> 104 (+1310 first cut) -> 74 (+reshape lookup, 1309 hits); kernels/token 1307 -> 1138 (-13%). Quick screens vs 1307+1308: ~24K 46.0 vs 46.1/45.9 ms/step (neutral), ~80K 51.6 vs 53.5/52.9 (~-2.5..-3.5%). Diagnosis tooling: BIGCHERRY_Q81_TRACE publish/miss pairing (tools/lab/flash-next/q81-trace-run.sh) found the hc_norm RESHAPE-of-RMSNorm keying and per-GPU activation width 320 (why 1310 needed non-512 rows). Rejected: 1310 row cap 512 (publishes ~3x more routed-expert activations that MoE MMVQ never hits; ~24K +6% regression) - reverted to 16. Remaining misses per trace: DSV4_HC_PRE outputs ~2958, other RESHAPE ~2896, GLU (routed experts) ~1847, MUL ~256. Next: producer for dsv4_hc_pre output; MoE (ids) MMVQ key alignment, then re-raise the row cap.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -163,3 +165,9 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-04 (agent): Consolidated QFP13 as the profiling/ranking/acceptance umbrella; removed duplicate PRBE38 backend design; assigned canonical owners; separated opportunity counts from proven reusable launches.
 - 2026-10-03T20:26:08.405034+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T20:32:18.645038+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T22:17:40.734913+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261003_221744_flash-next-decode-issues-13_8662
+- 2026-10-03T22:17:47.230319+00:00 (updated-by): Updated: section:ledger-events
