@@ -9,13 +9,14 @@ mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
-fit() {  # <name> <ctx> <ts> <ub>
-  local name=$1 ctx=$2 ts=$3 ub=$4
+fit() {  # <name> <ctx> <ts> <ub> [target KV type]
+  local name=$1 ctx=$2 ts=$3 ub=$4 kv=${5:-q8_0}
+  [[ -n "${FIT_ONLY:-}" && ! "$name" =~ ^(${FIT_ONLY})$ ]] && return
   local port=$((47000 + RANDOM % 2000)) log="$out/$name.server.log"
   "$bin" -m "$model" -ngl 99 --fit off -c "$ctx" --flash-attn on --parallel 1 --threads 16 -lv 4 \
     -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts "$ts" \
     -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3 \
-    -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 --allreduce cpu-root -ub "$ub" -b 2048 --port "$port" > "$log" 2>&1 &
+    -ctk $kv -ctv $kv -ctkd q8_0 -ctvd q8_0 --allreduce cpu-root -ub "$ub" -b 2048 --port "$port" > "$log" 2>&1 &
   local pid=$! ok=0
   for _ in $(seq 300); do
     curl -sf "http://127.0.0.1:$port/health" >/dev/null && { ok=1; break; }
@@ -48,3 +49,8 @@ fit 256k-556-ub512   262144 5,5,6 512
 fit 256k-556-ub1024  262144 5,5,6 1024
 fit 256k-223-ub512   262144 2,2,3 512
 fit 256k-445-ub1024  262144 4,4,5 1024
+# round 2 (round 1: every rebalanced -ts OOMed; compute buffers, not KV, are the limit)
+fit 256k-223-ub256       262144 2,2,3 256
+fit 256k-223-ub512-kvq4  262144 2,2,3 512 q4_0
+fit 256k-223-ub256-kvq4  262144 2,2,3 256 q4_0
+fit 192k-223-ub1024-kvq4 196608 2,2,3 1024 q4_0
