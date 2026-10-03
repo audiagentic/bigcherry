@@ -49,6 +49,10 @@ _FFN_SELECT = r"""    // bigcherry 1305: optional separate split vector for the 
         }
         return v;
     }();
+    if (!bigcherry_ffn_split.empty() && ud->model->arch != LLM_ARCH_QWEN4EXP) {  // checked only on qwen4exp (cf. 1303)
+        throw std::runtime_error(std::string("BIGCHERRY_FFN_TS is only supported for qwen4exp models (got ") +
+                                 llm_arch_name(ud->model->arch) + "); unset it for this model");
+    }
     if (!bigcherry_ffn_split.empty() && bigcherry_ffn_split.size() != ud->n_devices) {
         throw std::runtime_error("BIGCHERRY_FFN_TS has " + std::to_string(bigcherry_ffn_split.size()) +
                                  " entries, expected " + std::to_string(ud->n_devices));

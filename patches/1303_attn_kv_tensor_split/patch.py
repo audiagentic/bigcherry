@@ -62,6 +62,13 @@ _CONFIG = r"""    // bigcherry 1303: optional separate split vector for the full
         return cfg;
     }();
     if (bigcherry_attn_split.enabled) {
+        // Verified only on Qwen4Exp (bit-identical greedy vs the default split). Other architectures can group
+        // attention tensors differently (Gemma 4: cross-layer KV sharing, local/global layers) and produced
+        // garbage silently in the 2026-10-04 smoke, so refuse rather than risk wrong output.
+        if (ud->model->arch != LLM_ARCH_QWEN4EXP) {
+            throw std::runtime_error(std::string("BIGCHERRY_ATTN_TS is only supported for qwen4exp models (got ") +
+                                     llm_arch_name(ud->model->arch) + "); unset it for this model");
+        }
         if (bigcherry_attn_split.split.size() != ud->n_devices) {
             throw std::runtime_error("BIGCHERRY_ATTN_TS has " + std::to_string(bigcherry_attn_split.split.size()) +
                                      " entries, expected " + std::to_string(ud->n_devices));
