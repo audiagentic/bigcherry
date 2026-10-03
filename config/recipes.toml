@@ -393,6 +393,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # RNX02: 1291 + 1292 + 1294 + quantized-KV vector kernel for MTP verify (1298); A/B vs ar-cpu-root-kpool-topk.
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1298_fattn_vec_quant_verify"]
 
+[experiment.ar-cpu-root-kpool-topk-trim]
+# QFN01 deployment candidate: 1291 + 1292 + 1294 + 1297 (no 1295 until its parity is resolved).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
