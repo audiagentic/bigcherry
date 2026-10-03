@@ -39,7 +39,7 @@ PY
 }
 
 for depth in 10240 32768; do
-    for arm in builtin sidecar builtin; do
+    for arm in ${ARMS:-builtin sidecar builtin}; do
         log=$out/d$depth.$arm.$RANDOM.log
         pid=$(serve $arm "$log")
         ok=0
