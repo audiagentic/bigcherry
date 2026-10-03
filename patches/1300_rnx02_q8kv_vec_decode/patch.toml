@@ -1,0 +1,17 @@
+schema = 1
+id = "1300_rnx02_q8kv_vec_decode"
+order = 1300
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["RNX02"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = ["flash-attention", "kv-cache", "dispatch"]
+tags = ["flash-attention", "kv-cache", "dispatch"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
