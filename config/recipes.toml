@@ -377,6 +377,10 @@ patches = ["1290_vulkan_allreduce_host_f32"]
 # QFN01 goal: --allreduce cpu-root (1291) on the production composition (which carries 0840/0860).
 patches = ["1291_ar_cpu_root"]
 
+[experiment.ar-cpu-root-kpool]
+# QFN01: 1291 + kpool tail truncation (1292); A/B against ar-cpu-root for decode at long context with MTP.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate"]
+
 [experiment.adaptive-mtp]
 # 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
 # off unless --spec-draft-n-min-adaptive 2 > 0, so one binary serves both A/B arms.

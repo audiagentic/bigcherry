@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -70,6 +70,9 @@ mode=${3:-full}
 if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
+elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
+  DECODE_N=512 CACHE=1 run_pass timing 65536
+  exit 0
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
   DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode 65536
   p=/usr/lib/linux-tools/6.8.0-142-generic/perf
