@@ -1,7 +1,7 @@
 #!/bin/bash
 # 1303 deep-fill check of the new long-context profile: f16/f16 KV, -c 245760, KV heads pinned to both XTX
 # (BIGCHERRY_ATTN_TS=1,1,0 unrotated), expert -ts 0.31,0.27,0.42, + 1302. Fills to DEPTH then decodes; searches
-# only filled 8K. Depths: 128K and ~200K.
+# only filled 8K. DEPTH 131072 -> ~164K tokens filled, 184320 -> ~227K.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
@@ -12,7 +12,7 @@ export BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 TS=0.31,0.27,0.42 CTX=245
 bin=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/6ac162d81fbb92465dc2126e6d157ace/515d3ee6faf4dcccda0ea049f8a5b762/bin/llama-server
 R=/mnt/data/bigcherry-work/runs/flashnext-1303-deepfill
 docker stop radiance-vllm >/dev/null 2>&1
-for d in 131072 204800; do
+for d in ${DEPTHS:-131072 184320}; do  # DEPTH yields ~1.23x tokens: 184320 -> ~227K filled
   echo "== depth $d"
   DEPTH=$d bash tools/lab/flash-next/long-ctx-profile.sh "$bin" "$R/d$d" timing 2>&1 | grep -E "^timing|SERVER_FAILED"
   grep -hE "BIGCHERRY_PATCH_HIT patch=1302|cudaMalloc failed|ALLOC_FAILED" "$R/d$d/timing.server.log" | head -3
