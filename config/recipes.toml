@@ -385,6 +385,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate"]
 # RNX02: 1291 + 1292 + 1294 + QSA gathered-cell decode attention (1295); A/B vs ar-cpu-root-kpool-topk.
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode"]
 
+[experiment.ar-cpu-root-kpool-topk-gather-trim]
+# QFN01: + opt-in trimmed MTP draft head (1297, BIGCHERRY_DRAFT_VOCAB_N); one binary serves all A/B arms.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode", "1297_draft_vocab_trim"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
