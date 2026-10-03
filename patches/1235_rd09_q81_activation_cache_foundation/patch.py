@@ -242,7 +242,7 @@ COMMON_CUH_PATCH = FilePatch(
     ),
 )
 
-_DESTRUCTOR_INCLUDE_ANCHOR = r'#include "ggml-cuda/hip-autotune-reduce-telemetry\.h"'
+_DESTRUCTOR_INCLUDE_ANCHOR = r'#include "ggml-cuda/common\.cuh"'
 
 _DESTRUCTOR_INCLUDE_NEW = '\n#include "ggml-cuda/hip-q81-cache.h"'
 
@@ -268,7 +268,7 @@ GGML_CUDA_CU_PATCH = FilePatch(
         Edit(
             id="rd09-q81-cache-include",
             anchor=_DESTRUCTOR_INCLUDE_ANCHOR,
-            rationale="next to the existing BigCherry-header include, at the top of the file's include block",
+            rationale="after the upstream common.cuh include at the top of the include block (an upstream line, so 1235 does not depend on 0830/1224 adding their telemetry header)",
             text=_DESTRUCTOR_INCLUDE_NEW,
             guard=r'#include "ggml-cuda/hip-q81-cache\.h"',
         ),
