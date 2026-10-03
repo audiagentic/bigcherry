@@ -35,7 +35,7 @@ static void bigcherry_cuda_graph_instantiate(ggml_backend_cuda_context * cuda_ct
                 ++it;
             }
         }
-        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1302_graph_oom_evict device=%d evicted=%zu\n", cuda_ctx->device, evicted);
+        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1302_graph_oom_evict device=%d evicted=%zu\\n", cuda_ctx->device, evicted);
         err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
     }
     CUDA_CHECK(err);
