@@ -129,8 +129,8 @@ _HEAD = """            nullptr, nullptr, il);
     cb(cur, "result_norm", -1);
     res->t_embd = cur;
 
-    if (cparams.bc_out_trim != nullptr) {
-        // BigCherry 1297: draft logits over the trimmed vocabulary, scattered into -inf full-vocabulary logits
+    if (cparams.bc_out_trim != nullptr && ggml_nelements(cur) > 0) {
+        // BigCherry 1297 (batches with no output rows - MTP prompt replay - keep the plain head): draft logits over the trimmed vocabulary, scattered into -inf full-vocabulary logits
         // flatten whatever leading layout the head input has to [n_embd, n_out]
         const int64_t n_out   = ggml_nelements(cur) / cur->ne[0];
         const int64_t n_trim  = cparams.bc_out_trim->ne[1];
