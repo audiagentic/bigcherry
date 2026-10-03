@@ -401,6 +401,14 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # RNX02: deployment candidate + QSA gathered-cell decode attention v2 (1295, threshold 32K cells).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode", "1297_draft_vocab_trim"]
 
+[experiment.deploy-plus-1205]
+# Quick screen: deployment candidate + RD12 paired K/V projection MMVQ (1205).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1205_rd12_paired_mmvq_dual_output"]
+
+[experiment.deploy-plus-1206]
+# Quick screen: deployment candidate + RD13 mul_mat + add view fusion (1206).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1206_rd13_mul_mat_add_view_fusion"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
