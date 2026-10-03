@@ -14,11 +14,11 @@ draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash
 args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
       -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 2,2,3
       -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
-      -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 --allreduce cpu-root)
+      -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 --allreduce ${AR:-cpu-root})
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
         -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 2,2,3
-        -ctk q8_0 -ctv q8_0 --allreduce cpu-root)
+        -ctk q8_0 -ctv q8_0 --allreduce ${AR:-cpu-root})
 fi
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
 run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
@@ -56,9 +56,17 @@ for d in depths:
                                  "-p", os.environ["SERVER_PID"], "-o", os.environ["PERF_OUT"]],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": int(os.environ["DECODE_N"]),
-              "cache_prompt": cache, "temperature": 0, "ignore_eos": True})
+              "cache_prompt": cache, "temperature": 0, "ignore_eos": True,
+              **({"n_probs": 5} if os.environ.get("REPEAT") == "1" else {})})
+    if os.environ.get("REPEAT") == "1":
+        json.dump(t.get("completion_probabilities", [])[:8], open(f"{out}/{name}.{d}.probs.json", "w"))
     # temperature 0: the decoded text is the greedy output at this depth, compared across A/B arms
     open(f"{out}/{name}.{d}.greedy.txt", "w").write(t["content"])
+    if os.environ.get("REPEAT") == "1":  # same server, same cached prefix: does decode alone diverge?
+        t2 = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": int(os.environ["DECODE_N"]),
+                   "cache_prompt": cache, "temperature": 0, "ignore_eos": True, "n_probs": 5})
+        open(f"{out}/{name}.{d}.r1.greedy.txt", "w").write(t2["content"])
+        json.dump(t2.get("completion_probabilities", [])[:8], open(f"{out}/{name}.{d}.r1.probs.json", "w"))
     t = t["timings"]
     if perf is not None:
         import signal
@@ -80,7 +88,7 @@ if [ "$mode" = full ]; then
   run_pass plain 8192 32768 98304
   WRAP="rocprofv3 --kernel-trace --memory-copy-trace --stats --output-format csv -d $out/rocprof --" run_pass profiled 32768
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
-  DECODE_N=512 CACHE=1 run_pass timing ${DEPTH:-65536}
+  DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit 0
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
   DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode ${DEPTH:-65536}
