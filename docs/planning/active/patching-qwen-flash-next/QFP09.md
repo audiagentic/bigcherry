@@ -57,8 +57,11 @@ Split screens 2026-10-03 (QFN01 notes): 2,2,3.4 49.3; 2,2,3.8 49.1; 1.9,2.1,3 48
 
 2026-10-04 promoted to P0 by the QFP11 boundary decomposition: per-AR arrival skew (median ~80 us, R9700 last in ~70% of ARs; p90 800 us at 80K when XTX attention is slow) costs ~2.4 ms/token, far more than split boundaries (~0.4). Cause: -ts 0.31,0.27,0.42 sizes the R9700's expert share by VRAM (42%) while its memory bandwidth is ~2/3 of an XTX. Next code: patch 1305 BIGCHERRY_FFN_TS - a second split vector for the MoE expert family (ffn_*_exps, and shexp if it splits) on the 1303 mechanism, so expert placement follows bandwidth within VRAM limits; screen at 10K/80K with the skew metric from ar-boundary.py as the activation/benefit evidence.
 
+2026-10-04 1305 (BIGCHERRY_FFN_TS) screens on profile v2 placement at -c 65536 (-c 131072 OOMs XTX0 with more expert share): ~24K: 0.34,0.33,0.33 45.8 vs 46.0/45.6 ms/step (neutral); 0.37,0.35,0.28 47.1 vs 45.8/46.0 (+2.6%, worse); ~40K: 0.34,0.33,0.33 49.3 vs 50.1/49.5 (-0.8%, noise). Conclusion: moving the expert family alone off the R9700 does not remove the arrival skew - the XTX become the slow side once they take more experts, and the R9700 still carries 42% of the -ts tensors (GDN/recurrent projections, other matvec ~1.9 ms/token). The 'R9700 is slow because of expert share' hypothesis is not supported. Next: per-segment attribution - for each AR interval, which kernels on the last-arriving GPU account for its lateness (extend ar-boundary.py to sum kernel classes between consecutive ARs per GPU), then move only that class. 1305 parked (mechanism works and is cheap; no winning vector found).
+
 ## Change Log
 
 - 2026-10-03T15:21:02.481672+00:00 (created-by): Created by agent
 - 2026-10-03T16:05:27.527362+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T16:35:24.607549+00:00 (updated-by): Updated: priority='P0', section:notes
+- 2026-10-03T16:59:58.379545+00:00 (updated-by): Updated: section:notes

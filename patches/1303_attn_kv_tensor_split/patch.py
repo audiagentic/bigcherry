@@ -66,9 +66,8 @@ _CONFIG = r"""    // bigcherry 1303: optional separate split vector for the full
             throw std::runtime_error("BIGCHERRY_ATTN_TS has " + std::to_string(bigcherry_attn_split.split.size()) +
                                      " entries, expected " + std::to_string(ud->n_devices));
         }
-        static bool bigcherry_attn_split_logged = false;
-        if (!bigcherry_attn_split_logged) {
-            bigcherry_attn_split_logged = true;
+        static std::atomic<bool> bigcherry_attn_split_logged{false};  // split-state calls can be concurrent
+        if (!bigcherry_attn_split_logged.exchange(true)) {
             LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT attn_ts=%s attn_rotate=%d\n",
                            bigcherry_attn_split.raw.c_str(), bigcherry_attn_split.rotate ? 1 : 0);
         }
@@ -116,7 +115,7 @@ PATCHES = [
                 id="attn-ts-include",
                 anchor=re.escape(_INCLUDE),
                 mode="insert_after",
-                text="#include <cstdlib>  // bigcherry 1303: std::getenv\n",
+                text="#include <cstdlib>  // bigcherry 1303: std::getenv\n#include <atomic>   // bigcherry 1303: once-only log flag\n",
                 guard=r"#include <cstdlib>  // bigcherry 1303",
                 rationale="std::getenv for the env-selected attention split.",
                 expect_matches=1,
