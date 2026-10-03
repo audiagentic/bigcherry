@@ -55,7 +55,15 @@ Background: with 2 KV heads and 3 GPUs the default split rotates heads so each G
 
 2026-10-04 load-balance finding (QFP09 census): with KV/attention only on the two XTX (1,1,0), XTX flash-attn grows 0.23 -> 1.5 -> 3.6 ms/token at 10K/80K/160K and the R9700 idles in the allreduce (5.7 vs ~2.6 ms/tok at 160K). Experiment: same profile but rotated attention over all three GPUs (BIGCHERRY_ATTN_ROTATE=1, or ATTN_TS with an R9700 share) at a context that still fits (e.g. 192K), ABBA at 80K/160K; trade max context for depth speed, or switch placement by tier (240K memory-optimal vs <=192K speed-optimal).
 
+2026-10-04 cross-model safety: Gemma-4-26B-A4B on three tensor-split GPUs produced garbage with BIGCHERRY_ATTN_TS=1,1,0 (rotate 0 and 1) while plain and Q8_1-producer-only runs were correct (runs/gemma-iso-dg2). Likely Gemma 4's cross-layer KV sharing / local-global attention layout is outside 1303's attention-family classification. 1303 (and 1305 BIGCHERRY_FFN_TS) now fail closed on any architecture other than qwen4exp with a clear load error. Flash-Next output under 1303 was verified bit-identical earlier, unaffected. Extending 1303 to other architectures would need per-arch grouping proof plus a greedy identity check.
+
 ## Change Log
 
 - 2026-10-03T15:20:52.461503+00:00 (created-by): Created by agent
 - 2026-10-03T16:05:30.647552+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T23:52:04.938996+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261003_235207_the-flash-next-only-gpu-split_2755
+- 2026-10-03T23:52:10.433314+00:00 (updated-by): Updated: section:ledger-events
