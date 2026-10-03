@@ -9,8 +9,8 @@ set -u
 bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 export NO_MTP=1 REPEAT=1 DECODE_N=64
-for ar in cpu-root ccl; do
-  for depth in 32768 65536; do
+for ar in ${PROVIDERS:-cpu-root ccl}; do
+  for depth in ${DEPTHS:-32768 65536}; do
     for start in s1 s2; do
       AR=$ar DEPTH=$depth bash "$s" "$bin" "$root/$ar/d$depth/$start" timing
     done
