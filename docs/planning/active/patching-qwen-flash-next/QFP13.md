@@ -28,6 +28,55 @@ QFP13 owns:
 
 Implementation details belong in the canonical owner item. Do not duplicate matcher/kernel designs here.
 
+## Steps
+
+1. Maintain an adjacent-kernel/n-gram census for the selected production decode window on gfx1100 and gfx1201.
+2. Attribute the highest-frequency unexplained transitions to graph nodes/source. Current first attribution task: the ~108/token HIP runtime `copyBuffer*` kernels.
+3. For each ranked candidate, record: frequency/token, maximum removable launches/token, expected serial gap time, semantic risk, and canonical owner.
+4. Send implementation work to that owner (PRBE38/39/40/05/etc.); QFP13 must not gain backend matcher/kernel pseudocode.
+5. Re-run the same census after each owner lands an accepted experiment. Measure actual launch reduction, gap-time reduction, GPU busy share, ms/step, and effective TG.
+6. If an experiment misses the gate, park/supersede that implementation path rather than broadening it speculatively; advance to the next measured candidate.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+Upstream b11126 reference used for ownership: canonical supported `GGML_OP_GLU` vector graphs already feed `ggml_cuda_mm_fusion_args_host/_device` into fused `mul_mat_vec_q/f` epilogues. Literal `UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` is instead handled through the separate `ggml_cuda_op_unary_mul` pointwise path, so PRBE38 remains a distinct candidate only where trace proves that pointwise work remains a separate post-GEMV launch/global-memory round trip.
+
+QFP11's boundary decomposition measured roughly ~25 us for the split/round-trip itself while arrival skew was much larger; QFP06 measured ~2 MiB per cached graph instance and severe recapture churn with a cap of 32 against a ~195-instance live working set. Those are supporting evidence, not new QFP13 implementation seams.
+
+Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RNX04, RNX08, RNX10, RNX11.
+
+2026-10-04 1307 (PRBE05 stage 2, Q8_1 activation reuse; 1235 re-anchored on upstream common.cuh so it builds outside tuning sources): quantize_q8_1 per generated token per XTX 183 -> 149 (-19%), kernels/token ~1307 -> 1270; profile v2 quick screens ~24K 46.9 vs 48.0/46.6 ms/step, ~80K 53.1 vs 55.0/53.7 - neutral to ~1-2% (first baseline arm runs high every screen, so treat as drift-limited). Acceptance identical (exact reuse). Only ~1/5 of quantizes share an input; the remaining ~150/token need fusion (rms_norm->quantize 41, unary/unary_gated->quantize ~60) or no-quantize F32-activation matvec (1241/1274 route) to remove.
+
+2026-10-04 1308 (rollback snapshots without CONT, BIGCHERRY_ROLLBACK_NO_CONT=1; source: qwen4exp.cpp [TAG_RECURRENT_ROLLBACK_SPLITS], n_rs_seq+1 = 4 slots per recurrent layer, each CONT + CPY = 8 runtime copy kernels per layer, ~89 of ~108 copies/token): with 1307 on in both arms, greedy output IDENTICAL; kernels/token 1270 -> 1212 (cumulative with 1307: 1307 -> 1212, -7%); quick screens ~24K 46.0 vs 46.8/46.1 ms/step (neutral), ~80K 52.2 vs 54.3/53.3 (~-3%, outside both baselines). Next: full ABBA profile v2 vs v2+1307+1308 at 10K/80K for adoption.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -79,15 +128,6 @@ A QFP13 candidate may be promoted to an implementation owner only when all are t
 
 If an existing plan already owns the seam, update/cross-link that plan rather than creating another implementation plan.
 
-## Steps
-
-1. Maintain an adjacent-kernel/n-gram census for the selected production decode window on gfx1100 and gfx1201.
-2. Attribute the highest-frequency unexplained transitions to graph nodes/source. Current first attribution task: the ~108/token HIP runtime `copyBuffer*` kernels.
-3. For each ranked candidate, record: frequency/token, maximum removable launches/token, expected serial gap time, semantic risk, and canonical owner.
-4. Send implementation work to that owner (PRBE38/39/40/05/etc.); QFP13 must not gain backend matcher/kernel pseudocode.
-5. Re-run the same census after each owner lands an accepted experiment. Measure actual launch reduction, gap-time reduction, GPU busy share, ms/step, and effective TG.
-6. If an experiment misses the gate, park/supersede that implementation path rather than broadening it speculatively; advance to the next measured candidate.
-
 ## Validation / Acceptance Gate
 
 Use profile-v2 ABBA on the existing XTX+XTX+R9700 tensor-split topology at shallow (~8-10K) and deep (~65-80K) context.
@@ -112,16 +152,6 @@ Out of scope for QFP13 implementation ownership:
 - speculative fusion based only on source adjacency or operation names;
 - model/tensor-split/MTP-depth changes.
 
-## Notes
-
-Upstream b11126 reference used for ownership: canonical supported `GGML_OP_GLU` vector graphs already feed `ggml_cuda_mm_fusion_args_host/_device` into fused `mul_mat_vec_q/f` epilogues. Literal `UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` is instead handled through the separate `ggml_cuda_op_unary_mul` pointwise path, so PRBE38 remains a distinct candidate only where trace proves that pointwise work remains a separate post-GEMV launch/global-memory round trip.
-
-QFP11's boundary decomposition measured roughly ~25 us for the split/round-trip itself while arrival skew was much larger; QFP06 measured ~2 MiB per cached graph instance and severe recapture churn with a cap of 32 against a ~195-instance live working set. Those are supporting evidence, not new QFP13 implementation seams.
-
-Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RNX04, RNX08, RNX10, RNX11.
-
-2026-10-04 1307 (PRBE05 stage 2, Q8_1 activation reuse; 1235 re-anchored on upstream common.cuh so it builds outside tuning sources): quantize_q8_1 per generated token per XTX 183 -> 149 (-19%), kernels/token ~1307 -> 1270; profile v2 quick screens ~24K 46.9 vs 48.0/46.6 ms/step, ~80K 53.1 vs 55.0/53.7 - neutral to ~1-2% (first baseline arm runs high every screen, so treat as drift-limited). Acceptance identical (exact reuse). Only ~1/5 of quantizes share an input; the remaining ~150/token need fusion (rms_norm->quantize 41, unary/unary_gated->quantize ~60) or no-quantize F32-activation matvec (1241/1274 route) to remove.
-
 ## Change Log
 
 - 2026-10-03T17:26:47.771591+00:00 (created-by): Created by agent
@@ -129,3 +159,4 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 - 2026-10-03T19:38:00+00:00 (agent): Corrected branch selection to `patch-refactor`; made PRBE38 literal GEMV->UNARY->MUL the first trace-gated implementation target; added code-reuse, LOC-reduction, validation and performance gates.
 - 2026-10-03T20:00:05.640046+00:00 (updated-by): Updated: section:notes
 - 2026-10-04 (agent): Consolidated QFP13 as the profiling/ranking/acceptance umbrella; removed duplicate PRBE38 backend design; assigned canonical owners; separated opportunity counts from proven reusable launches.
+- 2026-10-03T20:26:08.405034+00:00 (updated-by): Updated: section:notes
