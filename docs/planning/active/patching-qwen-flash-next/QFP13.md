@@ -173,8 +173,11 @@ First concrete owner: PRBE38. Related: PRBE37 (existing native GEMV fusion descr
 
 2026-10-04 fusion census (XTX0, ~10K, per generated token): top kernels quantize_q8_1 183, mul_mat_vec_q 154, unary_op 102, k_bin_bcast 98, scale_f32 98, mul_mat_vec_f 82, rms_norm 79, __amd_rocclr_copyBufferRectAligned 55 + __amd_rocclr_copyBuffer 53 (HIP runtime copy kernels inside the graph: 108/token, origin unknown - find via apitrace), unary_gated 30, dsv4_hc_pre/post 30 each, cpu_root produce/consume 30 each, mmvq_moe 30. Top adjacent pairs: quantize_q8_1->mul_mat_vec_q 154 (dedupe/reuse q8_1 across consumers of the same activation, PRBE05/1235, or F32-act), scale_f32->unary_op 60, copyBufferRect<->copyBuffer 80, rms_norm->quantize 41 (PRBE06), mmvq->scale 30 / mmvf->scale 30 (PRBE37/38 epilogues), scale->dsv4_hc_post 30, mmvq->dsv4_hc_pre 30 (RNX04), unary_gated->quantize 30. Next: apitrace to attribute the 108 runtime copies; then quantize dedupe.
 
+2026-10-04 1307 (PRBE05 stage 2, Q8_1 activation reuse; 1235 re-anchored on upstream common.cuh so it builds outside tuning sources): quantize_q8_1 per generated token per XTX 183 -> 149 (-19%), kernels/token ~1307 -> 1270; profile v2 quick screens ~24K 46.9 vs 48.0/46.6 ms/step, ~80K 53.1 vs 55.0/53.7 - neutral to ~1-2% (first baseline arm runs high every screen, so treat as drift-limited). Acceptance identical (exact reuse). Only ~1/5 of quantizes share an input; the remaining ~150/token need fusion (rms_norm->quantize 41, unary/unary_gated->quantize ~60) or no-quantize F32-activation matvec (1241/1274 route) to remove.
+
 ## Change Log
 
 - 2026-10-03T17:26:47.771591+00:00 (created-by): Created by agent
 - 2026-10-03T17:27:37.409987+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T19:38:00+00:00 (agent): Corrected branch selection to `patch-refactor`; made PRBE38 literal GEMV->UNARY->MUL the first trace-gated implementation target; added code-reuse, LOC-reduction, validation and performance gates.
+- 2026-10-03T20:00:05.640046+00:00 (updated-by): Updated: section:notes

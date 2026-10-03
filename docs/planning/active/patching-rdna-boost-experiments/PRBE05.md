@@ -74,6 +74,8 @@ Supersedes: RD09 (closed historical predecessor). PRBE05 is the actionable owner
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: corrected the MMVQ call-path assumption (ggml_cuda_mul_mat_vec_q at mmvq.cu:1421 is self-contained -- it does NOT call ggml_cuda_op_mul_mat_vec_q at mmvq.cu:1538; verified via grep). Moved the cache seam to the exact quantize_row_q8_1_cuda call at mmvq.cu:1506. Moved cache ownership into the existing ggml_backend_cuda_context (common.cuh) instead of proposed new .h/.cu files, since the patcher is anchor-only on existing files. Added explicit graph-capture pointer-lifetime/ownership requirement and corrected the test target to GGML_OP_MUL_MAT (no literal MUL_MAT_VEC_Q op exists).
 
+2026-10-04 stage 2 implemented as patch 1307_q81_activation_cache_mmvq (requires 1235 + 1241; GGML_HIP_Q8_1_CACHE_MODE=on): cache keyed by the consumed node (not its view root, to avoid in-place aliasing), generation per ggml_backend_cuda_graph_compute, slab growth blocked during HIP graph capture. 1235's include anchor moved from an 0830-added header to upstream common.cuh. Flash-Next profile v2: quantize launches -19% (183 -> 149/token/GPU), decode neutral to ~1-2%, identical acceptance. See QFP13.
+
 ## Change Log
 
 - 2026-09-09T10:53:47.797556+00:00 (created-by): Created by capability-rebaseline-v3
@@ -95,3 +97,4 @@ Supersedes: RD09 (closed historical predecessor). PRBE05 is the actionable owner
 - 2026-09-12T09:55:06.200665+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:32:42.590942+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:36:28.306424+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:notes
+- 2026-10-03T20:00:08.759319+00:00 (updated-by): Updated: section:notes
