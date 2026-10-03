@@ -99,6 +99,11 @@ static bool bc_act_q81_try(ggml_backend_cuda_context & ctx, ggml_tensor * dst, c
     ggml_cuda_kernel_launch(bc_act_q81_kernel<op, gated>, launch_params, x, g, (float *) dst->data, (block_q8_1 *) r.ptr,
                             k_padded, ne0, ne0_padded, o0, o1);
     ggml_hip_q81_cache_publish(q81, key, r);
+    if (getenv("BIGCHERRY_Q81_TRACE") != nullptr) {  // pair with 1307's miss trace
+        GGML_LOG_WARN("BIGCHERRY_Q81 publish-act gen=%llu node=%p(%s) data=%p ne=%lld,%lld,%lld,%lld\n",
+            (unsigned long long) ggml_hip_q81_cache_current_generation(q81), (const void *) dst, dst->name, dst->data,
+            (long long) ne0, (long long) ne1, (long long) ne2, (long long) ne3);
+    }
     static std::atomic<bool> logged{false};
     if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr && !logged.exchange(true)) {
         GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1310_act_q81 gated=%d ne0=%lld rows=%lld\n", gated ? 1 : 0,

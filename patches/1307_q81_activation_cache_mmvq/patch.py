@@ -54,9 +54,16 @@ _QUANT_NEW = """\
             const ggml_hip_q81_cache_key key = ggml_hip_q81_cache_make_key(
                 q81, src1, src1->data, ctx.curr_stream_no,
                 ne10, ne10_padded, ne11, ne12, ne13, s11, s12, s13);
+            static const bool bigcherry_q81_trace = getenv("BIGCHERRY_Q81_TRACE") != nullptr;
             if (void * hit = ggml_hip_q81_cache_find(q81, key)) {
                 src1_q8_1_ptr = (const char *) hit;
             } else {
+                if (bigcherry_q81_trace) {  // diagnose producer/consumer key mismatches (1309/1310)
+                    GGML_LOG_WARN("BIGCHERRY_Q81 miss gen=%llu src1=%p(%s op=%s view_of=%s) data=%p ne=%lld,%lld,%lld,%lld\\n",
+                        (unsigned long long) ggml_hip_q81_cache_current_generation(q81), (const void *) src1, src1->name,
+                        ggml_op_name(src1->op), src1->view_src ? src1->view_src->name : "-", src1->data,
+                        (long long) ne10, (long long) ne11, (long long) ne12, (long long) ne13);
+                }
                 const ggml_hip_q81_cache_reservation r = ggml_hip_q81_cache_reserve(q81, src1_q8_1_bytes);
                 if (r.ok) {
                     quantize_row_q8_1_cuda(src1_d, nullptr, r.ptr, src0->type, ne10, s11, s12, s13, ne10_padded, ne11, ne12, ne13, stream);
