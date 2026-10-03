@@ -414,6 +414,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # serves both arms: BIGCHERRY_Q8_F32_MAXCOLS=1 is 1241 behaviour, =4 covers MTP3 verify; _RDNA4=1 adds gfx1201).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1301_prbe115_q8_f32_mtp_widths"]
 
+[experiment.deploy-plus-1302]
+# 192K deep-fill robustness: deployment candidate + 1302 (graph-instantiate OOM evicts other cached graphs, retries).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
