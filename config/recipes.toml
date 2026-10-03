@@ -430,6 +430,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # QFP06: production profile v2 + 1304 graph-cache LRU cap / per-instance memory log (both env-gated).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1304_cuda_graph_lru_cap"]
 
+[experiment.deploy-v2-plus-1305]
+# QFP09: production profile v2 + 1305 FFN/MoE split vector (BIGCHERRY_FFN_TS, env-gated; same binary both arms).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1305_ffn_tensor_split"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
