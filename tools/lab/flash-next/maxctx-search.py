@@ -33,6 +33,9 @@ def run(bin_, out, ts, ctx, ctk, ctv, ub):
         pass
     m = re.findall(r"allocating [\d.]+ MiB on device (\d+): cudaMalloc failed", log)
     oom_dev = int(m[-1]) if m else None
+    if oom_dev is None:  # e.g. CUBLAS_STATUS_ALLOC_FAILED creating a handle: the ROCm error names the device
+        d = re.findall(r"current device: (\d+)", log)
+        oom_dev = int(d[-1]) if d else None
     vram = [float(x) / 1e9 for x in re.findall(r"VRAM Total Used Memory \(B\): (\d+)", r.stdout)]
     timing = [l for l in r.stdout.splitlines() if l.startswith("timing:")]
     return ok, oom_dev, vram, timing
@@ -83,7 +86,8 @@ def main():
     hi = int(sys.argv[7]) if len(sys.argv) > 7 else 262144
     os.makedirs(root, exist_ok=True)
     print(f"== K {ctk} V {ctv} ub {ub}: search {lo}..{hi}", flush=True)
-    best_ts = [0.31, 0.27, 0.42]  # XTX1 carries ~4 GB of unsplit data, so it gets less
+    # XTX1 carries ~4 GB of unsplit data and, with the R9700, the two KV heads (XTX0 holds none), so XTX0 gets most.
+    best_ts = [float(x) for x in os.environ.get("START_TS", "0.31,0.27,0.42").split(",")]
     good = try_ctx(bin_, root, best_ts, lo, ctk, ctv, ub)
     if good is None:
         print(f"== K {ctk} V {ctv} ub {ub}: even {lo} fails", flush=True)
