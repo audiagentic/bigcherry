@@ -121,9 +121,14 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
         bool decode = true;
         for (int i = 0; i < cgraph->n_nodes && decode; i++) {
             const ggml_tensor * n = cgraph->nodes[i];
-            if (n->op == GGML_OP_MUL_MAT && n->src[1] != nullptr) {
+            // only quantized-weight matmuls choose between MMVQ (reads the cache) and MMQ; f16/f32 matmuls such as
+            // QSA indexer scoring over the KV cells have large row counts in decode graphs too and must not count
+            if (n->src[0] == nullptr || n->src[1] == nullptr || !ggml_is_quantized(n->src[0]->type)) {
+                continue;
+            }
+            if (n->op == GGML_OP_MUL_MAT) {
                 decode = n->src[1]->ne[1] <= MMVQ_MAX_BATCH_SIZE;
-            } else if (n->op == GGML_OP_MUL_MAT_ID && n->src[1] != nullptr) {
+            } else if (n->op == GGML_OP_MUL_MAT_ID) {
                 decode = n->src[1]->ne[2] <= MMVQ_MAX_BATCH_SIZE;
             }
         }
