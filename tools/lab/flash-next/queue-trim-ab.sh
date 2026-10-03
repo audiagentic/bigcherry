@@ -8,8 +8,8 @@ base=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/090aa
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-flash-trim-1 bigcherry:stock:linux-multi ar-cpu-root-kpool-topk-gather-trim gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-trim-ab-2 tools/lab/flash-next/trim-ab.sh @b-flash-trim-1 /mnt/data/bigcherry-work/runs/flashnext-trim-ab-2
+VIS=0,1,2,3 BUILD b-flash-trim-2 bigcherry:stock:linux-multi ar-cpu-root-kpool-topk-gather-trim gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT flashnext-trim-ab-3 tools/lab/flash-next/trim-ab.sh @b-flash-trim-2 /mnt/data/bigcherry-work/runs/flashnext-trim-ab-3
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
