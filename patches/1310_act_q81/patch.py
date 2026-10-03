@@ -78,7 +78,7 @@ static bool bc_act_q81_try(ggml_backend_cuda_context & ctx, ggml_tensor * dst, c
         return false;
     }
     const int64_t ne0 = dst->ne[0], ne1 = dst->ne[1], ne2 = dst->ne[2], ne3 = dst->ne[3];
-    if (ne0 % QK8_1 != 0 || ne1*ne2*ne3 > 16) {
+    if (ne0 % QK8_1 != 0 || ne1*ne2*ne3 > 512) {  // routed-expert activations: n_tokens x n_expert_used rows
         return false;
     }
     const int64_t ne0_padded = GGML_PAD(ne0, MATRIX_ROW_PADDING);  // MMVQ's padded src1 row

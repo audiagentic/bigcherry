@@ -55,7 +55,22 @@ _QUANT_NEW = """\
                 q81, src1, src1->data, ctx.curr_stream_no,
                 ne10, ne10_padded, ne11, ne12, ne13, s11, s12, s13);
             static const bool bigcherry_q81_trace = getenv("BIGCHERRY_Q81_TRACE") != nullptr;
-            if (void * hit = ggml_hip_q81_cache_find(q81, key)) {
+            void * hit = ggml_hip_q81_cache_find(q81, key);
+            // A contiguous RESHAPE of a published node (e.g. Qwen4Exp hc_norm = reshape of the RMSNorm output)
+            // has identical Q8_1 bytes when neither layout needs row padding: the flatten is row-major and the
+            // 32-element groups line up. Look it up under the source node's own key (a reshape never changes data).
+            if (hit == nullptr && src1->op == GGML_OP_RESHAPE && src1->view_src != nullptr &&
+                    src1->data == src1->view_src->data && ggml_is_contiguous(src1) &&
+                    ggml_is_contiguous(src1->view_src) && ne10 == ne10_padded &&
+                    src1->view_src->ne[0] % MATRIX_ROW_PADDING == 0 &&
+                    ggml_nelements(src1) == ggml_nelements(src1->view_src)) {
+                const ggml_tensor * vs = src1->view_src;
+                const ggml_hip_q81_cache_key vkey = ggml_hip_q81_cache_make_key(
+                    q81, vs, vs->data, ctx.curr_stream_no, vs->ne[0], vs->ne[0], vs->ne[1], vs->ne[2], vs->ne[3],
+                    vs->ne[0], vs->ne[0]*vs->ne[1], vs->ne[0]*vs->ne[1]*vs->ne[2]);
+                hit = ggml_hip_q81_cache_find(q81, vkey);
+            }
+            if (hit != nullptr) {
                 src1_q8_1_ptr = (const char *) hit;
             } else {
                 if (bigcherry_q81_trace) {  // diagnose producer/consumer key mismatches (1309/1310)
