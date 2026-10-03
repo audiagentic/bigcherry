@@ -6,9 +6,11 @@ set -u
 bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 export NO_MTP=1 REPEAT=1 DECODE_N=16 CTK=f16 CTV=f16 DEPTH=8192 CTX=${CTX:-65536}
+if [ "${ONLY_REF:-}" != 1 ]; then
 BIGCHERRY_QSA_GATHER=0 FA=on  bash "$s" "$bin" "$root/A" timing | grep "^timing: prompt"
 BIGCHERRY_QSA_GATHER=1 FA=on  bash "$s" "$bin" "$root/B" timing | grep "^timing: prompt"
-BIGCHERRY_QSA_GATHER=0 FA=off bash "$s" "$bin" "$root/C" timing | grep "^timing: prompt"
+fi
+BIGCHERRY_QSA_GATHER=0 CPU_REF=1 CTX=16384 bash "$s" "$bin" "$root/C" timing | grep "^timing: prompt"
 python3 - "$root" <<'PY'
 import json, math, sys
 r = sys.argv[1]
