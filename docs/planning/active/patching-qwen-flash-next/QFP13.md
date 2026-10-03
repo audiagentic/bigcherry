@@ -81,6 +81,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 Q8_1 producer stack result (flashnext-v2-q81c, profile v2 + 1307 cache + 1308, new arm adds 1309 BIGCHERRY_RMS_Q81 + 1310 BIGCHERRY_ACT_Q81; 1307 now also looks up a contiguous padding-free RESHAPE under its view_src's key): greedy IDENTICAL; quantize_q8_1 per token per XTX 183 (v2) -> 149 (1307) -> 104 (+1310 first cut) -> 74 (+reshape lookup, 1309 hits); kernels/token 1307 -> 1138 (-13%). Quick screens vs 1307+1308: ~24K 46.0 vs 46.1/45.9 ms/step (neutral), ~80K 51.6 vs 53.5/52.9 (~-2.5..-3.5%). Diagnosis tooling: BIGCHERRY_Q81_TRACE publish/miss pairing (tools/lab/flash-next/q81-trace-run.sh) found the hc_norm RESHAPE-of-RMSNorm keying and per-GPU activation width 320 (why 1310 needed non-512 rows). Rejected: 1310 row cap 512 (publishes ~3x more routed-expert activations that MoE MMVQ never hits; ~24K +6% regression) - reverted to 16. Remaining misses per trace: DSV4_HC_PRE outputs ~2958, other RESHAPE ~2896, GLU (routed experts) ~1847, MUL ~256. Next: producer for dsv4_hc_pre output; MoE (ids) MMVQ key alignment, then re-raise the row cap.
 
+2026-10-04 1311 (BIGCHERRY_HC_Q81=1, hyper-connection pre-mix emits Q8_1) on top of 1307-1310 with 1310 row cap 64 (flashnext-v2-1311): greedy IDENTICAL; quantize_q8_1/token/GPU 74 -> 45 (cumulative from profile v2: 183 -> 45, -75%); kernels/token 1138 -> 1116 (cumulative 1307 -> 1116, -15%); screens ~24K 45.4 vs 47.0/45.5 ms/step (neutral), ~80K 51.1 vs 52.8/52.2 (~-2%). Trace: DSV4_HC_PRE misses 2958 -> 1246, RESHAPE 2896 -> 936; GLU misses unchanged (1557) and publish-act unchanged even with cap 64 -> the routed-expert ffn_moe_swiglu outputs are not produced by ggml_cuda_op_unary_gated (likely the fused MUL_MAT_ID+GLU MMVQ path writes them), so 1310 cannot publish them; catching them needs a Q8_1 write in the fused GEMV epilogue (PRBE37 scope). Planned generalisation (owner request): replace the producers' row caps with the MMVQ batch rule (publish only when the graph's token count <= MMVQ_MAX_BATCH_SIZE) so other models' fan-out shapes and small prefill ubatches behave correctly.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -171,3 +173,4 @@ Out of scope for QFP13 implementation ownership:
 
 - chg_20261003_221744_flash-next-decode-issues-13_8662
 - 2026-10-03T22:17:47.230319+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-03T22:54:32.356647+00:00 (updated-by): Updated: section:notes
