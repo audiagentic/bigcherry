@@ -10,8 +10,8 @@ For small batches (n_tokens <= 8: decode, MTP verify, MTP draft) this patch gath
 cells (top pools + tail, sentinel n_kv for missing cells) from the K/V cache with get_rows, gathers the
 matching kq_mask entries (the sentinel maps to an appended -inf column), and runs flash attention per token
 over n_sel cells with the token as the batch dimension. Same attention, n_sel instead of n_kv cells read.
-Prefill keeps the masked path. Falls back to the masked path when the cache view is not plain (multiple
-streams, transposed V) or has no spare row for the sentinel. BIGCHERRY_QSA_GATHER=0 disables it.
+Prefill and caches below BIGCHERRY_QSA_GATHER_MIN cells (default 32768) keep the masked path, as do
+non-contiguous cache views (multiple streams, transposed V). BIGCHERRY_QSA_GATHER=0 disables it.
 """
 
 import re as _re
@@ -21,34 +21,34 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "core"
 STATE = "untested"
 
-_GATHER = """    // BigCherry 1295: small batches attend over the gathered n_sel cells, not the masked n_kv cells
-    if (bc_qsa_idx != nullptr && n_tokens <= 8 && bc_qsa_gather_enabled()) {
+_GATHER = """    // BigCherry 1295: small batches over a large cache attend over the gathered n_sel cells, not the masked n_kv
+    if (bc_qsa_idx != nullptr && n_tokens <= 8 && bc_qsa_gather_enabled() &&
+            mctx_cur->get_k(ctx0, il)->ne[2] >= bc_qsa_gather_min()) {
         ggml_tensor * k_all = mctx_cur->get_k(ctx0, il); // [hd, n_head_kv, n_kv, n_stream]
         ggml_tensor * v_all = mctx_cur->get_v(ctx0, il);
         const int64_t hd    = k_all->ne[0];
         const int64_t nh_kv = k_all->ne[1];
         const int64_t n_kv  = k_all->ne[2];
-        // pad the cell list to a multiple of 256 with the sentinel so the vec kernel and the GQA path apply
+        // pad the cell list to a multiple of 256 so the vec kernel and the GQA path apply
         const int64_t n_pad     = (256 - bc_qsa_idx->ne[0] % 256) % 256;
         const int64_t n_sel_all = bc_qsa_idx->ne[0] + n_pad;
         const bool plain = k_all->ne[3] == 1 && v_all->ne[3] == 1 && v_all->nb[1] <= v_all->nb[2] &&
-            k_all->view_src != nullptr && v_all->view_src != nullptr &&
-            k_all->view_offs + (size_t) (n_kv + 1) * k_all->nb[2] <= ggml_nbytes(k_all->view_src) &&
-            v_all->view_offs + (size_t) (n_kv + 1) * v_all->nb[2] <= ggml_nbytes(v_all->view_src) &&
-            v_all->ne[0] == hd && v_all->ne[1] == nh_kv;
+            ggml_is_contiguous(k_all) && ggml_is_contiguous(v_all) && v_all->ne[0] == hd && v_all->ne[1] == nh_kv;
         if (plain) {
-            // rows n_kv cells + 1: the sentinel index n_kv reads a spare row, masked to -inf below
-            ggml_tensor * k_rows = ggml_view_2d(ctx0, k_all->view_src, hd*nh_kv, n_kv + 1, k_all->nb[2], k_all->view_offs);
-            ggml_tensor * v_rows = ggml_view_2d(ctx0, v_all->view_src, hd*nh_kv, n_kv + 1, v_all->nb[2], v_all->view_offs);
+            // cells for the mask keep the sentinel n_kv (missing tail cells, padding) -> -inf column below
             ggml_tensor * cells = bc_qsa_idx;
             if (n_pad > 0) {
                 ggml_tensor * pad = ggml_fill(ctx0, ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_pad, n_tokens), (float) n_kv);
                 cells = ggml_concat(ctx0, cells, ggml_cast(ctx0, pad, GGML_TYPE_I32), 0);
             }
-            ggml_tensor * idx    = ggml_reshape_1d(ctx0, cells, n_sel_all*n_tokens);
+            // cells for K/V clamp the sentinel to a valid row (its weight is zero via the mask)
+            ggml_tensor * rows_idx = ggml_cast(ctx0, ggml_clamp(ctx0, ggml_cast(ctx0, cells, GGML_TYPE_F32), 0.0f, (float) (n_kv - 1)), GGML_TYPE_I32);
+            rows_idx = ggml_reshape_1d(ctx0, rows_idx, n_sel_all*n_tokens);
 
-            ggml_tensor * k_sel = ggml_cast(ctx0, ggml_get_rows(ctx0, k_rows, idx), GGML_TYPE_F16);
-            ggml_tensor * v_sel = ggml_cast(ctx0, ggml_get_rows(ctx0, v_rows, idx), GGML_TYPE_F16);
+            ggml_tensor * k_rows = ggml_reshape_2d(ctx0, k_all, hd*nh_kv, n_kv);
+            ggml_tensor * v_rows = ggml_reshape_2d(ctx0, v_all, hd*nh_kv, n_kv);
+            ggml_tensor * k_sel = ggml_cast(ctx0, ggml_get_rows(ctx0, k_rows, rows_idx), GGML_TYPE_F16);
+            ggml_tensor * v_sel = ggml_cast(ctx0, ggml_get_rows(ctx0, v_rows, rows_idx), GGML_TYPE_F16);
             k_sel = ggml_permute(ctx0, ggml_reshape_4d(ctx0, k_sel, hd, nh_kv, n_sel_all, n_tokens), 0, 2, 1, 3);
             v_sel = ggml_permute(ctx0, ggml_reshape_4d(ctx0, v_sel, hd, nh_kv, n_sel_all, n_tokens), 0, 2, 1, 3);
 
@@ -86,6 +86,15 @@ static bool bc_qsa_gather_enabled() {
         return enabled;
     }();
     return on;
+}
+
+// BigCherry 1295: below this many cache cells the masked path is cheaper than the per-token gather
+static int64_t bc_qsa_gather_min() {
+    static const int64_t n = [] {
+        const char * e = getenv("BIGCHERRY_QSA_GATHER_MIN");
+        return e != nullptr ? (int64_t) atoll(e) : (int64_t) 32768;
+    }();
+    return n;
 }
 
 """
