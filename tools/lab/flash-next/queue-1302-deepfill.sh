@@ -11,8 +11,8 @@ export BIGCHERRY_DRAFT_VOCAB_N=65536 CTKD=f16 CTVD=f16 DECODE_N=256 DEPTH=131072
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-deploy-1302 bigcherry:stock:linux-multi deploy-plus-1302 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT flashnext-1302-deepfill tools/lab/flash-next/long-ctx-profile.sh @b-deploy-1302 /mnt/data/bigcherry-work/runs/flashnext-1302-deepfill timing
+VIS=0,1,2,3 BUILD b-deploy-1302b bigcherry:stock:linux-multi deploy-plus-1302 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT flashnext-1302b-deepfill tools/lab/flash-next/long-ctx-profile.sh @b-deploy-1302b /mnt/data/bigcherry-work/runs/flashnext-1302-deepfill timing
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
