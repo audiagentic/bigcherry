@@ -381,6 +381,10 @@ patches = ["1291_ar_cpu_root"]
 # QFN01: 1291 + kpool tail truncation (1292); A/B against ar-cpu-root for decode at long context with MTP.
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate"]
 
+[experiment.ar-cpu-root-kpool-topk-gather]
+# RNX02: 1291 + 1292 + 1294 + QSA gathered-cell decode attention (1295); A/B vs ar-cpu-root-kpool-topk.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1295_qsa_gather_decode"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]

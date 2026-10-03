@@ -1,0 +1,16 @@
+schema = 1
+id = "1295_qsa_gather_decode"
+order = 1295
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+backends = ["hip"]
+plan-ids = ["RNX02"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+tags = ["flash-attention", "split-tensor", "optimization"]
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
