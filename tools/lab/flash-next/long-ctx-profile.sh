@@ -28,7 +28,7 @@ run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
   done
   if [ "$ok" != 1 ]; then echo "$name: SERVER_FAILED"; tail -5 "$log"; kill "$pid" 2>/dev/null; wait "$pid"; return; fi
   rocm-smi --showmeminfo vram 2>/dev/null | grep "Total Used" > "$out/$name.vram.txt"
-  python3 - "$port" "$name" "$out" "$@" <<'PY'
+  CACHE=${CACHE:-} DECODE_N=${DECODE_N:-128} python3 - "$port" "$name" "$out" "$@" <<'PY'
 import json, sys, urllib.request
 port, name, out = sys.argv[1:4]; depths = [int(d) for d in sys.argv[4:]]
 def post(body):
@@ -79,10 +79,10 @@ import csv, glob, sys, collections
 for path in sorted(glob.glob(f"{sys.argv[1]}/**/*memory_copy_trace.csv", recursive=True))[:1]:
     groups = collections.defaultdict(lambda: [0, 0.0])
     for r in csv.DictReader(open(path)):
-        if r.get("Direction", r.get("Kind", "")).endswith("DEVICE_TO_DEVICE"):
-            k = (r.get("Src_Agent_Id", "?"), r.get("Dst_Agent_Id", "?"), int(r.get("Bytes", r.get("Size", 0))))
+        if r["Direction"].endswith("DEVICE_TO_DEVICE"):  # this rocprofv3 reports no byte count
+            k = (r["Source_Agent_Id"], r["Destination_Agent_Id"], "stream " + r["Stream_Id"])
             g = groups[k]; g[0] += 1; g[1] += (int(r["End_Timestamp"]) - int(r["Start_Timestamp"])) / 1e6
-    print("device-to-device copies by (src, dst, bytes): calls, total ms")
+    print("device-to-device copies by (src, dst, stream): calls, total ms")
     for k, (n, ms) in sorted(groups.items(), key=lambda kv: -kv[1][1])[:15]:
         print(f"  {k}: {n} calls, {ms:.1f} ms")
 PY

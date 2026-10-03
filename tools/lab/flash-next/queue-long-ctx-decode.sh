@@ -7,7 +7,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-N
 bin=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/1356624955c2dd053598169ca58e5392/774ea136f428afd311569c9c47387042/bin/llama-server
 docker stop radiance-vllm >/dev/null 2>&1 && docker update --restart always radiance-vllm >/dev/null
 jobs=$(mktemp)
-echo "VIS=0,1,2,3 SCRIPT flashnext-long-ctx-decode-1 tools/lab/flash-next/long-ctx-profile.sh $bin /mnt/data/bigcherry-work/runs/flashnext-long-ctx-decode-1 decode" > "$jobs"
+echo "VIS=0,1,2,3 SCRIPT flashnext-long-ctx-decode-2 tools/lab/flash-next/long-ctx-profile.sh $bin /mnt/data/bigcherry-work/runs/flashnext-long-ctx-decode-2 decode" > "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
