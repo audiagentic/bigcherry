@@ -7,7 +7,7 @@ created-at: '2026-10-03T16:33:36.231209+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P0
+priority: P3
 work: L
 ---
 
@@ -53,6 +53,10 @@ Fewer graph launches per step (rocprof), GPU busy share up from ~42%, ms/step AB
 
 Evidence runs: flashnext-v2-synctrace-timed (sync-tracer.c now records blocked time), flashnext-v2-profile (rank-census.py), flashnext-v2-1304-memlog. Related: QFP01 (1291 cpu-root AR), QFP06 (graph memory), QFP09 (rank skew), RNX11 (AR graph-replay hardening), PRBE66/67 (graph keying).
 
+2026-10-04 boundary decomposition (tools/lab/flash-next/ar-boundary.py on flashnext-v2-profile d8192/d65536, ~30 ARs per generated token): gap_before ~9 us, gap_after ~3 us, CPU-root round trip once all ranks arrived 13 us (p90 14) - the boundary itself is ~25 us. The dead time is ARRIVAL SKEW: median 78 us at ~10K (p90 110), 82 us at ~80K (p90 800); the R9700 arrives last in 75%/67% of ARs. Skew x ~30 ARs/token ~= 2.4 ms/token, vs ~0.4 ms/token for split/launch boundaries. Conclusion: capturing the AR inside one graph would save at most ~0.4 ms/token; downgraded to P3. The lever is per-class load balance (QFP09: expert split by bandwidth, QFP07: attention placement at depth).
+
 ## Change Log
 
 - 2026-10-03T16:33:36.231209+00:00 (created-by): Created by agent
+- 2026-10-03T16:35:18.028294+00:00 (updated-by): Updated: section:notes
+- 2026-10-03T16:35:21.329774+00:00 (updated-by): Updated: priority='P3'
