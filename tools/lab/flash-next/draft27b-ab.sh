@@ -18,7 +18,9 @@ serve() {  # arm log
     if [ "$arm" = builtin ]; then
         HIP_VISIBLE_DEVICES=0,1 "$bin" $COMMON > "$log" 2>&1 &
     else
-        HIP_VISIBLE_DEVICES=0,1,3 "$bin" $COMMON -dev ROCm0,ROCm1 -devd ROCm2 -md "$side" \
+        local dgpu=3  # sidecar = 6900 XT (physical GPU 3); sidecar_r9700 = R9700 (physical GPU 2)
+        [ "$arm" = sidecar_r9700 ] && dgpu=2
+        HIP_VISIBLE_DEVICES=0,1,$dgpu "$bin" $COMMON -dev ROCm0,ROCm1 -devd ROCm2 -md "$side" \
             --no-spec-draft-backend-sampling -ctkd f16 -ctvd f16 > "$log" 2>&1 &
     fi
     echo $!
