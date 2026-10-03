@@ -116,6 +116,18 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     const bool bigcherry_q81_on = ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF;
     if (bigcherry_q81_on) {
         ggml_hip_q81_cache_begin_generation(ggml_hip_q81_cache_for_context(*cuda_ctx));
+        // Decode-shaped graph = every quantized matmul in it takes MMVQ (token count <= MMVQ_MAX_BATCH_SIZE);
+        // only then do Q8_1 producers publish (their output would otherwise be consumed by MMQ and wasted).
+        bool decode = true;
+        for (int i = 0; i < cgraph->n_nodes && decode; i++) {
+            const ggml_tensor * n = cgraph->nodes[i];
+            if (n->op == GGML_OP_MUL_MAT && n->src[1] != nullptr) {
+                decode = n->src[1]->ne[1] <= MMVQ_MAX_BATCH_SIZE;
+            } else if (n->op == GGML_OP_MUL_MAT_ID && n->src[1] != nullptr) {
+                decode = n->src[1]->ne[2] <= MMVQ_MAX_BATCH_SIZE;
+            }
+        }
+        ggml_hip_q81_decode_graph = decode;
     }
 #endif
 """

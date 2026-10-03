@@ -63,6 +63,12 @@ enum ggml_hip_q81_cache_mode {
 // the two would poison the native control that other experiments rely on.
 ggml_hip_q81_cache_mode ggml_hip_q81_cache_mode_get();
 
+// Set by ggml_backend_cuda_graph_compute (patch 1307) for the graph being evaluated on this thread: true when every
+// MUL_MAT / MUL_MAT_ID in it has a token count <= MMVQ_MAX_BATCH_SIZE, i.e. its quantized matmuls take the MMVQ path
+// that reads this cache. Q8_1 producers (1309/1310/1311) publish only in such graphs, so they never spend work on
+// activations that MMQ (prefill) consumes, independent of any model's fan-out shape (experts, hyper-connections).
+inline thread_local bool ggml_hip_q81_decode_graph = false;
+
 // Emits a one-line summary of lifetime stats to stderr when
 // GGML_HIP_Q8_1_CACHE_STATS=1 is set. Cheap to call unconditionally; the
 // env check is itself checked-once.

@@ -92,7 +92,7 @@ _FUSED_GATE = r"""#if defined(GGML_USE_HIP)
     // standalone quantize launch.
     static const bool bigcherry_rms_q81 = getenv("BIGCHERRY_RMS_Q81") != nullptr && atoi(getenv("BIGCHERRY_RMS_Q81")) != 0;
     if (bigcherry_rms_q81 && ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF && ne00 >= 1024 && ne00 % QK8_1 == 0 &&
-            ne01*ne02*ne03 <= 16 && ggml_is_contiguous(mul_tensor)) {
+            ggml_hip_q81_decode_graph && ggml_is_contiguous(mul_tensor)) {  // decode-shaped graph (1307), not a row cap
         const int64_t ne00_padded = GGML_PAD(ne00, MATRIX_ROW_PADDING);
         const size_t  q8_bytes    = (size_t) (ne01*ne02*ne03) * (ne00_padded/QK8_1) * sizeof(block_q8_1);
         ggml_hip_q81_cache & q81 = ggml_hip_q81_cache_for_context(ctx);

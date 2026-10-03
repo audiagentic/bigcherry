@@ -80,7 +80,7 @@ _LAUNCH_GATE = r"""#if defined(GGML_USE_HIP)
     {
         static const bool bigcherry_hc_q81 = getenv("BIGCHERRY_HC_Q81") != nullptr && atoi(getenv("BIGCHERRY_HC_Q81")) != 0;
         if (bigcherry_hc_q81 && ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF && ggml_is_contiguous(dst) &&
-                n_embd % QK8_1 == 0 && n_tokens <= 16 && dst->ne[0] == n_embd && dst->ne[1] == n_tokens) {
+                n_embd % QK8_1 == 0 && ggml_hip_q81_decode_graph && dst->ne[0] == n_embd && dst->ne[1] == n_tokens) {
             const int64_t n_embd_padded = GGML_PAD(n_embd, MATRIX_ROW_PADDING);
             ggml_hip_q81_cache & q81 = ggml_hip_q81_cache_for_context(ctx);
             const ggml_hip_q81_cache_key key = ggml_hip_q81_cache_make_key(
