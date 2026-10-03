@@ -13,7 +13,7 @@ model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4
 draft=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf
 args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
       -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts 2,2,3
-      -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max 3
+      -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
       -ctk q8_0 -ctv q8_0 -ctkd q8_0 -ctvd q8_0 --allreduce cpu-root)
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c 196608 --flash-attn on --parallel 1 --threads 16 -lv 4
@@ -47,7 +47,8 @@ for d in depths:
     import os
     cache = os.environ.get("CACHE") == "1"
     if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
-        post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})
+        fill = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})["timings"]
+        print(f"{name}: fill prefill {fill['prompt_n']} tok at {fill['prompt_per_second']:.1f} t/s", flush=True)
     perf = None
     if os.environ.get("PERF_OUT"):  # host-side sampling of the server during the timed decode only
         import subprocess
