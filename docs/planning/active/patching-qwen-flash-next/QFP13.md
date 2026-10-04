@@ -83,6 +83,10 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 1311 (BIGCHERRY_HC_Q81=1, hyper-connection pre-mix emits Q8_1) on top of 1307-1310 with 1310 row cap 64 (flashnext-v2-1311): greedy IDENTICAL; quantize_q8_1/token/GPU 74 -> 45 (cumulative from profile v2: 183 -> 45, -75%); kernels/token 1138 -> 1116 (cumulative 1307 -> 1116, -15%); screens ~24K 45.4 vs 47.0/45.5 ms/step (neutral), ~80K 51.1 vs 52.8/52.2 (~-2%). Trace: DSV4_HC_PRE misses 2958 -> 1246, RESHAPE 2896 -> 936; GLU misses unchanged (1557) and publish-act unchanged even with cap 64 -> the routed-expert ffn_moe_swiglu outputs are not produced by ggml_cuda_op_unary_gated (likely the fused MUL_MAT_ID+GLU MMVQ path writes them), so 1310 cannot publish them; catching them needs a Q8_1 write in the fused GEMV epilogue (PRBE37 scope). Planned generalisation (owner request): replace the producers' row caps with the MMVQ batch rule (publish only when the graph's token count <= MMVQ_MAX_BATCH_SIZE) so other models' fan-out shapes and small prefill ubatches behave correctly.
 
+2026-10-04 1312 (fused UNARY*MUL -> Q8_1 via 1310; upstream fuses sigmoid+mul into ggml_cuda_op_unary_mul so ggml_cuda_op_mul never runs for these) build A/B v3 vs v3+1312 (flashnext-v3-1312b): greedy IDENTICAL; ~24K 45.3 vs 47.7/45.2 ms/step, ~80K 51.0 vs 52.5/51.1 (neutral); quantize/token/XTX 45 -> 41.3, kernels/token 1116 unchanged. Trace: attn_gated misses gone (publish-act attn_gated); GDN final_output still missed - the MUL node is [128, heads, T] and ssm_out reads reshape_3d(128*heads, T) whose 1536-2688 row needs MMVQ padding, so 1307's padding-free reshape lookup cannot match. Fix committed: 1310 helper flatten01 (+ gate index by source row stride), 1312 publishes the GDN gated norm flattened, 1307 flattened-reshape lookup; recheck queued (flashnext-v3-1312c).
+
+2026-10-04 1313 (BIGCHERRY_SCALE_ACT_FUSE=1: SCALE -> SILU/SIGMOID [-> SCALE] in one launch, hyper-connection blocks; bit-identical math, 1310-style Q8_1 when the chain ends at the activation) env screen on one build (flashnext-v3-1313b): greedy IDENTICAL; ~24K 43.7 vs 45.2/44.5 ms/step (-2..-3%), ~80K 50.1 vs 51.1/51.1 (-2%); t/s flat at 80K because drafted/accepted counts differ (169/258 vs 171/252, 170/255) - run-to-run draft nondeterminism (QFP15), also seen between the two baseline arms. Census: kernels/token 1116 -> 1024 per XTX (972 R9700), elementwise ~357 -> ~275/token. Cumulative from profile v2: 1307 -> 1024 kernels/token (-22%). Candidate for v3 adoption after a multi-request ABBA (single-request t/s is acceptance-noise-limited until QFP15 is fixed).
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -171,8 +175,6 @@ Out of scope for QFP13 implementation ownership:
 
 ## Ledger-events
 
-
-
 - chg_20261003_221744_flash-next-decode-issues-13_8662
 - 2026-10-03T22:17:47.230319+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-03T22:54:32.356647+00:00 (updated-by): Updated: section:notes
@@ -180,3 +182,4 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-03T23:52:13.609111+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261004_011520_three-more-flash-next-decode-k_5440
 - 2026-10-04T01:15:24.244427+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-04T04:00:41.792844+00:00 (updated-by): Updated: section:notes
