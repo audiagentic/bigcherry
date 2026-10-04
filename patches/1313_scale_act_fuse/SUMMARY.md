@@ -16,3 +16,5 @@ Activation evidence: `BIGCHERRY_PATCH_HIT patch=1313_scale_act_fuse` under `BIGC
 ## Hardware result (2026-10-04 review)
 
 flashnext-v3-1313b (env screen): ~24K 43.7 vs 45.2/44.5 ms/step, ~80K 50.1 vs 51.1/51.1; kernels/token 1116 -> 1024 (elementwise ~357 -> ~275); greedy identical; t/s within draft-acceptance noise (QFP15). v4 candidate (multi-request ABBA pending).
+
+Adopted in production profile v4 (2026-10-04, flashnext-v4-abba): v3 -> v4 +2.1% at ~8K and ~64K, complete separation, greedy identical across 8 arms per depth. State stays evaluated until a qualification package exists.
