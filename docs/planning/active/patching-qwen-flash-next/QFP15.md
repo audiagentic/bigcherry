@@ -56,6 +56,9 @@ Diagnosis ~0.5-1 day (instrumentation + node-hash bisection). Fix S (env flag) t
 
 Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity checks; 1-2% wins provable from short runs instead of long ABBAs. Until fixed, judge launch-reduction screens by ms/step and confirm with multi-request ABBA. Related: QFP13 (screens affected), FMTP01 Gate 0 (acceptance statistics need deterministic runs).
 
+2026-10-04 run 1 (flashnext-det-d24k, b-det = v3 + 1312 + 1313 + 1315/1316/1317, three runs of one binary): base-a and base-b traces are bit-identical through the first (warm-up 'Hello') request, including the target hidden hash (target_h=511799406ebb49c1); they diverge at the FIRST draft step of the ~24K request (id 1144 vs 1044) and the next target_h differs. So the nondeterminism arises in long-prompt processing (target and/or draft prefill), not in decode. The middle arm differs from line 1 (even the warm-up) - unexplained, check separately. Leading hypothesis: prefill-size AllReduces (> 64 KiB) go to RCCL, whose reduction order is not fixed; decode-size ones use 1291's fixed-order CPU sum. Test queued: queue-determinism2.sh with BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES=256 MiB (all AllReduces through the fixed-order CPU sum). If still divergent: 1316 node hashes over the prefill graphs.
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
+- 2026-10-04T05:06:40.485818+00:00 (updated-by): Updated: section:notes
