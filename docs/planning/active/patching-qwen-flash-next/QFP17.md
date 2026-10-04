@@ -15,57 +15,93 @@ work: L
 
 ## Description
 
-Prefill today (v4, 240K f16 KV, -ub 512 -b 512): ~1,100 t/s at ~10K, ~910 t/s at ~80K. GPT survey + methods (req_6010ee79a7df4529, 2026-10-04) ranked levers; key challenge: attribute the ~17% 10K->80K decay first (context-growing QSA/attention/indexer vs constant MoE/GDN), optimize the critical-rank wall path (not summed kernel time), and gate every item by Amdahl (reject optimistic bound < ~3%). Immediate finding: validated prefill patches 1237 + 1265 (MoE MMQ compact grid, ~+7% MoE prefill on gfx1100, gfx1201 via 1265) and 1253 (BF16/WMMA chunked GDN prefill for gfx11/gfx12) were never in the Flash-Next profile (built from the stock lane + an explicit list) - screened first (deploy-v4-pp, queue-v4-pp.sh).
+Prefill today (v4, 240K f16 KV, -ub 512 -b 512): ~1,100 t/s at ~10K, ~910 t/s at ~80K. GPT survey + methods (req_6010ee79a7df4529, 2026-10-04) ranked levers; key challenge: attribute the ~17% 10K->80K decay first (context-growing QSA/attention/indexer vs constant MoE/GDN), optimize the critical-rank wall path (not summed kernel time), and gate every item by Amdahl (reject optimistic bound < ~3%).
 
 ## Steps
 
-0. deploy-v4-pp ABBA (1237 + 1265 + 1253 on v4): prefill and decode, greedy identity.
-1. PREFILL-ATTR: rocprof at 10K/80K/240K on v4(-pp), bucket ubatches by context position (0-10K, 10-20K, ...); per bucket per GPU: MoE MUL_MAT_ID/MMQ by quant, GDN chunked vs fallback, QSA indexer/top-k/mask/FATTN, AllReduce bytes + per-rank start/end (arrival_skew, collective_tail, exposed_barrier), copies by direction, CPU get_rows/PLE, draft-context prefill wall. 1319/1320/1325 for host enqueue.
-2. QSA-UBATCH: backport upstream llama.cpp #29825 (halves Qwen4Exp indexer compute buffer; speed-neutral itself) then sweep -b/-ub 512/768/1024/1536/2048 at 240K f16 (prior: ub512 -> 1024 -> 2048 = 933 -> 1139 -> 1328 t/s in an older config). Expected +5-25%. Gate: larger ubatch fits and ABBA > 5%.
-3. QSA-SPARSE-PP: HIP flash-attn variant consuming selected indices directly (avoid the dense [n_kv, n_tokens] selection mask and per-query gathered KV); 0-8% at 10K, 5-30% at 80K+. Gate: QSA/FATTN/indexer >= 10% wall at 80K and growing with context.
-4. MOE-MMQ-PP2: after 1237/1265, tokens-per-expert tile sizing (AMD fork #39 style) / ExLlamaV3 multi-row expert tiles (ub512 = ~10 rows/expert, ub2048 = ~40). +3-15%. Gate: routed MMQ >= 25% critical path with low rows/expert.
-5. GDN-PP2: verify 1253 is taken (no fallback), sweep chunk 16/32/64, occupancy/LDS/VGPR. +2-10%. Gate: GDN >= 15% wall. (1221 is RDNA3.5-only - not the baseline here.)
-6. TP-PREFILL-BALANCE: -ts tuned against AllReduce arrival times (R9700 late?), keep the independent attention split. +3-10%. Gate: p50/p95 arrival skew >= 5% of layer wall.
-7. QFP08 draft-prefill overlap (TTFT, 2-10%). Gate: serialized draft fill >= 5% TTFT.
-8. Conditional: two-microbatch compute/communication overlap (SGLang TBO) only if collective_tail >= 5% after balancing; CPU PLE/get_rows pinning only if >= 3-5% wall.
+0. VOID: 1237 + 1265 + 1253 are already composed by validated-enhancements.
+1. PREFILL-ATTR: rocprof at 10K/80K/240K; bucket ubatches by context position; per GPU attribute MoE, GDN, QSA/indexer/mask/FATTN, collectives, copies and host enqueue.
+2. QSA-UBATCH: #29825 is already relevant but insufficient alone; unlock ub1024+ by bounding dense QSA scratch rather than moving weights first.
+3. QSA-CHUNKED-MASK: chunk only QSA selection-mask construction + masked attention over query-token tiles (start 256) while preserving the outer ubatch for MoE/GDN. This is now the immediate implementation slice.
+4. QSA-INDEXER-TILE: independently qualify upstream #29901's 4-head lightning-indexer key/token tiling on HIP; do not conflate indexer compute with the dense-mask memory fix.
+5. QSA-SPARSE-PP: only after chunking, consider selected-index attention that eliminates the dense mask entirely; promote only if remaining mask/attention wall time justifies the larger kernel change.
+6. MOE-MMQ-PP2: after 1237/1265, tokens-per-expert tile sizing / multi-row expert tiles. Gate on routed MMQ critical-path share.
+7. GDN-PP2: verify 1253 is taken; sweep chunk 16/32/64. Gate on GDN wall share.
+8. TP-PREFILL-BALANCE: tune -ts against AllReduce arrival times; keep independent attention split.
+9. QFP08 draft-prefill overlap. Gate on serialized draft-fill TTFT share.
+10. Conditional two-microbatch compute/communication overlap only if collective tail remains material after balancing.
 
 ## Detailed Solution & Technical Design
 
+### Immediate slice: bounded QSA query tiling
 
+The 1329 allocation trace changes the priority: ub1024 fails because QSA materializes multiple `[n_kv,n_tokens]` f16 tensors on every Meta rank. At ~240K context each tensor is ~484 MiB at ub1024, versus ~242 MiB at ub512. The fix should reduce the `n_tokens` dimension of the QSA-only subgraph without reducing the model-wide ubatch.
+
+Implement a QSA query-tile loop at graph construction/execution boundary. For outer `n_tokens` of 1024/1536/2048, process query slices of 128/256/512 through indexer score -> top-k/selection mask -> masked attention, then concatenate/write each output slice into the existing attention result. KV remains full-context and read-only. MoE and GDN continue seeing the original outer ubatch, preserving their larger-batch efficiency.
+
+Memory target: peak QSA dense scratch must scale with `n_kv * qsa_tile`, not `n_kv * outer_ubatch`. At 240K, qsa_tile=256 caps each f16 dense mask near ~120 MiB independent of outer ubatch. Compared with ub1024's ~480 MiB mask, this removes ~360 MiB per live mask; with several overlapping graph temporaries the existing allocation trace predicts roughly 1-2 GiB/rank peak reduction.
+
+Do not create a second generic chunking framework. Reuse existing graph/view/split helpers and keep the policy local to Qwen4Exp/QSA until another architecture demonstrates the same shape pathology. QFP17 owns prefill/QSA memory and throughput; QFP07 owns decode attention placement; QFP08 owns speculative overlap; QFP09 owns generic rank-lateness; 1329 owns allocation telemetry only.
+
+### New upstream mechanism: #29901
+
+Upstream llama.cpp PR #29901 (`cuda: tile the lightning indexer over keys and tokens for 4 heads`) is directly relevant to Qwen4Exp prefill. It stages 64 keys once and scores them against an 8-token tile for the 4-head case, retaining the vector path below 8 tokens. Published RTX PRO 6000 data reports the kernel at 6.4 ms versus 16.4 ms at kv=65536, nb=2048 (2.5x), with Qwen4Exp PP 3867 -> 4038 t/s at 128K and TG unchanged; indexer GPU share falls 9.6% -> 4.0%. The implementation is in `ggml/src/ggml-cuda/lightning-indexer.cu` and the CUDA source is also the HIP compilation path, so it warrants exact gfx1100/gfx1201 qualification rather than a CUDA-only assumption.
+
+For HIP, sweep `{kv=10K,80K,240K} x {batch=8,64,256,512,1024,2048}` and record kernel wall, LDS, VGPR/SGPR, spills, occupancy and end-to-end prefill. The upstream tile uses shared `half2 k_shared[64][65]`, `float2 q_shared[8][64]`, 8 warps/block and float accumulation. Verify LDS/resource occupancy on gfx1100 and gfx1201 before carrying it. If HIP compilation or occupancy is poor, test 4 versus 8 warps and 32 versus 64 keys/block behind the existing architecture tuning mechanism; do not fork a standalone dispatcher.
+
+#29901 is complementary to QSA-CHUNKED-MASK: indexer tiling reduces repeated key reads/compute, whereas query tiling bounds the later dense selection/mask lifetime. Measure both independently and combined to avoid attributing a memory-fit win to the indexer kernel.
 
 ## Code Samples & Guidance
 
+Pseudo-structure for the QSA-only tile, preserving outer ubatch semantics:
 
+```cpp
+for (int64_t q0 = 0; q0 < n_tokens; q0 += qsa_tile) {
+    const int64_t nq = std::min<int64_t>(qsa_tile, n_tokens - q0);
+    ggml_tensor * q_tile = ggml_view_3d(ctx, q, ..., q0 * q->nb[2]);
+    ggml_tensor * sel = build_qsa_selection(ctx, q_tile, k_full, ...);
+    ggml_tensor * out = build_qsa_attention(ctx, q_tile, k_full, v_full, sel, ...);
+    write_qsa_output_slice(result, out, q0, nq);
+}
+```
+
+Required invariant: no `[n_kv, outer_n_tokens]` selection/mask tensor may remain live when `outer_n_tokens > qsa_tile`; allocation telemetry must prove the largest QSA mask second dimension is `<= qsa_tile`.
 
 ## Files
 
-
+Expected llama.cpp touch points after pin inspection: Qwen4Exp graph construction in `src/llama-model.cpp` / architecture graph implementation at the current pin; QSA/lightning-indexer op construction; `ggml/src/ggml-cuda/lightning-indexer.cu` only for the separate #29901 qualification. BigCherry plan/recipe changes remain in QFP17 and a new patch package only after the design passes build/mechanics gates.
 
 ## Validation
 
-Wall TTFT / prefill t/s ABBA (fixed prompt, warmup, clocks) at 10K/80K; greedy identity; VRAM headroom at 240K f16.
+ABBA fixed-prompt prefill at 10K/80K/240K, warm clocks, greedy identity. Sweep outer ubatch 512/1024/1536/2048 and qsa_tile 128/256/512. Record prefill t/s, TTFT, peak/final VRAM per rank, BIGCHERRY_ALLOC_TOP, QSA/indexer/FATTN kernel wall and collective arrival skew. Decode tg128/tg512 must remain unchanged within noise because the tiled path should gate on prefill-sized `n_tokens`.
+
+For #29901 run test-backend-ops lightning-indexer coverage including n_head=4 and the model-level greedy parity lane on gfx1100 and gfx1201.
 
 ## Effort & Risk
 
-
+QSA query tiling: medium implementation risk, high expected memory value. Main risks are graph-lifetime retention defeating the intended peak reduction, incorrect mask/query offsets, and extra launches erasing larger-ubatch throughput gains. #29901 HIP qualification is low implementation cost but architecture-resource risk.
 
 ## Standards
 
-
+Fail closed to the current graph when shape/layout prerequisites are not met. No model-output tolerance widening. Keep measurement and architecture dispatch in existing BigCherry facilities.
 
 ## Acceptance Criteria
 
+QSA-CHUNKED-MASK promotes only if ub1024 fits at 240K with >=1 GiB lower peak VRAM on the previously failing rank and end-to-end prefill improves >=5% versus ub512 baseline, with greedy identity and no representative decode regression >1%. ub1536/2048 are follow-on wins, not required for first promotion.
 
+#29901-derived HIP tiling promotes only if it improves lightning-indexer wall >=20% on both gfx1100 and gfx1201 at a representative long-context prefill shape and improves end-to-end prefill >=2% on at least one 80K+ lane, with no decode regression >1% and no spill/occupancy pathology.
 
 ## Notes
 
-Rejected from the survey for this lane: large-message CPU-root AllReduce (measured worse), KTransformers CPU-expert offload (experts fit VRAM; PCIe x4/no P2P), MLC-LLM/mistral.rs (no portable RDNA/IQ kernels). Sources and links in the GPT response req_6010ee79a7df4529 (llama.cpp #29825, AMD fork #39/#63, ExLlamaV3 MoE tiling, FLA chunked GDN, SGLang ROCm GDN + TBO, TRT-LLM selected-index sparse attention, AITER experimental gfx11/12).
+Rejected from the survey for this lane: large-message CPU-root AllReduce (measured worse), KTransformers CPU-expert offload (experts fit VRAM; PCIe x4/no P2P), MLC-LLM/mistral.rs (no portable RDNA/IQ kernels).
 
-CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN prefill) are NOT missing from the Flash-Next profile - [source.bigcherry] composes patch-sets serving-core + upstream-fixes + validated-enhancements into every build (validated-enhancements = 0860, 1225, 0840, 1237, 1241, 1253, 1274, 1265); the lane name 'stock' only refers to build options. deploy-v4-pp failed with 'overlay repeats a base patch module' and was removed. Step 0 is void; current prefill numbers already include them. GDN-PP2 should still verify 1253 is actually taken (no fallback) on this model.
+CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN prefill) are already composed through validated-enhancements; step 0 is void.
 
-2026-10-04 ubatch fit results on v6 at pin 0504396 (f16 KV; queue-v6-ub / fit-probe / fit-probe2): only -ub 512 fits on the 3-GPU split (prefill ~889 t/s at ~80K fill, decode 61.1). ub1024/1536/2048 at 240K: R9700 OOM (+2.0 GiB compute). Rebalancing -ts (0.33/0.28/0.39, 0.34/0.29/0.37, 0.32/0.28/0.40) moves the OOM to the XTXs (+1.25-2.9 GiB) and trimming context barely helps: Flash-Next KV is tiny (full attention every 4th layer, few KV heads, ~24 KB/token across GPUs), so 16K tokens free only ~0.2 GiB per XTX - ub1024 still fails at 192K, ub2048 at 160K. ub768 fits at 240K but prefill collapses to 134 t/s (decode 59.0) with the R9700 at 31.7/32 GiB - no host offload in the logs (all layers on GPU, --fit off, no unified memory); either driver-level oversubscription or a non-multiple-of-512 kernel path, unresolved. Conclusion: #29825 is not enough to unlock larger ubatches here; a larger ubatch needs ~4-5 GiB freed across the three GPUs, which only the 6900 (~11 GiB idle beside the draft) can provide (-ot of selected weights, decode cost to measure), or chunked MoE/attention scratch so peak compute buffers stay at the ub512 level.
+2026-10-04 ubatch fit: only ub512 fits comfortably at 240K. ub1024/1536/2048 add ~1.25-2.9 GiB/rank compute pressure depending on split; ub768 fits but collapses to ~134 t/s near full R9700 VRAM. Moving tensor split only relocates the OOM.
 
-2026-10-05 compute-buffer attribution (1329 BIGCHERRY_ALLOC_TOP, flashnext-alloc-top, v6 at 240K f16): the largest compute tensors are all dense full-context x ubatch masks, mirrored on every Meta rank: per QSA layer the selection-mask REPEAT [247811, n_tokens] f16 (242 MiB at ub512, 484 MiB at ub1024; 12 QSA layers), the masked indexer_sel ADD [245760, n_tokens] f16 (240 / 480 MiB) and attn_inp_kq_mask [245760, n_tokens] f16 (240 / 480 MiB). MoE intermediates are tens of MiB per tensor. A few of these live at once explains the +1.3-2 GiB per GPU at ub1024, and why trimming context helped little (masks scale with n_kv x n_tokens, 240K -> 192K only -20%). Chunked scratch is therefore worthwhile and narrow: chunk the QSA selection-mask construction + masked attention per token block (e.g. 256 tokens inside a 1024/2048 ubatch) so masks stay ub256-sized (~1.5-2+ GiB saved per GPU) while MoE/GDN keep the full ubatch (the prefill gain). Long-term alternative: sparse-selection attention consuming indices directly (no dense mask). GPT design pending (req_2e524202a01a4acc).
+2026-10-05 allocation attribution (1329): dominant growth is dense QSA/full-attention masks mirrored on every Meta rank. Per QSA layer, selection-mask REPEAT `[247811,n_tokens]` f16 is ~242 MiB at ub512 / ~484 MiB at ub1024; masked indexer_sel ADD and `attn_inp_kq_mask` are each ~240/480 MiB. MoE intermediates are only tens of MiB. This makes QSA-only query tiling the narrowest immediate route to larger outer ubatches.
+
+2026-10-05 upstream scan: llama.cpp #29901 was updated 2026-10-04 and adds 4-head key/token tiled lightning-indexer prefill; upstream reports 2.5x kernel speedup and 3867 -> 4038 t/s Qwen4Exp PP at 128K on RTX PRO 6000. Treat these NVIDIA numbers only as mechanism evidence; qualify HIP independently. Current release scan shows b11386 on 2026-10-04; #29943 selective expert-copy callback and #29927 AMD q1_0 byte permute belong to MET/PKC ownership and are not duplicated here.
 
 ## Change Log
 
@@ -73,3 +109,4 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 - 2026-10-04T07:55:32.606718+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T12:10:08.450336+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T13:00:59.838288+00:00 (updated-by): Updated: section:notes
+- 2026-10-05: Deepened QFP17 around QSA-only query tiling and added independent HIP qualification of upstream #29901.
