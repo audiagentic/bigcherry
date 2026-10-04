@@ -10,7 +10,7 @@ export BIGCHERRY_DRAFT_VOCAB_N=65536 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=24576
 export BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0
 export GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1
 export BIGCHERRY_SCALE_ACT_FUSE=1 BIGCHERRY_SCHED_ASYNC_INPUTS=1
-until grep -q ALL_JOBS_DONE /mnt/data/bigcherry-work/runs/queue-expert-cpu.log 2>/dev/null; do sleep 30; done
+until grep -q ALL_JOBS_DONE /mnt/data/bigcherry-work/runs/queue-expert-6900.log 2>/dev/null; do sleep 30; done
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
