@@ -125,6 +125,8 @@ Decides, in order: F reseed/sync elimination (build if C_reseed >= 0.5 ms; 1-4%)
 2026-10-04 Gate 0 timing (1317, flashnext-gate0-d10k/d80k, b-det = v3 + 1312 + 1313, greedy, n_max 3; timer overhead nil: 41.1 vs 41.2/40.6 ms/step). Per-round medians ~10K / ~80K: round 38.4 / 47.9 ms; draft 6.36 / 8.67 ms (16 / 18%); target submit (llama_process host time) 5.06 / 5.83 ms, mean 6.7 / 7.1 (17 / 15%); target sync wait 25.5 / 31.4 ms (63%); common_speculative_process 0.75 / 1.28 ms (2 / 3%); target sample-and-accept 0.67 / 0.87 ms (1.5%). Acceptance 59 / 69%, full-front rounds 36 / 58%, tokens/round 2.76 / 3.07.
 Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both low priority. B (early hidden catch-up) small: catch-up is ~1 ms; the cost is the fresh draft itself. FMTP gross ceiling = P(full)*P(bridge)*draft: ~0.25*6.4 = 1.6 ms (~4%) at 10K, ~0.41*8.7 = 3.5 ms (~7%) at 80K before promoted-front yield loss; workload-dependent -> keep FMTP02-05 gated on the n_max 7 calibration (not yet run). NEW top lever: target submit host time 5-7 ms/round (15-17%) - graph build/scheduling per verify step; owned by new item QFP16.
 
+2026-10-04 owner direction: pursue all Gate 0 options (small wins count) - F, C, B, FMTP calibration and QFP16. Order by effort: (1) FMTP n_max 7 calibration run (queue-fmtp-calib.sh; summary prints P(prefix>=k), P(full front), P(bridge|full), promoted-tail yield); (2) F + draft-loop sync reduction (QFP08 synctrace: ~12 syncs per draft call, context-wide synchronize in llama_get_embeddings_nextn_ith) - this also attacks the 6.4-8.7 ms serial draft itself, not only the 0.75-1.3 ms reseed; (3) C device argmax for target verify; (4) QFP16 target submit host time after the perf profile; (5) B; (6) FMTP02-05 per calibration.
+
 ## Reviews
 
 - RV4216
@@ -133,3 +135,4 @@ Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both 
 
 - 2026-10-04T03:26:42.716009+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:13:34.635207+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T05:24:47.114772+00:00 (updated-by): Updated: section:notes
