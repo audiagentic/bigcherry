@@ -1,7 +1,7 @@
 schema = 1
 id = "1305_ffn_tensor_split"
 order = 1305
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

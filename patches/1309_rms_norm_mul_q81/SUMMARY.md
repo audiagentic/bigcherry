@@ -1,6 +1,6 @@
 # 1309_rms_norm_mul_q81
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PRBE06/QFP13
 
 ## What it does
@@ -14,3 +14,7 @@ blocks, amax/127, roundf, half2(d, sum)), so the result is bit-identical. PRBE06
 RMSNorm -> quantize -> MMVQ triples per generated token per GPU with 1307 + 1308 on. Any reservation failure (e.g.
 during graph capture) or ineligible shape uses the unchanged kernel. Activation evidence:
 `BIGCHERRY_PATCH_HIT patch=1309_rms_norm_mul_q81` under `BIGCHERRY_PATCH_TRACE`.
+
+## Hardware result (2026-10-04 review)
+
+Profile v3 adoption ABBA (with 1307/1308/1310): +3% ~10K, +3.6% ~80K, greedy identical.

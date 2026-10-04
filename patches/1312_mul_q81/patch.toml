@@ -1,7 +1,7 @@
 schema = 1
 id = "1312_mul_q81"
 order = 1312
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

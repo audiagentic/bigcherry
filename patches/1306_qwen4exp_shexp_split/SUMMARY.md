@@ -1,6 +1,6 @@
 # 1306_qwen4exp_shexp_split
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFP12
 
 ## What it does
@@ -12,3 +12,7 @@ layer. Split, each GPU does ~1/n of it and its partial output joins the routed e
 AllReduce (no extra collective); VRAM for the shared expert also drops to ~1/n per GPU. Requires 1303 (shares its
 `<atomic>` include). Found by GPT review req_07434b19f4534cb3. Activation evidence:
 `BIGCHERRY_PATCH_HIT patch=1306_shexp_split`.
+
+## Hardware result (2026-10-04 review)
+
+Neutral in screens; parked (QFP09).

@@ -1,6 +1,6 @@
 # 1301_prbe115_q8_f32_mtp_widths
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PRBE115
 
 ## What it does
@@ -10,3 +10,7 @@ MTP verify widths, and optionally to RDNA4. Opt-in for screening: `BIGCHERRY_Q8_
 `BIGCHERRY_Q8_F32_RDNA4=1`. The 1241 kernel branch is already column-generic; only the host gate and the
 per-width compile-time dispatch change. Activation evidence: 1241's per-ncols `BIGCHERRY_PATCH_HIT` line under
 `BIGCHERRY_PATCH_TRACE`.
+
+## Hardware result (2026-10-04 review)
+
+Activation proven; neutral on hardware (QFN01).

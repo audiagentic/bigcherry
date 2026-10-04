@@ -1,6 +1,6 @@
 # 1307_q81_activation_cache_mmvq
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** PRBE05/QFP13
 
 ## What it does
@@ -12,3 +12,7 @@ A cache generation begins at every `ggml_backend_cuda_graph_compute`, and slab g
 is captured, so captured graphs reference only never-relocated memory. Motivation (QFP13): decode is launch-gap
 bound and issues ~183 quantize launches per generated token per GPU, one per MMVQ consumer, many re-quantizing the
 same activation. Cache statistics (1235) report hits and launches saved.
+
+## Hardware result (2026-10-04 review)
+
+Profile v3 adoption ABBA (flashnext-v2-fusion-ab-3, with 1308-1310): ~10K 74.3 -> 76.5 t/s (+3%), ~80K 53.3 -> 55.2 (+3.6%), complete separation, greedy identical; quantize_q8_1 183 -> 45/token with the producers.

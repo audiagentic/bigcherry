@@ -1,6 +1,6 @@
 # 1293_sched_single_input_sync
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFN01/RNX01
 
 ## What it does
@@ -25,3 +25,7 @@ Neutral. ms per MTP step 10K: base 50.4/50.8 vs new 50.6/50.1; 80K: base 65.0/65
 hipStreamSynchronize per 256-token decode: 40325 -> 32894 (-18%). Greedy output without MTP identical at 10K.
 The removed syncs were waits on GPU work the next step needs anyway, so host blocking dropped without
 shortening the critical path. Not part of any deployment recipe; kept as a correct, upstreamable cleanup.
+
+## Hardware result (2026-10-04 review)
+
+Neutral on hardware (QFN01): sync-count reduction alone did not improve decode.

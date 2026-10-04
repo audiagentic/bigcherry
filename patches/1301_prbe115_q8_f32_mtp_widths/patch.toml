@@ -1,7 +1,7 @@
 schema = 1
 id = "1301_prbe115_q8_f32_mtp_widths"
 order = 1301
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
