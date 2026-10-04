@@ -483,16 +483,16 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1315_mtp_draft_trace", "1316_node_hash_trace", "1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
 
 [experiment.stock-none]
-# QFP15 bisection: pinned upstream with no BigCherry patches (determinism baseline).
+# QFP15 bisection: source base patch-sets only (serving-core, upstream-fixes, validated-enhancements) - no experiment patches.
 patches = []
 
 [experiment.deploy-v4-plus-1326-diag]
 # QFP16: v4 + 1326 (BIGCHERRY_SCHED_ASYNC_INPUTS=1 async host->device split inputs) + timing diagnostics 1317/1318/1319/1320/1325 (env-gated).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing", "1326_sched_async_host_inputs"]
 
-[experiment.deploy-v4-pp]
-# Prefill: v4 + validated prefill patches never in the Flash-Next profile: 1237 + 1265 (MoE MMQ compact grid, gfx1100 + gfx1201/gfx1030) and 1253 (BF16/WMMA chunked GDN prefill, gfx11/gfx12).
-patches = ["1237_rd30_moe_mmq_compact_grid", "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2", "1253_nro04_gfx1100_bf16_chunked_gdn", "1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse"]
+[experiment.deploy-v5]
+# QFN01 candidate production profile v5: v4 + 1326 (async host->device scheduler split inputs; BIGCHERRY_SCHED_ASYNC_INPUTS=1).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs"]
 
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).

@@ -61,6 +61,9 @@ Wall TTFT / prefill t/s ABBA (fixed prompt, warmup, clocks) at 10K/80K; greedy i
 
 Rejected from the survey for this lane: large-message CPU-root AllReduce (measured worse), KTransformers CPU-expert offload (experts fit VRAM; PCIe x4/no P2P), MLC-LLM/mistral.rs (no portable RDNA/IQ kernels). Sources and links in the GPT response req_6010ee79a7df4529 (llama.cpp #29825, AMD fork #39/#63, ExLlamaV3 MoE tiling, FLA chunked GDN, SGLang ROCm GDN + TBO, TRT-LLM selected-index sparse attention, AITER experimental gfx11/12).
 
+CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN prefill) are NOT missing from the Flash-Next profile - [source.bigcherry] composes patch-sets serving-core + upstream-fixes + validated-enhancements into every build (validated-enhancements = 0860, 1225, 0840, 1237, 1241, 1253, 1274, 1265); the lane name 'stock' only refers to build options. deploy-v4-pp failed with 'overlay repeats a base patch module' and was removed. Step 0 is void; current prefill numbers already include them. GDN-PP2 should still verify 1253 is actually taken (no fallback) on this model.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
+- 2026-10-04T07:55:32.606718+00:00 (updated-by): Updated: section:notes

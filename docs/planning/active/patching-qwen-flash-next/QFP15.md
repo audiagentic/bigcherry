@@ -66,6 +66,8 @@ Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity c
 
 2026-10-04 run 5 (flashnext-det5-d24k, stock build with NO BigCherry patches, RCCL AllReduce, no attention split, CTX 65536): upstream is MORE nondeterministic than our builds - the greedy TEXT differs across all three runs (md5 8fe14447 / 184aaffd / 8b3d504c) and warm-up acceptance differs (3/10, 3/9, 4/8). Our always-on patches reduce nondeterminism (1291 fixed-order CPU-root AllReduce and 1294 deterministic TOP_K ties make the greedy text identical); the residual draft-acceptance wobble in our builds is upstream behaviour not yet removed by them. Remaining suspects for the residual: the draft context on the 6900 (QSA/indexer top-k in the MTP layer - check whether 1294's deterministic ties cover the draft path and gfx1030), RCCL-dependent prefill ARs for long prompts, and any atomics-based reduction on the target's decode path. Priority lowered: our production build is already greedy-stable; the residual only adds +-2% single-request t/s noise (use ms/step or multi-request ABBA). Next if resumed: run 2-run traces with the 6900 draft swapped to a deterministic configuration (e.g. draft on an XTX) to split target vs draft.
 
+CORRECTION 2026-10-04: the run-5 'stock-none' build was not pure upstream - [source.bigcherry] always includes the serving-core, upstream-fixes and validated-enhancements patch-sets (0840 hybrid AllReduce dispatch, 0860, 1225, 1237, 1241, 1253, 1274, 1265, ...). Run 5 therefore shows: base patch-sets WITHOUT 1291/1294 -> greedy text differs across runs; WITH 1291/1294 -> text identical, residual draft wobble. Pure-upstream behaviour is untested (would need a source without overlay patch-sets).
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
@@ -74,3 +76,4 @@ Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity c
 - 2026-10-04T06:14:06.301778+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:33:33.339610+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:54:25.842364+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T07:55:38.201733+00:00 (updated-by): Updated: section:notes

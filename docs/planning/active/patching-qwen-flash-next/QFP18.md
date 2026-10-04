@@ -55,6 +55,9 @@ patch-verify-evidence passes on the new pin; lifecycle promotion recorded with e
 
 Owner agreed 2026-10-04: qualify after the bump. Current states: evaluated (1302, 1303, 1307-1313, 1326, ...), rejected 1304; 1237/1265/1253 already validated but only now entering the Flash-Next profile.
 
+Correction: 1237/1265/1253 are already in every Flash-Next build via the validated-enhancements patch-set; v5 = v4 + 1326.
+
 ## Change Log
 
 - 2026-10-04T07:54:10.353678+00:00 (created-by): Created by agent
+- 2026-10-04T07:55:43.580424+00:00 (updated-by): Updated: section:notes
