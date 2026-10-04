@@ -67,7 +67,7 @@ for d in depths:
               "cache_prompt": cache, "temperature": 0, "ignore_eos": True,
               **({"n_probs": 5} if os.environ.get("REPEAT") == "1" else {})})
     if os.environ.get("REPEAT") == "1":
-        json.dump(t.get("completion_probabilities", [])[:8], open(f"{out}/{name}.{d}.probs.json", "w"))
+        json.dump(t.get("completion_probabilities", [])[:int(os.environ.get("PROBS_KEEP", "8"))], open(f"{out}/{name}.{d}.probs.json", "w"))
     # temperature 0: the decoded text is the greedy output at this depth, compared across A/B arms
     open(f"{out}/{name}.{d}.greedy.txt", "w").write(t["content"])
     if os.environ.get("REPEAT") == "1":  # same server, same cached prefix: does decode alone diverge?
