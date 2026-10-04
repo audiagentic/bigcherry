@@ -33,11 +33,18 @@ static int64_t bc_qsa_chunk() {
     static const int64_t c = getenv("BIGCHERRY_QSA_CHUNK") ? (int64_t) atoi(getenv("BIGCHERRY_QSA_CHUNK")) : 0;
     return c > 0 ? c : 0;
 }
+
+// bigcherry 1332: number of QSA chunks K for this context - a constant (from n_ubatch), so every chunked graph has the
+// same topology as the reserved one; 0 = chunking off
+static int64_t bc_qsa_chunks(uint32_t n_ubatch) {
+    const int64_t c = bc_qsa_chunk();
+    return c > 0 ? ((int64_t) n_ubatch + c - 1) / c : 0;
+}
 """
 
 _A_CAUSAL = "    ggml_tensor * idx_f = ggml_cast(ctx0, sel_idx, GGML_TYPE_F32);\n"
 _N_CAUSAL = (
-    "    if (bc_qsa_chunk() > 0 && n_tokens > bc_qsa_chunk()) {\n"
+    "    if (bc_qsa_chunks(cparams.n_ubatch) >= 2 && n_tokens >= bc_qsa_chunks(cparams.n_ubatch)) {\n"
     "        // bigcherry 1332: apply the causal mask while the selection is compact - gather kq_mask at each token's\n"
     "        // selected cells (0 visible, -inf invisible), mark invisible selections dead so they go to their dump rows;\n"
     "        // the scattered mask is then final (no dense [n_kv, T] ADD and no per-chunk views of the kq_mask input)\n"
@@ -53,9 +60,11 @@ _N_CAUSAL = (
     + _A_CAUSAL)
 
 _A_SEL = "    ggml_tensor * sel = ggml_set_rows(ctx0, mask_all, zeros, ggml_reshape_3d(ctx0, sel_idx, n_sel, n_tokens, 1));\n"
-_N_SEL = ("    // bigcherry 1332: build_attn_qsa builds the masks per token chunk from the indices; batches that fit in one chunk\n"
-          "    // (decode, MTP verify) keep the dense mask (a whole-mask view of the kq_mask input crashed the meta backend)\n"
-          "    if (bc_qsa_chunk() > 0 && n_tokens > bc_qsa_chunk()) {\n"
+_N_SEL = ("    // bigcherry 1332: build_attn_qsa builds the masks per token chunk from the indices. The graph topology depends\n"
+          "    // only on context constants (llama.cpp #29958): every batch with at least K = ceil(n_ubatch / chunk) tokens\n"
+          "    // uses exactly K chunks, smaller batches (decode, MTP verify) the dense mask - a topology change after\n"
+          "    // reserve forces a scheduler reallocation, which crashed the meta backend\n"
+          "    if (bc_qsa_chunks(cparams.n_ubatch) >= 2 && n_tokens >= bc_qsa_chunks(cparams.n_ubatch)) {\n"
           "        return sel_idx;        // I32 [n_sel, n_tokens], dead slots already remapped to their dump rows\n"
           "    }\n"
           + _A_SEL)
@@ -83,9 +92,12 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
         const int64_t n_tok = sel->ne[1];
         GGML_ASSERT(sel->ne[0] == n_sel && q_cur->ne[2] == n_tok);
         GGML_ASSERT(kq_mask->ne[1]*kq_mask->ne[2]*kq_mask->ne[3] == n_tok && kq_mask->ne[2] == 1 && kq_mask->ne[3] == 1);
-        const int64_t chunk = bc_qsa_chunk();
-        for (int64_t t0 = 0; t0 < n_tok; t0 += chunk) {
-            const int64_t nt = std::min<int64_t>(chunk, n_tok - t0);
+        // exactly K chunks for every batch (fixed topology); sizes differ by at most one token
+        const int64_t n_chunks = bc_qsa_chunks(cparams.n_ubatch);
+        GGML_ASSERT(n_chunks >= 2 && n_tok >= n_chunks);
+        int64_t t0 = 0;
+        for (int64_t ci = 0; ci < n_chunks; ++ci) {
+            const int64_t nt = n_tok / n_chunks + (ci < n_tok % n_chunks ? 1 : 0);
 
             // rows padded to 256 so the strided mask view keeps aligned rows for the flash-attention mask loads
             const int64_t rows = GGML_PAD(n_kv + n_sel, 256);
@@ -111,6 +123,7 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
                     (size_t) t0*q_cur->nb[2]);
             ggml_tensor * oc = build_attn_mha(qc, k, v, nullptr, mask, nullptr, nullptr, n_sel, kq_scale, il);
             cur = cur ? ggml_concat(ctx0, cur, oc, 1) : oc;
+            t0 += nt;
         }
     } else {
         // the selection mask already carries the causal mask

@@ -62,6 +62,10 @@ class Patch1332Mechanics(unittest.TestCase):
             g = (root / _GGML).read_text(encoding="utf-8")
             self.assertIn("GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));", g)
             self.assertIn("cur = cur ? ggml_concat(ctx0, cur, oc, 1) : oc;", attn)
+            # fixed topology (#29958): exactly K = ceil(n_ubatch / chunk) chunks, chunked iff n_tokens >= K
+            self.assertIn("const int64_t n_chunks = bc_qsa_chunks(cparams.n_ubatch);", attn)
+            self.assertIn("for (int64_t ci = 0; ci < n_chunks; ++ci) {", attn)
+            self.assertIn("if (bc_qsa_chunks(cparams.n_ubatch) >= 2 && n_tokens >= bc_qsa_chunks(cparams.n_ubatch)) {", sel)
             # one kq_mask view per chunk per graph (shared across QSA layers), held on the graph object
             h = (root / _HDR).read_text(encoding="utf-8")
             self.assertLess(h.index("ggml_tensor * bc_qsa_kq_rows = nullptr;"), h.index("ggml_tensor * build_attn_qsa("))
