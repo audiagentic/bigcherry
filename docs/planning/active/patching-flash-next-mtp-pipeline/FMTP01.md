@@ -127,6 +127,8 @@ Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both 
 
 2026-10-04 owner direction: pursue all Gate 0 options (small wins count) - F, C, B, FMTP calibration and QFP16. Order by effort: (1) FMTP n_max 7 calibration run (queue-fmtp-calib.sh; summary prints P(prefix>=k), P(full front), P(bridge|full), promoted-tail yield); (2) F + draft-loop sync reduction (QFP08 synctrace: ~12 syncs per draft call, context-wide synchronize in llama_get_embeddings_nextn_ith) - this also attacks the 6.4-8.7 ms serial draft itself, not only the 0.75-1.3 ms reseed; (3) C device argmax for target verify; (4) QFP16 target submit host time after the perf profile; (5) B; (6) FMTP02-05 per calibration.
 
+2026-10-04 Gate 0 calibration (flashnext-calib7b-d10k/d80k; depth-7 arm at CTX 131072 because the 8-token verify OOMs the R9700 at 240K; same prompt corpus as the n_max 3 timing runs): ~10K / ~80K: P(accepted prefix >= k) k1..k7 = .69 .58 .44 .37 .32 .29 .23 / .82 .63 .53 .42 .35 .30 .26; P(full 3-front) 0.44 / 0.53; P(bridge | full) 0.85 / 0.80; p_hit 0.37 / 0.42; promoted-tail yield E[accepted of 3 | bridge] 2.26 (75%) / 2.17 (72%) vs fresh n_max 3 acceptance 59% / 69% - the promoted front is NOT worse than a fresh front (conditioning on full-front + bridge selects predictable stretches and outweighs the depth decay). Projected FMTP saving = p_hit x serial draft: 0.37 x 6.4 = 2.4 ms of a 38.4 ms round (~6%) at 10K; 0.42 x 8.7 = 3.7 ms of 47.9 ms (~7.6%) at 80K, before overhang/contention, which the 25-31 ms target sync window should hide. Caveat: the calibration continued the live chain; FMTP02 forced replay may give a slightly different hidden trajectory. Decision: gate met on the point estimate (single prompt); proceed with FMTP02-05, keeping FMTP05's online EV control and the FMTP07 ABBA as the real acceptance gate.
+
 ## Reviews
 
 - RV4216
@@ -136,3 +138,4 @@ Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both 
 - 2026-10-04T03:26:42.716009+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:13:34.635207+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:24:47.114772+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T06:29:30.213802+00:00 (updated-by): Updated: section:notes
