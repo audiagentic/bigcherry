@@ -15,163 +15,308 @@ work: L
 
 ## Description
 
-BigCherry has spent substantial effort making each AllReduce faster, but prefill can also improve by executing fewer collectives. This item owns graph-level elimination/folding of redundant SUM reductions when multiple tensor-partial branches can be combined locally before one equivalent AllReduce.
+Prefill may improve more by executing fewer reductions than by only accelerating each reduction. PGC16 owns elimination/folding of redundant SUM reductions where tensor-partial branches can be combined locally before one equivalent AllReduce.
 
-Core identity for equal rank groups and equal elementwise shapes:
+The algebraic identity is:
 
 ```text
 AR(a) + AR(b) == AR(a + b)
 ```
 
-More generally, linear operations that preserve tensor-partial semantics may move before a SUM AllReduce. Nonlinear operations, mismatched rank groups, mirrored values, different split axes and shape/layout changes block the rewrite unless separately proven.
+only when `a` and `b` are partial values over the same rank group and logical elements. A MIRRORED value cannot be moved before AR because it would be added once per rank. Nonlinear ops, different split groups/axes and live consumers of the individual reduced values block the rewrite.
 
-This is not a generic compiler algebra project. Start from the real Flash-Next prefill AR census and implement only high-frequency/high-byte join topologies with an Amdahl bound >=3%. QFP17 owns model-level prefill acceptance; PGC16 owns partial-value semantics and collective-count reduction. PKC02 may later own reusable recipe/replay metadata once the first rewrite is proven.
+At llama.cpp `0504396`, Meta split semantics are already represented by `ggml_backend_meta_split_state { axis, nr[16], n_segments, ... }`; use that authoritative state rather than tensor-name heuristics.
 
 ## Steps
 
-1. Extend AR telemetry to emit producer/consumer topology around every prefill collective: `{node, layer, dtype/shape, split state, rank set, producer op, sibling producer(s), immediate consumer op, next collective distance, bytes}`. Rank by total prefill collective wall and count per layer.
-2. Implement a read-only analyzer that annotates graph values with `MIRRORED`, `PARTIAL(group, axis, reduction=SUM)`, or `UNKNOWN`. Propagate only through explicitly safe linear ops; unknown is fail closed.
-3. Find canonical `ADD(AR(a), AR(b))` and equivalent branch-join topologies. Require identical logical shape/dtype/rank membership and that neither reduced value has another live consumer requiring the individually reduced form.
-4. Rewrite the first proven topology to `AR(ADD(a,b))`. Reuse the existing Meta AllReduce node/provider; do not add a fused collective implementation yet. Confirm AR count decreases exactly as predicted.
-5. Add guarded linear epilogue movement only where useful: replicated bias or elementwise scale may remain after AR; local sums of multiple PARTIAL values may move before AR. Do not move activation/norm/softmax/GLU/nonlinear gates across AR.
-6. Audit Qwen4Exp routed/shared-expert joins carefully. A routed partial branch plus a shared partial branch with the same rank group may be locally added before one AR. An auxiliary/mirrored routed branch from MET05 is not equivalent and must remain outside the partial reduction. Encode this as a semantic rule, not a model-name special case.
-7. Search attention/output-projection and hyper-connection joins for the same pattern. Only implement additional rewrites if the telemetry proves separate ARs currently exist; do not infer from source graph intent.
-8. Measure numerical impact from changed local summation order. Exact algebra does not imply bit identity in f32/bf16 floating point. Use the existing KLD/top-token gates and preserve a disable flag until qualified.
-9. If the first two rewrites are profitable, factor the analyzer/matcher into one Meta graph optimization pass with stable diagnostics. Otherwise keep the implementation local and park the genericization.
-10. Compose with PGC15 after independent validation: fewer ARs reduce service demand; tiled overlap hides remaining ARs. Their correctness mechanisms must remain separable.
+1. Extend existing AR tracing with producer/consumer topology and split-state summaries around every large prefill reduction.
+2. Add a read-only partial-state analyzer with `UNKNOWN`, `MIRRORED`, `PARTIAL_SUM` and strict propagation rules.
+3. Dry-run canonical candidates and compute an optimistic bound from measured AR wall before changing a graph.
+4. Implement exactly one proven topology first: two compatible reduced branches immediately joined by ADD and no other consumer -> local ADD before one AR.
+5. Preserve the existing Meta provider; the optimization changes graph/subgraph structure, not collective transport.
+6. Do not move norm, activation, softmax, GLU/gating, routing or other nonlinear operations across a reduction.
+7. Treat routed/shared-expert joins carefully: only two PARTIAL branches with identical rank membership can be folded. MET05 auxiliary/mirrored branches are explicitly blocked.
+8. Validate changed floating-point summation order with KLD/top-token gates.
+9. Generalize into one graph pass only after two profitable real topologies exist.
+10. Compose independently with PGC15.
 
 ## Detailed Solution & Technical Design
 
-### Partial-state lattice
+### Partial contract
 
-Do not infer reducibility only from tensor names. The Meta backend already tracks split state. Build a narrow semantic descriptor from that authoritative state:
+Source-shaped descriptor:
 
 ```cpp
-enum bc_value_kind { BC_UNKNOWN, BC_MIRRORED, BC_PARTIAL };
-struct bc_partial_value {
-    bc_value_kind kind;
-    uint64_t rank_mask;
-    int split_axis;
-    enum ggml_type type;
-    int64_t ne[GGML_MAX_DIMS];
+enum bc_partial_kind : uint8_t {
+    BC_PARTIAL_UNKNOWN = 0,
+    BC_PARTIAL_MIRRORED,
+    BC_PARTIAL_SUM,
+};
+
+struct bc_partial_contract {
+    bc_partial_kind kind = BC_PARTIAL_UNKNOWN;
+    ggml_backend_meta_split_axis axis = GGML_BACKEND_SPLIT_AXIS_UNKNOWN;
+    uint32_t nr[16] = {};
+    uint32_t n_segments = 0;
+    ggml_type type = GGML_TYPE_COUNT;
+    int64_t ne[GGML_MAX_DIMS] = {};
 };
 ```
 
-For the first version, only these propagation rules are permitted:
-
-```text
-ADD(PARTIAL G, PARTIAL G) -> PARTIAL G
-ADD(PARTIAL G, MIRRORED)  -> blocked
-MUL(PARTIAL G, replicated scalar) -> PARTIAL G, only if exact graph representation proves scalar replication
-VIEW/RESHAPE(PARTIAL G) -> PARTIAL G only when no element reordering and every rank has identical view mapping
-AR(PARTIAL G) -> MIRRORED
-```
-
-`G` includes rank membership, split semantics and reduction kind. `PARTIAL G1 + PARTIAL G2` is blocked unless `G1 == G2`. Do not treat `MIRRORED` as a partial contribution: adding it on every rank before AR multiplies it by rank count.
-
-### Rewrite safety
-
-Canonical candidate:
-
-```text
-p0 ---- AR ---- r0 --+
-                      ADD -> out
-p1 ---- AR ---- r1 --+
-```
-
-becomes:
-
-```text
-p0 --+
-     ADD_LOCAL -> p01 -> AR -> out
-p1 --+
-```
-
-Required checks:
-- both AR nodes are SUM with the same communicator/provider/rank set;
-- `p0/p1` have the same logical shape/dtype and compatible strides;
-- `r0/r1` have no other consumers that require separately reduced values;
-- local ADD is valid on every rank, including ranks where the Meta scheduler skipped a producer: skipped partials must be explicit zero contributions exactly as current AR semantics require;
-- graph ordering does not introduce a dependency cycle or extend a large tensor lifetime enough to erase the win.
-
-Do not combine two ARs merely because they have the same byte count.
-
-### Graph matcher
-
-Prefer a pre-execution graph rewrite in the Meta/backend optimization layer where split-state metadata is available. If the upstream graph optimizer cannot represent Meta split semantics safely, first implement a narrow pattern inside `ggml-backend-meta.cpp` when building/executing subgraphs: recognize the specific pair of consecutive reduction outputs and substitute one local pre-reduce join. Keep the original graph path available for all unmatched cases.
-
-Pseudo-matcher:
+Build it from the real split state:
 
 ```cpp
-if (is_add(join) &&
-    is_meta_allreduce(join->src[0]) &&
-    is_meta_allreduce(join->src[1]) &&
-    same_partial_contract(pre_ar0, pre_ar1) &&
-    single_consumer(ar0) && single_consumer(ar1)) {
-    // build or select local ADD of pre-AR values, then one AR
+static bc_partial_contract bc_contract(const ggml_tensor * t) {
+    bc_partial_contract c;
+    if (t == nullptr || t->buffer == nullptr || !ggml_backend_buffer_is_meta(t->buffer)) {
+        return c;
+    }
+
+    const ggml_backend_meta_split_state ss =
+        ggml_backend_meta_get_split_state(t, /* assume_sync = */ false);
+
+    c.axis       = ss.axis;
+    c.n_segments = ss.n_segments;
+    memcpy(c.nr, ss.nr, sizeof(c.nr));
+    c.type = t->type;
+    memcpy(c.ne, t->ne, sizeof(c.ne));
+
+    if (ss.axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+        c.kind = BC_PARTIAL_MIRRORED;
+    } else if (ss.axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) {
+        c.kind = BC_PARTIAL_SUM;
+    }
+    return c;
 }
 ```
 
-Exact graph representation at pin 0504396 must be inspected before implementation; AllReduce may be represented by Meta split boundaries rather than a first-class GGML op. In that case the matcher operates on subgraph boundary metadata rather than literal nodes.
+`ggml_backend_meta_get_split_state()` is file-local in `ggml-backend-meta.cpp` at this pin. Keep the first matcher there or expose a private helper in `ggml-backend-impl.h`; do not add a public API for an experiment.
 
-### Floating-point behavior
+### Contract equality
 
-Original rank/order arithmetic may be `(a0+a1+a2) + (b0+b1+b2)`. Fused form may reduce `(a0+b0) + (a1+b1) + (a2+b2)`. They are mathematically equal but not bit-identical. For f32 expect small roundoff differences; for bf16 wire the provider already introduces quantization. Therefore require KLD/top-token/greedy-reference evidence and record that this is a summation-order change. Do not label divergence automatically as a bug unless it exceeds the established contract.
+Do not compare only axis/shape:
+
+```cpp
+static bool bc_same_partial_sum(
+        const bc_partial_contract & a,
+        const bc_partial_contract & b) {
+    if (a.kind != BC_PARTIAL_SUM || b.kind != BC_PARTIAL_SUM ||
+        a.axis != b.axis || a.n_segments != b.n_segments || a.type != b.type) {
+        return false;
+    }
+    for (int d = 0; d < GGML_MAX_DIMS; ++d) {
+        if (a.ne[d] != b.ne[d]) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < 16; ++i) {
+        if (a.nr[i] != b.nr[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+```
+
+If source inspection shows `nr[]` is insufficient to identify rank ownership, extend the descriptor with the actual Meta segment/rank map from the simple tensor container. Fail closed until that map is available.
+
+### Explicit propagation only
+
+First-version propagation code should be intentionally restrictive:
+
+```cpp
+static bc_partial_contract bc_propagate_binary(
+        const ggml_tensor * op,
+        const bc_partial_contract & a,
+        const bc_partial_contract & b) {
+    if (op->op != GGML_OP_ADD || !bc_same_partial_sum(a, b)) {
+        return {};
+    }
+    bc_partial_contract out = a;
+    out.type = op->type;
+    memcpy(out.ne, op->ne, sizeof(out.ne));
+    return out;
+}
+```
+
+Do not initially propagate PARTIAL through MUL except a separately proven replicated-scalar case.
+
+VIEW/RESHAPE can propagate only for no-reorder views:
+
+```cpp
+static bool bc_view_preserves_elements(const ggml_tensor * src, const ggml_tensor * dst) {
+    return ggml_nelements(src) == ggml_nelements(dst) &&
+           ggml_nbytes(src)    == ggml_nbytes(dst) &&
+           ggml_is_contiguous(src) && ggml_is_contiguous(dst) &&
+           src->data == dst->data;
+}
+```
+
+Anything else => UNKNOWN.
+
+### Candidate record: dry-run first
+
+AllReduce is not a first-class GGML op in this Meta path; it is inserted at subgraph boundaries. Record each boundary and its pre-reduction tensor:
+
+```cpp
+struct bc_ar_boundary {
+    size_t subgraph;
+    ggml_tensor * partial[GGML_BACKEND_META_MAX_DEVICES];
+    ggml_tensor * logical;
+    bc_partial_contract contract;
+    size_t bytes;
+};
+```
+
+At the existing block that builds `nodes` and calls `backend_ctx->comm_allreduce(...)`, emit:
+
+```cpp
+if (bc_ar_fold_trace) {
+    const auto c = bc_contract(nodes[0]);
+    fprintf(stderr,
+        "BIGCHERRY_AR_BOUNDARY sg=%zu name=%s axis=%s seg=%u bytes=%zu\n",
+        i,
+        nodes[0]->name,
+        ggml_backend_meta_split_axis_name(c.axis),
+        c.n_segments,
+        ggml_nbytes(nodes[0]));
+}
+```
+
+Augment this with logical producer/consumer ids from the split builder. The dry-run tool reports only candidates whose two reduced outputs feed one ADD and have no other consumer.
+
+### First rewrite: before Meta split construction
+
+Do **not** fake two boundaries inside `ggml_backend_meta_graph_compute()`. Rewrite the logical graph before scheduler/Meta split construction so one local ADD is naturally present before one PARTIAL boundary.
+
+Minimal matcher shape:
+
+```cpp
+static bool bc_can_fold_two_reductions(
+        ggml_tensor * join,
+        ggml_tensor * a_partial,
+        ggml_tensor * b_partial,
+        int n_consumers_a,
+        int n_consumers_b) {
+    if (join == nullptr || join->op != GGML_OP_ADD ||
+        n_consumers_a != 1 || n_consumers_b != 1) {
+        return false;
+    }
+    return bc_same_partial_sum(bc_contract(a_partial), bc_contract(b_partial));
+}
+```
+
+When the exact candidate is identified, change the builder topology from the conceptual:
+
+```cpp
+ra  = reduced_partial_a;
+rb  = reduced_partial_b;
+out = ggml_add(ctx0, ra, rb);
+```
+
+to:
+
+```cpp
+local = ggml_add(ctx0, a_partial, b_partial); // remains PARTIAL_SUM
+out   = local;                                // Meta inserts one reduction after the join
+```
+
+There is no public `reduce_partial()` constructor today. The real patch must arrange placement/split state so Meta sees a single PARTIAL boundary after `local`; trace proof determines the exact builder seam before anchors are written.
+
+### Debug assertion
+
+For the first candidate, assert its contract at the earliest point where split state exists:
+
+```cpp
+#ifndef NDEBUG
+{
+    const auto ca = bc_contract(a_partial);
+    const auto cb = bc_contract(b_partial);
+    GGML_ASSERT(bc_same_partial_sum(ca, cb));
+}
+#endif
+```
+
+If graph construction precedes buffer/split-state assignment, move this assertion into the Meta split-assignment phase and identify nodes by stable graph identity. Do not silently accept a failed contract after selecting the experimental path.
+
+### Floating-point order
+
+Original:
+
+```text
+(a0+a1+a2) + (b0+b1+b2)
+```
+
+folded:
+
+```text
+(a0+b0) + (a1+b1) + (a2+b2)
+```
+
+is mathematically equal but not bit-identical. This is an intentional summation-order change; use exact synthetic tests for indexing/algebra and model KLD/top-token gates for production.
 
 ## Code Samples & Guidance
 
-Primary code ownership:
-
-- `ggml/src/ggml-backend-meta.cpp`: split-state and collective boundary information; likely first matcher/diagnostic site.
-- Qwen4Exp graph (`src/models/qwen4exp.cpp`) only if one model-local topology must be made explicit; do not encode generic partial algebra there.
-- existing 0830/1277/1242 tracing patches and `tools/lab/flash-next/ar-segment.py`: extend for topology/count evidence rather than creating another trace format.
-- PKC02 only after the matcher has a stable semantic contract suitable for a reusable graph recipe.
-
-Suggested diagnostic:
+Implementation sequence:
 
 ```text
-BIGCHERRY_AR_FOLD candidate layer=37 join=ADD ar0=6.4MiB ar1=6.4MiB group=0x7 safe=1 reason=single_consumer
-BIGCHERRY_AR_FOLD applied layer=37 before=2 after=1 bytes_before=12.8MiB bytes_after=6.4MiB
+A. trace only in ggml-backend-meta.cpp
+B. offline topology tool identifies exact candidate + consumer counts
+C. add bc_partial_contract helpers + negative fixtures
+D. rewrite one graph topology before Meta split construction
+E. assert one fewer comm_allreduce call for that topology
+F. only after a measured win, factor matcher into a generic optimization
 ```
 
-Add a dry-run mode first that reports candidates and an optimistic wall-time bound from measured AR timing without changing the graph. Require the bound before coding a topology.
+Do not start at F.
+
+Diagnostics:
+
+```text
+BIGCHERRY_AR_FOLD candidate layer=37 join=ADD a=... b=... bytes=... safe=1
+BIGCHERRY_AR_FOLD applied layer=37 ar_before=2 ar_after=1
+BIGCHERRY_AR_FOLD reject layer=... reason=mirrored|rank_map|extra_consumer|nonlinear
+```
 
 ## Files
 
-`ggml/src/ggml-backend-meta.cpp`; graph optimizer source if split semantics can be carried there safely; existing AR telemetry/tooling; optional Qwen4Exp graph annotation only when necessary; new patch package after one concrete topology is proven.
+- `ggml/src/ggml-backend-meta.cpp`: authoritative split-state helper, boundary trace/assertions.
+- Exact model/graph builder containing the first proven topology, likely `src/models/qwen4exp.cpp` only after trace proof.
+- Existing AR telemetry + `tools/lab/flash-next/ar-segment.py`.
+- Generic optimizer only after multiple real candidates prove the contract.
 
 ## Validation
 
-Offline graph fixtures should cover:
-- two compatible PARTIAL branches -> one folded AR;
-- different rank masks -> no fold;
-- PARTIAL + MIRRORED -> no fold;
-- extra consumer of one AR -> no fold;
-- nonlinear consumer between partial and AR -> no fold;
-- skipped/zero rank contribution -> same logical result.
+Fixtures:
 
-Hardware: count AR calls and bytes before/after, pp1024/2048/4096, Flash-Next 10K/80K/200K. Compare critical-rank collective wall, prefill t/s, peak memory and output contract. Decode control must remain unchanged unless an explicitly separate decode topology is qualified.
+```text
+PARTIAL G + PARTIAL G -> eligible
+PARTIAL G1 + PARTIAL G2 -> reject
+PARTIAL + MIRRORED -> reject
+extra consumer -> reject
+nonlinear between branch and join -> reject
+view that changes element order -> reject
+```
+
+Hardware: count reductions/bytes before/after at pp1024/2048/4096 and Flash-Next 10K/80K/200K. Record collective wall, prefill t/s, peak memory and numerical contract. Decode unchanged unless separately qualified.
 
 ## Effort & Risk
 
-L. Semantic risk is higher than a kernel micro-optimization because an incorrect partial/mirrored classification can silently scale a branch by rank count. The first implementation must therefore be extremely narrow with explicit assertions and dry-run evidence. Secondary risk is changed floating-point summation order and longer partial-tensor lifetime.
+L/high semantic risk. Incorrect PARTIAL/MIRRORED classification can silently multiply values by rank count. First implementation must be narrow and assertion-heavy.
 
 ## Standards
 
-Split state is authoritative; one semantic analyzer; fail closed on UNKNOWN; no model-name heuristics for generic algebra; dry-run Amdahl evidence before rewrite; output contract acknowledges changed summation order; no duplicate collective provider.
+Split state authoritative; UNKNOWN fails closed; no model-name heuristic for generic algebra; dry-run Amdahl proof first; no transport changes here.
 
 ## Acceptance Criteria
 
-- Dry-run identifies at least one real prefill topology whose measured optimistic bound is >=3% E2E or >=5% of prefill wall.
-- First rewrite reduces the expected collective count/bytes with exact graph instrumentation and no extra collective elsewhere.
-- No PARTIAL+MIRRORED or mismatched-rank fold is possible through the matcher; unit fixtures cover these failures.
-- Representative prefill improves >=3% or collective critical-path wall falls >=10%, with accepted KLD/top-token/greedy-reference results and decode regression <=1%.
-- If no real topology meets the bound, close/park PGC16 with the census rather than inventing a synthetic fusion target.
-
-## Notes
-
-This item is deliberately separate from 1314 small-AR produce/consume launch fusion, which was neutral because it did not remove the synchronization service. PGC16 removes whole collective boundaries when algebra permits it. It also differs from QFP13 launch fusion: the target is prefill collective count, not local elementwise launch count.
+- Dry-run finds a real candidate with >=3% E2E optimistic bound or >=5% of prefill wall.
+- First rewrite removes exactly one expected AllReduce without adding another.
+- Negative fixtures make PARTIAL+MIRRORED/mismatched groups impossible.
+- Representative prefill improves >=3% or collective critical wall >=10%, accepted numerical contract, decode <=1% regression.
+- If no candidate meets the bound, park with census.
 
 ## Change Log
 
-- 2026-10-05T00:00:00+00:00 (created-by): Created by agent after prefill plan scan; no existing item owned graph-level reduction elision.
+- 2026-10-05T00:00:00+00:00 (created-by): Created by agent after prefill scan.
+- 2026-10-05: Added source-shaped split-state analyzer/matcher guidance grounded in llama.cpp 0504396 Meta semantics.
