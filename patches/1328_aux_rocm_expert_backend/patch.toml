@@ -1,0 +1,16 @@
+schema = 1
+id = "1328_aux_rocm_expert_backend"
+order = 1328
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-item = "MET05"
+plan-ids = ["MET05"]
+requires = []
+conflicts = []
+requires-options = []
+forbids-options = []
+validation-architectures = ["gfx1100", "gfx1201", "gfx1030"]
+backends = ["hip"]
+tags = ["meta-backend", "moe-routing", "tensor-parallel"]
