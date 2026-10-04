@@ -54,6 +54,7 @@ class Patch1322Mechanics(unittest.TestCase):
             self.assertLess(trim, sync)
             self.assertLess(sync, dec.index("common_speculative_process(spec.get(), batch.view);"))
             # promotion only on full acceptance of the same front with the predicted bonus token
+            self.assertIn("slot.bc_ahead_tail.size() == (size_t) slot.get_n_draft_max() + 1", out)
             self.assertIn("accepted.size() == slot.spec_draft.size() + 1", out)
             self.assertIn("accepted.back() == slot.bc_ahead_tail[0]", out)
             self.assertIn("dp.n_tail   = (int32_t) slot.get_n_draft_max() + 1;", out)

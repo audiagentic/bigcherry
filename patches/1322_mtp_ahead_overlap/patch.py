@@ -10,8 +10,10 @@ the target verify, whose sync wait (25.5 / 31.4 ms) leaves the 6900 idle. With B
    the checkpoint is removed again before common_speculative_process() reseeds it (same trim as after a normal
    draft), so the authoritative path is unchanged. Only for draft contexts with partial seq_rm (MTP head KV).
 2. Promotion (accept): when the whole front was accepted and the target sampled the tail's first token, the rest of
-   the tail is exactly what a fresh draft would continue from; it becomes the next round's draft and the serial
-   fresh draft is skipped for that round (the round still checkpoints and trims as a fresh draft does).
+   the (full-length) tail becomes the next round's draft and the serial fresh draft is skipped for that round (the
+   round still checkpoints and trims as a fresh draft does). The promoted tokens are MTP chain depths k+2.. built on
+   draft hidden rows, not a fresh draft reseeded from the target's hidden row (which only exists after verify), so
+   they are accepted somewhat less than a fresh front; the gain is the skipped serial draft.
 
 A promoted front is a proposal like any other draft: the target verifies it, so greedy output is unchanged. Any
 ahead failure leaves the round on the ordinary path. A log line every 64 rounds reports rounds / ahead drafts /
@@ -128,10 +130,13 @@ _A_ACCEPT = ("                slot.spec_draft = std::move(accepted);\n"
              "\n"
              "            const auto ids = std::move(slot.spec_draft);\n")
 _N_ACCEPT = ("                // bigcherry 1322: whole front accepted and the target sampled the tail's bonus prediction -> the\n"
-             "                // rest of the tail continues from exactly this state; promote it to the next round's draft\n"
+             "                // rest of the tail continues this state (on draft hidden rows); promote it to the next round's draft\n"
              "                slot.bc_promoted.clear();\n"
              "                if (bc_mtp_ahead_on()) {\n"
-             "                    if (!slot.bc_ahead_tail.empty() && accepted.size() == slot.spec_draft.size() + 1 &&\n"
+             "                    // only a full-length tail (bonus + n_draft_max) may replace a fresh draft: a short promoted\n"
+             "                    // front shrinks the verify batch and loses to a fresh full draft (RV4217 / deep-dive 2)\n"
+             "                    if (slot.bc_ahead_tail.size() == (size_t) slot.get_n_draft_max() + 1 &&\n"
+             "                            accepted.size() == slot.spec_draft.size() + 1 &&\n"
              "                            slot.spec_draft == slot.bc_ahead_front && accepted.back() == slot.bc_ahead_tail[0]) {\n"
              "                        slot.bc_promoted.assign(slot.bc_ahead_tail.begin() + 1, slot.bc_ahead_tail.end());\n"
              "                    }\n"
