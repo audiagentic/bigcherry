@@ -26,31 +26,38 @@ Same build, same prompt, temperature 0: greedy target output is identical, but M
 
 ## Detailed Solution & Technical Design
 
+Diagnosis must now separate target and draft before adding more node-level instrumentation. Run the same target binary/model twice while changing only the draft device: current gfx1030 6900 XT versus one gfx1100 XTX. Pin all draft-side launch/config knobs and record the first draft top-id/probability plus target hidden hash. If the mode follows the draft device while target hashes remain stable, investigate gfx1030 QSA/indexer/TOP_K/reduction order. If it persists identically on XTX, move upstream to shared draft graph/state logic rather than adding architecture-specific fixes.
 
+Use a true upstream control, not `[source.bigcherry]`: build an unpatched checkout at the current llama.cpp release pin (b11396 as of 2026-10-05 scan) and run the same no-overlay trace. This closes the run-5 attribution error and establishes whether the residual exists upstream before BigCherry spends code on it.
+
+Do not revive 1316's per-node eval callback under `-sm tensor`; it changes graph execution boundaries and trips meta-backend invariants. For any later bisection, hash only selected materialized outputs at existing graph boundaries after compute, or add an observation hook that does not split/rebuild the graph.
 
 ## Code Samples & Guidance
 
-
+Keep the diagnostic observational. Reuse `BIGCHERRY_DRAFT_TRACE` and existing device selection. Do not add another sampler or TOP_K implementation. For placement A/B, the only intended variable is the draft backend/device; target placement, prompt, context, MTP depth, p_min and target binary must remain identical.
 
 ## Files
 
-
+- `docs/planning/active/patching-qwen-flash-next/QFP15.md`
+- existing 1315 draft-trace patch/tooling and queue scripts; extend rather than create a second trace path
+- `common/speculative.cpp` only if later evidence proves shared speculative state logic is the first divergent owner
+- QSA/TOP_K backend code only if the divergence follows gfx1030
 
 ## Validation
 
-Three runs of one build: identical BIGCHERRY_DRAFT_TRACE streams, identical drafted/accepted counts and greedy text at ~24K and ~80K; any fix shows no t/s regression (ms/step ABBA).
+Primary diagnostic matrix: 3 runs each for draft=gfx1030 and draft=gfx1100 at warm-up, ~24K and ~80K; compare target hidden hashes, draft top-id/probability, drafted/accepted counts and greedy text. Pure-upstream current-release control: at least 3 identical runs with no BigCherry overlay patch-set. Any eventual fix: identical trace streams across 3 runs at both contexts and no >1% median ms/step regression.
 
 ## Effort & Risk
 
-Diagnosis ~0.5-1 day (instrumentation + node-hash bisection). Fix S (env flag) to M (kernel reduction order). Risk: a deterministic reduction can cost a little speed; measure.
+Diagnosis ~0.5 day because it reuses 1315 and changes placement rather than adding graph instrumentation. Fix scope remains evidence-dependent. Avoid deterministic-kernel rewrites until the placement matrix identifies the owner; forcing deterministic reductions globally can cost throughput for a benchmark-quality issue that currently does not change production greedy text.
 
 ## Standards
 
-
+QFP15 owns determinism diagnosis only. QFP13 owns performance acceptance/noise handling; FMTP01 owns speculative-policy tuning; QFP07 owns target attention placement; 1294 remains the single TOP_K tie-breaking implementation. Do not duplicate those mechanisms here.
 
 ## Acceptance Criteria
 
-
+Diagnosis is complete when the residual is classified as target-side, draft-side gfx1030-specific, shared/upstream, or BigCherry-overlay-specific with a reproducing A/B. A code fix is promoted only if it removes the observed divergence without >1% median ms/step regression. If pure upstream b11396 reproduces only acceptance wobble while BigCherry remains greedy-stable, downgrade this item to benchmark hygiene and use multi-request ABBA/ms-step for <=3% optimisation claims instead of carrying a throughput-costly deterministic path.
 
 ## Notes
 
@@ -68,6 +75,8 @@ Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity c
 
 CORRECTION 2026-10-04: the run-5 'stock-none' build was not pure upstream - [source.bigcherry] always includes the serving-core, upstream-fixes and validated-enhancements patch-sets (0840 hybrid AllReduce dispatch, 0860, 1225, 1237, 1241, 1253, 1274, 1265, ...). Run 5 therefore shows: base patch-sets WITHOUT 1291/1294 -> greedy text differs across runs; WITH 1291/1294 -> text identical, residual draft wobble. Pure-upstream behaviour is untested (would need a source without overlay patch-sets).
 
+2026-10-05 optimisation review: stop broad nondeterminism bisection until two cheap ownership controls are complete: (1) draft placement gfx1030 -> gfx1100 with target held fixed, and (2) a genuinely unpatched upstream b11396 control. This consolidates the next work around existing 1315 tracing and avoids another meta-backend-unsafe node-hash mechanism. If the residual follows gfx1030, inspect draft QSA/indexer/TOP_K/reduction ordering; if it reproduces unchanged on XTX and pure upstream, treat it as upstream benchmark noise unless it changes greedy output. Current production greedy stability means deterministic rewrites must clear a stricter no-regression gate than ordinary performance patches.
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
@@ -77,3 +86,4 @@ CORRECTION 2026-10-04: the run-5 'stock-none' build was not pure upstream - [sou
 - 2026-10-04T06:33:33.339610+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:54:25.842364+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T07:55:38.201733+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T07:04:00+11:00 (updated-by): Deep review: consolidate diagnosis on draft-placement and pure-upstream controls; forbid meta-backend graph-splitting instrumentation.
