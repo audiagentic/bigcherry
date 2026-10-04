@@ -16,6 +16,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
 _HDR = "src/models/models.h"
+_GGML = "ggml/src/ggml.c"
 
 
 def _load(pid: str):
@@ -36,6 +37,8 @@ class Patch1332Mechanics(unittest.TestCase):
         (root / _REL).parent.mkdir(parents=True)
         shutil.copy2(_VENDOR, root / _REL)
         shutil.copy2(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
+        (root / _GGML).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_REPO / "vendor/llama.cpp" / _GGML, root / _GGML)
         return root
 
     def test_apply_and_idempotent(self):
@@ -50,12 +53,18 @@ class Patch1332Mechanics(unittest.TestCase):
             self.assertLess(sel.index("return sel_idx;"), sel.index("ggml_set_rows(ctx0, mask_all, zeros"))
             attn = out[out.index("ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa("):out.index("ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn(")]
             self.assertIn("if (sel->type == GGML_TYPE_I32) {", attn)
-            self.assertIn("ggml_tensor * mask = ggml_add(ctx0, mv, kqm);", attn)  # out of place, contiguous
+            # causal mask applied to the compact selection before the remap: no dense ADD, no per-chunk input views
+            self.assertLess(sel.index("bigcherry 1332: apply the causal mask while the selection is compact"),
+                            sel.index("sel_idx = ggml_cast(ctx0, idx_f, GGML_TYPE_I32);"))
+            self.assertIn("live = ggml_mul(ctx0, live, ggml_reshape_2d(ctx0, ggml_step(ctx0, ggml_exp(ctx0, bc_kv))", sel)
+            self.assertNotIn("ggml_add(ctx0, mv", attn)
+            self.assertIn("const int64_t rows = GGML_PAD(n_kv + n_sel, 256);", attn)
+            g = (root / _GGML).read_text(encoding="utf-8")
+            self.assertIn("GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));", g)
             self.assertIn("cur = cur ? ggml_concat(ctx0, cur, oc, 1) : oc;", attn)
             # one kq_mask view per chunk per graph (shared across QSA layers), held on the graph object
-            self.assertIn("ggml_tensor * kqm = bc_qsa_kq_chunks[ci];", attn)
             h = (root / _HDR).read_text(encoding="utf-8")
-            self.assertLess(h.index("std::vector<ggml_tensor *> bc_qsa_kq_chunks;"), h.index("ggml_tensor * build_attn_qsa("))
+            self.assertLess(h.index("ggml_tensor * bc_qsa_kq_rows = nullptr;"), h.index("ggml_tensor * build_attn_qsa("))
             # cache store stays before attention; v rotation undo still applies to the concatenated output
             self.assertLess(attn.index("mctx_cur->cpy_v(ctx0, v_cur, v_idxs, il)"), attn.index("if (sel->type == GGML_TYPE_I32)"))
             self.assertLess(attn.index("ggml_concat(ctx0, cur, oc, 1)"), attn.index("cb(cur, \"kqv_out\", il);"))

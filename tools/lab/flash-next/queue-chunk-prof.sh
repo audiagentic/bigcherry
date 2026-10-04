@@ -13,11 +13,11 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-chunk4 bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT chunk-prof tools/lab/flash-next/chunk-prof.sh @b-chunk4 $R/qfp17-chunk-prof
+VIS=0,1,2,3 BUILD b-chunk5 bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT chunk-prof tools/lab/flash-next/chunk-prof.sh @b-chunk5 $R/qfp17-chunk-prof
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^(ub[0-9]|== |   |crash-case|realloc)" $R/chunk-prof.log
+grep -E "^(ub[0-9]|== |   |crash-case|realloc|nomtp|mtp-d24k)" $R/chunk-prof.log
 echo ALL_JOBS_DONE
