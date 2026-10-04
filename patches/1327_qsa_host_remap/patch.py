@@ -5,7 +5,7 @@ Upstream #29819 (in pin 0504396) made build_qsa_sel remap every dead selection s
     dump      = scale_bias(cumsum(fill(live, 1)), 1, n_kv - 1)              // per QSA layer: FILL, CUMSUM, SCALE
     idx       = dump + live*(idx - dump)
 The kernel census after the bump showed +~54 kernels per token per XTX (elementwise +37, get/set_rows +9) and decode
--2.3% at ~8K. tail_idxs is a host-set input and dump is n_kv + slot, so with BIGCHERRY_QSA_HOST_REMAP=1 both are
+-2.3% at ~8K. tail_idxs is a host-set input and dump is n_kv + slot, so by default (BIGCHERRY_QSA_HOST_REMAP=0 disables) both are
 computed once per graph on the host in the kpool input's set_input (bit-identical values: t < n_kv ? 1 : 0, and
 n_kv + s exactly representable in F32 for n_kv < 2^24) and fed to every QSA layer as inputs, removing six ops per QSA
 layer. The live_pool part (from the device top_k scores) and the final remap stay on the device unchanged.
@@ -48,8 +48,8 @@ _N_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_
 
 _A_BUILD = ("    inp->n_sel      = kpool*std::min<uint32_t>(n_pool, hparams.indexer_top_k / kpool) + kpool - 1;\n")
 _N_BUILD = _A_BUILD + (
-    "    {   // bigcherry 1327: host-side QSA remap inputs (BIGCHERRY_QSA_HOST_REMAP=1)\n"
-    "        static const bool bc_host_remap = getenv(\"BIGCHERRY_QSA_HOST_REMAP\") != nullptr && atoi(getenv(\"BIGCHERRY_QSA_HOST_REMAP\")) != 0;\n"
+    "    {   // bigcherry 1327: host-side QSA remap inputs (bit-identical, on by default; BIGCHERRY_QSA_HOST_REMAP=0 disables)\n"
+    "        static const bool bc_host_remap = getenv(\"BIGCHERRY_QSA_HOST_REMAP\") == nullptr || atoi(getenv(\"BIGCHERRY_QSA_HOST_REMAP\")) != 0;\n"
     "        if (bc_host_remap) {\n"
     "            inp->bc_live_tail = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, kpool - 1, n_tokens);\n"
     "            inp->bc_dump      = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, inp->n_sel, n_tokens);\n"
@@ -82,7 +82,7 @@ _N_REMAP = ("    ggml_tensor * live_tail = inp_kpool->bc_live_tail;  // bigcherr
 PATCHES = [
     FilePatch(
         path="src/models/qwen4exp.cpp",
-        description="1327: host-computed QSA dead-slot remap terms (BIGCHERRY_QSA_HOST_REMAP=1)",
+        description="1327: host-computed QSA dead-slot remap terms (on by default; BIGCHERRY_QSA_HOST_REMAP=0 disables)",
         language="none",
         edits=(
             Edit(id="qsa-remap-include", anchor=re.escape("#include <algorithm>\n"), mode="insert_after",
@@ -105,6 +105,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_QSA_HOST_REMAP', '0|1', '0',
+    EnvDoc('BIGCHERRY_QSA_HOST_REMAP', '0|1', '1 (on)',
            'compute QSA dead-slot remap terms on the host (removes six ops per QSA layer)'),
 )

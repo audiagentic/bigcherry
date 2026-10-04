@@ -240,7 +240,7 @@ patches = [
     # measured as promoted base vs base + patch in its adoption ABBA (evidence: patches/<id>/README.md, SUMMARY.md);
     # whole stack vs native llama.cpp +29% / +45% decode at 8K / 48K; 27B dual-XTX no-regression (flags at
     # defaults) identical acceptance and greedy text, decode/prefill within noise. Runtime flags off by default;
-    # BIGCHERRY_FEATURES=flashnext-v6 enables the profile.
+    # BIGCHERRY_FEATURES=flashnext enables the profile.
     "1235_rd09_q81_activation_cache_foundation",
     "1291_ar_cpu_root",
     "1292_kpool_tail_truncate",

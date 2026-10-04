@@ -5,7 +5,7 @@ build the GDN conv state ([TAG_RECURRENT_ROLLBACK_SPLITS] in qwen4exp.cpp) write
 tail view is one device copy and the CPY into the cache another, so 8 copy kernels per layer. The kernel census on
 Flash-Next decode attributes ~89 of the ~108 __amd_rocclr_copy* launches per generated token to exactly this
 sequence (concat_non_cont -> 8 copies -> get_rows). ggml_cpy accepts a non-contiguous source, so with
-BIGCHERRY_ROLLBACK_NO_CONT=1 the tail is copied directly: one kernel per slot instead of two. The copy is exact, so
+By default (BIGCHERRY_ROLLBACK_NO_CONT=0 disables) the tail is copied directly: one kernel per slot instead of two. The copy is exact, so
 outputs must be bit-identical; the open question this gates is whether every backend/split mode accepts the
 strided source (the meta backend's CPY handling), hence env-gated for A/B.
 """
@@ -21,11 +21,11 @@ STATE = "validated"
 
 _OLD = "        ggml_build_forward_expand(gf, ggml_cpy(ctx0, ggml_cont(ctx0, tail), dst));\n"
 _NEW = """\
-        // bigcherry 1308: BIGCHERRY_ROLLBACK_NO_CONT=1 copies the strided tail straight into the cache (one kernel
-        // per slot instead of CONT + CPY).
+        // bigcherry 1308: copy the strided tail straight into the cache (one kernel per slot instead of CONT + CPY);
+        // bit-identical, on by default, BIGCHERRY_ROLLBACK_NO_CONT=0 restores CONT + CPY.
         static const bool bigcherry_rollback_no_cont = [] {
             const char * s = std::getenv("BIGCHERRY_ROLLBACK_NO_CONT");
-            return s != nullptr && std::atoi(s) != 0;
+            return s == nullptr || std::atoi(s) != 0;
         }();
         ggml_build_forward_expand(gf, ggml_cpy(ctx0, bigcherry_rollback_no_cont ? tail : ggml_cont(ctx0, tail), dst));
 """
@@ -51,7 +51,7 @@ PATCHES = [
                 anchor=re.escape(_OLD),
                 mode="replace",
                 text=_NEW,
-                guard=r"bigcherry 1308: BIGCHERRY_ROLLBACK_NO_CONT",
+                guard=r"bigcherry 1308: copy the strided tail straight into the cache",
                 rationale="The per-slot snapshot write in the recurrent conv-state builder "
                           "([TAG_RECURRENT_ROLLBACK_SPLITS]); the only cpy(cont(tail), dst) in the file.",
                 expect_matches=1,
@@ -62,6 +62,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_ROLLBACK_NO_CONT', '0|1', '0',
-           'Qwen4Exp speculative rollback copies state without an extra ggml_cont'),
+    EnvDoc('BIGCHERRY_ROLLBACK_NO_CONT', '0|1', '1 (on)',
+           'Qwen4Exp speculative rollback copies state without an extra ggml_cont (bit-identical); 0 disables'),
 )

@@ -12,7 +12,8 @@ runtime flag documents it in its own patch.py as ENV_DOCS = (EnvDoc(...), ...) a
 loader turns those into rows inserted before this table's end marker, so the table lists exactly the flags of the
 patches in the build.
 
-To add a profile, add one row to bc_feature_sets below.
+To add a profile, add one row to bc_feature_sets below; a member may be @other-set. Name sets by scope (what they
+act on), not by the model they were tuned on.
 """
 
 from __future__ import annotations
@@ -29,10 +30,15 @@ _N = r"""#include <signal.h>
 
 // bigcherry 0910: named feature sets (BIGCHERRY_FEATURES=<set>[,<set>...] | help); explicit member variables win
 static const char * const bc_feature_sets[][3] = {
-    // name, description, members (NAME=VALUE, space separated)
-    { "flashnext-v6", "Qwen3.8 Flash-Next production profile v6 (pin 0504396)",
-      "GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 "
-      "BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1 BIGCHERRY_SCHED_ASYNC_INPUTS=1 BIGCHERRY_QSA_HOST_REMAP=1" },
+    // name, description, members (NAME=VALUE or @other-set, space separated). Name sets by what they act on, not
+    // by the model they were tuned on.
+    { "hip-q81", "HIP MMVQ decode: reuse one Q8_1 activation quantization and let RMS-norm, activations, MUL, scale "
+                 "fusions (and hyper-connection pre-mix, on HC models) write it directly (any quantized model)",
+      "GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1" },
+    { "sched-async", "scheduler stages small host inputs asynchronously (multi-backend / tensor-split runs)",
+      "BIGCHERRY_SCHED_ASYNC_INPUTS=1" },
+    { "flashnext", "Qwen3.8 Flash-Next production profile (pin 0504396); its Qwen4Exp-only patches are on by default",
+      "@hip-q81 @sched-async" },
 };
 
 typedef struct {
@@ -84,7 +90,8 @@ static void bc_feature_help(void) {
             if (eq) {
                 *eq = '\0';
             }
-            fprintf(stderr, "      %s%s\n", m, bc_env_documented(name) ? "" : "  (no patch in this build documents it)");
+            fprintf(stderr, "      %s%s\n", m,
+                    m[0] == '@' || bc_env_documented(name) ? "" : "  (no patch in this build documents it)");
             m = next;
         }
     }
@@ -93,6 +100,48 @@ static void bc_feature_help(void) {
         const bc_env_doc * d = &bc_env_docs[i];
         fprintf(stderr, "  %s = %s (default: %s) [%s]\n      %s\n", d->name, d->values, d->def, d->patch, d->desc);
     }
+}
+
+// expand one set into its variables (and the sets it references), appending " NAME=VALUE" items to applied
+static int bc_feature_set_apply(const char * set, char * applied, size_t cap, int depth) {
+    for (size_t i = 0; i < sizeof(bc_feature_sets)/sizeof(bc_feature_sets[0]); i++) {
+        if (strcmp(set, bc_feature_sets[i][0]) != 0) {
+            continue;
+        }
+        char members[1024];
+        snprintf(members, sizeof(members), "%s", bc_feature_sets[i][2]);
+        for (char * m = members; *m != '\0'; ) {
+            char * end = strchr(m, ' ');
+            char * next = end ? end + 1 : m + strlen(m);
+            if (end) {
+                *end = '\0';
+            }
+            if (m[0] == '@') {
+                if (depth >= 8 || !bc_feature_set_apply(m + 1, applied, cap, depth + 1)) {
+                    fprintf(stderr, "BIGCHERRY_FEATURES set '%s' references unknown or too deeply nested set '%s'\n", set, m + 1);
+                }
+                m = next;
+                continue;
+            }
+            char * eq = strchr(m, '=');
+            if (eq == NULL) {
+                m = next;
+                continue;
+            }
+            *eq = '\0';
+            const int preset = getenv(m) != NULL;
+            if (!preset) {
+                bc_feature_setenv(m, eq + 1);
+            }
+            char item[192];
+            snprintf(item, sizeof(item), " %s=%s%s%s", m, preset ? getenv(m) : eq + 1, preset ? "(explicit)" : "",
+                     bc_env_documented(m) ? "" : "(not in build)");
+            strncat(applied, item, cap - strlen(applied) - 1);
+            m = next;
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static void bc_feature_sets_expand(void) {
@@ -110,40 +159,10 @@ static void bc_feature_sets_expand(void) {
         while (*tok == ' ') {
             tok++;
         }
-        int found = 0;
-        for (size_t i = 0; i < sizeof(bc_feature_sets)/sizeof(bc_feature_sets[0]); i++) {
-            if (strcmp(tok, bc_feature_sets[i][0]) != 0) {
-                continue;
-            }
-            found = 1;
-            char members[1024];
-            snprintf(members, sizeof(members), "%s", bc_feature_sets[i][2]);
-            char applied[1024] = "";
-            for (char * m = members; *m != '\0'; ) {
-                char * end = strchr(m, ' ');
-                char * next = end ? end + 1 : m + strlen(m);
-                if (end) {
-                    *end = '\0';
-                }
-                char * eq = strchr(m, '=');
-                if (eq == NULL) {
-                    m = next;
-                    continue;
-                }
-                *eq = '\0';
-                const int preset = getenv(m) != NULL;
-                if (!preset) {
-                    bc_feature_setenv(m, eq + 1);
-                }
-                char item[192];
-                snprintf(item, sizeof(item), " %s=%s%s%s", m, preset ? getenv(m) : eq + 1, preset ? "(explicit)" : "",
-                         bc_env_documented(m) ? "" : "(not in build)");
-                strncat(applied, item, sizeof(applied) - strlen(applied) - 1);
-                m = next;
-            }
+        char applied[1024] = "";
+        if (bc_feature_set_apply(tok, applied, sizeof(applied), 0)) {
             fprintf(stderr, "BIGCHERRY_FEATURES %s:%s\n", tok, applied);
-        }
-        if (!found) {
+        } else {
             fprintf(stderr, "BIGCHERRY_FEATURES unknown set '%s' (ignored; BIGCHERRY_FEATURES=help lists sets)\n", tok);
         }
     }

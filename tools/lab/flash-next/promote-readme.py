@@ -16,7 +16,7 @@ PIN = "0504396"
 NATIVE = """## Native llama.cpp comparison (profile level, pin {pin})
 
 `tools/lab/flash-next/queue-promote.sh` (2026-10-05): native llama.cpp (source `llama-native`, no patches, default
-all-reduce) vs production profile v6 (`BIGCHERRY_FEATURES=flashnext-v6`), Qwen3.8 Flash-Next UD-IQ4_XS, 2x 7900 XTX +
+all-reduce) vs production profile v6 (`BIGCHERRY_FEATURES=flashnext`), Qwen3.8 Flash-Next UD-IQ4_XS, 2x 7900 XTX +
 R9700, MTP draft on the 6900 XT, 64K context, f16 KV, ub512, 256 greedy tokens, ABA (v6 / native / v6):
 
 | Depth | v6 decode (t/s) | native decode (t/s) | v6 ms/step | native ms/step | v6 vs native |
