@@ -133,3 +133,11 @@ Promoted tails cannot use that old lease on the next round because authoritative
 
 - 2026-10-04T06:32:20.288038+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T15:14:51.698567+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+
+- chg_20261004_161430_experimental-the-mtp-drafter_7189
+- 2026-10-04T16:14:33.914151+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_161448_experimental-the-mtp-drafter_6717
+- 2026-10-04T16:14:51.572473+00:00 (updated-by): Updated: section:ledger-events

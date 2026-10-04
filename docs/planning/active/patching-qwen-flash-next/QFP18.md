@@ -84,3 +84,11 @@ Owner 2026-10-05: one build only - promote into [patch-set.validated-enhancement
 - 2026-10-04T14:42:55.669115+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T14:44:53.920928+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T14:47:07.046673+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+
+- chg_20261004_161427_one-flag-bigcherry_featuresf_8633
+- 2026-10-04T16:14:30.741719+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_161445_one-flag-bigcherry_featuresf_6153
+- 2026-10-04T16:14:48.405399+00:00 (updated-by): Updated: section:ledger-events
