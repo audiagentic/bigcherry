@@ -128,6 +128,7 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 
 
 
+
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:00.116378+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T03:48:27.574308+00:00 (updated-by): Updated: section:notes
@@ -159,6 +160,7 @@ PRODUCTION PROFILE (Flash-Next, 192K): b-flash-deploy-1 = experiment ar-cpu-root
 - 2026-10-03T10:47:23.068845+00:00 (updated-by): Updated: section:ledger-events
 
 - chg_20261003_151601_flash-next-now-runs-240k-conte_5065
+- chg_20261004_011520_three-more-flash-next-decode-k_5440
 ## Reviews
 
 - RV4214
@@ -180,3 +182,4 @@ PRODUCTION PROFILE v2 (Flash-Next, 240K, f16 KV): build b-deploy-1303 (experimen
 PRODUCTION PROFILE v3 (Flash-Next, 240K, f16 KV): profile v2 command line plus patches 1235, 1307, 1308, 1309, 1310, 1311 (experiment deploy-v2-plus-1311; producers publish only in decode-shaped graphs, the row caps are gone) and env GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 (in addition to BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 BIGCHERRY_DRAFT_VOCAB_N=65536). 1311 adopted 2026-10-04: speed-neutral in its screen, greedy-identical, removes the hc_pre quantize launches; kept because it cuts launches with no regression (owner policy: small/neutral non-regressing wins are taken). Candidate next: 1312 (deploy-v3-plus-1312, screening as flashnext-v3-1312-*).
 
 2026-10-04 Qwen3.8-27B drafter placement (owner question; tools/lab/flash-next/draft27b-ab.sh, runs/draft27b-ab-1): 27B Q8_0 on the two XTX (-sm tensor, cpu-root), built-in MTP head (drafts on the TP XTX) vs the Q4_0 MTP sidecar on the 6900 (-devd, f16 draft KV), spec-draft-n-max 4, 256 greedy tokens. ~10K: built-in 70.2/72.8 t/s (46.2/44.5 ms/step) vs sidecar 68.0 (49.5); ~32K: built-in 71.9/71.7 (47.5/47.6) vs sidecar 61.2 (53.0). Acceptance similar. Verdict: keep the 27B's built-in MTP on the XTX - its single dense MTP layer is cheap there; on the slower 6900 its compute + attention (grows with depth) + hidden-state handoff exceed the AllReduces saved. Opposite of Flash-Next, whose large MTP model did not fit/benefit on the TP cards.
+- 2026-10-04T01:15:27.393851+00:00 (updated-by): Updated: section:ledger-events

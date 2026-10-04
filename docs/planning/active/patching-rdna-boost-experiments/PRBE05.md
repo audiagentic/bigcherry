@@ -151,6 +151,7 @@ RD09 remains closed historical provenance. PRBE05 is the only actionable Q8_1 ac
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.147212+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -161,3 +162,5 @@ RD09 remains closed historical provenance. PRBE05 is the only actionable Q8_1 ac
 - 2026-09-24T02:32:42.590942+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:36:28.306424+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:notes
 - 2026-10-03T20:00:08.759319+00:00 (updated-by): Updated: section:notes
+- chg_20261003_221744_flash-next-decode-issues-13_8662
+- 2026-10-03T22:17:50.302518+00:00 (updated-by): Updated: section:ledger-events
