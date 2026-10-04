@@ -34,6 +34,7 @@ class Patch1326Mechanics(unittest.TestCase):
             hook = be.index("bigcherry 1326: async host->device input copy")
             self.assertLess(be.index("struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);"), hook)
             self.assertLess(hook, be.index("if (input->flags & GGML_TENSOR_FLAG_INPUT) {", hook))
+            self.assertIn("memcpy(bc_stage.data(), input->data, ggml_nbytes(input));", be)
             meta = (root / "ggml/src/ggml-backend-meta.cpp").read_text(encoding="utf-8")
             fn = meta.index("static void ggml_backend_meta_set_tensor_async(")
             fb = meta.index("bigcherry 1326: states the async splice cannot express")

@@ -152,8 +152,10 @@ _FUSE_TEXT = r"""
                 bc_scale_act_fused(*cuda_ctx, node, act, post);
                 return 2;
             }
-            // leave UNARY -> MUL to upstream's unary_mul fusion (and 1312's Q8_1 output on it)
-            const bool act_then_mul = post && post->op == GGML_OP_MUL && (post->src[0] == act || post->src[1] == act);
+            // leave UNARY -> MUL to upstream's unary_mul fusion (and 1312's Q8_1 output on it) - only when that fusion
+            // will actually be taken (same predicate as ggml_cuda_try_fuse); otherwise fuse SCALE -> ACT here
+            const bool act_then_mul = post && post->op == GGML_OP_MUL &&
+                ggml_cuda_can_fuse(cgraph, i + 1, { GGML_OP_UNARY, GGML_OP_MUL }, { ggml_get_unary_op(act) });
             if (!act_then_mul && ggml_can_fuse(cgraph, i, ops3, 2)) {
                 bc_scale_act_fused(*cuda_ctx, node, act, nullptr);
                 return 1;
