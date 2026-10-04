@@ -167,6 +167,8 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 2026-10-05 first hardware screen (1321+1322, v6, 240K f16, quick ABA, same binary, BIGCHERRY_MTP_AHEAD=1 middle arm). Greedy identical in all arms at 24K and 80K. 24K: 74.4/76.1 base vs 75.7 t/s ahead; ms/step 41.5/41.0 -> 38.4; promoted 25/64 rounds (39%, = Gate 0 p_hit); ahead host ~16 ms per round, hidden under target verify. 80K: 53.5/54.6 vs 54.5 t/s; ms/step 50.4/49.9 -> 47.4; promoted 16/64 (25%); ahead ~21 ms. Per-step saving matches the skipped serial draft (~p_hit x draft time) but t/s is neutral because promoted fronts are accepted less (24K 168/257 vs 173/242; 80K 157/291 vs 161/279): a promoted token is MTP chain position 5-7 on draft hidden states, vs fresh drafts reseeded from target h every round. Next: promote only high-confidence tail tokens (stricter p_min for the tail, e.g. 0.8-0.9) or cap promotion to 1-2 tokens; record per-position acceptance of promoted vs fresh fronts to pick the cut.
 
+2026-10-05 tail confidence cut (BIGCHERRY_MTP_AHEAD_PMIN, queue-ahead-pmin) at 24K: 0.85 -> 67.9 t/s vs 73.9/75.0 base (44.4 vs 41.1 ms/step), promoted 19/64 with ~2.5-token fronts; 0.95 -> 63.8 vs 75.0/75.2 (45.6 ms/step), 17/64, ~2.2 tokens. The cut shortens promoted fronts, and a short promoted front replaces a full fresh 3-token draft: worse than no cut. Greedy also differed from base in both cut arms (not without the cut); verify-batch-shape numerics are the likely cause but treat as unresolved. Keep default no cut. Next options: promote only full-length fronts (else fresh draft), or keep promotion and also prepare a target-seeded fresh draft in the overlap window.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
@@ -179,3 +181,4 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 - chg_20261004_161448_experimental-the-mtp-drafter_6717
 - 2026-10-04T16:14:54.714881+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T17:00:27.817054+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T17:31:34.739948+00:00 (updated-by): Updated: section:notes
