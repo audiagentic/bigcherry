@@ -14,14 +14,14 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-1330 bigcherry:stock:linux-multi deploy-v6-plus-1330 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT a1330-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-1330 @b-1330 $R/flashnext-1330-d24k BIGCHERRY_QSA_MASK_INPLACE=1
-VIS=0,1,2,3 SCRIPT ub-1330 tools/lab/flash-next/ub-1330.sh @b-1330 $R/flashnext-ub-1330
+VIS=0,1,2,3 BUILD b-1330b bigcherry:stock:linux-multi deploy-v6-plus-1330 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT a1330b-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-1330b @b-1330b $R/flashnext-1330b-d24k BIGCHERRY_QSA_MASK_INPLACE=1
+VIS=0,1,2,3 SCRIPT ub-1330b tools/lab/flash-next/ub-1330.sh @b-1330b $R/flashnext-ub-1330
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^base-|^new|SERVER_FAILED" $R/a1330-d24k.log
-D=$R/flashnext-1330-d24k; md5sum $D/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
-grep -E "^ub" $R/ub-1330.log
+grep -E "^base-|^new|SERVER_FAILED" $R/a1330b-d24k.log
+D=$R/flashnext-1330b-d24k; md5sum $D/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
+grep -E "^ub" $R/ub-1330b.log
 echo ALL_JOBS_DONE
