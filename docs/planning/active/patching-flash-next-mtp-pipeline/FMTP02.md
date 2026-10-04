@@ -121,6 +121,8 @@ A continued/promoted tail may differ from what a fresh next-round target-reseede
 
 Prep 2026-10-04 - code anchors at the pinned c061 vendor tree (vendor/llama.cpp): common/speculative.cpp struct common_speculative_impl_draft_mtp (~L1331): state pending_h / verify_h / verify_h_rows / chain_h / smpls / i_last; begin() ~L1457; process() ~L1475 (authoritative reseed from the verified batch, sets pending_h); draft() ~L1584: seed batch (dp.id_last, dp.pos0, pending_h) then loop: llama_process(ctx_dft) -> common_sampler_sample(smpl, ctx_dft, i_last) -> llama_get_embeddings_nextn_ith (h_row) -> p_min check -> result.push_back -> n_max stop -> re-add (id, h_row) at dp.pos0+i+1 (the fresh-front continuation seam is the n_max stop, after h_row is read and before the re-add); accept() ~L1735 copies verify_h row n_accepted into pending_h. Diagnostic patches already in this region: 1315 (DRAFT_TRACE after the sample/h_row read) and 1318 (draft-loop timing) - new anchors must compose with both (test like test_1318 composes with 1315). Patch number: 1321_mtp_ahead_primitives. Calibration (FMTP01) supports the work: promoted-tail yield 72-75% >= fresh-front acceptance.
 
+Implemented 2026-10-05 as patches/1321_mtp_ahead_primitives (commit after d70c80a1): new common_speculative_draft_params fields forced / n_tail / tail, handled in the existing single-head MTP draft loop (one shared per-step path). Design simplification vs the plan: the live continuation is drafted inline in the same draft() call (tail past n_max, disjoint from result), so there is no separate continuation lease that could outlive a rollback/reseed; a promoted tail is replayed next round via dp.forced from the authoritative seed. Asserts: single-head non-shared MTP only, greedy only for forced, forced <= n_max, tail buffer present. Offline mechanics tests pass (alone, composed with 1315 + 1318); patched speculative.cpp compiles (clang++ -fsyntax-only). Runtime validation (forced replay of the previous greedy draft reproduces it; tail = uninterrupted continuation) moves to FMTP03, where the server first sets these fields.
+
 ## Key review finding
 
 A copied `(id, h_row, pos)` is not a self-contained durable seed. Continuation also depends on the live `ctx_dft` KV frontier and draft sampler state. Treat a fresh-front continuation record as an **ephemeral lease**: any rollback, process, reset, state restore, other draft mutation or sampler reset invalidates it.
@@ -130,3 +132,4 @@ Promoted tails cannot use that old lease on the next round because authoritative
 ## Change Log
 
 - 2026-10-04T06:32:20.288038+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T15:14:51.698567+00:00 (updated-by): Updated: section:notes
