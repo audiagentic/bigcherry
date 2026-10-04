@@ -127,6 +127,8 @@ for tid, ns in per_tid.most_common(6):
     print(f"  thread {tid}: {ns/1e6/steps:.2f} ms/step in HIP API ({100*ns/win:.0f}% of wall)")
 PY
   exit 0
+elif [ "$mode" = prefillprof ]; then  # QFP17: kernel trace + stats of one uncached prefill fill at DEPTH (8 decode tokens)
+  DECODE_N=8 CACHE=0 WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $out/rocprof --" run_pass prefillprof ${DEPTH:-20480}
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit 0
