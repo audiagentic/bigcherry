@@ -11,138 +11,116 @@ priority: P0
 work: L
 ---
 
-# Overlap MTP continuation with target verification
+# Overlap target verification and MTP work on one host thread
 
 ## Description
 
-Run FMTP02's bounded `bridge + tail` continuation on the separate MTP GPU while the target verifies the current front draft. Preserve a single owner for `ctx_dft` and join before any existing path reuses, restores or destroys that context.
+Exploit c061's asynchronous target graph submission directly. Split target `llama_process()` from `llama_synchronize()`, execute bounded MTP work between them, then resume the existing authoritative rollback/reseed path.
+
+Do **not** add a persistent worker in v1 unless FMTP01 hardware evidence disproves this execution model.
 
 ## Steps
 
-1. Add one persistent worker per speculative context; no per-token or per-round thread creation.
-2. Publish immutable jobs containing only copied seed state, `seq_id`, epoch and requested tail depth.
-3. After normal front drafting, if an eligible seed exists, launch/publish the continuation **before** target `llama_process()`.
-4. Delay the current post-draft draft-context rollback/truncation until the worker has completed. The worker needs the speculative frontier created by the front.
-5. After target verification has synchronized, join/collect the worker **before** `common_speculative_process()` touches `ctx_dft`.
-6. Then run the existing rollback/truncate and authoritative `common_speculative_process()` path unchanged.
-7. Join before any operation that can mutate/restore/free `ctx_dft`: begin/reset, state restore, prompt checkpoint restore, sleep/model unload, destruction and error recovery.
-8. Add per-sequence epoch fencing. Reset/replay/context-shift marks jobs stale; a late completion is copied out only when epoch/frontier still match.
-9. v1 cancellation is logical, not GPU preemption. A stale in-flight continuation may finish but is discarded. Maximum work is bounded by `mtp_ahead`.
-10. Record worker queue delay, ahead device time, overlap window and join overhang.
+1. Preserve the existing target verification batch construction and speculative checkpoint logic.
+2. Submit target verification with `llama_process(ctx_tgt, ...)` but do not immediately synchronize.
+3. If the current front was freshly drafted, call FMTP02 `continue_live_front()` while target GPU work is in flight.
+4. If the current front was promoted from a prior ahead result, call FMTP02 `replay_known_front_and_continue()` while target GPU work is in flight.
+5. Call `llama_synchronize(ctx_tgt)` after bounded MTP work completes.
+6. Then perform the existing draft rollback/truncate and `common_speculative_process()` authoritative replay/reseed unchanged.
+7. On any MTP ahead failure, discard the ahead result and continue the target request normally.
+8. Keep all work on the server processing thread in v1; no mailbox, background thread, cross-thread context use or worker lifetime state.
+9. Record target submit time, MTP overlap work time, target sync wait and derived overhang.
+10. Preserve queue responsiveness by using the repository's existing `yield_to_queue` mechanism around the new submit/work/sync sequence without allowing another task to mutate the same slot/context between its phases.
 
 ## Detailed Solution & Technical Design
 
-Use a persistent thread with a one-job mailbox. `std::jthread` is preferred when the project/toolchain supports it; otherwise use `std::thread` with explicit shutdown. Avoid `std::async` because execution policy/thread creation is implementation-dependent.
+Current c061 server shape:
 
 ```cpp
-struct mtp_ahead_job {
-    uint64_t epoch;
-    llama_seq_id seq_id;
-    int32_t n_tail;
-    common_mtp_ahead_seed seed;
-};
-
-struct mtp_ahead_mailbox {
-    std::mutex mu;
-    std::condition_variable cv;
-    std::optional<mtp_ahead_job> pending;
-    std::optional<common_mtp_ahead_result> complete;
-    bool stop = false;
-    bool running = false;
-};
+queue_tasks.yield_to_queue([&]() {
+    ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+    if (ret == 0 && has_output) {
+        llama_synchronize(ctx_tgt);
+    }
+});
 ```
 
-No worker pointer may refer to `server_slot`; slots are server-thread-owned. Jobs contain copied scalar/vector state only.
+The context itself submits with `ggml_backend_sched_graph_compute_async()`. Proposed shape:
 
-### Ownership timeline
+```cpp
+queue_tasks.yield_to_queue([&]() {
+    ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+    if (ret != 0) {
+        return;
+    }
+
+    if (eligible_ahead) {
+        ahead_ok = promoted_front
+            ? common_speculative_replay_front_and_ahead(spec.get(), ...)
+            : common_speculative_continue_live_ahead(spec.get(), ...);
+    }
+
+    if (has_output) {
+        llama_synchronize(ctx_tgt);
+    }
+});
+```
+
+Exact placement can differ if `yield_to_queue` requires smaller scopes, but three ordering invariants are mandatory:
+
+1. target GPU submit happens before MTP overlap work;
+2. target synchronization happens after MTP overlap work;
+3. no authoritative `ctx_dft` rollback/process happens until the MTP work is finished.
+
+Ideal critical-path time after target submit is:
 
 ```text
-server thread                         MTP worker
--------------                         ----------
-common_speculative_draft(front A)
-publish(seed) ----------------------> resume bridge + tail
-build/submit target verify A          ctx_dft exclusively owned here
-llama_synchronize(ctx_tgt)
-join/collect <------------------------ publish copied token result
-rollback/truncate ctx_dft
-common_speculative_process(A)
-post_decode accept/reject A
+T_overlap = max(T_target_gpu, T_mtp_work)
+T_overhang = max(0, T_mtp_work - T_target_gpu)
 ```
 
-The server may interact with unrelated queue/HTTP state during target decode, but no code path may enter `ctx_dft` while the job is running.
+This is the same device-level overlap a two-thread design seeks, without thread-safety risk.
 
-### Where to launch
+### Fresh-front round
 
-Current server `pre_decode()` drafts before adding the sampled+draft tokens to the target verification batch. The launch should happen after front draft/checkpoint metadata are fixed but before the target decode begins. It must not run before the front's required speculative context state exists.
+The live lease captured in FMTP02 remains valid because no `ctx_dft` mutation occurs between front draft and continuation.
 
-### Where to join
+### Promoted-front round
 
-Current `decode()` calls target `llama_process()`, synchronizes when outputs are needed, and then calls `common_speculative_process(spec, batch.view)`. Join after target synchronization and before that call. This is the largest safe window without duplicating the draft context.
+There is no live speculative lease from the previous round; it was intentionally destroyed by authoritative rollback. FMTP02 replays the known front from current authoritative MTP seed and continues beyond it during this overlap window.
 
-### Rollback ordering
+### Failure path
 
-Today server code may restore/truncate `ctx_dft` immediately after drafting because no more draft work is expected before target verify. FMTP03 must move that action after join. Do not delete it: continuation state is speculative and must still be discarded before authoritative processing.
+If MTP work fails, still synchronize target, then run existing rollback/reseed and acceptance. Ahead failure must be a performance miss, not a request failure.
 
-### Error paths
+### Fallback worker criterion
 
-Worker failure result:
-
-```cpp
-struct common_mtp_ahead_result {
-    ...
-    bool ok = false;
-    int32_t decode_rc = 0;
-};
-```
-
-An ahead failure must not fail the request if the original synchronous speculative path remains healthy. Record failure, invalidate result, rollback draft context and continue normally.
-
-## Code Samples & Guidance
-
-RAII join guard around draft-context entry points is preferable to scattered assertions:
-
-```cpp
-void common_speculative_join_ahead(common_speculative * spec) {
-    if (!spec) return;
-    spec->mtp_ahead.join_if_running();
-}
-```
-
-In debug builds, assert worker is idle immediately before `common_speculative_process()` enters MTP `process()`.
+Only revisit a worker if profiler evidence shows the production target backend completes/synchronizes inside `llama_process()` despite c061's async graph API, or if server queue semantics make the same-thread split impossible without unacceptable responsiveness regressions. Any worker design then needs a separate thread-safety proof.
 
 ## Files
 
-- `common/speculative.h`
-- `common/speculative.cpp`
+- `common/speculative.h/.cpp`
 - `tools/server/server-context.cpp`
-- patch package + worker mechanics tests
+- patch package + scheduling tests
 
 ## Validation
 
-Offline concurrency tests with a fake resume callback:
-- publish/join repeated thousands of times;
-- reset while work is running => old epoch result rejected;
-- destruction joins cleanly;
-- failure result falls back;
-- mailbox never exceeds one pending job in v1;
-- no stale server-slot pointers.
-
-Run ThreadSanitizer on the fake worker test where supported.
+Offline:
+- fake target submit/sync test proves MTP callback runs strictly between them;
+- fresh and promoted paths select the correct FMTP02 primitive;
+- ahead failure still reaches target sync + ordinary speculative processing;
+- no MTP work runs when ahead=0.
 
 Hardware:
-- rocprof timeline must visibly overlap target verification kernels on target GPUs with continuation kernels on the MTP GPU;
-- trace must show no overlapping `ctx_dft` process/replay call from server thread;
-- compare ahead off/on greedy output before FMTP04 promotion is enabled (ahead is computed then discarded in this item).
-
-## Effort & Risk
-
-L / high. Main risk is draft-context lifetime/ownership, not the worker primitives.
+- rocprof visibly shows target kernels on target GPUs overlapping MTP kernels on the draft GPU;
+- target submit host call returns before target GPU interval completes;
+- target sync wait shrinks by approximately the hidden MTP duration until overhang begins;
+- no cross-thread llama/backend calls exist in v1.
 
 ## Acceptance Criteria
 
-- Non-zero real target/MTP overlap is demonstrated.
-- One persistent worker; no hot-path thread creation.
-- Existing rollback/replay still executes after join.
-- `common_speculative_process()` never races the worker.
-- Sleep, unload, reset, error and destruction paths join safely.
-- Ahead computation can be enabled-and-discarded with exact control output.
+- Real cross-device overlap without a worker thread.
+- Existing authoritative rollback/reseed remains after target sync.
+- Ahead failure is fail-open to ordinary target correctness.
+- Target/MTP overlap timing matches the `max(T_target, T_mtp)` model within profiler noise.
+- No ahead=0 behavior or performance regression outside measurement noise.
