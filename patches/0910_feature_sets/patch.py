@@ -59,7 +59,7 @@ typedef struct {
 
 // one block per patch in this build that reads a runtime flag (its ENV_DOCS, added by the patch loader)
 static const bc_env_doc bc_env_docs[] = {
-    { "BIGCHERRY_FEATURES", "0910_feature_sets", "<profile>[,<profile>...] | help", "unset",
+    { "BIGCHERRY_FEATURES", "0910_feature_sets", "<profile>[,<profile>...] | auto | help", "unset",
       "apply runtime profiles from the profile/ folder; 'help' prints the profiles and every documented flag" },
     { "BIGCHERRY_PROFILES", "0910_feature_sets", "<folder|file>", "profile/ next to libggml-base",
       "runtime profile folder (every *.ini) or single file to load instead of the one shipped with the binaries" },
@@ -205,7 +205,10 @@ static int bc_parse_profile_file(const char * path) {
             bc_profiles[cur].desc = bc_store(vb, (size_t) (ve - vb));
             ok = bc_profiles[cur].desc != NULL;
         } else if (ke - kb == 4 && memcmp(kb, "arch", 4) == 0) {
-            bc_profiles[cur].arch = bc_store(vb, (size_t) (ve - vb));  // last arch wins in help; Python checks all
+            char joined[512];  // several arch lines accumulate as "a,b"
+            snprintf(joined, sizeof(joined), "%s%s%.*s", bc_profiles[cur].arch, bc_profiles[cur].arch[0] ? "," : "",
+                     (int) (ve - vb), vb);
+            bc_profiles[cur].arch = bc_store(joined, strlen(joined));
             ok = bc_profiles[cur].arch != NULL;
         } else if (bc_is_flag(kb, ke)) {
             for (const char * p = vb; p < ve; p++) {
@@ -351,6 +354,9 @@ static void bc_feature_help(int loaded) {
     }
 }
 
+static int bc_auto_pending = 0;
+static int bc_apply_request(const char * begin, const char * end);
+
 static int bc_feature_sets_expand(void) {
     const char * raw = getenv("BIGCHERRY_FEATURES");
     if (raw == NULL || raw[0] == '\0') return GGML_BIGCHERRY_FEATURES_OK;
@@ -372,6 +378,16 @@ static int bc_feature_sets_expand(void) {
                 bc_profile_path[0] ? bc_profile_path : "profile/", loaded == 0 ? "not found" : "invalid");
         return GGML_BIGCHERRY_FEATURES_ERROR;
     }
+    if (end - begin == 4 && memcmp(begin, "auto", 4) == 0) {
+        bc_auto_pending = 1;  // applied by ggml_bigcherry_features_apply_arch() once the model architecture is known
+        fprintf(stderr, "BIGCHERRY_FEATURES auto: the profile is chosen by the model architecture at load (%s)\n", bc_profile_path);
+        return GGML_BIGCHERRY_FEATURES_OK;
+    }
+    return bc_apply_request(begin, end);
+}
+
+// apply a comma-separated profile request [begin, end): all-or-nothing, explicit variables win, rollback on failure
+static int bc_apply_request(const char * begin, const char * end) {
     bc_pending pending[BC_MAX_PENDING];
     int np = 0;
     int requested[BC_MAX_PROFILES];
@@ -439,12 +455,52 @@ int ggml_bigcherry_features_init(void) {
     return result;
 }
 
+// BIGCHERRY_FEATURES=auto: called by llama when the first model's architecture is known (before its hyperparameters
+// and tensors load); applies the profile whose arch list contains it. Flags already read before this point keep their
+// values, so auto only governs flags read at or after model load.
+GGML_API int ggml_bigcherry_features_apply_arch(const char * arch);
+int ggml_bigcherry_features_apply_arch(const char * arch) {
+    (void) ggml_bigcherry_features_init();
+    ggml_critical_section_start();
+    int status = GGML_BIGCHERRY_FEATURES_OK;
+    if (bc_auto_pending) {
+        bc_auto_pending = 0;  // the first model (the target) decides
+        int found = -1;
+        const size_t n = strlen(arch);
+        for (int p = 0; p < bc_n_profiles && found < 0; p++) {
+            const char * a = bc_profiles[p].arch;
+            while (a != NULL && *a != '\0') {
+                const char * comma = strchr(a, ',');
+                const size_t len = comma ? (size_t) (comma - a) : strlen(a);
+                if (len == n && memcmp(a, arch, n) == 0) { found = p; break; }
+                a = comma ? comma + 1 : NULL;
+            }
+        }
+        if (found < 0) {
+            fprintf(stderr, "BIGCHERRY_FEATURES auto: no profile for architecture '%s'; nothing applied\n", arch);
+        } else {
+            const char * name = bc_profiles[found].name;
+            fprintf(stderr, "BIGCHERRY_FEATURES auto: architecture '%s' -> profile '%s'\n", arch, name);
+            status = bc_apply_request(name, name + strlen(name));
+        }
+    }
+    ggml_critical_section_end();
+    return status;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor)) static void bc_feature_sets_ctor(void) {
     (void) ggml_bigcherry_features_init();  // early fast path; never exits
 }
 #endif
 """
+
+_A_MODEL = ("llama_model * llama_model_create(llama_model_loader & ml, const llama_model_params & params) {\n"
+            "    llm_arch arch = ml.get_arch();\n")
+_N_MODEL = ("extern \"C\" int ggml_bigcherry_features_apply_arch(const char * arch);  // bigcherry 0910 (ggml.c)\n"
+            "\n"
+            + _A_MODEL +
+            "    (void) ggml_bigcherry_features_apply_arch(ml.get_arch_name().c_str());  // bigcherry 0910: BIGCHERRY_FEATURES=auto\n")
 
 _A_INIT = "struct ggml_context * ggml_init(struct ggml_init_params params) {\n"
 _N_INIT = _A_INIT + "    (void) ggml_bigcherry_features_init();  // bigcherry 0910: runtime profiles before any flag is read\n"
@@ -535,6 +591,16 @@ PATCHES = [
         edits=(
             Edit(id="feature-sets-server-main", anchor=re.escape(_A_MAIN), mode="replace", text=_N_MAIN,
                  guard=r"bigcherry 0910: BIGCHERRY_FEATURES=help -> 0", rationale="llama-server main.",
+                 expect_matches=1, max_span_lines=3),
+        ),
+    ),
+    FilePatch(
+        path="src/llama-model.cpp",
+        description="0910: BIGCHERRY_FEATURES=auto picks the runtime profile by the model architecture",
+        language="none",
+        edits=(
+            Edit(id="feature-sets-auto-arch", anchor=re.escape(_A_MODEL), mode="replace", text=_N_MODEL,
+                 guard=r"bigcherry 0910: BIGCHERRY_FEATURES=auto", rationale="llama_model_create, once the arch is known.",
                  expect_matches=1, max_span_lines=3),
         ),
     ),

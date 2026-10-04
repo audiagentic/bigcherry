@@ -18,7 +18,8 @@ from bigcherry.patcher import ENV_DOC_TABLE_END, EnvDoc, apply_all, env_docs  # 
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
-_FILES = ("ggml/src/ggml.c", "ggml/src/ggml-backend-reg.cpp", "tools/server/main.cpp", "CMakeLists.txt")
+_FILES = ("ggml/src/ggml.c", "ggml/src/ggml-backend-reg.cpp", "tools/server/main.cpp", "CMakeLists.txt",
+          "src/llama-model.cpp")
 _CC = shutil.which("clang") or shutil.which("gcc") or shutil.which("cc")
 
 
@@ -64,6 +65,10 @@ class Patch0910Mechanics(unittest.TestCase):
             cm = snap["CMakeLists.txt"]
             self.assertLess(cm.index("bigcherry 0910: ship the runtime profile/ folder"), cm.index("add_subdirectory(src)"))
             self.assertIn("install(FILES ${BIGCHERRY_PROFILE_FILES} DESTINATION ${CMAKE_INSTALL_BINDIR}/profile)", cm)
+            lm = snap["src/llama-model.cpp"]
+            create = lm[lm.index("llama_model * llama_model_create(llama_model_loader & ml, const llama_model_params & params) {"):]
+            self.assertLess(create.index("ggml_bigcherry_features_apply_arch(ml.get_arch_name().c_str());"),
+                            create.index("return llama_model_create(arch, params);"))
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(snap, {f: (root / f).read_text(encoding="utf-8") for f in _FILES})
@@ -86,6 +91,10 @@ class Patch0910Behaviour(unittest.TestCase):
             "\nint main(void) {\n"
             "    int st = ggml_bigcherry_features_init();\n"
             "    if (ggml_bigcherry_features_init() != st) return 9;  /* idempotent */\n"
+            "    if (getenv(\"TEST_ARCH\")) {\n"
+            "        printf(\"arch_status=%d\\n\", ggml_bigcherry_features_apply_arch(getenv(\"TEST_ARCH\")));\n"
+            "        if (ggml_bigcherry_features_apply_arch(getenv(\"TEST_ARCH\")) != 0) return 8;  /* second model: no-op */\n"
+            "    }\n"
             "    printf(\"status=%d\\n\", st);\n"
             '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_SCHED_ASYNC_INPUTS", "BIGCHERRY_X"};\n'
             '    for (int i = 0; i < 3; i++) { const char * v = getenv(k[i]); printf("%s=%s\\n", k[i], v ? v : "<unset>"); }\n'
@@ -169,6 +178,25 @@ class Patch0910Behaviour(unittest.TestCase):
         out, err = self._run({"BIGCHERRY_FEATURES": "gen"}, profiles=self.profile_dir / "missing")
         self.assertIn("status=-1", out)
         self.assertIn("not found", err)
+
+    def test_auto_picks_profile_by_arch(self):
+        out, err = self._run({"BIGCHERRY_FEATURES": "auto", "TEST_ARCH": "qwen4exp"})
+        self.assertIn("status=0", out)
+        self.assertIn("arch_status=0", out)
+        self.assertIn("BIGCHERRY_ACT_Q81=1", out)  # model -> @gen
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
+        self.assertIn("architecture 'qwen4exp' -> profile 'model'", err)
+
+    def test_auto_without_matching_arch_applies_nothing(self):
+        out, err = self._run({"BIGCHERRY_FEATURES": "auto", "TEST_ARCH": "llama"})
+        self.assertIn("arch_status=0", out)
+        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
+        self.assertIn("no profile for architecture 'llama'", err)
+
+    def test_explicit_profile_ignores_arch_hook(self):
+        out, _ = self._run({"BIGCHERRY_FEATURES": "gen", "TEST_ARCH": "qwen4exp"})
+        self.assertIn("BIGCHERRY_ACT_Q81=1", out)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=<unset>", out)  # auto not requested -> model profile not applied
 
     def test_unset_does_nothing(self):
         out, _ = self._run({})
