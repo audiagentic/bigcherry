@@ -58,6 +58,9 @@ GPT reviewer req_2359b5a495574b94 (2026-10-05) on the six evaluated-but-not-prom
 
 Bug fixes/reworks go inside each patch's own package (owner rule 2026-10-05).
 
+Owner 2026-10-05: untested patches with potential are worth pursuing. 1286 (DFlash/DSpark draft local copies of tensor-split target tensors) WAS hardware-tested (dflash-27b-screen-1286, Qwen3.8-27B dual-XTX, 1.6K prompt): without it every DFlash/DSpark run with an -sm tensor target fails to start; with it DFlash2-Q8 n7 drafting on the R9700 76.6 t/s (45.5% acc) vs built-in MTP5 77.2 (57.8%), on the 6900 72.7; DSpark n6 6900 64.6; prefill 1084-1103 vs MTP5 1294. Add: (a) 1286 offline mechanics test + evidence record -> promote as an enabler; (b) DFlash tuning on the 27B: n_max 4-10 x placement (R9700 / 6900) x Q4_K_M/Q8, recover acceptance (n4 R9700 gave 59.3% / 75.4 t/s), find the prefill loss; (c) 1300 Q8_0/D=256 native vector FA decode: one screen at a q8_0 KV fallback tier (contexts beyond the f16 fit).
+
 ## Change Log
 
 - 2026-10-04T21:02:03.440345+00:00 (created-by): Created by agent
+- 2026-10-04T21:05:37.061800+00:00 (updated-by): Updated: section:notes

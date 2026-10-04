@@ -115,3 +115,13 @@ for n in mtp5 mtp4 mtp3 mtpside5-d6900 plain-3card mtp5-3card mtpside5-3card-d69
   [ -f "$out/plain.greedy.txt" ] && [ -f "$out/$n.greedy.txt" ] && { cmp -s "$out/plain.greedy.txt" "$out/$n.greedy.txt" && echo "greedy plain == $n" || echo "greedy plain != $n"; }
 done
 echo PROBE_DONE
+# QFP21 DFlash tuning on the promoted base + 1286 (tensor-split target, draft on the R9700 or the 6900)
+D=/mnt/data/llm-models/qwen3.8-27b/gguf/dflash
+for q in q8:Qwen3.8-27B-DFlash2-Q8_0 q4:Qwen3.8-27B-DFlash2-Q4_K_M; do
+  for n in 4 5 6 7 8 10; do
+    probe q21-dflash-${q%%:*}-n$n-dR9700 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm2 -md $D/${q#*:}.gguf --spec-type draft-dflash --spec-draft-n-max $n
+  done
+  for n in 4 7; do
+    probe q21-dflash-${q%%:*}-n$n-d6900 0,1,2,3 -dev ROCm0,ROCm1 -sm tensor -devd ROCm3 -md $D/${q#*:}.gguf --spec-type draft-dflash --spec-draft-n-max $n
+  done
+done
