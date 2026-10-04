@@ -10,15 +10,16 @@ set -u
 bin=$1 out=$2
 mkdir -p "$out"
 model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+AR_ARG=(--allreduce "${AR:-cpu-root}"); [ "${AR:-}" = none ] && AR_ARG=()  # AR=none: binaries without --allreduce (native llama.cpp)
 draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf}
 args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b ${B:-2048} --flash-attn ${FA:-on} --parallel 1 --threads 16 -lv 4
       -ot '^per_layer_token_embd\.weight$=CPU' -dev ROCm0,ROCm1,ROCm2 -devd ROCm3 -sm tensor -ts ${TS:-2,2,3}
       -md "$draft" --no-spec-draft-backend-sampling --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3}
-      -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTKD:-${CTK:-q8_0}} -ctvd ${CTVD:-${CTV:-q8_0}} --allreduce ${AR:-cpu-root})
+      -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} -ctkd ${CTKD:-${CTK:-q8_0}} -ctvd ${CTVD:-${CTV:-q8_0}} "${AR_ARG[@]}")
 if [ "${NO_MTP:-}" = 1 ]; then  # deterministic greedy reference: no draft, so no acceptance-dependent batch shapes
   args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b ${B:-2048} --flash-attn ${FA:-on} --parallel 1 --threads 16 -lv 4
         -ot '^per_layer_token_embd\.weight$=CPU' -dev ${DEVS:-ROCm0,ROCm1,ROCm2} -sm tensor -ts ${TS:-2,2,3}
-        -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} --allreduce ${AR:-cpu-root})
+        -ctk ${CTK:-q8_0} -ctv ${CTV:-q8_0} "${AR_ARG[@]}")
 fi
 [ -n "${EXTRA_OT:-}" ] && args+=(-ot "$EXTRA_OT")  # extra placement override for every target-model mode
 if [ "${CPU_REF:-}" = 1 ]; then  # f32 CPU reference (no tensor split, no flash attention): slow, accuracy only
