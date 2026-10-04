@@ -122,6 +122,9 @@ CALIBRATION n_max=7 (acceptance only, never timing): P(A1..A3), P(A4|A1..A3) (br
 Derive p_hit, Y_fresh, Y_prom, D_serial, C_reseed, C_logits, W_async (target_sync_done - target_process_return, with kernels in flight), W_hidden (target token final - authoritative hidden ready).
 Decides, in order: F reseed/sync elimination (build if C_reseed >= 0.5 ms; 1-4%), C device argmax for target verify (if C_logits >= 0.5 ms/round; 0.5-3%; purpose-built, upstream backend sampling unsupported under tensor split), B early authoritative-hidden draft catch-up (if W_hidden useful; 2-8%), D 1268 EV signal (0-2%), FMTP02-05 only if bootstrap lower bound >= 2% throughput (committed tokens / wall time). FMTP06/unconditional FMTP not before that. QFP08 keeps draft-prefill overlap (TTFT).
 
+2026-10-04 Gate 0 timing (1317, flashnext-gate0-d10k/d80k, b-det = v3 + 1312 + 1313, greedy, n_max 3; timer overhead nil: 41.1 vs 41.2/40.6 ms/step). Per-round medians ~10K / ~80K: round 38.4 / 47.9 ms; draft 6.36 / 8.67 ms (16 / 18%); target submit (llama_process host time) 5.06 / 5.83 ms, mean 6.7 / 7.1 (17 / 15%); target sync wait 25.5 / 31.4 ms (63%); common_speculative_process 0.75 / 1.28 ms (2 / 3%); target sample-and-accept 0.67 / 0.87 ms (1.5%). Acceptance 59 / 69%, full-front rounds 36 / 58%, tokens/round 2.76 / 3.07.
+Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both low priority. B (early hidden catch-up) small: catch-up is ~1 ms; the cost is the fresh draft itself. FMTP gross ceiling = P(full)*P(bridge)*draft: ~0.25*6.4 = 1.6 ms (~4%) at 10K, ~0.41*8.7 = 3.5 ms (~7%) at 80K before promoted-front yield loss; workload-dependent -> keep FMTP02-05 gated on the n_max 7 calibration (not yet run). NEW top lever: target submit host time 5-7 ms/round (15-17%) - graph build/scheduling per verify step; owned by new item QFP16.
+
 ## Reviews
 
 - RV4216
@@ -129,3 +132,4 @@ Decides, in order: F reseed/sync elimination (build if C_reseed >= 0.5 ms; 1-4%)
 ## Change Log
 
 - 2026-10-04T03:26:42.716009+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T05:13:34.635207+00:00 (updated-by): Updated: section:notes
