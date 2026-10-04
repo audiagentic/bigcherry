@@ -126,6 +126,8 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 
 2026-10-05 optimisation scan: upstream llama.cpp #29958 is now the highest-priority 1332 mechanism to qualify because it fixes qwen4exp graph reallocation by eliminating mutable-state topology branches. Test its invariant before spending more time on GET_ROWS/view lifetime. Other open work (#29953 MMQ allocation-width consistency, #29948 MMQ+GLU fusion, #29927 AMD `amdgcn_perm`, #29901 tiled lightning indexer) remains orthogonal and should not be folded into 1332.
 
+2026-10-05 1332 rework results (qfp17-chunk-prof, 31.8K-token prefill under rocprof, 240K f16, flashnext): ub512 c0 936 t/s; ub512 c256 923 (-1.4%, was -7% before the compact causal filter); ub1024 c256 1052 (+12%); ub1024 c512 1097 (+17%, now fits). Kernel time summed over GPUs: matmul 27.7 s (ub512) -> 19.4 s (ub1024, -30%: the actual gain); flash attention 5.5 s unchunked, 7.3 s at c256, 5.5 s at c512 (chunk cost = FA tile/launch efficiency, recovered at c512); mask build ~0.9 s, concat ~0.25 s (negligible); RCCL AllReduce 22-23 s (~30% of all kernel time - prefill AllReduce work deferred per owner); k_get_rows_float 1.0 -> 4.9 s from the compact causal gather (single-element rows) - follow-up: cheaper gather (e.g. only tail cells, pools already carry visibility via -inf scores; verify multi-sequence) or a fused gather. MTP 24K: speed unchanged (75.1 vs 75.0/76.0), text = f32-side near-tie. No-MTP decode still crashed on that build: GGML_SCHED_DEBUG_REALLOC=1 showed 'unexpected graph reallocation' (last 49-token ubatch took the dense path -> topology change after reserve, #29958 class) -> fixed in 9de9f46f (K = ceil(n_ubatch/chunk) fixed chunks for every batch >= K tokens). Confirmation queued (queue-chunk-confirm: 80K fill unprofiled 512:0/1024:256/1024:512 + no-MTP decode + MTP identity).
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -135,3 +137,4 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 ## Reviews
 
 - RV4217
+- 2026-10-04T23:43:03.592762+00:00 (updated-by): Updated: section:notes
