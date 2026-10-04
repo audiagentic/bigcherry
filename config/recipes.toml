@@ -498,6 +498,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # v5 + env-gated timing diagnostics 1317/1318/1319/1325 (1320 is known_broken on 0504396); per-phase comparison across pins.
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1325_sched_split_timing"]
 
+[experiment.deploy-v5-plus-1327]
+# Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap"]
+
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
 patches = ["1291_ar_cpu_root", "1294_topk_deterministic_ties"]
