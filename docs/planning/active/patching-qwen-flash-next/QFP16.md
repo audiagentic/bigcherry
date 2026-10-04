@@ -26,7 +26,19 @@ FMTP01 Gate 0 (1317) measured llama_process(ctx_tgt) host time at 5.06 ms median
 
 ## Detailed Solution & Technical Design
 
+Prep 2026-10-04 (confirm with 1320 data first: n_subgraphs and launch_us share).
 
+Current decode path per verify round (-sm tensor, 3 devices): ggml_backend_sched -> ggml_backend_meta_graph_compute (ggml/src/ggml-backend-meta.cpp ~L1970). Subgraphs are cached while cgraph->uid is unchanged (needs_rebuild false on graph reuse). Execution loop (~L2441): for each subgraph i, for each device j: ggml_backend_graph_compute_async -> ggml_backend_cuda_graph_compute (ggml-cuda.cu ~L4810: graph key lookup, set_enabled, check_compability over all nodes, uid fast path, cudaGraphLaunch); then comm_allreduce (1291 cpu-root small path: bc_cpu_root_produce/consume kernels on each device stream, device-advanced epochs, no per-call host state besides the launch). Host cost ~ n_subgraphs x 3 x (lookup + compat scan + hipGraphLaunch) + n_subgraphs x AllReduce enqueue.
+
+Proposed patch (one HIP graph per device per round):
+1. Meta level (ggml-backend-meta.cpp): when !needs_rebuild and the round is decode-shaped (all subgraph cgraphs have <= MMVQ_MAX_BATCH_SIZE tokens; reuse the 1307 decode-graph rule) and a per-uid 'outer graph' exists and is valid -> for each device launch its outer graph instance (3 launches total) and return.
+2. Capture: on the first stable reuse (2nd call with same uid, mirroring the CUDA backend warmup), begin capture (relaxed mode) on every device stream, run the normal execution loop with the CUDA backend in pass-through mode (evaluate kernels eagerly into the outer capture, no inner capture/launch), end capture per device, instantiate. Streams never wait on each other through events (cpu-root AllReduce synchronizes through pinned host memory spins), so per-stream independent captures are legal.
+3. CUDA backend pass-through: add a proc-address API (registered like ggml_backend_cuda_* helpers, fetched via ggml_backend_reg_get_proc_address) e.g. ggml_backend_cuda_set_outer_capture(backend, bool); when set, ggml_backend_cuda_graph_compute calls ggml_cuda_graph_evaluate_and_capture(use_cuda_graph=false) on the capturing stream.
+4. Invalidation: any needs_rebuild, uid change, max_tmp_size/max_subgraphs growth, AllReduce provider path change (must be the small cpu-root path for every subgraph), CUDA graph properties change (input pointer moves) -> drop the outer graphs and fall back for that call. Fail closed: any capture error -> disable for the process with a WARN.
+5. Env gate BIGCHERRY_META_GRAPH=1; activation marker BIGCHERRY_PATCH_HIT.
+Risks: 1307 Q8_1 cache begin_generation and producer decisions are host-side per call - already baked inside today's per-subgraph graphs, so outer capture does not change semantics, but verify greedy identity; memory: one extra executable graph per device per verify width; QFP06 working-set (graph LRU) unaffected but recheck VRAM at 240K.
+Validation: 1319/1320 show graph_compute host ~5 ms -> < 0.5 ms; ms/step ABBA ~10K/~80K; greedy identical; prefill unaffected (not decode-shaped).
+Secondary items: draft context alternating widths (1 vs 4) -> 50% graph reuse; KQ mask input O(n_kv) 0.25 ms/round at 80K.
 
 ## Code Samples & Guidance
 
@@ -68,3 +80,4 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 - 2026-10-04T06:12:21.750192+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:17:35.435151+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:21:34.071163+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T06:32:01.947191+00:00 (updated-by): Updated: section:detailed_solution

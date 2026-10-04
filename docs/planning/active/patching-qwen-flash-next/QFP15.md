@@ -62,9 +62,12 @@ Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity c
 
 2026-10-04 run 3 (1316 node hashes): incompatible with the tensor-split meta backend - the eval callback splits the graph per node and ggml-backend-meta.cpp:2229 asserts (i_start == cgraph->n_nodes); only the first 18 nodes (embedding .. hc_pre .. cache_r view) were hashed and they were identical across runs. 1316 needs a non-callback design for -sm tensor (e.g. hash selected graph outputs after compute). Startup logs of a run in each mode (det2 base-a vs base-b) are identical apart from port/timing, so the mode is not a startup choice. New leading hypothesis: stale/uninitialized device memory read (depends on VRAM left by earlier processes and on per-run allocation addresses) - prime suspect the 1235/1307 Q8_1 activation cache and its producers (address+generation keyed reuse). Note GGML_HIP_Q8_1_CACHE_MODE=verify is parsed but not implemented in the MMVQ path. Run 4 queued (queue-determinism4.sh): all v3/v4 runtime flags off; deterministic => bisect the flag-gated patches.
 
+2026-10-04 run 4 (flashnext-det4-d24k, all v3/v4 runtime flags OFF: Q8_1 cache, RMS/ACT/HC producers, rollback no-CONT, scale-act fusion): still nondeterministic from the very first draft step of the warm-up (base-a id 1942; new id 353 p=0x1.03571ep-1; base-b id 353 p=0x1.172e36p-1). The flag-gated patches (1307-1313) are cleared. Remaining suspects: always-on patches in the build (1291 cpu-root AllReduce, 1292, 1294, 1297, 1302, 1303 attention split) or upstream itself. Run 5 queued (queue-determinism5.sh): stock build with no patches, RCCL, no attention split, CTX 65536.
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
 - 2026-10-04T05:06:40.485818+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:47:30.490172+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:14:06.301778+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T06:33:33.339610+00:00 (updated-by): Updated: section:notes
