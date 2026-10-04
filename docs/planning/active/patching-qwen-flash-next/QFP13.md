@@ -89,6 +89,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 1314 (BIGCHERRY_AR_FUSED=1: one fused produce+consume kernel per small cpu-root AllReduce) env screen (flashnext-v3-1314b): greedy IDENTICAL; ~24K 44.3 vs 44.3/44.2 ms/step, ~80K 51.1 vs 51.1/51.1 - neutral. Census: AllReduce launches 59 -> 29.5/token, kernels/token 1116 -> 1072, but AllReduce busy time 1.2 -> 2.5 ms/token on XTX: the wait for the CPU sum moved from the inter-kernel gap into the fused kernel's spin. The AllReduce is bound by rank arrival skew and the CPU sum, not by the launch. PARKED (correct, neutral); do not adopt.
 
+2026-10-04 1312 recheck after the GDN flatten fix (flashnext-v3-1312c, build A/B v3 vs v3+1312): greedy IDENTICAL; ~24K 44.3 vs 44.8/44.9 ms/step, ~80K 51.0 vs 51.8/51.1 (0..-1%); quantize/token/XTX 45 -> 29.8 (cumulative from profile v2: 183 -> 30), kernels/token 1116 -> 1091 (R9700 1064 -> 1040). Adopt with 1313 (v3 + 1312 + 1313 expected ~1000 kernels/token) after a multi-request ABBA.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -186,3 +188,4 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-04T01:15:24.244427+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T04:00:41.792844+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T04:18:25.310777+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T04:47:25.709859+00:00 (updated-by): Updated: section:notes

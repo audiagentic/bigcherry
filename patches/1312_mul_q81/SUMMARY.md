@@ -1,6 +1,6 @@
 # 1312_mul_q81
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFP13
 
 ## What it does
@@ -14,3 +14,7 @@ gated output norm (`final_output` -> ssm_out). Bit-identical F32; Q8_1 matches `
 Activation evidence: `BIGCHERRY_Q81 publish-act node=...(attn_gated-N)` under `BIGCHERRY_Q81_TRACE`.
 GDN `final_output` (per-head rows of 128 read through `reshape_3d(head_v_dim*heads, T)`) is published flattened to the
 consumer's padded row (1310 `flatten01`), matched by 1307's flattened-reshape lookup.
+
+## Hardware result (2026-10-04 review)
+
+flashnext-v3-1312c (build A/B vs v3): ~24K 44.3 vs 44.8/44.9 ms/step, ~80K 51.0 vs 51.8/51.1; quantize/token 45 -> 30, kernels/token 1116 -> 1091; greedy identical. v4 candidate (multi-request ABBA pending).

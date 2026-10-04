@@ -1,6 +1,6 @@
 # 1313_scale_act_fuse
 
-**Status:** untested
+**Status:** evaluated
 **Plan item:** QFP13
 
 ## What it does
@@ -12,3 +12,7 @@ blocks: `silu(scale(w_down @ xn))` and `2 * sigmoid(scale(inject))`, ~98 scale l
 chain ends at the activation and 1310's rules hold (`BIGCHERRY_ACT_Q81=1`, cache on, decode graph), the launch also
 publishes the MMVQ Q8_1 activation like 1310. `UNARY -> MUL` is left to upstream's unary_mul fusion (1312).
 Activation evidence: `BIGCHERRY_PATCH_HIT patch=1313_scale_act_fuse` under `BIGCHERRY_PATCH_TRACE`.
+
+## Hardware result (2026-10-04 review)
+
+flashnext-v3-1313b (env screen): ~24K 43.7 vs 45.2/44.5 ms/step, ~80K 50.1 vs 51.1/51.1; kernels/token 1116 -> 1024 (elementwise ~357 -> ~275); greedy identical; t/s within draft-acceptance noise (QFP15). v4 candidate (multi-request ABBA pending).

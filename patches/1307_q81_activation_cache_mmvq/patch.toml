@@ -1,7 +1,7 @@
 schema = 1
 id = "1307_q81_activation_cache_mmvq"
 order = 1307
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
