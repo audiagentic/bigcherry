@@ -107,6 +107,8 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 2026-10-05 1332 (QSA masks + attention per token chunk; one kq_mask view per chunk shared across QSA layers - per-layer input views were materialised by the meta backend: 3 GiB OOM at ub512). Results (v6, 240K f16, 80K fill): ub512 unchunked 868-895 prefill / 59-63 decode; ub512 chunk256 806-827 / 61.8-61.9 (compute buffer 1020.9 -> 785.6 MiB, ROCm3 616 -> 505); ub1024 chunk256 FITS for the first time: 898-901 prefill / 60.0-60.9 decode (+1-3% prefill vs v6 ub512). Sweep queued: 512:0, 1024:256, 1024:512, 2048:512, 2048:1024 (queue-ubchunk). OPEN CORRECTNESS QUESTION: 1332's 24K greedy text diverges from v6 at byte 41 into exactly the same alternative text as 1330 did ('summarize the entire document they've provided in detail' vs 'summarize in detail the content of the four documents'); two independent rebuilds of the QSA mask agreeing suggests the production mask path differs semantically, not just numerically. Settle with a CPU f32 reference (long-ctx-profile CPU_REF=1) or single-device run at the divergent token before adopting either; check whether the unpatched dense-mask path has a meta-backend split/mirroring issue.
 
+2026-10-05 mask correctness RESOLVED (queue-maskref2, 24K prompt = 38.7K tokens, no MTP, 16 tokens): v6 GPU (no MTP) and the CPU f32 reference produce the same text ('summarize the entire document they've provided in'), matching 1330/1332's output. The divergent text is v6 WITH MTP ('in detail the content of the four documents'): token 9 is a near-tie (top-1 0.479 v6 / 0.566 f32) that MTP verify-batch numerics flip. Not a mask bug; greedy byte-identity vs v6+MTP is too strict at near-ties - use agreement with the f32 reference / top-k prob match for mask-path changes. 1332 single-token decode segfaulted in ggml_backend_meta_graph_compute (whole-mask view of the kq_mask input) -> fixed by chunking only when n_tokens > chunk (decode/MTP verify keep the dense path); queue-chunk3 re-checks. Sweep: only ub1024 + chunk256 fits (prefill 904 vs 851-891 t/s at 80K fill, decode unchanged); ub1024 chunk512 and ub2048 do not fit.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -121,3 +123,4 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T18:12:07.315403+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T19:15:06.825550+00:00 (updated-by): Updated: section:notes
