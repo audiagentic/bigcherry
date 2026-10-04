@@ -15,53 +15,42 @@ work: M
 
 ## Description
 
-Establish the exact timing/device baseline and capability gate for verification-overlap without changing scheduling. This item exists to prove that the production Flash-Next lane has an overlap window worth exploiting and that native MTP is actually isolated on a separate device.
+Prove that the production Flash-Next lane has a real asynchronous target-submit window and a physically independent MTP execution lane before changing scheduling.
 
-Do not add a worker or asynchronous execution here.
+Do not add a worker or asynchronous state machine here.
 
 ## Steps
 
-1. Add disabled-by-default configuration to `common_params_speculative_draft`:
-   - `int32_t mtp_ahead = 0;`
-   - CLI `--spec-mtp-ahead N`
-   - env `LLAMA_ARG_SPEC_MTP_AHEAD`
-   - semantics: maximum future tail tokens; bridge is additional and not counted in `N`.
-2. Add a read-only MTP capability query instead of making server code inspect implementation internals. Report `is_mem_shared`, `chain_heads`, `n_mtp_layers`, probabilistic mode and effective `n_max`.
-3. v1 eligibility must fail closed unless all are true:
-   - speculative type is `draft-mtp`;
-   - `mtp_ahead > 0`;
-   - `!is_mem_shared`;
-   - `!chain_heads`;
-   - greedy/sample-and-match mode (`!params.probabilistic`);
-   - one active sequence for the qualification path.
-4. Add phase counters around the existing lifecycle:
-   - front MTP draft time;
-   - draft rollback/truncate time;
-   - target verify time;
-   - `common_speculative_process()` draft re-evaluation time;
-   - target acceptance time;
-   - full-front acceptance count/rate.
-5. Add one activation/rejection marker containing requested ahead depth, effective eligibility and one bounded reason code (`shared_memory`, `chain_heads`, `probabilistic`, `multi_seq`, `disabled`).
-6. Record target and draft backend/device names at startup. On HIP qualification, capture rocprof/rocprofv3 traces proving the MTP decode kernels execute on the intended separate card and identifying any target-GPU work caused by the draft context.
-7. Keep high-cardinality timing details in trace/evidence artifacts. Only add server metrics when labels/counters are bounded.
-8. Add a paired baseline contract for the exact Flash-Next deployment recipe and preserve all existing target/MTP arguments except the subject-only ahead opt-in.
+1. Add disabled-by-default `common_params_speculative_draft::mtp_ahead = 0`, CLI `--spec-mtp-ahead N`, env `LLAMA_ARG_SPEC_MTP_AHEAD`; bridge is additional to `N`.
+2. Add a read-only MTP capability query reporting `is_mem_shared`, `chain_heads`, `n_mtp_layers`, probabilistic mode and effective front depth.
+3. v1 eligibility fails closed unless: draft-mtp, ahead requested, non-shared, single-head, non-probabilistic, one active sequence.
+4. For the production qualification lane additionally require target/draft device sets to be disjoint and record whether any model/meta buffers are shared across contexts. `!is_mem_shared` alone does not prove physical isolation.
+5. Split timing of target verification into:
+   - target `llama_process()` submit/enqueue host time;
+   - target `llama_synchronize()` wait time;
+   - total target device interval from profiler.
+6. Record front MTP draft, draft rollback/truncate, `common_speculative_process()` replay/reseed and target acceptance times.
+7. Prove with rocprof that after `llama_process(ctx_tgt)` returns, target kernels remain in flight until explicit synchronization. c061 uses `ggml_backend_sched_graph_compute_async`; this is the basis for the worker-free FMTP03 design.
+8. Record target and draft backend/device names and any draft-context work appearing on target GPUs.
+9. Add bounded activation/rejection reasons: disabled, not_mtp, shared_memory, chain_heads, probabilistic, multi_seq, device_overlap, shared_buffer.
+10. Keep detailed timing in trace/evidence; add server metrics only for bounded aggregates.
 
 ## Detailed Solution & Technical Design
 
-The exact c061 MTP class already exposes the necessary mode split internally:
+c061 server currently executes target process and synchronization together:
 
 ```cpp
-int32_t n_mtp_layers  = 1;
-bool    is_mem_shared = false;
-bool    chain_heads   = false;
-...
-is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt;
-chain_heads   = n_mtp_layers > 1 && !is_mem_shared;
+queue_tasks.yield_to_queue([&]() {
+    ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+    if (ret == 0 && has_output) {
+        llama_synchronize(ctx_tgt);
+    }
+});
 ```
 
-Do not hard-code Qwen model names. The safety condition is execution semantics, not architecture strings.
+The underlying context submits with `ggml_backend_sched_graph_compute_async()`. FMTP01 must measure the process-return-to-sync interval separately; do not insert any extra synchronization for telemetry.
 
-Suggested public/common-side query:
+Suggested capability shape:
 
 ```cpp
 struct common_speculative_mtp_caps {
@@ -72,81 +61,43 @@ struct common_speculative_mtp_caps {
     int32_t n_mtp_layers = 0;
     int32_t n_max = 0;
 };
-
-bool common_speculative_get_mtp_caps(
-        const common_speculative * spec,
-        common_speculative_mtp_caps * out);
 ```
 
-The query should return false for non-MTP compositions rather than relying on RTTI in `server-context.cpp`.
+Device-disjointness can remain a server/qualification check if common speculative code cannot inspect both context device sets cleanly.
 
-Timing must use synchronization points that already exist. Do not insert `llama_synchronize()` solely to obtain measurements; that would perturb the very overlap opportunity being measured. Prefer host wall-time around already-synchronous phases and HIP trace for device execution.
-
-Branch-specific constraints:
-
-- `1293_sched_single_input_sync` already removed many host synchronizations with neutral wall time. Treat sync count as diagnostic, not the objective.
-- `1280_qwen4exp_mtp_kpool_alloc` is rejected. Eligibility assumes corrected MTP sidecar metadata, not that patch.
-- `1268_prbe52_adaptive_mtp_wiring` owns front-depth adaptation; this plan must not add a competing front-depth knob.
-
-## Code Samples & Guidance
-
-Argument validation:
-
-```cpp
-if (value < 0 || value > 32) {
-    throw std::invalid_argument("--spec-mtp-ahead must be in [0, 32]");
-}
-params.speculative.draft.mtp_ahead = value;
-```
-
-Fail-closed reason helper should be pure and testable:
-
-```cpp
-enum class mtp_ahead_reason {
-    eligible,
-    disabled,
-    not_mtp,
-    shared_memory,
-    chain_heads,
-    probabilistic,
-    multi_seq,
-};
-```
+Branch constraints:
+- 1268 owns front-depth adaptation.
+- 1280 is rejected; corrected sidecar metadata is required.
+- 1293 showed sync-count reduction alone is not a performance objective.
 
 ## Files
 
 - `common/common.h`
 - `common/arg.cpp`
-- `common/speculative.h`
-- `common/speculative.cpp`
+- `common/speculative.h/.cpp`
 - `tools/server/server-context.cpp`
-- optional bounded server metrics files
-- new patch package + patch mechanics tests
+- optional bounded metrics files
+- patch package + mechanics tests
 - `config/experiment-contracts.toml`
 
 ## Validation
 
 Offline:
-- argument bounds/default tests;
-- capability-query tests for all three MTP modes and non-MTP;
-- `mtp_ahead=0` never changes draft scheduling or creates new threads;
-- patch apply/idempotence/missing-anchor tests;
-- trace marker appears only when requested.
+- argument bounds/defaults;
+- capability-query matrix;
+- ahead=0 creates no new scheduling path;
+- fail-closed device-overlap/shared-buffer checks where observable;
+- patch apply/idempotence/missing-anchor tests.
 
 Hardware:
-- production Flash-Next target tensor split + separate MTP GPU;
-- fixed seed/temp/depth, at least 10 steady-state rounds;
-- rocprof device lanes for target verify and MTP draft;
-- collect phase distributions at shallow and deep context.
-
-## Effort & Risk
-
-M / low. It is instrumentation plus capability plumbing. Primary risk is measurement perturbation from accidental synchronization.
+- target tensor split + separate MTP GPU;
+- shallow/deep context;
+- rocprof timeline proving target process returns before target GPU completes and MTP device is disjoint.
 
 ## Acceptance Criteria
 
-- Ahead defaults to off and existing output/performance is unchanged within noise.
-- Production lane is explicitly classified eligible or rejected with one concrete reason.
-- Device trace proves where native MTP work actually executes.
-- Baseline data is sufficient to estimate `T_front`, `T_verify`, replay time and available overlap window.
-- No new synchronization is introduced just for telemetry.
+- Ahead defaults off with unchanged behavior.
+- Production lane is explicitly eligible/rejected.
+- `target_submit_us` and `target_sync_wait_us` are separately measurable without new syncs.
+- Profiler proves an exploitable target-in-flight window and where MTP work executes.
+- Evidence is sufficient to choose worker-free FMTP03 or reject it before implementation.
