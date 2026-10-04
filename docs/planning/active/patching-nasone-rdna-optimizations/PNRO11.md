@@ -71,6 +71,12 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: confirmed target-load ordering remains genuinely unresolved (real prerequisite work, not yet a design). Verified via direct read that src/llama-model.cpp's pattern_output_bias branch (lines 595-598) unconditionally returns GGML_BACKEND_SPLIT_AXIS_0 and does NOT read output.weight's own config/MIRRORED state as previously assumed -- corrected step 3 to explicitly extend the bias branch's own condition rather than relying on inherited state. Added the previously-unspecified pre-load VRAM check/failure requirement.
 
+2026-10-04 drafter screen (tools/lab/flash-next/draft27b-ab.sh, draft27b-single.sh):
+- 27B Q8_0 -sm tensor on 2 XTX: DFlash2/DSpark on the TP XTXs -> GGML_ASSERT(src_ss[0].axis != GGML_BACKEND_SPLIT_AXIS_0) ggml-backend-meta.cpp:543; on R9700 (-devd) -> abort in ggml_backend_sched_backend_id_from_cur during draft graph_reserve. Fails at 10K and 32K. Built-in MTP: 72.7/73.1 t/s @10K, 71.8/72.0 @32K vs nospec 37.5/36.5.
+- 27B IQ4_XS single XTX0 (no TP): nospec 40.9/39.4, MTP 75.5/73.5, DFlash2 Q8 77.1/70.4, DFlash2 Q4 78.0/71.7, DSpark 65.3/64.6 t/s at 4K/16K. DFlash2 +2-3% at 4K, -2..4% at 16K (acceptance per draft higher, but falls with depth). DSpark loses.
+- Greedy identity: ALL spec arms (incl MTP) diverge from nospec at the same char with identical text -> batched-verify vs single-token numerics flip near-ties; not drafter-specific. Use spec-vs-spec, not spec-vs-nospec, as identity reference.
+- No DFlash/DSpark drafter exists for Flash-Next (2026-10-04). Verdict: fixing PNRO11 is low value; keep built-in MTP. Revisit only if a Flash-Next DFlash drafter is published.
+
 ## Change Log
 
 - 2026-09-09T10:52:56.925530+00:00 (created-by): Created by capability-rebaseline-v3
@@ -88,3 +94,4 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 - 2026-09-24T02:34:51.105317+00:00 (updated-by): Updated: section:description, section:detailed_solution, section:code_samples, section:files, section:validation
 - 2026-09-24T02:35:05.511646+00:00 (updated-by): Updated: section:effort_risk, section:notes
 - 2026-09-24T04:50:35.412744+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-10-04T01:02:24.355840+00:00 (updated-by): Updated: section:notes
