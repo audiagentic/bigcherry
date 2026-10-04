@@ -109,6 +109,8 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 2026-10-05 mask correctness RESOLVED (queue-maskref2, 24K prompt = 38.7K tokens, no MTP, 16 tokens): v6 GPU (no MTP) and the CPU f32 reference produce the same text ('summarize the entire document they've provided in'), matching 1330/1332's output. The divergent text is v6 WITH MTP ('in detail the content of the four documents'): token 9 is a near-tie (top-1 0.479 v6 / 0.566 f32) that MTP verify-batch numerics flip. Not a mask bug; greedy byte-identity vs v6+MTP is too strict at near-ties - use agreement with the f32 reference / top-k prob match for mask-path changes. 1332 single-token decode segfaulted in ggml_backend_meta_graph_compute (whole-mask view of the kq_mask input) -> fixed by chunking only when n_tokens > chunk (decode/MTP verify keep the dense path); queue-chunk3 re-checks. Sweep: only ub1024 + chunk256 fits (prefill 904 vs 851-891 t/s at 80K fill, decode unchanged); ub1024 chunk512 and ub2048 do not fit.
 
+2026-10-05 queue-chunk3 (1332 with n_tokens > chunk gate): MTP serving at 24K fine (ms/step 41.2 all arms; text = f32-side near-tie). No-MTP single-token decode after a chunked prefill still segfaults in ggml_backend_meta_graph_compute (null write) even though decode itself takes the dense path; chunk 0 decodes fine (38.6 t/s). Likely stale meta-backend bookkeeping for the per-chunk views of the kq_mask INPUT created during prefill. Next fix if resumed: never view the input - copy the chunk's kq_mask rows with ggml_get_rows from a small per-chunk I32 row-index graph input (needs an llm_graph_input set_input hook), or fix the meta view bookkeeping. Parked as experimental: payoff is ub1024 fitting at 240K with only +1.5-6% prefill at an 80K fill; bigger prefill wins need removing the dense kq_mask input (step 3).
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -124,3 +126,4 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 - 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T18:12:07.315403+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T19:15:06.825550+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T19:37:51.020304+00:00 (updated-by): Updated: section:notes
