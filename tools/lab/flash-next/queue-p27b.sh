@@ -7,7 +7,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-N
 export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
 export BIGCHERRY_DRAFT_VOCAB_N=65536 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=245760 TS=0.31,0.27,0.42 B=512 DECODE_N=512
 export EXTRA_OT='^token_embd\.weight$=CPU' BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0
-export BIGCHERRY_FEATURES=flashnext-v6
+export BIGCHERRY_FEATURES=flashnext
 until grep -q ALL_JOBS_DONE /mnt/data/bigcherry-work/runs/queue-ahead-pmin.log 2>/dev/null; do sleep 30; done
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)

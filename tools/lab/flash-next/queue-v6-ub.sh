@@ -15,7 +15,7 @@ jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
 VIS=0,1,2,3 BUILD b-1327 bigcherry:stock:linux-multi deploy-v5-plus-1327 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT v6-abba tools/lab/flash-next/abba-depths.sh @b-1327 @b-1327 $R/flashnext-v6-abba BIGCHERRY_QSA_HOST_REMAP=1
+VIS=0,1,2,3 SCRIPT v6-abba tools/lab/flash-next/abba-depths.sh @b-1327 @b-1327 $R/flashnext-abba BIGCHERRY_QSA_HOST_REMAP=1
 VIS=0,1,2,3 SCRIPT ub-sweep tools/lab/flash-next/ub-sweep.sh @b-1327 $R/flashnext-ub-sweep 512 1024 1536 2048
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

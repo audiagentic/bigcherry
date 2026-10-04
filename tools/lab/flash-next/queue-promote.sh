@@ -1,7 +1,7 @@
 #!/bin/bash
 # QFP18 promotion GPU session (runs after queue-peak):
 # (1) native llama.cpp (llama-native source, no patches, no --allreduce) vs v6 at 64K ctx f16, depths 8K + 48K,
-#     ABA with v6 as the A arm (BIGCHERRY_FEATURES=flashnext-v6) and native as the middle arm, same flags otherwise;
+#     ABA with v6 as the A arm (BIGCHERRY_FEATURES=flashnext) and native as the middle arm, same flags otherwise;
 # (1b) FMTP03 screen: v6 vs v6 + BIGCHERRY_MTP_AHEAD=1 (same binary) at 24K and 80K, 240K f16;
 # (2) cross-model no-regression: Qwen3.8-27B dual-XTX production config, promoted base (stock-none on the bigcherry
 #     source) vs base + the Flash-Next patch set (deploy-v5-plus-1327) with every flag at its default, ABBA, 2 depths.

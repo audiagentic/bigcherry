@@ -53,13 +53,13 @@ class Patch0910Mechanics(unittest.TestCase):
 class Patch0910Behaviour(unittest.TestCase):
     def _run(self, env_extra):
         code = _P._N.split("#include <signal.h>\n", 1)[1]
-        # one documented flag, as a patch's env_docs() row adds it (ACT_Q81 documented, QSA_HOST_REMAP not)
+        # one documented flag, as a patch's env_docs() row adds it (ACT_Q81 documented, SCHED_ASYNC_INPUTS not)
         doc = env_docs("1310_act_q81", (EnvDoc("BIGCHERRY_ACT_Q81", "0|1", "0", 'act "q8" test'),))
         code = code.replace(ENV_DOC_TABLE_END, doc.edits[0].text + ENV_DOC_TABLE_END)
         main = (
             "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n" + code +
             "\nint main(void) {\n"
-            '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_QSA_HOST_REMAP", "GGML_HIP_Q8_1_CACHE_MODE"};\n'
+            '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_SCHED_ASYNC_INPUTS", "GGML_HIP_Q8_1_CACHE_MODE"};\n'
             '    for (int i = 0; i < 3; i++) { const char * v = getenv(k[i]); printf("%s=%s\\n", k[i], v ? v : "<unset>"); }\n'
             "    return 0;\n}\n"
         )
@@ -76,26 +76,38 @@ class Patch0910Behaviour(unittest.TestCase):
             return p.stdout, p.stderr
 
     def test_set_expands(self):
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext-v6"})
+        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext"})
         self.assertIn("BIGCHERRY_ACT_Q81=1", out)
-        self.assertIn("BIGCHERRY_QSA_HOST_REMAP=1", out)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
         self.assertIn("GGML_HIP_Q8_1_CACHE_MODE=on", out)
-        self.assertIn("BIGCHERRY_FEATURES flashnext-v6:", err)
-        self.assertIn("BIGCHERRY_QSA_HOST_REMAP=1(not in build)", err)
+        self.assertIn("BIGCHERRY_FEATURES flashnext:", err)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1(not in build)", err)
 
     def test_explicit_member_wins(self):
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext-v6", "BIGCHERRY_ACT_Q81": "0"})
+        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext", "BIGCHERRY_ACT_Q81": "0"})
         self.assertIn("BIGCHERRY_ACT_Q81=0", out)
         self.assertIn("BIGCHERRY_ACT_Q81=0(explicit)", err)
-        self.assertIn("BIGCHERRY_QSA_HOST_REMAP=1", out)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
 
     def test_help_lists_sets_and_docs(self):
         _, err = self._run({"BIGCHERRY_FEATURES": "help"})
-        self.assertIn("flashnext-v6 - ", err)
+        self.assertIn("flashnext - ", err)
         self.assertIn("BIGCHERRY_ACT_Q81 = 0|1 (default: 0) [1310_act_q81]", err)
         self.assertIn('act "q8" test', err)
-        self.assertIn("BIGCHERRY_QSA_HOST_REMAP=1  (no patch in this build documents it)", err)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1  (no patch in this build documents it)", err)
         self.assertIn("BIGCHERRY_FEATURES = ", err)
+
+    def test_set_references_and_help(self):
+        # flashnext composes @hip-q81 and @sched-async; help lists references without "not documented" noise
+        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext"})
+        self.assertIn("GGML_HIP_Q8_1_CACHE_MODE=on", out)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
+        _, err = self._run({"BIGCHERRY_FEATURES": "help"})
+        self.assertIn("      @hip-q81\n", err)
+        self.assertIn("hip-q81 - ", err)
+        out, _ = self._run({"BIGCHERRY_FEATURES": "sched-async"})
+        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
+        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
 
     def test_unset_and_unknown(self):
         out, _ = self._run({})
