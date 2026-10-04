@@ -28,13 +28,15 @@ from bigcherry.patcher import Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "untested"
 
-_A_H = ("    // candidate distribution per drafted token; set it to make draft-simple and draft-mtp sample\n"
-        "    std::vector<std::vector<llama_token_data>> * result_q = nullptr;\n")
+_A_H = ("    // the target's temp and seed, read only when the drafter samples probabilistically\n"
+        "    float    temp = 1.0f;\n"
+        "    uint32_t seed = LLAMA_DEFAULT_SEED;\n")
+# appended after the last field: the server brace-initialises the leading fields positionally
 _N_H = _A_H + (
     "\n"
     "    // bigcherry 1321 (FMTP02), single-head MTP only: a promoted front forced through the MTP head in order before\n"
     "    // sampling resumes (greedy drafting only; p_min does not apply to forced tokens), and a live tail drafted past\n"
-    "    // n_max into *tail (disjoint from *result). Defaults keep the ordinary draft.\n"
+    "    // the front into *tail (disjoint from *result). Defaults keep the ordinary draft.\n"
     "    const llama_tokens * forced = nullptr;\n"
     "    int32_t              n_tail = 0;\n"
     "    llama_tokens *       tail   = nullptr;\n")
@@ -82,10 +84,12 @@ _A_STEP = """                // add drafted token for each sequence
 _N_STEP = """                auto & dp = dparams.at(seq_id);
                 auto & result = *dp.result;
 
-                // bigcherry 1321: forced promoted front first, then sampled tokens; past n_max they go to the tail
+                // bigcherry 1321: forced promoted front first, then sampled tokens; past the front (the forced tokens
+                // when given, else n_max) they go to the tail
                 const size_t bc_n_forced = dp.forced ? dp.forced->size() : 0;
+                const size_t bc_front    = dp.forced ? bc_n_forced : (size_t) params.n_max;
                 const bool   bc_forced   = result.size() < bc_n_forced;
-                const bool   bc_in_tail  = !bc_forced && params.n_max <= (int) result.size();
+                const bool   bc_in_tail  = !bc_forced && bc_front <= result.size();
 
                 // add drafted token for each sequence
                 const llama_token id = bc_forced ? (*dp.forced)[result.size()]
@@ -115,7 +119,7 @@ _N_STEP = """                auto & dp = dparams.at(seq_id);
                         dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
                     }
 
-                    if (params.n_max <= (int) result.size() && dp.n_tail <= 0) {
+                    if (bc_front <= result.size() && dp.n_tail <= 0) {
                         drafting[seq_id] = false;
                         n_drafting--;
                         continue;
@@ -150,8 +154,8 @@ PATCHES = [
         language="none",
         edits=(
             Edit(id="mtp-ahead-params", anchor=re.escape(_A_H), mode="replace", text=_N_H,
-                 guard=r"bigcherry 1321 \(FMTP02\), single-head MTP only", rationale="After result_q in the draft params.",
-                 expect_matches=1, max_span_lines=3),
+                 guard=r"bigcherry 1321 \(FMTP02\), single-head MTP only", rationale="After the last draft-params field (seed).",
+                 expect_matches=1, max_span_lines=4),
         ),
     ),
     FilePatch(

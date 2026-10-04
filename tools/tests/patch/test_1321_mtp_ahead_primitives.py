@@ -43,7 +43,7 @@ class Patch1321Mechanics(unittest.TestCase):
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             h = (root / "common/speculative.h").read_text(encoding="utf-8")
-            self.assertLess(h.index("result_q = nullptr;"), h.index("const llama_tokens * forced = nullptr;"))
+            self.assertLess(h.index("uint32_t seed = LLAMA_DEFAULT_SEED;"), h.index("const llama_tokens * forced = nullptr;"))
             self.assertIn("llama_tokens *       tail   = nullptr;", h)
             cpp = (root / "common/speculative.cpp").read_text(encoding="utf-8")
             mtp = cpp[cpp.index("struct common_speculative_impl_draft_mtp"):cpp.index("struct common_speculative_impl_ngram_simple")]
@@ -51,7 +51,8 @@ class Patch1321Mechanics(unittest.TestCase):
             self.assertLess(mtp.index("const llama_token id = bc_forced ? (*dp.forced)[result.size()]"),
                             mtp.index("if (!bc_forced && cur_p->data[0].p < params.p_min)"))
             # the front stops at n_max only without a tail; tail tokens never enter result
-            self.assertIn("if (params.n_max <= (int) result.size() && dp.n_tail <= 0)", mtp)
+            self.assertIn("if (bc_front <= result.size() && dp.n_tail <= 0)", mtp)
+            self.assertIn("const size_t bc_front    = dp.forced ? bc_n_forced : (size_t) params.n_max;", mtp)
             self.assertIn("dp.tail->push_back(id);", mtp)
             self.assertIn("GGML_ASSERT(dp.forced == nullptr || (int) dp.forced->size() <= params.n_max);", mtp)
             self.assertIn("bigcherry 1321: a tail only continues a front that is verified", mtp)
