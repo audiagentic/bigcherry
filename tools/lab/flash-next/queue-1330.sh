@@ -10,18 +10,19 @@ export BIGCHERRY_DRAFT_VOCAB_N=65536 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=24576
 export EXTRA_OT='^token_embd\.weight$=CPU' BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0
 export GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1
 export BIGCHERRY_SCALE_ACT_FUSE=1 BIGCHERRY_SCHED_ASYNC_INPUTS=1 BIGCHERRY_QSA_HOST_REMAP=1
+until grep -q ALL_JOBS_DONE /mnt/data/bigcherry-work/runs/queue-1330b.log 2>/dev/null; do sleep 20; done
 docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-1330b bigcherry:stock:linux-multi deploy-v6-plus-1330 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT a1330b-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-1330b @b-1330b $R/flashnext-1330b-d24k BIGCHERRY_QSA_MASK_INPLACE=1
-VIS=0,1,2,3 SCRIPT ub-1330b tools/lab/flash-next/ub-1330.sh @b-1330b $R/flashnext-ub-1330
+VIS=0,1,2,3 BUILD b-1330c bigcherry:stock:linux-multi deploy-v6-plus-1330 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT a1330c-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-1330c @b-1330c $R/flashnext-1330c-d24k BIGCHERRY_QSA_MASK_INPLACE=1
+VIS=0,1,2,3 SCRIPT ub-1330c tools/lab/flash-next/ub-1330.sh @b-1330c $R/flashnext-ub-1330
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^base-|^new|SERVER_FAILED" $R/a1330b-d24k.log
-D=$R/flashnext-1330b-d24k; md5sum $D/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
-grep -E "^ub" $R/ub-1330b.log
+grep -E "^base-|^new|SERVER_FAILED" $R/a1330c-d24k.log
+D=$R/flashnext-1330c-d24k; md5sum $D/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
+grep -E "^ub" $R/ub-1330c.log
 echo ALL_JOBS_DONE

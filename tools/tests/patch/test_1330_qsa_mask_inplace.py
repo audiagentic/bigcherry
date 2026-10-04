@@ -50,6 +50,7 @@ class Patch1330Mechanics(unittest.TestCase):
             self.assertLess(out.index("ggml_set_rows(ctx0, mask_all, zeros"), hook)
             self.assertIn("sel = bc_inplace ? ggml_add_inplace(ctx0, sel, kq_mask) : ggml_add(ctx0, sel, kq_mask);", out)
             self.assertLess(hook, out.index('cb(sel, "indexer_sel", il);'))
+            self.assertIn("ggml_are_same_shape(sel, kq_mask) ? sel", out)
             second = apply_all(_P1330.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, (root / _REL).read_text(encoding="utf-8"))
