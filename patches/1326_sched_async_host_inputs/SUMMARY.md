@@ -20,3 +20,7 @@ Adopted in production profile v5 (2026-10-04, flashnext-v5-abba): v4 -> v5 decod
 ## 2026-10-04 lifetime fix (reviewer-gpt-agent req_3b37d17e61374a6a)
 
 The fast path now copies each host input into scheduler-owned pageable staging (per input copy) before ggml_backend_tensor_set_async: the source may be a pinned host buffer (truly async DMA) that the caller rewrites on the next set_inputs (e.g. the next prefill ubatch). The results above were measured before this fix; re-measure (queue-v5b-abba.sh) before final adoption.
+
+## 2026-10-04 v5c re-measure (staged) and size cap
+
+v5c ABBA x2 with pageable staging: decode ~8K 79.1 -> 86.5 t/s (+9.4%), ~64K 57.1 -> 61.5 (+7.8%), greedy identical 8/8 per depth, but prefill -2.3% / -2% (the earlier +3.7/+7.2% prefill came from the unsafe zero-copy path). The fast path is now limited to inputs <= 4 MiB (decode KQ mask at 240K for a 4-token verify is ~2 MB; prefill masks ~10 MB take the upstream path), so prefill returns to v4 behaviour. A pinned staging ring with copy-slot events could recover the prefill gain safely (future work).
