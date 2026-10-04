@@ -15,150 +15,345 @@ work: M
 
 ## Description
 
-Patch 1326/QFP16 proved that synchronous split-input handling is expensive and that asynchronous host->device input copies can materially improve serving. The first zero-copy/pinned-source version also showed prefill gains (+3.7% / +7.2% in the recorded v5 screen), but it was unsafe because callers can rewrite graph-input host storage before true asynchronous DMA consumes it. The safe fix stages through scheduler-owned pageable memory; that preserved decode gains but made large prefill inputs slower, so 1326 now caps the fast path at 4 MiB. Its own result identifies the missing mechanism: a scheduler-owned pinned staging ring whose slots are not reused until every destination backend has consumed them.
+Patch 1326/QFP16 proved that synchronous split-input handling is expensive and async host->device copies can improve serving. The original pinned-source shortcut improved prefill but was unsafe because graph-input storage may be rewritten before true DMA consumes it. Current 1326 therefore copies into scheduler-owned pageable `std::vector<uint8_t>` staging and caps the path at 4 MiB; safe for decode, but large prefill inputs lose the overlap.
 
-QFP24 owns that prefill extension. QFP16 remains the target-verify submit diagnosis/acceptance item and 1326 remains the implementation base; do not add another scheduler input-copy path. The new mechanism should replace 1326's per-input `thread_local unordered_map<tensor*, vector<uint8_t>>` staging only for large inputs where pinned DMA + overlap beats the current synchronous path.
+QFP24 extends **the existing 1326 code**, not a second scheduler copy path: large eligible inputs stage into a persistent pinned ring whose slots are reused only after every destination stream has recorded completion.
+
+Pinned llama.cpp `0504396` APIs available to use:
+
+```cpp
+ggml_backend_buffer_type_t ggml_backend_dev_host_buffer_type(ggml_backend_dev_t device);
+ggml_backend_buffer_t      ggml_backend_buft_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size);
+void *                     ggml_backend_buffer_get_base(ggml_backend_buffer_t buffer);
+
+ggml_backend_event_t ggml_backend_event_new(ggml_backend_dev_t device);
+void ggml_backend_event_record(ggml_backend_event_t event, ggml_backend_t backend);
+void ggml_backend_event_wait(ggml_backend_t backend, ggml_backend_event_t event);
+void ggml_backend_event_synchronize(ggml_backend_event_t event);
+```
+
+There is no generic nonblocking `event_query` at this pin. The plan therefore specifies both a minimal safe v1 and the preferred v2 query hook instead of pretending an API already exists.
 
 ## Steps
 
-1. Extend 1326 timing with per-input `{name, bytes, source backend, destination split, mirrored fanout count, staging memcpy us, enqueue us, completion/next-use distance}` on prefill ubatches. Rank the large inputs; current expectation is KQ/QSA masks around ~10 MiB/ubatch, but use measured names/sizes.
-2. Allocate scheduler-owned pinned staging slots with stable addresses. Start with 3 slots per size class or per logical input-copy lane. The caller copies source bytes into a free slot synchronously on CPU, then the split backend asynchronously fans that pinned slot to its device copies.
-3. Record completion on every destination that reads the slot. For Meta MIRRORED destinations, one slot cannot be reused until all participating GPU streams have passed the H2D copy. Use backend/device events or an explicit Meta copy-completion event array; no `backend_synchronize()` in the steady-state fast path.
-4. Add generation numbers to prevent ABA reuse. Slot selection is `(logical_lane, generation % depth)`; if the next slot is still live, fall back to the existing 1326 pageable/synchronous path rather than host-waiting indefinitely.
-5. Size policy: preallocate bounded capacity from the graph's observed/max eligible input sizes or a small set of powers-of-two. Do not `hipHostMalloc` per ubatch. Cap total pinned memory and expose telemetry; oversized inputs fall back safely.
-6. Update Meta `set_tensor_async` fanout so completion ownership is observable. Prefer one event per destination stream recorded immediately after the copy. Do not add device-wide events or a global synchronize.
-7. Sweep ring depth `{2,3,4}`, pinned cap and input-size threshold. Compare against upstream synchronous, current 1326 pageable staging and pinned ring. The ring is a prefill optimization only if end-to-end wall improves after including the CPU memcpy into pinned storage.
-8. Test sequential ubatches, prompt-cache reuse, two concurrent server slots if supported, and source buffers that are themselves pinned. Slot lifetime must depend only on scheduler-owned storage, never caller lifetime.
-9. If prefill wins, fold the ring into patch 1326 rather than creating a parallel patch. Update QFP16 notes with the final result; QFP24 can close once 1326 owns the qualified implementation.
+1. Extend 1326 trace/timing with input name, bytes, source/split backend, Meta fanout count, CPU staging memcpy, enqueue and slot-reuse distance.
+2. Allocate bounded scheduler-owned pinned buffers using the destination device's host buffer type; no per-ubatch `hipHostMalloc`.
+3. Replace large-input `std::vector` staging with lanes/ring slots keyed by stable destination-copy identity/size class, not source tensor pointer.
+4. For Meta fanout, record one child-backend event immediately after each `set_tensor_async` enqueue. A slot is live until all required child events are complete.
+5. v1 correctness prototype: on ring wrap, synchronize only that slot's completion events. Measure; this may already amortize the wait if depth is sufficient.
+6. v2 preferred: add an optional CUDA/HIP proc-address `ggml_backend_event_query` (or equivalent private helper) returning completion without blocking; scheduler tries another slot/falls back when busy.
+7. Ring-full behavior is fallback, not unbounded host wait. Keep 1326 pageable/synchronous path intact.
+8. Cap pinned memory globally/per scheduler; collect reserved/active/high-water and fallback counters.
+9. Stress graph reuse, sequential ubatches, two server slots, source overwrite immediately after staging, and 3-rank mirrored Meta fanout.
+10. If positive, fold implementation into patch 1326 and close QFP24 as its design/qualification owner.
 
 ## Detailed Solution & Technical Design
 
-### Ownership and slot lifecycle
+### 1. Replace the current 1326 staging object with owned pinned slots
 
-The current 1326 fast path copies the input to `std::vector<uint8_t>` then calls `ggml_backend_tensor_set_async()`. On HIP, pageable host memory makes the call effectively consume/copy enough data before return to make caller reuse safe, but that destroys the intended prefill overlap. Replace large-input staging with persistent pinned storage:
+Current 1326 code is effectively:
+
+```cpp
+static thread_local std::unordered_map<const ggml_tensor *, std::vector<uint8_t>> bc_staging;
+std::vector<uint8_t> & bc_stage = bc_staging[input_cpy];
+bc_stage.resize(ggml_nbytes(input));
+memcpy(bc_stage.data(), input->data, ggml_nbytes(input));
+ggml_backend_tensor_set_async(split_backend, input_cpy, bc_stage.data(), 0, ggml_nbytes(input));
+```
+
+Replace only the large-input branch with a scheduler-owned pool:
 
 ```cpp
 struct bc_async_input_slot {
-    void * host_ptr;              // hipHostMalloc / backend host-pinned buffer
-    size_t capacity;
-    uint64_t generation;
-    bool active;
-    backend_event done[MAX_META_RANKS];
+    ggml_backend_buffer_t host_buf = nullptr;
+    void * ptr = nullptr;
+    size_t capacity = 0;
+    uint64_t generation = 0;
+    bool live = false;
+
+    ggml_backend_event_t done[GGML_BACKEND_META_MAX_DEVICES] = {};
+    uint32_t n_done = 0;
 };
 
 struct bc_async_input_lane {
     bc_async_input_slot slots[4];
-    uint32_t next;
+    uint32_t depth = 3;
+    uint32_t next = 0;
+};
+
+struct bc_async_input_pool {
+    std::unordered_map<uint64_t, bc_async_input_lane> lanes;
+    size_t reserved = 0;
+    size_t cap_bytes = 256ull << 20;
 };
 ```
 
-Use the project's backend abstraction for host-pinned allocation and events where available; do not leak HIP types into generic scheduler interfaces unnecessarily.
+Put the pool in scheduler lifetime (`ggml_backend_sched` context), not `thread_local`; the scheduler owns tensor-copy buffers and can free all pinned buffers/events in its destructor/reset path.
 
-Lifecycle for generation `g`:
+### 2. Pinned allocation through the GGML backend abstraction
 
-```text
-CPU producer complete
-      |
-memcpy source -> pinned slot[g % depth]
-      |
-set_tensor_async(meta/split, slot.ptr)
-      |-- H2D rank0 -- record done0
-      |-- H2D rank1 -- record done1
-      `-- H2D rank2 -- record done2
+For a non-Meta GPU destination:
 
-slot becomes reusable only after all required done events have completed
+```cpp
+static bool bc_alloc_pinned_slot(
+        ggml_backend_t dst_backend,
+        bc_async_input_slot & slot,
+        size_t bytes) {
+    ggml_backend_dev_t dev = ggml_backend_get_device(dst_backend);
+    ggml_backend_buffer_type_t buft = ggml_backend_dev_host_buffer_type(dev);
+    if (buft == nullptr) {
+        return false;
+    }
+
+    ggml_backend_buffer_t buf = ggml_backend_buft_alloc_buffer(buft, bytes);
+    if (buf == nullptr || !ggml_backend_buffer_is_host(buf)) {
+        if (buf != nullptr) {
+            ggml_backend_buffer_free(buf);
+        }
+        return false;
+    }
+
+    slot.host_buf = buf;
+    slot.ptr = ggml_backend_buffer_get_base(buf);
+    slot.capacity = ggml_backend_buffer_get_size(buf);
+    return slot.ptr != nullptr && slot.capacity >= bytes;
+}
 ```
 
-The host `memcpy` is intentionally synchronous because it establishes independence from caller storage. It should be much cheaper than waiting for three H2D copies and allows the caller to proceed immediately after staging.
+For Meta, do not assume its `caps.host_buffer` bit is usable at this pin. Prefer the first simple child's host-buffer type only after verifying all child CUDA/HIP devices accept the same pinned host allocation; otherwise allocate via the CUDA/HIP registry helper used by the child backends. Keep that logic inside a Meta helper, not in generic scheduler code.
 
-### Nonblocking slot reuse
+### 3. Internal tracked Meta fanout
 
-Do not call `hipEventSynchronize` for every slot. Before choosing a slot, query its completion events. If all complete, reuse. If not, try another slot. If the ring is full, either use 1326's existing safe fallback or only then wait if measurement proves bounded waiting is better. Default to fallback for the first version to avoid turning a throughput optimization into host serialization.
+Current Meta `set_tensor_async` fans a host pointer into each simple destination. Add a private core helper in `ggml-backend-impl.h` / `ggml-backend-meta.cpp`, not public API:
 
-Use monotonic generations for diagnostics and safety. A stale event from generation `g-depth` must never authorize reuse for generation `g` unless that slot's exact completion records correspond to the previous owner.
+```cpp
+struct ggml_backend_meta_async_ticket {
+    ggml_backend_event_t events[GGML_BACKEND_META_MAX_DEVICES];
+    uint32_t n_events;
+};
 
-### Meta fanout
+bool ggml_backend_meta_set_tensor_async_tracked(
+        ggml_backend_t backend,
+        ggml_tensor * tensor,
+        const void * data,
+        size_t offset,
+        size_t size,
+        ggml_backend_meta_async_ticket * ticket);
+```
 
-For a MIRRORED split input, `ggml_backend_meta_set_tensor_async` fans the same host pointer to each child backend. Add an internal completion-return/record hook rather than assuming enqueue means consumed. If the existing backend event API can record on each child stream immediately after `set_tensor_async`, use it. Otherwise add a private Meta helper used by the scheduler fast path:
+Implementation shape:
 
 ```cpp
 bool ggml_backend_meta_set_tensor_async_tracked(
-    ggml_backend_t meta,
-    ggml_tensor * dst,
-    const void * pinned_src,
-    size_t size,
-    ggml_backend_event_t * completion_events,
-    size_t * n_events);
+        ggml_backend_t backend,
+        ggml_tensor * tensor,
+        const void * data,
+        size_t offset,
+        size_t size,
+        ggml_backend_meta_async_ticket * ticket) {
+    GGML_ASSERT(ggml_backend_is_meta(backend));
+    ticket->n_events = 0;
+
+    const size_t n = ggml_backend_meta_n_backends(backend);
+    for (size_t i = 0; i < n; ++i) {
+        ggml_backend_t child = ggml_backend_meta_simple_backend(backend, i);
+        ggml_tensor * child_tensor = bc_meta_simple_tensor_for_set(tensor, i); // factor from current set_tensor_async
+        if (child_tensor == nullptr) {
+            continue;
+        }
+
+        ggml_backend_tensor_set_async(child, child_tensor, data, offset, size);
+
+        ggml_backend_dev_t dev = ggml_backend_get_device(child);
+        ggml_backend_event_t ev = ggml_backend_event_new(dev);
+        if (ev == nullptr) {
+            return false;
+        }
+        ggml_backend_event_record(ev, child); // same child stream, immediately after H2D copy
+        ticket->events[ticket->n_events++] = ev;
+    }
+    return ticket->n_events > 0;
+}
 ```
 
-This is illustrative. Prefer extending an existing event/copy helper over a public API if possible.
+`bc_meta_simple_tensor_for_set()` is not an upstream symbol: extract/refactor the exact child-tensor mapping already present in current `ggml_backend_meta_set_tensor_async()` so the tracked and untracked paths cannot drift.
 
-### Allocation policy
+Do not allocate/free events per ubatch in production; the code above shows ordering only. Real implementation pre-creates one event per `(slot, child)` when the slot/lane is initialized and re-records it each generation.
 
-Pinned memory is a finite system resource. Start with a global cap such as 256 MiB and measured size classes. For example, a 3-slot ring for one 10 MiB mask is ~30 MiB, acceptable; duplicating that for every tensor identity is not. Key lanes by destination input-copy buffer/shape class, not source tensor pointer, so graph rebuilds do not leak a new ring.
+### 4. Slot acquisition v1: safe and simple
 
-Record `pinned_reserved`, `pinned_active`, slot waits/fallbacks, bytes staged and average CPU memcpy bandwidth. A ring that rarely reuses the same lane or falls back >10% should not be promoted without redesign.
+Because generic GGML lacks event query at this pin, first prove the design with slot-local synchronization only on reuse:
+
+```cpp
+static void bc_slot_wait_and_reuse(bc_async_input_slot & slot) {
+    if (!slot.live) {
+        return;
+    }
+    for (uint32_t i = 0; i < slot.n_done; ++i) {
+        ggml_backend_event_synchronize(slot.done[i]);
+    }
+    slot.live = false;
+    slot.n_done = 0;
+}
+```
+
+With depth 3/4 the copy may already be complete when a slot wraps, so this can be nearly free while being unquestionably correct. Measure before widening API surface.
+
+### 5. Preferred v2: nonblocking completion query
+
+If v1 shows useful overlap but slot-wrap synchronization is material, add an optional backend proc-address rather than changing the public device iface/API version:
+
+```cpp
+typedef bool (*ggml_backend_event_query_t)(ggml_backend_event_t event);
+```
+
+CUDA/HIP registry exports:
+
+```cpp
+static bool ggml_backend_cuda_event_query(ggml_backend_event_t event) {
+    auto * cuda_event = (ggml_backend_cuda_event *) event->context;
+    cudaError_t err = cudaEventQuery(cuda_event->event);
+    if (err == cudaSuccess) {
+        return true;
+    }
+    if (err == cudaErrorNotReady) {
+        return false;
+    }
+    GGML_CUDA_CHECK(err);
+    return false;
+}
+```
+
+and returns it from `get_proc_address("ggml_backend_event_query")`. The pool resolves one query function per child device at initialization. Unknown backend -> v1 sync/fallback; never cast a CUDA event from generic code.
+
+Then:
+
+```cpp
+static bool bc_slot_ready_nonblocking(const bc_async_input_slot & slot) {
+    for (uint32_t i = 0; i < slot.n_done; ++i) {
+        if (!slot.query[i](slot.done[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+```
+
+### 6. Scheduler fast path anchored to current 1326 code
+
+Inside `ggml_backend_sched_compute_splits`, retain all existing eligibility checks and current safe fallback. Add the pinned branch only above the 4 MiB cap/fallback:
+
+```cpp
+const size_t nbytes = ggml_nbytes(input);
+const bool bc_large = nbytes > ((size_t) 4 << 20);
+
+if (bc_async_inputs && bc_large &&
+        split_backend->iface.set_tensor_async != nullptr &&
+        input->buffer != nullptr &&
+        ggml_backend_buffer_is_host(input->buffer) &&
+        ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS &&
+        ggml_is_contiguous(input) && ggml_is_contiguous(input_cpy) &&
+        nbytes == ggml_nbytes(input_cpy)) {
+
+    ggml_backend_synchronize(input_backend); // preserve 1326 producer ordering first
+
+    bc_async_input_slot * slot = bc_pool_try_acquire(sched->bc_async_pool, input_cpy, nbytes);
+    if (slot != nullptr) {
+        memcpy(slot->ptr, input->data, nbytes);
+
+        ggml_backend_meta_async_ticket ticket = {};
+        bool ok = ggml_backend_is_meta(split_backend)
+            ? ggml_backend_meta_set_tensor_async_tracked(
+                  split_backend, input_cpy, slot->ptr, 0, nbytes, &ticket)
+            : bc_simple_set_tensor_async_tracked(
+                  split_backend, input_cpy, slot->ptr, nbytes, &ticket);
+
+        if (ok) {
+            bc_slot_adopt_ticket(*slot, ticket, ++sched->bc_async_generation);
+            continue;
+        }
+    }
+}
+
+// Existing 1326 pageable staging / upstream synchronous fallback follows unchanged.
+```
+
+`bc_pool_try_acquire` must try all ring slots and return `nullptr` when none are safely reusable; do not wait indefinitely.
+
+### 7. Lane key and bounded memory
+
+Do not key by source tensor pointer. Key by destination copy buffer identity plus rounded capacity:
+
+```cpp
+static uint64_t bc_lane_key(const ggml_tensor * input_cpy, size_t bytes) {
+    const uint64_t sz_class = 1ull << (64 - __builtin_clzll(std::max<size_t>(bytes, 1) - 1));
+    return bc_hash_combine((uintptr_t) input_cpy->buffer, sz_class);
+}
+```
+
+Use a portable round-up helper instead of this exact builtin if MSVC support matters. The invariant is stable destination lifetime + bounded size classes.
 
 ## Code Samples & Guidance
 
-Primary implementation must remain in 1326 anchors:
+Implementation sequence:
 
-- `ggml/src/ggml-backend.cpp`: `ggml_backend_sched_compute_splits`, replacing/extending the current `bc_staging` block.
-- `ggml/src/ggml-backend-meta.cpp`: tracked async fanout/completion for mirrored and supported split states.
-- backend host-buffer/event helpers in existing GGML backend APIs; use them before direct `hipHostMalloc` if they expose portable pinned memory.
-
-Pseudo fast path:
-
-```cpp
-if (bc_async_inputs && eligible_large_host_input(input, input_cpy)) {
-    ggml_backend_synchronize(input_backend); // CPU producer must be done
-    auto * slot = ring.try_acquire(ggml_nbytes(input));
-    if (slot != nullptr) {
-        memcpy(slot->ptr, input->data, nbytes);
-        if (set_tensor_async_tracked(split_backend, input_cpy, slot->ptr, nbytes, slot->done)) {
-            slot->active = true;
-            continue;
-        }
-        ring.release(slot);
-    }
-}
-// existing 1326/upstream fallback
+```text
+1. move staging ownership from thread_local into scheduler context
+2. add pinned slot allocation/free and v1 wrap synchronization
+3. factor current Meta child fanout into reusable helper
+4. add per-slot child completion events
+5. stress immediate source overwrite for correctness
+6. benchmark depth 2/3/4
+7. only if wrap sync matters, add optional CUDA/HIP event-query proc
+8. fold into 1326; delete any duplicate experimental path
 ```
 
-The `input_backend` synchronize is retained only where the source is produced asynchronously; plain user/CPU-written inputs may already be ready. Optimize that separately only with evidence.
+Diagnostics:
+
+```text
+BIGCHERRY_ASYNC_INPUT name=... bytes=... lane=... slot=2 gen=41 pinned=1 fanout=3 fallback=0 memcpy_us=... enqueue_us=...
+BIGCHERRY_ASYNC_INPUT_POOL reserved=... active=... busy_fallbacks=... wrap_wait_us=...
+```
 
 ## Files
 
-`patches/1326_sched_async_host_inputs/patch.py` and its tests/evidence; `ggml/src/ggml-backend.cpp`; `ggml/src/ggml-backend-meta.cpp`; existing backend event/host-buffer implementation; QFP16 for submit-path evidence; QFP17 for prefill ABBA integration.
+- `patches/1326_sched_async_host_inputs/patch.py` + tests/evidence.
+- `ggml/src/ggml-backend.cpp`: scheduler pool + fast path.
+- `ggml/src/ggml-backend-meta.cpp`: factor child fanout + tracked events.
+- `ggml/src/ggml-backend-impl.h`: private ticket/helper declaration if needed.
+- CUDA/HIP registry source only if v2 nonblocking event query is justified.
 
 ## Validation
 
-Unit/mechanics: slot depth 2 with deliberately delayed destination completion; source buffer overwritten immediately after staging; verify destination bytes retain the staged generation. Exercise mirrored 3-rank fanout, one-rank split, ring-full fallback, tail size, resize and graph rebuild.
+Mechanics:
+- overwrite source immediately after scheduler staging;
+- depth-2 ring with deliberately delayed child copy;
+- 3-rank mirrored fanout where one rank is delayed;
+- graph rebuild and repeated requests;
+- ring full -> fallback, never stale reuse;
+- >=10,000 generations with byte pattern generation tags.
 
-Hardware: profile 10K/80K/200K fills at outer ubatch 512/1024 where available. Compare synchronous baseline, 1326 pageable staging and pinned ring. Record scheduler input wall, CPU memcpy wall, H2D overlap, prefill t/s, TTFT, PCIe copy-engine utilization and pinned-memory high-water.
+Hardware: 10K/80K/200K fills, ub512/1024 where possible. Compare upstream sync, current 1326 pageable staging, pinned v1, pinned v2 if implemented. Record input-handling wall, CPU memcpy, H2D overlap, prefill t/s, TTFT, copy-engine utilization and pinned high-water.
 
-Decode/MTP control: retain 1326's validated <=4 MiB path unchanged or prove the ring does not regress it. Greedy/reference output must be identical because only transport/lifetime changes.
+Decode/MTP <=4 MiB path should remain current 1326 behavior unless the ring is separately proven better.
 
 ## Effort & Risk
 
-M. The code is localized, but lifetime bugs can cause silent corruption. Main risks are slot reuse before the slowest Meta child copy finishes, excessive pinned-memory reservation, event-query overhead and host memcpy becoming the new bottleneck.
+M. Localized code, high lifetime-corruption risk. Main failure mode is slot reuse before the slowest Meta child copy completes.
 
 ## Standards
 
-Scheduler-owned lifetime; bounded pinned memory; stable addresses; no caller-lifetime dependency; no per-ubatch pinned allocation; no global/device synchronization in steady state; explicit safe fallback; implementation folded into 1326 after qualification.
+Scheduler-owned lifetime; bounded pinned memory; stable addresses; events recorded after copy on the same child stream; safe fallback; no assumed pageable-copy semantics; no public API expansion unless required.
 
 ## Acceptance Criteria
 
-- Immediate overwrite/reuse stress shows no stale/corrupt destination data across >=10,000 staged generations.
-- Large prefill split-input handling drops >=30% or representative prefill improves >=3% versus current safe 1326, with no decode regression >1%.
-- No steady-state backend/device synchronize is added for destination completion; slot ownership is event/generation based.
-- Pinned allocation is bounded/configured and leak-free across graph rebuilds/repeated requests.
-- Qualified code is consolidated into 1326; no second scheduler async-input implementation remains.
-
-## Notes
-
-This is the concrete follow-up already called out by the 1326 hardware result. It is separated from QFP16 because QFP16's primary objective is decode/MTP target-submit host time, while QFP24 is specifically the large-input prefill lifetime/overlap extension of the same mechanism.
+- Source-overwrite/ring-wrap stress passes >=10,000 generations.
+- Large prefill input handling drops >=30% or prefill improves >=3% vs current safe 1326.
+- No decode regression >1%.
+- Pinned allocation bounded/leak-free.
+- Final code consolidated into patch 1326.
 
 ## Change Log
 
-- 2026-10-05T00:00:00+00:00 (created-by): Created by agent from QFP16/1326 prefill follow-up.
+- 2026-10-05T00:00:00+00:00 (created-by): Created from QFP16/1326 follow-up.
+- 2026-10-05: Added concrete scheduler/Meta/pinned-buffer/event code paths grounded in llama.cpp 0504396 APIs and current 1326 implementation.
