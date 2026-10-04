@@ -333,9 +333,8 @@ static void bc_feature_help(int loaded) {
     if (loaded > 0) {
         fprintf(stderr, "BigCherry runtime profiles (%s; BIGCHERRY_FEATURES=<profile>[,...]; explicit variables win):\n", bc_profile_path);
         for (int p = 0; p < bc_n_profiles; p++) {
-            fprintf(stderr, "  %s%s%s - %s\n", bc_profiles[p].name, bc_profiles[p].arch[0] ? " [arch " : "",
-                    bc_profiles[p].arch[0] ? bc_profiles[p].arch : "", bc_profiles[p].desc);
-            if (bc_profiles[p].arch[0]) fprintf(stderr, "      (arch %s)\n", bc_profiles[p].arch);
+            fprintf(stderr, "  %s - %s\n", bc_profiles[p].name, bc_profiles[p].desc);
+            if (bc_profiles[p].arch[0]) fprintf(stderr, "      arch = %s\n", bc_profiles[p].arch);
             for (int i = 0; i < bc_n_items; i++) {
                 if (bc_items[i].profile != p) continue;
                 if (bc_items[i].kind == 1) fprintf(stderr, "      @%s\n", bc_items[i].a);
