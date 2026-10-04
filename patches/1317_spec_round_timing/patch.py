@@ -82,11 +82,9 @@ _PROCESS_NEW = """            queue_tasks.yield_to_queue([&]() {
 """
 
 _SAMPLE_OLD = """                const auto & synth_probs = common_speculative_get_synth_probs(spec.get());
-                auto accepted = synth_probs.empty()
 """
 _SAMPLE_NEW = """                const auto & synth_probs = common_speculative_get_synth_probs(spec.get());
                 const int64_t bc_ts0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
-                auto accepted = synth_probs.empty()
 """
 
 _ACCEPT_OLD = """                common_speculative_accept(spec.get(), slot.id, accepted.size() - 1);
