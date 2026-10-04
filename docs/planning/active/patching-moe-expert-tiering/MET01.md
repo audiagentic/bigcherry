@@ -15,101 +15,114 @@ work: M
 
 ## Description
 
-Prerequisite for every tiering patch. Collect per-layer routed-expert statistics for qwen4exp (Flash-Next) from ffn_moe_topk and turn them into a validated placement JSON under a measured per-device VRAM budget. Design agreed with GPT 2026-10-02 (session ses_f4675ceea21f47bf, req_6aee98215e88444d).
+Prerequisite for every tiering patch. Collect per-layer routed-expert statistics for qwen4exp (Flash-Next) from ffn_moe_topk and turn them into a validated placement JSON under a measured per-device VRAM budget.
 
-Expert residency now has one canonical policy surface. DwarfStar persistence/prefetch and upstream llama.cpp #29887's GPU LRU for host-resident experts are candidate policies under this owner; neither may create a second expert store, independent placement solver, or unrelated copy transport.
+Expert residency has one canonical policy surface. Static hot placement, DwarfStar-style persistence/prefetch, upstream llama.cpp #29887 demand LRU, and MET05/1328's auxiliary ROCm3 residency are policies/tier targets under this owner. They must not create independent placement solvers or competing residency accounting.
 
 ## Steps
 
-1. Fix routing-profile.sh (eval-callback rejects --tensor-filter) so 1279's full-tensor dump captures ffn_moe_topk.
-2. Profile workloads: code, prose/chat, long-context retrieval, production prompts, MTP generation; decode and prefill separately.
+1. Fix routing-profile.sh so the full-tensor dump captures ffn_moe_topk without violating meta-backend callback invariants.
+2. Profile code, prose/chat, long-context retrieval, production prompts and MTP generation; decode and prefill separately.
 3. Emit hits[l][e], weight_sum[l][e], tokens, ubatch_present[l][e], assigned_tokens[l][e].
-4. Measure non-routed-expert peak VRAM at production config (192K q8_0 KV, MTP depth 3, -sm tensor -ts 3,3,2, PLE CPU, all routed experts CPU) to get per-device tier budgets (headroom: XTX 2 GiB, R9700 2-3 GiB, 6900 1-2 GiB).
-5. Solver: assign (layer, expert) by marginal benefit/byte, balance expected active bytes by bandwidth (960/960/640/512 discounted for 6900 transfer latency), simulate per-layer max(service times)+reduction; target CPU route mass <= 0.5% (prefer <= 0.25%); include ubatch_present for prefill.
-6. Placement JSON v1 (architecture, model_fingerprint, n_layer, n_expert, tiers, per-layer tier[512]); validator rejecting wrong fingerprint/n_expert, missing/duplicate experts.
-7. Add a persistence/prefetch policy experiment inspired by DwarfStar: keep the resident expert set warm across requests/session resets; maintain short/long-horizon hit EMAs; optionally prefetch only when the route decision/look-ahead provides enough lead time to hide transfer. Keep transport separate from policy and do not create a second expert store.
-8. Qualify upstream llama.cpp #29887 inside the same placement/residency framework. Compare four policies under identical VRAM budgets: (a) whole-layer residency baseline, (b) pure GPU LRU tail cache for host experts, (c) MET static hot `(layer,expert)` placement, (d) hybrid static hot set + small LRU tail. Preserve #29887's small-batch gate (<=32 tokens) initially; large prefill batches bypass the LRU until AMD measurements prove otherwise.
-9. For the no-P2P deployment topology, allocate/cache per physical device and upload host->target GPU only. Do not add peer-copy assumptions. Record cache bank identity by expert layout and placement generation so stale cache entries cannot survive model/placement changes.
+4. Measure non-expert peak VRAM at production configuration and derive per-device expert budgets from measured headroom.
+5. Solver: assign `(layer,expert)` by avoided critical-path service time per resident byte. Include device bandwidth, PCIe upload latency, no-P2P topology and prefill `ubatch_present`; target CPU route mass <=0.5%, preferably <=0.25%.
+6. Placement JSON v1 includes model fingerprint, architecture, expert layout/quant, placement generation, n_layer/n_expert and per-expert tier/device. Reject wrong fingerprints, duplicate/missing experts and impossible devices.
+7. Persistence experiment: keep physical residency warm across requests while prompt-local predictors may reset. Prefetch only when measured lead time can hide transfer.
+8. Qualify upstream llama.cpp #29887 at equal VRAM: whole-layer baseline, pure LRU, static hot, hybrid static+LRU. Preserve its <=32-token gate initially.
+9. Consolidate MET05/1328 into the same solver: ROCm3 auxiliary residency is a third GPU tier, not a separate whole-layer policy. First keep 1328's safe whole-layer implementation; then, only after correctness, allow the solver to emit expert-granular ROCm3 candidates for a future extension.
+10. Add a **miss-cost-aware hybrid objective**. A host expert that is repeatedly uploaded by #29887 may be cheaper as persistent ROCm3 residency even when ROCm3 compute is slower than XTX. Conversely a rare expert should remain host/LRU rather than consume 6900 VRAM. Score each candidate against its measured alternative, not nominal FLOPS.
+11. Instrument one canonical residency table with counters: static hit, LRU hit, aux hit, host miss, uploaded bytes, upload stall, aux staging bytes/stall, eviction, and useful prefetch. Aggregate by `(layer,expert,device)` and placement generation.
+12. Keep large-batch prefill separate. #29887 intentionally bypasses cache above 32 tokens and its published data shows prompt regressions when cache VRAM displaces whole resident layers; the solver may allocate different decode and prefill budgets but must use the same physical residency/accounting owner.
 
 ## Detailed Solution & Technical Design
 
-DwarfStar's useful mechanism is policy separation: its resident expert cache remains warm across sessions while prompt-local eviction heuristics reset independently, and its implementation has optional expert look-ahead/prefetch hooks. Import that shape, not its SSD transport. BigCherry's discrete no-P2P topology should score persistence by expected route mass avoided per byte and migration cost.
+### Canonical tier decision
 
-Conceptual score extension:
-
-```text
-score[layer,expert,device] =
-    ema_hits * avoided_service_ms
-  - lambda_bytes * resident_bytes
-  - lambda_move * expected_migration_ms
-  + stickiness * already_resident
-```
-
-The solver remains the single placement owner. Persistence changes initial conditions/eviction cost; it must not fork a second placement algorithm. Prefetch is a separate optional action emitted by the same policy and consumed by the existing transport/loader.
-
-### Host-resident expert LRU (#29887)
-
-#29887's useful mechanism is demand caching after routing: a `MUL_MAT_ID` that selects a host-resident expert may execute on the GPU after uploading only cache misses. It uses separate banks for differing expert layouts and bypasses the cache above 32-token batches. That is complementary to MET's static route-mass solver, not a replacement.
-
-The preferred BigCherry experiment is **static-hot + LRU-tail**:
+For each `(layer,expert)` compare expected service cost under mutually exclusive tiers:
 
 ```text
-VRAM expert budget
-  = static hot experts selected by MET solver
-  + bounded LRU tail for host-resident misses
+cost(host) = p_active * (cpu_service_ms + required_sync_ms)
+cost(lru_gpu_d) = p_active * (p_hit * gpu_service_ms[d]
+                    + p_miss * (h2d_ms[d] + gpu_service_ms[d]))
+cost(aux6900) = p_active * (host_stage_in_ms + aux_service_ms + host_stage_out_ms)
+cost(static_gpu_d) = p_active * gpu_service_ms[d]
+
+score(tier) = baseline_cost - cost(tier)
+              - lambda_bytes * resident_bytes
+              - lambda_move * migration_ms
+              + stickiness * already_resident
 ```
 
-Static placement handles predictable heavy hitters and avoids recurring uploads. The LRU tail handles workload drift and long-tail experts. Both must use one residency accounting table and one generation counter. A cache hit must resolve to the same exact expert bytes/quant format as the uncached host path.
+Use measured critical-path costs. Do not substitute theoretical bandwidth for `h2d_ms`, aux staging or compute. The no-P2P topology means every cache bank is per physical device and every upload goes host->target GPU.
 
-Published #29887 NVIDIA data shows the tradeoff that must be measured on AMD: Qwen3.8-Flash-Next Q4_0 generation improves 1.57-1.62x on RTX 4090 and 1.77-2.20x on RTX 5090 with 72-89% hits, but pp512/2048/8192 regresses when VRAM is taken from whole resident expert layers. Therefore optimize **service time per reserved GiB**, not hit rate alone.
+### #29887 mechanism and consolidation
 
-## Code Samples & Guidance
+Upstream #29887 ports a qvac-fabric MoE cache. Scheduler callbacks resolve host `MUL_MAT_ID` weights to a persistent GPU cache, prepare only selected misses, and remap expert ids to cache slots. Different layouts have separate banks and batches >32 bypass the cache. This is the correct reuse point: if adopted, BigCherry should feed its cache capacity/residency decisions from MET rather than implement another cache allocator.
 
-Keep workload-history state compact: per-layer/expert counters/EMA plus current placement generation. Session reset may clear prompt-local predictors without discarding physical residency. Any prefetch request must carry placement generation so stale asynchronous work can be dropped safely.
+Published Qwen3.8-Flash-Next Q4_0 data is strong for decode but exposes the budget tradeoff: RTX 4090 25.0 -> 39.4/40.7 t/s (1.57-1.62x, 72-77% hits) and RTX 5090 30.8 -> 54.5/67.8 t/s (1.77-2.20x, 77-89% hits). However RTX 4090 pp512/2048/8192 falls to 0.89/0.93/0.91x with a 6.4 GiB cache and 0.70/0.78/0.76x with a 10.7 GiB cache because cache VRAM displaces whole resident expert layers. Therefore hit rate is not the objective; **avoided critical-path milliseconds per reserved GiB** is.
 
-For the LRU candidate, reuse llama.cpp backend buffer/copy and existing host expert storage. Do not implement a second allocator. Cache key should be `(model_fingerprint, layer, expert, layout/quant, device, placement_generation)`; the value is a resident buffer handle plus last-use/lease metadata. Never use a raw pointer as the persistent identity across placement generations.
+The submitted scheduler implementation also currently requires `sched->n_copies == 1` for cache activation. BigCherry uses graph/meta machinery heavily, so qualification must explicitly prove the cache is active in the production scheduler configuration rather than infer it from the CLI flag. Record resolved cache entries and miss uploads at runtime.
+
+### MET05 / 1328 boundary
+
+1328 already supplies a correctness-constrained auxiliary ROCm3 backend outside Meta/RCCL, with pinned-host staging and whole routed-expert layer placement. Do not duplicate its transport in MET01. MET01 chooses residency; MET05 owns aux execution/transport semantics. Initial comparison is whole-layer aux versus host/LRU/static-XTX at equal VRAM. Expert-granular aux placement is a later capability only if whole-layer data proves positive service-time/GiB and the scheduler can preserve routed/shared semantics without multiplying split boundaries.
+
+A useful follow-up is a **two-level tail**:
+
+```text
+XTX/R9700 static-hot experts
+    -> ROCm3 persistent warm tail
+    -> per-target-GPU #29887 LRU for remaining host misses
+    -> CPU fallback
+```
+
+Do not implement all levels first. Measure each transition's avoided stall. Promote the next tier only if it reduces end-to-end decode/MTP wall time after staging/synchronization.
 
 ## Files
 
-tools/lab/flash-next/routing-profile.sh, tools/lab/flash-next/expert-placement/ (profile aggregation, solver, validator); existing expert loader/transport and `MUL_MAT_ID` host-expert path only if a later implementation experiment is promoted. Upstream comparison source: llama.cpp PR #29887.
+`tools/lab/flash-next/routing-profile.sh`, `tools/lab/flash-next/expert-placement/`; existing expert loader/transport; MET05/1328 for aux execution; upstream llama.cpp #29887 for demand-cache implementation reference.
 
 ## Validation
 
-Profiles from >=4 workloads; solver output passes validator; predicted CPU-active layers/token reported; budgets derived from measured free VRAM, not nominal capacity. Persistence experiment must compare cold-start placement vs warm cross-session placement on repeated and shifted workloads. Report expert hit mass, bytes migrated/request, transfer stall ms/token, and effective TG. Prefetch only passes if useful-hit rate and hidden-transfer time improve without increasing worst-case latency materially.
+Profiles from >=4 workloads. Solver output passes schema/fingerprint/device validation. Equal-VRAM policy matrix on gfx1100/gfx1201, then production 2xXTX+R9700 with ROCm3 auxiliary lane where applicable. Test decode/MTP <=32 independently from pp512/2048/8192.
 
-#29887 qualification matrix: R9700 gfx1201 and one XTX gfx1100 first, then production 2xXTX+R9700 placement. Use Qwen3.8-Flash-Next with a model/quant too large for comfortable all-expert VRAM residency. Test decode/MTP small batches <=32 separately from pp512/2048/8192. For each policy report: static resident GiB, LRU GiB, hit rate, H2D bytes/token, miss-upload time, CPU-expert fallback time, TG/effective TG, PP, and peak VRAM. The hybrid only wins if decode improves without a worse pp/residency tradeoff than equal-VRAM alternatives.
+For each policy report static GiB, LRU GiB, aux GiB, route mass by tier, cache hit rate, H2D bytes/token, aux staged bytes/token, miss-upload ms/token, aux service/staging ms/token, CPU fallback ms/token, TG/effective TG, PP and peak VRAM. Include cold start, repeated warm requests and workload shift.
+
+Runtime gate for #29887: prove scheduler cache callbacks actually resolve/prepare entries under the production graph configuration; zero cache activity is a failed experiment, not a performance result.
 
 ## Effort & Risk
 
-Medium. Policy/tooling is low risk; asynchronous prefetch and demand LRU on discrete GPUs are higher risk because PCIe/host latency may not be hideable after routing is known. #29887 has strong NVIDIA evidence but no local AMD proof; transport is not promoted until gfx1100/gfx1201 measurements show useful hit latency.
+Medium policy/tooling risk; high runtime risk for asynchronous uploads and expert-granular aux execution. #29887 has strong NVIDIA decode evidence but no local AMD proof. 1328 is already the canonical aux transport/correctness owner and remains whole-layer until hardware evidence justifies finer granularity.
 
 ## Standards
 
-One canonical expert placement solver/store; policy/transport separation; generation-safe asynchronous work; reuse-before-fork; equal-VRAM comparisons; no-P2P-safe device ownership.
+One canonical placement/residency accounting surface; policy/transport separation; generation-safe async work; reuse upstream cache machinery before forking; equal-VRAM comparisons; no-P2P-safe device ownership; optimize critical-path service time/GiB rather than hit rate.
 
 ## Acceptance Criteria
 
 - Profiles cover >=4 workloads and decode/prefill routing.
 - Placement remains within measured VRAM/headroom budgets and target CPU route mass.
-- Warm-residency experiment proves whether cross-session stickiness reduces migrated bytes/stalls.
-- Prefetch is promoted only when route lead time can hide a material part of transfer latency.
-- #29887-style LRU, static MET, and hybrid are compared at equal expert-VRAM budgets on gfx1100/gfx1201.
-- A promoted LRU implementation reuses the canonical expert store/loader and creates no second cache allocator or placement solver.
-- Large-batch prompt-processing regressions are explicitly included in the decision; decode hit rate alone cannot promote the feature.
+- Static, LRU, hybrid and aux policies are compared at equal expert-VRAM budgets.
+- A promoted #29887-style cache reuses upstream scheduler/cache machinery and proves nonzero cache activity in production scheduler mode.
+- MET05/1328 remains the sole owner of ROCm3 aux execution/host staging; MET01 only supplies policy/placement.
+- Any expert-granular aux extension requires whole-layer 1328 evidence showing positive end-to-end service-time/GiB first.
+- Large-batch prompt regressions are included; decode hit rate alone cannot promote a feature.
+- Warm residency/prefetch is promoted only when migrated bytes or transfer stalls fall without material tail-latency regression.
 
 ## Notes
 
-Key number: CPU cost ~2 ms per CPU-active layer; P(layer touches CPU) = 1-(1-q)^10 for CPU route mass q. 1% CPU mass ~ +9 ms/token vs 23.3 ms/token MTP baseline. Route mass, not expert count, decides CPU cost. Prefill activates far more cold experts (512*10 selections/ubatch).
+Key CPU sensitivity: ~2 ms per CPU-active layer; with 10 selected experts, small CPU route mass can create large layer-touch probability. Route mass, not expert count, is the governing quantity.
 
-2026-10-02 first routing profile (flashnext-routing-4; Flash-Next UD-IQ4_XS, one XTX + routed experts on CPU, -sm none, because llama-debug's per-node callback asserts in the meta backend under -sm tensor; --tensor-filter exists only in llama-debug; ub 512). Single mixed prose+code prompt, 176,330 selections/layer (~17.6K tokens), prefill-only. Per layer: experts used mean 496/512 (min 293). Hottest 10/25/50% of experts cover 41.5/68.8/91.3% of picks (means). Coldest experts holding <= 0.25/0.5/1/2/5% of picks: mean 84/106/134/169/225 of 512 (min 39/54/72/95/130, max ~440 - skew varies a lot by layer). Experts needed for 50/80/90/95% of picks: mean 73/174/235/287. Implication: a <= 0.5% CPU route-mass budget puts only ~21% of routed experts (~20 GiB at Q6) in RAM; the other ~75 GiB of Q6 routed experts must sit on the four GPUs alongside ~10 GiB non-expert weights, 192K KV and the MTP draft - roughly the whole 96 GB of combined VRAM. Q6 at <= 0.5% CPU mass is at the edge; Q5_K or a 1-2% CPU budget is more realistic. Caveats: one prompt domain, prefill only (decode routing may be more skewed), IQ4_XS routing may differ slightly from Q6. Next: profile chat/long-context/MTP-generation workloads and decode-only routing.
+2026-10-02 first routing profile: Flash-Next UD-IQ4_XS, one XTX + routed experts on CPU, ub512, mixed prose+code prefill. Per layer mean 496/512 experts used; hottest 10/25/50% of experts cover 41.5/68.8/91.3% of picks. Experts needed for 50/80/90/95% picks: mean 73/174/235/287. A <=0.5% CPU route-mass budget is therefore tight at Q6 and motivates measured multi-tier residency rather than expert-count heuristics.
 
-External mechanism reference (verified 2026-10-04): DwarfStar keeps its resident SSD expert cache warm across sessions while resetting prompt-local eviction state and exposes expert look-ahead/prefetch hooks. BigCherry adopts only the residency/policy separation until discrete-GPU timing proves a transport worth implementing: https://github.com/antirez/ds4/blob/0aaea5a238fb41a35106a551e73c8409dfb751ac/ds4_gpu.h
-
-Upstream mechanism reference (verified 2026-10-04): https://github.com/ggml-org/llama.cpp/pull/29887 . It ports a qvac-fabric-style GPU LRU for host experts; cache is used only for batches <=32 in the submitted design and separate expert layouts use separate banks.
+External references verified 2026-10-05:
+- DwarfStar persistence/prefetch mechanism: https://github.com/antirez/ds4/blob/0aaea5a238fb41a35106a551e73c8409dfb751ac/ds4_gpu.h
+- llama.cpp #29887: https://github.com/ggml-org/llama.cpp/pull/29887 ; updated 2026-10-04T21:51Z, still open. Submitted implementation adds scheduler-level MoE cache callbacks, per-layout cache banks, selected-expert miss uploads and <=32-token gating.
+- llama.cpp release baseline visible 2026-10-05: b11396 (`2e7c58c`, released 2026-10-04 17:45 UTC). #29887 is newer/open work and must not be treated as released baseline behavior.
 
 ## Change Log
 
 - 2026-10-02T04:44:44.458623+00:00 (created-by): Created by agent
 - 2026-10-02T06:35:13.803287+00:00 (updated-by): Updated: section:notes
-- 2026-10-04T00:30:00+00:00 (agent): Consolidated DwarfStar warm-residency/prefetch policy into MET01 rather than creating another expert-cache plan.
-- 2026-10-04 (agent): Folded llama.cpp #29887 into MET01 as an equal-budget LRU/hybrid residency candidate; no new expert store or placement solver.
+- 2026-10-04: Consolidated DwarfStar persistence and llama.cpp #29887 into MET01.
+- 2026-10-05: Consolidated MET05 auxiliary residency with the canonical solver; added miss-cost-aware static/LRU/aux policy, scheduler-activation gate, and two-level tail experiment.
