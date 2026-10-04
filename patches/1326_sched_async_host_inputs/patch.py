@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -107,3 +107,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_SCHED_ASYNC_INPUTS', '0|1', '0',
+           'scheduler stages small host inputs asynchronously (capped 4 MiB)'),
+)

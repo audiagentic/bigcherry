@@ -69,9 +69,18 @@ Correction: 1237/1265/1253 are already in every Flash-Next build via the validat
 
 Replaces the earlier per-patch contract plan (estimated ~3 dev-days + ~2 GPU-days - rejected as too heavy). Existing evidence: v3/v4/v5 adoption ABBAs (flashnext-v2-fusion-ab-3, flashnext-v4-abba, flashnext-v5c-abba), 1312/1313/1326 screens with census/trace/timing evidence, offline tests for every patch. Correction: 1237/1265/1253 are already validated and in every build via validated-enhancements.
 
+Native baseline design (owner 2026-10-05: compare against something useful). Stock does run Flash-Next (flashnext-stock-1/3, 2026-10-02, old pin): -sm tensor -ts 4,4,3, MTP draft on the 6900, 8K decode 65-68 t/s, prefill ~950 t/s at ub512, 1139-1478 t/s at ub1024/2048 (short prompt); its largest load was 192K with q8 KV only. Native run must therefore be: (1) matched-workload speed at depths stock can load with f16 KV (8K, 64K), each side at its own best flags, same model/draft/prompts, greedy identity recorded; (2) a capability fit table (max ctx at f16 and q8 for stock vs v6). Report stock's larger-ubatch prefill advantage at short context honestly. Per-patch attribution still comes from incremental ABBAs; the native run is profile-level only.
+
+Owner 2026-10-05: keep a cumulative promoted base. Rule: the comparison point for a new patch is the current promoted base profile (ordered patch list + env + launch flags + pin), measured as base vs base+patch ABBA. Promotion adds the patch and creates the next profile (v6 -> v7). Evidence records the base id + pin; order dependence is accepted and documented, not re-measured. Earlier evidence stays valid for its base; if a new patch overlaps an earlier patch's code path, its ABBA shows the combined effect, and a leave-one-out (new base minus old patch) is run only if the result looks inconsistent. The native llama.cpp run is profile-level context once per pin bump, not a per-patch gate. Backlog order = profile entry order: v3/v4 fusions (1307-1313, 1308), v5 (1326), v6 (1327); enablers 1291/1292/1294/1297/1302/1303 were in the base from v1.
+
+Owner 2026-10-05: one build only - promote into [patch-set.validated-enhancements] (no separate flash-next patch-set). Env-gated (no-op unless set): 1297, 1303, 1307-1313, 1326, 1327. Ungated or default-sensitive, need a cross-model no-regression check: 1291 (AR CPU-root thresholds), 1292 (no gate), 1294 (verify default), 1302 (always on). Add to the promotion GPU session: one balanced ABBA on the dual-XTX 27B production baseline (validated-enhancements before vs after adding the Flash-Next set), decode + prefill, greedy identity.
+
 ## Change Log
 
 - 2026-10-04T07:54:10.353678+00:00 (created-by): Created by agent
 - 2026-10-04T07:55:43.580424+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T09:25:05.297276+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:notes
 - 2026-10-04T14:26:58.996448+00:00 (updated-by): Updated: work='S', section:steps
+- 2026-10-04T14:42:55.669115+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T14:44:53.920928+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T14:47:07.046673+00:00 (updated-by): Updated: section:notes

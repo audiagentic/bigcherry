@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -93,3 +93,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_DRAFT_TIMING', '0|1', '0',
+           'diagnostic: MTP draft step timing (with BIGCHERRY_SPEC_TIMING)'),
+)

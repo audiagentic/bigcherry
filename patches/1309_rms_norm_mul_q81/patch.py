@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -168,3 +168,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_RMS_Q81', '0|1', '0',
+           'fused RMS-norm*weight writes the Q8_1 activation directly (needs Q8_1 cache)'),
+)

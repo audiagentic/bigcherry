@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -60,3 +60,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_ROLLBACK_NO_CONT', '0|1', '0',
+           'Qwen4Exp speculative rollback copies state without an extra ggml_cont'),
+)

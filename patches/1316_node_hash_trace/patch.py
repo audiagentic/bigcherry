@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -139,3 +139,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_NODE_HASH', '<from>:<count>', 'unset',
+           'diagnostic: hash graph node outputs [from, from+count) to locate nondeterminism'),
+)

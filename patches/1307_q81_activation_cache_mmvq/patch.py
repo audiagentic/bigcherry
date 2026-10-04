@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -242,3 +242,10 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('GGML_HIP_Q8_1_CACHE_MODE', 'off|on|verify', 'off',
+           'reuse one Q8_1 quantization of an activation across MMVQ consumers (foundation 1235)'),
+    EnvDoc('BIGCHERRY_Q81_TRACE', 'set', 'unset',
+           'log Q8_1 cache hits/misses'),
+)

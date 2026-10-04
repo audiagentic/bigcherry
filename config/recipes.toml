@@ -30,6 +30,7 @@ patches = [
   "0600_mmvq_geometry",
   "0650_mmvq_native_variant",
   "0700_coverage_counters",
+  "0910_feature_sets",  # QFP18: BIGCHERRY_FEATURES sets + built-in flag help (framework, no-op unless set)
 ]
 required-state = "validated"
 
@@ -505,6 +506,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 [experiment.deploy-v5-plus-1327-aux6900]
 # MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap", "1328_aux_rocm_expert_backend"]
+
+[experiment.deploy-v6-alloc-peak]
+# QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap", "1329_alloc_top_trace", "1331_alloc_peak_live"]
 
 [experiment.deploy-v6-alloc-trace]
 # QFP17 chunked-scratch attribution: v6 (v5 + 1327) + 1329 (BIGCHERRY_ALLOC_TOP compute-buffer top tensors).
