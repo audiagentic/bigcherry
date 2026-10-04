@@ -15,115 +15,86 @@ work: M
 
 ## Description
 
-Run the correctness, concurrency and performance gates needed to promote or reject the pipeline on the real BigCherry Flash-Next setup. Promotion requires critical-path evidence, not merely successful ahead generation.
+Run correctness, scheduling and performance gates on the real BigCherry Flash-Next topology. Promotion requires target/MTP device overlap and critical-path reduction, not merely successful ahead generation.
 
 ## Steps
 
-1. Build paired arms from the same `patch-refactor` baseline/upstream pin:
-   - control: MTP, `mtp_ahead=0`;
-   - fixed ahead: FMTP04 with a fixed future-tail depth;
-   - adaptive ahead: FMTP05 policy.
-2. Hold constant model/sidecar metadata, target tensor split, KV types, ubatch/batch, MTP GPU, front draft depth, sampler settings and all unrelated BigCherry toggles.
-3. First qualification lane: `--parallel 1`, temperature 0, fixed front depth. Then repeat with 1268 adaptive front depth enabled.
-4. Run shallow and deep contexts representative of current Flash-Next profiling (roughly 8-10K and 65-80K), plus a long steady decode window.
-5. Prompt classes must include predictable code, structured/repetitive output, ordinary prose and deliberately low-acceptance output.
-6. Capture per round:
-   - generation tok/s and ms/generated token;
-   - front full-accept rate;
-   - bridge-match-given-full rate;
-   - ahead attempts/hits/flushes;
-   - ahead generated/promoted/flushed tokens;
-   - target verify time;
-   - front MTP draft time;
-   - ahead continuation time;
-   - `common_speculative_process()` replay/reseed time;
-   - join overhang;
-   - target wait attributable to MTP work;
-   - GPU utilization/power and a rocprof overlap timeline.
-7. Correctness gates:
-   - exact greedy target token IDs vs ahead-disabled control;
-   - no stale-publication acceptance;
-   - reset/stop/context-shift/checkpoint replay stress;
-   - long-run log/assert/memory-error scan.
-8. Compatibility matrix:
-   - 1268 adaptive depth off/on;
-   - 1308 rollback-no-cont off/on;
-   - QSA gather/other active Flash-Next recipe patches unchanged between arms.
-9. Regression controls:
-   - MTP ahead=0 must match current server behavior/performance;
-   - ordinary non-speculative `llama-bench` lane if common scheduler/server code changed;
-   - confirm 1293-style host-sync count is not being mistaken for performance evidence.
-10. Promote only from paired/ABBA evidence with activation markers and profiler proof of actual cross-device overlap.
+1. Build paired arms from one `patch-refactor` baseline:
+   - control: MTP, ahead=0;
+   - fixed ahead;
+   - adaptive ahead.
+2. Hold model/sidecar metadata, target split, KV types, batch/ubatch, MTP GPU, front depth, sampler and unrelated BigCherry toggles constant.
+3. First lane: `--parallel 1`, temperature 0, fixed front depth; then 1268 adaptive front depth.
+4. Test shallow ~8-10K and deep ~65-80K contexts plus long steady decode.
+5. Include code, structured/repetitive text, prose and deliberately low-acceptance output.
+6. Separate round classes in telemetry:
+   - cold/flush round with serial fresh front + live continuation;
+   - promoted-hit round with no serial fresh front + forced-front replay/continuation under target verification.
+7. Capture:
+   - tok/s and ms/generated token;
+   - full-front and bridge-match rates;
+   - promoted/flushed tokens;
+   - target `llama_process` submit host time;
+   - target device interval and final `llama_synchronize` wait;
+   - serial fresh-front draft time;
+   - promoted-front replay time;
+   - continuation time;
+   - total MTP overlap work and overhang;
+   - authoritative `common_speculative_process()` replay/reseed time;
+   - GPU utilization/power and rocprof timeline.
+8. Correctness: exact greedy target IDs vs control, no stale/frontier acceptance, reset/stop/context-shift/replay stress, long-run assert/memory scan.
+9. Compatibility: 1268 off/on; 1308 off/on; other Flash-Next recipe patches identical between arms.
+10. Promote only from paired/ABBA evidence with activation markers and profiler proof.
 
 ## Detailed Solution & Technical Design
 
-Primary derived metrics:
+Primary metrics:
 
 ```text
 pipeline_hit_rate = promoted_tails / ahead_attempts
-
 bridge_match_given_full = bridge_matches / full_front_accepts
-
-hidden_fraction =
-    1 - join_overhang_us / max(ahead_us, 1)
-
-critical_path_delta =
-    control_ms_per_generated_token - subject_ms_per_generated_token
+hidden_fraction = 1 - overhang_us / max(mtp_overlap_us, 1)
+critical_path_delta = control_ms_per_token - subject_ms_per_token
 ```
 
-Also report wasted speculative GPU work:
+For the worker-free design, verify directly:
 
 ```text
-waste_ratio = flushed_ahead_tokens / max(ahead_generated_tokens, 1)
+target submit
+  -> target kernels continue running
+  -> MTP replay/continuation kernels run on separate GPU
+  -> target sync waits only for remaining target work
 ```
 
-Waste is acceptable only when it remains hidden and does not create meaningful contention/power/thermal throttling. A high waste ratio with positive wall-clock value can still be rational on an otherwise idle separate card; the controller should nevertheless shut off if overhang/contention makes EV negative.
+A reduced target sync wait that matches the overlapped MTP interval is stronger evidence than a reduced host-sync count.
 
-### Initial promotion gate
+### Promotion gates
 
-Correctness/stability are absolute:
+Absolute:
 - zero greedy token divergence;
-- zero accepted stale result;
-- zero draft-context ownership race or lifecycle failure.
+- zero accepted stale/frontier-mismatched result;
+- zero draft-context lifetime/rollback failure;
+- ahead=0 unchanged.
 
 Performance:
-- paired CI must exclude material regression;
-- use >=3% median end-to-end gain as a useful first screening target, not a hard universal requirement;
-- final adoption can use the repository's standard improvement/no-regression contract if critical-path telemetry explains the effect;
-- ahead=0 and non-speculative controls must not regress >1% absent an explained measurement artifact.
-
-### Branch-specific interpretation
-
-`1293_sched_single_input_sync` reduced sync calls substantially with neutral ms/step. Therefore FMTP07 must show overlap/critical-path reduction directly. A lower sync count alone is not acceptance evidence.
-
-`1308_qwen4exp_rollback_copy_no_cont` has already demonstrated meaningful launch-count reduction. The pipeline should stack independently: measure both 1308 arms to ensure overlap benefit is not an artifact of one rollback implementation.
+- paired CI excludes material regression;
+- >=3% median gain is a useful first screen, not a universal threshold;
+- target submit/sync and profiler timeline explain the observed gain;
+- non-speculative controls do not regress >1% without an explained artifact.
 
 ### Failure interpretation
 
-- No visible GPU overlap: reject FMTP03 execution model before tuning controller.
-- Good overlap but frequent bridge mismatch: FMTP05 should usually turn ahead off; do not weaken bridge rule.
-- Good hit rate but slower target verify: diagnose PCIe/host/scheduler contention.
-- Ahead completes after target verify: reduce depth or reject on this MTP GPU.
-- Win only on predictable prompts: adaptive policy may still promote if mixed-workload tests prove fast disabling elsewhere.
-
-## Code Samples & Guidance
-
-Evidence summary should include a table per context class with:
-
-```text
-control t/s | fixed t/s | adaptive t/s | full% | bridge% | hit% |
-ahead us | verify us | overhang us | target-wait delta | correctness
-```
-
-Store full profiler artifacts separately; do not embed huge traces in plan notes.
+- `llama_process` does not leave target work in flight: reject worker-free FMTP03 before adding complexity; only then evaluate a worker fallback.
+- Promoted-front replay exceeds target verify window: reduce ahead depth or reject steady-state chaining.
+- High bridge mismatch: adaptive controller should turn off; never weaken bridge rule.
+- Good hit rate but worse target time: diagnose PCIe/host/thermal contention.
+- Win only on predictable prompts: adaptive mode may still qualify if probe/hysteresis behavior disables elsewhere.
 
 ## Files
 
-- `config/experiment-contracts.toml`
-- relevant model/recipe registry only if the exact Flash-Next lane is absent
-- validation producer/evidence artifacts
-- plan item notes/change log after hardware runs
-- `tools/lab/flash-next/*` helper scripts if needed
+- experiment contract/recipe evidence
+- `tools/lab/flash-next/*` helpers if needed
+- plan notes after hardware runs
 
 ## Validation
 
@@ -133,17 +104,13 @@ Before hardware:
 python docs/planning/active/patching-flash-next-mtp-pipeline/mock_pipeline.py
 ```
 
-Then repository-standard patch lint/rebase tests and paired hardware runner. Record exact BigCherry commit, llama.cpp pin, ROCm version, device IDs/topology, model + MTP sidecar identity and full server arguments.
-
-## Effort & Risk
-
-M / high operationally. The code can be correct while the optimization loses due to continuation overhang or shared host/PCIe contention.
+Then repository-standard patch lint/rebase tests and paired hardware runner. Record BigCherry commit, llama.cpp pin, ROCm version, device topology, model/MTP identity and full server args.
 
 ## Acceptance Criteria
 
-- Exact greedy target output vs ahead-disabled control.
-- Profiler visibly proves target/MTP concurrent kernel execution on separate devices.
-- Telemetry explains hit, flush, overhang and measured throughput delta.
-- Ahead=0 preserves current behavior.
-- 1268 and 1308 compatibility lanes pass.
-- Promote/reject decision is evidence-backed; feature remains default-off until this item passes.
+- Exact greedy output.
+- Profiler proves concurrent target/MTP kernels on disjoint devices.
+- Promoted rounds visibly use forced-front replay under the target window, not stale speculative KV.
+- Telemetry explains hit/flush/overhang and throughput delta.
+- Ahead=0, 1268 and 1308 compatibility lanes pass.
+- Default remains off until evidence supports promotion.
