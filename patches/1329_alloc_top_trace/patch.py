@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -114,3 +114,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_ALLOC_TOP', '<n>', '0 (off)',
+           'diagnostic: log the n largest compute-buffer tensors per reserved graph'),
+)

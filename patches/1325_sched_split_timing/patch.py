@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -63,3 +63,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_SCHED_SPLIT', '0|1', '0',
+           'diagnostic: scheduler per-split timing (with BIGCHERRY_SUBMIT_TIMING)'),
+)

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -89,3 +89,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_QSA_MASK_INPLACE', '0|1|2', '0',
+           'experimental: in-place QSA causal-mask add (2 = contiguous copy before FA, diagnostic)'),
+)

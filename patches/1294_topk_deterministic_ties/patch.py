@@ -16,7 +16,7 @@ BIGCHERRY_PATCH_HIT patch=1294_topk_deterministic_ties logs once under BIGCHERRY
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "evaluated"
@@ -168,3 +168,8 @@ TOPK = FilePatch(
 )
 
 PATCHES = [TOPK]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_TOPK_DETERMINISTIC', '0|1', '1 (on)',
+           'split-tensor top-k breaks score ties by index (deterministic); 0 disables'),
+)

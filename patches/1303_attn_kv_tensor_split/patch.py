@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -171,3 +171,10 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_ATTN_TS', '<w0>,<w1>,...', 'unset (follow -ts)',
+           'per-device split weights for attention/KV heads (0 = device holds no KV)'),
+    EnvDoc('BIGCHERRY_ATTN_ROTATE', '0|1', '1',
+           'rotate the attention split assignment across layers'),
+)

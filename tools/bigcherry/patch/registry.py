@@ -98,6 +98,8 @@ PATCH_TAGS: frozenset[str] = frozenset({
 })
 
 PATCH_TOML_SCHEMA = 1
+#: Patch whose ggml.c help table receives ENV_DOCS rows (see load_implementation).
+ENV_DOCS_PATCH_ID = "0910_feature_sets"
 REPRESENTATION_SIMPLE = "simple"
 REPRESENTATION_PACKAGED = "packaged"
 
@@ -905,4 +907,14 @@ def load_implementation(
         raise PatchRegistryError(
             f"{descriptor.patch_id} defines neither PATCH nor PATCHES"
         )
+    # ENV_DOCS: runtime flags the patch reads, compiled into the 0910 help table of the build that includes it.
+    # Added here (not in PATCHES) so per-file mechanics tests and rebase checks see only the patch's own edits.
+    env = getattr(module, "ENV_DOCS", None)
+    if env:
+        if ENV_DOCS_PATCH_ID not in descriptor.requires:
+            raise PatchRegistryError(
+                f"{descriptor.patch_id} defines ENV_DOCS but does not require {ENV_DOCS_PATCH_ID!r}"
+            )
+        from bigcherry.patch.apply import env_docs
+        return [*found, env_docs(descriptor.patch_id, tuple(env))]
     return list(found)

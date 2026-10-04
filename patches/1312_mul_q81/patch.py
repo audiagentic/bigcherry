@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -65,3 +65,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '0',
+           'also covers the elementwise MUL -> Q8_1 path (shared with 1310)'),
+)

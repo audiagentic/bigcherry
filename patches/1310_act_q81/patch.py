@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "untested"
@@ -198,3 +198,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '0',
+           'activation ops write the Q8_1 activation directly for the next MMVQ (needs Q8_1 cache)'),
+)

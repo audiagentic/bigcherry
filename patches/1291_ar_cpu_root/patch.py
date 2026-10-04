@@ -13,7 +13,7 @@ RCCL. BIGCHERRY_PATCH_HIT patch=1291_ar_cpu_root logs once under BIGCHERRY_PATCH
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "evaluated"
@@ -555,3 +555,12 @@ BENCH = FilePatch(
 )
 
 PATCHES = [CUDA, ARG, BENCH]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_AR_CPU_ROOT_MAX_BYTES', '<bytes>', '65536',
+           'all-reduce payloads up to this size use the CPU-root path'),
+    EnvDoc('BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES', '<bytes>', '0 (off)',
+           'opt-in chunked CPU-root all-reduce for larger payloads'),
+    EnvDoc('BIGCHERRY_AR_CPU_ROOT_CHUNK_BYTES', '<bytes>', '1048576',
+           'chunk size for the large CPU-root all-reduce'),
+)

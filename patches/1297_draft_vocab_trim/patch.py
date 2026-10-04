@@ -13,7 +13,7 @@ usual [n_vocab, n_out] logits. Unset (default): unchanged. A model with output_s
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "evaluated"
@@ -174,3 +174,8 @@ _MODEL = FilePatch(
 )
 
 PATCHES = [_CPARAMS, _CONTEXT_H, _CONTEXT_CPP, _MODEL]
+
+ENV_DOCS = (
+    EnvDoc('BIGCHERRY_DRAFT_VOCAB_N', '<n>', 'unset (full vocab)',
+           'MTP draft head computes logits for the first n vocab rows only'),
+)

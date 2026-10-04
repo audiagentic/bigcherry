@@ -478,3 +478,47 @@ def format_results(results: list[PatchResult]) -> str:
         for edit in result.failed:
             lines.append(f"           {edit.edit_id}: {edit.detail}")
     return "\n".join(lines)
+
+
+# ------------------------------------------------- runtime env-flag help (0910)
+#: Anchor that 0910_feature_sets places at the end of its env-doc table in ggml/src/ggml.c.
+ENV_DOC_TABLE_END = "    // bigcherry 0910: env doc table end\n"
+
+
+@dataclass(frozen=True)
+class EnvDoc:
+    """One runtime environment flag a patch reads, documented for the built binary's help."""
+
+    name: str
+    values: str
+    default: str
+    description: str
+
+
+def _c_string(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def env_docs(patch_id: str, docs: tuple[EnvDoc, ...]) -> FilePatch:
+    """Register *docs* in the 0910 env-doc table so ``BIGCHERRY_FEATURES=help`` lists them.
+
+    The patch that calls this must declare ``requires = ["0910_feature_sets"]``: the edit anchors on the table-end
+    marker that 0910 inserts, and fails closed when it is absent."""
+    if not docs:
+        raise ValueError(f"{patch_id}: env_docs needs at least one EnvDoc")
+    rows = "".join(
+        f"    {{ {_c_string(d.name)}, {_c_string(patch_id)}, {_c_string(d.values)}, {_c_string(d.default)}, "
+        f"{_c_string(d.description)} }},\n"
+        for d in docs
+    )
+    text = f"    // bigcherry env-doc {patch_id}\n" + rows
+    return FilePatch(
+        path="ggml/src/ggml.c",
+        description=f"{patch_id}: runtime env-flag help rows",
+        language="none",
+        edits=(
+            Edit(id=f"env-docs-{patch_id}", anchor=re.escape(ENV_DOC_TABLE_END), mode="insert_before", text=text,
+                 guard=re.escape(f"// bigcherry env-doc {patch_id}\n"),
+                 rationale="0910_feature_sets env-doc table end marker.", expect_matches=1, max_span_lines=2),
+        ),
+    )
