@@ -14,6 +14,9 @@ Kind: framework (no behaviour change unless `BIGCHERRY_FEATURES` is set).
 - `BIGCHERRY_FEATURES=<profile>[,<profile>...]` applies profiles. A profile lists `NAME = VALUE` flags and may include
   other profiles (`@name`). Explicit environment variables win. Application is all-or-nothing: unknown/duplicate
   profiles, include cycles, conflicting assignments and malformed lines apply nothing; a failed set rolls back.
+- `BIGCHERRY_FEATURES=auto` picks the profile by model architecture: when the first model loads
+  (`llama_model_create`, before its hyperparameters and tensors), the profile whose `arch =` list contains the GGUF
+  architecture is applied. Flags read before model load keep their values.
 - `BIGCHERRY_FEATURES=help` prints the loaded profiles and every runtime flag documented by the patches in this build
   (name, values, default, owning patch, description). The library never exits; llama-server maps help to exit 0 and
   errors to exit 2.
