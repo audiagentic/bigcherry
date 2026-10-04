@@ -511,6 +511,10 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 # FMTP03: v6 + 1321 (MTP forced front / live tail) + 1322 (ahead draft during target verify + promotion; BIGCHERRY_MTP_AHEAD=1).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap", "1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap"]
 
+[experiment.deploy-v6-plus-chunk]
+# QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap", "1331_alloc_peak_live", "1332_qsa_token_chunk"]
+
 [experiment.deploy-v6-alloc-peak]
 # QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1326_sched_async_host_inputs", "1327_qsa_host_remap", "1329_alloc_top_trace", "1331_alloc_peak_live"]

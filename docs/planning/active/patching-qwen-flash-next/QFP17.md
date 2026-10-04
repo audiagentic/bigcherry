@@ -103,6 +103,8 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 2026-10-05 upstream scan: llama.cpp #29901 was updated 2026-10-04 and adds 4-head key/token tiled lightning-indexer prefill; upstream reports 2.5x kernel speedup and 3867 -> 4038 t/s Qwen4Exp PP at 128K on RTX PRO 6000. Treat these NVIDIA numbers only as mechanism evidence; qualify HIP independently. Current release scan shows b11386 on 2026-10-04; #29943 selective expert-copy callback and #29927 AMD q1_0 byte permute belong to MET/PKC ownership and are not duplicated here.
 
+2026-10-05 live-at-peak attribution (1331, v6, 240K f16): main graph compute-buffer peak is at indexer_sel of the first QSA layer. ub1024: 1748 MiB live = attn_inp_kq_mask input 480 + mask_all REPEAT 484 + indexer_sel ADD 480 + kpool mask leaf 120 + ~180 other; ub512: 883 MiB (same three, halved). MoE/GDN intermediates are not at the peak. 1330 (in-place sel add) targeted the 480 ADD but the ub1024 reserve stayed 1560.72 MiB and greedy diverged (cause: in-place add or row padding, not the FA strided read); not adopted. Next: (1) peak trace with 1330 on to see where the peak moves; (2) token-chunked QSA mask/attention (build mask_all + sel per 256-token slice, FA per slice) to cut the 484+480 pair ~4x; (3) longer-term avoid the dense kq_mask input via the sparse FA path (compact mask / n_kv_max_query).
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -110,3 +112,9 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 - 2026-10-04T12:10:08.450336+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T13:00:59.838288+00:00 (updated-by): Updated: section:notes
 - 2026-10-05: Deepened QFP17 around QSA-only query tiling and added independent HIP qualification of upstream #29901.
+
+## Ledger-events
+
+- chg_20261004_161454_found-what-limits-the-larger-p_4462
+- 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
