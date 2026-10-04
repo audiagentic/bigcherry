@@ -1,6 +1,6 @@
 #!/bin/bash
 # QFP17/QFP22 1332: where does chunked prefill time go? rocprof kernel stats of one prefill fill (~32K tokens) for
-# ub512 unchunked, ub512 chunk256, ub1024 chunk256 (240K f16, flashnext profile), then kernel time grouped by family.
+# ub512 unchunked, ub512 chunk256, ub1024 chunk256, ub1024 chunk512 (240K f16, flashnext profile), then kernel time grouped by family.
 # Also: the no-MTP single-token decode crash case under GGML_SCHED_DEBUG_REALLOC=1 (graph realloc / topology changes).
 # Usage: chunk-prof.sh <llama-server> <out-root>
 set -u
@@ -8,7 +8,7 @@ bin=$1 root=$2
 s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
 export BIGCHERRY_FEATURES=flashnext CTX=245760 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 TS=0.31,0.27,0.42 EXTRA_OT='^token_embd\.weight$=CPU'
 export DEPTH=20480
-for arm in 512:0 512:256 1024:256; do
+for arm in 512:0 512:256 1024:256 1024:512; do
   ub=${arm%%:*} c=${arm##*:}
   BIGCHERRY_QSA_CHUNK=$c UB=$ub B=$ub bash "$s" "$bin" "$root/ub$ub-c$c" prefillprof 2>&1 | grep -E "^prefillprof:|SERVER_FAILED" | sed "s/^/ub$ub c$c: /"
 done
@@ -37,3 +37,8 @@ PY
 GGML_SCHED_DEBUG_REALLOC=1 NO_MTP=1 DECODE_N=8 DEPTH=24576 BIGCHERRY_QSA_CHUNK=256 UB=512 B=512 \
   bash "$s" "$bin" "$root/crash-realloc" timing 2>&1 | grep -E "^timing:|SERVER_FAILED" | sed "s/^/crash-case: /"
 grep -hiE "realloc|graph.*(nodes|leafs)|reserve" "$root/crash-realloc/timing.server.log" | tail -15 | sed "s/^/realloc: /"
+# correctness after the compact causal filter: no-MTP decode (the old crash case) and MTP serving identity, both chunk on/off
+here=$(cd "$(dirname "$0")" && pwd)
+bash "$here/chunk-nomtp.sh" "$bin" "$root/nomtp" 2>&1 | sed "s/^/nomtp: /"
+QUICK_DEPTH=24576 bash "$here/quick-ab.sh" "$bin" "$bin" "$root/mtp-d24k" BIGCHERRY_QSA_CHUNK=256 2>&1 | sed "s/^/mtp-d24k: /"
+md5sum "$root"/mtp-d24k/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c | sed "s/^/mtp-d24k greedy: /"
