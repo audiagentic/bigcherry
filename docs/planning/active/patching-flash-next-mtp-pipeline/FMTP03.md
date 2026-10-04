@@ -97,6 +97,10 @@ If MTP work fails, still synchronize target, then run existing rollback/reseed a
 
 Only revisit a worker if profiler evidence shows the production target backend completes/synchronizes inside `llama_process()` despite c061's async graph API, or if server queue semantics make the same-thread split impossible without unacceptable responsiveness regressions. Any worker design then needs a separate thread-safety proof.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 - `common/speculative.h/.cpp`
@@ -117,6 +121,14 @@ Hardware:
 - target sync wait shrinks by approximately the hidden MTP duration until overhang begins;
 - no cross-thread llama/backend calls exist in v1.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 - Real cross-device overlap without a worker thread.
@@ -124,3 +136,11 @@ Hardware:
 - Ahead failure is fail-open to ordinary target correctness.
 - Target/MTP overlap timing matches the `max(T_target, T_mtp)` model within profiler noise.
 - No ahead=0 behavior or performance regression outside measurement noise.
+
+## Notes
+
+Prep 2026-10-04 - code anchors (vendor/llama.cpp/tools/server/server-context.cpp): target decode ~L3681 queue_tasks.yield_to_queue([&]{ ret = llama_process(ctx_tgt, ...); if (ret == 0 && has_output) llama_synchronize(ctx_tgt); }) - the ahead call goes between process and synchronize inside the same yield; 1317 (spec round timing) already splits submit/sync timers here - compose with it. Speculative reseed after the decode: ~L3747 common_speculative_process(spec, batch.view). Gate 0 numbers: target sync wait 25.5 ms (10K) / 31.4 ms (80K) per round vs ahead work = continuation 4 steps (bridge + 3) ~2.1-2.9 ms/step on the 6900 = ~8.5-11.6 ms (fresh) or forced replay 3 + continuation 4 = ~15-20 ms (promoted) - both fit inside the sync window. The 6900 is otherwise idle during target verify. Patch number: 1322_mtp_ahead_overlap. Async proof (FMTP01 step 7) still to capture with rocprof in the first 1322 run.
+
+## Change Log
+
+- 2026-10-04T06:32:25.863452+00:00 (updated-by): Updated: section:notes

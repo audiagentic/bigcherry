@@ -84,6 +84,10 @@ Do not preserve the speculative KV by skipping rollback: authoritative replay/re
 
 A promoted tail may have been generated from recursively propagated draft hidden state and differ from what fresh target-seeded MTP would have sampled next round. Greedy correctness is still preserved because the target verifies every proposal. Forced replay uses the authoritative seed plus the promoted token values to reconstruct a valid live state for further proposals.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 - `tools/server/server-context.cpp`
@@ -105,6 +109,14 @@ Exhaustive/state tests:
 
 Greedy target IDs must match ahead-disabled control in every case.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 - No ahead token is emitted without target verification.
@@ -114,3 +126,11 @@ Greedy target IDs must match ahead-disabled control in every case.
 - Promoted fronts skip serial fresh drafting but are replayed through MTP under target verification before further ahead generation.
 - Existing checkpoint/replay remains authoritative.
 - 1308 off/on does not change token semantics or promotion predicates.
+
+## Notes
+
+Prep 2026-10-04 - code anchors (vendor/llama.cpp/tools/server/server-context.cpp): server_slot fields spec_draft (~L213) / spec_i_batch (~L215), cleared ~L342; verify batch built from spec_draft ~L477-511; pre_decode() ~L2907, drafting set + common_speculative_draft ~L3044 (skip for slots with a promoted front); accept path ~L3910-3966: common_sampler_sample_and_accept_n -> n_rollback -> common_speculative_accept(spec, slot.id, accepted.size()-1) -> slot.spec_draft = accepted - promotion predicate (full front + bridge == ids.back()) goes right after the accept. Patch number: 1323_mtp_ahead_promotion. FMTP05 controller: 1324_mtp_ahead_controller.
+
+## Change Log
+
+- 2026-10-04T06:32:31.159768+00:00 (updated-by): Updated: section:notes
