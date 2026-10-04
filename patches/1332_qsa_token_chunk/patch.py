@@ -83,8 +83,15 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
 
             const size_t row = m->nb[2];
             ggml_tensor * mv  = ggml_view_4d(ctx0, m, n_kv, nt, 1, 1, row, row*nt, row*nt, 0);
-            ggml_tensor * kqm = ggml_view_4d(ctx0, kq_mask, n_kv, nt, 1, 1, kq_mask->nb[1], kq_mask->nb[1]*nt,
-                    kq_mask->nb[1]*nt, (size_t) t0*kq_mask->nb[1]);
+            // one view of the kq_mask input per chunk for the whole graph: the meta backend materialises each view
+            // of an input as its own graph-lifetime copy, so per-layer views would multiply the mask (3 GiB at ub512)
+            const size_t ci = (size_t) (t0 / chunk);
+            if (bc_qsa_kq_chunks.size() <= ci) {
+                bc_qsa_kq_chunks.push_back(ggml_view_4d(ctx0, kq_mask, n_kv, nt, 1, 1, kq_mask->nb[1], kq_mask->nb[1]*nt,
+                        kq_mask->nb[1]*nt, (size_t) t0*kq_mask->nb[1]));
+            }
+            ggml_tensor * kqm = bc_qsa_kq_chunks[ci];
+            GGML_ASSERT(kqm->view_src == kq_mask && kqm->ne[1] == nt);
             ggml_tensor * mask = ggml_add(ctx0, mv, kqm);
             cb(mask, "kq_mask_qsa", il);
 
@@ -102,7 +109,24 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
     }
 """
 
+_A_HDR = ("        // dense self-attention over the cells the QSA mask keeps\n"
+          "        ggml_tensor * build_attn_qsa(\n")
+_N_HDR = ("        // bigcherry 1332: per-chunk views of the kq_mask input, shared by all QSA layers of this graph\n"
+          "        std::vector<ggml_tensor *> bc_qsa_kq_chunks;\n"
+          "\n"
+          + _A_HDR)
+
 PATCHES = [
+    FilePatch(
+        path="src/models/models.h",
+        description="1332: qwen4exp graph member for the shared per-chunk kq_mask views",
+        language="none",
+        edits=(
+            Edit(id="qsa-chunk-member", anchor=re.escape(_A_HDR), mode="replace", text=_N_HDR,
+                 guard=r"bigcherry 1332: per-chunk views of the kq_mask input", rationale="qwen4exp graph struct, before build_attn_qsa.",
+                 expect_matches=1, max_span_lines=3),
+        ),
+    ),
     FilePatch(
         path="src/models/qwen4exp.cpp",
         description="1332: QSA masks + flash attention per token chunk (BIGCHERRY_QSA_CHUNK=<tokens>)",

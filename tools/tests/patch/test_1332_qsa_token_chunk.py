@@ -15,6 +15,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
+_HDR = "src/models/models.h"
 
 
 def _load(pid: str):
@@ -34,6 +35,7 @@ class Patch1332Mechanics(unittest.TestCase):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
         shutil.copy2(_VENDOR, root / _REL)
+        shutil.copy2(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
         return root
 
     def test_apply_and_idempotent(self):
@@ -50,6 +52,10 @@ class Patch1332Mechanics(unittest.TestCase):
             self.assertIn("if (sel->type == GGML_TYPE_I32) {", attn)
             self.assertIn("ggml_tensor * mask = ggml_add(ctx0, mv, kqm);", attn)  # out of place, contiguous
             self.assertIn("cur = cur ? ggml_concat(ctx0, cur, oc, 1) : oc;", attn)
+            # one kq_mask view per chunk per graph (shared across QSA layers), held on the graph object
+            self.assertIn("ggml_tensor * kqm = bc_qsa_kq_chunks[ci];", attn)
+            h = (root / _HDR).read_text(encoding="utf-8")
+            self.assertLess(h.index("std::vector<ggml_tensor *> bc_qsa_kq_chunks;"), h.index("ggml_tensor * build_attn_qsa("))
             # cache store stays before attention; v rotation undo still applies to the concatenated output
             self.assertLess(attn.index("mctx_cur->cpy_v(ctx0, v_cur, v_idxs, il)"), attn.index("if (sel->type == GGML_TYPE_I32)"))
             self.assertLess(attn.index("ggml_concat(ctx0, cur, oc, 1)"), attn.index("cb(cur, \"kqv_out\", il);"))
