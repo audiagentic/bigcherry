@@ -66,6 +66,8 @@ Owner 2026-10-05: untested patches with potential are worth pursuing. 1286 (DFla
 
 Correction (owner challenge 2026-10-05): the DFlash 'keep MTP5' decision was premature - only a 1.6K prompt / 128-token decode was tested. Open: (1) long context - built-in MTP5 drafts on the XTX tensor-split pair (every draft token pays TP compute + AllReduces that grow with depth) while DFlash drafts on the otherwise idle R9700; compare DFlash Q4_K_M/Q8 n5-6 on the R9700 vs MTP5 at 16K and 64K depth, decode and prefill. (2) The -10% prefill likely comes from the draft model prefilling serially after the target; with the drafter on its own GPU it could overlap the target prefill - profile and fix. (3) Acceptance tuning (n6 already ties MTP5 at 44-49% vs 58%). (4) n10 must be rejected cleanly (block size), not crash. No decision until (1)-(2) are measured.
 
+2026-10-05 DFlash at depth (qfp21-dflash-depth, 27B Q8_0 dual-XTX tensor split, ub2048, 256 tokens; MTP5 first and last): 16K depth (13.0K tok): MTP5 71.9/72.3 t/s prefill 1375/1366; DFlash Q4_K_M n6 on R9700 72.4 (prefill 1251, -9%); Q8 n6 71.7 (1247) = tie. 64K depth (51.9K tok): MTP5 58.5/59.6 t/s prefill 1204/1204; DFlash Q4_K_M n6 64.0 (+8%), prefill 1142 (-5%), acceptance 187/402; Q8 n6 60.5 (+2%), 182/432. So DFlash wins decode at depth (MTP5 on the tensor-split pair degrades faster) and Q4_K_M beats Q8; prefill cost shrinks with depth. Single run per DFlash arm - repeat for magnitude. Next: overlap the draft prefill with the target prefill (drafter has its own GPU), n5/n6/n7 at 64K+, greedy identity check per depth, then a depth-aware choice in the [qwen27b] profile / launch config. 1295: default flipped to off + ENV_DOCS + guard bug fixed (re-apply duplicated the gather block) + tests; composes before 1332 (9cc84d31).
+
 ## Change Log
 
 - 2026-10-04T21:02:03.440345+00:00 (created-by): Created by agent
@@ -73,3 +75,4 @@ Correction (owner challenge 2026-10-05): the DFlash 'keep MTP5' decision was pre
 - 2026-10-04T21:52:02.541657+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T23:00:21.339102+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T23:01:31.187042+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T23:49:09.380343+00:00 (updated-by): Updated: section:notes
