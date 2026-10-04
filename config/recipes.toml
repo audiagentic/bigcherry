@@ -459,7 +459,7 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81"]
 
 [experiment.deploy-v3-plus-1312]
-# QFP13: profile v3 (v2 + 1307-1311) + 1312 (same-shape MUL emits Q8_1: attn output gate + GDN gated norm; BIGCHERRY_ACT_Q81=1).
+# QFP13: profile v3 (v2 + 1307-1311) + 1312 (fused UNARY*MUL gate emits Q8_1 via 1310: attn output gate + GDN gated norm; BIGCHERRY_ACT_Q81=1).
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81"]
 
 [experiment.ar-cpu-root-topk]
