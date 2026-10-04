@@ -91,6 +91,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 1312 recheck after the GDN flatten fix (flashnext-v3-1312c, build A/B v3 vs v3+1312): greedy IDENTICAL; ~24K 44.3 vs 44.8/44.9 ms/step, ~80K 51.0 vs 51.8/51.1 (0..-1%); quantize/token/XTX 45 -> 29.8 (cumulative from profile v2: 183 -> 30), kernels/token 1116 -> 1091 (R9700 1064 -> 1040). Adopt with 1313 (v3 + 1312 + 1313 expected ~1000 kernels/token) after a multi-request ABBA.
 
+2026-10-04 post-bump (pin 0504396) adjacent-pair census on v5+1327 (flashnext-census-1327, XTX0, per 1k kernels ~= per token): MMVF -> unary_op -> k_bin_bcast chains ~26/token (literal UNARY->binary after an f16 matvec; PRBE38 topology; fold into the MMVF epilogue, ~52 removable launches, ~1.5%); k_bin_bcast -> k_bin_bcast ~37/token (binary-op chains incl. the remaining #29819 remap arithmetic; fused binary-chain kernel, ~1%); cpy_scalar -> cpy_scalar ~34/token (runs of recurrent-state rollback copies after 1308; one batched copy kernel per layer, ~1%); quantize_q8_1 <-> mul_mat_vec_q_moe ~15/token (routed-expert path not covered by the Q8_1 cache); bc_cpu_root produce -> consume ~29/token (1314 parked). Kernels/token: old pin ~1000, new pin 1053, + 1327 1027. Next: identify the exact graph ops of the MMVF->UNARY->BINARY chain (likely GDN alpha/beta gating) and implement the epilogue fusion first.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -189,3 +191,4 @@ Out of scope for QFP13 implementation ownership:
 - 2026-10-04T04:00:41.792844+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T04:18:25.310777+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T04:47:25.709859+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T11:26:49.575199+00:00 (updated-by): Updated: section:notes
