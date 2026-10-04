@@ -186,13 +186,21 @@ def resolve_runtime_artifacts(
     # *.so*, so a stale ggml-hip.dll with an unchanged launcher would not
     # have invalidated reuse on Windows at all. *.dylib included for
     # completeness though there is no macOS HIP path today.
-    for pattern in ("*.so*", "*.dll", "*.dylib"):
+    # QFP23: the runtime profile folder (profile/*.ini, 0910) ships next to the binaries and changes runtime behaviour,
+    # so it is part of the bundle identity too.
+    for pattern in ("*.so*", "*.dll", "*.dylib", "profile/*.ini"):
         for candidate in sorted(directory.glob(pattern)):
             if candidate.is_file() and not candidate.is_symlink() and candidate not in seen:
                 artifacts.append(candidate)
                 seen.add(candidate)
 
     return tuple(artifacts)
+
+
+def runtime_artifact_key(binary: Path, artifact: Path) -> str:
+    """Bundle key of a runtime artifact: its path relative to the binary's folder (``libggml.so``,
+    ``profile/base.ini``), so files in subfolders cannot collide with top-level ones."""
+    return artifact.relative_to(binary.parent).as_posix()
 
 
 def runtime_bundle_hash(artifacts: dict[str, str]) -> str:
@@ -811,7 +819,7 @@ def capture_completed_build_evidence(
     )
 
     runtime_artifacts = {
-        artifact.name: binary_hash(artifact)
+        runtime_artifact_key(binary, artifact): binary_hash(artifact)
         for artifact in resolve_runtime_artifacts(binary, extra_binaries=extra_binaries)
     }
 

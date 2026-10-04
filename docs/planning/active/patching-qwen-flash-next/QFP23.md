@@ -61,6 +61,9 @@ Offline: validator rejects bad files; C loader unit tests (file parse, flatten, 
 
 What stays in code: behaviour that is part of one model's own code path (qwen4exp.cpp patches, 1303 refusing non-qwen4exp) - code semantics, not tunables.
 
+Owner 2026-10-05 (two directions): (1) profile files must live in a folder relative to the final release - we still ship a releasable package; (2) incorporate per-model tuning. Release layout: canonical source in the overlay src/bigcherry-profiles/ (part of source identity), CMake copies it next to the binaries as bin/bigcherry-profiles.ini (+ install rule), resolve_runtime_artifacts includes it in the runtime bundle hash, the C loader finds it relative to libggml-base (dladdr / GetModuleHandleEx) with BIGCHERRY_PROFILES=<file> override. Per-model tuning: model profiles ([flashnext], [qwen27b], ...) with arch = <gguf arch>; BIGCHERRY_FEATURES=auto picks by architecture after model load (only lazily-read flags; ENV_DOCS records read time); a per-model sweep harness (tools/lab/tune-profile) sweeps each patch's knobs per model (1301 MAXCOLS, 1295 GATHER_MIN, DFlash n_max/placement, AR thresholds, QSA_CHUNK, ATTN_TS/FFN_TS) and writes the winners into that model's profile section with the evidence run id in a comment. First data: 1301 width sweep + DFlash sweep -> [qwen27b].
+
 ## Change Log
 
 - 2026-10-04T22:01:19.661087+00:00 (created-by): Created by agent
+- 2026-10-04T22:04:04.431702+00:00 (updated-by): Updated: section:notes

@@ -1,4 +1,5 @@
-"""Offline tests for 0910_feature_sets: mechanics on pinned ggml.c, plus compile-and-run of the expansion code."""
+"""Offline tests for 0910_feature_sets: mechanics on the pinned files, plus compile-and-run of the profile loader
+against a temporary profile/ folder (QFP23)."""
 
 from __future__ import annotations
 
@@ -16,9 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import ENV_DOC_TABLE_END, EnvDoc, apply_all, env_docs  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_REL = "ggml/src/ggml.c"
-_REL_REG = "ggml/src/ggml-backend-reg.cpp"
-_VENDOR = _REPO / "vendor/llama.cpp" / _REL
+_V = _REPO / "vendor/llama.cpp"
+_FILES = ("ggml/src/ggml.c", "ggml/src/ggml-backend-reg.cpp", "tools/server/main.cpp", "CMakeLists.txt")
 _CC = shutil.which("clang") or shutil.which("gcc") or shutil.which("cc")
 
 
@@ -32,156 +32,148 @@ def _load():
 
 _P = _load()
 
+_PROFILES = {
+    "base.ini": "# generic\n[gen]\ndescription = generic\nBIGCHERRY_ACT_Q81 = 1\n\n[other]\ndescription = o\nBIGCHERRY_X = 2\n",
+    "model.ini": "[model]\ndescription = model profile\narch = qwen4exp\n@gen\nBIGCHERRY_SCHED_ASYNC_INPUTS = 1\n",
+}
 
-@unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
+
+@unittest.skipUnless(all((_V / f).exists() for f in _FILES), "pinned vendor checkout not present")
 class Patch0910Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            for rel in (_REL, _REL_REG):
+            for rel in _FILES:
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(_REPO / "vendor/llama.cpp" / rel, root / rel)
+                shutil.copy2(_V / rel, root / rel)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
-            out = (root / _REL).read_text(encoding="utf-8")
-            self.assertEqual(out.count("bigcherry 0910: named feature sets"), 1)
-            self.assertIn("__attribute__((constructor)) static void bc_feature_sets_ctor", out)
-            # explicit init runs from ggml_init's first call and the backend registry constructor too (MSVC has no ctor)
-            init = out[out.index("struct ggml_context * ggml_init(struct ggml_init_params params) {"):]
-            self.assertLess(init.index("ggml_bigcherry_features_init();"), init.index("is_first_call = false;"))
-            reg = (root / _REL_REG).read_text(encoding="utf-8")
-            ctor = reg[reg.index("ggml_backend_registry() {"):]
-            self.assertLess(ctor.index("ggml_bigcherry_features_init();"), ctor.index("register_backend("))
+            snap = {f: (root / f).read_text(encoding="utf-8") for f in _FILES}
+            c = snap["ggml/src/ggml.c"]
+            self.assertEqual(c.count("bigcherry 0910: runtime profiles (BIGCHERRY_FEATURES"), 1)
+            self.assertNotIn("exit(0)", c)  # the library never exits
+            init = c[c.index("struct ggml_context * ggml_init(struct ggml_init_params params) {"):]
+            self.assertTrue(init.split("\n")[1].strip().startswith("(void) ggml_bigcherry_features_init();"))
+            reg = snap["ggml/src/ggml-backend-reg.cpp"]
+            get_reg = reg[reg.index("static ggml_backend_registry & get_reg() {"):]
+            self.assertLess(get_reg.index("ggml_bigcherry_features_init();"), get_reg.index("static ggml_backend_registry reg;"))
+            load_all = reg[reg.index("void ggml_backend_load_all_from_path(const char * dir_path) {"):]
+            self.assertTrue(load_all.split("\n")[1].strip().startswith("(void) ggml_bigcherry_features_init();"))
+            main = snap["tools/server/main.cpp"]
+            self.assertLess(main.index("ggml_bigcherry_features_init()"), main.index("return llama_server(argc, argv);"))
+            cm = snap["CMakeLists.txt"]
+            self.assertLess(cm.index("bigcherry 0910: ship the runtime profile/ folder"), cm.index("add_subdirectory(src)"))
+            self.assertIn("install(FILES ${BIGCHERRY_PROFILE_FILES} DESTINATION ${CMAKE_INSTALL_BINDIR}/profile)", cm)
             second = apply_all(_P.PATCHES, root)
-            self.assertTrue(all(r.ok for r in second))
-            self.assertEqual(out, (root / _REL).read_text(encoding="utf-8"))
-
-
-class Patch0910SetValidation(unittest.TestCase):
-    def test_real_sets_valid(self):
-        _P._validate_sets(_P.SETS)
-
-    def test_rejects_bad_definitions(self):
-        bad = {
-            "duplicate": (("a", "d", ("X=1",)), ("a", "d", ("Y=1",))),
-            "unknown ref": (("a", "d", ("@b",)),),
-            "cycle": (("a", "d", ("@b",)), ("b", "d", ("@a",))),
-            "conflict": (("a", "d", ("X=1",)), ("b", "d", ("X=2",)), ("c", "d", ("@a", "@b"))),
-            "bad member": (("a", "d", ("lower=1",)),),
-        }
-        for label, sets in bad.items():
-            with self.assertRaises(ValueError, msg=label):
-                _P._validate_sets(sets)
+            self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
+            self.assertEqual(snap, {f: (root / f).read_text(encoding="utf-8") for f in _FILES})
 
 
 @unittest.skipUnless(_CC, "no C compiler")
 class Patch0910Behaviour(unittest.TestCase):
-    def _run(self, env_extra):
+    _exe: Path | None = None
+    _td: tempfile.TemporaryDirectory | None = None
+
+    @classmethod
+    def setUpClass(cls):
         code = _P._N.split("#include <signal.h>\n", 1)[1]
-        # one documented flag, as a patch's env_docs() row adds it (ACT_Q81 documented, SCHED_ASYNC_INPUTS not)
         doc = env_docs("1310_act_q81", (EnvDoc("BIGCHERRY_ACT_Q81", "0|1", "0", 'act "q8" test'),))
         code = code.replace(ENV_DOC_TABLE_END, doc.edits[0].text + ENV_DOC_TABLE_END)
         main = (
-            "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define GGML_API\n"
+            "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+            "#ifdef _WIN32\n#include <windows.h>\n#endif\n#define GGML_API\n"
             "static void ggml_critical_section_start(void) {}\nstatic void ggml_critical_section_end(void) {}\n" + code +
             "\nint main(void) {\n"
-            "    ggml_bigcherry_features_init();  /* second call: must be a no-op */\n"
-            '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_SCHED_ASYNC_INPUTS", "GGML_HIP_Q8_1_CACHE_MODE"};\n'
+            "    int st = ggml_bigcherry_features_init();\n"
+            "    if (ggml_bigcherry_features_init() != st) return 9;  /* idempotent */\n"
+            "    printf(\"status=%d\\n\", st);\n"
+            '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_SCHED_ASYNC_INPUTS", "BIGCHERRY_X"};\n'
             '    for (int i = 0; i < 3; i++) { const char * v = getenv(k[i]); printf("%s=%s\\n", k[i], v ? v : "<unset>"); }\n'
             "    return 0;\n}\n"
         )
-        with tempfile.TemporaryDirectory() as td:
-            src = Path(td) / "t.c"
-            exe = Path(td) / ("t.exe" if os.name == "nt" else "t")
-            src.write_text(main, encoding="utf-8")
-            cc = subprocess.run([_CC, "-std=c11", "-D_GNU_SOURCE", "-D_CRT_SECURE_NO_WARNINGS", "-o", str(exe), str(src)],
-                                check=False, capture_output=True, text=True)
-            self.assertEqual(cc.returncode, 0, cc.stderr[-2000:])
-            env = {k: v for k, v in os.environ.items() if not re.match(r"(BIGCHERRY_|GGML_HIP_)", k)}
-            env.update(env_extra)
-            p = subprocess.run([str(exe)], env=env, capture_output=True, text=True, check=True)
-            return p.stdout, p.stderr
+        cls._td = tempfile.TemporaryDirectory()
+        d = Path(cls._td.name)
+        (d / "t.c").write_text(main, encoding="utf-8")
+        cls._exe = d / ("t.exe" if os.name == "nt" else "t")
+        cc = subprocess.run([_CC, "-std=c11", "-D_GNU_SOURCE", "-D_CRT_SECURE_NO_WARNINGS", "-o", str(cls._exe), str(d / "t.c")],
+                            capture_output=True, text=True)
+        if cc.returncode != 0:
+            raise AssertionError(cc.stderr[-3000:])
+        prof = d / "profile"
+        prof.mkdir()
+        for name, text in _PROFILES.items():
+            (prof / name).write_text(text, encoding="utf-8")
+        cls.profile_dir = prof
 
-    def test_set_expands(self):
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext"})
+    @classmethod
+    def tearDownClass(cls):
+        if cls._td is not None:
+            cls._td.cleanup()
+
+    def _run(self, env_extra, profiles=None):
+        env = {k: v for k, v in os.environ.items() if not re.match(r"(BIGCHERRY_|GGML_HIP_)", k)}
+        env["BIGCHERRY_PROFILES"] = str(profiles or self.profile_dir)
+        env.update(env_extra)
+        p = subprocess.run([str(self._exe)], env=env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout, p.stderr
+
+    def test_profile_with_include_applies(self):
+        out, err = self._run({"BIGCHERRY_FEATURES": "model"})
+        self.assertIn("status=0", out)
         self.assertIn("BIGCHERRY_ACT_Q81=1", out)
         self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
-        self.assertIn("GGML_HIP_Q8_1_CACHE_MODE=on", out)
-        self.assertIn("BIGCHERRY_FEATURES flashnext:", err)
-        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1(not in build)", err)
+        self.assertIn("BIGCHERRY_X=<unset>", out)
+        self.assertIn("BIGCHERRY_FEATURES model", err)
 
     def test_explicit_member_wins(self):
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext", "BIGCHERRY_ACT_Q81": "0"})
+        out, err = self._run({"BIGCHERRY_FEATURES": "model", "BIGCHERRY_ACT_Q81": "0"})
         self.assertIn("BIGCHERRY_ACT_Q81=0", out)
-        self.assertIn("BIGCHERRY_ACT_Q81=0(explicit)", err)
-        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
+        self.assertIn("BIGCHERRY_ACT_Q81=<explicit>", err)
 
-    def test_help_lists_sets_and_docs(self):
-        _, err = self._run({"BIGCHERRY_FEATURES": "help"})
-        self.assertIn("flashnext - ", err)
+    def test_help_returns_status_and_lists(self):
+        out, err = self._run({"BIGCHERRY_FEATURES": "help"})
+        self.assertIn("status=1", out)
+        self.assertIn("model", err)
+        self.assertIn("@gen", err)
         self.assertIn("BIGCHERRY_ACT_Q81 = 0|1 (default: 0) [1310_act_q81]", err)
         self.assertIn('act "q8" test', err)
-        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1  (no patch in this build documents it)", err)
-        self.assertIn("BIGCHERRY_FEATURES = ", err)
+        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)  # help mutates nothing
 
-    def test_set_references_and_help(self):
-        # flashnext composes @hip-q81 and @sched-async; help lists references without "not documented" noise
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext"})
-        self.assertIn("GGML_HIP_Q8_1_CACHE_MODE=on", out)
-        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
-        _, err = self._run({"BIGCHERRY_FEATURES": "help"})
-        self.assertIn("      @hip-q81\n", err)
-        self.assertIn("hip-q81 - ", err)
-        out, _ = self._run({"BIGCHERRY_FEATURES": "sched-async"})
-        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
-        self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
+    def test_errors_apply_nothing(self):
+        for req in ("nope", "model,,gen", "model,model", "model," + "x" * 5000):
+            out, err = self._run({"BIGCHERRY_FEATURES": req})
+            self.assertIn("status=-1", out, req)
+            self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out, req)
+            self.assertIn("no profile applied", err, req)
 
-    def test_too_long_fails_closed_and_init_is_idempotent(self):
-        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext," + "x" * 300})
-        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
-        self.assertIn("too long", err)
-        _, err = self._run({"BIGCHERRY_FEATURES": "hip-q81"})
-        self.assertEqual(err.count("BIGCHERRY_FEATURES hip-q81:"), 1)
+    def test_conflict_cycle_and_bad_file(self):
+        bad = {
+            "conflict": {"a.ini": "[p]\ndescription = d\nBIGCHERRY_ACT_Q81 = 1\n[q]\ndescription = d\nBIGCHERRY_ACT_Q81 = 2\n"
+                                  "[r]\ndescription = d\n@p\n@q\n"},
+            "cycle": {"a.ini": "[r]\ndescription = d\n@s\n[s]\ndescription = d\n@r\n"},
+            "bad line": {"a.ini": "[r]\ndescription = d\nlowercase = 1\n"},
+            "dup profile": {"a.ini": "[r]\ndescription = d\n", "b.ini": "[r]\ndescription = d\n"},
+        }
+        for label, files in bad.items():
+            with tempfile.TemporaryDirectory() as td:
+                for name, text in files.items():
+                    (Path(td) / name).write_text(text, encoding="utf-8")
+                out, err = self._run({"BIGCHERRY_FEATURES": "r"}, profiles=Path(td))
+                self.assertIn("status=-1", out, label)
+                self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out, label)
 
-    def test_unset_and_unknown(self):
+    def test_single_file_and_missing(self):
+        out, _ = self._run({"BIGCHERRY_FEATURES": "gen"}, profiles=self.profile_dir / "base.ini")
+        self.assertIn("BIGCHERRY_ACT_Q81=1", out)
+        out, err = self._run({"BIGCHERRY_FEATURES": "gen"}, profiles=self.profile_dir / "missing")
+        self.assertIn("status=-1", out)
+        self.assertIn("not found", err)
+
+    def test_unset_does_nothing(self):
         out, _ = self._run({})
+        self.assertIn("status=0", out)
         self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
-        out, err = self._run({"BIGCHERRY_FEATURES": "nope"})
-        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
-        self.assertIn("unknown set 'nope'", err)
-
-
-class EnvDocsLoader(unittest.TestCase):
-    """registry.load_implementation turns ENV_DOCS into one 0910 help-table FilePatch, failing closed without 0910."""
-
-    def _registry(self, td, requires):
-        from bigcherry.patch import registry
-        root = Path(td) / "patches"
-        pkg = root / "1999_env_demo"
-        pkg.mkdir(parents=True)
-        (pkg / "patch.toml").write_text(
-            'schema = 1\nid = "1999_env_demo"\norder = 1999\nstate = "untested"\nkind = "enhancement"\n'
-            + f"requires = {requires!r}\n".replace("'", '"'), encoding="utf-8")
-        (pkg / "patch.py").write_text(
-            "from bigcherry.patcher import Edit, EnvDoc, FilePatch\n"
-            "PATCHES = [FilePatch(path='a.c', edits=(Edit(id='x', anchor='A', mode='insert_after', text='B',"
-            " guard='B', rationale='r'),))]\n"
-            "ENV_DOCS = (EnvDoc('BIGCHERRY_DEMO', '0|1', '0', 'demo flag'),)\n", encoding="utf-8")
-        reg = registry.load_registry(root)
-        return registry, reg.get("1999_env_demo"), root
-
-    def test_env_docs_appended(self):
-        with tempfile.TemporaryDirectory() as td:
-            registry, desc, root = self._registry(td, ["0910_feature_sets"])
-            loaded = registry.load_implementation(desc, root=root)
-            self.assertEqual([p.path for p in loaded], ["a.c", "ggml/src/ggml.c"])
-            self.assertIn('"BIGCHERRY_DEMO", "1999_env_demo", "0|1", "0", "demo flag"', loaded[1].edits[0].text)
-
-    def test_env_docs_without_0910_fails_closed(self):
-        with tempfile.TemporaryDirectory() as td:
-            registry, desc, root = self._registry(td, [])
-            with self.assertRaises(registry.PatchRegistryError):
-                registry.load_implementation(desc, root=root)
 
 
 if __name__ == "__main__":

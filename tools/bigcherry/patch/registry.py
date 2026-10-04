@@ -850,12 +850,13 @@ def _validate_packaged_imports(source: str, descriptor: PatchDescriptor) -> None
                 )
 
 
-def load_implementation(
+def _exec_implementation(
     descriptor: PatchDescriptor,
     *,
     root: Path | None = None,
     expected_digest: str | None = None,
-) -> list[FilePatch]:
+) -> ModuleType:
+    """Digest-check and execute a patch implementation in a synthetic module (see load_implementation)."""
     """Load a patch's production implementation (runbook 12/13), for EITHER
     representation: read current bytes, compile directly, execute in a
     synthetic module, extract ``PATCH``/``PATCHES``.
@@ -899,6 +900,25 @@ def load_implementation(
     # Register before exec so a legacy patch module may import its siblings.
     sys.modules[name] = module
     exec(code, module.__dict__)
+    return module
+
+
+def load_env_docs(descriptor: PatchDescriptor, *, root: Path | None = None) -> tuple:
+    """The patch's ENV_DOCS (runtime flags it reads), or an empty tuple."""
+    return tuple(getattr(_exec_implementation(descriptor, root=root), "ENV_DOCS", None) or ())
+
+
+def load_implementation(
+    descriptor: PatchDescriptor,
+    *,
+    root: Path | None = None,
+    expected_digest: str | None = None,
+) -> list[FilePatch]:
+    """Load a patch's production implementation (runbook 12/13), for EITHER
+    representation: read current bytes, compile directly, execute in a
+    synthetic module, extract ``PATCH``/``PATCHES`` (plus ENV_DOCS help rows).
+    Execution and its fail-closed digest/import checks live in _exec_implementation."""
+    module = _exec_implementation(descriptor, root=root, expected_digest=expected_digest)
     found = getattr(module, "PATCHES", None)
     if found is None:
         single = getattr(module, "PATCH", None)

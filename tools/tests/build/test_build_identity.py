@@ -107,6 +107,27 @@ class RuntimeBundleTests(unittest.TestCase):
 
             self.assertEqual(set(artifacts), {binary, hip_so, extra})
 
+    def test_runtime_profiles_are_part_of_the_bundle(self):
+        # QFP23: the profile/ folder ships next to the binaries and changes runtime behaviour, so it is in the
+        # bundle identity, keyed by its path relative to the binary's folder.
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory) / "bin"
+            (bin_dir / "profile").mkdir(parents=True)
+            binary = bin_dir / "llama-server"
+            binary.write_bytes(b"launcher")
+            prof = bin_dir / "profile" / "base.ini"
+            prof.write_text("[p]\ndescription = d\n", encoding="utf-8")
+            (bin_dir / "profile" / "notes.txt").write_text("not a profile", encoding="utf-8")
+
+            artifacts = resolve_runtime_artifacts(binary)
+
+            self.assertEqual(set(artifacts), {binary, prof})
+            self.assertEqual(builds.runtime_artifact_key(binary, prof), "profile/base.ini")
+            before = builds.runtime_bundle_hash({builds.runtime_artifact_key(binary, a): builds.binary_hash(a) for a in artifacts})
+            prof.write_text("[p]\ndescription = changed\n", encoding="utf-8")
+            after = builds.runtime_bundle_hash({builds.runtime_artifact_key(binary, a): builds.binary_hash(a) for a in artifacts})
+            self.assertNotEqual(before, after)
+
     def test_runtime_bundle_hash_changes_when_any_dependent_library_changes(self):
         # The exact gpt-auto-agent finding: a reuse check based only on the
         # requested launcher's hash could accept a cache hit even though

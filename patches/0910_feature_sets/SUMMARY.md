@@ -1,31 +1,34 @@
 # 0910_feature_sets
 
 **Status:** validated
-**Plan item:** QFP18
-Kind: framework (no behaviour change unless `BIGCHERRY_FEATURES` is set). Applied once by `ggml_bigcherry_features_init()`, called from `ggml_init`, the backend registry constructor and (GCC/Clang) a load-time constructor, so MSVC builds apply sets too; an overlong request is ignored entirely; set definitions are validated (duplicates, unknown @refs, cycles, conflicting assignments) when the patch loads.
+**Plan item:** QFP18/QFP23
+
+Kind: framework (no behaviour change unless `BIGCHERRY_FEATURES` is set).
 
 ## What it does
 
-- `BIGCHERRY_FEATURES=<set>[,<set>...]` enables a named profile of runtime switches with one flag. A load-time
-  constructor in ggml.c expands each set before any backend or model code reads its flags. Explicitly set member
-  variables win, so dev A/B runs can still turn one member off (e.g. `BIGCHERRY_ACT_Q81=0`). The expansion is logged
-  once to stderr (`BIGCHERRY_FEATURES <set>: NAME=VALUE ...`) as activation evidence.
-- `BIGCHERRY_FEATURES=help` (or `list`) prints every feature set and every runtime flag documented by the patches in
-  this build (name, values, default, owning patch, description), then exits:
+- **Runtime profiles from config files.** Model- and scope-specific runtime settings live in `profile/*.ini`, not in
+  patch code. The canonical copy is the source overlay's `src/profile/`; the build copies the folder next to the
+  binaries (`bin/profile/`, part of the runtime bundle hash) and installs it with them. The loader finds it relative to
+  `libggml-base`; `BIGCHERRY_PROFILES=<folder|file>` overrides.
+- `BIGCHERRY_FEATURES=<profile>[,<profile>...]` applies profiles. A profile lists `NAME = VALUE` flags and may include
+  other profiles (`@name`). Explicit environment variables win. Application is all-or-nothing: unknown/duplicate
+  profiles, include cycles, conflicting assignments and malformed lines apply nothing; a failed set rolls back.
+- `BIGCHERRY_FEATURES=help` prints the loaded profiles and every runtime flag documented by the patches in this build
+  (name, values, default, owning patch, description). The library never exits; llama-server maps help to exit 0 and
+  errors to exit 2.
+- `ggml_bigcherry_features_init()` is idempotent and runs before any flag is read: `ggml_init`, `get_reg()` before
+  the backend registry is constructed, `ggml_backend_load_all_from_path` before backends are dlopened, llama-server's
+  `main`, and a GCC/Clang load-time constructor. Works on MSVC through the explicit hooks.
 
-      BIGCHERRY_FEATURES=help ./llama-server
+## Profiles shipped (src/profile/)
 
-## Sets
+| File | Profiles |
+|---|---|
+| `base.ini` | `hip-q81` (HIP MMVQ Q8_1 activation path, any quantized model), `sched-async` (scheduler, multi-backend runs) |
+| `flashnext.ini` | `flashnext` (Qwen3.8 Flash-Next on 2x XTX + R9700 + 6900 drafter: `@hip-q81 @sched-async` + placement) |
 
-Sets are named by what they act on, not by the model they were tuned on. A member is `NAME=VALUE` or `@other-set`.
-
-| Set | Members | Scope |
-|---|---|---|
-| `hip-q81` | `GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1` | HIP MMVQ decode, any quantized model (HC pre-mix only acts on hyper-connection models) |
-| `sched-async` | `BIGCHERRY_SCHED_ASYNC_INPUTS=1` | scheduler, multi-backend / tensor-split runs |
-| `flashnext` | `@hip-q81 @sched-async` | Qwen3.8 Flash-Next production profile; its Qwen4Exp-only patches (1308, 1327) are on by default |
-
-Placement settings with real values (`BIGCHERRY_ATTN_TS`, `BIGCHERRY_DRAFT_VOCAB_N`) stay separate flags.
+Tuned per-model values go into the model's profile file with the evidence run in a comment.
 
 ## Documenting a flag (patch authors)
 
@@ -38,8 +41,6 @@ ENV_DOCS = (
 )
 ```
 
-The patch loader (`registry.load_implementation`) turns `ENV_DOCS` into rows of this patch's help table, so they are
-compiled into the binary only when the patch is in the build and the help reflects the actual build. The loader fails
-closed when `ENV_DOCS` is present without the `0910_feature_sets` requirement. Per-file mechanics tests and rebase
-checks see only the patch's own edits.
-To add a profile, add one row to `bc_feature_sets` in patch.py.
+The patch loader turns `ENV_DOCS` into rows of this patch's help table, so the help reflects the actual build.
+`patch-lint` validates the profile files (grammar, duplicates, unknown includes, cycles, conflicts) and rejects
+flags that no patch documents.
