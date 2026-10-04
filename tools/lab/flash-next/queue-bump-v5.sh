@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pin bump c061df198 -> 0504396: v5 rebuilt on the new pin (b-v5-p2b) vs the old-pin v5 binary (b-v5c, c061df198),
+# Pin bump c061df198 -> 0504396: v5 rebuilt on the new pin (b-v5-p2c) vs the old-pin v5 binary (b-v5c, c061df198),
 # ABBA x2 at ~8K and ~64K: decode + prefill t/s, greedy identity. Measures the bump itself (upstream #29825 indexer
 # memory, #29824 mask construction, #29856 recurrent-state reserve) on production profile v5.
 set -u
@@ -16,11 +16,11 @@ OLD=/mnt/vault/development/projects/bigcherry/workspaces/main/work/builds/c7cca1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-v5-p2b bigcherry:stock:linux-multi deploy-v5 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT bump-v5b-abba tools/lab/flash-next/abba-depths.sh $OLD @b-v5-p2b $R/flashnext-bump-v5b-abba
+VIS=0,1,2,3 BUILD b-v5-p2c bigcherry:stock:linux-multi deploy-v5 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT bump-v5c-abba tools/lab/flash-next/abba-depths.sh $OLD @b-v5-p2c $R/flashnext-bump-v5c-abba
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^d[0-9]+ " $R/bump-v5b-abba.log
+grep -E "^d[0-9]+ " $R/bump-v5c-abba.log
 echo ALL_JOBS_DONE
