@@ -157,3 +157,11 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
 - 2026-10-05: Consolidated FMTP03 onto landed 1321 forced-front/tail primitive; removed planned duplicate helper/lease architecture and added slack-bounded tail policy.
+
+## Ledger-events
+
+
+- chg_20261004_161430_experimental-the-mtp-drafter_7189
+- 2026-10-04T16:14:37.089254+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_161448_experimental-the-mtp-drafter_6717
+- 2026-10-04T16:14:54.714881+00:00 (updated-by): Updated: section:ledger-events
