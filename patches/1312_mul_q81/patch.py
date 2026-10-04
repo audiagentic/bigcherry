@@ -31,8 +31,11 @@ _IMPL_OLD = """    } else {
 
 _IMPL_NEW = """    } else {
 #if defined(GGML_USE_HIP)
+        // GDN gated norm [head_v_dim, heads, T] is read by ssm_out through reshape_3d(head_v_dim*heads, T): publish
+        // that flattened layout when the per-head row would need MMVQ padding (1307 flattened-reshape lookup).
+        const bool flatten01 = mul_node->ne[0] % MATRIX_ROW_PADDING != 0 && mul_node->ne[1] > 1;
         if (bc_act_q81_try<op, true>(ctx, mul_node, (const float *) unary_src->data, (const float *) other_src->data,
-                                     unary_stride / sizeof(float), other_stride / sizeof(float))) {  // bigcherry 1312
+                                     unary_stride / sizeof(float), other_stride / sizeof(float), flatten01)) {  // bigcherry 1312
             return;
         }
 #endif

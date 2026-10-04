@@ -51,6 +51,8 @@ class Patch1312Mechanics(unittest.TestCase):
             self.assertLess(hook, out.index("(float *) mul_node->data, k, nc,", hook))
             self.assertLess(hook, out.index("void ggml_cuda_op_unary_mul(ggml_backend_cuda_context & ctx", impl))
             self.assertEqual(out.count("bc_act_q81_try<op, true>(ctx, mul_node,"), 1)
+            self.assertIn("const bool flatten01 = mul_node->ne[0] % MATRIX_ROW_PADDING != 0 && mul_node->ne[1] > 1;", out)
+            self.assertIn("const int64_t j0 = srow * o0 + scol;", out)
             second = apply_all(_P1312.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))

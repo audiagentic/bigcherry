@@ -12,3 +12,5 @@ branch of that fused path now goes through 1310's `bc_act_q81_try<op, true>` wit
 Flash-Next misses fed by a gate multiply: the full-attention output gate (`attn_gated` -> wo) and the GatedDeltaNet
 gated output norm (`final_output` -> ssm_out). Bit-identical F32; Q8_1 matches `quantize_q8_1`. Requires 1310.
 Activation evidence: `BIGCHERRY_Q81 publish-act node=...(attn_gated-N)` under `BIGCHERRY_Q81_TRACE`.
+GDN `final_output` (per-head rows of 128 read through `reshape_3d(head_v_dim*heads, T)`) is published flattened to the
+consumer's padded row (1310 `flatten01`), matched by 1307's flattened-reshape lookup.

@@ -33,7 +33,7 @@ class Patch1310Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
             self.assertIn("static __global__ void bc_act_q81_kernel(", out)
-            self.assertIn("bc_act_q81_try<op, false>(ctx, dst, (const float *) src0_d, nullptr, 0, 0)", out)
+            self.assertIn("bc_act_q81_try<op, false>(ctx, dst, (const float *) src0_d, nullptr, 0, 0, false)", out)
             self.assertIn("bc_act_q81_try<op, true>(ctx, dst, src0_p, src1_p,", out)
             self.assertIn("q81, dst, dst->data, ctx.curr_stream_no, ne0, ne0_padded, ne1, ne2, ne3, ne0, ne0*ne1, ne0*ne1*ne2", out)
             self.assertIn('rows=%lld\\n"', out)
