@@ -1,14 +1,15 @@
 #!/bin/bash
-# Prefill tier check: ub512 vs ub1024 for the context tiers found in fit-sweep-2 (10K cached prompt, MTP3):
-# 4,4,3 f16 KV at 96K; 4,4,3 q8_0 at 160K; 2,2,3 q8_0 at 192K. ub1024 needs more compute buffer; a load
-# failure means that tier stays on ub512. Usage: ub-sweep.sh <llama-server> <out-root>
+# -ub/-b sweep at the production context (CTX from the caller, f16 KV): balanced order (A B C D D C B A) over UB values,
+# each arm one long-ctx-profile timing pass at DEPTH (fill prefill t/s + decode t/s). SERVER_FAILED = does not fit.
+# Usage: ub-sweep.sh <llama-server> <out-root> <ub values...>
 set -u
-bin=$1 root=$2
-s=$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh
-for tier in "4,4,3 f16 98304" "4,4,3 q8_0 163840" "2,2,3 q8_0 196608"; do
-  set -- $tier; ts=$1 kv=$2 ctx=$3
-  for ub in 512 1024 1024 512; do
-    echo "== ts $ts kv $kv ctx $ctx ub $ub"
-    TS=$ts CTK=$kv CTV=$kv CTX=$ctx UB=$ub DEPTH=8192 bash "$s" "$bin" "$root/ts${ts//,/}-$kv-c$ctx-ub$ub-$RANDOM" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-  done
+export BIGCHERRY_QSA_HOST_REMAP=1  # sweeps run profile v6 (v5 + 1327)
+bin=$1 root=$2; shift 2
+s="$(cd "$(dirname "$0")" && pwd)/long-ctx-profile.sh"
+order=("$@"); rev=(); for ((i=${#order[@]}-1; i>=0; i--)); do rev+=("${order[i]}"); done
+n=0
+for ub in "${order[@]}" "${rev[@]}"; do
+  n=$((n+1))
+  out=$(UB=$ub B=$ub DEPTH=${DEPTH:-65536} bash "$s" "$bin" "$root/ub$ub-$n" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
+  echo "ub$ub run$n: $(echo $out | tr '\n' ' ')"
 done
