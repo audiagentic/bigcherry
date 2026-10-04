@@ -7,10 +7,14 @@ with sums of ReLU, so many scores are exactly 0.0; once the context holds more p
 cut falls inside that tie and the attended KV blocks change between runs (greedy text diverged across
 server starts at 32K and 80K context with every AllReduce provider; tools/lab/flash-next/determinism.sh).
 
-The gather now skips the equal branch, and one extra block per row walks the columns in ascending order
-in tiles of 256, ranks each tied column by a ballot/popcount prefix count, and writes the first `rank` of
-them: the lowest-index tied columns, independent of scheduling. Output order of the k indices is still
-unspecified (the consumers treat them as a set). BIGCHERRY_TOPK_DETERMINISTIC=0 restores the old path.
+The upstream gather is unchanged; after it, one extra block per row checks the row's cutoff: when every
+cutoff-equal column fit (equal_count <= rank, which includes the common unique cutoff) the selected set is already
+deterministic and the block returns at once. Only an ambiguous cutoff (more equal columns than free slots) is
+rewritten: the block walks the columns in ascending order in tiles of 256, ranks each tied column by a ballot/popcount
+prefix count and writes the first `rank` of them - the lowest-index tied columns, independent of scheduling. So rows
+without an ambiguous tie (vocabulary top-k sampling, most generic TOP_K) pay one trivial launch, not a column scan
+(GPT deep-dive req_434421a94f6444d3). Output order of the k indices is still unspecified (consumers treat them as
+a set). BIGCHERRY_TOPK_DETERMINISTIC=0 restores the old path.
 BIGCHERRY_PATCH_HIT patch=1294_topk_deterministic_ties logs once under BIGCHERRY_PATCH_TRACE.
 """
 
@@ -31,7 +35,10 @@ static __global__ void top_k_radix_gather_ties(
         int k) {
     const int row = blockIdx.x;
     const top_k_radix_state st = states[row];
-    if (st.rank <= 0) {
+    // the upstream gather already wrote the cutoff-equal columns in arrival order; when every equal column fits
+    // (equal_count <= rank, e.g. the common unique cutoff) that set is already deterministic - only an ambiguous
+    // cutoff (more equal columns than slots) is rewritten with the lowest-index ones
+    if (st.rank <= 0 || st.equal_count <= st.rank) {
         return;
     }
     const float * row_src = src + (size_t) row * ncols;
@@ -97,41 +104,6 @@ TOPK = FilePatch(
     description="Radix TOP_K: lowest-index deterministic tie-break instead of atomic arrival order.",
     edits=(
         Edit(
-            id="topk-gather-det-param",
-            anchor=_re.escape(
-                "static __global__ void top_k_radix_gather(\n"
-                "        const float * __restrict__ src,\n"
-                "        int * __restrict__ dst,\n"
-                "        top_k_radix_state * __restrict__ states,\n"
-                "        int ncols,\n"
-                "        int k,\n"
-                "        int blocks_per_row) {"
-            ),
-            text=(
-                "static __global__ void top_k_radix_gather(\n"
-                "        const float * __restrict__ src,\n"
-                "        int * __restrict__ dst,\n"
-                "        top_k_radix_state * __restrict__ states,\n"
-                "        int ncols,\n"
-                "        int k,\n"
-                "        int blocks_per_row,\n"
-                "        int det_ties) {"
-            ),
-            mode="replace",
-            guard=r"int blocks_per_row,\n        int det_ties\) \{",
-            expect_matches=1,
-            rationale="The gather kernel's exact signature; it is the only writer of tied columns.",
-        ),
-        Edit(
-            id="topk-gather-skip-equal",
-            anchor=_re.escape("        } else if (key == state->prefix) {"),
-            text="        } else if (!det_ties && key == state->prefix) {",
-            mode="replace",
-            guard=_re.escape("} else if (!det_ties && key == state->prefix) {"),
-            expect_matches=1,
-            rationale="The atomic-order equal branch in top_k_radix_gather.",
-        ),
-        Edit(
             id="topk-tie-kernel",
             anchor=r"(?m)^static void top_k_radix_cuda\(",
             text=_TIE_KERNEL,
@@ -144,8 +116,8 @@ TOPK = FilePatch(
             id="topk-launch-ties",
             anchor=_re.escape("            src, dst, states, ncols, k, blocks_per_row);\n}"),
             text=(
-                "            src, dst, states, ncols, k, blocks_per_row, det_ties ? 1 : 0);\n"
-                "    if (det_ties) {\n"
+                "            src, dst, states, ncols, k, blocks_per_row);\n"
+                "    if (det_ties) {  // BigCherry 1294: rewrite only ambiguous cutoffs, after the gather (stream order)\n"
                 "        top_k_radix_gather_ties<BLOCK_SIZE><<<nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
                 "    }\n"
                 "}"

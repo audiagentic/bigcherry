@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
 STATE = "validated"
@@ -22,11 +22,20 @@ _UPDATE_HEAD = "static void ggml_cuda_graph_update_executable(ggml_backend_cuda_
 _HELPER = """\
 // bigcherry 1302: instantiate a captured graph; on out-of-memory evict every other cached graph of this
 // context (each holds an executable instance in device memory), synchronise and retry once. HIP builds only:
-// validated on ROCm (gfx1100/gfx1201); CUDA keeps upstream's fail-fast instantiate.
+// validated on ROCm (gfx1100/gfx1201); CUDA keeps upstream's fail-fast instantiate. BIGCHERRY_GRAPH_OOM_EVICT=0
+// restores the fail-fast behaviour on HIP too.
+static bool bigcherry_graph_oom_evict_enabled() {
+    static const bool on = [] {
+        const char * e = getenv("BIGCHERRY_GRAPH_OOM_EVICT");
+        return e == nullptr || strcmp(e, "0") != 0;
+    }();
+    return on;
+}
+
 static void bigcherry_cuda_graph_instantiate(ggml_backend_cuda_context * cuda_ctx, ggml_cuda_graph * graph) {
     cudaError_t err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
 #if defined(GGML_USE_HIP)
-    if (err == cudaErrorMemoryAllocation) {
+    if (err == cudaErrorMemoryAllocation && bigcherry_graph_oom_evict_enabled()) {
         (void) cudaGetLastError();
         graph->instance = nullptr;
         CUDA_CHECK(cudaStreamSynchronize(cuda_ctx->stream()));
@@ -81,3 +90,8 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc("BIGCHERRY_GRAPH_OOM_EVICT", "0|1", "1 (on, HIP builds)",
+           "on HIP graph-instantiate OOM, evict the context's other cached graphs and retry once; 0 restores fail-fast"),
+)
