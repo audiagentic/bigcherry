@@ -36,7 +36,9 @@ static int64_t bc_qsa_chunk() {
 """
 
 _A_SEL = "    ggml_tensor * sel = ggml_set_rows(ctx0, mask_all, zeros, ggml_reshape_3d(ctx0, sel_idx, n_sel, n_tokens, 1));\n"
-_N_SEL = ("    if (bc_qsa_chunk() > 0) {  // bigcherry 1332: build_attn_qsa builds the masks per token chunk from the indices\n"
+_N_SEL = ("    // bigcherry 1332: build_attn_qsa builds the masks per token chunk from the indices; batches that fit in one chunk\n"
+          "    // (decode, MTP verify) keep the dense mask (a whole-mask view of the kq_mask input crashed the meta backend)\n"
+          "    if (bc_qsa_chunk() > 0 && n_tokens > bc_qsa_chunk()) {\n"
           "        return sel_idx;        // I32 [n_sel, n_tokens], dead slots already remapped to their dump rows\n"
           "    }\n"
           + _A_SEL)
