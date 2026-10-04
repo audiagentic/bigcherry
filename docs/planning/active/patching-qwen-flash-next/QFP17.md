@@ -63,7 +63,10 @@ Rejected from the survey for this lane: large-message CPU-root AllReduce (measur
 
 CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN prefill) are NOT missing from the Flash-Next profile - [source.bigcherry] composes patch-sets serving-core + upstream-fixes + validated-enhancements into every build (validated-enhancements = 0860, 1225, 0840, 1237, 1241, 1253, 1274, 1265); the lane name 'stock' only refers to build options. deploy-v4-pp failed with 'overlay repeats a base patch module' and was removed. Step 0 is void; current prefill numbers already include them. GDN-PP2 should still verify 1253 is actually taken (no fallback) on this model.
 
+2026-10-04 ubatch fit results on v6 at pin 0504396 (f16 KV; queue-v6-ub / fit-probe / fit-probe2): only -ub 512 fits on the 3-GPU split (prefill ~889 t/s at ~80K fill, decode 61.1). ub1024/1536/2048 at 240K: R9700 OOM (+2.0 GiB compute). Rebalancing -ts (0.33/0.28/0.39, 0.34/0.29/0.37, 0.32/0.28/0.40) moves the OOM to the XTXs (+1.25-2.9 GiB) and trimming context barely helps: Flash-Next KV is tiny (full attention every 4th layer, few KV heads, ~24 KB/token across GPUs), so 16K tokens free only ~0.2 GiB per XTX - ub1024 still fails at 192K, ub2048 at 160K. ub768 fits at 240K but prefill collapses to 134 t/s (decode 59.0) with the R9700 at 31.7/32 GiB - no host offload in the logs (all layers on GPU, --fit off, no unified memory); either driver-level oversubscription or a non-multiple-of-512 kernel path, unresolved. Conclusion: #29825 is not enough to unlock larger ubatches here; a larger ubatch needs ~4-5 GiB freed across the three GPUs, which only the 6900 (~11 GiB idle beside the draft) can provide (-ot of selected weights, decode cost to measure), or chunked MoE/attention scratch so peak compute buffers stay at the ub512 level.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
 - 2026-10-04T07:55:32.606718+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T12:10:08.450336+00:00 (updated-by): Updated: section:notes
