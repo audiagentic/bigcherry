@@ -2,7 +2,7 @@
 
 **Status:** validated
 **Plan item:** QFP18
-Kind: framework (no behaviour change unless `BIGCHERRY_FEATURES` is set)
+Kind: framework (no behaviour change unless `BIGCHERRY_FEATURES` is set). Applied once by `ggml_bigcherry_features_init()`, called from `ggml_init`, the backend registry constructor and (GCC/Clang) a load-time constructor, so MSVC builds apply sets too; an overlong request is ignored entirely; set definitions are validated (duplicates, unknown @refs, cycles, conflicting assignments) when the patch loads.
 
 ## What it does
 

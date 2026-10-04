@@ -17,6 +17,7 @@ from bigcherry.patcher import ENV_DOC_TABLE_END, EnvDoc, apply_all, env_docs  # 
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "ggml/src/ggml.c"
+_REL_REG = "ggml/src/ggml-backend-reg.cpp"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
 _CC = shutil.which("clang") or shutil.which("gcc") or shutil.which("cc")
 
@@ -37,16 +38,40 @@ class Patch0910Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / _REL).parent.mkdir(parents=True)
-            shutil.copy2(_VENDOR, root / _REL)
+            for rel in (_REL, _REL_REG):
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(_REPO / "vendor/llama.cpp" / rel, root / rel)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             out = (root / _REL).read_text(encoding="utf-8")
             self.assertEqual(out.count("bigcherry 0910: named feature sets"), 1)
             self.assertIn("__attribute__((constructor)) static void bc_feature_sets_ctor", out)
+            # explicit init runs from ggml_init's first call and the backend registry constructor too (MSVC has no ctor)
+            init = out[out.index("struct ggml_context * ggml_init(struct ggml_init_params params) {"):]
+            self.assertLess(init.index("ggml_bigcherry_features_init();"), init.index("is_first_call = false;"))
+            reg = (root / _REL_REG).read_text(encoding="utf-8")
+            ctor = reg[reg.index("ggml_backend_registry() {"):]
+            self.assertLess(ctor.index("ggml_bigcherry_features_init();"), ctor.index("register_backend("))
             second = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in second))
             self.assertEqual(out, (root / _REL).read_text(encoding="utf-8"))
+
+
+class Patch0910SetValidation(unittest.TestCase):
+    def test_real_sets_valid(self):
+        _P._validate_sets(_P.SETS)
+
+    def test_rejects_bad_definitions(self):
+        bad = {
+            "duplicate": (("a", "d", ("X=1",)), ("a", "d", ("Y=1",))),
+            "unknown ref": (("a", "d", ("@b",)),),
+            "cycle": (("a", "d", ("@b",)), ("b", "d", ("@a",))),
+            "conflict": (("a", "d", ("X=1",)), ("b", "d", ("X=2",)), ("c", "d", ("@a", "@b"))),
+            "bad member": (("a", "d", ("lower=1",)),),
+        }
+        for label, sets in bad.items():
+            with self.assertRaises(ValueError, msg=label):
+                _P._validate_sets(sets)
 
 
 @unittest.skipUnless(_CC, "no C compiler")
@@ -57,8 +82,10 @@ class Patch0910Behaviour(unittest.TestCase):
         doc = env_docs("1310_act_q81", (EnvDoc("BIGCHERRY_ACT_Q81", "0|1", "0", 'act "q8" test'),))
         code = code.replace(ENV_DOC_TABLE_END, doc.edits[0].text + ENV_DOC_TABLE_END)
         main = (
-            "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n" + code +
+            "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define GGML_API\n"
+            "static void ggml_critical_section_start(void) {}\nstatic void ggml_critical_section_end(void) {}\n" + code +
             "\nint main(void) {\n"
+            "    ggml_bigcherry_features_init();  /* second call: must be a no-op */\n"
             '    const char * k[] = {"BIGCHERRY_ACT_Q81", "BIGCHERRY_SCHED_ASYNC_INPUTS", "GGML_HIP_Q8_1_CACHE_MODE"};\n'
             '    for (int i = 0; i < 3; i++) { const char * v = getenv(k[i]); printf("%s=%s\\n", k[i], v ? v : "<unset>"); }\n'
             "    return 0;\n}\n"
@@ -108,6 +135,13 @@ class Patch0910Behaviour(unittest.TestCase):
         out, _ = self._run({"BIGCHERRY_FEATURES": "sched-async"})
         self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
         self.assertIn("BIGCHERRY_SCHED_ASYNC_INPUTS=1", out)
+
+    def test_too_long_fails_closed_and_init_is_idempotent(self):
+        out, err = self._run({"BIGCHERRY_FEATURES": "flashnext," + "x" * 300})
+        self.assertIn("BIGCHERRY_ACT_Q81=<unset>", out)
+        self.assertIn("too long", err)
+        _, err = self._run({"BIGCHERRY_FEATURES": "hip-q81"})
+        self.assertEqual(err.count("BIGCHERRY_FEATURES hip-q81:"), 1)
 
     def test_unset_and_unknown(self):
         out, _ = self._run({})
