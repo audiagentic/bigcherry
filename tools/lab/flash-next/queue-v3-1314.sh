@@ -13,18 +13,18 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-v3-1314 bigcherry:stock:linux-multi deploy-v3-plus-1314 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT v3-1314-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v3-1314 @b-v3-1314 $R/flashnext-v3-1314-d24k BIGCHERRY_AR_FUSED=1
-VIS=0,1,2,3 SCRIPT v3-1314-d80k tools/lab/flash-next/quick-ab-depth.sh 65536 @b-v3-1314 @b-v3-1314 $R/flashnext-v3-1314-d80k BIGCHERRY_AR_FUSED=1
-VIS=0,1,2,3 SCRIPT v3-1314-census tools/lab/flash-next/census-run.sh @b-v3-1314 $R/flashnext-v3-1314-census BIGCHERRY_AR_FUSED=1
-VIS=0,1,2,3 SCRIPT v3-1314-trace tools/lab/flash-next/q81-trace-run.sh @b-v3-1314 $R/flashnext-v3-1314-trace BIGCHERRY_AR_FUSED=1
+VIS=0,1,2,3 BUILD b-v3-1314b bigcherry:stock:linux-multi deploy-v3-plus-1314 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT v3-1314b-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-v3-1314b @b-v3-1314b $R/flashnext-v3-1314b-d24k BIGCHERRY_AR_FUSED=1
+VIS=0,1,2,3 SCRIPT v3-1314b-d80k tools/lab/flash-next/quick-ab-depth.sh 65536 @b-v3-1314b @b-v3-1314b $R/flashnext-v3-1314b-d80k BIGCHERRY_AR_FUSED=1
+VIS=0,1,2,3 SCRIPT v3-1314b-census tools/lab/flash-next/census-run.sh @b-v3-1314b $R/flashnext-v3-1314b-census BIGCHERRY_AR_FUSED=1
+VIS=0,1,2,3 SCRIPT v3-1314b-trace tools/lab/flash-next/q81-trace-run.sh @b-v3-1314b $R/flashnext-v3-1314b-trace BIGCHERRY_AR_FUSED=1
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-for j in v3-1314-d24k v3-1314-d80k; do echo "== $j"; grep -E "^base-|^new|SERVER_FAILED" $R/$j.log; done
+for j in v3-1314b-d24k v3-1314b-d80k; do echo "== $j"; grep -E "^base-|^new|SERVER_FAILED" $R/$j.log; done
 echo "== greedy identity ~24K"
-cmp -s $R/flashnext-v3-1314-d24k/base-a/timing.24576.greedy.txt $R/flashnext-v3-1314-d24k/new/timing.24576.greedy.txt && echo IDENTICAL || echo DIFFERENT
-echo "== census"; grep -E "kernels/token|quantize|busy|elementwise" $R/v3-1314-census.log | head -12
-echo "== trace"; grep -E "^publish|misses in|miss ops|publish-mul" $R/v3-1314-trace.log
+cmp -s $R/flashnext-v3-1314b-d24k/base-a/timing.24576.greedy.txt $R/flashnext-v3-1314b-d24k/new/timing.24576.greedy.txt && echo IDENTICAL || echo DIFFERENT
+echo "== census"; grep -E "kernels/token|quantize|busy|elementwise" $R/v3-1314b-census.log | head -12
+echo "== trace"; grep -E "^publish|misses in|miss ops|publish-mul" $R/v3-1314b-trace.log
 echo ALL_JOBS_DONE
