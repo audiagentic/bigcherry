@@ -1,7 +1,7 @@
 schema = 1
 id = "1314_ar_cpu_root_fused"
 order = 1314
-state = "untested"
+state = "evaluated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
