@@ -1,4 +1,4 @@
-"""Offline mechanics tests for 1330_qsa_mask_inplace (pinned src/models/qwen4exp.cpp, alone and with 1297 + 1308)."""
+"""Offline mechanics tests for 1330_qsa_mask_inplace (pinned qwen4exp.cpp + ggml.c, alone and with 1297 + 1308)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
+_REL_GGML = "ggml/src/ggml.c"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
 
 
@@ -38,6 +39,8 @@ class Patch1330Mechanics(unittest.TestCase):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
         shutil.copy2(_VENDOR, root / _REL)
+        (root / _REL_GGML).parent.mkdir(parents=True)
+        shutil.copy2(_REPO / "vendor/llama.cpp" / _REL_GGML, root / _REL_GGML)
         return root
 
     def test_apply_and_idempotent(self):
@@ -51,6 +54,10 @@ class Patch1330Mechanics(unittest.TestCase):
             self.assertIn("sel = bc_inplace ? ggml_add_inplace(ctx0, sel, kq_mask) : ggml_add(ctx0, sel, kq_mask);", out)
             self.assertLess(hook, out.index('cb(sel, "indexer_sel", il);'))
             self.assertIn("ggml_are_same_shape(sel, kq_mask) ? sel", out)
+            self.assertIn("const int64_t bc_mask_rows = bc_mask_inplace ? GGML_PAD(n_kv + n_sel, 256) : n_kv + n_sel;", out)
+            g = (root / _REL_GGML).read_text(encoding="utf-8")
+            self.assertIn("GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));", g)
+            self.assertIn("bigcherry 1330: rows must be contiguous", g)
             second = apply_all(_P1330.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, (root / _REL).read_text(encoding="utf-8"))
