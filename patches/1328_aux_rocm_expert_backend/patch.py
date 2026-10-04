@@ -209,7 +209,7 @@ _COPY_FALLBACK_NEW = r'''                } else {
 
                         static bool bc_traced = false;
                         if (!bc_traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-                            GGML_LOG_INFO("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend aux=%s bytes=%zu\n",
+                            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend aux=%s bytes=%zu\n",
                                 bc_aux_name, nbytes);
                             bc_traced = true;
                         }
@@ -413,7 +413,7 @@ PATCHES = [
             Edit(id="meta-device-membership", anchor=re.escape(_META_DEVICE_ANCHOR), mode="insert_before",
                  text=_META_DEVICE_HELPER, guard=r"BigCherry 1328: membership query",
                  rationale="Insert beside Meta device construction where the private constituent list is available.",
-                 expect_matches=1, max_span_lines=2),
+                 expect_matches=1, max_span_lines=3),
             Edit(id="meta-exact-merge", anchor=re.escape(_META_BIN), mode="replace", text=_META_BIN_NEW,
                  guard=r"BigCherry 1328: full auxiliary routed-MoE \+ reduced shared expert",
                  rationale="Binary-broadcast split propagation owns ADD's Meta reduction semantics.",
