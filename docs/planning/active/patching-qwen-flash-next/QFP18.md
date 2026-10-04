@@ -11,17 +11,17 @@ priority: P2
 work: M
 ---
 
-# Qualify the Flash-Next production stack to validated (after the pin bump)
+# Lightweight evidence-reuse promotion to validated for the Flash-Next stack
 
 ## Description
 
-None of the 2026-10 Flash-Next patches is 'validated': each needs a qualification package (experiment contract binding, validation.toml wired to the existing ABBA/ab-benchmark tooling, contract evidence on the current pin). Do it after the llama.cpp pin bump (upstream #29825/#29824/#29856) so evidence is bound to the new pin.
+Owner direction 2026-10-04: the path to 'validated' must be quick and reuse evidence we already produce; no heavyweight per-patch 4-session contract campaigns or bespoke producers for patches that already have strong evidence. Reserve full contracts for patches meant for broad reuse or with weak/ambiguous evidence.
 
 ## Steps
 
-1. Bump pin (bump-llamacpp skill), re-anchor, re-screen v5 (v4 + 1326 + 1237/1265/1253 if clean).
-2. First candidates: 1326_sched_async_host_inputs (+8% t/s, greedy identical) and the Q8_1 launch-reduction stack 1235/1307/1309/1310/1311/1312/1313 (+ 1308 rollback copies); then 1302/1303 (240K f16 enablers) and 1291/1292/1294/1297.
-3. Per patch: experiment contract (hypothesis, workload = Flash-Next v5 decode ~10K/~80K, controls, thresholds, activation evidence, greedy identity), validation.toml adapter, README; run contract sessions (balanced, multi-request); patch-verify-evidence; deliberate promotion via the lifecycle skill.
+1. Define a 'profile-evidence' qualification tier (tooling + docs: docs/reference/testing/PATCH_VALIDATION.md, tools/bigcherry/patch/validation_policy.py / evidence.py) accepting, on the current pin: (a) patch-lint + focused mechanics tests pass; (b) activation evidence - BIGCHERRY_PATCH_HIT marker or a census/trace showing the mechanism (kernel/launch counts, Q8_1 hit trace, timing split); (c) an adoption ABBA (abba-depths.sh or quick-ab-depth) with complete separation or a stated neutral/enabler rationale, and greedy identity across arms; (d) the run logs referenced by path in patches/<id>/evidence/validation.json (append-only).
+2. Add a small converter: ABBA run dir -> evidence JSON (per-arm t/s, ms/step, acceptance, greedy hashes, build id, pin).
+3. After the pin bump: one v5 re-screen on the new pin supplies the profile evidence; attach per-patch activation evidence; promote 1302, 1303, 1307-1313, 1326 (+ 1291/1292/1294/1297) via the lifecycle skill in one pass.
 
 ## Detailed Solution & Technical Design
 
@@ -57,7 +57,10 @@ Owner agreed 2026-10-04: qualify after the bump. Current states: evaluated (1302
 
 Correction: 1237/1265/1253 are already in every Flash-Next build via the validated-enhancements patch-set; v5 = v4 + 1326.
 
+Replaces the earlier per-patch contract plan (estimated ~3 dev-days + ~2 GPU-days - rejected as too heavy). Existing evidence: v3/v4/v5 adoption ABBAs (flashnext-v2-fusion-ab-3, flashnext-v4-abba, flashnext-v5c-abba), 1312/1313/1326 screens with census/trace/timing evidence, offline tests for every patch. Correction: 1237/1265/1253 are already validated and in every build via validated-enhancements.
+
 ## Change Log
 
 - 2026-10-04T07:54:10.353678+00:00 (created-by): Created by agent
 - 2026-10-04T07:55:43.580424+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T09:25:05.297276+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:notes
