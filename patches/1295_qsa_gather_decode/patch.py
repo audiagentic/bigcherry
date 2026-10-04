@@ -11,12 +11,12 @@ cells (top pools + tail, sentinel n_kv for missing cells) from the K/V cache wit
 matching kq_mask entries (the sentinel maps to an appended -inf column), and runs flash attention per token
 over n_sel cells with the token as the batch dimension. Same attention, n_sel instead of n_kv cells read.
 Prefill and caches below BIGCHERRY_QSA_GATHER_MIN cells (default 32768) keep the masked path, as do
-non-contiguous cache views (multiple streams, transposed V). BIGCHERRY_QSA_GATHER=0 disables it.
+non-contiguous cache views (multiple streams, transposed V). Off by default; BIGCHERRY_QSA_GATHER=1 enables it (runtime profile).
 """
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "evaluated"
@@ -75,11 +75,12 @@ _GATHER = """    // BigCherry 1295: small batches over a large cache attend over
 
 """
 
-_ENABLED = """// BigCherry 1295: QSA gathered-cell attention for small batches, on unless BIGCHERRY_QSA_GATHER=0
+_ENABLED = """// BigCherry 1295: QSA gathered-cell attention for small batches, off unless BIGCHERRY_QSA_GATHER=1 (enabled from a
+// runtime profile: it only pays off at long context, see SUMMARY.md)
 static bool bc_qsa_gather_enabled() {
     static const bool on = [] {
         const char * e = getenv("BIGCHERRY_QSA_GATHER");
-        const bool enabled = e == nullptr || strcmp(e, "0") != 0;
+        const bool enabled = e != nullptr && strcmp(e, "0") != 0;
         if (enabled && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
             LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1295_qsa_gather_decode\\n");
         }
@@ -121,7 +122,7 @@ MODEL = FilePatch(
             anchor=_re.escape("    // the selection mask already carries the causal mask\n"),
             text=_GATHER,
             mode="insert_before",
-            guard=r"BigCherry 1295: small batches attend over the gathered n_sel cells",
+            guard=r"BigCherry 1295: small batches over a large cache attend over the gathered n_sel cells",
             expect_matches=1,
             rationale="In build_attn_qsa after the K/V cache writes, before the masked path builds its mask.",
         ),
@@ -159,3 +160,10 @@ MODELS_H = FilePatch(
 )
 
 PATCHES = [MODEL, MODELS_H]
+
+ENV_DOCS = (
+    EnvDoc("BIGCHERRY_QSA_GATHER", "0|1", "0",
+           "Qwen4Exp QSA: batches of <= 8 tokens attend over the gathered selected cells instead of the masked cache"),
+    EnvDoc("BIGCHERRY_QSA_GATHER_MIN", "<cells>", "32768",
+           "minimum KV cache size (cells) for the gathered QSA path; below it the masked path is cheaper"),
+)
