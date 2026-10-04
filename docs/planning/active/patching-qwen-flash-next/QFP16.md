@@ -56,6 +56,9 @@ Diagnosis S-M; fix M. Padding verify batches costs a little GPU work per round; 
 
 Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), QFP13 (launch count), FMTP01.
 
+2026-10-04 1318 draft-loop timing (flashnext-drafthost, v4 diag build): per MTP draft step ~10K / ~80K: submit (llama_process(ctx_dft) host) 0.53 / 0.89 ms, draft-GPU wait 1.36 / 1.77 ms, host rest (sampling over trimmed 65K vocab + nextn hidden read) 0.23 / 0.24 ms; draft call 6.36 / 8.74 ms (3 steps). Host share of the draft ~36-40%. Submit grows with context on both contexts (target 5.06 -> 5.83 ms/round 10K -> 80K; draft 0.53 -> 0.89 ms/step), pointing at O(n_kv) host input work per call - prime suspect set_input_kq_mask (seen in host perf: set_input_kq_mask_impl<unsigned short,true>) rebuilding the full KQ mask on the CPU every step, plus kpool/QSA inputs. Fix candidates once 1319 confirms the inputs_us share: incremental mask update (append-only positions for decode), device-side mask construction, or caching mask rows across reused graphs. Same lever applies to the draft context (FMTP01 F/B scope).
+
 ## Change Log
 
 - 2026-10-04T05:13:42.699438+00:00 (created-by): Created by agent
+- 2026-10-04T06:12:21.750192+00:00 (updated-by): Updated: section:notes
