@@ -102,10 +102,9 @@ _N_DECODE = _A_DECODE + r"""            // bigcherry 1322: draft ahead on the dr
                     dp.result   = &slot.bc_ahead_scratch;
                     dp.result_q = nullptr;
                     dp.forced   = &slot.bc_ahead_front;
-                    dp.n_tail   = (int32_t) slot.bc_ahead_front.size() + 1;
+                    // bonus-token prediction + a full next front, independent of this round's (possibly short) front
+                    dp.n_tail   = (int32_t) slot.get_n_draft_max() + 1;
                     dp.tail     = &slot.bc_ahead_tail;
-                    static const float bc_tail_p_min = getenv("BIGCHERRY_MTP_AHEAD_PMIN") ? (float) atof(getenv("BIGCHERRY_MTP_AHEAD_PMIN")) : 0.0f;
-                    dp.tail_p_min = bc_tail_p_min;
                     common_speculative_draft(spec.get());
                     dp = saved;
                     dp.drafting = false;
@@ -178,6 +177,4 @@ PATCHES = [
 ENV_DOCS = (
     EnvDoc("BIGCHERRY_MTP_AHEAD", "0|1", "0",
            "experimental: draft the next MTP front on the draft GPU during target verify and promote it on full acceptance"),
-    EnvDoc("BIGCHERRY_MTP_AHEAD_PMIN", "<p>", "0 (draft p_min)",
-           "minimum top-1 probability for ahead tail tokens; promoted fronts sit deeper in the MTP chain and are accepted less"),
 )

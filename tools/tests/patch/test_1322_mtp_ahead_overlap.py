@@ -56,6 +56,8 @@ class Patch1322Mechanics(unittest.TestCase):
             # promotion only on full acceptance of the same front with the predicted bonus token
             self.assertIn("accepted.size() == slot.spec_draft.size() + 1", out)
             self.assertIn("accepted.back() == slot.bc_ahead_tail[0]", out)
+            self.assertIn("dp.n_tail   = (int32_t) slot.get_n_draft_max() + 1;", out)
+            self.assertNotIn("PMIN", out)
             # promoted draft skips the serial draft but keeps the fresh-draft checkpoint path
             prom = out.index("bigcherry 1322: a promoted ahead tail is this round's draft")
             self.assertLess(out.index("slot.spec_ckpt.update_pos("), prom)
