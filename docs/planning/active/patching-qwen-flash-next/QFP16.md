@@ -74,6 +74,8 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 
 2026-10-04 1319 at ~80K: target graph 0.003 ms, inputs 0.33 ms (0.09 at 10K), graph_compute 5.53 ms median (mean 6.98); draft inputs 0.20 ms (0.04 at 10K), compute 0.56 ms, graph reuse 50%. Input setup scales with n_kv (KQ mask built on the CPU) - real but secondary (~0.25 ms/target round + ~0.16 ms/draft step at 80K, ~1%); the meta graph_compute host time (5-5.5 ms) is the main term.
 
+2026-10-04 1320 meta breakdown at ~10K (flashnext-metatime-d10k): 97 subgraphs per verify graph (7119 nodes), rebuilds ~0 (2/84); per round launch 1.69 ms median (17.4 us per subgraph across 3 devices), AllReduce enqueue 0.54 ms (5.6 us each), meta total 2.24 ms median (mean 3.14). So the one-HIP-graph-per-device capture saves at most ~2 ms/round (~5%), not 8-10%. The other ~2.8 ms of the 5.0 ms target graph_compute host time is in the scheduler outside the meta backend - suspects: CPU splits (token_embd and the 26.8 GiB per_layer_token_embd get_rows run synchronously on the host) and their input copies/synchronization into the GPU split. 1325 (per-split scheduler timing) queued (queue-sched-split.sh). If CPU-split time dominates: move the lookups off the critical path (overlap the CPU get_rows of round n+1 with the GPU work of round n is impossible because tokens are unknown; instead make the CPU split cheaper, or move token_embd to GPU now that VRAM allows at 240K, or async the copy).
+
 ## Change Log
 
 - 2026-10-04T05:13:42.699438+00:00 (created-by): Created by agent
@@ -81,3 +83,4 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 - 2026-10-04T06:17:35.435151+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:21:34.071163+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:32:01.947191+00:00 (updated-by): Updated: section:detailed_solution
+- 2026-10-04T06:45:39.484407+00:00 (updated-by): Updated: section:notes
