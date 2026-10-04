@@ -1,0 +1,10 @@
+{
+  "disposition": "known_broken",
+  "failure_status": "FAILED_NEEDS_RECONCILIATION",
+  "owner": "flash-next",
+  "patch_digest": "adf0f5df4ed108f2e55bf6dc263ab491f864759ae020428dbbfbfa157849b4b4",
+  "patch_id": "1320_meta_compute_timing",
+  "reason": "diagnostic; AllReduce-loop anchors collide with a base patch-set meta edit on the new pin; data already collected; not in the build recipe",
+  "target_revision": "0504396140d1c882f5f6ee34466a42db7ae90114",
+  "tracking_item": "QFP19"
+}

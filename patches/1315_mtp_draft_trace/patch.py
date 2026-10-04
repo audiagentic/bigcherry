@@ -37,7 +37,7 @@ static uint64_t bc_fnv1a(const void * data, size_t n) {
 }
 """
 
-_STEP_ANCHOR = ("                common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);\n"
+_STEP_ANCHOR = ("                const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);\n"
                 "                const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);\n")
 _STEP = r"""                if (bc_draft_trace_on()) {  // bigcherry 1315
                     const auto * bc_cur = common_sampler_get_candidates(smpl, true);
