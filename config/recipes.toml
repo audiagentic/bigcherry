@@ -471,8 +471,8 @@ patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_determinis
 patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1314_ar_cpu_root_fused"]
 
 [experiment.deploy-v3-determinism]
-# QFP15: profile v3 + 1312 + 1313 + 1315 (BIGCHERRY_DRAFT_TRACE bit-exact MTP draft/accept trace) for same-build repeat runs.
-patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1315_mtp_draft_trace"]
+# QFP15: profile v3 + 1312 + 1313 + 1315 (BIGCHERRY_DRAFT_TRACE) + 1316 (BIGCHERRY_NODE_HASH, off unless set) for same-build repeat runs.
+patches = ["1291_ar_cpu_root", "1292_kpool_tail_truncate", "1294_topk_deterministic_ties", "1297_draft_vocab_trim", "1302_cuda_graph_oom_evict", "1303_attn_kv_tensor_split", "1235_rd09_q81_activation_cache_foundation", "1307_q81_activation_cache_mmvq", "1308_qwen4exp_rollback_copy_no_cont", "1309_rms_norm_mul_q81", "1310_act_q81", "1311_hc_pre_q81", "1312_mul_q81", "1313_scale_act_fuse", "1315_mtp_draft_trace", "1316_node_hash_trace"]
 
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
