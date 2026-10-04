@@ -4,6 +4,8 @@ ggml_backend_cuda_context keeps one ggml_cuda_graph (captured graph + executable
 only evicts entries unused for 10 s. Near the context limit the executable instances of other shapes hold the
 last device memory and the next instantiation aborts via CUDA_CHECK. Both instantiate sites now go through a
 helper that, on cudaErrorMemoryAllocation, destroys every other cached graph, synchronises and retries once.
+The retry path is compiled for HIP builds only (validated on ROCm); CUDA builds keep the upstream fail-fast
+instantiate (RV4217).
 """
 
 from __future__ import annotations
@@ -19,9 +21,11 @@ _UPDATE_HEAD = "static void ggml_cuda_graph_update_executable(ggml_backend_cuda_
 
 _HELPER = """\
 // bigcherry 1302: instantiate a captured graph; on out-of-memory evict every other cached graph of this
-// context (each holds an executable instance in device memory), synchronise and retry once.
+// context (each holds an executable instance in device memory), synchronise and retry once. HIP builds only:
+// validated on ROCm (gfx1100/gfx1201); CUDA keeps upstream's fail-fast instantiate.
 static void bigcherry_cuda_graph_instantiate(ggml_backend_cuda_context * cuda_ctx, ggml_cuda_graph * graph) {
     cudaError_t err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
+#if defined(GGML_USE_HIP)
     if (err == cudaErrorMemoryAllocation) {
         (void) cudaGetLastError();
         graph->instance = nullptr;
@@ -38,6 +42,9 @@ static void bigcherry_cuda_graph_instantiate(ggml_backend_cuda_context * cuda_ct
         GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1302_graph_oom_evict device=%d evicted=%zu\\n", cuda_ctx->device, evicted);
         err = cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0);
     }
+#else
+    GGML_UNUSED(cuda_ctx);
+#endif
     CUDA_CHECK(err);
 }
 
