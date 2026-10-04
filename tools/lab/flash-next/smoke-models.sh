@@ -8,7 +8,7 @@ set -u
 bin=$1 out=$2
 mkdir -p "$out"
 port=18731
-ON="GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1"
+ON="GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_ROLLBACK_NO_CONT=1 BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1 BIGCHERRY_SCHED_ASYNC_INPUTS=1"
 M=/mnt/data/llm-models
 PROMPT='Write three short sentences about why the sky is blue.'
 
@@ -18,7 +18,7 @@ run() {  # name devices split extra-args model
         local envs="HIP_VISIBLE_DEVICES=$devs"
         [ "$mode" = on ] && envs="$envs $ON"
         local log="$out/$name.$mode.log"
-        env -u BIGCHERRY_ATTN_TS -u BIGCHERRY_ATTN_ROTATE -u BIGCHERRY_FFN_TS -u BIGCHERRY_DRAFT_VOCAB_N -u GGML_HIP_Q8_1_CACHE_MODE -u BIGCHERRY_ROLLBACK_NO_CONT -u BIGCHERRY_RMS_Q81 -u BIGCHERRY_ACT_Q81 -u BIGCHERRY_HC_Q81 $envs "$bin" -m "$model" -ngl 99 -c 4096 --port $port --host 127.0.0.1 -fa on $sm $extra > "$log" 2>&1 &
+        env -u BIGCHERRY_ATTN_TS -u BIGCHERRY_ATTN_ROTATE -u BIGCHERRY_FFN_TS -u BIGCHERRY_DRAFT_VOCAB_N -u GGML_HIP_Q8_1_CACHE_MODE -u BIGCHERRY_ROLLBACK_NO_CONT -u BIGCHERRY_RMS_Q81 -u BIGCHERRY_ACT_Q81 -u BIGCHERRY_HC_Q81 -u BIGCHERRY_SCALE_ACT_FUSE -u BIGCHERRY_SCHED_ASYNC_INPUTS -u BIGCHERRY_QSA_HOST_REMAP $envs "$bin" -m "$model" -ngl 99 -c 4096 --port $port --host 127.0.0.1 -fa on $sm $extra > "$log" 2>&1 &
         local pid=$!
         local ok=0
         for _ in $(seq 240); do
