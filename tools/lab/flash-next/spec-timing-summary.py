@@ -24,3 +24,19 @@ na = [r[6] for r in rows]
 full = sum(1 for d, a in zip(nd, na) if a == d and d > 0)
 print(f"  drafted {sum(nd)} accepted {sum(na)} ({sum(na)/max(1,sum(nd))*100:.1f}%)  full-front rounds "
       f"{full}/{len(rows)} ({full/len(rows)*100:.1f}%)  tokens/round {(sum(na)+len(rows))/len(rows):.2f}")
+# Accepted-prefix distribution (greedy verification accepts a prefix): P(prefix >= k) and the FMTP calibration terms
+# when the run drafted deeper than the production front (e.g. SPEC_N=7 vs front 3): P(full front), P(bridge | full)
+# and the conditional yield of the would-be promoted tail.
+FRONT = 3
+nmax = max(nd) if nd else 0
+if nmax > FRONT:
+    def p_ge(k, pool):
+        return sum(1 for a in pool if a >= k) / max(1, len(pool))
+    print("  P(accepted prefix >= k): " + " ".join(f"k{k}={p_ge(k, na):.2f}" for k in range(1, nmax + 1)))
+    eligible = [a for d, a in zip(nd, na) if d > FRONT]  # rounds that drafted past the front
+    full = [a for a in eligible if a >= FRONT]
+    bridge = [a for a in full if a >= FRONT + 1]
+    tail = [min(a, nmax) - (FRONT + 1) for a in bridge]
+    print(f"  FMTP calibration (front {FRONT}): P(full front) {len(full)/max(1,len(eligible)):.2f}  "
+          f"P(bridge|full) {len(bridge)/max(1,len(full)):.2f}  "
+          f"E[accepted promoted tail | bridge] {sum(tail)/max(1,len(tail)):.2f} of {nmax - FRONT - 1}")
