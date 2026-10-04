@@ -536,6 +536,10 @@ patches = ["1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap"]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
 patches = ["1295_qsa_gather_decode"]
 
+[experiment.retest-1286]
+# QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
+patches = ["1286_draft_local_shared_tensors"]
+
 [experiment.retest-1301]
 # QFP21: promoted base + 1301 Q8_0 raw-F32 MMVQ at MTP verify widths (BIGCHERRY_Q8_F32_MAXCOLS, default 1).
 patches = ["1301_prbe115_q8_f32_mtp_widths"]
