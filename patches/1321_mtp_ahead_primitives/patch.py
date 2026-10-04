@@ -39,14 +39,15 @@ _N_H = _A_H + (
     "    // the front into *tail (disjoint from *result). Defaults keep the ordinary draft.\n"
     "    const llama_tokens * forced = nullptr;\n"
     "    int32_t              n_tail = 0;\n"
-    "    llama_tokens *       tail   = nullptr;\n"
-    "    float                tail_p_min = 0.0f;  // stricter confidence cut for tail tokens (max with p_min)\n")
+    "    llama_tokens *       tail   = nullptr;\n")
 
 _A_SEED = ("            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);\n"
            "            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });\n")
 _N_SEED = ("            // bigcherry 1321: forced front / live tail are single-head non-shared MTP only, greedy only\n"
            "            GGML_ASSERT(((dp.forced == nullptr || dp.forced->empty()) && dp.n_tail <= 0) || (!chain_heads && !is_mem_shared));\n"
-           "            GGML_ASSERT(dp.forced == nullptr || dp.forced->empty() || dp.result_q == nullptr);\n"
+           "            // forced / tail drafting is greedy only: no candidate distribution, no probabilistic drafter\n"
+           "            GGML_ASSERT((dp.forced == nullptr || dp.forced->empty()) && dp.n_tail <= 0 ||\n"
+           "                        (dp.result_q == nullptr && !params.probabilistic));\n"
            "            GGML_ASSERT(dp.n_tail <= 0 || dp.tail != nullptr);\n"
            "            GGML_ASSERT(dp.forced == nullptr || (int) dp.forced->size() <= params.n_max);\n"
            "            if (dp.n_tail > 0) {\n"
@@ -96,10 +97,8 @@ _N_STEP = """                auto & dp = dparams.at(seq_id);
                 const llama_token id = bc_forced ? (*dp.forced)[result.size()]
                                      : dp.result_q ? id_sampled : cur_p->data[0].id;
 
-                // only collect very high-confidence draft tokens (a forced token is already chosen; tail tokens
-                // may use a stricter cut)
-                const float bc_p_min = bc_in_tail ? std::max(params.p_min, dp.tail_p_min) : params.p_min;
-                if (!bc_forced && cur_p->data[0].p < bc_p_min) {
+                // only collect very high-confidence draft tokens (a forced token is already chosen)
+                if (!bc_forced && cur_p->data[0].p < params.p_min) {
                     drafting[seq_id] = false;
                     n_drafting--;
 
