@@ -1,5 +1,5 @@
 #!/bin/bash
-# QFP22 1332 (compact causal filter): unprofiled ub x chunk sweep at the 80K fill, 240K f16, flashnext profile (after dflash-depth).
+# QFP22 1332 (compact causal filter + fixed topology): unprofiled ub x chunk sweep at the 80K fill, no-MTP decode, MTP identity, 240K f16, flashnext profile (after dflash-depth).
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
@@ -13,12 +13,17 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-chunk4 bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT ubc-confirm tools/lab/flash-next/ubchunk-sweep.sh @b-chunk4 $R/qfp22-ubchunk-confirm 512:0 1024:256 1024:512
+VIS=0,1,2,3 BUILD b-chunk6 bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT ubc-confirm tools/lab/flash-next/ubchunk-sweep.sh @b-chunk6 $R/qfp22-ubchunk-confirm 512:0 1024:256 1024:512
+VIS=0,1,2,3 SCRIPT chunk6-nomtp tools/lab/flash-next/chunk-nomtp.sh @b-chunk6 $R/qfp22-chunk6-nomtp
+VIS=0,1,2,3 SCRIPT chunk6-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @b-chunk6 @b-chunk6 $R/qfp22-chunk6-d24k BIGCHERRY_QSA_CHUNK=256
 JOBS
 export BIGCHERRY_FEATURES=flashnext CTX=245760 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 TS=0.31,0.27,0.42 EXTRA_OT='^token_embd\.weight$=CPU'
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 grep -E "^ub" $R/ubc-confirm.log
+grep -E "^chunk|^ +[0-9]" $R/chunk6-nomtp.log
+grep -E "^base-|^new|SERVER_FAILED" $R/chunk6-d24k.log
+md5sum $R/qfp22-chunk6-d24k/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
 echo ALL_JOBS_DONE
