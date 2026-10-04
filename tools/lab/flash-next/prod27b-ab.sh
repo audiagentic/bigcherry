@@ -6,6 +6,8 @@
 # AR_FLAG (e.g. "--allreduce cpu-root") is passed to both arms; unset = each build's default all-reduce (the base
 # build has no cpu-root provider: that comes from 1291).
 set -u
+# cross-model check: no Flash-Next runtime flags (1303 fails closed on BIGCHERRY_ATTN_TS for non-qwen4exp models)
+for v in $(env | grep -oE "^(BIGCHERRY_[A-Z0-9_]+|GGML_HIP_[A-Z0-9_]+)"); do unset "$v"; done
 A=$1 B=$2 out=$3 benv="${*:4}"
 mkdir -p "$out"
 port=18743
