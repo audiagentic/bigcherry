@@ -11,7 +11,7 @@ priority: P2
 work: L
 ---
 
-# 1284 aux_rocm_expert_backend: 6900 XT (ROCm3) as auxiliary expert device outside Meta/RCCL
+# 1328 aux_rocm_expert_backend: 6900 XT (ROCm3) as auxiliary expert device outside Meta/RCCL
 
 ## Description
 
@@ -88,3 +88,4 @@ Implemented in the new `1328_aux_rocm_expert_backend` package with the exact v5+
 
 - 2026-10-02T04:45:07.116948+00:00 (created-by): Created by agent
 - 2026-10-04: Implemented patch 1328 design/package, recipe, mechanics tests, and ROCm3 sweep queue; retained pending state until hardware validation.
+- 2026-10-05: Corrected the plan heading to the implemented patch id 1328; hardware qualification remains pending.
