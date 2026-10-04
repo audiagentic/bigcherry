@@ -56,6 +56,8 @@ class Patch1307Mechanics(unittest.TestCase):
             self.assertIn('#include "hip-q81-cache.h"', mmvq)
             self.assertIn("ggml_hip_q81_cache_find(q81, key)", mmvq)
             self.assertIn("ggml_hip_q81_cache_publish(q81, key, r);", mmvq)
+            # flattened-reshape lookup (1312 GDN final_output) after the padding-free reshape lookup
+            self.assertLess(mmvq.index("hit = ggml_hip_q81_cache_find(q81, vkey);"), mmvq.index("hit = ggml_hip_q81_cache_find(q81, fkey);"))
             self.assertIn("src0->data, src0->type, src1_q8_1_ptr, ids_d", mmvq)
             self.assertNotIn("src1_q8_1(ctx.pool(), ne13*ne12", mmvq)  # pool buffer only on fallback now
             # publish must follow the quantize that fills the reservation (1235's contract)

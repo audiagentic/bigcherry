@@ -70,6 +70,16 @@ _QUANT_NEW = """\
                     vs->ne[0], vs->ne[0]*vs->ne[1], vs->ne[0]*vs->ne[1]*vs->ne[2]);
                 hit = ggml_hip_q81_cache_find(q81, vkey);
             }
+            // A contiguous RESHAPE that merges the source's dims 0 and 1 into a row that needs padding (Qwen4Exp GDN
+            // final_output): the producer (1312) publishes under the source node with exactly this consumer geometry.
+            if (hit == nullptr && src1->op == GGML_OP_RESHAPE && src1->view_src != nullptr &&
+                    src1->data == src1->view_src->data && ggml_is_contiguous(src1) &&
+                    ggml_is_contiguous(src1->view_src) && ne10 == src1->view_src->ne[0]*src1->view_src->ne[1] &&
+                    ggml_nelements(src1) == ggml_nelements(src1->view_src)) {
+                const ggml_hip_q81_cache_key fkey = ggml_hip_q81_cache_make_key(
+                    q81, src1->view_src, src1->data, ctx.curr_stream_no, ne10, ne10_padded, ne11, ne12, ne13, s11, s12, s13);
+                hit = ggml_hip_q81_cache_find(q81, fkey);
+            }
             if (hit != nullptr) {
                 src1_q8_1_ptr = (const char *) hit;
             } else {

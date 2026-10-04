@@ -37,7 +37,8 @@ _HELPER = r"""#if defined(GGML_USE_HIP)
 // consecutive threads that are all in range together.
 template <float (*op)(float), bool gated>
 static __global__ void bc_act_q81_kernel(const float * x, const float * g, float * dst, block_q8_1 * yq,
-        const int64_t k_padded, const int64_t n, const int64_t n_padded, const int64_t o0, const int64_t o1) {
+        const int64_t k_padded, const int64_t n, const int64_t n_padded, const int64_t n_src, const int64_t o0,
+        const int64_t o1) {
     const int64_t ip = int64_t(blockDim.x)*blockIdx.x + threadIdx.x;
     if (ip >= k_padded) {
         return;
@@ -48,8 +49,11 @@ static __global__ void bc_act_q81_kernel(const float * x, const float * g, float
     if (col < n) {
         const int64_t i = row * n + col;  // flat index of the contiguous F32 output
         if constexpr (gated) {
-            const int64_t j0 = row * o0 + col;
-            const int64_t j1 = o0 == o1 ? j0 : row * o1 + col;
+            // gate inputs may be strided per SOURCE row (n_src elements; n_src == n unless flattened, 1312)
+            const int64_t srow = i / n_src;
+            const int64_t scol = i % n_src;
+            const int64_t j0 = srow * o0 + scol;
+            const int64_t j1 = o0 == o1 ? j0 : srow * o1 + scol;
             v = op(x[j0]) * g[j1];
         } else {
             v = op(x[i]);
@@ -70,15 +74,20 @@ static __global__ void bc_act_q81_kernel(const float * x, const float * g, float
 
 // Returns true when the activation was produced (F32 + Q8_1 published); false = caller runs the normal kernel.
 template <float (*op)(float), bool gated>
+// flatten01 (1312): publish dims 0 and 1 merged into one row, the layout of a consumer that reads this node through a
+// contiguous reshape_3d(ne0*ne1, ne2, ne3) whose row needs MMVQ padding (1307's flattened-reshape lookup).
 static bool bc_act_q81_try(ggml_backend_cuda_context & ctx, ggml_tensor * dst, const float * x, const float * g,
-        const int64_t o0, const int64_t o1) {
+        const int64_t o0, const int64_t o1, const bool flatten01) {
     static const bool enabled = getenv("BIGCHERRY_ACT_Q81") != nullptr && atoi(getenv("BIGCHERRY_ACT_Q81")) != 0;
     if (!enabled || ggml_hip_q81_cache_mode_get() == GGML_HIP_Q81_CACHE_OFF || dst->type != GGML_TYPE_F32 ||
             !ggml_is_contiguous(dst)) {
         return false;
     }
-    const int64_t ne0 = dst->ne[0], ne1 = dst->ne[1], ne2 = dst->ne[2], ne3 = dst->ne[3];
-    if (ne0 % QK8_1 != 0 || !ggml_hip_q81_decode_graph) {  // only in decode-shaped graphs (1307): MMVQ consumers
+    const int64_t ne0 = flatten01 ? dst->ne[0]*dst->ne[1] : dst->ne[0];
+    const int64_t ne1 = flatten01 ? dst->ne[2] : dst->ne[1];
+    const int64_t ne2 = flatten01 ? dst->ne[3] : dst->ne[2];
+    const int64_t ne3 = flatten01 ? 1 : dst->ne[3];
+    if (ne0 % QK8_1 != 0 || !ggml_hip_q81_decode_graph || (flatten01 && dst->ne[0] % QK8_1 != 0)) {  // only in decode-shaped graphs (1307): MMVQ consumers
         return false;
     }
     const int64_t ne0_padded = GGML_PAD(ne0, MATRIX_ROW_PADDING);  // MMVQ's padded src1 row
@@ -97,7 +106,7 @@ static bool bc_act_q81_try(ggml_backend_cuda_context & ctx, ggml_tensor * dst, c
     static_assert(block % QK8_1 == 0, "1310: block must cover whole Q8_1 groups");
     const ggml_cuda_kernel_launch_params launch_params((dim3) ((k_padded + block - 1) / block), dim3(block, 1, 1), 0, ctx.stream());
     ggml_cuda_kernel_launch(bc_act_q81_kernel<op, gated>, launch_params, x, g, (float *) dst->data, (block_q8_1 *) r.ptr,
-                            k_padded, ne0, ne0_padded, o0, o1);
+                            k_padded, ne0, ne0_padded, dst->ne[0], o0, o1);
     ggml_hip_q81_cache_publish(q81, key, r);
     if (getenv("BIGCHERRY_Q81_TRACE") != nullptr) {  // pair with 1307's miss trace
         GGML_LOG_WARN("BIGCHERRY_Q81 publish-act gen=%llu node=%p(%s) data=%p ne=%lld,%lld,%lld,%lld\n",
@@ -121,7 +130,7 @@ _UNARY_OLD = """    } else {
 """
 _UNARY_NEW = """    } else {
 #if defined(GGML_USE_HIP)
-        if (bc_act_q81_try<op, false>(ctx, dst, (const float *) src0_d, nullptr, 0, 0)) {  // bigcherry 1310
+        if (bc_act_q81_try<op, false>(ctx, dst, (const float *) src0_d, nullptr, 0, 0, false)) {  // bigcherry 1310
             return;
         }
 #endif
@@ -132,7 +141,7 @@ _UNARY_NEW = """    } else {
 _GATED_OLD = """        unary_gated_cuda<op>(src0_p, src1_p, (float *)dst_d, ggml_nelements(dst), nc, src0_o / sizeof(float), src1_o / sizeof(float), stream);
 """
 _GATED_NEW = """#if defined(GGML_USE_HIP)
-        if (bc_act_q81_try<op, true>(ctx, dst, src0_p, src1_p, src0_o / sizeof(float), src1_o / sizeof(float))) {  // bigcherry 1310
+        if (bc_act_q81_try<op, true>(ctx, dst, src0_p, src1_p, src0_o / sizeof(float), src1_o / sizeof(float), false)) {  // bigcherry 1310
             return;
         }
 #endif
