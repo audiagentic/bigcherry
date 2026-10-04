@@ -1,6 +1,6 @@
 # 1308_qwen4exp_rollback_copy_no_cont
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP13
 
 ## What it does

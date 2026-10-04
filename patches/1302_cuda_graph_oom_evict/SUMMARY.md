@@ -1,6 +1,6 @@
 # 1302_cuda_graph_oom_evict
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFN03
 
 ## What it does

@@ -1,6 +1,6 @@
 # 1303_attn_kv_tensor_split
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFN03
 
 ## What it does

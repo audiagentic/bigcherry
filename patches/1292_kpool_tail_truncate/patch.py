@@ -20,7 +20,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "evaluated"
+STATE = "validated"
 
 _TRUNCATE = """        // BigCherry 1292: a stale position after the first cell is a tail edit (e.g. rejected MTP drafts
         // removed with seq_rm [p, inf)); everything before it is unchanged, so cut the layout there and let

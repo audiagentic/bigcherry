@@ -1,6 +1,6 @@
 # 1294_topk_deterministic_ties
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** RNX02
 
 ## What it does

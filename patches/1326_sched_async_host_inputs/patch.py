@@ -21,7 +21,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A = ("            struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);\n"
       "\n"

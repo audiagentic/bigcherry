@@ -1,6 +1,6 @@
 # 1297_draft_vocab_trim
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFN01
 
 ## What it does

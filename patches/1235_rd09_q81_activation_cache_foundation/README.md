@@ -122,3 +122,17 @@ Draft acceptance is comparable (172-175 accepted of 239-249 drafted), so the arm
 greedy-identical to each other; native differs in text (Q8_1 activation paths and deterministic top-k ties change
 low-order bits). Native cannot load the 240K f16 deployment at all (its largest load was 192K with q8_0 KV), which
 1302/1303 enable. Runs: `/mnt/data/bigcherry-work/runs/flashnext-native-d8k`, `flashnext-native-d48k`.
+
+## Cross-model no-regression (one release build)
+
+The Flash-Next set ships in every release build (validated-enhancements), with every runtime flag at its default.
+Qwen3.8-27B Q8_0 dual-XTX production config (-sm tensor, built-in MTP4, default all-reduce), ABBA per depth,
+promoted base (A) vs base + Flash-Next set (B), `tools/lab/flash-next/queue-p27b-3.sh` (2026-10-05):
+
+| Depth | A decode (t/s) | B decode (t/s) | A prefill | B prefill | acceptance A / B |
+|---|---|---|---|---|---|
+| 10K | 70.9 / 72.9 | 72.8 / 73.5 | 1292.8 / 1292.1 | 1292.2 / 1293.4 | 177/310 / 177/310 |
+| 32K | 72.2 / 72.3 | 72.2 / 72.1 | 1251.7 / 1253.7 | 1253.2 / 1253.7 | 181/293 / 181/293 |
+
+Greedy text identical between A and B at both depths. 1303 fails closed when BIGCHERRY_ATTN_TS is set for a
+non-qwen4exp model (observed on the first 27B attempt), so the flag cannot silently misplace another model's KV.

@@ -1,6 +1,6 @@
 # 1291_ar_cpu_root
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFN01
 
 ## What it does

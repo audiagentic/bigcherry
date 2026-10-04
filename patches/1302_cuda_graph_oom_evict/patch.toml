@@ -1,7 +1,7 @@
 schema = 1
 id = "1302_cuda_graph_oom_evict"
 order = 1302
-state = "evaluated"
+state = "validated"
 kind = "framework"
 origin = "local"
 backend = "hip"

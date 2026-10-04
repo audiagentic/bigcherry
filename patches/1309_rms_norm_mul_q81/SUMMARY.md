@@ -1,6 +1,6 @@
 # 1309_rms_norm_mul_q81
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** PRBE06/QFP13
 
 ## What it does

@@ -19,7 +19,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_MEMBERS = "    ggml_tensor * new_pool_pos  = nullptr; // I32 [4*n_new]        M-RoPE position of each new block's first member\n"
 _N_MEMBERS = _A_MEMBERS + ("    ggml_tensor * bc_live_tail  = nullptr; // bigcherry 1327: F32 [kpool - 1, n_tokens] tail cell live (1) / sentinel (0)\n"

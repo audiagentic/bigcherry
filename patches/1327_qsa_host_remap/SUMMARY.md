@@ -1,6 +1,6 @@
 # 1327_qsa_host_remap
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP13
 
 ## What it does

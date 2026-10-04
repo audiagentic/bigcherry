@@ -1,6 +1,6 @@
 # 1313_scale_act_fuse
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP13
 
 ## What it does

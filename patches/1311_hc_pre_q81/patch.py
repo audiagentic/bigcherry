@@ -19,7 +19,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _INCLUDE_ANCHOR = '#include "dsv4-hc.cuh"\n'
 _INCLUDE_TEXT = ('#if defined(GGML_USE_HIP)\n'
