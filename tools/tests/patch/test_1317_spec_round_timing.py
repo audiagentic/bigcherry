@@ -34,7 +34,7 @@ class Patch1317Mechanics(unittest.TestCase):
             out = path.read_text(encoding="utf-8")
             # phase order inside one round: draft, target submit/sync, draft catch-up, sample, log
             order = [out.index(k) for k in ("bc_spec_t().draft_us +=", "bc_spec_t().sync_us   +=",
-                                            "bc_spec_t().process_us +=", "const int64_t bc_ts0 = ggml_time_us();",
+                                            "bc_spec_t().process_us +=", "const int64_t bc_ts0 = bc_spec_timing_on() ? ggml_time_us() : 0;",
                                             "BIGCHERRY_SPEC_TIMING draft_us=")]
             self.assertEqual(order, sorted(order))
             self.assertLess(out.index("struct bc_spec_timing {"), order[0])

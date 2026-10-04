@@ -54,6 +54,7 @@ class Patch1313Mechanics(unittest.TestCase):
             self.assertLess(softcap, match)
             self.assertLess(match, cu.index("static void ggml_cuda_graph_evaluate_and_capture(", match))
             self.assertIn("!act_then_mul && ggml_can_fuse(cgraph, i, ops3, 2)", cu)
+            self.assertIn("ggml_cuda_can_fuse(cgraph, i + 1, { GGML_OP_UNARY, GGML_OP_MUL }, { ggml_get_unary_op(act) })", cu)
             before = {f: (dst / f).read_text(encoding="utf-8") for f in _FILES}
             second = apply_all(_P1313.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])

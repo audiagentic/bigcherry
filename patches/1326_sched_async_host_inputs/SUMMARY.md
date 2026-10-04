@@ -16,3 +16,7 @@ splice instead of aborting. 1325 measured ~2.6 ms per target verify round and ~0
 ~24K 44.3/44.5 -> 40.0 ms/step (-10%), 72.2/71.9 -> 78.0 t/s; ~80K 50.6/50.0 -> 46.7 ms/step (-7%), 58.8/60.2 -> 64.5 t/s; greedy identical at both depths; acceptance equal. Target submit 5.7 -> 3.0 ms/round; meta split input handling 2.56 -> 0.38 ms; draft split input 0.45-0.57 -> 0.014-0.016 ms/call. Profile v5 candidate (with the prefill patches 1237/1265/1253 if their screen is clean).
 
 Adopted in production profile v5 (2026-10-04, flashnext-v5-abba): v4 -> v5 decode +10.8% at ~8K, +7.8% at ~64K; prefill +3.7% / +7.2%; complete separation; greedy identical across 8 arms per depth.
+
+## 2026-10-04 lifetime fix (reviewer-gpt-agent req_3b37d17e61374a6a)
+
+The fast path now copies each host input into scheduler-owned pageable staging (per input copy) before ggml_backend_tensor_set_async: the source may be a pinned host buffer (truly async DMA) that the caller rewrites on the next set_inputs (e.g. the next prefill ubatch). The results above were measured before this fix; re-measure (queue-v5b-abba.sh) before final adoption.

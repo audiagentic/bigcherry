@@ -43,9 +43,11 @@ _DRAFT_OLD = """            queue_tasks.yield_to_queue([&]() {
             });
 """
 _DRAFT_NEW = """            queue_tasks.yield_to_queue([&]() {
-                const int64_t bc_t0 = ggml_time_us();  // bigcherry 1317
+                const int64_t bc_t0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
                 common_speculative_draft(spec.get());
-                bc_spec_t().draft_us += ggml_time_us() - bc_t0;
+                if (bc_spec_timing_on()) {
+                    bc_spec_t().draft_us += ggml_time_us() - bc_t0;
+                }
             });
 """
 
@@ -54,14 +56,16 @@ _DECODE_OLD = """            ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DEC
                 llama_synchronize(ctx_tgt);
             }
 """
-_DECODE_NEW = """            const int64_t bc_t0 = ggml_time_us();  // bigcherry 1317
+_DECODE_NEW = """            const int64_t bc_t0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
-            const int64_t bc_t1 = ggml_time_us();
+            const int64_t bc_t1 = bc_spec_timing_on() ? ggml_time_us() : 0;
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
-            bc_spec_t().submit_us += bc_t1 - bc_t0;
-            bc_spec_t().sync_us   += ggml_time_us() - bc_t1;
+            if (bc_spec_timing_on()) {
+                bc_spec_t().submit_us += bc_t1 - bc_t0;
+                bc_spec_t().sync_us   += ggml_time_us() - bc_t1;
+            }
 """
 
 _PROCESS_OLD = """            queue_tasks.yield_to_queue([&]() {
@@ -69,9 +73,11 @@ _PROCESS_OLD = """            queue_tasks.yield_to_queue([&]() {
             });
 """
 _PROCESS_NEW = """            queue_tasks.yield_to_queue([&]() {
-                const int64_t bc_t0 = ggml_time_us();  // bigcherry 1317
+                const int64_t bc_t0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
                 ok = common_speculative_process(spec.get(), batch.view);
-                bc_spec_t().process_us += ggml_time_us() - bc_t0;
+                if (bc_spec_timing_on()) {
+                    bc_spec_t().process_us += ggml_time_us() - bc_t0;
+                }
             });
 """
 
@@ -79,7 +85,7 @@ _SAMPLE_OLD = """                const auto & synth_probs = common_speculative_g
                 auto accepted = synth_probs.empty()
 """
 _SAMPLE_NEW = """                const auto & synth_probs = common_speculative_get_synth_probs(spec.get());
-                const int64_t bc_ts0 = ggml_time_us();  // bigcherry 1317
+                const int64_t bc_ts0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
                 auto accepted = synth_probs.empty()
 """
 
@@ -92,8 +98,8 @@ _ACCEPT_NEW = """                common_speculative_accept(spec.get(), slot.id, 
                     SLT_WRN(slot, "BIGCHERRY_SPEC_TIMING draft_us=%lld submit_us=%lld sync_us=%lld process_us=%lld sample_us=%lld n_draft=%zu n_acc=%zu\\n",
                         (long long) bt.draft_us, (long long) bt.submit_us, (long long) bt.sync_us, (long long) bt.process_us,
                         (long long) bt.sample_us, n_draft, accepted.size() - 1);
+                    bc_spec_t() = bc_spec_timing();
                 }
-                bc_spec_t() = bc_spec_timing();
 """
 
 PATCHES = [
@@ -114,7 +120,7 @@ PATCHES = [
                  guard=r"bc_spec_t\(\)\.process_us \+=", rationale="Draft-context catch-up/reseed.",
                  expect_matches=1, max_span_lines=4),
             Edit(id="spec-timing-sample", anchor=re.escape(_SAMPLE_OLD), mode="replace", text=_SAMPLE_NEW,
-                 guard=r"const int64_t bc_ts0 = ggml_time_us\(\);", rationale="Start of target sample-and-accept.",
+                 guard=r"const int64_t bc_ts0 = bc_spec_timing_on\(\) \? ggml_time_us\(\) : 0;", rationale="Start of target sample-and-accept.",
                  expect_matches=1, max_span_lines=3),
             Edit(id="spec-timing-accept", anchor=re.escape(_ACCEPT_OLD), mode="replace", text=_ACCEPT_NEW,
                  guard=r"BIGCHERRY_SPEC_TIMING draft_us=", rationale="Round end: log and reset.",
