@@ -1,151 +1,156 @@
 # Flash-Next MTP verification-overlap pipeline
 
-Plan set for hiding native MTP draft work under target verification on BigCherry's separate-draft-GPU Flash-Next topology.
+Plan set for hiding native MTP work under target verification on BigCherry's separate-draft-GPU Flash-Next topology.
 
 ## Baseline and scope
 
-- BigCherry branch: `patch-refactor` (design revalidated from `af3898e8d98afe9c4de2b5813394c19d0fce325d`).
+- BigCherry branch: `patch-refactor`.
 - llama.cpp pin: `c061df198`.
 - Target workload: Qwen4Exp / Flash-Next with target tensor split and a separate MTP GPU.
-- This is a scheduling/state-machine optimization. It does not change target acceptance semantics.
-- QFP13 remains the owner of same-step decode launch-count reduction. This plan targets a different seam: overlap between target verification and future MTP work.
+- Target sampling/verification remains authoritative; ahead work only creates future proposals.
+- QFP13 still owns same-step launch-count reduction. FMTP owns cross-device scheduling/overlap.
 
-## Target transformation
+## Review correction: no worker in v1
 
-Current server critical path, simplified:
+At c061, llama decode submits graphs with `ggml_backend_sched_graph_compute_async()`. The server then explicitly calls `llama_synchronize(ctx_tgt)` after `llama_process(ctx_tgt, ...)` when outputs are needed. Therefore v1 does not need a background thread to overlap separate GPUs.
 
-```text
-draft A
--> restore/truncate draft context
--> target verifies A
--> common_speculative_process() re-evaluates verified rows in ctx_dft
--> target accepts/rejects
--> next round drafts again
-```
-
-Proposed bounded pipeline:
+Preferred host schedule:
 
 ```text
-draft front A
--> launch MTP continuation (bridge + B) ───────────┐
--> target verifies A                              │ concurrent, separate GPU
--> join continuation <─────────────────────────────┘
--> preserve authoritative draft-context replay/reseed
--> target accepts/rejects A
--> promote B only if full-A acceptance + bridge equality
+llama_process(ctx_tgt, verify_batch)   # async GPU submit; do not sync yet
+run bounded MTP work on ctx_dft        # same host thread, separate GPU
+llama_synchronize(ctx_tgt)             # waits only for target remainder
+rollback/truncate ctx_dft
+common_speculative_process(...)
+post_decode target accept/reject
 ```
 
-The target remains authoritative for every emitted token. Ahead tokens are only proposal work and are always verified normally before they can be emitted.
+This gives the same ideal device overlap as a worker (`max(T_target, T_mtp)`) without cross-thread llama/backend access, mailbox races, worker lifetime, or unload/reset joins. A worker becomes a fallback only if hardware traces prove target submission is not sufficiently asynchronous on the production HIP path.
 
-## Why native MTP can continue ahead
+## Review correction: promoted fronts must be replayed through MTP
 
-At llama.cpp `c061df198`, `common_speculative_impl_draft_mtp` has three modes:
+The old draft-context branch used to create an ahead tail cannot survive target verification: the existing path deliberately rolls/truncates `ctx_dft`, reprocesses the verified target batch, and reseeds MTP from authoritative target hidden state.
 
-- shared-memory assistant (`is_mem_shared`),
-- chained trained heads (`chain_heads`),
-- single-head non-shared MTP (Qwen path).
+Therefore storing only promoted tokens is safe for target verification, but it is not enough to continue another ahead chain on the following round.
 
-For the single-head non-shared path, the first input is `(dp.id_last, pending_h)`. After each draft decode the implementation samples `id`, reads `h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last)`, and feeds `(id, h_row)` to the next MTP position. Therefore, once front A has been generated, the MTP context has all state needed to continue its own speculative branch without another target hidden-state row.
+Steady-state pipeline needs two cases:
 
-`accept()` later overwrites `pending_h` from `verify_h[n_accepted]`; that remains the authoritative reseed path after target verification.
+### Cold / miss round
+
+```text
+serially draft front A on MTP
+submit target verify A asynchronously
+continue live MTP branch -> bridge + B while target runs
+sync target
+rollback/reseed draft context authoritatively
+accept/reject A
+promote B only on full-A + bridge match
+```
+
+### Hit round with promoted front B
+
+```text
+install promoted B as target verification draft; no serial fresh draft
+submit target verify B asynchronously
+from authoritative MTP seed, force/replay known B tokens through MTP
+continue reconstructed live branch -> bridge + C while target runs
+sync target
+rollback/reseed draft context authoritatively
+accept/reject B
+promote C only on full-B + bridge match
+```
+
+The forced replay is work, but it is moved inside the target verification window. This is the mechanism that makes the pipeline continuous after the first hit without preserving a second draft-context snapshot.
+
+## Why native MTP can continue
+
+At c061, single-head non-shared MTP starts a round from target `pending_h`, then after each draft decode samples `id`, reads the MTP `h_row`, and feeds `(id, h_row)` to the next MTP position.
+
+A live front therefore has a valid continuation seam. A promoted front has lost that live speculative KV after authoritative rollback, so it must be replayed from `(id_last, pending_h)` with its known tokens forced until the live frontier is reconstructed.
+
+The replayed MTP hidden trajectory need not equal the prior speculative trajectory or a fresh next-round proposal trajectory. That is acceptable in greedy/sample-and-match mode: proposals may differ, but every promoted token is still verified by the target before emission.
 
 ## Bridge rule
 
-A continuation cannot be reused merely because all front tokens were accepted.
+If current front is `A1..AN`, ahead work produces `B0 B1..BM`, while full target verification produces `A1..AN Z`.
 
-If the current draft is:
+Reuse is allowed only when:
 
-```text
-A1 A2 ... AN
-```
+1. all front tokens are accepted;
+2. `B0 == Z`;
+3. epoch and absolute frontier metadata match;
+4. remaining tail meets the existing minimum-draft policy.
 
-then continuing MTP produces:
+`B0` is consumed by the equality check. Only `B1..BM` becomes the next verification draft.
 
-```text
-bridge B1 B2 ... BM
-```
+## v1 eligibility
 
-while a full target verification produces:
+- native `draft-mtp`;
+- `!is_mem_shared`;
+- `!chain_heads`;
+- greedy/sample-and-match only;
+- one active sequence;
+- target and draft device sets disjoint for the production qualification lane;
+- no known shared model/meta buffer dependency between target and draft contexts.
 
-```text
-A1 A2 ... AN Z
-```
+The last two are performance/lifetime guards: `!is_mem_shared` only describes MTP memory semantics; it does not prove physical device isolation.
 
-The continuation tail is on the authoritative prefix only when both are true:
+## Existing BigCherry work to reuse
 
-1. target accepts all `N` tokens in A;
-2. `bridge == Z`.
-
-The bridge is consumed by this equality check. Only `B1..BM` may become the next verification draft. Partial acceptance, bridge mismatch, stale epoch, reset, replay, context shift, failure, stop/EOS, or frontier mismatch flushes the ahead result.
-
-## Compatibility envelope for v1
-
-| Mode | v1 | Reason |
-| --- | --- | --- |
-| native MTP on separate draft context/device | yes | intended independent execution lane |
-| single-head (`!chain_heads`) | yes | self-continuing hidden-state recurrence is proven at c061 |
-| non-shared memory (`!is_mem_shared`) | yes | avoids concurrent mutation of target-shared memory |
-| greedy / sample-and-match | yes | deterministic first qualification lane |
-| `--parallel 1` | yes | simplest lifecycle and epoch proof |
-| probabilistic rejection | later | proposal distributions + sampler state must be exact |
-| chained trained heads | later/no | head-indexed KV semantics differ |
-| shared-memory assistants | no | unsafe to mutate shared state concurrently |
-| multi-slot | later | requires independent epochs/jobs per sequence |
-
-## Existing BigCherry work this set must reuse
-
-- `1254_nro05_gdn_mtp_prefix_tail`: recurrent/GDN MTP correctness surface.
-- `1255_nro06_adaptive_mtp_depth`: pure adaptive depth controller.
-- `1261_nro10_spec_ctx_other_devices`: speculative scheduler visibility across target/draft devices.
-- `1268_prbe52_adaptive_mtp_wiring`: runtime per-sequence adaptive MTP depth and acceptance accounting; includes the current `n_min_adaptive >= n_min` guard.
-- `1280_qwen4exp_mtp_kpool_alloc`: rejected; do not depend on it. Correct Flash-Next MTP metadata is required instead.
-- `1293_sched_single_input_sync`: evidence that host-sync count reduction alone was neutral; do not duplicate this direction.
-- `1308_qwen4exp_rollback_copy_no_cont`: may reduce same-step rollback snapshot launches; pipeline must remain correct with either 1308 arm.
+- `1254_nro05_gdn_mtp_prefix_tail` — recurrent/GDN correctness.
+- `1255_nro06_adaptive_mtp_depth` + `1268_prbe52_adaptive_mtp_wiring` — front-depth policy/accounting.
+- `1261_nro10_spec_ctx_other_devices` — speculative device visibility.
+- `1280_qwen4exp_mtp_kpool_alloc` — rejected; do not depend on it.
+- `1293_sched_single_input_sync` — sync-count reduction was neutral; do not optimize sync count as a proxy.
+- `1308_qwen4exp_rollback_copy_no_cont` — same-step rollback optimization; FMTP must work with either arm.
 
 ## Dependency graph
 
 ```text
-FMTP01 instrumentation + fail-closed eligibility
-  -> FMTP02 synchronous continuation primitive
-  -> FMTP03 persistent async worker / overlap
-  -> FMTP04 bridge-validated tail promotion
-  -> FMTP05 adaptive ahead-depth economics
+FMTP01 instrumentation + eligibility
+  -> FMTP02 live continuation + forced-front replay primitive
+  -> FMTP03 single-thread target-submit/MTP-work/target-sync overlap
+  -> FMTP04 bridge-gated promotion + promoted-front replay wiring
+  -> FMTP05 adaptive ahead economics/probing
   -> FMTP07 hardware qualification
 
 FMTP04 -> FMTP06 probabilistic + multi-slot extension -> FMTP07
 ```
 
-FMTP06 is not required for the first greedy single-slot hardware proof.
+FMTP06 is not required for the first greedy single-slot proof.
 
 ## State invariants
 
-1. Target sampling/verification is the sole commit authority.
-2. Every ahead job/result carries `(seq_id, epoch, base_pos, front_len)`.
-3. Stale epochs/frontiers are rejected, never repaired heuristically.
-4. Tail promotion requires full front acceptance **and** bridge equality.
-5. A promoted tail is still a normal speculative draft and must be target-verified.
-6. `ctx_dft` has a single owner while ahead work is running; `common_speculative_process()`, reset/checkpoint restore and destruction cannot race it.
-7. Existing replay/rollback and `accept()` hidden-state reseed remain authoritative after each verification.
-8. `ahead=0` must preserve the existing path and performance within noise.
+1. Target verification is the only commit authority.
+2. Every ahead result identifies its parent `(seq_id, epoch, base_pos, front_len)`.
+3. Every round transition gets a new epoch; a promoted child is retagged to the new round.
+4. Tail promotion requires full-front acceptance plus bridge equality.
+5. A promoted tail remains an ordinary target-verified draft.
+6. A live continuation seed is an ephemeral lease over current `ctx_dft` KV + sampler frontier; any draft-context mutation invalidates it.
+7. Promoted fronts must be replayed from authoritative MTP seed before another continuation can be generated.
+8. Existing rollback/replay and `accept()` target-hidden reseed remain authoritative after each verification.
+9. `ahead=0` preserves current behavior.
 
 ## Mock oracle
 
-`mock_pipeline.py` models front verification, target-extra token, bridge-gated tail reuse, epoch invalidation and stale completion rejection. It is deliberately not a KV/backend simulator.
+`mock_pipeline.py` now models cold rounds, promoted-front replay, recursive draft hidden state, hidden-state mismatch versus fresh reseed, bridge promotion, stale/base faults, short tails and the single-thread overlap timing equation.
 
-Design qualification run:
+Current qualification run:
 
 ```text
-PASS trials=5000 promotions=64199 flushes=316763 stale_rejected=316763
+PASS trials=5000 rounds=381584 promotions=39286 promoted_replays=39286 hidden_mismatch_promotions=24203 flushes=342298 stale_rejected=7566 timing_cases=10000
 ```
 
-The randomized oracle reproduces the target truth stream exactly for draft depths 1..8 and varied synthetic draft accuracy. Real MTP hidden/KV equivalence remains an FMTP02 hardware/mechanics gate.
+`hidden_mismatch_promotions > 0` is intentional: it demonstrates that bridge-gated tails can differ from a fresh target-reseeded MTP proposal while the target output remains exact.
+
+The mock is still not a KV/backend simulator. FMTP02 must prove real forced-front replay and continuation on c061 before scheduling changes land.
 
 ## Primary performance question
 
-Do not promote this feature based on "ahead hit rate" alone. The relevant result is critical-path reduction:
+Measure critical-path reduction, not ahead hit rate alone:
 
-- target wait on MTP work,
-- join overhang,
-- target verify ms/step,
-- end-to-end generation latency / tok/s,
-- and device contention while target and MTP GPUs overlap.
+- target submit time and target sync wait separately;
+- MTP replay/continuation time;
+- join/sync overhang (`max(0, T_mtp - T_target)`);
+- target verify ms/step and end-to-end tok/s;
+- cross-device contention/power/thermal effects.
