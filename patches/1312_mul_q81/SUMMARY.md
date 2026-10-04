@@ -18,3 +18,5 @@ consumer's padded row (1310 `flatten01`), matched by 1307's flattened-reshape lo
 ## Hardware result (2026-10-04 review)
 
 flashnext-v3-1312c (build A/B vs v3): ~24K 44.3 vs 44.8/44.9 ms/step, ~80K 51.0 vs 51.8/51.1; quantize/token 45 -> 30, kernels/token 1116 -> 1091; greedy identical. v4 candidate (multi-request ABBA pending).
+
+Adopted in production profile v4 (2026-10-04, flashnext-v4-abba): v3 -> v4 +2.1% at ~8K and ~64K, complete separation, greedy identical across 8 arms per depth. State stays evaluated until a qualification package exists.
