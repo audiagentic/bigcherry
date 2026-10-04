@@ -91,6 +91,8 @@ Owner 2026-10-05: one build only - promote into [patch-set.validated-enhancement
 
 ## Ledger-events
 
+
+
 - chg_20261004_161427_one-flag-bigcherry_featuresf_8633
 - 2026-10-04T16:14:30.741719+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261004_161445_one-flag-bigcherry_featuresf_6153
@@ -99,3 +101,7 @@ Owner 2026-10-05: one build only - promote into [patch-set.validated-enhancement
 - 2026-10-04T18:32:59.802499+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T18:33:11.689790+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-10-04T18:33:15.022660+00:00 (state-transition): State: pending → completed
+- chg_20261004_235327_model-and-scope-tuning-now-liv_4754
+- 2026-10-04T23:53:30.414564+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_235343_model-and-scope-tuning-now-liv_4846
+- 2026-10-04T23:53:46.687293+00:00 (updated-by): Updated: section:ledger-events

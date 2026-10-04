@@ -121,9 +121,12 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 ## Ledger-events
 
+
 - chg_20261004_161454_found-what-limits-the-larger-p_4462
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T18:12:07.315403+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T19:15:06.825550+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T19:37:51.020304+00:00 (updated-by): Updated: section:notes
+- chg_20261004_235349_long-context-flash-next-candid_9064
+- 2026-10-04T23:53:53.025717+00:00 (updated-by): Updated: section:ledger-events

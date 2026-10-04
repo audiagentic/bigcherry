@@ -67,3 +67,11 @@ Owner 2026-10-05 (two directions): (1) profile files must live in a folder relat
 
 - 2026-10-04T22:01:19.661087+00:00 (created-by): Created by agent
 - 2026-10-04T22:04:04.431702+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+
+- chg_20261004_235327_model-and-scope-tuning-now-liv_4754
+- 2026-10-04T23:53:33.547468+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_235343_model-and-scope-tuning-now-liv_4846
+- 2026-10-04T23:53:49.845549+00:00 (updated-by): Updated: section:ledger-events

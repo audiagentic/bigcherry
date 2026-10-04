@@ -138,3 +138,9 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 
 - RV4217
 - 2026-10-04T23:43:03.592762+00:00 (updated-by): Updated: section:notes
+- RV4219
+
+## Ledger-events
+
+- chg_20261004_235349_long-context-flash-next-candid_9064
+- 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events

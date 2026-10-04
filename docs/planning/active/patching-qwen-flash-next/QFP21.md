@@ -76,3 +76,12 @@ Correction (owner challenge 2026-10-05): the DFlash 'keep MTP5' decision was pre
 - 2026-10-04T23:00:21.339102+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T23:01:31.187042+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T23:49:09.380343+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4218
+
+## Ledger-events
+
+- chg_20261004_235349_long-context-flash-next-candid_9064
+- 2026-10-04T23:53:56.169165+00:00 (updated-by): Updated: section:ledger-events
