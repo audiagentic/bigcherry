@@ -3,12 +3,14 @@
 # cpu-root AllReduce) on two binaries, ABBA per depth (A = before, B = after). Reports prefill and decode t/s,
 # acceptance, ms/step, and saves the greedy completion text per run (identity check: md5 of the .txt files).
 # Usage: prod27b-ab.sh <before llama-server> <after llama-server> <out-dir> [after-arm env...]
+# AR_FLAG (e.g. "--allreduce cpu-root") is passed to both arms; unset = each build's default all-reduce (the base
+# build has no cpu-root provider: that comes from 1291).
 set -u
 A=$1 B=$2 out=$3 benv="${*:4}"
 mkdir -p "$out"
 port=18743
 model=/mnt/data/llm-models/qwen3.8-27b/gguf/unsloth/Qwen3.8-27B-Q8_0.gguf
-COMMON="-m $model -ngl 99 -c 40960 -ub 512 -b 2048 -fa on --parallel 1 --threads 8 --port $port --host 127.0.0.1 --allreduce cpu-root -sm tensor -ts 1,1 --spec-type draft-mtp --spec-draft-n-max 4"
+COMMON="-m $model -ngl 99 -c 40960 -ub 512 -b 2048 -fa on --parallel 1 --threads 8 --port $port --host 127.0.0.1 ${AR_FLAG:-} -sm tensor -ts 1,1 --spec-type draft-mtp --spec-draft-n-max 4"
 
 request() {  # depth text-out -> "decode_tps prompt_tps acc gen n"
     python3 - "$1" "$port" "$2" <<'PY'
