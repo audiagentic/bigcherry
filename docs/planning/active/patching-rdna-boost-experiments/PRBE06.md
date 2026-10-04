@@ -132,3 +132,8 @@ The direct path must preserve the standalone quantizer's exact scale, rounding, 
 ## Change Log
 
 - 2026-10-03T20:39:54.017623+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261003_221744_flash-next-decode-issues-13_8662
+- 2026-10-03T22:17:53.371988+00:00 (updated-by): Updated: section:ledger-events

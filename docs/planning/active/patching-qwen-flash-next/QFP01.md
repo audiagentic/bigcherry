@@ -59,3 +59,8 @@ Evidence: flashnext-cpuroot-4 ABBA vs auto (-ts 4,4,3 ub1024): no-MTP decode +6.
 
 - 2026-10-03T15:20:13.613565+00:00 (created-by): Created by agent
 - 2026-10-03T20:26:47.420667+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261003_221753_fixed-a-possible-hang-when-shu_6807
+- 2026-10-03T22:17:56.460475+00:00 (updated-by): Updated: section:ledger-events

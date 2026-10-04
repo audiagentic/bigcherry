@@ -84,6 +84,7 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 
 ## Ledger-events
 
+
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.099464+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -95,3 +96,5 @@ Successor key: patching-nasone-rdna-optimizations-nro12
 - 2026-09-24T02:35:05.511646+00:00 (updated-by): Updated: section:effort_risk, section:notes
 - 2026-09-24T04:50:35.412744+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-10-04T01:02:24.355840+00:00 (updated-by): Updated: section:notes
+- chg_20261004_011520_three-more-flash-next-decode-k_5440
+- 2026-10-04T01:15:30.484663+00:00 (updated-by): Updated: section:ledger-events

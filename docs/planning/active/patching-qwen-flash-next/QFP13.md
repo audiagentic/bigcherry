@@ -171,6 +171,12 @@ Out of scope for QFP13 implementation ownership:
 
 ## Ledger-events
 
+
+
 - chg_20261003_221744_flash-next-decode-issues-13_8662
 - 2026-10-03T22:17:47.230319+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-03T22:54:32.356647+00:00 (updated-by): Updated: section:notes
+- chg_20261003_235210_flash-next-decode-launches-15_2384
+- 2026-10-03T23:52:13.609111+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261004_011520_three-more-flash-next-decode-k_5440
+- 2026-10-04T01:15:24.244427+00:00 (updated-by): Updated: section:ledger-events
