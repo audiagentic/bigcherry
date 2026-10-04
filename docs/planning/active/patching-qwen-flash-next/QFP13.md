@@ -87,6 +87,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 2026-10-04 1313 (BIGCHERRY_SCALE_ACT_FUSE=1: SCALE -> SILU/SIGMOID [-> SCALE] in one launch, hyper-connection blocks; bit-identical math, 1310-style Q8_1 when the chain ends at the activation) env screen on one build (flashnext-v3-1313b): greedy IDENTICAL; ~24K 43.7 vs 45.2/44.5 ms/step (-2..-3%), ~80K 50.1 vs 51.1/51.1 (-2%); t/s flat at 80K because drafted/accepted counts differ (169/258 vs 171/252, 170/255) - run-to-run draft nondeterminism (QFP15), also seen between the two baseline arms. Census: kernels/token 1116 -> 1024 per XTX (972 R9700), elementwise ~357 -> ~275/token. Cumulative from profile v2: 1307 -> 1024 kernels/token (-22%). Candidate for v3 adoption after a multi-request ABBA (single-request t/s is acceptance-noise-limited until QFP15 is fixed).
 
+2026-10-04 1314 (BIGCHERRY_AR_FUSED=1: one fused produce+consume kernel per small cpu-root AllReduce) env screen (flashnext-v3-1314b): greedy IDENTICAL; ~24K 44.3 vs 44.3/44.2 ms/step, ~80K 51.1 vs 51.1/51.1 - neutral. Census: AllReduce launches 59 -> 29.5/token, kernels/token 1116 -> 1072, but AllReduce busy time 1.2 -> 2.5 ms/token on XTX: the wait for the CPU sum moved from the inter-kernel gap into the fused kernel's spin. The AllReduce is bound by rank arrival skew and the CPU sum, not by the launch. PARKED (correct, neutral); do not adopt.
+
 ## Current Evidence
 
 Profile-v2 observations:
@@ -183,3 +185,4 @@ Out of scope for QFP13 implementation ownership:
 - chg_20261004_011520_three-more-flash-next-decode-k_5440
 - 2026-10-04T01:15:24.244427+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T04:00:41.792844+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T04:18:25.310777+00:00 (updated-by): Updated: section:notes
