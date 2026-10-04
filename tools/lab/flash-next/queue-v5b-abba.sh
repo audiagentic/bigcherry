@@ -1,5 +1,5 @@
 #!/bin/bash
-# QFN01 v5 re-adoption after review fixes (1326 staging, 1313 eligibility): v4 (b-v4b, fixed 1313) vs v5 (b-v5b), ABBA x2.
+# QFN01 v5 re-adoption after review fixes (1326 staging, 1313 eligibility): v4 (b-v4c, fixed 1313) vs v5 (b-v5c), ABBA x2.
 # ABBA x2 at ~8K and ~64K, 512 decode tokens per arm. Waits for the Gate 0 queue.
 set -u
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -13,12 +13,12 @@ docker stop radiance-vllm >/dev/null 2>&1
 jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD b-v4b bigcherry:stock:linux-multi deploy-v4 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 BUILD b-v5b bigcherry:stock:linux-multi deploy-v5 gfx1100,gfx1201,gfx1030
-VIS=0,1,2,3 SCRIPT v5b-abba tools/lab/flash-next/abba-depths.sh @b-v4b @b-v5b $R/flashnext-v5b-abba BIGCHERRY_SCHED_ASYNC_INPUTS=1
+VIS=0,1,2,3 BUILD b-v4c bigcherry:stock:linux-multi deploy-v4 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD b-v5c bigcherry:stock:linux-multi deploy-v5 gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 SCRIPT v5c-abba tools/lab/flash-next/abba-depths.sh @b-v4c @b-v5c $R/flashnext-v5c-abba BIGCHERRY_SCHED_ASYNC_INPUTS=1
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^d[0-9]+ " $R/v5b-abba.log
+grep -E "^d[0-9]+ " $R/v5c-abba.log
 echo ALL_JOBS_DONE
