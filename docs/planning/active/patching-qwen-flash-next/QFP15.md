@@ -60,8 +60,11 @@ Payoff beyond clean benchmarks: exact spec-vs-nospec and spec-vs-spec identity c
 
 2026-10-04 run 2 (flashnext-det2-d24k, all AllReduce sizes through the fixed-order cpu-root CPU sum via BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES=256 MiB): still nondeterministic, and now even the warm-up 'Hello' request differs: base-a starts with draft id 1942 (as in run 1), new and base-b with id 353; new vs base-b share the first draft round but the target accepted 1 vs 0 tokens with different target_h. RCCL is NOT the cause; the target computation itself differs on a tiny prompt with only small fixed-order AllReduces. Two discrete modes (1942 vs 353 starts) suggest a per-process choice made at startup (kernel/algorithm selection, tuning, library heuristics, device/stream assignment) rather than continuous float noise. Next: run 3 (queue-determinism3.sh) with 1316 BIGCHERRY_NODE_HASH=0:2 hashes every node of the first two graphs per context across three runs; the first differing node names the op.
 
+2026-10-04 run 3 (1316 node hashes): incompatible with the tensor-split meta backend - the eval callback splits the graph per node and ggml-backend-meta.cpp:2229 asserts (i_start == cgraph->n_nodes); only the first 18 nodes (embedding .. hc_pre .. cache_r view) were hashed and they were identical across runs. 1316 needs a non-callback design for -sm tensor (e.g. hash selected graph outputs after compute). Startup logs of a run in each mode (det2 base-a vs base-b) are identical apart from port/timing, so the mode is not a startup choice. New leading hypothesis: stale/uninitialized device memory read (depends on VRAM left by earlier processes and on per-run allocation addresses) - prime suspect the 1235/1307 Q8_1 activation cache and its producers (address+generation keyed reuse). Note GGML_HIP_Q8_1_CACHE_MODE=verify is parsed but not implemented in the MMVQ path. Run 4 queued (queue-determinism4.sh): all v3/v4 runtime flags off; deterministic => bisect the flag-gated patches.
+
 ## Change Log
 
 - 2026-10-04T04:00:27.523971+00:00 (created-by): Created by agent
 - 2026-10-04T05:06:40.485818+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:47:30.490172+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T06:14:06.301778+00:00 (updated-by): Updated: section:notes
