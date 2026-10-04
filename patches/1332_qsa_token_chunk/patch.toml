@@ -1,6 +1,6 @@
 schema = 1
-id = "1330_qsa_mask_inplace"
-order = 1330
+id = "1332_qsa_token_chunk"
+order = 1332
 state = "untested"
 kind = "enhancement"
 origin = "local"
@@ -8,7 +8,7 @@ backend = "hip"
 plan-item = "QFP17"
 plan-ids = ["QFP17"]
 requires = ["0910_feature_sets"]
-conflicts = ["1332_qsa_token_chunk"]
+conflicts = ["1330_qsa_mask_inplace"]
 requires-options = []
 forbids-options = []
 subsystems = ["model"]
