@@ -30,7 +30,9 @@ _N = ("    {   // bigcherry 1330: add the causal mask in place (one dense mask i
 _A2 = "    ggml_tensor * mask    = ggml_reshape_4d(ctx0, sel, kq_mask->ne[0], kq_mask->ne[1], kq_mask->ne[2], kq_mask->ne[3]);\n"
 _N2 = ("    // bigcherry 1330: the in-place selection mask is a strided view of [n_kv + n_sel, T] already shaped like kq_mask;\n"
        "    // flash attention reads the mask by its own row stride, so pass it through instead of reshaping (needs contiguity)\n"
-       "    ggml_tensor * mask    = ggml_are_same_shape(sel, kq_mask) ? sel\n"
+       "    // (BIGCHERRY_QSA_MASK_INPLACE=2: diagnostic, make it contiguous first to isolate the strided-mask read)\n"
+       "    static const int bc_mask_mode = getenv(\"BIGCHERRY_QSA_MASK_INPLACE\") ? atoi(getenv(\"BIGCHERRY_QSA_MASK_INPLACE\")) : 0;\n"
+       "    ggml_tensor * mask    = ggml_are_same_shape(sel, kq_mask) ? (bc_mask_mode == 2 ? ggml_cont(ctx0, sel) : sel)\n"
        "        : ggml_reshape_4d(ctx0, sel, kq_mask->ne[0], kq_mask->ne[1], kq_mask->ne[2], kq_mask->ne[3]);\n")
 
 _A3 = ("    ggml_tensor * mask_all = ggml_new_tensor_4d(ctx0, kq_mask->type, n_kv + n_sel, 1, 1, 1);\n"

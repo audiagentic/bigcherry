@@ -53,7 +53,7 @@ class Patch1330Mechanics(unittest.TestCase):
             self.assertLess(out.index("ggml_set_rows(ctx0, mask_all, zeros"), hook)
             self.assertIn("sel = bc_inplace ? ggml_add_inplace(ctx0, sel, kq_mask) : ggml_add(ctx0, sel, kq_mask);", out)
             self.assertLess(hook, out.index('cb(sel, "indexer_sel", il);'))
-            self.assertIn("ggml_are_same_shape(sel, kq_mask) ? sel", out)
+            self.assertIn("ggml_are_same_shape(sel, kq_mask) ? (bc_mask_mode == 2 ? ggml_cont(ctx0, sel) : sel)", out)
             self.assertIn("const int64_t bc_mask_rows = bc_mask_inplace ? GGML_PAD(n_kv + n_sel, 256) : n_kv + n_sel;", out)
             g = (root / _REL_GGML).read_text(encoding="utf-8")
             self.assertIn("GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));", g)
