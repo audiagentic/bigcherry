@@ -60,8 +60,11 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 
 2026-10-04 1319 submit split at ~10K (flashnext-submitsplit-d10k): target ctx (4-token verify, 98% graph reuse) graph 0.003 ms, inputs 0.09 ms, graph_compute host 5.01 ms median (mean 5.83) - the KQ-mask hypothesis is wrong; essentially all of the submit is inside ggml_backend_sched_graph_compute_async over the meta (-sm tensor) backend. Draft ctx (6900): graph reuse only 50% (alternates 1-token draft steps and 4-token process), graph 0.13 ms, inputs 0.04, compute 0.42 ms. Meta backend structure: graph split at every AllReduce; per subgraph x per device one ggml_backend_graph_compute_async (one HIP graph launch) then the AllReduce enqueue - ~(n_subgraphs x 3) graph launches per verify round. 1320 queued to measure n_subgraphs and launch vs AllReduce host time. Candidate fix if launches dominate: since decode-size AllReduces are stream kernels (1291 cpu-root produce/consume), capture each device's whole subgraph+AllReduce sequence into ONE HIP graph per device per round (graph reuse keeps topology fixed), turning ~100 launches per device into 1. Potential ~3-4 ms/round (~8-10%). Draft graph reuse: cache two graphs (width 1 and width n_max+1) instead of one.
 
+2026-10-04 1319 at ~80K: target graph 0.003 ms, inputs 0.33 ms (0.09 at 10K), graph_compute 5.53 ms median (mean 6.98); draft inputs 0.20 ms (0.04 at 10K), compute 0.56 ms, graph reuse 50%. Input setup scales with n_kv (KQ mask built on the CPU) - real but secondary (~0.25 ms/target round + ~0.16 ms/draft step at 80K, ~1%); the meta graph_compute host time (5-5.5 ms) is the main term.
+
 ## Change Log
 
 - 2026-10-04T05:13:42.699438+00:00 (created-by): Created by agent
 - 2026-10-04T06:12:21.750192+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:17:35.435151+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T06:21:34.071163+00:00 (updated-by): Updated: section:notes
