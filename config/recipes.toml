@@ -431,11 +431,6 @@ patches = ["1205_rd12_paired_mmvq_dual_output"]
 # Quick screen: deployment candidate + RD13 mul_mat + add view fusion (1206).
 patches = ["1206_rd13_mul_mat_add_view_fusion"]
 
-[experiment.deploy-plus-1301]
-# PRBE115 screen: deployment candidate + 1301 (Q8_0 F32-act at MTP verify widths; env-gated, so one binary
-# serves both arms: BIGCHERRY_Q8_F32_MAXCOLS=1 is 1241 behaviour, =4 covers MTP3 verify; _RDNA4=1 adds gfx1201).
-patches = ["1301_prbe115_q8_f32_mtp_widths"]
-
 [experiment.deploy-plus-1302]
 # 192K deep-fill robustness: deployment candidate + 1302 (graph-instantiate OOM evicts other cached graphs, retries).
 patches = []
@@ -539,10 +534,6 @@ patches = ["1295_qsa_gather_decode"]
 [experiment.retest-1286]
 # QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
 patches = ["1286_draft_local_shared_tensors"]
-
-[experiment.retest-1301]
-# QFP21: promoted base + 1301 Q8_0 raw-F32 MMVQ at MTP verify widths (BIGCHERRY_Q8_F32_MAXCOLS, default 1).
-patches = ["1301_prbe115_q8_f32_mtp_widths"]
 
 [experiment.deploy-v6-plus-chunk]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).

@@ -20,7 +20,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "rejected"
 
 _GATE_OLD = (
     "    if (!ids && src0->type == GGML_TYPE_Q8_0 && ne1 == 1 && !forced.requested()) {\n"
