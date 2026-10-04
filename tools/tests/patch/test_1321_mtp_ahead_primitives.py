@@ -49,7 +49,8 @@ class Patch1321Mechanics(unittest.TestCase):
             mtp = cpp[cpp.index("struct common_speculative_impl_draft_mtp"):cpp.index("struct common_speculative_impl_ngram_simple")]
             # forced token chosen before the p_min gate, which skips forced tokens
             self.assertLess(mtp.index("const llama_token id = bc_forced ? (*dp.forced)[result.size()]"),
-                            mtp.index("if (!bc_forced && cur_p->data[0].p < params.p_min)"))
+                            mtp.index("if (!bc_forced && cur_p->data[0].p < bc_p_min)"))
+            self.assertIn("std::max(params.p_min, dp.tail_p_min)", mtp)
             # the front stops at n_max only without a tail; tail tokens never enter result
             self.assertIn("if (bc_front <= result.size() && dp.n_tail <= 0)", mtp)
             self.assertIn("const size_t bc_front    = dp.forced ? bc_n_forced : (size_t) params.n_max;", mtp)
