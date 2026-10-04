@@ -25,22 +25,72 @@ from bigcherry.patcher import ENV_DOC_TABLE_END, Edit, FilePatch
 GROUP = "rdna-boosts"
 STATE = "validated"
 
+# Feature sets: (name, description, members). A member is NAME=VALUE or @other-set. Name sets by what they act on,
+# not by the model they were tuned on. Validated below when the patch is loaded; the C table is generated from it.
+SETS = (
+    ("hip-q81",
+     "HIP MMVQ decode: reuse one Q8_1 activation quantization and let RMS-norm, activations, MUL, scale fusions (and "
+     "hyper-connection pre-mix, on HC models) write it directly (any quantized model)",
+     ("GGML_HIP_Q8_1_CACHE_MODE=on", "BIGCHERRY_RMS_Q81=1", "BIGCHERRY_ACT_Q81=1", "BIGCHERRY_HC_Q81=1",
+      "BIGCHERRY_SCALE_ACT_FUSE=1")),
+    ("sched-async",
+     "scheduler stages small host inputs asynchronously (multi-backend / tensor-split runs)",
+     ("BIGCHERRY_SCHED_ASYNC_INPUTS=1",)),
+    ("flashnext",
+     "Qwen3.8 Flash-Next production profile (pin 0504396); its Qwen4Exp-only patches are on by default",
+     ("@hip-q81", "@sched-async")),
+)
+
+_SET_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_VAR = re.compile(r"^[A-Z][A-Z0-9_]*=[^ \"\\]+$")
+
+
+def _validate_sets(sets) -> None:
+    """Fail closed on duplicate names, bad tokens, unknown @refs, reference cycles and conflicting assignments."""
+    by_name = {}
+    for name, desc, members in sets:
+        if not _SET_NAME.match(name) or name in by_name:
+            raise ValueError(f"0910: bad or duplicate feature set name {name!r}")
+        if not desc or '"' in desc or "\\" in desc:
+            raise ValueError(f"0910: set {name!r} needs a plain description")
+        for m in members:
+            if not (m.startswith("@") and _SET_NAME.match(m[1:])) and not _VAR.match(m):
+                raise ValueError(f"0910: set {name!r} has a bad member {m!r}")
+        by_name[name] = members
+
+    def flatten(name, stack):
+        if name in stack:
+            raise ValueError(f"0910: feature set cycle {' -> '.join((*stack, name))}")
+        out = {}
+        for m in by_name[name]:
+            if m.startswith("@"):
+                if m[1:] not in by_name:
+                    raise ValueError(f"0910: set {name!r} references unknown set {m!r}")
+                items = flatten(m[1:], (*stack, name)).items()
+            else:
+                items = [tuple(m.split("=", 1))]
+            for var, value in items:
+                if out.get(var, value) != value:
+                    raise ValueError(f"0910: set {name!r} assigns {var} both {out[var]!r} and {value!r}")
+                out[var] = value
+        return out
+
+    for name in by_name:
+        flatten(name, ())
+
+
+def _c_sets_table(sets) -> str:
+    rows = "".join(f'    {{ "{n}", "{d}",\n      "{" ".join(m)}" }},\n' for n, d, m in sets)
+    return "static const char * const bc_feature_sets[][3] = {\n    // name, description, members (generated)\n" + rows + "};\n"
+
+
+_validate_sets(SETS)
+
 _A = "#include <signal.h>\n"
 _N = r"""#include <signal.h>
 
 // bigcherry 0910: named feature sets (BIGCHERRY_FEATURES=<set>[,<set>...] | help); explicit member variables win
-static const char * const bc_feature_sets[][3] = {
-    // name, description, members (NAME=VALUE or @other-set, space separated). Name sets by what they act on, not
-    // by the model they were tuned on.
-    { "hip-q81", "HIP MMVQ decode: reuse one Q8_1 activation quantization and let RMS-norm, activations, MUL, scale "
-                 "fusions (and hyper-connection pre-mix, on HC models) write it directly (any quantized model)",
-      "GGML_HIP_Q8_1_CACHE_MODE=on BIGCHERRY_RMS_Q81=1 BIGCHERRY_ACT_Q81=1 BIGCHERRY_HC_Q81=1 BIGCHERRY_SCALE_ACT_FUSE=1" },
-    { "sched-async", "scheduler stages small host inputs asynchronously (multi-backend / tensor-split runs)",
-      "BIGCHERRY_SCHED_ASYNC_INPUTS=1" },
-    { "flashnext", "Qwen3.8 Flash-Next production profile (pin 0504396); its Qwen4Exp-only patches are on by default",
-      "@hip-q81 @sched-async" },
-};
-
+""" + _c_sets_table(SETS) + r"""
 typedef struct {
     const char * name;
     const char * patch;
@@ -154,6 +204,10 @@ static void bc_feature_sets_expand(void) {
         exit(0);
     }
     char sets[256];
+    if (strlen(req) >= sizeof(sets)) {  // fail closed: never enable part of a request
+        fprintf(stderr, "BIGCHERRY_FEATURES too long (%zu >= %zu chars): ignored entirely\n", strlen(req), sizeof(sets));
+        return;
+    }
     snprintf(sets, sizeof(sets), "%s", req);
     for (char * tok = strtok(sets, ","); tok != NULL; tok = strtok(NULL, ",")) {
         while (*tok == ' ') {
@@ -168,12 +222,36 @@ static void bc_feature_sets_expand(void) {
     }
 }
 
+// Explicit, idempotent entry point: called from ggml_init's first call and the backend registry constructor (so it
+// runs on every compiler, including MSVC, before backends or models read their flags), and from a load-time
+// constructor where the compiler supports one (earliest, before other libraries' static initialisers read flags).
+GGML_API void ggml_bigcherry_features_init(void);
+void ggml_bigcherry_features_init(void) {
+    static int done = 0;
+    ggml_critical_section_start();
+    const int first = !done;
+    done = 1;
+    ggml_critical_section_end();
+    if (first) {
+        bc_feature_sets_expand();
+    }
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((constructor)) static void bc_feature_sets_ctor(void) {
-    bc_feature_sets_expand();
+    ggml_bigcherry_features_init();
 }
 #endif
 """
+
+_A_INIT = ("        // initialize time system (required on Windows)\n"
+           "        ggml_time_init();\n")
+_N_INIT = _A_INIT + "        ggml_bigcherry_features_init();  // bigcherry 0910: feature sets before any flag is read\n"
+
+_A_REG_INC = "#include \"ggml-impl.h\"\n"
+_N_REG_INC = _A_REG_INC + "extern \"C\" void ggml_bigcherry_features_init(void);  // bigcherry 0910 (ggml.c)\n"
+_A_REG = "    ggml_backend_registry() {\n"
+_N_REG = _A_REG + "        ggml_bigcherry_features_init();  // bigcherry 0910: before any backend registers or reads its flags\n"
 
 PATCHES = [
     FilePatch(
@@ -183,6 +261,22 @@ PATCHES = [
         edits=(
             Edit(id="feature-sets", anchor=re.escape(_A), mode="replace", text=_N,
                  guard=r"bigcherry 0910: named feature sets", rationale="ggml.c standard include block (signal.h).",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="feature-sets-ggml-init", anchor=re.escape(_A_INIT), mode="replace", text=_N_INIT,
+                 guard=r"bigcherry 0910: feature sets before any flag is read", rationale="ggml_init first-call block.",
+                 expect_matches=1, max_span_lines=3),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-backend-reg.cpp",
+        description="0910: apply feature sets before the backend registry registers any backend",
+        language="none",
+        edits=(
+            Edit(id="feature-sets-reg-decl", anchor=re.escape(_A_REG_INC), mode="replace", text=_N_REG_INC,
+                 guard=r"bigcherry 0910 \(ggml\.c\)", rationale="ggml-backend-reg.cpp include block.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="feature-sets-reg-ctor", anchor=re.escape(_A_REG), mode="replace", text=_N_REG,
+                 guard=r"bigcherry 0910: before any backend registers", rationale="ggml_backend_registry constructor.",
                  expect_matches=1, max_span_lines=2),
         ),
     ),

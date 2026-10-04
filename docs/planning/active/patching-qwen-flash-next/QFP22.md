@@ -114,3 +114,7 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
 - 2026-10-05: Deepened 1332 graph-lifetime fix, A/B qualification, consolidation boundaries and promotion gates.
+
+## Reviews
+
+- RV4217
