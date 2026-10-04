@@ -1,7 +1,7 @@
 # 1314_ar_cpu_root_fused
 
 **Status:** untested
-**Plan item:** QFP13 (QFP11)
+**Plan item:** QFP13/QFP11
 
 ## What it does
 
