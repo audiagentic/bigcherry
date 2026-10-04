@@ -352,6 +352,9 @@ def cmd_patch_lint(args: Namespace) -> int:
     )
     lint_report = patch_gates.evaluate_repository_lint_gates()
     problems.extend(lint_report.problems)
+    # QFP23: runtime profiles (config/runtime-profiles/*.ini) must parse, flatten and only set documented flags
+    from bigcherry.patch import runtime_profiles
+    problems.extend(runtime_profiles.check(documented_flags=runtime_profiles.documented_flags()))
     if args.json:
         print(
             json.dumps(

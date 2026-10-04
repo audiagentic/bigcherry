@@ -763,7 +763,7 @@ def run_server_comparison_capture(
     activation. Keep those missing gates visible rather than implying that a
     successful subprocess constitutes a production performance result.
     """
-    from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts
+    from bigcherry.build.builds import binary_hash, inspect_dispatch_build, resolve_runtime_artifacts, runtime_artifact_key
     from bigcherry.campaign.bench_runner import _resolve_runner_root
     from bigcherry.campaign.run_advisories import evaluate_ab_result
 
@@ -838,7 +838,7 @@ def run_server_comparison_capture(
         if source_attestation is None:
             raise ValueError(f"{arm['name']}: source attestation is unavailable")
         _verify_source(source_root, source_attestation)
-        runtime = {path.name: binary_hash(path) for path in resolve_runtime_artifacts(binary)}
+        runtime = {runtime_artifact_key(binary, path): binary_hash(path) for path in resolve_runtime_artifacts(binary)}
         if metadata.get("binary_hash") != binary_hash(binary) or any(
                 metadata.get("runtime_artifacts", {}).get(name) != digest for name, digest in runtime.items()):
             raise ValueError(f"{arm['name']}: runtime bytes disagree with campaign metadata")
