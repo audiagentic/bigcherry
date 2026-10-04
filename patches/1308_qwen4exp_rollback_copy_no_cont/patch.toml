@@ -1,7 +1,7 @@
 schema = 1
 id = "1308_qwen4exp_rollback_copy_no_cont"
 order = 1308
-state = "evaluated"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

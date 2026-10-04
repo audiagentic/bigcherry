@@ -1,6 +1,6 @@
 # 1326_sched_async_host_inputs
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP16
 
 ## What it does

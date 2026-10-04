@@ -1,7 +1,7 @@
 # 1322_mtp_ahead_overlap
 
 **Status:** untested
-**Plan item:** FMTP03
+**Plan item:** FMTP03/FMTP04
 
 ## What it does
 

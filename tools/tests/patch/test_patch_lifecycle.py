@@ -50,7 +50,8 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         self.assertTrue(s.source_pinned)
         self.assertTrue(s.materialized)
         self.assertEqual(s.patch_ids, ("1235_rd09_q81_activation_cache_foundation",))
-        self.assertEqual(s.build_state, "untested")
+        # promoted 2026-10-05 with the Flash-Next stack (QFP18 lightweight tier; foundation of 1307-1313)
+        self.assertEqual(s.build_state, "validated")
         self.assertFalse(s.contracted)
         self.assertNotIn("RD09", self.statuses)
 

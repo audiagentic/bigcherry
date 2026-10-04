@@ -1,7 +1,7 @@
 schema = 1
 id = "1235_rd09_q81_activation_cache_foundation"
 order = 1235
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"

@@ -1,6 +1,6 @@
 # 1311_hc_pre_q81
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP13
 
 ## What it does

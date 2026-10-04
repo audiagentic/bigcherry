@@ -1,6 +1,6 @@
 # 1312_mul_q81
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFP13
 
 ## What it does

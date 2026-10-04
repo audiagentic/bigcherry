@@ -1,6 +1,6 @@
 # 1292_kpool_tail_truncate
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** QFN01
 
 Qwen4Exp indexer pool layout (`kpool_layout_update`) rebuilt every sequence from scratch after any edit.

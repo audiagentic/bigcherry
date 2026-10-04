@@ -19,7 +19,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _IMPL_OLD = """    } else {
         unary_gated_cuda<op>((const float *) unary_src->data, (const float *) other_src->data,

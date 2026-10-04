@@ -19,7 +19,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _UNARY_ANCHOR = "/* fused relu + sqr */\n"
 

@@ -16,7 +16,7 @@ import re as _re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
-STATE = "evaluated"
+STATE = "validated"
 
 _CPARAMS = FilePatch(
     path="src/llama-cparams.h",

@@ -1,7 +1,7 @@
 schema = 1
 id = "1327_qsa_host_remap"
 order = 1327
-state = "evaluated"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

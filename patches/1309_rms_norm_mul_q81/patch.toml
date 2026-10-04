@@ -1,7 +1,7 @@
 schema = 1
 id = "1309_rms_norm_mul_q81"
 order = 1309
-state = "evaluated"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
