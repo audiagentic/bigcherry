@@ -70,6 +70,10 @@ Branch constraints:
 - 1280 is rejected; corrected sidecar metadata is required.
 - 1293 showed sync-count reduction alone is not a performance objective.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 - `common/common.h`
@@ -94,6 +98,14 @@ Hardware:
 - shallow/deep context;
 - rocprof timeline proving target process returns before target GPU completes and MTP device is disjoint.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 - Ahead defaults off with unchanged behavior.
@@ -101,3 +113,19 @@ Hardware:
 - `target_submit_us` and `target_sync_wait_us` are separately measurable without new syncs.
 - Profiler proves an exploitable target-in-flight window and where MTP work executes.
 - Evidence is sufficient to choose worker-free FMTP03 or reject it before implementation.
+
+## Notes
+
+2026-10-04 Gate 0 (RV4216, owner-approved; absorbs QFP08's decode-overlap scope and its synctrace evidence: ~12 syncs per draft call, context-wide synchronize per step in llama_get_embeddings_nextn_ith). One instrumented binary, identical 10K/80K corpora, two modes.
+BASELINE n_max=3 per round: target_process enter/return; target first/last kernel; target_sync enter/return; common_speculative_process subspans (hidden read/copy, draft catch-up, rollback/KV, accept, sampler); serial fresh-draft us; target logits D2H bytes (n_output_rows*n_vocab*4) and us; target sampler us; committed tokens; rocprof timeline of target + draft kernels + DMA/AR.
+CALIBRATION n_max=7 (acceptance only, never timing): P(A1..A3), P(A4|A1..A3) (bridge), E[accepted A5..A7 | A1..A4] (promoted-front yield), per-position draft time.
+Derive p_hit, Y_fresh, Y_prom, D_serial, C_reseed, C_logits, W_async (target_sync_done - target_process_return, with kernels in flight), W_hidden (target token final - authoritative hidden ready).
+Decides, in order: F reseed/sync elimination (build if C_reseed >= 0.5 ms; 1-4%), C device argmax for target verify (if C_logits >= 0.5 ms/round; 0.5-3%; purpose-built, upstream backend sampling unsupported under tensor split), B early authoritative-hidden draft catch-up (if W_hidden useful; 2-8%), D 1268 EV signal (0-2%), FMTP02-05 only if bootstrap lower bound >= 2% throughput (committed tokens / wall time). FMTP06/unconditional FMTP not before that. QFP08 keeps draft-prefill overlap (TTFT).
+
+## Reviews
+
+- RV4216
+
+## Change Log
+
+- 2026-10-04T03:26:42.716009+00:00 (updated-by): Updated: section:notes

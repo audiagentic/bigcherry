@@ -11,15 +11,18 @@ priority: P2
 work: L
 ---
 
-# MTP draft/verify overlap on the 6900 XT drafter
+# MTP draft-prefill overlap on the 6900 XT drafter (TTFT)
 
 ## Description
 
-Overlap MTP drafting on the 6900 XT with target work instead of strict draft -> verify serialisation. Draft costs ~6.5 ms per 3-token draft at 10K and ~9.2 ms at 80K = 15-17% of an MTP step (profile ABBA logs); that is the ceiling. MTP drafters need target hidden states, so full cross-round overlap is not free: start with double-buffered hidden-state transfer and overlapping transfer/sampling, and draft-prefill overlap at prompt time.
+Scope narrowed 2026-10-04 (FMTP01 Gate 0 review, owner-approved): decode-time draft/verify overlap, sync elimination and hidden-state handoff moved to the FMTP plan (FMTP01 Gate 0 owns measurement; options F/C/B there). QFP08 now owns only draft-prefill overlap: pipeline the draft context's prompt processing chunk by chunk behind target prefill (draft chunk i runs while the target processes chunk i+1, fed the target hidden rows of chunk i). Objective: long-context TTFT; no change to decode or acceptance. Expected 5-30% of draft-related TTFT, bounded by the currently serialized draft prefill and CPU/PCIe contention.
 
 ## Steps
 
-1. Trace one MTP step timeline (draft, transfer, verify) on profile v2. 2. Prototype draft-prefill overlap. 3. Hidden-state double buffering.
+1. Measure draft-prefill time vs target prefill at 10K/80K/240K prompts on profile v3 (server timings + rocprof).
+2. Design the chunk pipeline at the server/common speculative prompt seam: target chunk submit -> hidden rows ready (event, not context synchronize) -> draft chunk on ROCm3 while next target chunk runs.
+3. Implement as a patch behind an env flag; fail closed to serial on any error.
+4. Validate: TTFT ABBA, greedy identical, acceptance unchanged, no target prefill slowdown.
 
 ## Detailed Solution & Technical Design
 
@@ -35,7 +38,7 @@ Overlap MTP drafting on the 6900 XT with target work instead of strict draft -> 
 
 ## Validation
 
-ms/step ABBA; acceptance unchanged; greedy identical.
+TTFT ABBA at 10K/80K; greedy identical; draft acceptance unchanged; target pp t/s not reduced.
 
 ## Effort & Risk
 
@@ -59,3 +62,5 @@ GPT design req_93c6774520f7454a (draft-prefill overlap). Online (RV4214): SGLang
 
 - 2026-10-03T15:20:57.065205+00:00 (created-by): Created by agent
 - 2026-10-03T16:30:23.311740+00:00 (updated-by): Updated: section:notes
+- 2026-10-04T03:26:36.373482+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation
+- 2026-10-04T03:26:55.973470+00:00 (updated-by): Updated: section:description
