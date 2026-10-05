@@ -442,6 +442,8 @@ One compact selection producer shared with dense fallback; explicit op/capabilit
 
 2026-10-06 CORRECTION (owner: do not take work off the table, queue it behind the other work). The independent GGML_OP_FLASH_ATTN_QSA op / dedicated HIP kernel is NOT dropped. Order for this item: (1) kernel profile of the 1334 path at ~100K / ~200K (run sparseprof); (2) the small adapter feeding QSA selected indices into the 1334 sparse-FA primitive; (3) the independent QSA attention op and kernel, queued behind the adapter and the rest of the prefill round (1332, 1334 default-on, #29901 backport, PGC15, PGC14, QFP26, QFP24), to be assessed against whatever the adapter leaves on the table.
 
+2026-10-06 DEFAULT-ON CHECK PASSED (run fadef-b11402e, build b-fadef-b11402e, pin b11402). 1334 is now on by default (BIGCHERRY_FA_SPARSE=0 is the off switch; flashnext profile no longer lists it). (1) Qwen3.8-27B dual-XTX production ABBA against b-sparsefa-b11402c (path off): greedy text identical in all runs at both depths (one md5 per depth, 4 runs each), 32K prefill 1246.8 (A) vs 1246.0 / 1220.1 (B), decode 73.5 vs 73.6 / 73.4 t/s, acceptance 181/293 in every run - a model without n_kv_max is unaffected. (2) Flash-Next ~99K prefill on the new binary: default 924.4 / 979.6 t/s vs BIGCHERRY_FA_SPARSE=0 838.6 / 870.7 - the off switch works. Per the owner rule a default change does not invalidate the patch's proof.
+
 ## Change Log
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created as QFP17 QSA-SPARSE-PP implementation owner.
@@ -569,3 +571,4 @@ This supersedes only the earlier `ncols1=1` fallback sentence/arm; the shared-ma
 - 2026-10-05T20:59:33.795432+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T21:25:26.973991+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T21:26:50.770909+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T22:37:59.309251+00:00 (updated-by): Updated: section:notes
