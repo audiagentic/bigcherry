@@ -17,42 +17,74 @@ work: L
 
 Resolve the gfx1100 HIP tiled Flash-Attention D=72 aperture violation for VLM workloads. Prefer a kernel/root-cause fix; retain the CLIP-only matmul fallback as a narrow safety valve. Upstream PR #28664 closed without merge while issue #28608 retains evidence of the fault, so the workaround must not be assumed present merely because the PR existed.
 
+Current BigCherry baseline is b11402. Reproduce against that pin before authoring a patch: the previous `050439614` pin named below is historical evidence only.
+
 ## Steps
 
-1. Reproduce on the current llama.cpp pin (`050439614`) on dual XTX with representative Qwen/Gemma mmproj lanes at 1024/1600/2048/2560px; record Q sequence length and exact `flash_attn_tile<D,D,cols_per_block,...>` instantiation.
-2. Reproduce with one XTX as a topology control and `cols_per_block=32/64`. Treat tile width as diagnostic only: upstream evidence says 32 can move the crash earlier.
-3. Instrument `ggml/src/ggml-cuda/fattn-tile.cuh` and helpers for Q/K/V/O bounds, shared-memory offsets, padded sequence extents, vectorized D=72 tail loads/stores, launch dimensions, workspace sizes, and allocation byte ranges. Compare generated gfx1100 ISA/resource use against D=64/80 controls and gfx1201 where supported.
-4. Test the D=72 non-power-of-two/vector-tail hypothesis with guarded tail-safe loads/stores for final lanes before considering broad kernel changes.
-5. If no kernel fix is proven, retain only the #28664-style `tools/mtmd/clip.cpp::clip_graph::build_attn` fallback: HIP + CLIP + `d_head == 72`. Never disable main-model FA or all HIP FA.
-6. Feed architecture/shape policy through existing HIP-autotune ownership; do not add a second dispatch registry. Retire a local fallback when upstream lands an equivalent targeted fix.
+1. Reproduce on current BigCherry pin b11402 on one and two 7900 XTX with representative Qwen/Gemma mmproj lanes at 1024/1600/2048/2560px; record Q sequence length and exact `flash_attn_tile<D,D,cols_per_block,...>` instantiation.
+2. Use `cols_per_block=32/64` only as a diagnostic. Upstream evidence says 32 can move the crash earlier, so do not encode tile width as a workaround.
+3. Instrument `ggml/src/ggml-cuda/fattn-tile.cuh` and helpers for Q/K/V/O byte ranges, shared-memory offsets, padded sequence extents, vectorized D=72 tail loads/stores, launch dimensions and workspace allocation ranges. Compare D=64/72/80 and generated gfx1100 ISA/resources; use gfx1201 as a comparison where the same kernel is selected.
+4. Test the D=72 non-power-of-two/vector-tail hypothesis with a temporary guarded tail-safe load/store prototype. The prototype is diagnostic and must not become a D=72 clone kernel.
+5. If the fault survives tail guarding, next isolate padded-sequence/workspace addressing. Stop pursuing tail geometry once byte-range telemetry proves every vector access is inside its allocation.
+6. If no kernel fix is proven, retain only the #28664-style `tools/mtmd/clip.cpp::clip_graph::build_attn` fallback: HIP + CLIP + `d_head == 72`. Never disable main-model FA or all HIP FA.
+7. Feed any architecture/shape policy through existing HIP-autotune ownership; do not add a second dispatch registry. Retire a local fallback when upstream lands an equivalent targeted fix.
+8. Rebase interpretation on upstream commit `d89651a7` / #29435 when BigCherry next bumps past b11402. It changes FA scheduling only for NVIDIA DGX Spark two-stage async-KV kernels (`GGML_CUDA_CC_IS_NVIDIA && cc == DGX_SPARK`), so it is not an AMD D=72 fix and must not be cargo-culted. Its useful mechanism is diagnostic: mask-scan-induced work imbalance can justify whole-tile scheduling, but only after correctness is established and only if AMD profiling shows the same imbalance.
 
 ## Detailed Solution & Technical Design
 
-Issue #28608 provides useful boundary evidence: the failure resolves in `flash_attn_tile<72,72,64,1,false>`, scales with image/sequence size, and forcing a narrower tile does not cure it. That makes D=72 tail geometry, storage sizing, vector-width assumptions, or another allocation/indexing invariant higher-value hypotheses than the 64-column selection itself.
+Issue #28608 resolves the failure in `flash_attn_tile<72,72,64,1,false>`, scales with image/sequence size, and forcing a narrower tile does not cure it. That makes D=72 tail geometry, storage sizing, vector-width assumptions, or another allocation/indexing invariant higher-value hypotheses than the 64-column selection itself.
 
 The optimisation opportunity is to recover tiled FA for D=72 rather than permanently paying matmul-attention cost. Audit vectorized `D/pack` loops, final-pack masking, padded key/query lengths, and any storage sized by floor division while wider loads/stores are issued. The image-size threshold may expose an address error that exists at shorter lengths but remains in-bounds.
 
-PHA08 owns only the D=72 correctness gate and narrow candidate fix. Generic FA architecture/shape tuning remains with `patching-hip-autotune`; generic kernel work remains in the normal patch/upstream path. Related aperture-violation reports are comparison evidence only unless traces resolve to the same defect.
+### Diagnostic prototype
 
-## Code Samples & Guidance
-
-Debug invariants should validate byte ranges, not only logical element indices:
+Do not start with a production patch. Add a temporary compile-time guarded path at the existing vector load/store helper boundary:
 
 ```cpp
-// debug-only pseudocode; use actual tensor strides/types
-const size_t last_byte = base + logical_index * elem_size + vector_width_bytes;
-GGML_ASSERT(last_byte <= allocation_end);
+// pseudocode: preserve the normal vector path for full packs
+constexpr int pack = sizeof(vec_t) / sizeof(scalar_t);
+const int lane0 = pack_index * pack;
+if constexpr (D % pack != 0) {
+    if (lane0 + pack > D) {
+        scalar_t tmp[pack] = {};
+        #pragma unroll
+        for (int i = 0; i < pack && lane0 + i < D; ++i) {
+            tmp[i] = src[lane0 + i];
+        }
+        consume(tmp);
+    } else {
+        consume(load_vec(src + lane0));
+    }
+} else {
+    consume(load_vec(src + lane0));
+}
 ```
 
-For a proven D-tail defect, prefer a compile-time/tail predicate inside the existing load/store helper over cloning a D=72 kernel.
+Instrument the last byte touched by every D-tail vector access in debug builds. If the guarded prototype removes the aperture fault for 20 repeated 2048/2560px encodes and parity holds, replace the prototype with the smallest helper-level predicate that preserves vectorized full packs. If it does not, remove it and move to workspace/padded-sequence isolation; do not leave speculative code for downstream agents.
+
+### Scheduling boundary
+
+Fresh upstream #29435 (`d89651a7`, merged 2026-10-05) adds `async_kv_preload` to `launch_fattn` and disables Stream-K only for DGX Spark when mask scanning is active and whole-tile efficiency is already >=75%. This is explicitly NVIDIA-gated. PHA08 therefore owns no Stream-K/whole-tile optimisation. After D=72 correctness, an AMD scheduling experiment is permitted only if profiling shows mask-scan imbalance and must be added through generic HIP-autotune policy rather than this item.
+
+PHA08 owns only the D=72 correctness gate and narrow candidate fix. Generic FA architecture/shape tuning remains with `patching-hip-autotune`; generic kernel work remains in the normal patch/upstream path.
 
 ## Files
 
-`ggml/src/ggml-cuda/fattn-tile.cuh`; related FA helpers/dispatch; `tools/mtmd/clip.cpp`; `patches/<new-id>/**`; `tools/bigcherry/patch/**`; `tools/bigcherry/tuning/correctness_evidence.py`; `tools/tests/patch/**`; `tools/tests/tuning/**`; `docs/evidence/<run-id>/`.
+- `ggml/src/ggml-cuda/fattn-tile.cuh` and the exact helper reached by the D=72 vector load/store
+- `ggml/src/ggml-cuda/fattn-common.cuh` only for telemetry/scheduling comparison; do not port #29435's NVIDIA gate as a fix
+- `tools/mtmd/clip.cpp` for the fallback only
+- `patches/<new-id>/**` only after the diagnostic identifies a reproducible predicate
+- `tools/bigcherry/tuning/correctness_evidence.py`, `tools/tests/tuning/**`, `docs/evidence/<run-id>/`
 
 ## Validation
 
-Current pin plus a suitable upstream control; 1x/2x XTX; gfx1201 comparison where supported; 1024/1600/2048/2560px; D=64/72/80 controls; cols-per-block 32/64 diagnostic only; FA candidate versus CLIP matmul fallback. Capture HSA fault absence, logits/embedding parity, image encode latency, peak VRAM/workspace, kernel time, VGPR/SGPR/spills, and text-only throughput. Run at least 20 repeated 2048/2560px encodes before accepting a memory-safety fix.
+Matrix: b11402 baseline; 1x/2x XTX; gfx1201 comparison where the same kernel is available; 1024/1600/2048/2560px; D=64/72/80 controls; cols-per-block 32/64 diagnostic; normal FA vs guarded-tail diagnostic vs CLIP matmul fallback.
+
+Capture HSA fault absence, logits/embedding parity, image encode latency, peak VRAM/workspace, exact allocation/touched byte ranges, kernel time, VGPR/SGPR/spills and text-only throughput. Run at least 20 repeated 2048/2560px encodes before accepting a memory-safety fix.
+
+Correctness gate: zero aperture violations and zero reported byte-range violations; parity to matmul fallback within existing VLM correctness tolerance. Performance gate for a production FA fix: >=5% VLM encode improvement versus fallback with no >2% healthy-shape regression. A diagnostic guard that fixes correctness but costs >2% on D=64/80 must be specialized/compiled away for divisible D before promotion.
+
+Stop gates: (a) current b11402 does not reproduce across the full stress matrix -> record evidence and close without patch; (b) tail guard does not affect fault and byte telemetry is clean -> remove prototype and investigate workspace/padding only; (c) no root cause after bounded instrumentation -> ship/retain only narrow HIP+CLIP+D72 fallback, not unfinished speculative kernel work.
 
 ## Effort & Risk
 
@@ -68,17 +100,16 @@ Preferred: a D=72 tiled-FA fix completes 20x 2048/2560px runs on gfx1100 with no
 
 ## Notes
 
-Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900 XTX HIP Flash-Attention crash'; source https://github.com/ggml-org/llama.cpp/pull/28664. Existing PHA06 is a different completed item.
+Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900 XTX HIP Flash-Attention crash'; source https://github.com/ggml-org/llama.cpp/pull/28664.
 
-2026-10-05, folded in from BCOP21 (audit backfill) - root-cause before retaining the fallback: upstream #28664 closed without merge while #28608 keeps evidence of gfx1100 faults in `flash_attn_tile<72,72,64,1,false>`. Reproduce on current pin `050439614` with D=64/72/80 controls on gfx1100/gfx1201; inspect vector/tail bounds, padded extents, shared-memory offsets, workspace sizing, generated ISA and resources; keep only the narrow HIP+CLIP+d_head==72 fallback until root cause is known.
-
-Sources: https://github.com/ggml-org/llama.cpp/issues/28608 ; https://github.com/ggml-org/llama.cpp/pull/28664
+Fresh upstream comparison: https://github.com/ggml-org/llama.cpp/commit/d89651a7b205c03c4a0b13cd0646d400dc929f79 (#29435). It is NVIDIA DGX-Spark-specific scheduling evidence, not an AMD correctness fix.
 
 ## Change Log
 
-- 2026-09-11T22:57:38.584940+00:00 (created-by): Created by agent
+- 2026-09-11T22:57:38.584940+00:00: Created by agent.
 - 2026-10-05: BCOP21 audit backfill added root-cause gate.
-- 2026-10-05: Transplanted the structured D=72 root-cause/tail-geometry plan from `automation-qfp-indexer-20261004`, preserving current-pin audit guidance.
+- 2026-10-05: Transplanted structured D=72 root-cause/tail-geometry plan from `automation-qfp-indexer-20261004`.
+- 2026-10-05: Updated baseline to b11402; bounded the tail-safe diagnostic prototype; classified fresh upstream #29435 as NVIDIA-only scheduling evidence and added explicit stop gates.
 
 ## Ledger-events
 
