@@ -1,7 +1,7 @@
 ---
 id: BCOP04
 order: 4
-plan: bc-optimizations
+plan: patching-bc-optimizations
 state: superseded
 created-at: '2026-10-05T04:33:00+00:00'
 breadth: ''
