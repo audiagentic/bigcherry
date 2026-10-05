@@ -1,7 +1,8 @@
 #!/bin/bash
-# Three-way baseline on the current pin: native llama.cpp vs BigCherry base (bigcherry source, no enhancement
-# patches: experiment stock-none) vs BigCherry patched (production build). Builds only the base binary; native and
-# patched come from existing build runs.
+# Three-way baseline on the current pin: native llama.cpp vs BigCherry framework only (source bigcherry-serving-base:
+# serving-core + upstream-fixes, NO validated-enhancements) vs BigCherry patched (production build, source bigcherry).
+# Builds only the framework binary; native and patched come from existing build runs. Note: the `bigcherry` source
+# with experiment stock-none is the full production patch set, not a base without enhancements.
 #   27B dual-XTX production config (prod27b-ab.sh ABBA, 10K + 32K): native vs base, base vs patched (prod27b-ab.sh
 #   clears every BIGCHERRY_/GGML_HIP_ flag, so "patched" there runs with the runtime features OFF), then the
 #   patched binary with the fused Q8_1 decode kernels and async inputs ON (BIGCHERRY_FEATURES=hip-q81,sched-async).
@@ -22,21 +23,21 @@ export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.
 export CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=65536 TS=0.31,0.27,0.42 B=512 DECODE_N=256
 export EXTRA_OT='^token_embd\.weight$=CPU'
 docker stop radiance-vllm >/dev/null 2>&1
-BASE=b-base-$PIN
+BASE=b-fwbase-$PIN
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD $BASE bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
-VIS=0,1 SCRIPT 3way-$PIN-27b-native-base tools/lab/flash-next/prod27b-ab.sh @$NATIVE @$BASE $R/3way-$PIN-27b-native-base
-VIS=0,1 SCRIPT 3way-$PIN-27b-base-patched tools/lab/flash-next/prod27b-ab.sh @$BASE @$PATCHED $R/3way-$PIN-27b-base-patched
-VIS=0,1 SCRIPT 3way-$PIN-27b-patched-fused tools/lab/flash-next/prod27b-ab.sh @$PATCHED @$PATCHED $R/3way-$PIN-27b-patched-fused BIGCHERRY_FEATURES=hip-q81,sched-async
-VIS=0,1,2,3 SCRIPT 3way-$PIN-flash-d8k tools/lab/flash-next/native-ab.sh 8192 @$PATCHED @$BASE $R/3way-$PIN-flash-d8k
-VIS=0,1,2,3 SCRIPT 3way-$PIN-flash-d48k tools/lab/flash-next/native-ab.sh 49152 @$PATCHED @$BASE $R/3way-$PIN-flash-d48k
+VIS=0,1,2,3 BUILD $BASE bigcherry-serving-base:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
+VIS=0,1 SCRIPT 3wayfw-$PIN-27b-native-base tools/lab/flash-next/prod27b-ab.sh @$NATIVE @$BASE $R/3wayfw-$PIN-27b-native-base
+VIS=0,1 SCRIPT 3wayfw-$PIN-27b-base-patched tools/lab/flash-next/prod27b-ab.sh @$BASE @$PATCHED $R/3wayfw-$PIN-27b-base-patched
+VIS=0,1 SCRIPT 3wayfw-$PIN-27b-patched-fused tools/lab/flash-next/prod27b-ab.sh @$PATCHED @$PATCHED $R/3wayfw-$PIN-27b-patched-fused BIGCHERRY_FEATURES=hip-q81,sched-async
+VIS=0,1,2,3 SCRIPT 3wayfw-$PIN-flash-d8k tools/lab/flash-next/native-ab.sh 8192 @$PATCHED @$BASE $R/3wayfw-$PIN-flash-d8k
+VIS=0,1,2,3 SCRIPT 3wayfw-$PIN-flash-d48k tools/lab/flash-next/native-ab.sh 49152 @$PATCHED @$BASE $R/3wayfw-$PIN-flash-d48k
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-echo "== 27B: A = native $NATIVE, B = base $BASE"; grep -E "^d[0-9]|SERVER_FAILED" $R/3way-$PIN-27b-native-base.log
-echo "== 27B: A = base $BASE, B = patched $PATCHED"; grep -E "^d[0-9]|SERVER_FAILED" $R/3way-$PIN-27b-base-patched.log
-echo "== 27B: A = patched, runtime features off, B = same binary with BIGCHERRY_FEATURES=hip-q81,sched-async"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/3way-$PIN-27b-patched-fused.log
-for d in d8k d48k; do echo "== Flash-Next $d: base arms = patched $PATCHED, new = base $BASE"; grep -E "^base-|^new|SERVER_FAILED" $R/3way-$PIN-flash-$d.log; done
+echo "== 27B: A = native $NATIVE, B = base $BASE"; grep -E "^d[0-9]|SERVER_FAILED" $R/3wayfw-$PIN-27b-native-base.log
+echo "== 27B: A = base $BASE, B = patched $PATCHED"; grep -E "^d[0-9]|SERVER_FAILED" $R/3wayfw-$PIN-27b-base-patched.log
+echo "== 27B: A = patched, runtime features off, B = same binary with BIGCHERRY_FEATURES=hip-q81,sched-async"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/3wayfw-$PIN-27b-patched-fused.log
+for d in d8k d48k; do echo "== Flash-Next $d: base arms = patched $PATCHED, new = base $BASE"; grep -E "^base-|^new|SERVER_FAILED" $R/3wayfw-$PIN-flash-$d.log; done
 echo ALL_JOBS_DONE
