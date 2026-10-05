@@ -540,3 +540,16 @@ The memory arithmetic in `1295 decode gather: why it does not scale to ub512` ab
 - padded query tiles `Q={8,16,32}`: K+V scratch = **{36,72,144} MiB**.
 
 The earlier `Hkv=4` / `4.50 GiB` total figures are superseded. The design conclusion is unchanged: full-ub512 materialized gather is still too expensive versus direct selected-index K/V loads; small query-tiled gather remains useful only as a correctness oracle or first prototype.
+
+### 1334 RDNA dispatch correction after concurrent `bbe4bb96`
+
+The shared branch changed 1334 after the review above: RDNA sparse WMMA now requires `ncols1*ncols2 >= 16`, and the current sparse specialization exists at `ncols2=8`; production prefill takes the 8x8 grouped path. Therefore the earlier suggestion to force `ncols1=1,ncols2=8` is **not executable on the current RDNA WMMA path**.
+
+Revised failure branch for the smallest proof:
+
+1. instrument or otherwise expose the **unclamped** `row_count`/group-union size before `min(row_count, n_kv_max)` for real Q=512 masks and the adversarial disjoint case;
+2. if every 8-query union is `<=2051`, 1334 phase A remains semantically safe and can proceed to timing;
+3. if any union exceeds 2051, reject 1334-as-is for model use: the compaction capacity must bound the group union, not the per-query `n_sel`; simply using the worst-case `8*n_sel` also expands sparse work/heuristic thresholds enough to erase much of the intended proof;
+4. in that case, the next correctness implementation is the phase-B **per-query direct Qwen selected-index path** (or a new one-query-capable HIP FA specialization), not a forced 1x8 instantiation of the current WMMA kernel.
+
+This supersedes only the earlier `ncols1=1` fallback sentence/arm; the shared-mask/adversarial-union tests, direct-index design, seams and acceptance gates remain unchanged.
