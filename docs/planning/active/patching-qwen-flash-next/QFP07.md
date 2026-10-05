@@ -57,6 +57,8 @@ Background: with 2 KV heads and 3 GPUs the default split rotates heads so each G
 
 2026-10-04 cross-model safety: Gemma-4-26B-A4B on three tensor-split GPUs produced garbage with BIGCHERRY_ATTN_TS=1,1,0 (rotate 0 and 1) while plain and Q8_1-producer-only runs were correct (runs/gemma-iso-dg2). Likely Gemma 4's cross-layer KV sharing / local-global attention layout is outside 1303's attention-family classification. 1303 (and 1305 BIGCHERRY_FFN_TS) now fail closed on any architecture other than qwen4exp with a clear load error. Flash-Next output under 1303 was verified bit-identical earlier, unaffected. Extending 1303 to other architectures would need per-arch grouping proof plus a greedy identity check.
 
+2026-10-05, folded in from BCOP19 (audit backfill) - sequence-sharded long-context attention gate: Flash-Next's small KV-head count limits head-based distribution. Sequence (token-range) sharding of decode attention is worth pursuing only if online-softmax partial-state exchange over our no-P2P topology beats the measured XTX attention skew. Order: (1) finish static/context-aware attention placement and the long-context threshold diagnosis; (2) benchmark transfer latency for the O(head_dim) partial state (max, sum_exp, weighted_value) over the available direct/host-staged paths; (3) abandon before implementation if that lower bound cannot beat the skew; (4) if viable, prototype with a numerically stable combine and adversarial tail-shard tests. Promote only for >=5% long-context decode on two lanes with communication <=50% of attention time saved, raw-logit/KLD correctness passing, reusing existing collective/transport ownership.
+
 ## Change Log
 
 - 2026-10-03T15:20:52.461503+00:00 (created-by): Created by agent
@@ -67,3 +69,4 @@ Background: with 2 KV heads and 3 GPUs the default split rotates heads so each G
 
 - chg_20261003_235207_the-flash-next-only-gpu-split_2755
 - 2026-10-03T23:52:10.433314+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T04:54:56.316602+00:00 (updated-by): Updated: section:notes

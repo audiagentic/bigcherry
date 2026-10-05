@@ -65,6 +65,8 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: corrected the documented matcher predicate -- 1205's real `_DETECT_BLOCK` requires exact `mid->src[1] == mm_a->src[1]` identity, not shared-allocation/overlap detection, and has no output-range safety check. Added a required output-range safety check (`ggml_cuda_check_fusion_memory_ranges`) to patch 1205 before dispatch and updated the negative-fixture matrix to match the real predicate.
 
+2026-10-05, folded in from BCOP22 (audit backfill): the audit described RD12 as depending on RD25 plus a fused-core prerequisite; this item already states RD25/PRBE19 is not a prerequisite, so no dependency chain is added. Added requirement: the isolated performance run compares 1205 against current-upstream HIP on the same gfx1100/gfx1201 matrix (pp512, pp2048, tg128, tg512), recording activation rate, kernel time, VRAM and correctness, with gfx1030 as a correctness control.
+
 ## Change Log
 
 - 2026-09-09T10:54:15.041193+00:00 (created-by): Created by capability-rebaseline-v3
@@ -98,3 +100,4 @@ Supersedes: RD12 (closed historical predecessor). Preserve source identities 44b
 - 2026-09-14T12:44:30.679907+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:22.636649+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:38:53.320058+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-10-05T04:54:39.864347+00:00 (updated-by): Updated: section:notes

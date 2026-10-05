@@ -2,7 +2,7 @@
 id: BCOP15
 order: 15
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:44:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,12 +25,45 @@ Backfill of the earlier MET02 audit. Range-aware zero/skip semantics can remain 
 4. Preserve current precision selection and current upstream MMQ tail/allocation safety.
 5. Gate through existing HIP autotune rather than a second dispatcher.
 
-## Related
+## Detailed Solution & Technical Design
 
-MET02, HIP autotune, QFP10; upstream MUL_MAT_ID work.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Compact dispatch promotes only for >=5% end-to-end or >=10% MUL_MAT_ID kernel improvement on a representative <=25%-local lane.
 - No required dense lane regresses >2%.
 - No duplicate router/dispatch registry is created.
+
+## Notes
+
+2026-10-05: superseded by MET02 - findings, steps and gates folded into its notes. Not implemented; work stays open there.
+
+## Related
+
+MET02, HIP autotune, QFP10; upstream MUL_MAT_ID work.
+
+## Change Log
+
+- 2026-10-05T04:55:10.055844+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:55:39.129117+00:00 (state-transition): State: pending → superseded

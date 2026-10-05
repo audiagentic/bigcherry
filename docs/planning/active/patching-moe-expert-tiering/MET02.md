@@ -54,6 +54,9 @@ Touches hot HIP MoE kernels; must not regress normal MUL_MAT_ID (A/B on Flash-Ne
 
 ## Notes
 
+2026-10-05, folded in from BCOP15 (audit backfill) - compact active-lane dispatch: range-aware zero/skip stays dispatch-heavy when a tier owns few routed experts. Follow-up once range semantics are confirmed on the live branch: (1) profile 0/10/25/50/75/100% local ownership across ub1-512 on gfx1100/gfx1201; (2) prototype global->local translation plus a compact (output lane, local expert) list in the existing backend workspace, scattering results back to the original lanes; (3) keep current precision selection and upstream MMQ tail/allocation safety; (4) gate through the existing HIP autotune, no second dispatcher or router. Promote only for >=5% end-to-end or >=10% MUL_MAT_ID kernel gain on a <=25%-local lane with no dense lane >2% slower.
+
 ## Change Log
 
 - 2026-10-02T04:44:50.160922+00:00 (created-by): Created by agent
+- 2026-10-05T04:54:43.149052+00:00 (updated-by): Updated: section:notes

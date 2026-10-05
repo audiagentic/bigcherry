@@ -53,6 +53,8 @@ Either current-pin/non-reproduction evidence closes the gap without a patch, or 
 
 Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900 XTX HIP Flash-Attention crash'; source https://github.com/ggml-org/llama.cpp/pull/28664. Existing PHA06 is a different completed item; this is a new D=72 issue.
 
+2026-10-05, folded in from BCOP21 (audit backfill) - root-cause before retaining the fallback: upstream #28664 closed without merge while #28608 keeps evidence of gfx1100 faults in flash_attn_tile<72,72,64,1,false>. (1) Reproduce on the current pin (050439614) with D=64/72/80 controls on gfx1100 and gfx1201; (2) inspect vector/tail bounds, padded sequence extents, shared-memory offsets, workspace sizing, generated ISA and resource use; (3) test the D=72 tail/storage-invariant hypothesis rather than assuming tile width is causal; (4) until root cause is known keep only the narrow HIP+CLIP+d_head==72 fallback, no generic HIP FA disable; (5) a kernel fix needs >=20 repeated 2048/2560px encodes plus parity against matmul attention, and promotes only with >=5% VLM encode gain over the fallback and no healthy-shape regression >2%.
+
 ## Change Log
 
 - 2026-09-11T22:57:38.584940+00:00 (created-by): Created by agent
@@ -61,3 +63,4 @@ Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900
 
 - chg_20260911_225756_added-six-provenance-rich-buil_2622
 - 2026-09-11T22:57:56.719160+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T04:55:02.911053+00:00 (updated-by): Updated: section:notes
