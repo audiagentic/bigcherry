@@ -11,370 +11,421 @@ priority: P1
 work: M
 ---
 
-# Qualify Strata Flash-Next execution on the local 96 GB VRAM / 96 GB RAM host
+# Qualify Strata Flash-Next on local AMD host
 
 ## Description
 
+Qualify the Strata execution architecture for Qwen Flash-Next on the local AMD machine (96 GiB aggregate VRAM, 96 GiB RAM), compare it with the current BigCherry/llama.cpp deployment, and preserve enough mechanism-level evidence to decide what BigCherry should adopt.
 
+This item is deliberately prescriptive. Agents MUST NOT spend time trying to make an unsuitable Strata source tree support HIP/Qwen/GGUF. First identify a runnable AMD implementation, prove its capabilities from source, then benchmark it. A failed prerequisite is a routing problem, not an invitation to create a new backend.
 
-## Steps
+BCOP37 is an evidence/disposition item. It does not own a new scheduler, expert router/cache, loader, HIP backend, MTP implementation, or benchmark framework.
 
+## Authoritative source selection
 
+### Architecture reference only
 
-## Detailed Solution & Technical Design
+`ro99/strata@015b075079c51a7aec670ee24924f920f5e7bb2b`
 
+Use this exact revision only to understand/reference Strata architecture where useful. DO NOT attempt to port, repair or benchmark it on AMD as part of BCOP37.
 
+Repository evidence already established on 2026-10-06:
 
-## Code Samples & Guidance
+- its functional GPU backend is CUDA-oriented;
+- the local non-CUDA build reaches a CUDA stub rather than a HIP execution backend;
+- this revision does not provide the required Qwen Flash-Next/qwen4exp + GGUF execution path for our matched test.
 
+These facts are a CLOSED finding for this item. Do not rediscover them, retry CUDA/HIP CMake permutations, install CUDA, implement HIP shims, add Qwen registration, or add a GGUF loader to this tree.
 
+### Runnable AMD candidate
 
-## Files
+Primary candidate: `Maxritz/Strata-rocm` (or its current successor if the repository itself explicitly redirects/supersedes it).
 
+The agent MUST pin the exact tested commit SHA and prove, from the checked-out source before building, that it contains ALL of:
 
+1. a real HIP/ROCm GPU backend (not a stub);
+2. Qwen Flash-Next/qwen4exp model support;
+3. the model/checkpoint format needed for the selected test artifact, preferably the same GGUF/quant used by BigCherry;
+4. build targets for the local AMD architecture being tested;
+5. actual expert-cache/hybrid execution code required for the Strata mechanism test.
 
-## Validation
+If any prerequisite is absent, STOP. Search current Strata forks/branches/releases for the correct implementation. Do not implement the missing prerequisite under BCOP37.
 
+Before build, save source evidence for these prerequisites to `source-capability.txt`: repository URL, SHA and exact files/symbols/CMake targets proving each capability.
 
+## Anti-diversion rules
 
-## Effort & Risk
+Agents MUST NOT, unless a separate approved plan explicitly requests it:
 
+- port CUDA Strata to HIP;
+- rewrite CMake to pretend a CUDA backend is HIP;
+- implement Qwen model registration in an incompatible tree;
+- implement GGUF loading in an incompatible tree;
+- convert the production model to a materially different quant and call the result a matched benchmark;
+- spend GPU time on a CPU/stub build;
+- benchmark a build before proving that GPU kernels are actually executing;
+- create a BigCherry Strata clone before measuring the reference mechanism;
+- abandon the test merely because the first repository/revision is unsuitable when a known ROCm fork exists.
 
+Maximum source-selection/build triage budget before escalation: 60 minutes of agent work. If no qualifying AMD tree is found, record exact blockers and stop the Strata arm rather than starting a port.
 
-## Standards
+## Step 0 — refresh external source facts
 
+Before cloning/building:
 
+1. Inspect current `ro99/strata`, `Maxritz/Strata-rocm`, relevant forks and releases.
+2. Determine whether `Maxritz/Strata-rocm` remains the current runnable AMD lineage or has been superseded.
+3. Read recent README/ROCm porting/build notes and relevant source, not only repository descriptions.
+4. Record repository, branch/tag and SHA chosen.
+5. Record why this source satisfies the five capability prerequisites above.
+6. Record any known gfx1100/gfx1201 qualification claims as external evidence only; do not treat them as local measured results.
 
-## Acceptance Criteria
+No local code changes are permitted during Step 0.
 
+## Step 1 — establish actual local hardware/runtime
 
+Save to `system.txt`:
 
-## Notes
+- exact GPU models and VRAM/device;
+- HIP device order and gfx target for each GPU;
+- negotiated PCIe width/speed;
+- ROCm/HIP and driver/kernel versions;
+- CPU/NUMA topology;
+- physical RAM, free RAM and swap state;
+- existing P2P/RCCL capability evidence;
+- free VRAM/device before load.
 
-2026-10-06 PHASE 0 FINDING (Brutus, clone at /mnt/data/bigcherry-work/external/strata, ro99/strata commit 015b075079c51a7aec670ee24924f920f5e7bb2b). The matched Strata lanes cannot be run on this host as specified: (1) Backend: Strata is C++20/CUDA only - CMakeLists enables language CUDA with CUDA_ARCHITECTURES 86 120 and find_package(CUDAToolkit); with no CUDA compiler it builds src/platform/cuda_backend_stub.cpp (STRATA_HAS_CUDA=0). No HIP/ROCm/Vulkan/OpenCL/SYCL source or CMake path exists (word grep over code and CMake: zero matches; docs: zero matches for ROCm/Radeon). Brutus has ROCm only (no nvidia-smi, no CUDA toolkit). (2) Model: registered model types are gemma4, deepseek, glm, glm53, laguna, inkling, kimi-k3 - no Qwen / qwen4exp. (3) Format: checkpoints are safetensors / compressed-tensors (MXFP4, NVFP4, FP8, INT4/INT8); no GGUF reader, so the Flash-Next IQ4_XS GGUF cannot be consumed and the same-quant rule cannot be met. Consequence: Phases 1-8 (Strata single-GPU ceilings, expert-cache, cold-expert, KV, speculation, prefill, multi-GPU sweeps) have no runnable Strata arm here; only a stub (CPU) build is possible and it would not measure any mechanism the item asks about. No GPU time was spent. What remains actionable without a Strata arm: Phase 9 (BigCherry matched control lanes: short-decode 4K, short-prefill 4K, agent-mixed 32K, long 128K, extreme 256K with the runs.csv bundle) and Strata's transferable method - the bottleneck/ceiling gate (PEF07 step 10): per-family wall-time share f gives a maximum end-to-end gain 1/(1-f), used to rank fixes. First ceiling table from the b11402 sparse-path prefill profile (sparseprof, ~99K tokens) is recorded in QFP17.
+The expected aggregate is 96 GiB VRAM and 96 GiB RAM, but runtime discovery is authoritative.
 
-## Purpose
+Do not silently substitute historical topology.
 
-Run a controlled local Strata qualification against the current BigCherry/llama.cpp Flash-Next baseline and return enough evidence to determine which Strata mechanisms should be adopted, reproduced, rejected, or assigned to existing technical owners.
+## Step 2 — model compatibility gate
 
-This is an evidence/action item. It does not authorize a second BigCherry scheduler, expert router, cache policy, model loader, or benchmark framework. Technical follow-up must be assigned to the existing owner (MET01/MET02/MET05/FMTP/RPL01/PHA03/BRVP or another existing plan) wherever possible.
+Choose the exact Qwen Flash-Next artifact BEFORE compiling/tuning.
 
-## Machine contract
+Preferred primary lane: same GGUF file and quant currently used by BigCherry, with SHA256 recorded.
 
-Record the actual host at run time rather than assuming historical topology.
+Create `model-compatibility.txt` containing:
 
-Required facts before testing:
+- model repository/file;
+- architecture identifier;
+- quantization;
+- byte size;
+- SHA256;
+- proof that the selected Strata source accepts that architecture and format;
+- proof that BigCherry accepts the same artifact.
 
-- 96 GB total physical GPU VRAM across all installed GPUs.
-- 96 GB system RAM.
-- exact GPU models, gfx targets, VRAM/device, PCIe negotiated width/speed and device ordering;
-- ROCm/HIP version, kernel/driver version and Strata commit;
-- BigCherry/llama.cpp commit/build used for the control;
-- CPU model, NUMA topology, RAM speed if available, swap configuration;
-- P2P/RCCL capability from existing PHA evidence where available;
-- free host RAM and free VRAM before model load.
+If exact artifact parity is impossible but Strata is otherwise runnable, create two classes:
 
-Do not infer aggregate memory from old documentation. Save the command outputs used to establish the run-time topology.
+- `MATCHED`: identical weights/quant/file semantics suitable for engine comparison;
+- `UNMATCHED`: different representation/quant, useful only for architecture/mechanism exploration.
 
-## Safety/resource gate
+Never calculate an engine speedup from UNMATCHED lanes.
 
-96 GB RAM is not an unlimited expert backing store. Before full model load:
+## Step 3 — clean ROCm build
 
-1. Disable or avoid swap-backed benchmarking. Record swap state.
-2. Reserve at least 12 GiB host RAM for OS/runtime unless measurement shows a larger requirement.
-3. Estimate model/expert pinned-RAM requirement before enabling all-expert pinning.
-4. Abort a lane if host available RAM falls below 8 GiB, sustained swapping occurs, OOM killer activity occurs, or the runtime silently drops pinned/locked allocations.
-5. Record peak RSS, pinned/locked memory where observable, and peak VRAM per GPU.
+Build only after Steps 0-2 pass.
 
-A result obtained while paging to disk is not a valid CPU-expert/PCIe comparison.
+1. Clone the qualifying AMD source to a fresh directory.
+2. Checkout the pinned SHA.
+3. Follow its documented ROCm build path before inventing flags.
+4. Build for the first target GPU only; R9700/gfx1201 is preferred if supported.
+5. Save configure/build commands, compiler versions and complete logs.
+6. Verify produced binaries link/load HIP/ROCm libraries as expected.
+7. Verify source/build output contains kernels for the intended gfx target.
 
-## Reproducibility bundle
+Do not add unrelated architecture targets to the first build.
 
-Create one timestamped result directory containing:
+### Build failure policy
 
-- `system.txt` — CPU/RAM/kernel/ROCm/GPU/PCIe/topology;
-- `strata-version.txt` — repository URL, commit SHA, dirty status, build flags;
-- `bigcherry-version.txt` — repository/llama.cpp SHA, patch set/build flags;
-- `model.txt` — exact model repository/file, quant, file size and checksum;
-- `commands.txt` — exact command for every lane;
-- `env.txt` — relevant environment variables;
-- `runs.csv` — one row per repetition;
-- `summary.md` — median, dispersion, failures and observations;
-- raw Strata/BigCherry logs.
+For a build failure classify it before changing anything:
 
-Do not overwrite previous results.
+A. missing documented dependency -> install/fix dependency and retry;
+B. stale/wrong build command -> correct to documented command and retry;
+C. local ROCm compatibility issue with a small mechanical fix -> document proposed diff and stop for review if it changes source;
+D. missing backend/model/format/architecture implementation -> wrong source for BCOP37; stop and re-run Step 0;
+E. genuine upstream defect -> capture minimal reproducer and issue/diff; do not turn BCOP37 into a porting project.
 
-## Model/control rule
+No source patch larger than a trivial build compatibility adjustment is authorized by this item.
 
-The primary comparison MUST use the same Qwen Flash-Next model weights/quant wherever both engines can consume them. Record exact file checksum.
+## Step 4 — prove GPU execution before benchmarking
 
-If Strata requires a different representation, report that as a separate non-equivalent lane. Do not present different quants as an engine speedup.
+A successful compile is insufficient.
 
-Use identical prompt text, context construction, output length, sampling/greedy settings and chat template where technically possible.
+Run a 32-64 token smoke generation and prove:
 
-## Phase 0 — build and smoke test
+- intended HIP device is selected;
+- VRAM allocation materially increases;
+- GPU utilization/kernel activity occurs;
+- output is non-empty and sane;
+- no fallback/stub/CPU-only backend is active;
+- model/expert runtime reports expected Qwen/Strata path;
+- second request in the same process succeeds.
 
-1. Build/install Strata at a pinned commit using its supported AMD/ROCm path.
-2. Save complete build configuration and compiler output.
-3. Run the project's tests/smoke tests applicable to AMD.
-4. Load the target model and generate 32-64 deterministic/greedy tokens.
-5. Confirm output is non-empty/coherent and no HIP/runtime errors occur.
-6. Record model load time, RSS and VRAM/device.
-7. Run the same basic prompt twice in one process to catch state/cache corruption.
+Save `gpu-smoke.txt` and raw log.
 
-Stop here if the build is unstable or deterministic output is corrupted.
+If GPU execution cannot be proven, STOP. Do not benchmark.
 
-## Phase 1 — establish single-GPU reference ceilings
+## Step 5 — memory safety gate
 
-Do not begin with all GPUs. Test each primary architecture independently so multi-GPU gains/losses can be explained.
+96 GiB RAM is constrained relative to a large host-resident expert pool.
 
-Run, where supported:
+- Avoid swap-backed benchmark results.
+- Reserve >=12 GiB RAM for OS/runtime unless measured requirements demand more.
+- Abort if available RAM falls below 8 GiB, sustained swap begins, OOM activity occurs, or pinned allocation silently fails.
+- Record peak RSS, locked/pinned host memory where observable and VRAM/device.
 
-- R9700/gfx1201 alone;
-- one 7900 XTX/gfx1100 alone;
-- other materially different GPU alone if useful.
+A disk-paged expert run is invalid for CPU-vs-PCIe conclusions.
 
-For each device:
+## Step 6 — reproduce one known-good Strata ROCm lane
 
-1. Start with Strata's automatic/calibrated expert-cache and prefill settings.
-2. Keep host expert policy constant.
-3. Run the short decode lane below five measured repetitions after one warm-up.
-4. Record TG, PP if emitted, expert-cache slots/bytes, hit/miss rate, CPU-expert fraction, H2D/D2H bytes, host RSS, VRAM, draft acceptance if enabled, and wall time.
-5. Repeat with speculation disabled to separate Strata execution architecture from speculative gain.
+Before tuning our machine, reproduce the closest configuration documented by the selected ROCm source for a supported AMD GPU/model.
 
-Select the fastest stable single GPU as the tuning reference, but retain all single-GPU results.
+The purpose is not to match somebody else's t/s exactly. It is to establish that:
 
-## Phase 2 — baseline benchmark lanes
+- expert caching is active;
+- Qwen Flash-Next executes through the intended kernels;
+- reported counters behave plausibly;
+- PP/TG are stable across repetitions;
+- speculation can be independently disabled/enabled if supported.
 
-Use fixed prompt fixtures with deterministic cache-busting suffixes so repeated runs do not accidentally become prompt-cache measurements.
+Record every deviation forced by our hardware/model.
 
-Minimum lanes:
+If this cannot be reproduced, diagnose before proceeding to broad sweeps.
 
-| Lane | Effective input/context | Output | Purpose |
-| --- | ---: | ---: | --- |
-| short-decode | ~4K | 512 | decode ceiling/expert behavior |
-| short-prefill | fresh ~4K | 128 | prefill control |
-| agent-mixed | ~32K | 512 | normal mixed workload |
-| long | ~128K | 512 | KV/expert residency crossover |
-| extreme | ~256K | 256 | optional; only if both engines support it safely |
+## Step 7 — single-GPU ceilings first
 
-For every promoted comparison use >=5 measured repetitions after warm-up and report median plus min/max or p25/p75. Alternate engine order where practical (ABBA) to reduce thermal/background bias.
+Do not begin with 96 GiB aggregate VRAM.
 
-## Phase 3 — expert-cache/residency sweep
+Test independently where supported:
 
-On the best single GPU, determine whether Strata's advantage is expert residency/execution rather than speculation.
+1. R9700/gfx1201;
+2. one 7900 XTX/gfx1100;
+3. another materially different installed GPU only if useful.
 
-1. Disable speculation for the first sweep.
-2. Record the calibrated/auto expert cache as `E_auto`.
-3. Test approximately 50%, 75%, 100% and, if memory permits, 110-125% of `E_auto` using supported cache controls.
-4. Keep KV-resident setting and prefill policy fixed.
-5. Run short-decode and agent-mixed lanes.
-6. Record:
-   - expert cache capacity in bytes/slots;
-   - hit/miss rate;
-   - CPU-executed expert count/time;
-   - GPU expert time;
-   - expert H2D bytes/time;
-   - total TG;
-   - host RSS and VRAM;
-   - synchronization/idle evidence if available.
+For each, use one warm-up + >=5 measured repetitions of the short decode lane with speculation OFF first.
 
-Decision: identify the knee where another GiB of expert residency produces <2% TG improvement. That is the initial VRAM opportunity cost for RPL01/MET01 comparison.
+Capture:
 
-## Phase 4 — cold-expert policy experiment
-
-If Strata exposes both CPU execution and GPU-fetch behavior for cache misses, compare them directly. If not exposed, use available telemetry to infer the active path and document the limitation rather than patching Strata during this first qualification.
-
-For representative expert misses estimate/measure:
-
-`CPU_miss_cost = CPU expert execution time`
-
-`GPU_miss_cost = H2D expert transfer time + GPU expert execution time + uncovered synchronization`
-
-Run at least short-decode and agent-mixed. Determine whether the preferred path changes with expert size/routing density/device.
-
-This is the critical evidence for MET01/MET05. Do not implement a BigCherry hybrid policy until this comparison exists.
-
-## Phase 5 — KV versus expert-residency sweep
-
-On the best single GPU test supported KV-resident targets near:
-
-- 16K;
-- 32K;
-- 64K;
-- larger/full where safe.
-
-For each setting:
-
-1. Recalibrate or explicitly record expert-cache capacity left after KV allocation.
-2. Run 32K and 128K lanes; include 256K if stable.
-3. Record KV VRAM, expert-cache VRAM/slots, KV transfer/streaming evidence, cache hit rate, PP, TG and peak memory.
-
-Decision: select settings by end-to-end throughput, not maximum resident KV or maximum expert slots independently.
-
-## Phase 6 — speculation/MTP sweep
-
-Using the best non-speculative residency/KV configuration, sweep supported speculation depths around:
-
-`0, 2, 3, 4, 5, 6`
-
-Do not force unsupported values.
-
-Record:
-
-- proposed tokens;
-- accepted tokens by draft position if available;
-- acceptance ratio;
-- draft time;
-- verification time;
-- rollback/recompute evidence;
-- TG wall time;
-- effective accepted target tokens/s;
-- VRAM/RSS change.
-
-Run short-decode, agent-mixed and long lanes.
-
-Select by effective end-to-end target throughput. A deeper draft that has higher acceptance but lower TG is a rejection.
-
-Technical findings belong with FMTP owners; BCOP37 only records disposition.
-
-## Phase 7 — prefill tuning
-
-Starting from auto/calibrated prefill:
-
-1. Record Strata's chosen chunk/batch/borrowing values.
-2. Test the nearest smaller and larger supported settings, including an 8192-class chunk if applicable.
-3. Run fresh 4K and 32K prefills; optionally 128K if runtime is reasonable.
-4. Record PP tok/s, temporary expert-cache borrowing/reduction, peak VRAM, host RSS, PCIe traffic and subsequent decode TG.
-
-Reject a prefill setting that wins PP but materially damages steady-state TG without an overall workload win.
-
-## Phase 8 — multi-GPU scaling
-
-Only after the single-GPU optimum is understood, test available combinations in increasing complexity. Construct the actual matrix from installed devices, normally including:
-
-- best single GPU;
-- 2x7900 XTX if present;
-- R9700 + one XTX;
-- R9700 + 2xXTX;
-- all suitable GPUs;
-- auxiliary/6900-class GPU only as an explicit experiment, not assumed beneficial.
-
-For each combination record:
-
-- per-GPU VRAM allocation;
-- per-GPU utilization/kernel time where available;
-- H2D/D2H and inter-device/host-mediated traffic;
-- synchronization/idle gaps;
 - PP/TG;
-- expert hit/miss and placement;
-- total power if readily available.
+- wall time;
+- expert-cache bytes/slots;
+- hit/miss rate;
+- CPU expert count/fraction/time;
+- GPU expert time;
+- expert H2D/D2H bytes/time where available;
+- host RSS;
+- VRAM;
+- GPU utilization.
 
-Calculate scaling efficiency relative to the best constituent single GPU:
+This determines whether Strata's architecture is already competitive without multi-GPU complexity.
 
-`efficiency = multi_gpu_TG / best_single_TG`
+## Step 8 — fixed benchmark lanes
 
-Do not call extra GPUs beneficial solely because more model data fits. Require >=5% end-to-end gain to promote a combination. Explicitly retain negative scaling evidence for RPL01/PHA03.
+Use cache-busted but semantically equivalent fixtures:
 
-## Phase 9 — BigCherry/llama.cpp matched control
+| lane | context/input | output | purpose |
+| --- | ---: | ---: | --- |
+| short-decode | ~4K | 512 | decode/expert ceiling |
+| short-prefill | fresh ~4K | 128 | PP control |
+| agent-mixed | ~32K | 512 | representative agent workload |
+| long | ~128K | 512 | KV/expert tradeoff |
+| extreme | ~256K | 256 | optional safety/architecture lane |
 
-Run the current promoted BigCherry/llama.cpp configuration on the same model/quant and prompt fixtures.
+Use >=5 measured repetitions after warm-up. Alternate engine order ABBA where practical. Report median and dispersion, not best run.
 
-At minimum capture:
+## Step 9 — isolate expert-cache mechanism
 
-- exact tensor/layer split and device order;
-- flash-attention state;
-- KV types and context;
+On the fastest stable single GPU, speculation OFF:
+
+1. record Strata auto/calibrated expert cache `E_auto`;
+2. test ~50%, 75%, 100%, and if safe 110-125% of `E_auto`;
+3. hold KV/prefill policy constant;
+4. run short-decode + agent-mixed;
+5. plot/report TG against cache GiB and hit rate.
+
+Find the cache knee: additional GiB gives <2% TG improvement.
+
+This is the primary evidence for MET01/RPL01.
+
+## Step 10 — measure cold-expert economics
+
+Where runtime controls/counters permit, determine for cache misses:
+
+`CPU_cost = CPU expert execution`
+
+versus
+
+`GPU_fetch_cost = H2D expert transfer + GPU expert execution + uncovered synchronization`
+
+Do not assume one wins globally. Record expert size/routing density/device/context.
+
+If the implementation already makes this decision dynamically, capture its calibration inputs and decision path from source plus runtime telemetry.
+
+Do not patch in a new policy merely to run this experiment.
+
+## Step 11 — KV versus expert residency
+
+Test supported resident-KV targets around 16K, 32K, 64K and larger/full where safe.
+
+For each setting record:
+
+- KV VRAM;
+- remaining expert cache bytes/slots;
+- expert hit rate;
+- KV streaming/transfer evidence;
+- PP/TG;
+- peak VRAM/RSS.
+
+Run 32K and 128K lanes, 256K only if safe.
+
+Select by end-to-end throughput, not maximum KV residency or maximum expert cache independently.
+
+## Step 12 — speculation/MTP sweep
+
+Only after obtaining the best non-speculative configuration, test supported depths around 0/2/3/4/5/6.
+
+Capture proposed/accepted tokens, acceptance by depth if available, draft/verify time, rollback/recompute, VRAM and effective target TG.
+
+A deeper setting with higher acceptance but lower end-to-end TG loses.
+
+Findings map to existing FMTP owners.
+
+## Step 13 — prefill tuning
+
+Starting from Strata auto/default:
+
+- record chosen chunk/batch/cache borrowing;
+- test nearest smaller/larger supported values;
+- include an ~8192 chunk only if supported/relevant;
+- run fresh 4K/32K and optional 128K PP;
+- record PP, peak memory, expert-cache borrowing, PCIe traffic and post-prefill TG.
+
+Reject PP-only wins that reduce representative end-to-end throughput.
+
+## Step 14 — multi-GPU only after single-GPU explanation
+
+Construct combinations from runtime-discovered GPUs. Likely candidates include best single GPU, 2x XTX, R9700+XTX, R9700+2xXTX, then all suitable GPUs.
+
+For each capture per-device allocation/utilization plus host-mediated/inter-device traffic and synchronization.
+
+Require >=5% end-to-end improvement over the best simpler configuration. More resident weights alone is not a win.
+
+Negative scaling is important evidence for RPL01/PHA03.
+
+## Step 15 — matched BigCherry controls
+
+Run current promoted BigCherry/llama.cpp against the SAME artifact for MATCHED lanes.
+
+Capture exact:
+
+- commit/patch stack;
+- tensor/layer split/device order;
+- FA state;
+- KV types/context;
 - batch/ubatch;
 - MTP/spec settings;
 - PP/TG;
-- peak VRAM/device;
-- host RSS;
-- H2D/D2H/graph-copy telemetry already available;
-- correctness/output checksum or logits comparison where available.
+- host RSS and VRAM/device;
+- existing copy/transfer/graph telemetry.
 
-Run the best known BigCherry deployment AND, where practical, a single-R9700 BigCherry control. This distinguishes Strata architecture from multi-GPU topology effects.
+Run both best-known BigCherry deployment and, where practical, single-R9700 BigCherry. This separates engine architecture from topology effects.
 
 ## Correctness gate
 
-Performance is invalid unless correctness survives.
+No performance claim survives without correctness:
 
-Required:
+- greedy/deterministic fixed prompt >=128 generated tokens;
+- repeated requests in one process;
+- multi-ubatch prompt where applicable;
+- 32K and 128K integrity;
+- no NaN/Inf/runtime errors;
+- logits/top-token/KLD comparison where both engines expose compatible logits;
+- speculation results must prove verification/accepted work;
+- reject truncated context, accidental prompt-cache hits, missing expert work or different-quant comparisons.
 
-1. deterministic/greedy fixed-prompt comparison for at least 128 generated tokens;
-2. repeated requests in one process;
-3. multi-ubatch prompt where applicable;
-4. 32K and 128K context integrity;
-5. no NaN/Inf/runtime errors;
-6. if engines permit logits capture, compare top-token agreement and divergence/KLD using the same quant; otherwise record token/output divergence without claiming bit identity;
-7. speculation-on results must show accepted/verified work rather than skipped verification.
+## Reproducibility bundle
 
-A faster run caused by missing expert work, truncated context, prompt-cache reuse, failed KV residency, or different quant is rejected.
+Create a timestamped immutable result directory containing:
 
-## Required  fields
+- `source-capability.txt`
+- `system.txt`
+- `strata-version.txt`
+- `bigcherry-version.txt`
+- `model-compatibility.txt`
+- `commands.txt`
+- `env.txt`
+- `gpu-smoke.txt`
+- `runs.csv`
+- `summary.md`
+- raw build/runtime/profiling logs
 
-At minimum:
+`runs.csv` minimum fields:
 
-`timestamp,engine,commit,model_sha,quant,gpus,context,input_tokens,output_tokens,repeat,prefill_tps,decode_tps,wall_s,spec_depth,accepted_tokens,proposed_tokens,expert_cache_bytes,expert_hit_pct,cpu_expert_pct,h2d_bytes,d2h_bytes,host_peak_gib,vram0_peak_gib,vram1_peak_gib,vram2_peak_gib,vram3_peak_gib,kv_resident,correctness_status,notes`
+`timestamp,comparison_class,engine,commit,model_sha,quant,gpus,context,input_tokens,output_tokens,repeat,prefill_tps,decode_tps,wall_s,spec_depth,accepted_tokens,proposed_tokens,expert_cache_bytes,expert_hit_pct,cpu_expert_pct,h2d_bytes,d2h_bytes,host_peak_gib,vram0_peak_gib,vram1_peak_gib,vram2_peak_gib,vram3_peak_gib,kv_resident,correctness_status,notes`
 
-Use blank/NA for unavailable counters; never encode unknown as zero.
+Unavailable counters are `NA`, never zero.
 
-## Analysis to return for review
+## Required local-agent report
 
-The local agent must commit or attach the result bundle and provide a concise report containing:
+Return:
 
-1. fastest valid Strata configuration for each benchmark lane;
-2. fastest valid BigCherry configuration for the same lane;
-3. same-quant speedup ratio for PP and TG;
-4. RAM and VRAM footprint difference;
-5. single-GPU versus multi-GPU scaling;
-6. expert-cache knee and hit-rate curve;
-7. measured CPU-execute versus H2D+GPU miss economics where observable;
-8. KV-residency/expert-cache crossover;
-9. speculation depth/acceptance curve;
-10. correctness failures or unsupported counters;
-11. exact raw-result path/commit.
+1. exact runnable Strata ROCm repository + SHA and capability proof;
+2. build/smoke status;
+3. fastest valid Strata configuration per lane;
+4. fastest matched BigCherry configuration per lane;
+5. MATCHED PP/TG speed ratios only;
+6. RAM/VRAM footprint;
+7. expert-cache knee/hit curve;
+8. CPU-execute vs H2D+GPU miss evidence;
+9. KV/expert crossover;
+10. speculation curve;
+11. single vs multi-GPU scaling;
+12. correctness failures/unsupported counters;
+13. raw result path/commit;
+14. mechanisms worth transferring to BigCherry, each with evidence.
 
-Do not summarize away negative results.
+Do not hide failed or negative lanes.
 
-## Ownership/disposition after results
+## Ownership after evidence
 
-After review, classify each demonstrated mechanism:
+Disposition findings to existing owners:
 
-- **MET01** — expert residency/cache economics and hot/cold expert policy;
-- **MET02** — sparse/indexed expert execution primitives;
-- **MET05** — host/auxiliary-device expert transport and overlap;
-- **FMTP02-07** — MTP/speculation implementation and acceptance economics;
-- **RPL01** — cross-capability/device/VRAM placement cost comparison;
-- **PHA03** — topology/P2P/RCCL admission evidence;
-- **BRVP** — external/native backend integration boundaries;
-- existing telemetry owner — missing measurement primitives.
+- MET01: expert residency/cache/hot-cold policy;
+- MET02: sparse/indexed expert execution;
+- MET05: host/aux transport and overlap;
+- FMTP02-07: MTP/speculation;
+- RPL01: device/VRAM/cross-capability placement;
+- PHA03: topology/P2P/RCCL qualification;
+- BRVP: external backend integration boundary;
+- existing telemetry owner: missing counters.
 
-Prefer updating those owners over creating another implementation plan.
+Do not create a second technical owner when one exists.
 
-## Promotion/rejection gates
+## Promotion gates
 
-A Strata mechanism is worth BigCherry implementation work only when at least one matched lane demonstrates either:
+A mechanism merits BigCherry implementation work when matched evidence shows at least one of:
 
-- >=10% end-to-end PP or TG improvement at equal quant/correctness; or
-- >=20% lower required VRAM at <=5% throughput loss; or
-- a clearly measured mechanism-level saving large enough to justify an implementation experiment.
+- >=10% end-to-end PP or TG improvement at equal quant/correctness;
+- >=20% lower required VRAM at <=5% throughput loss;
+- a measured mechanism-level saving large enough to justify a bounded implementation experiment.
 
-For multi-GPU or adaptive mechanisms, require >=5% end-to-end gain over the best simpler qualified configuration.
+Multi-GPU/adaptive complexity requires >=5% over the best simpler qualified configuration.
 
-Reject/defer mechanisms whose gain disappears after matching quant, context, prompt caching, speculation, RAM paging and correctness.
+Reject/defer gains that disappear after matching quant, context, prompt caching, speculation, paging and correctness.
 
-## Completion criteria
+## Acceptance Criteria
 
-BCOP37 is complete when:
+BCOP37 completes when:
 
-- Strata builds and the supported AMD path is qualified or its failure is captured reproducibly;
-- matched Strata versus BigCherry results exist;
-- expert/KV/speculation/multi-GPU sweeps are completed to the extent supported by the runtime;
+- the AMD source lineage is identified and pinned without attempting an unauthorized port;
+- a real HIP GPU smoke test passes, or a precise current-source blocker is captured;
+- matched Strata/BigCherry evidence is produced where technically possible;
+- expert-cache, cold-expert, KV, speculation and topology mechanisms are characterized to the extent exposed by the runtime;
 - raw evidence is preserved;
-- every material mechanism is assigned to an existing technical owner or explicitly rejected/deferred;
-- no duplicate BigCherry runtime subsystem has been created as part of the test.
+- each useful mechanism is assigned to an existing BigCherry owner;
+- no duplicate runtime subsystem was created.
 
-## Change Log
+## Notes
 
-- 2026-10-05T21:59:23.414049+00:00 (updated-by): Updated: section:notes
+2026-10-06: `ro99/strata@015b075079c51a7aec670ee24924f920f5e7bb2b` was tested as if it were the AMD target. Source inspection showed it was unsuitable for this qualification: CUDA-oriented backend/stub behavior locally, no required Qwen Flash-Next/qwen4exp path and no matching GGUF path. No GPU time was spent. This revision is now explicitly architecture-reference-only for BCOP37; agents must not repeat this dead end. The next executable path is current `Maxritz/Strata-rocm` or a demonstrably newer/superseding AMD lineage, pinned after capability verification.
