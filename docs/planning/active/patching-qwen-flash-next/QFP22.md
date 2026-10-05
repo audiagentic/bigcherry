@@ -156,3 +156,77 @@ chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, 
 - 2026-10-05T04:38:52.451161+00:00 (updated-by): Updated: section:notes
 - chg_20261005_060430_moved-the-llamacpp-pin-to-b11_6653
 - 2026-10-05T06:04:34.204505+00:00 (updated-by): Updated: section:ledger-events
+
+## Plan Review — 2026-10-05: b11402 HIP regression triage
+
+Scope: pin `0504396140d1c882f5f6ee34466a42db7ae90114` -> b11402 `d89651a7b205c03c4a0b13cd0646d400dc929f79`, same `bigcherry` + `deploy-v6-plus-chunk` 34/34 patch composition. Measured outputs/draft acceptance are unchanged; this review is performance-only. The leading common suspect is upstream #29612 (`2ca15f5404760548c39e7b92bd43116a09414a1a`): it changes the AMD WMMA FlashAttention MMA load/address code without changing the selector, while single-token vec/tile paths are untouched. That shape can explain both the MTP-only Flash-Next loss and the long-prefill dense loss.
+
+### Upstream commit reachability on Brutus HIP
+
+| Commit | HIP reachability / path | AMD behavior change | Disposition |
+|---|---|---|---|
+| #29941 `dd266785` MMQ expert allocation | **Yes**, quantized `MUL_MAT_ID` / MoE MMQ in `mmq.cu` on gfx1100/gfx1201/gfx1030. | Changes only `src1_q8_1` pool allocation tail from `J_max(..., ne11)` to `J_max(..., ne12)`. No memset, kernel selector, grid, launch count or kernel code change. `J_max` rounds widths <8 to 0, so for 2-5-token verify both old and new terms are 0. At widths >=8 it can add at most the compiled J tail and can shift pool pressure/addressing. Dense non-MoE is unaffected. | Low for observed Flash MTP regression unless actual target batch reaches >=8; not a dense culprit. Correctness fix must not be reverted as mitigation. |
+| #29939 `2bc56357` `blocks_per_col` | **No** on HIP AMD: changed code is inside `BLACKWELL_MMA_AVAILABLE` NVFP4 quantization. | None on gfx1100/1201/1030. | Reject. |
+| #29940 `0eb6d9a8` `neu_padded` scope | **Yes**, `mm_ids_helper` used by MoE `MUL_MAT_ID`. | Moves one `constexpr` into the already-selected specialized branch. Same launch, shared memory, routing and arithmetic for instantiated specializations; only compile/template scoping can differ. | Very low. |
+| #29612 `2ca15f54` FA swizzle refactor | **Yes on gfx1100/gfx1201** when `BEST_FATTN_KERNEL_MMA_F16` is selected. `AMD_WMMA_AVAILABLE` is defined for RDNA3/RDNA4. **Not the gfx1030 RDNA2 drafter path**: RDNA2 does not get that macro and falls back to vec/tile here. | AMD still has `swz=false` (swizzling is Turing-only), but the commit replaces the old `load_ldmatrix<swz>` / trans helpers and row/column address calculation with compile-time-stride `load_ldmatrix_swizzled<stride>` helpers and linear offsets in `fattn-mma-f16.cuh`/`mma.cuh`. No intended selector/grid/launch-count change, but AMD template instantiation, inlining, address arithmetic and therefore ISA/VGPR/codegen can change. Vec/tile FA is untouched. No compile flags changed. | **Primary suspect for both regressions.** |
+| #29435 `d89651a7` (b11402) whole-tile FA scheduling | Host launcher is compiled/reached, but the new policy is gated by `GGML_CUDA_CC_IS_NVIDIA(cc) && cc == GGML_CUDA_CC_DGX_SPARK`. | On AMD `prefer_whole_tiles=false`; mask scan and prior stream-K decision are semantically unchanged. Extra `async_kv_preload` argument is host/template plumbing only. | Reject unless b11401->b11402 A/B unexpectedly proves otherwise. |
+| #29622 `0bb496db` mixed token+embedding batches | **Yes, host-side on every request**, including MTP hook batches. Qwen4Exp PLE input handling is also changed. | Batch allocator now scans all entries, supports token/embedding mixes, builds section-major positions and emits a `type` vector only for genuinely mixed ubatches. Homogeneous raw-token batches get extra O(n) bookkeeping but no new GPU kernel. MTP batches carrying both token+embedding can take new host/input paths. | Secondary Flash-MTP suspect; weak dense-prefill fit. |
+| #29806 `a7b94df2` CPU tinyBLAS tails | Only `ggml-cpu` x86 tinyBLAS. | No HIP device behavior; only matters if a measured matmul is intentionally/fallback-routed to CPU. Current all-GPU target/expert lanes do not. | Reject. |
+| #29895 `a7fb71fa` (b11401) logging/router | Server/log host code is reachable, but router subprocess changes are irrelevant to the normal single server and log formatting runs only when a log entry is emitted. | No GPU work. No new per-token logging was added. | Reject unless verbose/high-frequency logging is enabled in the benchmark. |
+
+#29934 is Vulkan-only and unreachable in `GGML_HIP`.
+
+### Why the regression shape points at FA MMA, not the drafter
+
+- Flash-Next no-MTP uses a one-token target batch; AMD FA selection commonly stays vec/tile at that shape. MTP target verification uses 2-5 query tokens and can cross the AMD WMMA MMA threshold (`Q->ne[1] * gqa_ratio_eff`), while #29612 changes only the MMA implementation. This exactly permits “MTP -3%, no-MTP flat” without changing acceptance or text.
+- gfx1030 is not on the #29612 AMD-WMMA path. Therefore a #29612 regression should appear on target gfx1100/gfx1201 verify kernels, not primarily on the 6900 XT drafter. If rocprof instead shows the extra ~1.1 ms on gfx1030, demote #29612 immediately.
+- Dense 27B prefill has large query batches and therefore exercises MMA FA; the loss increasing from ~0.8% at 10K to ~1.4% at 32K is consistent with attention taking a larger wall-time share with context. Dense decode can remain flat if its small verify shape selects vec/tile or if MMA FA is a much smaller fraction of the step.
+- #29622 gives the other plausible MTP-only mechanism, but it does not naturally explain the separated 27B prefill regression, and its homogeneous-token overhead is small. Treat it as the next boundary if FA kernel time does not move.
+- #29941 looks attractive because Flash-Next is 512-expert MoE, but for the stated 2-5-token verify widths the changed `J_max` term is exactly zero on both pins. It becomes relevant only if profiling shows a real >=8-token `MUL_MAT_ID` batch or an unexpected allocator effect elsewhere.
+
+### BigCherry interaction audit for the measured 34-patch composition
+
+`source.bigcherry` contributes serving-core + upstream-fixes + validated-enhancements; `deploy-v6-plus-chunk` adds only 1331 + 1332. Important consequences:
+
+- **0200/0300 are selected.** 0200 can route quantized matmuls through replay/forced candidates; 0300 uses `ggml_cuda_mmq_get_J_max` for forced-J safety. #29941 changes the upstream MMQ allocation to use the same real MoE token-width dimension (`ne12`) that 0300 already reasons about. This is a safety-alignment change for widths >=8, not a J selector/grid change; at widths 2-5 it is inert.
+- **1237/1265 are selected.** They compact MoE MMQ launch geometry on gfx1100/gfx1201/gfx1030. #29941 executes earlier in the same `ggml_cuda_mul_mat_q` path and can enlarge one pool allocation before 1237's compact-grid workspace, but it does not alter 1237's block map/grid. Only investigate this interaction if MMQ/pool profiling moves and the real width is >=8.
+- **1303 is selected.** It changes attention/KV placement across the meta split, so it determines which target GPU pays an FA regression; it does not touch #29612 code or change between pins.
+- **1307-1313 are selected.** These optimize Q8_1/MMVQ/fused decode producers. They do not touch the #29612 FA implementation. A pin-specific interaction is unlikely unless profiling shows the regression outside FA.
+- **1332 is selected but explicitly disables chunking for `n_tokens <= 8`.** It therefore cannot create the 2-5-token MTP decode regression. It can change QSA prefill FA shapes for larger batches and may amplify a #29612 MMA change there, but no Flash-Next prefill pin A/B is currently in the evidence above.
+- **1295 is not in `deploy-v6-plus-chunk`**, and its default gather threshold would not fire at a ~24K cache anyway. It cannot explain this measured regression.
+- **1202 and 1266 are experiment-only, not in the measured 34 patches.** Thus 1266's direct co-tenancy with `fattn-mma-f16.cuh` is not part of this regression. If 1266 is retested on b11402 it must be requalified because #29612 rewrote the surrounding load/address helpers despite clean anchors. 1202 is the separate BF16 tile path and is not relevant to these f16-KV measurements.
+- **No cleanly-applied anchor in the measured selection was found to reinterpret an upstream-changed selector.** The important semantic change is upstream #29612 itself; BigCherry mainly changes placement/workload shapes that decide how often that kernel runs.
+
+### Ranked suspects
+
+Flash-Next 24K MTP decode:
+1. **#29612 FA swizzle/load refactor — ~75% confidence.** Best fit to MTP-vs-no-MTP and target-vs-drafter architecture split.
+2. **#29622 mixed-batch host refactor — ~15%.** MTP-specific host path is reachable; confirm only if GPU kernel census does not account for the +1.1 ms.
+3. **#29941 MMQ allocation — <=5%.** Structurally MoE-specific but inert for widths 2-5 because `J_max=0`; raise only if actual width >=8 or pool telemetry changes.
+4. **#29940 — <=2%.** Same MoE helper arithmetic/launch.
+5. **#29435/#29939/#29806/#29895 — ~0-1% each** under the stated run.
+
+27B dense prefill:
+1. **#29612 — ~90% confidence.** Only material AMD GPU-kernel change in the range that directly matches large-batch FA; increasing loss with context is consistent.
+2. **#29622 — ~5%.** Extra host batch preparation is reachable but unlikely to cost 0.8-1.4% of GPU-bound prefill.
+3. **#29435 — ~1%.** Explicit NVIDIA-only behavioral gate; b11401/b11402 is the cheap proof.
+4. Others: effectively excluded by backend/path (MoE-only, Blackwell-only, CPU-only or logging-only).
+
+### Cheapest discriminating experiments, in order
+
+1. **Profile before rebuilding.** rocprofv3 kernel census old pin vs b11402 on (a) ~100 Flash MTP target steps at 24K and (b) 32K dense prefill. Aggregate count/total/mean by GPU and kernel family: `flash_attn_ext_f16*` MMA vs tile/vec, `mul_mat_q*`, `quantize*_mmq_q8_1*`, `mm_ids_helper`, and launch gaps. Confirmation for #29612: same FA-MMA launch counts/grid family and unchanged vec/tile/MMQ times, but target gfx1100/gfx1201 FA-MMA total/mean grows by approximately the missing wall time; gfx1030 remains flat. If kernel totals are flat but host gaps grow, move to #29622 and existing 1319/1325 host-submit diagnostics.
+2. **b11401 `a7fb71fab83b474a0892b9a05aaa3a8ddca2729b` vs b11402 `d89651a7...`.** This isolates #29435. Expected: both are equally slow on AMD. If b11401 recovers, #29435 has an unexpected AMD/codegen effect despite the NVIDIA guard and should be reduced immediately.
+3. **`a7b94df2c616bc1f62a73b964b4a71cb0dcc488e` vs `2ca15f5404760548c39e7b92bd43116a09414a1a`.** Exact before/after pair for #29612. Run one dense 32K prefill pair plus Flash MTP/no-MTP. Confirmation: both regressions first appear at `2ca15f54`; no-MTP stays flat.
+4. **`2ca15f54` vs `0bb496dbd3af0add77ff82c406a915b41e839d56`.** Exact #29622 boundary. Only needed if #29612 boundary is clean or host-gap profiling moves. Confirmation: MTP wall/host submit changes at `0bb496db` while per-kernel GPU time is stable.
+5. **`16c163d561b976d8375a17db5660105abe47cda1` vs `dd266785c2595775001c1c714bd9d92b3ef34cde`.** Exact #29941 boundary; run only if a real >=8-token MoE MMQ shape is observed or pool/MMQ timing moves. For the stated 2-5 width it should be identical.
+6. **`2e7c58c5477478c8cf6e199cfaa5dcd5a4319c81` vs `0eb6d9a8137ff13deb1b3a755b01b1e5b7f89229`.** Exact #29940 boundary; lowest-priority MoE check.
+
+A single revert of #29435 on b11402 is cheap. Prefer the exact `a7b94df2`/`2ca15f54` boundary over reverting #29612 on top of b11402 because #29435 later edits the same FA file and makes the revert conflict-prone/less clean. Likewise, do not use a #29941 revert as a production mitigation: it restores a known OOB fault.
+
+### Mitigation / upstream disposition
+
+If #29612 is confirmed, add a narrow BigCherry upstream-fix patch that restores the pre-#29612 **unswizzled AMD** MMA load/address implementation under `AMD_WMMA_AVAILABLE` / `AMD_MFMA_AVAILABLE`, while leaving the new NVIDIA/Turing swizzle refactor intact. Do not change FA selection policy first: the cleanest fix is to recover the old AMD machine-code path for the same selected kernel and prove identical output plus recovered kernel time. Re-run on both gfx1100 and gfx1201; gfx1030 is the negative control. This should be reported upstream with the exact `a7b94df2` vs `2ca15f54` A/B, rocprof per-kernel delta, kernel launch counts and unchanged output.
+
+If #29622 is confirmed instead, optimize the homogeneous raw-token fast path in `llama_batch_allocr`/MTP hook handling rather than reverting mixed-batch support; report upstream if stock llama.cpp reproduces the host-submit regression. If #29941 is unexpectedly implicated, retain its corrected allocation and optimize/reuse the scratch/pool behavior or reconcile 0300/1237 workspace sizing; never reintroduce the under-allocation.
+
+Promotion/pin decision: keep b11402 correctness only if required by an upstream fix; otherwise the performance gate remains open until the #29612 boundary/profile test is resolved. No BigCherry patch/code change is authorized by this review alone.
