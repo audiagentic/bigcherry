@@ -2,7 +2,7 @@
 id: BCOP08
 order: 8
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:37:00+00:00'
 breadth: ''
 skill: advanced
@@ -26,9 +26,29 @@ Follow-through for MET01/MET05 audit. MET01 should own residency decisions while
 5. Add the ROCm3 persistent tier only if whole-layer hardware results improve end-to-end service time per GiB.
 6. Keep cache policy in MET01 and execution/transport semantics in MET05/1328.
 
-## Related
+## Detailed Solution & Technical Design
 
-MET01, MET04, MET05, patch 1328; llama.cpp #29887.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -36,3 +56,16 @@ MET01, MET04, MET05, patch 1328; llama.cpp #29887.
 - Equal-VRAM comparisons include both PP displacement cost and TG benefit.
 - 6900 tier is admitted only from positive whole-layer hardware evidence.
 - No second cache/router/placement registry is introduced.
+
+## Notes
+
+2026-10-05 review: superseded by owner item MET01 (carries #29887 cache qualification, LRU and per-GiB scoring) with execution in MET05/1328. Not implemented; the 1328 hardware sweep has not been run. #29887 is not in pin 050439614.
+
+## Related
+
+MET01, MET04, MET05, patch 1328; llama.cpp #29887.
+
+## Change Log
+
+- 2026-10-05T04:37:06.226829+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:51.734654+00:00 (state-transition): State: pending → superseded

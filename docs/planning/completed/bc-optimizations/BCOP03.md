@@ -2,7 +2,7 @@
 id: BCOP03
 order: 3
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:32:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,9 +25,29 @@ Follow-through for the FMTP03 consolidation audit. Patch 1321 already provides f
 4. Add slack-adaptive tail-depth selection from prior-round timing EWMAs only after fixed-depth correctness is proven.
 5. Require rejection-safe recurrent/KV/state ownership and unchanged target output/acceptance semantics.
 
-## Related
+## Detailed Solution & Technical Design
 
-FMTP02, FMTP03, patch 1321, QFP08.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -35,3 +55,16 @@ FMTP02, FMTP03, patch 1321, QFP08.
 - >=70% of candidate draft/replay work is hidden or the overlap path is rejected.
 - No duplicate live-front lease/transition API remains planned without measured necessity.
 - End-to-end promotion meets FMTP03 performance/correctness gates.
+
+## Notes
+
+2026-10-05 review: superseded by owner item FMTP03, which already carries the 1321 forced-front + n_tail design, the 70% hidden-work gate and EWMA tail depth. Not implemented; work stays open under FMTP03.
+
+## Related
+
+FMTP02, FMTP03, patch 1321, QFP08.
+
+## Change Log
+
+- 2026-10-05T04:36:49.467652+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:35.081982+00:00 (state-transition): State: pending → superseded

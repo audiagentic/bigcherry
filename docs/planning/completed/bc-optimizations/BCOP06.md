@@ -2,7 +2,7 @@
 id: BCOP06
 order: 6
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:35:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,12 +25,45 @@ Follow-through for QFP15. Existing evidence has not proven pure-upstream nondete
 4. Do not revive per-node graph splitting. Observe materialized outputs only at existing safe compute boundaries.
 5. Until resolved, judge <=3% speculative speedups using ms/step plus ABBA/multi-request evidence, not one t/s run.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP15, QFP13, FMTP01, patch 1294.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Device-placement and pure-upstream controls are both completed.
 - Root ownership is narrowed or QFP15 is explicitly converted to benchmark-hygiene guidance.
 - No Meta-unsafe tracing path is reintroduced.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP15, which already carries the gfx1100 draft-placement control, the unpatched-upstream control, the ban on per-node eval callbacks and the ABBA rule. Neither control has been run; work stays open under QFP15.
+
+## Related
+
+QFP15, QFP13, FMTP01, patch 1294.
+
+## Change Log
+
+- 2026-10-05T04:36:59.486647+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:45.134059+00:00 (state-transition): State: pending → superseded

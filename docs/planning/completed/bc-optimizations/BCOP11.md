@@ -2,7 +2,7 @@
 id: BCOP11
 order: 11
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:40:00+00:00'
 breadth: ''
 skill: advanced
@@ -27,9 +27,29 @@ Follow-through for QFP27/QFP24/1326. Upstream #29963 provides copy-indexed sched
 6. Add event-query API only if copy-reuse waits consume >=1% prefill wall.
 7. Retire QFP24's duplicate generation/event/ring protocol if scheduler semantics pass.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP16/1326, QFP24, QFP27, MET06; llama.cpp #29963.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -37,3 +57,16 @@ QFP16/1326, QFP24, QFP27, MET06; llama.cpp #29963.
 - Zero stale-generation reads across stress matrix.
 - Pinned backing is promoted only for >=3% PP/TTFT improvement.
 - Duplicate QFP24 lifetime machinery is removed/retired.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP27, which is the same consolidation (10,000-generation stress, copy depth, aggregate Meta completion, 95% gate). Not implemented; work stays open under QFP27. #29963 is not in pin 050439614.
+
+## Related
+
+QFP16/1326, QFP24, QFP27, MET06; llama.cpp #29963.
+
+## Change Log
+
+- 2026-10-05T04:37:16.193171+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:38:01.685352+00:00 (state-transition): State: pending → superseded

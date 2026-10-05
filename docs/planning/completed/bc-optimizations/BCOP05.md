@@ -2,7 +2,7 @@
 id: BCOP05
 order: 5
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:34:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,12 +25,45 @@ Follow-through for QFP09 audits that showed the late rank changes with context a
 4. Attribute attention-specific skew to QFP07 and local same-stream gaps to QFP13 rather than duplicating mechanisms.
 5. Promote placement only for >=3% decode improvement with <=2% regression elsewhere and no context-headroom loss.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP07, QFP09, QFP13, QFP01/1291.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Critical-path excess is measured by rank/context rather than inferred from utilization.
 - Each proposed placement has a quantified movable opportunity.
 - Ownership is consolidated and stale generic launch-gap work is removed from QFP09.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP09, which already carries the timestamp-paired critical-path excess method and the 0.5 ms/token movable-excess gate. Not implemented; work stays open under QFP09.
+
+## Related
+
+QFP07, QFP09, QFP13, QFP01/1291.
+
+## Change Log
+
+- 2026-10-05T04:36:56.164578+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:41.823202+00:00 (state-transition): State: pending → superseded

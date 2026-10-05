@@ -2,7 +2,7 @@
 id: BCOP13
 order: 13
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:42:00+00:00'
 breadth: ''
 skill: advanced
@@ -26,9 +26,29 @@ Follow-through for QFP28. External Flash-Next investigation demonstrated that co
 5. If host-expert residency becomes production-relevant, qualify existing staging-ring capacity at equal effective residency; do not create a QFP28-private ring.
 6. Feed pass/fail results back into QFP28, QFP22/QFP04 and relevant MET items.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP28, QFP22/1332, QFP04/1295, MET01, MET06.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -37,3 +57,16 @@ QFP28, QFP22/1332, QFP04/1295, MET01, MET06.
 - Data-movement results include physical transport plausibility.
 - 1295/1332 throughput cannot be promoted without PASS.
 - No duplicate gather/ring/cache/scheduler mechanism is introduced.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP28, which already specifies the multi-request gate, injected-corruption sensitivity proof, transfer GB/s plausibility and post-abort coverage. The gate is not implemented yet; it stays open under QFP28 and must pass before 1295/1332 are promoted (also recorded in QFP22).
+
+## Related
+
+QFP28, QFP22/1332, QFP04/1295, MET01, MET06.
+
+## Change Log
+
+- 2026-10-05T04:37:22.891895+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:38:08.302510+00:00 (state-transition): State: pending → superseded

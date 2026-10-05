@@ -2,7 +2,7 @@
 id: BCOP02
 order: 2
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:31:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,9 +25,29 @@ Follow-through for QFP10 audits that changed the optimization target from isolat
 4. Compare stock path, VDR1 extension and direct-F32/MMVDQ-style path. Stop MMVDQ work if activation conversion is <10% of service wall.
 5. Promote only with >=10% expert-service reduction and >=3% end-to-end decode/MTP improvement with correctness intact.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP10, PKC05/1273, HIP autotune; llama.cpp #29941, #29953.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -35,3 +55,16 @@ QFP10, PKC05/1273, HIP autotune; llama.cpp #29941, #29953.
 - One measured expert-service breakdown determines the winning path.
 - No duplicate tile estimator, dispatch table or padding formula is added.
 - QFP10 records promote/reject evidence and implementation owner.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP10, which already carries the #29941/#29953 prerequisite, the MMQ J-boundary matrix and the MMVDQ 10% stop gate. Not implemented; work stays open under QFP10. Neither PR is in pin 050439614.
+
+## Related
+
+QFP10, PKC05/1273, HIP autotune; llama.cpp #29941, #29953.
+
+## Change Log
+
+- 2026-10-05T04:36:46.056072+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:31.714015+00:00 (state-transition): State: pending → superseded

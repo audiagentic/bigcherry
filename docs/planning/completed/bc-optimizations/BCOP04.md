@@ -2,7 +2,7 @@
 id: BCOP04
 order: 4
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:33:00+00:00'
 breadth: ''
 skill: intermediate
@@ -25,12 +25,45 @@ Follow-through for the QFP11 audit that found captured-graph/AllReduce boundary 
 4. Reopen only with measured evidence; reuse existing graph-cache/replay ownership rather than adding a scheduler.
 5. Ensure QFP09/QFP13/QFP11 ownership text remains consistent.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP07, QFP09, QFP11, QFP13, QFP01/1291.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Current boundary-cost evidence is recorded after latest balancing/fusion changes.
 - QFP11 is explicitly closed or reopened against numeric gates.
 - No duplicate graph/scheduler mechanism is introduced.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP11, which already carries the <1 ms/token and <3% reopen gates. The post-balancing re-measurement has not been run; it stays open under QFP11.
+
+## Related
+
+QFP07, QFP09, QFP11, QFP13, QFP01/1291.
+
+## Change Log
+
+- 2026-10-05T04:36:52.801851+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:38.467198+00:00 (state-transition): State: pending → superseded

@@ -2,7 +2,7 @@
 id: BCOP12
 order: 12
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:41:00+00:00'
 breadth: ''
 skill: advanced
@@ -26,9 +26,29 @@ Follow-through for QFP04/1295/1296. The preferred end-state is one canonical sel
 5. Compare direct FA against typed gather with f16/q8 KV, selection-count extremes, tails/sentinels and reference logits.
 6. Keep typed gather only if it wins or is required as correctness fallback.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP04, QFP17, QFP22, patches 1295/1296; llama.cpp #29901; SYCL sparse-FA mechanism evidence.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -36,3 +56,16 @@ QFP04, QFP17, QFP22, patches 1295/1296; llama.cpp #29901; SYCL sparse-FA mechani
 - Direct FA is implemented only after the materiality gate passes.
 - Promote for >=3% decode-wall or >=0.5 ms/token gain at >=160K with <=2% short-context regression and correctness intact.
 - No second dense selection buffer or duplicate indexer implementation.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP04, which already carries the #29901-first ordering, bc_qsa_idx and the 160K / 0.5 ms/token materiality gate. Not implemented; work stays open under QFP04.
+
+## Related
+
+QFP04, QFP17, QFP22, patches 1295/1296; llama.cpp #29901; SYCL sparse-FA mechanism evidence.
+
+## Change Log
+
+- 2026-10-05T04:37:19.506465+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:38:05.005082+00:00 (state-transition): State: pending → superseded
