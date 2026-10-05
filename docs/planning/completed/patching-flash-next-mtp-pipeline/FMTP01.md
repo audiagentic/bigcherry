@@ -2,7 +2,7 @@
 id: FMTP01
 order: 0
 plan: patching-flash-next-mtp-pipeline
-state: pending
+state: completed
 created-at: '2026-10-04T00:48:00+00:00'
 breadth: ''
 skill: advanced
@@ -129,6 +129,8 @@ Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both 
 
 2026-10-04 Gate 0 calibration (flashnext-calib7b-d10k/d80k; depth-7 arm at CTX 131072 because the 8-token verify OOMs the R9700 at 240K; same prompt corpus as the n_max 3 timing runs): ~10K / ~80K: P(accepted prefix >= k) k1..k7 = .69 .58 .44 .37 .32 .29 .23 / .82 .63 .53 .42 .35 .30 .26; P(full 3-front) 0.44 / 0.53; P(bridge | full) 0.85 / 0.80; p_hit 0.37 / 0.42; promoted-tail yield E[accepted of 3 | bridge] 2.26 (75%) / 2.17 (72%) vs fresh n_max 3 acceptance 59% / 69% - the promoted front is NOT worse than a fresh front (conditioning on full-front + bridge selects predictable stretches and outweighs the depth decay). Projected FMTP saving = p_hit x serial draft: 0.37 x 6.4 = 2.4 ms of a 38.4 ms round (~6%) at 10K; 0.42 x 8.7 = 3.7 ms of 47.9 ms (~7.6%) at 80K, before overhang/contention, which the 25-31 ms target sync window should hide. Caveat: the calibration continued the live chain; FMTP02 forced replay may give a slightly different hidden trajectory. Decision: gate met on the point estimate (single prompt); proceed with FMTP02-05, keeping FMTP05's online EV control and the FMTP07 ABBA as the real acceptance gate.
 
+2026-10-05 close-out: acceptance met. Ahead is default off (BIGCHERRY_MTP_AHEAD, patch 1322); submit and sync time are separately measured (1317: target submit 5.06 / 5.83 ms, sync wait 25.5 / 31.4 ms at ~10K / ~80K) without new syncs; the exploitable window is shown (63% of a round is target sync wait with the 6900 XT idle) and confirmed by the first 1322 screen (ahead host ~16-21 ms per round hidden under target verify); the n_max 7 calibration met the proceed gate (p_hit 0.37 / 0.42). The decision this item existed to make - worker-free FMTP03 - was taken and implemented as 1321 + 1322. Remaining work is tracked in FMTP03/FMTP04/FMTP05/FMTP07.
+
 ## Reviews
 
 - RV4216
@@ -139,3 +141,5 @@ Decisions: F (reseed/sync) <= ~2-3% ceiling, C (device greedy) <= ~1.5% -> both 
 - 2026-10-04T05:13:34.635207+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T05:24:47.114772+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T06:29:30.213802+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T10:04:08.471912+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T10:04:22.266126+00:00 (state-transition): State: pending → completed

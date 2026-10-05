@@ -169,6 +169,8 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 2026-10-05 tail confidence cut (BIGCHERRY_MTP_AHEAD_PMIN, queue-ahead-pmin) at 24K: 0.85 -> 67.9 t/s vs 73.9/75.0 base (44.4 vs 41.1 ms/step), promoted 19/64 with ~2.5-token fronts; 0.95 -> 63.8 vs 75.0/75.2 (45.6 ms/step), 17/64, ~2.2 tokens. The cut shortens promoted fronts, and a short promoted front replaces a full fresh 3-token draft: worse than no cut. Greedy also differed from base in both cut arms (not without the cut); verify-batch-shape numerics are the likely cause but treat as unresolved. Keep default no cut. Next options: promote only full-length fronts (else fresh draft), or keep promotion and also prepare a target-seeded fresh draft in the overlap window.
 
+2026-10-05 schedule (owner go-ahead): (1) re-run the 1321 + 1322 screen on the current pin and baseline (b11402 with 1333; every earlier number is from pin 0504396) - tools/lab/flash-next/queue-ahead-screen.sh b11402 2, two ABA sets per depth; (2) per-position acceptance telemetry for promoted vs fresh fronts; (3) promotion policy - note 1322 already promotes only full-length tails, so the remaining option from the list above is preparing a target-seeded fresh draft in the overlap window, or accepting the per-step gain where acceptance holds; (4) repair 1268 before FMTP05; (5) FMTP05 then FMTP07. The greedy difference seen in the confidence-cut arms stays unresolved and needs the QFP28 multi-request text gate before FMTP07.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
@@ -182,3 +184,4 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 - 2026-10-04T16:14:54.714881+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T17:00:27.817054+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T17:31:34.739948+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T10:04:16.532717+00:00 (updated-by): Updated: section:notes
