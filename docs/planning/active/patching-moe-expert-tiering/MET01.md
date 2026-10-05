@@ -19,6 +19,63 @@ MET01 is the single policy/accounting owner for routed-expert residency. It prof
 
 The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 moves selective host-expert copying out of generic `ggml_backend_sched_compute_splits()` into a public scheduler copy callback. #29887 is explicitly intended to become user-code-only after that refactor. BigCherry should therefore qualify the callback boundary before carrying any private scheduler cache fork.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- One canonical placement JSON/accounting table covers static, LRU, aux and host tiers.
+- #29943 callback seam is either present upstream or qualified as a minimal temporary backport; MET logic does not live in generic scheduler code.
+- Observation-only callback proves semantic transparency before selective-copy/cache testing.
+- #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
+- The Stew/Shali R9700 4 GiB expert-cache observation is preserved with source/configuration traceability and either reproduced directionally on local gfx1201 or dispositioned with measured reasons.
+- Multi-request correctness covers the reported DEV_GATHER corruption class; no first-request-only result can promote.
+- Static/LRU/hybrid/aux are compared at equal expert-VRAM budget; decode and large-batch prompt effects are both reported.
+- MET05 remains sole auxiliary transport owner; MET06 remains blocked until its explicit placement-gap gate passes.
+- RPL01 may compare MET01's selected candidate against other system placements but cannot introduce another expert residency policy or mutate MET01 placement state.
+- Unsupported or inactive paths fail closed rather than silently becoming baseline measurements.
+
+## Notes
+
+2026-10-05 audit: #29943 materially improves the integration boundary for MET. Its diff removes expert-ID parsing/copy grouping from generic scheduler compute and exposes a host-weight copy callback, while `llama_context` becomes the user-code owner. #29887 states that after #29943 it should be entirely user-code. This reduces BigCherry's reason to carry scheduler-core MoE cache patches and makes the first local mock cheap: an observation-only callback can validate ordering/lifetime on HIP before cache code is introduced.
+
+2026-10-06 cross-capability audit: RPL01 was added as a read-only whole-system cost/recommendation owner. MET01 remains authoritative for expert residency; it exports measured candidate cost components rather than surrendering placement ownership.
+
+2026-10-06 provenance audit: the existing expert-cache plan was traced back to `stew675/llama-cpp-rdna-boosts` and the R9700 Flash-Next reproduction/report in `Shali12/r9700-flash-next-notes`. The reported `-ncmoe 41` + 4096 MiB cache result, lazy/no-load host mode, MTP interaction and second-request DEV_GATHER corruption are now explicit experimental/correctness gates. Upstream #29943/#29887 remain the preferred implementation seam; source lineage is retained even when implementation lineage converges upstream.
+
+External references:
+- llama.cpp #29943 `ggml: refactor selective expert copying to user code`
+- llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`
+- https://github.com/stew675/llama-cpp-rdna-boosts
+- https://github.com/Shali12/r9700-flash-next-notes
+
+2026-10-06 PREREQUISITE PATCHES - STATUS. Upstream state at b11402+30 (origin/master 7049ff0cb): neither #29943 nor #29887 is merged; both fetched as PR heads (pr-29943 528e0a3fc based on b11379; pr-29887 6b7b03aab single commit on bed0a8566), so step 2 is a backport. (1) AUTHORED: patches/1336_sched_copy_callback (kind upstream-backport, origin upstream-pr, state untested, experiment moe-copy-callback). Carries #29943's public API (ggml_backend_sched_copy_callback, ggml_backend_sched_set_copy_callback), host weights copied last, and llama_context::sched_copy_experts verbatim, with the embedded MUL_MAT_ID expert selection removed from ggml_backend_sched_compute_splits. Deviation from upstream form: the scheduler loop is edited in place (two-pass loop + callback call) instead of extracted into ggml_backend_sched_copy_input, because validated patch 1326 edits the same loop; offline tests prove 1336 applies alone and with 1326 in either order to the same result, is idempotent, and fails closed if the expert block changes. BigCherry additions inside the callback only (no MET policy in ggml-backend.cpp): BIGCHERRY_MOE_COPY=0 observation-only control (the step-3 probe: counts, returns false); BIGCHERRY_MOE_COPY_DENSE_PCT (default 90) - when >= that share of a layer's experts is used, one whole copy replaces per-range copies (existing evidence: prefill touches ~496/512 experts per layer); exit counters under BIGCHERRY_PATCH_TRACE (calls, host_weight_bytes, selective_calls, dense_calls, experts_used/total, copied_bytes). Not yet migrated: 1328 (MET05, untested) and 1293 (evaluated) anchor in the same loop and will need re-anchoring when combined with 1336. (2) RUNNING: queue-moe-copy.sh b11402g - build b-moecopy-b11402g, then moe-copy-ab.sh on the R9700 alone with --n-cpu-moe 41, ctx 16384, f16 KV: arms O (observation-only), S (selective + dense shortcut), R (selective, no shortcut), S2 (repeat); each arm serves short, short again, a ~4K-token prompt, short a third time in one process; reports md5 identity across arms and requests, prefill/decode t/s and the counters. This covers steps 2-3 (callback transparency, non-zero selected-copy counters, second-request and workload-shift integrity). (3) FINDING on #29887 as published: it is NOT expressed on the #29943 callback. It adds its own scheduler hooks (ggml_backend_sched_set_moe_cache with resolve/begin/prepare callbacks, a moe_cache_entry table, changes in ggml_backend_sched_backend_id_from_cur and ggml_backend_sched_split_graph that re-home MUL_MAT_ID onto the cache backend and substitute a remapped ids tensor) - about 190 lines in ggml-backend.cpp plus src/llama-moe-cache.cpp (459 lines), cparams/common plumbing and a moe_cache_size context parameter; it refuses pipeline parallelism and more than one device. The copy callback alone cannot implement it: the cache needs the graph rewritten at split time (cached weight tensor + remapped ids), which the callback does not see. So the cache patch is a second, larger backport (overlay file for llama-moe-cache.* + ~20 anchored edits), to be authored after 1336's lanes pass; the 'entirely user code after #29943' statement is the PR author's intent, not the current diff.
+
 ## Repository evidence
 
 - Existing routing evidence on Flash-Next UD-IQ4_XS, ub512: mean 496/512 experts touched per layer in mixed prose+code prefill; hottest 10/25/50% cover 41.5/68.8/91.3% of picks; mean experts needed for 50/80/90/95% picks are 73/174/235/287. Static expert-count heuristics are therefore insufficient.
@@ -112,33 +169,6 @@ Performance: ABBA >=5 repetitions for TG128/512 and PP512/2048/8192; report medi
 
 Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRAM budget with <=2% regression in the unaffected regime. A workload-specific decode policy may be retained if prompt regression is explicitly isolated and feature-gated. Reject any result whose implied transfer/work exceeds measured physical limits or whose correctness/integrity gate fails.
 
-## Acceptance Criteria
-
-- One canonical placement JSON/accounting table covers static, LRU, aux and host tiers.
-- #29943 callback seam is either present upstream or qualified as a minimal temporary backport; MET logic does not live in generic scheduler code.
-- Observation-only callback proves semantic transparency before selective-copy/cache testing.
-- #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
-- The Stew/Shali R9700 4 GiB expert-cache observation is preserved with source/configuration traceability and either reproduced directionally on local gfx1201 or dispositioned with measured reasons.
-- Multi-request correctness covers the reported DEV_GATHER corruption class; no first-request-only result can promote.
-- Static/LRU/hybrid/aux are compared at equal expert-VRAM budget; decode and large-batch prompt effects are both reported.
-- MET05 remains sole auxiliary transport owner; MET06 remains blocked until its explicit placement-gap gate passes.
-- RPL01 may compare MET01's selected candidate against other system placements but cannot introduce another expert residency policy or mutate MET01 placement state.
-- Unsupported or inactive paths fail closed rather than silently becoming baseline measurements.
-
-## Notes
-
-2026-10-05 audit: #29943 materially improves the integration boundary for MET. Its diff removes expert-ID parsing/copy grouping from generic scheduler compute and exposes a host-weight copy callback, while `llama_context` becomes the user-code owner. #29887 states that after #29943 it should be entirely user-code. This reduces BigCherry's reason to carry scheduler-core MoE cache patches and makes the first local mock cheap: an observation-only callback can validate ordering/lifetime on HIP before cache code is introduced.
-
-2026-10-06 cross-capability audit: RPL01 was added as a read-only whole-system cost/recommendation owner. MET01 remains authoritative for expert residency; it exports measured candidate cost components rather than surrendering placement ownership.
-
-2026-10-06 provenance audit: the existing expert-cache plan was traced back to `stew675/llama-cpp-rdna-boosts` and the R9700 Flash-Next reproduction/report in `Shali12/r9700-flash-next-notes`. The reported `-ncmoe 41` + 4096 MiB cache result, lazy/no-load host mode, MTP interaction and second-request DEV_GATHER corruption are now explicit experimental/correctness gates. Upstream #29943/#29887 remain the preferred implementation seam; source lineage is retained even when implementation lineage converges upstream.
-
-External references:
-- llama.cpp #29943 `ggml: refactor selective expert copying to user code`
-- llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`
-- https://github.com/stew675/llama-cpp-rdna-boosts
-- https://github.com/Shali12/r9700-flash-next-notes
-
 ## Change Log
 
 - 2026-10-02T04:44:44.458623+00:00: created.
@@ -147,3 +177,4 @@ External references:
 - 2026-10-05: made #29943 user-code copy callback the required integration seam; added observation-only mock, HIP qualification matrix and explicit no-duplicate-scheduler boundary.
 - 2026-10-06: added explicit RPL01 boundary: export expert candidate cost evidence to the whole-system scorer without duplicating MET01 residency policy.
 - 2026-10-06: added explicit Stew/Shali provenance, 4 GiB R9700 reproduction lane, MTP interaction and multi-request DEV_GATHER correctness gate.
+- 2026-10-05T22:40:38.378182+00:00 (updated-by): Updated: section:notes
