@@ -13,44 +13,37 @@ maintain now redundant, merged upstream, or silently broken" -- and it was
 never run for over a week of real bumps until this skill's authoring session
 went looking for it.
 
-## Daily bump fast path (first run 2026-10-05, 0504396 -> b11402)
+## Daily bump fast path (b11402 run, 2026-10-05; orchestrator updated the same day)
 
-Use this when the pin is at most a few days old. It is the same procedure as the numbered sections below, reduced
-to the commands that were actually needed, in order. Anything that fails here drops you into the matching full
-section. The only expected custom work is reconciling a patch whose anchor upstream really changed.
+Use this when the pin is at most a few days old. Anything that stops here drops you into the matching full section.
 
 1. Orient (about 10 s): `python -m bigcherry pin-status --all-remotes`; confirm Brutus is idle
    (`pgrep -af "llama-server|ninja|queue-"`). Latest tag: `gh api repos/ggml-org/llama.cpp/releases --jq '.[0].tag_name'`.
-2. Start `python -m bigcherry sources check` in the background (10+ minutes, one fork times out at 600 s). Its
-   findings are triage input, not a bump blocker; do not wait on it.
-3. `python -m bigcherry pin-bump <tag> --source bigcherry` (about 3 minutes). It repins, commits the declaring
-   commit, pulls vendor and audits. It then STOPS at `coverage` whenever any patch fails `patch-rebase-check --all`.
-4. Read the stop correctly. `--all` composes all ~110 non-rejected patches in one tree, so patches that are never
-   built together collide (shared env-doc anchors, declared conflicts). Check what upstream really touched before
-   reconciling anything:
-   `git -C vendor/llama.cpp diff --stat <old-sha> <new-sha> -- <files of the failing edits>` and
-   `python -m bigcherry patch-rebase-check --source bigcherry --focal-overlay <patch-id>` per failing patch.
-   On 2026-10-05 all 7 "uncovered" patches were clean in the real composition and upstream had changed one of the
-   six files involved. Only a patch that fails its focal check needs authoring work.
-5. If the source selection is clean, finish by the manual fallback (about 1 minute):
-   `patch-rebase-check --source bigcherry --json releases/patch-rebase.json`, then
-   `apply --rebase-report releases/patch-rebase.json --known-good`, then `audit` (expect 34/34-style PASS).
-6. Patch tests: `python -m unittest discover -s tools/tests/patch` only gives a valid result against a PRISTINE
-   vendor tree. After `apply`, tests that copy vendor files see already-applied guards and 7 fail-closed tests go
-   red. Run `python -m bigcherry pull --source bigcherry` (resets vendor), run the tests, then `apply` again.
-7. Commit `releases/index.json`, `releases/<tag>.json`, `releases/patch-rebase.json`; push.
-8. Brutus, in this order: `git pull --ff-only`; `python3 -m bigcherry pull --source bigcherry` (the build resolves
-   `<tag>^{commit}` in `vendor/llama.cpp`, which does not have a new tag until pulled); then
-   `git checkout -- releases/` because that pull rewrites the release records with different line endings and the
-   build refuses a dirty repo ("BigCherry repository is dirty").
-9. Build + smoke: `tools/lab/flash-next/queue-bump-smoke.sh <previous build run> <new build run>` (build about
-   10 minutes, then a no-MTP run and a 24K MTP decode ABA of previous-pin build vs new-pin build). Use a NEW build
-   run name on every attempt: the queue does not rebuild a run name whose log already exists, even a failed one.
-10. Completion gate, ledger event and `supports/` tag as in sections 5 and 6.
+2. Optional, in the background: `python -m bigcherry sources check` (30+ minutes; one fork's `git cherry` times
+   out at 600 s). Findings are triage input, not a bump blocker.
+3. `python -m bigcherry pin-bump <tag> --source bigcherry` and let it finish (about 16 minutes; do NOT commit in
+   this checkout while it runs - a moved HEAD makes the coverage report stale and it stops with
+   `COVERAGE_REPORT_STALE`; `--resume` recomputes). In one run it repins, pulls, audits, probes every patch, runs the
+   patch test suite against the pristine tree, applies the build selection, re-audits and commits the release
+   record. It ends with the list to act on (also in `artifacts/pin-bump/resume-<tag>/patch-failures.json`):
+   - "only collide in the all-patches probe": clean over the build, nothing to do;
+   - "outside the build need reconciliation": real failures with file, edit and reason - fix in the patch's own
+     package after the bump (they do not block it);
+   - "patch test(s) fail against the pristine new revision": mechanics tests to fix.
+   It stops before applying only for `RECIPE_PATCHES_FAILED` (a build patch does not apply), listing every failing
+   build patch and edit at once; reconcile those, then `--resume`.
+   Check whether upstream caused a listed failure before treating it as bump work:
+   `git -C vendor/llama.cpp diff --stat <old-sha> <new-sha> -- <file>`.
+4. Push, then on Brutus `git pull --ff-only` (the build fetches a newly pinned tag itself).
+5. Build + smoke: `tools/lab/flash-next/queue-bump-smoke.sh <previous build run> <new build run>` (build about
+   10 minutes, a no-MTP run, a 24K MTP decode ABA of previous-pin vs new-pin build).
+6. Regression recheck, always: `tools/lab/flash-next/queue-bump-ab.sh <new build run> <previous build run> <tag>`
+   (reversed Flash-Next ABA plus the 27B dual-XTX ABBA at 10K/32K). One ABA is three samples; the reversed run
+   makes six and settles a 2-3% difference. Identical greedy text and acceptance are required; a consistent
+   slowdown is a reason to hold the pin, not to shrug (b11402: Flash-Next decode -3%, 27B prefill -0.8..-1.4%).
+7. Completion gate, ledger event and `supports/` tag as in sections 5 and 6.
 
-Known rough edges to fix in tooling rather than work around forever: the `--all` coverage gate reports
-composition collisions as rebase failures; `failure.json` lists uncovered patch ids without the failing edit;
-`pull` on a campaign tree dirties `releases/`; the patch tests depend on vendor being pristine.
+Still manual: the Brutus pull/build/smoke, and the completion gate.
 
 ## 0. Orient before touching anything
 
