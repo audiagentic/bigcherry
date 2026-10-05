@@ -8,35 +8,27 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P2
-work: L
+work: S
 ---
 
-# Evaluate no-P2P MoE expert parallelism
+# Gate no-P2P MoE expert parallelism
 
 ## Description
 
-Determine whether routed MoE work can be profitably partitioned across BigCherry's multi-GPU topology when direct GPU peer access is unavailable. The design must account for host-mediated activation/routing traffic and must not duplicate MET01 residency policy, MET02 sparse expert execution, MET05 auxiliary transport or PHA03 collective admission.
+Action/disposition ledger for deciding whether expert-parallel execution is viable on BigCherry's no-P2P topology. MET01 owns residency, MET02 sparse/grouped expert execution, MET05 auxiliary transport, PHA03 collective/topology admission and RPL01 cross-capability placement. BCOP34 owns none of those mechanisms.
 
-## Steps
+## Actions
 
-1. Establish a communication lower bound from actual routed token counts, activation width/type, expert fanout and required gather/reduction semantics.
-2. Compare candidate decompositions: whole-layer placement, expert-group ownership, auxiliary expert service, and host-mediated dispatch/gather. Reuse MET01 placement data and MET02 grouped/range semantics.
-3. Measure host-device and device-host transfer latency/bandwidth for the production topology; include root-complex contention and concurrent transfers.
-4. Implement a trace/replay simulator before runtime transport changes. Given captured routing, predict per-device expert work, bytes moved, overlap and critical path.
-5. Reject expert parallelism where communication/synchronization exceeds saved compute. Prefer persistent/local expert residency where MET01 already captures the win.
-6. If a viable region exists, prototype the smallest transport path through existing scheduler/backend-copy or MET05-owned auxiliary seams. Do not add a second expert router.
-7. Feed candidate cost/result evidence to RPL01 for system-level placement selection.
+1. Use existing routing evidence plus measured transport costs to calculate the minimum activation/gather bytes and synchronization required for candidate expert partitioning.
+2. Compare that lower bound with the compute time that could actually be removed. If the bound cannot support a >=5% end-to-end opportunity, reject without implementing transport.
+3. If viable, use a trace/replay mock before GPU code to test skew, balance, overlap and critical path.
+4. Route any proven implementation to MET01/02/05 or the existing backend-copy seam according to ownership; do not add a second router/cache/placement store.
+5. Record terminal disposition: `residency-sufficient`, `transport-prototype-justified`, `wait-upstream`, or `rejected-communication`.
 
-## Validation
+## Gate
 
-- Routing traces from code, prose/chat, retrieval/long-context and MTP workloads.
-- gfx1100/gfx1201 production topology with P2P explicitly disabled/unavailable.
-- Correctness parity, exact work/byte accounting and ABBA end-to-end PP/TG.
-- Include skewed and near-uniform expert distributions.
+Promotion requires exact work/byte accounting, correctness parity and >=5% end-to-end improvement at equal model/VRAM budget on the real no-P2P topology. Failed prototypes are removed.
 
-## Acceptance Criteria
+## Related
 
-- A communication lower-bound model predicts observed transport cost within a useful error bound before promotion.
-- Any promoted no-P2P expert-parallel path improves end-to-end throughput >=5% at equal model/VRAM budget.
-- MET01 remains residency owner; MET02 remains sparse expert execution owner; MET05 remains auxiliary transport owner.
-- No duplicate routing, cache, placement or collective-admission subsystem is introduced.
+MET01; MET02; MET05; PHA03; RPL01; BCOP32.
