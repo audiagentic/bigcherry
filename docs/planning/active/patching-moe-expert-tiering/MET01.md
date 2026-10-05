@@ -26,6 +26,17 @@ The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 
 - MET06 owns standard-GGUF materialization only if normal host-weight execution/cache mechanisms leave a measured placement gap.
 - RPL01 owns cross-capability topology/compute/transfer/VRAM cost comparison. MET01 remains the authoritative expert-residency solver and exports candidate costs/evidence to RPL01; RPL01 must not choose experts independently or replace MET01 placement JSON.
 
+## External provenance and traceability
+
+The expert-cache/static-hot/hybrid direction predates the current upstream seam in this plan and must retain its source lineage rather than appearing as an internally invented BigCherry mechanism.
+
+1. **Stew AMD implementation lineage:** `https://github.com/stew675/llama-cpp-rdna-boosts`. This repository is an RDNA/HIP-focused llama.cpp patch set and is the practical AMD lineage for the expert-cache idea being evaluated here. Stew-specific environment variables, scheduler behavior and patch details are evidence/mechanism references, not BigCherry API contracts.
+2. **Single-R9700 evidence lineage:** `https://github.com/Shali12/r9700-flash-next-notes`. The report covers Qwen3.8 Flash-Next on one Radeon AI PRO R9700/gfx1201, 32 GB VRAM, 64 GB RAM and ROCm 10. The reported configuration included `--lazy-mode on --load-mode none`, `-ncmoe 41` and `MOE_EXPERT_CACHE_MIB=4096`. Reported decode increased from roughly 17-20 t/s without expert cache to roughly 36-39 t/s with the 4 GiB cache. With an MTP draft head, reported throughput reached roughly 52-55 t/s at an additional ~3-8 GB VRAM. These numbers are external evidence and must not be represented as BigCherry measurements until reproduced.
+3. **Correctness lineage:** the same R9700 notes report an r30 MoE failure where `GGML_SCHED_DEVGATHER` could allow a correct-looking first request but corrupt the second request into `////////`; setting `GGML_SCHED_DEVGATHER=0` was the reported workaround, and r31 changed the default. This directly motivates the existing multi-request integrity gate and makes first-request-only cache qualification invalid.
+4. **Upstream convergence lineage:** llama.cpp #29887 supplies the upstream GPU cache for host-resident MoE experts, while #29943 moves selective expert copying behind a public scheduler copy callback owned from user code. BigCherry's preferred implementation path is therefore `Stew/R9700 evidence -> reproduce/measure -> upstream #29943/#29887 seam where sufficient`, rather than importing a second private scheduler cache.
+
+For every externally derived candidate, preserve at least: source URL, source commit/revision when available, observed hardware/software configuration, exact relevant flags/environment, claimed result, local reproduction configuration, and deviations. If a source idea is later implemented through a different upstream mechanism, preserve both `idea/evidence provenance` and `implementation provenance`.
+
 ## Upstream mechanism: #29943 + #29887
 
 #29943 adds `ggml_backend_sched_copy_callback` in `ggml/include/ggml-backend.h`, stores it on `ggml_backend_sched`, and funnels split inputs through `ggml_backend_sched_copy_input()` in `ggml/src/ggml-backend.cpp`. Non-weight inputs are copied first; host-backed weight inputs are copied last so user code can inspect already-copied routing inputs. If the callback returns false, the scheduler performs the normal whole-input copy.
@@ -39,11 +50,12 @@ It also removes the scheduler's embedded `MUL_MAT_ID` expert-selection implement
 1. **Profile and budget.** Fix/retain `tools/lab/flash-next/routing-profile.sh` so `ffn_moe_topk` collection is safe under the meta callback. Capture decode and prefill separately across code, chat/prose, retrieval/long-context and MTP. Emit `hits[l][e]`, `weight_sum[l][e]`, `ubatch_present[l][e]`, assigned tokens and route mass.
 2. **Adopt the callback seam, not a private cache.** On the current pin, first determine whether #29943 is present. If absent, qualify a minimal backport containing only the public copy-callback seam and moved selective-copy logic. Do not add MET-specific logic to `ggml/src/ggml-backend.cpp`.
 3. **Mock callback correctness before cache policy.** Install a diagnostic callback that returns false for every host weight while counting callback invocations, backend, tensor bytes and graph first-op. Require byte/token/logit identity with callback disabled. Then enable the upstream selective-copy implementation and require identical greedy output plus nonzero selected-copy counters.
-4. **Qualify #29887 at equal VRAM.** Compare whole-layer baseline, pure LRU, static-hot, and hybrid static+LRU. Preserve <=32-token gating initially. Prove the callback/cache is active under production scheduler copies; zero cache activity is a failed experiment.
+4. **Qualify #29887 at equal VRAM and reproduce the AMD provenance lane.** Compare whole-layer baseline, pure LRU, static-hot, and hybrid static+LRU. Preserve <=32-token gating initially. Prove the callback/cache is active under production scheduler copies; zero cache activity is a failed experiment. On gfx1201 include an explicit 0 versus 4096 MiB cache lane with `-ncmoe 41` and the closest compatible lazy/no-load controls to the Shali12/Stew report, MTP disabled for primary attribution. Treat failure to reproduce the claimed direction as useful evidence requiring transfer/cache-activity explanation, not as permission to tune until it appears.
 5. **Canonical objective.** Rank each `(layer,expert,tier)` by avoided critical-path milliseconds per resident byte, using measured H2D, compute, sync and auxiliary staging costs. Do not optimize hit rate in isolation. Export this decomposition to RPL01 for whole-system counterfactual scoring; RPL01 consumes the MET01 result rather than re-solving expert placement.
 6. **Aux tier.** Feed MET05/1328 candidates from the same placement JSON. Keep 1328 whole-layer until hardware evidence proves expert-granular auxiliary placement worthwhile.
 7. **Large-batch separation.** Keep pp512/2048/8192 separate from <=32-token decode/MTP. A cache configuration that improves decode by consuming VRAM but materially hurts prefill is not globally promoted; allow workload-specific feature-set policy only with explicit budgets.
-8. **Only then consider MET06 slicing.** Runtime standard-GGUF slicing is blocked unless the callback/cache/static/aux matrix leaves >=5% TG/PP opportunity attributable to coarse placement or >=1 GiB avoidable resident expert memory at equal throughput.
+8. **MTP interaction after cache attribution.** Once the non-speculative cache lane is stable, repeat with the production MTP sidecar/depth. Record draft VRAM, acceptance, effective target TG and cache working-set/hit-rate change. The reported ~52-55 t/s R9700 result is a hypothesis to reproduce, not a promotion target.
+9. **Only then consider MET06 slicing.** Runtime standard-GGUF slicing is blocked unless the callback/cache/static/aux matrix leaves >=5% TG/PP opportunity attributable to coarse placement or >=1 GiB avoidable resident expert memory at equal throughput.
 
 ## Code-level mock
 
@@ -71,7 +83,7 @@ static bool met_probe_copy(
 
 Build/test this control before any cache port. Required assertions: callback fires only for host-backed weight split inputs; ordinary input tensors are already copied before callback; `return false` preserves baseline output; no callback-owned pointer survives beyond the compute call; multiple scheduler copies do not share mutable probe/cache slot state without generation/copy indexing.
 
-For the selective path, preserve upstream MMQ safety: grouped expert copies must include required guard/padding bytes. Never infer a performance win from missing/corrupt expert work; use the BCOP/QFP28 multi-request integrity gate when qualifying Flash-Next.
+For the selective path, preserve upstream MMQ safety: grouped expert copies must include required guard/padding bytes. Never infer a performance win from missing/corrupt expert work; use the BCOP/QFP28 multi-request integrity gate when qualifying Flash-Next. Explicitly include a two-or-more-request same-process lane capable of detecting the Stew/Shali `GGML_SCHED_DEVGATHER` corruption class; first-request correctness is insufficient.
 
 ## Ownership and files
 
@@ -91,11 +103,12 @@ Hardware: gfx1100 XTX, gfx1201 R9700, then production 2xXTX+R9700; 6900 only thr
 Correctness before performance:
 - callback-disabled vs observation-only callback: greedy identity and logits/KLD contract;
 - selective copy/cache: multi-request same-process, cold->warm->workload-shift, MTP on/off;
+- explicit second-request corruption check covering the reported r30 `GGML_SCHED_DEVGATHER` failure class;
 - <=32-token decode plus pp512/2048/8192 bypass lanes;
 - long context and scheduler-copy reuse;
 - counters prove selected experts and uploaded bytes are nonzero and physically plausible.
 
-Performance: ABBA >=5 repetitions for TG128/512 and PP512/2048/8192; report median/dispersion, static/LRU/aux GiB, route mass by tier, cache hit, H2D bytes/token, miss-upload ms/token, auxiliary service/staging, CPU fallback, peak VRAM and locked host memory.
+Performance: ABBA >=5 repetitions for TG128/512 and PP512/2048/8192; report median/dispersion, static/LRU/aux GiB, route mass by tier, cache hit, H2D bytes/token, miss-upload ms/token, auxiliary service/staging, CPU fallback, peak VRAM and locked host memory. Include an explicit gfx1201 0/4096 MiB provenance lane before broader cache-budget optimization.
 
 Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRAM budget with <=2% regression in the unaffected regime. A workload-specific decode policy may be retained if prompt regression is explicitly isolated and feature-gated. Reject any result whose implied transfer/work exceeds measured physical limits or whose correctness/integrity gate fails.
 
@@ -105,6 +118,8 @@ Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRA
 - #29943 callback seam is either present upstream or qualified as a minimal temporary backport; MET logic does not live in generic scheduler code.
 - Observation-only callback proves semantic transparency before selective-copy/cache testing.
 - #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
+- The Stew/Shali R9700 4 GiB expert-cache observation is preserved with source/configuration traceability and either reproduced directionally on local gfx1201 or dispositioned with measured reasons.
+- Multi-request correctness covers the reported DEV_GATHER corruption class; no first-request-only result can promote.
 - Static/LRU/hybrid/aux are compared at equal expert-VRAM budget; decode and large-batch prompt effects are both reported.
 - MET05 remains sole auxiliary transport owner; MET06 remains blocked until its explicit placement-gap gate passes.
 - RPL01 may compare MET01's selected candidate against other system placements but cannot introduce another expert residency policy or mutate MET01 placement state.
@@ -116,7 +131,13 @@ Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRA
 
 2026-10-06 cross-capability audit: RPL01 was added as a read-only whole-system cost/recommendation owner. MET01 remains authoritative for expert residency; it exports measured candidate cost components rather than surrendering placement ownership.
 
-External references: llama.cpp #29943 `ggml: refactor selective expert copying to user code`; llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`.
+2026-10-06 provenance audit: the existing expert-cache plan was traced back to `stew675/llama-cpp-rdna-boosts` and the R9700 Flash-Next reproduction/report in `Shali12/r9700-flash-next-notes`. The reported `-ncmoe 41` + 4096 MiB cache result, lazy/no-load host mode, MTP interaction and second-request DEV_GATHER corruption are now explicit experimental/correctness gates. Upstream #29943/#29887 remain the preferred implementation seam; source lineage is retained even when implementation lineage converges upstream.
+
+External references:
+- llama.cpp #29943 `ggml: refactor selective expert copying to user code`
+- llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`
+- https://github.com/stew675/llama-cpp-rdna-boosts
+- https://github.com/Shali12/r9700-flash-next-notes
 
 ## Change Log
 
@@ -125,3 +146,4 @@ External references: llama.cpp #29943 `ggml: refactor selective expert copying t
 - 2026-10-05: consolidated MET05 auxiliary residency with canonical solver.
 - 2026-10-05: made #29943 user-code copy callback the required integration seam; added observation-only mock, HIP qualification matrix and explicit no-duplicate-scheduler boundary.
 - 2026-10-06: added explicit RPL01 boundary: export expert candidate cost evidence to the whole-system scorer without duplicating MET01 residency policy.
+- 2026-10-06: added explicit Stew/Shali provenance, 4 GiB R9700 reproduction lane, MTP interaction and multi-request DEV_GATHER correctness gate.
