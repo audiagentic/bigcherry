@@ -20,7 +20,7 @@ import os, pathlib, sys
 sys.path.insert(0, ".")
 from strata_tokenizer import Tokenizer
 tk = Tokenizer.from_pack(pathlib.Path(sys.argv[1]) / "tokenizer")
-print(",".join(str(i) for i in tk.encode(os.environ["PROMPT"])))' "$P")
+print(",".join(str(i) for i in tk.encode(os.environ["PROMPT"], parse_special=True)))' "$P")
 [ -n "$ids" ] || { echo "SMOKE_FAILED: tokenizer produced no ids"; exit 1; }
 vram() { rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[$gpu\].*Total Used" | awk '{print int($NF/1048576)}'; }
 before=$(vram)
