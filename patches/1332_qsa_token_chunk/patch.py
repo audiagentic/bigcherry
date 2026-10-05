@@ -6,10 +6,10 @@ indexer_sel = mask_all view + kq_mask [n_kv, T] 480 MiB (+ kpool mask 120). The 
 
 With BIGCHERRY_QSA_CHUNK=C (tokens), build_qsa_sel stops after the dead-slot remap and returns the selection indices
 (I32 [n_sel, T], ~8 MiB) instead of the dense mask, and build_attn_qsa builds, per chunk of C query tokens, the same
-mask_all (-inf, zeros scattered at the selected cells, dead slots to their dump rows; the causal mask is applied to
-the compact selection beforehand), materialises its first n_kv rows as a contiguous mask and runs flash attention for
-that chunk's queries; the chunk outputs are concatenated along the token dimension. Mask values are the same as the
-unchunked path. Chunks are built in order, so each chunk's masks are freed before the next chunk's are allocated: the peak
+mask_all (-inf, zeros scattered at the selected cells, dead slots to their dump rows) and the same out-of-place add of
+the causal kq_mask rows, then runs flash attention for that chunk's queries; the chunk outputs are concatenated
+along the token dimension. Mask values are the same as the unchunked path (same fill/set_rows/add ops on a row
+subset). Chunks are built in order, so each chunk's masks are freed before the next chunk's are allocated: the peak
 holds one chunk's pair (C/T of 964 MiB) next to the kq_mask input. Flash attention may select a different kernel
 tiling for fewer query rows, so results can differ in the last bits; greedy identity is checked on hardware.
 Conflicts with 1330 (which rewrites the same mask code).
@@ -106,7 +106,8 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
         for (int64_t ci = 0; ci < n_chunks; ++ci) {
             const int64_t nt = n_tok / n_chunks + (ci < n_tok % n_chunks ? 1 : 0);
 
-            const int64_t rows = n_kv + n_sel;
+            // rows padded to 256 so the strided mask view keeps aligned rows for the flash-attention mask loads
+            const int64_t rows = GGML_PAD(n_kv + n_sel, 256);
             ggml_tensor * m = ggml_new_tensor_4d(ctx0, kq_mask->type, rows, 1, 1, 1);
             m = ggml_fill(ctx0, m, -INFINITY);
             m = ggml_repeat_4d(ctx0, m, rows, nt, 1, 1);
@@ -120,12 +121,9 @@ _N_ATTN = """    ggml_tensor * kq_mask = inp->get_kq_mask();
             ggml_tensor * idx = ggml_view_2d(ctx0, sel, n_sel, nt, sel->nb[1], (size_t) t0*sel->nb[1]);
             m = ggml_set_rows(ctx0, m, z, ggml_reshape_3d(ctx0, idx, n_sel, nt, 1));
 
-            // the causal mask was applied to the compact selection in build_qsa_sel: the first n_kv rows are final.
-            // Flash attention takes a contiguous mask (backends assume a row stride of n_kv), so the strided view of
-            // those rows is materialised per chunk
+            // the causal mask was applied to the compact selection in build_qsa_sel: the first n_kv rows are final
             const size_t row = m->nb[2];
             ggml_tensor * mask = ggml_view_4d(ctx0, m, n_kv, nt, 1, 1, row, row*nt, row*nt, 0);
-            mask = ggml_cont(ctx0, mask);
             cb(mask, "kq_mask_qsa", il);
 
             ggml_tensor * qc = ggml_view_3d(ctx0, q_cur, q_cur->ne[0], q_cur->ne[1], nt, q_cur->nb[1], q_cur->nb[2],
@@ -149,6 +147,15 @@ _N_HDR = ("        // bigcherry 1332: the kq_mask input as [1, n_kv, n_tokens] r
           "        ggml_tensor * bc_qsa_kq_rows = nullptr;\n"
           "\n"
           + _A_HDR)
+
+_A_FA = ("        GGML_ASSERT(mask->type == GGML_TYPE_F16);\n"
+         "        GGML_ASSERT(ggml_is_contiguous(mask));\n"
+         "        //GGML_ASSERT(ggml_can_repeat_rows(mask, qk));\n")
+_N_FA = ("        GGML_ASSERT(mask->type == GGML_TYPE_F16);\n"
+         "        // bigcherry 1332: rows must be contiguous; backends index mask rows by nb[1..3], so a strided row view (the\n"
+         "        // chunked QSA mask) is valid\n"
+         "        GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));\n"
+         "        //GGML_ASSERT(ggml_can_repeat_rows(mask, qk));\n")
 
 PATCHES = [
     FilePatch(
@@ -178,6 +185,16 @@ PATCHES = [
             Edit(id="qsa-chunk-attn", anchor=re.escape(_A_ATTN), mode="replace", text=_N_ATTN,
                  guard=r"bigcherry 1332: sel holds the causally-filtered selection indices", rationale="build_attn_qsa mask + attention.",
                  expect_matches=1, max_span_lines=11),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml.c",
+        description="1332: ggml_flash_attn_ext accepts a mask with contiguous rows and any row stride",
+        language="none",
+        edits=(
+            Edit(id="qsa-chunk-fa-mask-rows", anchor=re.escape(_A_FA), mode="replace", text=_N_FA,
+                 guard=r"bigcherry 1332: rows must be contiguous", rationale="ggml_flash_attn_ext mask checks.",
+                 expect_matches=1, max_span_lines=4),
         ),
     ),
 ]

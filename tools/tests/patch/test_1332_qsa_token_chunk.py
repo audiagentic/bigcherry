@@ -16,6 +16,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
 _VENDOR = _REPO / "vendor/llama.cpp" / _REL
 _HDR = "src/models/models.h"
+_GGML = "ggml/src/ggml.c"
 
 
 def _load(pid: str):
@@ -36,6 +37,8 @@ class Patch1332Mechanics(unittest.TestCase):
         (root / _REL).parent.mkdir(parents=True)
         shutil.copy2(_VENDOR, root / _REL)
         shutil.copy2(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
+        (root / _GGML).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(_REPO / "vendor/llama.cpp" / _GGML, root / _GGML)
         return root
 
     def test_apply_and_idempotent(self):
@@ -55,9 +58,9 @@ class Patch1332Mechanics(unittest.TestCase):
                             sel.index("sel_idx = ggml_cast(ctx0, idx_f, GGML_TYPE_I32);"))
             self.assertIn("live = ggml_mul(ctx0, live, ggml_reshape_2d(ctx0, ggml_step(ctx0, ggml_exp(ctx0, bc_kv))", sel)
             self.assertNotIn("ggml_add(ctx0, mv", attn)
-            # flash attention gets a contiguous mask per chunk; ggml.c keeps its contiguity assert
-            self.assertIn("mask = ggml_cont(ctx0, mask);", attn)
-            self.assertFalse(any(fp.path == "ggml/src/ggml.c" for fp in _P.PATCHES))
+            self.assertIn("const int64_t rows = GGML_PAD(n_kv + n_sel, 256);", attn)
+            g = (root / _GGML).read_text(encoding="utf-8")
+            self.assertIn("GGML_ASSERT(mask->nb[0] == ggml_type_size(mask->type));", g)
             self.assertIn("cur = cur ? ggml_concat(ctx0, cur, oc, 1) : oc;", attn)
             # fixed topology (#29958): exactly K = ceil(n_ubatch / chunk) chunks, chunked iff n_tokens >= K
             self.assertIn("const int64_t n_chunks = bc_qsa_chunks(cparams.n_ubatch);", attn)

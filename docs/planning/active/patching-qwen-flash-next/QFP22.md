@@ -130,6 +130,8 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 
 chunk8 (2026-10-05, build b-chunk8 = deploy-v6-plus-chunk with 1007 + fixed 1332): no-MTP crash RESOLVED by patch 1007 - chunk 256 completes (39.1 t/s decode vs 38.4 chunk 0, rc=0). Text identity still OPEN: no-MTP greedy md5 differs (c0 eda3ae34 vs c256 0db7bf7a) and 24K MTP text differs (acceptance 169/258 vs 173/242; 41.6 vs 41.5/41.3 ms/step; 70.8 vs 74.3/74.7 t/s). 80K sweep: ub1024 c512 947.4/945.0 prefill, 66.2/67.4 decode vs ub512 c0 868.6/891.3, 60.5/61.2. Next: move 1007 to patch-set.upstream-fixes; rework 1332 to a materialised contiguous per-chunk mask and drop the ggml.c FA assert relaxation (RV4220 top suspect); 1332 promotion blocked until text identity vs dense holds. External-notes follow-ups tracked in QFP28.
 
+chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, no ggml.c assert relaxation; commit abd5010b): REJECTED and reverted. (a) ub1024 chunk 512 no longer loads at 240K f16 - ROCm out of memory on device 2 (R9700) during reserve, because the contiguous copy sits next to the scattered mask and removes the saving the patch exists for. (b) Text still differs from dense with the contiguous mask: no-MTP chunk 256 md5 dcf5a52d vs dense eda3ae34 (strided build gave 0db7bf7a), so the strided view / relaxed assert is NOT the sole cause of the dense-vs-chunk difference (RV4220 top suspect not confirmed). Baselines unchanged: 24K MTP 41.5/41.1 ms/step, 80K ub512 870.9 t/s prefill, 60.5 decode; no-MTP chunk 256 39.2 t/s vs 37.0. Next: md5 identity cannot separate last-bit kernel-tiling differences from corruption - compare per-token logits/top-k of chunked vs dense (and vs chunk sizes) and run the QFP28 multi-request gate before any promotion decision.
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -145,9 +147,9 @@ chunk8 (2026-10-05, build b-chunk8 = deploy-v6-plus-chunk with 1007 + fixed 1332
 
 ## Ledger-events
 
-
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:10:51.942507+00:00 (updated-by): Updated: section:notes
 - chg_20261005_041827_fixed-a-crash-in-multi-gpu-ten_1501
 - 2026-10-05T04:18:31.126073+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T04:38:52.451161+00:00 (updated-by): Updated: section:notes
