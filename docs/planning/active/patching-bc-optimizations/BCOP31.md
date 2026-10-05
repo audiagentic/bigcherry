@@ -8,34 +8,27 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P2
-work: M
+work: S
 ---
 
-# Evaluate native AMD/HRX-style backend opportunities
+# Track native AMD backend qualification
 
 ## Description
 
-Determine whether a more AMD-native execution/backend path can materially outperform or simplify BigCherry's current HIP/Vulkan llama.cpp path on RDNA3/RDNA4. This is an evaluation and integration-boundary item, not authorization to fork the backend stack. Prefer upstream or externally maintained primitives where possible.
+Action/disposition ledger for evaluating AMD-native backend mechanisms without creating a parallel BigCherry runtime. `build-rocm-vulkan-provider` (BRVP) owns backend/provider integration. Existing HIP kernel plans own kernel-specific ports. RPL01 may consume measured backend costs but does not own backend implementation.
 
-## Steps
+## Actions
 
-1. Inventory candidate AMD-native runtimes/kernel stacks applicable to llama.cpp-class inference and record support for gfx1100/gfx1201, quantized GEMM/MMQ, attention, MoE, MTP, graph capture, multi-GPU and host-weight execution.
-2. Define a minimal representative kernel/workload matrix: dense Q/K/V and FFN matmul, K-quants, Flash Attention, sparse/routed MoE, MTP draft path, PP512/2048 and TG128/512.
-3. Compare against the current promoted HIP baseline at equal quant/model/context/batch and VRAM budget. Record kernel time, launch/sync overhead, allocator cost and end-to-end PP/TG.
-4. Separate backend capability wins from kernel wins. If a candidate only contributes a kernel primitive, integrate it through existing BigCherry patch/provider ownership rather than introducing a parallel runtime.
-5. Require correctness parity and repeatable hardware evidence on both gfx1100 and gfx1201 before proposing production integration.
-6. Feed measured per-op/backend costs to RPL01; RPL01 may compare backend candidates but does not own backend implementation.
+1. BRVP inventories current AMD-native/HRX-style candidates and classifies support for gfx1100/gfx1201 and BigCherry-required operations.
+2. For a credible candidate, run the smallest equal-work correctness/performance comparison against the promoted HIP/Vulkan path. Separate kernel-only wins from backend-wide wins.
+3. Route kernel-only mechanisms to their existing HIP/attention/MoE owner rather than introducing a new backend.
+4. Create/extend a BRVP technical item only if a backend-wide capability survives the cheap qualification gate.
+5. Record one terminal disposition here: `kernel-only`, `BRVP candidate`, `wait-upstream`, or `rejected`.
 
-## Validation
+## Gate
 
-- Same model/quant/context/batch inputs and correctness contract as baseline.
-- ABBA >=5 repetitions for promoted candidates.
-- gfx1100 and gfx1201 tested independently before heterogeneous conclusions.
-- No claim based solely on synthetic GEMM throughput if end-to-end PP/TG does not improve.
+Do not create a new loader, scheduler, allocator, placement policy or backend fork from BCOP31. Backend-wide work requires correctness parity plus either >=5% end-to-end gain in a material workload or a required capability unavailable through existing providers without >2% regression elsewhere.
 
-## Acceptance Criteria
+## Related
 
-- Candidate capability matrix and reproducible benchmark evidence exist.
-- Any promoted integration provides >=5% end-to-end gain in a material workload or unlocks a currently unavailable capability without >2% regression elsewhere.
-- No duplicate model loader, scheduler, residency policy or multi-GPU planner is introduced.
-- Unsupported candidates are dispositioned with evidence rather than retained as speculative production paths.
+BRVP01-03; RPL01; existing HIP/autotune/kernel owners.
