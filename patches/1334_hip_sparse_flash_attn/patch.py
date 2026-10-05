@@ -11,9 +11,10 @@ attention, idles in the all-reduce meanwhile).
 
 This patch enables that path on HIP for RDNA3/RDNA4 WMMA behind BIGCHERRY_FA_SPARSE=1:
 
-1. A HIP version of the index kernel. Upstream's uses __ballot_sync / __popc over 32-lane warps; the HIP one keeps the
-   same output (ascending column order, -1 fill, per-list count) with a per-thread count and a block prefix sum, so it
-   does not depend on the wave size.
+1. A HIP version of the index kernel. Upstream's uses the CUDA warp primitives (__ballot_sync / __popc, 32-lane
+   warps); the HIP one is the same algorithm on the AMD wave primitives (__ballot 64-bit lane mask, __popcll, warpSize
+   for the actual wave width), as 1294 already does for top-k, with the same output (ascending column order, -1 fill,
+   per-list count).
 2. ggml_cuda_flash_attn_ext_compact_mask and ..._shall_use_sparse are compiled for HIP; the selection accepts
    amd_wmma_available(cc) when the flag is set (NVIDIA selection unchanged).
 3. The sparse kernels exist at ncols2 = 8 only. RDNA picks ncols2 by exact GQA divisibility (Qwen4Exp: 24 heads over
@@ -48,16 +49,19 @@ static bool bc_fa_sparse_enabled() {
 }
 
 // BigCherry 1334: HIP version of the mask compaction below - one list per group of ncols1 queries, a column is
-// selected if any query of the group can see it. Same output (ascending columns, -1 fill, count) without warp
-// ballots, so it does not depend on the wave size: each thread owns 8 consecutive columns per pass and the block
-// prefix-sums the per-thread counts.
+// selected if any query of the group can see it. Same layout and output as the CUDA kernel (ascending columns, -1
+// fill, count), using the AMD wave primitives: __ballot returns the 64-bit lane mask of the wave and warpSize is the
+// actual wave width (32 or 64), so the same code is correct for either.
 template <int ncols1, bool oob>
 __launch_bounds__(256, 1)
 static __global__ void flash_attn_mask_to_sparse_indices(
         const half * mask_ptr, int32_t * indices_ptr, int32_t * counts_ptr, const int ne30, const int n_queries,
         const int n_kv_max, const int64_t s31, const int64_t s33) {
-    constexpr int values_per_thread = 8;
+    constexpr int values_per_lane = 8;
     const int tid      = threadIdx.x;
+    const int wave     = tid / warpSize;
+    const int lane     = tid % warpSize;
+    const int n_waves  = blockDim.x / warpSize;
     const int sequence = blockIdx.y;
     const int group    = blockIdx.x;
 
@@ -67,7 +71,7 @@ static __global__ void flash_attn_mask_to_sparse_indices(
     const half * mask = mask_ptr + sequence*s33 + q0*s31;
     int32_t * indices = indices_ptr + (int64_t(sequence)*gridDim.x + group)*n_kv_max;
 
-    __shared__ int thread_offsets[256];
+    __shared__ int wave_offsets[256/32];  // sized for the narrowest wave
     __shared__ int row_count;
     __shared__ int chunk_count;
 
@@ -76,12 +80,12 @@ static __global__ void flash_attn_mask_to_sparse_indices(
     }
     __syncthreads();
 
-    for (int i0 = 0; i0 < ne30; i0 += blockDim.x*values_per_thread) {
-        uint32_t selected_bits = 0;
-        int      thread_count  = 0;
+    for (int i0 = 0; i0 < ne30; i0 += blockDim.x*values_per_lane) {
+        unsigned long long selected_wave[values_per_lane];
+        int wave_count = 0;
 #pragma unroll
-        for (int item = 0; item < values_per_thread; ++item) {
-            const int i = i0 + tid*values_per_thread + item;
+        for (int item = 0; item < values_per_lane; ++item) {
+            const int i = i0 + (wave*values_per_lane + item)*warpSize + lane;
             bool selected = false;
             if (i < ne30) {
 #pragma unroll
@@ -89,32 +93,36 @@ static __global__ void flash_attn_mask_to_sparse_indices(
                     selected |= (!oob || q < q1 - q0) && isfinite(__half2float(mask[q*s31 + i]));
                 }
             }
-            selected_bits |= uint32_t(selected) << item;
-            thread_count  += selected;
+            selected_wave[item] = __ballot(selected);
+            wave_count += __popcll(selected_wave[item]);
         }
-        thread_offsets[tid] = thread_count;
+
+        if (lane == 0) {
+            wave_offsets[wave] = wave_count;
+        }
         __syncthreads();
 
         if (tid == 0) {
             int offset = 0;
-            for (int it = 0; it < (int) blockDim.x; ++it) {
-                const int count = thread_offsets[it];
-                thread_offsets[it] = offset;
+            for (int iw = 0; iw < n_waves; ++iw) {
+                const int count = wave_offsets[iw];
+                wave_offsets[iw] = offset;
                 offset += count;
             }
             chunk_count = offset;
         }
         __syncthreads();
 
-        int dst = row_count + thread_offsets[tid];
+        const unsigned long long lane_mask = (1ull << lane) - 1ull;
+        int wave_item_offset = 0;
 #pragma unroll
-        for (int item = 0; item < values_per_thread; ++item) {
-            if (selected_bits & (uint32_t(1) << item)) {
-                if (dst < n_kv_max) {
-                    indices[dst] = i0 + tid*values_per_thread + item;
-                }
-                dst++;
+        for (int item = 0; item < values_per_lane; ++item) {
+            const int i = i0 + (wave*values_per_lane + item)*warpSize + lane;
+            const int dst = row_count + wave_offsets[wave] + wave_item_offset + __popcll(selected_wave[item] & lane_mask);
+            if ((selected_wave[item] & (1ull << lane)) && dst < n_kv_max) {
+                indices[dst] = i;
             }
+            wave_item_offset += __popcll(selected_wave[item]);
         }
         __syncthreads();
 
