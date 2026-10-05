@@ -14,7 +14,7 @@
   "bigcherry_revision": "951f130a95b3f4e72ff5745bff353a86629d5043",
   "first_seen": "2026-10-05T04:59:21.358476+00:00",
   "manifest_hash": "",
-  "notes": "",
+  "notes": "Bump 0504396140d1 -> b11402 (d89651a7b205) complete 2026-10-05. Completion gate: `bigcherry pin-status --complete --all-remotes` -> local VERDICT consistent, brutus VERDICT consistent, AGGREGATE converged, COMPLETION PASS (bigcherry 426e5293). Build + smoke on Brutus (2x gfx1100 + gfx1201 tensor split, gfx1030 MTP drafter): Flash-Next 24K MTP decode 41.2 ms/step (old pin 41.8), no-MTP run ok, greedy text identical to the old pin; Qwen3.8-27B dual-XTX prefill 1290 t/s at 10K, 1245 at 32K (old pin 1291 / 1250), decode level; Flash-Next prefill ~99K / ~202K tokens 871 / 663 t/s (old pin 793-835 / 614-621). Regressions found and disposition: upstream #29622 (mixed token/embd input branch in every graph) - fixed by patch 1333_mixed_batch_on_demand; upstream #29612 (by elimination) - 27B prefill at 32K about 0.3% lower, accepted. Outside the build, not caused by this bump: 1268 fails over the build selection, 1250 blocked by dependency, test_1314 fails on a pristine tree. `sources check` did not complete (timed out); triage outstanding.",
   "patches": {
     "applied_cleanly": true,
     "failed_edits": [],
