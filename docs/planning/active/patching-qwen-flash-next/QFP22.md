@@ -145,6 +145,9 @@ chunk8 (2026-10-05, build b-chunk8 = deploy-v6-plus-chunk with 1007 + fixed 1332
 
 ## Ledger-events
 
+
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:10:51.942507+00:00 (updated-by): Updated: section:notes
+- chg_20261005_041827_fixed-a-crash-in-multi-gpu-ten_1501
+- 2026-10-05T04:18:31.126073+00:00 (updated-by): Updated: section:ledger-events
