@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -409,76 +410,126 @@ def run_phase_declare(*, repo_root: Path, target_ref: str) -> str:
     return _git(repo_root, "rev-parse", "HEAD")
 
 
-def stop_on_bad_rebase_status(
-    *,
-    phase: str,
-    report: dict,
-    patch_id: str,
-    entry: dict,
-) -> None:
-    status = entry["status"]
-    code = {
-        "FAILED": "PATCH_FAILED_NEEDS_RECONCILIATION",
-        "BLOCKED_BY_DEPENDENCY": "PATCH_BLOCKED_BY_DEPENDENCY",
-        "QUARANTINED": "PATCH_QUARANTINED",
-        "UPSTREAM_ABSORBED": "PATCH_UPSTREAM_ABSORBED",
-    }.get(status, "PATCH_REBASE_BAD_STATUS")
+def failed_edits(entry: dict) -> list[dict]:
+    """The edits of one rebase-report patch entry that did not apply, reduced
+    to what a reconciler needs: which file, which edit, and why."""
+    return [
+        {
+            "path": file_entry["path"],
+            "edit_id": edit["edit_id"],
+            "reason_code": edit.get("reason_code"),
+            "actual_matches": edit.get("actual_matches"),
+            "expect_matches": edit.get("expect_matches"),
+        }
+        for file_entry in entry.get("files", ())
+        for edit in file_entry.get("edits", ())
+        if edit.get("status") not in ("applied-clean", "already-applied")
+    ]
+
+
+def stop_on_recipe_failures(*, phase: str, recipe_report: dict) -> None:
+    """A recipe-selected patch that does not apply blocks the bump (nothing
+    can be built), and no disposition can excuse it. Every failing recipe
+    patch is reported in one stop, each with its failing edits, so the whole
+    reconciliation list is known from a single run."""
+    failures = [
+        {
+            "patch_id": entry["patch_id"],
+            "status": entry["status"],
+            "requires": list(entry.get("requires", ())),
+            "failed_edits": failed_edits(entry),
+        }
+        for entry in recipe_report.get("patches", ())
+        if entry["status"] not in patch_disposition.CLEAN_STATUSES
+    ]
+    if not failures:
+        return
     raise PinBumpStop(
         phase,
-        code,
-        f"{patch_id} is {status} against the new revision",
-        evidence={
-            "patch_id": patch_id,
-            "status": status,
-            "requires": entry.get("requires", ()),
-        },
+        "RECIPE_PATCHES_FAILED",
+        f"{len(failures)} recipe-selected patch(es) do not apply to the new revision",
+        evidence={"patch_failures": failures},
         recommended_actions=[
-            "if UPSTREAM_ABSORBED: upstream already contains this patch -- retire it "
-            "(state superseded) via the patch-lifecycle procedure",
-            "reconcile the patch (see the rebase report's per-edit reason_code)",
-            "or record a known_broken disposition via `bigcherry patch-disposition set` "
-            "if this patch is not in the build recipe",
+            "reconcile each listed patch in its own package (failed_edits names the anchors)",
+            "if UPSTREAM_ABSORBED: retire the patch (state superseded) via the patch-lifecycle procedure",
             "rerun `bigcherry pin-bump --resume`",
         ],
     )
 
 
-def enforce_all_patches_clean_or_dispositioned(
+def classify_patch_coverage(
     *,
     all_report: dict,
     recipe_report: dict,
     catalog_states: dict[str, str],
     dispositions_dir: Path,
     target_revision: str,
-    phase: str = "coverage",
+    focal_probe: Callable[[str], dict | None],
 ) -> dict:
-    """HI152's coverage gate. Raises PinBumpStop with the coverage block
-    as evidence if anything is uncovered."""
-    dispositions = patch_disposition.list_dispositions(dispositions_dir)
-    recipe_ids = frozenset(
-        entry["patch_id"] for entry in recipe_report.get("patches", ())
-    )
+    """Coverage of every non-rejected patch against the new revision, without
+    stopping the bump for a patch that is not in the build.
+
+    The recipe report is the authority for recipe-selected patches. For any
+    other patch that the all-patches probe reports as bad, `focal_probe`
+    re-probes it over the real source selection: a patch that is clean there
+    only collided with patches it is never built with (`composition_only`),
+    and is not a failure against this upstream. What remains is `outstanding`:
+    the list of patches to reconcile after the bump."""
+    recipe_entries = {entry["patch_id"]: entry for entry in recipe_report.get("patches", ())}
+    merged = {entry["patch_id"]: entry for entry in all_report.get("patches", ())}
+    merged.update(recipe_entries)
     result = patch_disposition.compute_coverage(
         catalog_states=catalog_states,
-        all_report=all_report,
-        recipe_patch_ids=recipe_ids,
-        dispositions=dispositions,
+        all_report={"patches": list(merged.values())},
+        recipe_patch_ids=frozenset(recipe_entries),
+        dispositions=patch_disposition.list_dispositions(dispositions_dir),
         target_revision=target_revision,
     )
-    if not result.complete:
-        raise PinBumpStop(
-            phase,
-            "COVERAGE_INCOMPLETE",
-            f"{len(result.uncovered_patch_ids)} patch(es) uncovered against {target_revision[:12]}",
-            evidence=result.as_dict(),
-            recommended_actions=[
-                "reconcile each uncovered patch, or record a known_broken "
-                "disposition via `bigcherry patch-disposition set` if it is "
-                "not in the build recipe",
-                "rerun `bigcherry pin-bump --resume`",
-            ],
-        )
-    return result.as_dict()
+    composition_only: list[str] = []
+    outstanding: list[dict] = []
+    for patch_id in result.uncovered_patch_ids:
+        entry = merged.get(patch_id)
+        if entry is None:
+            outstanding.append({"patch_id": patch_id, "status": "UNDISCOVERED", "probe": "none",
+                                "state": catalog_states.get(patch_id, ""), "failed_edits": []})
+            continue
+        probe = "all-patches"
+        if entry["status"] != "UPSTREAM_ABSORBED":
+            focal = focal_probe(patch_id)
+            if focal is not None:
+                if focal["status"] in patch_disposition.CLEAN_STATUSES:
+                    composition_only.append(patch_id)
+                    continue
+                entry, probe = focal, "focal-overlay"
+        outstanding.append({"patch_id": patch_id, "status": entry["status"], "probe": probe,
+                            "state": catalog_states.get(patch_id, ""), "failed_edits": failed_edits(entry)})
+    coverage = result.as_dict()
+    coverage["composition_only_patch_ids"] = composition_only
+    coverage["outstanding"] = outstanding
+    coverage["complete"] = not outstanding
+    return coverage
+
+
+def run_patch_tests(repo_root: Path) -> list[str]:
+    """Run the offline patch mechanics suite and return the failing test ids.
+    Called before apply, while the vendor tree is the pristine new revision:
+    the fixtures copy vendor files, so an already-patched tree would turn every
+    fail-closed test red for reasons unrelated to upstream."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "unittest", "discover", "-s", "tools/tests/patch"],
+        cwd=repo_root,
+        env={**os.environ, "PYTHONPATH": str(repo_root / "tools")},
+        capture_output=True,
+        text=True,
+    )
+    failing = [
+        line.split(": ", 1)[1].strip()
+        for line in (completed.stdout + completed.stderr).splitlines()
+        if line.startswith(("FAIL: ", "ERROR: "))
+    ]
+    if completed.returncode != 0 and not failing:
+        failing = [f"patch test suite exited {completed.returncode} without a parsable failure"]
+    return failing
 
 
 @dataclass
@@ -989,24 +1040,44 @@ def _run_phases(
                 vendor_root,
                 source_name=selector_name,
             )
-            for entry in recipe_report.get("patches", ()):
-                if entry["status"] not in patch_disposition.CLEAN_STATUSES:
-                    stop_on_bad_rebase_status(
-                        phase="coverage",
-                        report=recipe_report,
-                        patch_id=entry["patch_id"],
-                        entry=entry,
-                    )
+            stop_on_recipe_failures(phase="coverage", recipe_report=recipe_report)
             catalog_states = {
                 patch_id: entry.state
                 for patch_id, entry in patch_catalog.load_catalog().items()
             }
-            coverage = enforce_all_patches_clean_or_dispositioned(
+
+            def focal_probe(patch_id: str) -> dict | None:
+                # Only a source selection can carry a focal overlay; a patch that
+                # cannot be layered over it (declared conflict, missing requires)
+                # keeps its all-patches verdict.
+                if selector_kind != "source":
+                    return None
+                try:
+                    focal_report = patch_rebase.run_rebase_check(
+                        vendor_root, source_name=selector_name, focal_overlay_patch_id=patch_id
+                    )
+                except (RuntimeError, ValueError, KeyError):
+                    return None
+                for focal_entry in focal_report.get("patches", ()):
+                    if focal_entry["patch_id"] == patch_id:
+                        return focal_entry
+                return None
+
+            coverage = classify_patch_coverage(
                 all_report=all_report,
                 recipe_report=recipe_report,
                 catalog_states=catalog_states,
                 dispositions_dir=dispositions_dir,
                 target_revision=state.to_sha,
+                focal_probe=focal_probe,
+            )
+            coverage["test_failures"] = run_patch_tests(repo_root)
+            (report_dir / "patch-failures.json").write_text(
+                json.dumps(
+                    {"patches": coverage["outstanding"], "tests": coverage["test_failures"]},
+                    indent=2, sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
             )
             recipe_report_path = report_dir / "rebase-recipe.json"
             patch_rebase.write_report(recipe_report_path, recipe_report)

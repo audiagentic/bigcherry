@@ -1837,6 +1837,26 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         f"pin-bump: PASS -- {result.state.from_ref} -> {result.state.to_ref} "
         f"({result.state.to_sha[:12]})"
     )
+    outstanding = result.coverage.get("outstanding", [])
+    collisions = result.coverage.get("composition_only_patch_ids", [])
+    if collisions:
+        print(f"  {len(collisions)} patch(es) only collide in the all-patches probe (clean over the build): "
+              + ", ".join(collisions))
+    if outstanding:
+        print(f"pin-bump: {len(outstanding)} patch(es) outside the build need reconciliation "
+              f"({report_dir / 'patch-failures.json'}):")
+        for failure in outstanding:
+            print(f"  {failure['patch_id']}  {failure['status']}  state={failure['state']}  probe={failure['probe']}")
+            for edit in failure["failed_edits"]:
+                print(f"      {edit['path']}  {edit['edit_id']}  {edit['reason_code']} "
+                      f"(matches {edit['actual_matches']}, expected {edit['expect_matches']})")
+    test_failures = result.coverage.get("test_failures", [])
+    if test_failures:
+        print(f"pin-bump: {len(test_failures)} patch test(s) fail against the pristine new revision:")
+        for test_id in test_failures:
+            print(f"  {test_id}")
+    if not outstanding and not test_failures:
+        print("pin-bump: no patch failures")
     print(
         "next: run `bigcherry pin-status --complete --all-remotes` once every "
         "required tree has been bumped the same way"
