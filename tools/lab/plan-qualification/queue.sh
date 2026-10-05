@@ -117,10 +117,10 @@ build_line() {
     [ "$experiment" != - ] && experiment_args=(--experiment "$experiment")
     [ "$arch" != - ] && arch_args=(--arch "$arch")
     log="$work/runs/$run.log"
-    if [ -f "$log" ] && grep -q '^BUILD_EXIT=' "$log"; then
+    # A finished successful build is reused; a failed one is built again (its cause may be fixed).
+    if [ -f "$log" ] && grep -qx 'BUILD_EXIT=0' "$log"; then
         echo "skip build $run (finished)"
-        grep -qx 'BUILD_EXIT=0' "$log"
-        return $?
+        return 0
     fi
     echo "start build $run $(date -Is)"
     # One build per (lane, experiment, arch): always request llama-server so the build plan (and its

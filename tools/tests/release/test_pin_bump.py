@@ -126,9 +126,10 @@ class PinBumpStopResumeE2ETests(unittest.TestCase):
                 ),
                 patch.object(
                     pin_bump,
-                    "enforce_all_patches_clean_or_dispositioned",
-                    return_value={"ok": True},
+                    "classify_patch_coverage",
+                    return_value={"complete": True, "outstanding": [], "composition_only_patch_ids": []},
                 ),
+                patch.object(pin_bump, "run_patch_tests", return_value=[]),
                 patch.object(pin_bump, "_write_release_doc_best_effort"),
                 patch.object(pin_bump, "_commit_release_records"),
             ):
@@ -1176,67 +1177,120 @@ class RequireCleanControllerCheckoutTests(unittest.TestCase):
             self.assertEqual(ctx.exception.phase, "preflight")
 
 
-class StopOnBadRebaseStatusTests(unittest.TestCase):
-    def test_failed_needs_reconciliation_maps_to_the_right_code(self):
+def _entry(patch_id, status, *, failed=()):
+    return {
+        "patch_id": patch_id,
+        "status": status,
+        "implementation_digest": "d1",
+        "requires": (),
+        "files": [
+            {
+                "path": "ggml/src/x.cpp",
+                "edits": [{"edit_id": "ok-edit", "status": "applied-clean"}]
+                + [
+                    {"edit_id": edit_id, "status": "failed", "reason_code": "anchor-no-match",
+                     "actual_matches": 0, "expect_matches": 1}
+                    for edit_id in failed
+                ],
+            }
+        ],
+    }
+
+
+class RecipeFailureStopTests(unittest.TestCase):
+    def test_clean_recipe_does_not_stop(self):
+        pin_bump.stop_on_recipe_failures(
+            phase="coverage", recipe_report={"patches": [_entry("0300_x", "CLEAN")]}
+        )
+
+    def test_every_failing_recipe_patch_is_listed_with_its_failed_edits(self):
+        report = {
+            "patches": [
+                _entry("0300_x", "CLEAN"),
+                _entry("0400_y", "FAILED_NEEDS_RECONCILIATION", failed=("e1", "e2")),
+                _entry("0500_z", "BLOCKED_BY_DEPENDENCY"),
+            ]
+        }
         with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-            pin_bump.stop_on_bad_rebase_status(
-                phase="coverage",
-                report={},
-                patch_id="0300_x",
-                entry={"status": "FAILED", "requires": ()},
-            )
-        self.assertEqual(ctx.exception.code, "PATCH_FAILED_NEEDS_RECONCILIATION")
-
-    def test_quarantined_maps_to_the_right_code(self):
-        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-            pin_bump.stop_on_bad_rebase_status(
-                phase="coverage",
-                report={},
-                patch_id="0400_y",
-                entry={"status": "QUARANTINED", "requires": ("0300_x",)},
-            )
-        self.assertEqual(ctx.exception.code, "PATCH_QUARANTINED")
-        self.assertEqual(ctx.exception.evidence["requires"], ("0300_x",))
-
-    def test_blocked_by_dependency_maps_to_the_right_code(self):
-        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-            pin_bump.stop_on_bad_rebase_status(
-                phase="coverage",
-                report={},
-                patch_id="0400_y",
-                entry={"status": "BLOCKED_BY_DEPENDENCY", "requires": ()},
-            )
-        self.assertEqual(ctx.exception.code, "PATCH_BLOCKED_BY_DEPENDENCY")
+            pin_bump.stop_on_recipe_failures(phase="coverage", recipe_report=report)
+        self.assertEqual(ctx.exception.code, "RECIPE_PATCHES_FAILED")
+        failures = ctx.exception.evidence["patch_failures"]
+        self.assertEqual([f["patch_id"] for f in failures], ["0400_y", "0500_z"])
+        self.assertEqual([e["edit_id"] for e in failures[0]["failed_edits"]], ["e1", "e2"])
+        self.assertEqual(failures[0]["failed_edits"][0]["reason_code"], "anchor-no-match")
 
 
-class CoverageGateDelegationTests(unittest.TestCase):
-    def test_stops_with_coverage_incomplete_when_uncovered(self):
+class CoverageClassificationTests(unittest.TestCase):
+    def _classify(self, directory, *, all_patches, recipe=(), focal=None, states=None):
+        return pin_bump.classify_patch_coverage(
+            all_report={"patches": list(all_patches)},
+            recipe_report={"patches": list(recipe)},
+            catalog_states=states or {e["patch_id"]: "untested" for e in all_patches},
+            dispositions_dir=Path(directory),
+            target_revision="rev-a",
+            focal_probe=focal or (lambda patch_id: None),
+        )
+
+    def test_real_failure_outside_the_build_is_outstanding_and_does_not_stop(self):
         with tempfile.TemporaryDirectory() as directory:
-            dispositions_dir = Path(directory)
-            with self.assertRaises(pin_bump.PinBumpStop) as ctx:
-                pin_bump.enforce_all_patches_clean_or_dispositioned(
-                    all_report={
-                        "patches": [
-                            {
-                                "patch_id": "1206_x",
-                                "status": "FAILED",
-                                "implementation_digest": "d1",
-                            },
-                        ]
-                    },
-                    recipe_report={"patches": []},
-                    catalog_states={"1206_x": "untested"},
-                    dispositions_dir=dispositions_dir,
-                    target_revision="rev-a",
-                )
-            self.assertEqual(ctx.exception.code, "COVERAGE_INCOMPLETE")
-            self.assertIn("1206_x", ctx.exception.evidence["uncovered_patch_ids"])
+            coverage = self._classify(
+                directory, all_patches=[_entry("1206_x", "FAILED_NEEDS_RECONCILIATION", failed=("e1",))]
+            )
+        self.assertFalse(coverage["complete"])
+        self.assertEqual(coverage["composition_only_patch_ids"], [])
+        (failure,) = coverage["outstanding"]
+        self.assertEqual((failure["patch_id"], failure["probe"]), ("1206_x", "all-patches"))
+        self.assertEqual([e["edit_id"] for e in failure["failed_edits"]], ["e1"])
 
-    def test_passes_through_when_a_matching_disposition_covers_it(self):
+    def test_patch_clean_over_the_build_is_composition_only(self):
         with tempfile.TemporaryDirectory() as directory:
-            dispositions_dir = Path(directory)
+            coverage = self._classify(
+                directory,
+                all_patches=[_entry("1206_x", "FAILED_NEEDS_RECONCILIATION", failed=("e1",))],
+                focal=lambda patch_id: _entry(patch_id, "CLEAN"),
+            )
+        self.assertTrue(coverage["complete"])
+        self.assertEqual(coverage["composition_only_patch_ids"], ["1206_x"])
+        self.assertEqual(coverage["outstanding"], [])
+
+    def test_focal_failure_reports_the_focal_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            coverage = self._classify(
+                directory,
+                all_patches=[_entry("1206_x", "FAILED_NEEDS_RECONCILIATION", failed=("collision",))],
+                focal=lambda patch_id: _entry(patch_id, "FAILED_NEEDS_RECONCILIATION", failed=("real",)),
+            )
+        (failure,) = coverage["outstanding"]
+        self.assertEqual(failure["probe"], "focal-overlay")
+        self.assertEqual([e["edit_id"] for e in failure["failed_edits"]], ["real"])
+
+    def test_recipe_report_is_the_authority_for_recipe_patches(self):
+        probed = []
+        with tempfile.TemporaryDirectory() as directory:
+            coverage = self._classify(
+                directory,
+                all_patches=[_entry("1294_x", "FAILED_NEEDS_RECONCILIATION", failed=("collision",))],
+                recipe=[_entry("1294_x", "CLEAN")],
+                focal=lambda patch_id: probed.append(patch_id),
+            )
+        self.assertTrue(coverage["complete"])
+        self.assertEqual(probed, [])
+
+    def test_upstream_absorbed_is_outstanding_without_a_focal_probe(self):
+        probed = []
+        with tempfile.TemporaryDirectory() as directory:
+            coverage = self._classify(
+                directory,
+                all_patches=[_entry("1206_x", "UPSTREAM_ABSORBED")],
+                focal=lambda patch_id: probed.append(patch_id),
+            )
+        self.assertEqual(probed, [])
+        self.assertEqual(coverage["outstanding"][0]["status"], "UPSTREAM_ABSORBED")
+
+    def test_matching_disposition_covers_a_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
             patch_disposition.save_disposition(
-                dispositions_dir,
+                Path(directory),
                 patch_disposition.Disposition(
                     patch_id="1206_x",
                     target_revision="rev-a",
@@ -1248,22 +1302,10 @@ class CoverageGateDelegationTests(unittest.TestCase):
                     tracking_item="RD13",
                 ),
             )
-            result = pin_bump.enforce_all_patches_clean_or_dispositioned(
-                all_report={
-                    "patches": [
-                        {
-                            "patch_id": "1206_x",
-                            "status": "FAILED",
-                            "implementation_digest": "d1",
-                        },
-                    ]
-                },
-                recipe_report={"patches": []},
-                catalog_states={"1206_x": "untested"},
-                dispositions_dir=dispositions_dir,
-                target_revision="rev-a",
+            coverage = self._classify(
+                directory, all_patches=[_entry("1206_x", "FAILED_NEEDS_RECONCILIATION", failed=("e1",))]
             )
-            self.assertTrue(result["complete"])
+        self.assertTrue(coverage["complete"])
 
 
 if __name__ == "__main__":

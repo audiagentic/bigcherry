@@ -98,7 +98,7 @@ def _atomic_write_json(path: Path, document: dict[str, Any]) -> None:
     temporary: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent,
+            mode="w", encoding="utf-8", newline="\n", dir=path.parent,
             prefix=f".{path.name}.", suffix=".tmp", delete=False,
         ) as handle:
             temporary = handle.name

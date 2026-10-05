@@ -304,7 +304,16 @@ def resolve_base_revision(ref: str, *, repo: Path) -> str:
     enters the source identity and what ``git worktree add --detach`` receives,
     so a moved ref yields a new identity, never a reused stale worktree.
     (RV80/B2: replaces the implicit ``git_head`` + state-scan baseline.)"""
-    return _run(["git", "rev-parse", "--verify", f"{ref}^{{commit}}"], cwd=repo)
+    probe = ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"]
+    resolved = subprocess.run(probe, cwd=repo, capture_output=True, text=True)
+    if resolved.returncode == 0:
+        return resolved.stdout.strip()
+    # A freshly pinned tag is not in a tree that has not pulled since the bump:
+    # fetch exactly that tag from the checkout's own origin, then resolve again
+    # (still fails closed if the ref does not exist upstream).
+    subprocess.run(["git", "fetch", "--quiet", "origin", f"refs/tags/{ref}:refs/tags/{ref}"],
+                   cwd=repo, capture_output=True, text=True)
+    return _run(probe, cwd=repo)
 
 
 def _overlay_files(overlay_root: Path | None) -> list[tuple[str, str]]:
