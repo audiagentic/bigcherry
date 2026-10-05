@@ -119,6 +119,8 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 
 2026-10-06 1332 VALIDATED (pin b11402, build b-chunk-b11402d = production incl. 1334 + 1331 + 1332, BIGCHERRY_FA_SPARSE=1 both arms). ub512 vs ub1024 + BIGCHERRY_QSA_CHUNK=256, ABBA with MTP: ~99K 965.1 / 980.3 -> 1011.7 / 1013.7 t/s (+4%); ~202K 838.5 / 847.7 -> 874.3 / 874.2 (+4%). Decode ms/step unchanged (16.8 vs 16.7 at 99K, 22.1 vs 22.0 at 202K; t/s differs with acceptance because the text differs). Fidelity at 99.3K fill: 23/24 top-1, TV mean 0.092 vs ub512; ub512 repeat identical. No-MTP fill was 2% slower at ub1024 (one sample) - gain is for the MTP production config. 1332 added to validated-enhancements as an opt-in enabler; deployment sets -ub 1024 + BIGCHERRY_QSA_CHUNK=256 (not the profile, which cannot set -ub). Also this round: 1334 validated (QFP25). Rejected earlier in the round and recorded here: PGC16 fold (no foldable pair), all-reduce provider switch (cpu-root/ccl/adaptive ~1030 t/s equal, host 572, root3 fails), half-width wire (wire is already BF16). Remaining order: 1334 default-on flip + 27B check, #29901 tiled indexer backport (GPT: ~170 lines in ggml-cuda/lightning-indexer.cu, no post-b11402 dependency, ROCm tested upstream, not bit-identical), PGC15 phase 1, PGC14, QFP26, QFP24, QFP25 adapter then independent op.
 
+2026-10-06 CEILING TABLE (Strata-style bottleneck gate, BCOP37 / PEF07 step 10). Source: sparseprof-d81920, build b-sparsefa-b11402c, BIGCHERRY_FA_SPARSE=1, ~99.3K-token uncached prefill at 946.5 t/s (~105 s wall), rocprofv3 kernel trace, per 7900 XTX (Agent 1): 77.3 s kernel time in a 129.8 s first-to-last-kernel span. Share f of the span and maximum end-to-end gain 1/(1-f) if the family cost nothing: GPU idle / not in a kernel 52.5 s, 40%, 1.68x (upper bound - the span also covers warm-up, the 4-token prompt and a few decode steps, so the prefill-only idle share is lower and must be measured); all-reduce (ncclDevKernel_Generic_4) 22.6 s, 17%, 1.21x; MMQ 19.3 s, 15%, 1.17x; float matmul 11.1 s, 9%, 1.09x; flash attention 6.1 s, 5%, 1.05x (was 18.9 s dense before 1334); other (mm_ids_helper, dsv4_hc_post, moe reduction) 5.1 s, 4%, 1.04x; QSA indexer + top-k 4.3 s, 3%, 1.03x (6.2 s on the R9700; 1335 target); norm/activation 3.4 s, 3%; set/get rows + mask build 2.9 s, 2%, 1.02x (ceiling for the QFP25 mask-elimination adapter at this depth); GDN 1.8 s, 1%. Ranking implication: (1) attribute the idle 40% first (host graph build / scheduling, RCCL waits, cross-device waits) - it bounds more than any kernel family; (2) all-reduce (PGC15 / PGC14); (3) MMQ; everything attention/indexer/mask related is now <= 5% each. ~200K table to follow from sparseprof-d163840.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -128,7 +130,6 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - 2026-10-05: Deepened QFP17 around QSA-only query tiling and added independent HIP qualification of upstream #29901.
 
 ## Ledger-events
-
 
 - chg_20261004_161454_found-what-limits-the-larger-p_4462
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
@@ -143,6 +144,7 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - chg_20261005_205930_flash-next-long-context-prefil_8173
 
 - chg_20261005_215129_flash-next-long-context-prefil_7176
+
 ## Plan Review - 2026-10-05 prefill round
 
 Scope: b11402 `d89651a7b205`, Brutus 3-rank Meta split `0.31,0.27,0.42`, attention/KV on the two XTX, f16 KV, ub512. Shared-branch note: while this review was running, patch `1334_hip_sparse_flash_attn` landed behind `BIGCHERRY_FA_SPARSE=1`; treat QFP25 as an implementation-ready hardware-proof item, not a future design project. MTP look-ahead is out of scope.
@@ -225,3 +227,4 @@ Long-context per-unit-effort execution order after the provider diagnostic: **13
 - 2026-10-05T20:59:37.128575+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T21:51:29.617714+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T21:51:33.037255+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T21:59:38.345579+00:00 (updated-by): Updated: section:notes

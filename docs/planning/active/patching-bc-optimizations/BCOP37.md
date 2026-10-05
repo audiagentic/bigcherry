@@ -13,6 +13,46 @@ work: M
 
 # Qualify Strata Flash-Next execution on the local 96 GB VRAM / 96 GB RAM host
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-10-06 PHASE 0 FINDING (Brutus, clone at /mnt/data/bigcherry-work/external/strata, ro99/strata commit 015b075079c51a7aec670ee24924f920f5e7bb2b). The matched Strata lanes cannot be run on this host as specified: (1) Backend: Strata is C++20/CUDA only - CMakeLists enables language CUDA with CUDA_ARCHITECTURES 86 120 and find_package(CUDAToolkit); with no CUDA compiler it builds src/platform/cuda_backend_stub.cpp (STRATA_HAS_CUDA=0). No HIP/ROCm/Vulkan/OpenCL/SYCL source or CMake path exists (word grep over code and CMake: zero matches; docs: zero matches for ROCm/Radeon). Brutus has ROCm only (no nvidia-smi, no CUDA toolkit). (2) Model: registered model types are gemma4, deepseek, glm, glm53, laguna, inkling, kimi-k3 - no Qwen / qwen4exp. (3) Format: checkpoints are safetensors / compressed-tensors (MXFP4, NVFP4, FP8, INT4/INT8); no GGUF reader, so the Flash-Next IQ4_XS GGUF cannot be consumed and the same-quant rule cannot be met. Consequence: Phases 1-8 (Strata single-GPU ceilings, expert-cache, cold-expert, KV, speculation, prefill, multi-GPU sweeps) have no runnable Strata arm here; only a stub (CPU) build is possible and it would not measure any mechanism the item asks about. No GPU time was spent. What remains actionable without a Strata arm: Phase 9 (BigCherry matched control lanes: short-decode 4K, short-prefill 4K, agent-mixed 32K, long 128K, extreme 256K with the runs.csv bundle) and Strata's transferable method - the bottleneck/ceiling gate (PEF07 step 10): per-family wall-time share f gives a maximum end-to-end gain 1/(1-f), used to rank fixes. First ceiling table from the b11402 sparse-path prefill profile (sparseprof, ~99K tokens) is recorded in QFP17.
+
 ## Purpose
 
 Run a controlled local Strata qualification against the current BigCherry/llama.cpp Flash-Next baseline and return enough evidence to determine which Strata mechanisms should be adopted, reproduced, rejected, or assigned to existing technical owners.
@@ -271,7 +311,7 @@ Required:
 
 A faster run caused by missing expert work, truncated context, prompt-cache reuse, failed KV residency, or different quant is rejected.
 
-## Required `runs.csv` fields
+## Required  fields
 
 At minimum:
 
@@ -334,3 +374,7 @@ BCOP37 is complete when:
 - raw evidence is preserved;
 - every material mechanism is assigned to an existing technical owner or explicitly rejected/deferred;
 - no duplicate BigCherry runtime subsystem has been created as part of the test.
+
+## Change Log
+
+- 2026-10-05T21:59:23.414049+00:00 (updated-by): Updated: section:notes
