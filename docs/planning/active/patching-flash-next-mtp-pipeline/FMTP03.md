@@ -180,6 +180,7 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 ## Ledger-events
 
+
 - chg_20261004_161430_experimental-the-mtp-drafter_7189
 - 2026-10-04T16:14:37.089254+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261004_161448_experimental-the-mtp-drafter_6717
@@ -188,3 +189,5 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 - 2026-10-04T17:31:34.739948+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T10:04:16.532717+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T10:30:54.194436+00:00 (updated-by): Updated: section:notes
+- chg_20261005_113349_the-fused-decode-kernels-now-a_9568
+- 2026-10-05T11:33:55.911140+00:00 (updated-by): Updated: section:ledger-events
