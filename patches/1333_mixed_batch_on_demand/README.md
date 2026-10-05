@@ -29,9 +29,18 @@ the arms of every comparison below.
 
 ## Native llama.cpp comparison
 
-Pending: native llama.cpp b11402 (source `llama-native`, no patches) against native + this patch alone
-(experiment `native-plus-1333`), Qwen3.8-27B dual-XTX production config, `tools/lab/flash-next/queue-native-1333.sh`.
-The comparisons above are BigCherry builds on both sides; the unpatched arm runs upstream's own code for this path.
+`tools/lab/flash-next/queue-native-1333.sh b11402` (2026-10-05): native llama.cpp b11402 (source `llama-native`, no
+patches) against native + this patch alone (experiment `native-plus-1333`), Qwen3.8-27B Q8_0 dual-XTX production
+config (-sm tensor, built-in MTP4, default all-reduce), ABBA per depth:
+
+| Depth | native prefill (t/s) | native + 1333 prefill (t/s) | decode native / +1333 (t/s) | acceptance |
+|---|---|---|---|---|
+| 10K | 1279.2 / 1277.0 | 1293.0 / 1295.5 | 72.4, 72.3 / 72.5, 72.7 | 177/310 both |
+| 32K | 1237.4 / 1236.2 | 1247.7 / 1247.1 | 70.1, 70.3 / 70.3, 70.4 | 180/297 both |
+
+Complete separation at both depths (+1.3% at 10K, +0.8% at 32K); greedy text identical between the arms at each
+depth. The regression and the fix therefore reproduce on stock upstream with no other BigCherry patch present.
+Runs: `/mnt/data/bigcherry-work/runs/native1333-b11402-27b`.
 
 ## Not covered
 
