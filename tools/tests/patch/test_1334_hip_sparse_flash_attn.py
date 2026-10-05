@@ -59,12 +59,15 @@ class Patch1334Mechanics(unittest.TestCase):
             self.assertNotIn("sparse flash attention is only supported on NVIDIA CUDA", fa)
             self.assertEqual(fa.count("#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)"), 0)
             # RDNA selection is opt-in and the NVIDIA term is unchanged
-            self.assertIn("const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled();", fa)
+            # 16 columns minimum: the WMMA kernel has no 1x8 device code, single-query batches stay dense
+            self.assertIn("const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;", fa)
             self.assertIn("const bool bc_arch_ok = GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc);", fa)
             self.assertIn('getenv("BIGCHERRY_FA_SPARSE") != nullptr && atoi(', fa)
             # RDNA picks ncols2 = 8 only when the sparse path is taken, before its exact-divisibility choices
             rdna = fa[fa.index("// On RDNA it is preferable to minimize wasted compute"):]
             self.assertLess(rdna.index("shall_use_sparse(cc, dst, 8, 8)"), rdna.index("if (use_gqa_opt && gqa_ratio % 8 == 0)"))
+            # ... and only for batches that actually reach the 8x8 kernel
+            self.assertIn("if (use_gqa_opt && gqa_ratio > 4 && Q->ne[1] > 32/8 &&", rdna)
             # both dispatch sites compile for HIP
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n    if constexpr", fa)
             self.assertIn("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n        if constexpr", mma)
