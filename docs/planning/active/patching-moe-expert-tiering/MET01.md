@@ -5,124 +5,117 @@ plan: patching-moe-expert-tiering
 state: pending
 created-at: '2026-10-02T04:44:44.458623+00:00'
 breadth: ''
-skill: intermediate
+skill: advanced
 created-by: agent
 priority: P1
 work: M
 ---
 
-# Per-layer routed-expert profile + placement solver tooling
+# Per-layer routed-expert profile + canonical residency policy
 
 ## Description
 
-Prerequisite for every tiering patch. Collect per-layer routed-expert statistics for qwen4exp (Flash-Next) from ffn_moe_topk and turn them into a validated placement JSON under a measured per-device VRAM budget.
+MET01 is the single policy/accounting owner for routed-expert residency. It profiles routing, derives measured per-device expert budgets, and chooses among whole-layer residency, static-hot experts, upstream demand cache, ROCm3 auxiliary residency, and host fallback. It must not own a second scheduler, cache transport, auxiliary transport, or loader.
 
-Expert residency has one canonical policy surface. Static hot placement, DwarfStar-style persistence/prefetch, upstream llama.cpp #29887 demand LRU, and MET05/1328's auxiliary ROCm3 residency are policies/tier targets under this owner. They must not create independent placement solvers or competing residency accounting.
+The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 moves selective host-expert copying out of generic `ggml_backend_sched_compute_splits()` into a public scheduler copy callback. #29887 is explicitly intended to become user-code-only after that refactor. BigCherry should therefore qualify the callback boundary before carrying any private scheduler cache fork.
 
-## Steps
+## Repository evidence
 
-1. Fix routing-profile.sh so the full-tensor dump captures ffn_moe_topk without violating meta-backend callback invariants.
-2. Profile code, prose/chat, long-context retrieval, production prompts and MTP generation; decode and prefill separately.
-3. Emit hits[l][e], weight_sum[l][e], tokens, ubatch_present[l][e], assigned_tokens[l][e].
-4. Measure non-expert peak VRAM at production configuration and derive per-device expert budgets from measured headroom.
-5. Solver: assign `(layer,expert)` by avoided critical-path service time per resident byte. Include device bandwidth, PCIe upload latency, no-P2P topology and prefill `ubatch_present`; target CPU route mass <=0.5%, preferably <=0.25%.
-6. Placement JSON v1 includes model fingerprint, architecture, expert layout/quant, placement generation, n_layer/n_expert and per-expert tier/device. Reject wrong fingerprints, duplicate/missing experts and impossible devices.
-7. Persistence experiment: keep physical residency warm across requests while prompt-local predictors may reset. Prefetch only when measured lead time can hide transfer.
-8. Qualify upstream llama.cpp #29887 at equal VRAM: whole-layer baseline, pure LRU, static hot, hybrid static+LRU. Preserve its <=32-token gate initially.
-9. Consolidate MET05/1328 into the same solver: ROCm3 auxiliary residency is a third GPU tier, not a separate whole-layer policy. First keep 1328's safe whole-layer implementation; then, only after correctness, allow the solver to emit expert-granular ROCm3 candidates for a future extension.
-10. Add a **miss-cost-aware hybrid objective**. A host expert that is repeatedly uploaded by #29887 may be cheaper as persistent ROCm3 residency even when ROCm3 compute is slower than XTX. Conversely a rare expert should remain host/LRU rather than consume 6900 VRAM. Score each candidate against its measured alternative, not nominal FLOPS.
-11. Instrument one canonical residency table with counters: static hit, LRU hit, aux hit, host miss, uploaded bytes, upload stall, aux staging bytes/stall, eviction, and useful prefetch. Aggregate by `(layer,expert,device)` and placement generation.
-12. Keep large-batch prefill separate. #29887 intentionally bypasses cache above 32 tokens and its published data shows prompt regressions when cache VRAM displaces whole resident layers; the solver may allocate different decode and prefill budgets but must use the same physical residency/accounting owner.
+- Existing routing evidence on Flash-Next UD-IQ4_XS, ub512: mean 496/512 experts touched per layer in mixed prose+code prefill; hottest 10/25/50% cover 41.5/68.8/91.3% of picks; mean experts needed for 50/80/90/95% picks are 73/174/235/287. Static expert-count heuristics are therefore insufficient.
+- MET05/patch 1328 already owns auxiliary 6900 execution and host staging. MET01 may select that tier but must not reproduce its transport.
+- MET06 owns standard-GGUF materialization only if normal host-weight execution/cache mechanisms leave a measured placement gap.
 
-## Detailed Solution & Technical Design
+## Upstream mechanism: #29943 + #29887
 
-### Canonical tier decision
+#29943 adds `ggml_backend_sched_copy_callback` in `ggml/include/ggml-backend.h`, stores it on `ggml_backend_sched`, and funnels split inputs through `ggml_backend_sched_copy_input()` in `ggml/src/ggml-backend.cpp`. Non-weight inputs are copied first; host-backed weight inputs are copied last so user code can inspect already-copied routing inputs. If the callback returns false, the scheduler performs the normal whole-input copy.
 
-For each `(layer,expert)` compare expected service cost under mutually exclusive tiers:
+It also removes the scheduler's embedded `MUL_MAT_ID` expert-selection implementation and installs `llama_context::sched_copy_experts` from `src/llama-context.cpp`. This is the important consolidation boundary: selective expert-copy/cache policy belongs above generic scheduler machinery.
 
-```text
-cost(host) = p_active * (cpu_service_ms + required_sync_ms)
-cost(lru_gpu_d) = p_active * (p_hit * gpu_service_ms[d]
-                    + p_miss * (h2d_ms[d] + gpu_service_ms[d]))
-cost(aux6900) = p_active * (host_stage_in_ms + aux_service_ms + host_stage_out_ms)
-cost(static_gpu_d) = p_active * gpu_service_ms[d]
+#29887 then supplies the policy candidate: per-layout GPU cache banks, selected-expert miss upload, remapped expert IDs and a <=32-token cache gate. Published NVIDIA Flash-Next Q4_0 results are strong for decode (4090 25.0 -> 39.4/40.7 t/s; 5090 30.8 -> 54.5/67.8 t/s) but prompt processing regresses as cache VRAM displaces whole resident layers. Treat those numbers as mechanism evidence only; AMD promotion requires gfx1100/gfx1201 measurements.
 
-score(tier) = baseline_cost - cost(tier)
-              - lambda_bytes * resident_bytes
-              - lambda_move * migration_ms
-              + stickiness * already_resident
+## Implementation plan
+
+1. **Profile and budget.** Fix/retain `tools/lab/flash-next/routing-profile.sh` so `ffn_moe_topk` collection is safe under the meta callback. Capture decode and prefill separately across code, chat/prose, retrieval/long-context and MTP. Emit `hits[l][e]`, `weight_sum[l][e]`, `ubatch_present[l][e]`, assigned tokens and route mass.
+2. **Adopt the callback seam, not a private cache.** On the current pin, first determine whether #29943 is present. If absent, qualify a minimal backport containing only the public copy-callback seam and moved selective-copy logic. Do not add MET-specific logic to `ggml/src/ggml-backend.cpp`.
+3. **Mock callback correctness before cache policy.** Install a diagnostic callback that returns false for every host weight while counting callback invocations, backend, tensor bytes and graph first-op. Require byte/token/logit identity with callback disabled. Then enable the upstream selective-copy implementation and require identical greedy output plus nonzero selected-copy counters.
+4. **Qualify #29887 at equal VRAM.** Compare whole-layer baseline, pure LRU, static-hot, and hybrid static+LRU. Preserve <=32-token gating initially. Prove the callback/cache is active under production scheduler copies; zero cache activity is a failed experiment.
+5. **Canonical objective.** Rank each `(layer,expert,tier)` by avoided critical-path milliseconds per resident byte, using measured H2D, compute, sync and auxiliary staging costs. Do not optimize hit rate in isolation.
+6. **Aux tier.** Feed MET05/1328 candidates from the same placement JSON. Keep 1328 whole-layer until hardware evidence proves expert-granular auxiliary placement worthwhile.
+7. **Large-batch separation.** Keep pp512/2048/8192 separate from <=32-token decode/MTP. A cache configuration that improves decode by consuming VRAM but materially hurts prefill is not globally promoted; allow workload-specific feature-set policy only with explicit budgets.
+8. **Only then consider MET06 slicing.** Runtime standard-GGUF slicing is blocked unless the callback/cache/static/aux matrix leaves >=5% TG/PP opportunity attributable to coarse placement or >=1 GiB avoidable resident expert memory at equal throughput.
+
+## Code-level mock
+
+Use the upstream seam as the test double; no cache implementation is required for the first discriminator:
+
+```cpp
+struct met_copy_probe {
+    uint64_t calls = 0;
+    uint64_t host_weight_bytes = 0;
+};
+
+static bool met_probe_copy(
+        ggml_backend_t backend,
+        const ggml_tensor * src,
+        ggml_tensor * dst,
+        ggml_cgraph * graph,
+        void * opaque) {
+    auto & p = *static_cast<met_copy_probe *>(opaque);
+    ++p.calls;
+    p.host_weight_bytes += ggml_nbytes(src);
+    // Observation-only control: normal scheduler copy must still execute.
+    return false;
+}
 ```
 
-Use measured critical-path costs. Do not substitute theoretical bandwidth for `h2d_ms`, aux staging or compute. The no-P2P topology means every cache bank is per physical device and every upload goes host->target GPU.
+Build/test this control before any cache port. Required assertions: callback fires only for host-backed weight split inputs; ordinary input tensors are already copied before callback; `return false` preserves baseline output; no callback-owned pointer survives beyond the compute call; multiple scheduler copies do not share mutable probe/cache slot state without generation/copy indexing.
 
-### #29887 mechanism and consolidation
+For the selective path, preserve upstream MMQ safety: grouped expert copies must include required guard/padding bytes. Never infer a performance win from missing/corrupt expert work; use the BCOP/QFP28 multi-request integrity gate when qualifying Flash-Next.
 
-Upstream #29887 ports a qvac-fabric MoE cache. Scheduler callbacks resolve host `MUL_MAT_ID` weights to a persistent GPU cache, prepare only selected misses, and remap expert ids to cache slots. Different layouts have separate banks and batches >32 bypass the cache. This is the correct reuse point: if adopted, BigCherry should feed its cache capacity/residency decisions from MET rather than implement another cache allocator.
+## Ownership and files
 
-Published Qwen3.8-Flash-Next Q4_0 data is strong for decode but exposes the budget tradeoff: RTX 4090 25.0 -> 39.4/40.7 t/s (1.57-1.62x, 72-77% hits) and RTX 5090 30.8 -> 54.5/67.8 t/s (1.77-2.20x, 77-89% hits). However RTX 4090 pp512/2048/8192 falls to 0.89/0.93/0.91x with a 6.4 GiB cache and 0.70/0.78/0.76x with a 10.7 GiB cache because cache VRAM displaces whole resident expert layers. Therefore hit rate is not the objective; **avoided critical-path milliseconds per reserved GiB** is.
+- `tools/lab/flash-next/routing-profile.sh`, `tools/lab/flash-next/expert-placement/`: profiling/solver tooling.
+- `ggml/include/ggml-backend.h`, `ggml/src/ggml-backend.cpp`: upstream #29943 callback seam only; no MET policy.
+- `src/llama-context.cpp` / context-owned helper: selective-copy/cache user-code owner from #29943/#29887.
+- MET05 / patch 1328: auxiliary ROCm3 execution and staging.
+- MET06: standard-GGUF materialization fallback only after the measured gate.
 
-The submitted scheduler implementation also currently requires `sched->n_copies == 1` for cache activation. BigCherry uses graph/meta machinery heavily, so qualification must explicitly prove the cache is active in the production scheduler configuration rather than infer it from the CLI flag. Record resolved cache entries and miss uploads at runtime.
+No second dispatch table, residency map, cache allocator, prefetch scheduler or ROCm3 transport is permitted.
 
-### MET05 / 1328 boundary
+## Validation matrix
 
-1328 already supplies a correctness-constrained auxiliary ROCm3 backend outside Meta/RCCL, with pinned-host staging and whole routed-expert layer placement. Do not duplicate its transport in MET01. MET01 chooses residency; MET05 owns aux execution/transport semantics. Initial comparison is whole-layer aux versus host/LRU/static-XTX at equal VRAM. Expert-granular aux placement is a later capability only if whole-layer data proves positive service-time/GiB and the scheduler can preserve routed/shared semantics without multiplying split boundaries.
+Hardware: gfx1100 XTX, gfx1201 R9700, then production 2xXTX+R9700; 6900 only through MET05 controls. No-P2P means every cache bank/upload is target-device-local.
 
-A useful follow-up is a **two-level tail**:
+Correctness before performance:
+- callback-disabled vs observation-only callback: greedy identity and logits/KLD contract;
+- selective copy/cache: multi-request same-process, cold->warm->workload-shift, MTP on/off;
+- <=32-token decode plus pp512/2048/8192 bypass lanes;
+- long context and scheduler-copy reuse;
+- counters prove selected experts and uploaded bytes are nonzero and physically plausible.
 
-```text
-XTX/R9700 static-hot experts
-    -> ROCm3 persistent warm tail
-    -> per-target-GPU #29887 LRU for remaining host misses
-    -> CPU fallback
-```
+Performance: ABBA >=5 repetitions for TG128/512 and PP512/2048/8192; report median/dispersion, static/LRU/aux GiB, route mass by tier, cache hit, H2D bytes/token, miss-upload ms/token, auxiliary service/staging, CPU fallback, peak VRAM and locked host memory.
 
-Do not implement all levels first. Measure each transition's avoided stall. Promote the next tier only if it reduces end-to-end decode/MTP wall time after staging/synchronization.
-
-## Files
-
-`tools/lab/flash-next/routing-profile.sh`, `tools/lab/flash-next/expert-placement/`; existing expert loader/transport; MET05/1328 for aux execution; upstream llama.cpp #29887 for demand-cache implementation reference.
-
-## Validation
-
-Profiles from >=4 workloads. Solver output passes schema/fingerprint/device validation. Equal-VRAM policy matrix on gfx1100/gfx1201, then production 2xXTX+R9700 with ROCm3 auxiliary lane where applicable. Test decode/MTP <=32 independently from pp512/2048/8192.
-
-For each policy report static GiB, LRU GiB, aux GiB, route mass by tier, cache hit rate, H2D bytes/token, aux staged bytes/token, miss-upload ms/token, aux service/staging ms/token, CPU fallback ms/token, TG/effective TG, PP and peak VRAM. Include cold start, repeated warm requests and workload shift.
-
-Runtime gate for #29887: prove scheduler cache callbacks actually resolve/prepare entries under the production graph configuration; zero cache activity is a failed experiment, not a performance result.
-
-## Effort & Risk
-
-Medium policy/tooling risk; high runtime risk for asynchronous uploads and expert-granular aux execution. #29887 has strong NVIDIA decode evidence but no local AMD proof. 1328 is already the canonical aux transport/correctness owner and remains whole-layer until hardware evidence justifies finer granularity.
-
-## Standards
-
-One canonical placement/residency accounting surface; policy/transport separation; generation-safe async work; reuse upstream cache machinery before forking; equal-VRAM comparisons; no-P2P-safe device ownership; optimize critical-path service time/GiB rather than hit rate.
+Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRAM budget with <=2% regression in the unaffected regime. A workload-specific decode policy may be retained if prompt regression is explicitly isolated and feature-gated. Reject any result whose implied transfer/work exceeds measured physical limits or whose correctness/integrity gate fails.
 
 ## Acceptance Criteria
 
-- Profiles cover >=4 workloads and decode/prefill routing.
-- Placement remains within measured VRAM/headroom budgets and target CPU route mass.
-- Static, LRU, hybrid and aux policies are compared at equal expert-VRAM budgets.
-- A promoted #29887-style cache reuses upstream scheduler/cache machinery and proves nonzero cache activity in production scheduler mode.
-- MET05/1328 remains the sole owner of ROCm3 aux execution/host staging; MET01 only supplies policy/placement.
-- Any expert-granular aux extension requires whole-layer 1328 evidence showing positive end-to-end service-time/GiB first.
-- Large-batch prompt regressions are included; decode hit rate alone cannot promote a feature.
-- Warm residency/prefetch is promoted only when migrated bytes or transfer stalls fall without material tail-latency regression.
+- One canonical placement JSON/accounting table covers static, LRU, aux and host tiers.
+- #29943 callback seam is either present upstream or qualified as a minimal temporary backport; MET logic does not live in generic scheduler code.
+- Observation-only callback proves semantic transparency before selective-copy/cache testing.
+- #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
+- Static/LRU/hybrid/aux are compared at equal expert-VRAM budget; decode and large-batch prompt effects are both reported.
+- MET05 remains sole auxiliary transport owner; MET06 remains blocked until its explicit placement-gap gate passes.
+- Unsupported or inactive paths fail closed rather than silently becoming baseline measurements.
 
 ## Notes
 
-Key CPU sensitivity: ~2 ms per CPU-active layer; with 10 selected experts, small CPU route mass can create large layer-touch probability. Route mass, not expert count, is the governing quantity.
+2026-10-05 audit: #29943 materially improves the integration boundary for MET. Its diff removes expert-ID parsing/copy grouping from generic scheduler compute and exposes a host-weight copy callback, while `llama_context` becomes the user-code owner. #29887 states that after #29943 it should be entirely user-code. This reduces BigCherry's reason to carry scheduler-core MoE cache patches and makes the first local mock cheap: an observation-only callback can validate ordering/lifetime on HIP before cache code is introduced.
 
-2026-10-02 first routing profile: Flash-Next UD-IQ4_XS, one XTX + routed experts on CPU, ub512, mixed prose+code prefill. Per layer mean 496/512 experts used; hottest 10/25/50% of experts cover 41.5/68.8/91.3% of picks. Experts needed for 50/80/90/95% picks: mean 73/174/235/287. A <=0.5% CPU route-mass budget is therefore tight at Q6 and motivates measured multi-tier residency rather than expert-count heuristics.
-
-External references verified 2026-10-05:
-- DwarfStar persistence/prefetch mechanism: https://github.com/antirez/ds4/blob/0aaea5a238fb41a35106a551e73c8409dfb751ac/ds4_gpu.h
-- llama.cpp #29887: https://github.com/ggml-org/llama.cpp/pull/29887 ; updated 2026-10-04T21:51Z, still open. Submitted implementation adds scheduler-level MoE cache callbacks, per-layout cache banks, selected-expert miss uploads and <=32-token gating.
-- llama.cpp release baseline visible 2026-10-05: b11396 (`2e7c58c`, released 2026-10-04 17:45 UTC). #29887 is newer/open work and must not be treated as released baseline behavior.
+External references: llama.cpp #29943 `ggml: refactor selective expert copying to user code`; llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`.
 
 ## Change Log
 
-- 2026-10-02T04:44:44.458623+00:00 (created-by): Created by agent
-- 2026-10-02T06:35:13.803287+00:00 (updated-by): Updated: section:notes
-- 2026-10-04: Consolidated DwarfStar persistence and llama.cpp #29887 into MET01.
-- 2026-10-05: Consolidated MET05 auxiliary residency with the canonical solver; added miss-cost-aware static/LRU/aux policy, scheduler-activation gate, and two-level tail experiment.
+- 2026-10-02T04:44:44.458623+00:00: created.
+- 2026-10-04: consolidated DwarfStar persistence and #29887 into MET01.
+- 2026-10-05: consolidated MET05 auxiliary residency with canonical solver.
+- 2026-10-05: made #29943 user-code copy callback the required integration seam; added observation-only mock, HIP qualification matrix and explicit no-duplicate-scheduler boundary.
