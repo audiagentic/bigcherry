@@ -24,6 +24,7 @@ The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 
 - Existing routing evidence on Flash-Next UD-IQ4_XS, ub512: mean 496/512 experts touched per layer in mixed prose+code prefill; hottest 10/25/50% cover 41.5/68.8/91.3% of picks; mean experts needed for 50/80/90/95% picks are 73/174/235/287. Static expert-count heuristics are therefore insufficient.
 - MET05/patch 1328 already owns auxiliary 6900 execution and host staging. MET01 may select that tier but must not reproduce its transport.
 - MET06 owns standard-GGUF materialization only if normal host-weight execution/cache mechanisms leave a measured placement gap.
+- RPL01 owns cross-capability topology/compute/transfer/VRAM cost comparison. MET01 remains the authoritative expert-residency solver and exports candidate costs/evidence to RPL01; RPL01 must not choose experts independently or replace MET01 placement JSON.
 
 ## Upstream mechanism: #29943 + #29887
 
@@ -39,7 +40,7 @@ It also removes the scheduler's embedded `MUL_MAT_ID` expert-selection implement
 2. **Adopt the callback seam, not a private cache.** On the current pin, first determine whether #29943 is present. If absent, qualify a minimal backport containing only the public copy-callback seam and moved selective-copy logic. Do not add MET-specific logic to `ggml/src/ggml-backend.cpp`.
 3. **Mock callback correctness before cache policy.** Install a diagnostic callback that returns false for every host weight while counting callback invocations, backend, tensor bytes and graph first-op. Require byte/token/logit identity with callback disabled. Then enable the upstream selective-copy implementation and require identical greedy output plus nonzero selected-copy counters.
 4. **Qualify #29887 at equal VRAM.** Compare whole-layer baseline, pure LRU, static-hot, and hybrid static+LRU. Preserve <=32-token gating initially. Prove the callback/cache is active under production scheduler copies; zero cache activity is a failed experiment.
-5. **Canonical objective.** Rank each `(layer,expert,tier)` by avoided critical-path milliseconds per resident byte, using measured H2D, compute, sync and auxiliary staging costs. Do not optimize hit rate in isolation.
+5. **Canonical objective.** Rank each `(layer,expert,tier)` by avoided critical-path milliseconds per resident byte, using measured H2D, compute, sync and auxiliary staging costs. Do not optimize hit rate in isolation. Export this decomposition to RPL01 for whole-system counterfactual scoring; RPL01 consumes the MET01 result rather than re-solving expert placement.
 6. **Aux tier.** Feed MET05/1328 candidates from the same placement JSON. Keep 1328 whole-layer until hardware evidence proves expert-granular auxiliary placement worthwhile.
 7. **Large-batch separation.** Keep pp512/2048/8192 separate from <=32-token decode/MTP. A cache configuration that improves decode by consuming VRAM but materially hurts prefill is not globally promoted; allow workload-specific feature-set policy only with explicit budgets.
 8. **Only then consider MET06 slicing.** Runtime standard-GGUF slicing is blocked unless the callback/cache/static/aux matrix leaves >=5% TG/PP opportunity attributable to coarse placement or >=1 GiB avoidable resident expert memory at equal throughput.
@@ -79,6 +80,7 @@ For the selective path, preserve upstream MMQ safety: grouped expert copies must
 - `src/llama-context.cpp` / context-owned helper: selective-copy/cache user-code owner from #29943/#29887.
 - MET05 / patch 1328: auxiliary ROCm3 execution and staging.
 - MET06: standard-GGUF materialization fallback only after the measured gate.
+- RPL01: whole-system advisory cost model; consumes MET01 candidate/decomposition and must not duplicate expert selection/residency state.
 
 No second dispatch table, residency map, cache allocator, prefetch scheduler or ROCm3 transport is permitted.
 
@@ -105,11 +107,14 @@ Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRA
 - #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
 - Static/LRU/hybrid/aux are compared at equal expert-VRAM budget; decode and large-batch prompt effects are both reported.
 - MET05 remains sole auxiliary transport owner; MET06 remains blocked until its explicit placement-gap gate passes.
+- RPL01 may compare MET01's selected candidate against other system placements but cannot introduce another expert residency policy or mutate MET01 placement state.
 - Unsupported or inactive paths fail closed rather than silently becoming baseline measurements.
 
 ## Notes
 
 2026-10-05 audit: #29943 materially improves the integration boundary for MET. Its diff removes expert-ID parsing/copy grouping from generic scheduler compute and exposes a host-weight copy callback, while `llama_context` becomes the user-code owner. #29887 states that after #29943 it should be entirely user-code. This reduces BigCherry's reason to carry scheduler-core MoE cache patches and makes the first local mock cheap: an observation-only callback can validate ordering/lifetime on HIP before cache code is introduced.
+
+2026-10-06 cross-capability audit: RPL01 was added as a read-only whole-system cost/recommendation owner. MET01 remains authoritative for expert residency; it exports measured candidate cost components rather than surrendering placement ownership.
 
 External references: llama.cpp #29943 `ggml: refactor selective expert copying to user code`; llama.cpp #29887 `add a GPU cache for MoE experts kept in host memory`.
 
@@ -119,3 +124,4 @@ External references: llama.cpp #29943 `ggml: refactor selective expert copying t
 - 2026-10-04: consolidated DwarfStar persistence and #29887 into MET01.
 - 2026-10-05: consolidated MET05 auxiliary residency with canonical solver.
 - 2026-10-05: made #29943 user-code copy callback the required integration seam; added observation-only mock, HIP qualification matrix and explicit no-duplicate-scheduler boundary.
+- 2026-10-06: added explicit RPL01 boundary: export expert candidate cost evidence to the whole-system scorer without duplicating MET01 residency policy.
