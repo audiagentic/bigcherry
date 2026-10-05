@@ -14,7 +14,7 @@ depth=$1 bin=$2 root=$3 ref=$4; shift 4
 here="$(cd "$(dirname "$0")" && pwd)"
 run() {  # <arm dir> [extra env...]
   local dir=$1; shift
-  env "$@" PROBES=${PROBES:-24} UB=${UB:-512} B=${UB:-512} DEPTH=$depth \
+  env PROBES=${PROBES:-24} UB=${UB:-512} B=${UB:-512} DEPTH=$depth "$@" \
       bash "$here/long-ctx-profile.sh" "$bin" "$root/$dir" probes 2>&1 | grep -E "^probes:|SERVER_FAILED"
 }
 echo "D:  $(run D NO_MTP=1 | tr '\n' ' ')"
