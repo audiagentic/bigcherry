@@ -127,6 +127,7 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 
 ## Ledger-events
 
+
 - chg_20261004_161454_found-what-limits-the-larger-p_4462
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
@@ -137,6 +138,7 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - 2026-10-04T23:53:53.025717+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T12:52:50.061761+00:00 (updated-by): Updated: section:notes
 
+- chg_20261005_205930_flash-next-long-context-prefil_8173
 ## Plan Review - 2026-10-05 prefill round
 
 Scope: b11402 `d89651a7b205`, Brutus 3-rank Meta split `0.31,0.27,0.42`, attention/KV on the two XTX, f16 KV, ub512. Shared-branch note: while this review was running, patch `1334_hip_sparse_flash_attn` landed behind `BIGCHERRY_FA_SPARSE=1`; treat QFP25 as an implementation-ready hardware-proof item, not a future design project. MTP look-ahead is out of scope.
@@ -216,3 +218,4 @@ The 99.3K column below is measured. The 200K column is an **extrapolated bound**
 Static R9700 placement is still worth a no-code diagnostic sweep before inventing phase-aware placement: try 1303-compatible `BIGCHERRY_ATTN_TS`/rotation variants that preserve whole GQA groups, record per-rank KV reserve at 245760 and decode regression, and reject any arm that trades the XTX FA wait for R9700 MMQ/VRAM pressure. Do not carry a prefill-only placement patch unless that static screen demonstrates >=5% E2E upside and enough 245760-context reserve.
 
 Long-context per-unit-effort execution order after the provider diagnostic: **1334/QFP25 -> 1332 -> #29901 -> PGC15 phase 1 -> QFP26 -> R9700 placement only if the static screen wins -> PGC14 only on transport evidence -> QFP24. Drop half-width wire and PGC16.**
+- 2026-10-05T20:59:37.128575+00:00 (updated-by): Updated: section:ledger-events
