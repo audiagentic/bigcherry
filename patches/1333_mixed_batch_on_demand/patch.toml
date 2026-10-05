@@ -1,7 +1,7 @@
 schema = 1
 id = "1333_mixed_batch_on_demand"
 order = 1333
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"

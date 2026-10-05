@@ -1,6 +1,6 @@
 # 1333_mixed_batch_on_demand
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP22
 
 Kind: performance fix for an upstream regression, no flag.
@@ -35,7 +35,8 @@ First form of this patch (whole feature behind `BIGCHERRY_MIXED_BATCH`, default 
 against the old-pin build in one session: Flash-Next 41.1 ms/step vs 41.8 / 41.4; 27B prefill 10K 1290.7 / 1291.1 vs
 1291.9 t/s. That form was replaced by the on-demand condition before promotion.
 
-- Hardware confirmation of the on-demand form: pending.
+- Hardware confirmation of the on-demand form and the mixed-batch test: README.md.
 - Which part of the branch costs the time has not been profiled (for Flash-Next the token embedding table is on the
   CPU, so the second lookup adds a CPU-side node to every graph).
-- No workload with real mixed batches has been run with this patch.
+- 27B prefill at 32K stays about 0.4% below the old pin with either form of the patch; that part of the b11402
+  regression is not from #29622.
