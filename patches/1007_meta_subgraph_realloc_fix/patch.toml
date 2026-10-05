@@ -1,7 +1,7 @@
 schema = 1
 id = "1007_meta_subgraph_realloc_fix"
 order = 1007
-state = "untested"
+state = "validated"
 kind = "upstream-backport"
 origin = "local"
 backend = "agnostic"
