@@ -71,7 +71,10 @@ Owner 2026-10-05 (two directions): (1) profile files must live in a folder relat
 ## Ledger-events
 
 
+
 - chg_20261004_235327_model-and-scope-tuning-now-liv_4754
 - 2026-10-04T23:53:33.547468+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261004_235343_model-and-scope-tuning-now-liv_4846
 - 2026-10-04T23:53:49.845549+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261005_113349_the-fused-decode-kernels-now-a_9568
+- 2026-10-05T11:33:52.589848+00:00 (updated-by): Updated: section:ledger-events
