@@ -1,6 +1,6 @@
 # 1334_hip_sparse_flash_attn
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP25/QFP17
 
 Kind: enhancement, flag `BIGCHERRY_FA_SPARSE` (default 0).
@@ -20,6 +20,11 @@ Motivation (b11402, production config, rocprofv3 kernel trace of one uncached pr
 23.5 s kernel time per XTX over 31.8K tokens and 18.9 s of 89.5 s over 99.3K tokens (32 -> 97 ms per 512-token
 ubatch); the R9700 holds no attention and spends the equivalent time waiting in the all-reduce.
 
-- Build on HIP: pending.
-- Correctness (test-backend-ops flash attention with a sparse mask, both architectures): pending.
-- Prefill ABBA at ~100K and ~200K, output vs the CPU f32 reference: pending.
+Results (b11402, Brutus, 2026-10-05/06; details and the promotion rationale in README.md):
+
+- Prefill, ABBA, production config: ~99K tokens 862.4 / 872.1 -> 978.7 / 982.5 t/s (+13%); ~202K tokens
+  658.2 / 663.5 -> 846.1 / 847.8 t/s (+28%). 24K MTP decode unchanged (41.5 / 41.6 vs 41.2 - 41.4 ms/step).
+- Correctness: test-backend-ops sparse-mask flash attention matches the CPU backend on all four GPUs with the flag
+  off and on, with the activation marker proving the 8x8 sparse kernel ran.
+- Fidelity: not bit-identical to the dense path (different summation order feeding a discrete top-k selection);
+  against a CPU f32 reference the sparse path is no further away than the dense path.

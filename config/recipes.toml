@@ -258,6 +258,7 @@ patches = [
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
     "1333_mixed_batch_on_demand",
+    "1334_hip_sparse_flash_attn",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -550,14 +551,6 @@ patches = ["1331_alloc_peak_live", "1332_qsa_token_chunk"]
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]
-
-[experiment.sparse-fa]
-# QFP25: production set + 1334 (upstream sparse flash attention on RDNA WMMA, BIGCHERRY_FA_SPARSE=1).
-patches = ["1334_hip_sparse_flash_attn"]
-
-[experiment.sparse-fa-chunk]
-# QFP17/QFP25: production set + 1334 + 1332 (QSA masks + attention per token chunk, BIGCHERRY_QSA_CHUNK with -ub 1024).
-patches = ["1332_qsa_token_chunk", "1334_hip_sparse_flash_attn"]
 
 [experiment.deploy-v6-alloc-peak]
 # QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).

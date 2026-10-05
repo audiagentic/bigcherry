@@ -23,7 +23,7 @@ export BIGCHERRY_FEATURES=flashnext
 docker stop radiance-vllm >/dev/null 2>&1
 RUN=b-sparsefa-$TAG
 jobs=$(mktemp)
-echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi sparse-fa gfx1100,gfx1201,gfx1030" > "$jobs"
+echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030" > "$jobs"
 for d in "${DEPTHS[@]}"; do
     echo "VIS=0,1,2,3 SCRIPT sparsefa-$TAG-pp$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/sparsefa-$TAG-pp$d BIGCHERRY_FA_SPARSE=1" >> "$jobs"
 done

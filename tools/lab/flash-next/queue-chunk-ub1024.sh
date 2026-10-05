@@ -1,5 +1,5 @@
 #!/bin/bash
-# QFP17 / 1332 on top of sparse flash attention (1334): build production + 1332 + 1334, then per depth a prefill ABBA
+# QFP17 / 1332 on top of sparse flash attention (1334): build production (with 1334) + 1331 + 1332, then per depth a prefill ABBA
 # of ub512 (A) vs ub1024 with BIGCHERRY_QSA_CHUNK=256 (B), both with BIGCHERRY_FA_SPARSE as given, and a fidelity
 # gate (flash-fidelity.sh) of ub1024 + chunk 256 against ub512 at the first depth.
 # Usage: queue-chunk-ub1024.sh <tag> <sparse 0|1> <depth>... [wait=<log with ALL_JOBS_DONE>]
@@ -18,7 +18,7 @@ export BIGCHERRY_FEATURES=flashnext BIGCHERRY_FA_SPARSE=$SPARSE
 docker stop radiance-vllm >/dev/null 2>&1
 RUN=b-chunk-$TAG
 jobs=$(mktemp)
-echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi sparse-fa-chunk gfx1100,gfx1201,gfx1030" > "$jobs"
+echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030" > "$jobs"
 for d in "${depths[@]}"; do
   echo "VIS=0,1,2,3 SCRIPT chunk-$TAG-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/chunk-$TAG-d$d UB=1024 B=1024 BIGCHERRY_QSA_CHUNK=256" >> "$jobs"
 done

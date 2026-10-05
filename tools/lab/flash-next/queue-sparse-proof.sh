@@ -19,7 +19,7 @@ docker stop radiance-vllm >/dev/null 2>&1
 RUN=b-sparsefa-$TAG
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi sparse-fa gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT sparseproof-$TAG-backend tools/lab/flash-next/fa-sparse-backend-test.sh @$RUN $R/sparseproof-$TAG-backend
 VIS=0,1,2,3 SCRIPT sparseproof-$TAG-fid24k tools/lab/flash-next/flash-fidelity.sh 24576 @$RUN $R/sparseproof-$TAG-fid24k ref BIGCHERRY_FA_SPARSE=1
 VIS=0,1,2,3 SCRIPT sparseproof-$TAG-fid$LONG tools/lab/flash-next/flash-fidelity.sh $LONG @$RUN $R/sparseproof-$TAG-fid$LONG noref BIGCHERRY_FA_SPARSE=1
