@@ -4,8 +4,7 @@
 # Builds only the framework binary; native and patched come from existing build runs. Note: the `bigcherry` source
 # with experiment stock-none is the full production patch set, not a base without enhancements.
 #   27B dual-XTX production config (prod27b-ab.sh ABBA, 10K + 32K): native vs base, base vs patched (prod27b-ab.sh
-#   clears every BIGCHERRY_/GGML_HIP_ flag, so "patched" there runs with the runtime features OFF), then the
-#   patched binary with the fused Q8_1 decode kernels and async inputs ON (BIGCHERRY_FEATURES=hip-q81,sched-async).
+#   clears every BIGCHERRY_/GGML_HIP_ flag, so both run on their built-in defaults).
 #   Flash-Next 64K ctx f16 (native-ab.sh ABA, 8K + 48K): patched (A arms, flashnext profile) vs base (middle arm).
 #   (patched vs native for Flash-Next is queue-native-flash.sh.)
 # Usage: queue-threeway.sh <pin tag> <native build run> <patched build run> [wait=<log with ALL_JOBS_DONE>]
@@ -29,7 +28,6 @@ cat > "$jobs" <<JOBS
 VIS=0,1,2,3 BUILD $BASE bigcherry-serving-base:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1 SCRIPT 3wayfw-$PIN-27b-native-base tools/lab/flash-next/prod27b-ab.sh @$NATIVE @$BASE $R/3wayfw-$PIN-27b-native-base
 VIS=0,1 SCRIPT 3wayfw-$PIN-27b-base-patched tools/lab/flash-next/prod27b-ab.sh @$BASE @$PATCHED $R/3wayfw-$PIN-27b-base-patched
-VIS=0,1 SCRIPT 3wayfw-$PIN-27b-patched-fused tools/lab/flash-next/prod27b-ab.sh @$PATCHED @$PATCHED $R/3wayfw-$PIN-27b-patched-fused BIGCHERRY_FEATURES=hip-q81,sched-async
 VIS=0,1,2,3 SCRIPT 3wayfw-$PIN-flash-d8k tools/lab/flash-next/native-ab.sh 8192 @$PATCHED @$BASE $R/3wayfw-$PIN-flash-d8k
 VIS=0,1,2,3 SCRIPT 3wayfw-$PIN-flash-d48k tools/lab/flash-next/native-ab.sh 49152 @$PATCHED @$BASE $R/3wayfw-$PIN-flash-d48k
 JOBS
@@ -38,6 +36,5 @@ echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 echo "== 27B: A = native $NATIVE, B = base $BASE"; grep -E "^d[0-9]|SERVER_FAILED" $R/3wayfw-$PIN-27b-native-base.log
 echo "== 27B: A = base $BASE, B = patched $PATCHED"; grep -E "^d[0-9]|SERVER_FAILED" $R/3wayfw-$PIN-27b-base-patched.log
-echo "== 27B: A = patched, runtime features off, B = same binary with BIGCHERRY_FEATURES=hip-q81,sched-async"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/3wayfw-$PIN-27b-patched-fused.log
 for d in d8k d48k; do echo "== Flash-Next $d: base arms = patched $PATCHED, new = base $BASE"; grep -E "^base-|^new|SERVER_FAILED" $R/3wayfw-$PIN-flash-$d.log; done
 echo ALL_JOBS_DONE
