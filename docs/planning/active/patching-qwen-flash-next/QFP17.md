@@ -195,3 +195,24 @@ Mechanism gate: kernel census must show ~half the ubatches and ~half the 96-AR b
 | QFP24 | timeline proves host-input copy/sync bubbles removed, no hidden staging overwrite | ABBA short + 100K prefill | repeated/multi-request stress; exact input bytes and output reference |
 
 Order of execution: **provider/protocol screen -> 1334 hardware proof -> 1332 current-pin proof -> PGC15 phase-1 microbench/patch -> #29901 -> PGC14 only if screen justifies it -> QFP26 -> QFP24.**
+
+### 100K/200K long-context bound correction and omitted candidate
+
+The 99.3K column below is measured. The 200K column is an **extrapolated bound**, not a kernel trace: use the observed 202K end-to-end wall (`202000/663 = 304.7 s`), ~394.5 ubatches, measured context-independent XTX costs (AR ~114 ms/ub, MMQ ~100 ms/ub, float matmul ~57 ms/ub), and linear-context extrapolation for FA (97 -> ~194 ms average/ub) and indexer (22 -> ~44 ms average/ub). Re-profile at ~200K before promoting any Amdahl estimate to evidence.
+
+| Candidate / owned bucket | ~100K wall fraction; ideal speedup ceiling | ~200K extrapolated wall fraction; ideal speedup ceiling | Per-effort/risk decision |
+|---|---:|---:|---|
+| QFP25 selected-index QSA FA | 15.8%; +18.7% | 25.1%; +33.5% | Highest long-context upside; 1334 makes first proof small. **Rank 1.** |
+| 1332 ub1024/chunk256 | no isolated hard bucket; measured +1.5..7% at 80K | same mechanism; measure | Already implemented and fits 240K. **Rank 2 hardware proof.** |
+| #29901 tiled lightning indexer | 3.6%; +3.8% | 5.7%; +6.0% | Small code/backport risk and growing bound. **Rank 3 per unit effort.** |
+| PGC15 overlap, all reductions | 18.0%; +21.9% | 14.8%; +17.3% | High bound but L/high risk; phase-1 one-of-two-reductions ceiling is roughly half (~9.0% / ~7.4% wall). **Rank 4.** |
+| QFP26 MoE/MMQ | whole-MMQ 16.3%; +19.5% | whole-MMQ 12.9%; +14.9% | QFP26 owns only a subset; likely 3-6% E2E if successful. **Rank 5.** |
+| R9700 attention rebalance | measured idle opportunity ~70 ms/ub ~= 11.3% wall; +12.8% ideal | hard upper bound <= FA bucket 25.1%; no defensible point estimate | **Screen cheaply, implementation defer.** 1303 makes attention-family/KV placement load-time/static; full-attention weights, norms and KV cache use one split vector and preserve GQA grouping. A true *prefill-only* move requires phase-aware KV duplication/migration or a second placement, and the R9700 is already the 0.42 model-weight rank. Also QFP25 directly removes the imbalance without adding KV residency. Rank 6 implementation. |
+| PGC14 RCCL transport | same AR ceiling 18.0%; +21.9% | 14.8%; +17.3% | Provider sweep is already flat (`cpu-root 1031.8`, `ccl 1031.0`, `adaptive 1028.7`) and host is bad. Keep only if protocol diagnostics expose a concrete loss. Rank 7. |
+| QFP24 input staging/ring | not in GPU-kernel buckets; only exposed host/GPU bubble is removable | not established | Prior unsafe path helped, safe staging regressed; park until timeline proves an exposed input bubble after 1326. Rank 8. |
+| Half-width 5.2 MiB reduction wire | **0 incremental** for “half width” | **0 incremental** | Drop: b11402 3-rank RCCL already uses BF16 above 131072 elements; 2560x512 is 1,310,720 elements, so wire is already ~2.62 MiB. |
+| PGC16 fold two layer reductions | **0 eligible** | **0 eligible** | Drop: nonlinear/residual dependence separates the attention and FFN reductions; no independent pair exists to fold. |
+
+Static R9700 placement is still worth a no-code diagnostic sweep before inventing phase-aware placement: try 1303-compatible `BIGCHERRY_ATTN_TS`/rotation variants that preserve whole GQA groups, record per-rank KV reserve at 245760 and decode regression, and reject any arm that trades the XTX FA wait for R9700 MMQ/VRAM pressure. Do not carry a prefill-only placement patch unless that static screen demonstrates >=5% E2E upside and enough 245760-context reserve.
+
+Long-context per-unit-effort execution order after the provider diagnostic: **1334/QFP25 -> 1332 -> #29901 -> PGC15 phase 1 -> QFP26 -> R9700 placement only if the static screen wins -> PGC14 only on transport evidence -> QFP24. Drop half-width wire and PGC16.**
