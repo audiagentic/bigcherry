@@ -1,5 +1,5 @@
 schema = 1
-id = "1333_mixed_batch_opt_in"
+id = "1333_mixed_batch_on_demand"
 order = 1333
 state = "untested"
 kind = "enhancement"
@@ -7,7 +7,7 @@ origin = "local"
 backend = "agnostic"
 upstream-ref = "ggml-org/llama.cpp #29622 (0bb496dbd) - regression not reported upstream yet"
 plan-ids = ["QFP22"]
-requires = ["0910_feature_sets"]
+requires = []
 conflicts = []
 requires-options = []
 forbids-options = []
