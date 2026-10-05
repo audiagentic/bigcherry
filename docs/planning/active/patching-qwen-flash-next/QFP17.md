@@ -117,6 +117,8 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 Per ubatch: all-reduce on the XTX is constant at ~114 ms (7.1 s / 62 and 22.2 s / 194), MMQ constant at ~100 ms, float matmul ~57 ms; flash attention grows with context, 32 ms average over the first 32K and 97 ms average over 100K, so it passes all-reduce somewhere past 100K; the indexer grows too (7.6 -> 22 ms). The R9700 holds no attention (BIGCHERRY_ATTN_TS 1,1,0), and its extra all-reduce time (35.6 s vs ~21.5 s) matches the XTX attention time it waits for: at long context the R9700 idles inside the collective while the XTX run attention.
 Consequences for ordering: (a) all-reduce is the largest block up to ~100K (about 18% of wall at 100K, 21% at 32K); (b) at the long-context end, attention + indexer is 26% of XTX kernel time at 100K and still growing, so QFP25 (sparse prefill attention, cost ~ n_sel instead of n_kv) and the rank imbalance it causes on the R9700 move up with context; (c) MMQ is a constant 22-27%; (d) the upstream tiled indexer (#29901) is worth at most 5-7% of kernel time at 100K. 1332 chunk does not reduce attention work, it only allows ub1024.
 
+2026-10-06 1332 VALIDATED (pin b11402, build b-chunk-b11402d = production incl. 1334 + 1331 + 1332, BIGCHERRY_FA_SPARSE=1 both arms). ub512 vs ub1024 + BIGCHERRY_QSA_CHUNK=256, ABBA with MTP: ~99K 965.1 / 980.3 -> 1011.7 / 1013.7 t/s (+4%); ~202K 838.5 / 847.7 -> 874.3 / 874.2 (+4%). Decode ms/step unchanged (16.8 vs 16.7 at 99K, 22.1 vs 22.0 at 202K; t/s differs with acceptance because the text differs). Fidelity at 99.3K fill: 23/24 top-1, TV mean 0.092 vs ub512; ub512 repeat identical. No-MTP fill was 2% slower at ub1024 (one sample) - gain is for the MTP production config. 1332 added to validated-enhancements as an opt-in enabler; deployment sets -ub 1024 + BIGCHERRY_QSA_CHUNK=256 (not the profile, which cannot set -ub). Also this round: 1334 validated (QFP25). Rejected earlier in the round and recorded here: PGC16 fold (no foldable pair), all-reduce provider switch (cpu-root/ccl/adaptive ~1030 t/s equal, host 572, root3 fails), half-width wire (wire is already BF16). Remaining order: 1334 default-on flip + 27B check, #29901 tiled indexer backport (GPT: ~170 lines in ggml-cuda/lightning-indexer.cu, no post-b11402 dependency, ROCm tested upstream, not bit-identical), PGC15 phase 1, PGC14, QFP26, QFP24, QFP25 adapter then independent op.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -139,6 +141,8 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - 2026-10-05T12:52:50.061761+00:00 (updated-by): Updated: section:notes
 
 - chg_20261005_205930_flash-next-long-context-prefil_8173
+
+- chg_20261005_215129_flash-next-long-context-prefil_7176
 ## Plan Review - 2026-10-05 prefill round
 
 Scope: b11402 `d89651a7b205`, Brutus 3-rank Meta split `0.31,0.27,0.42`, attention/KV on the two XTX, f16 KV, ub512. Shared-branch note: while this review was running, patch `1334_hip_sparse_flash_attn` landed behind `BIGCHERRY_FA_SPARSE=1`; treat QFP25 as an implementation-ready hardware-proof item, not a future design project. MTP look-ahead is out of scope.
@@ -219,3 +223,5 @@ Static R9700 placement is still worth a no-code diagnostic sweep before inventin
 
 Long-context per-unit-effort execution order after the provider diagnostic: **1334/QFP25 -> 1332 -> #29901 -> PGC15 phase 1 -> QFP26 -> R9700 placement only if the static screen wins -> PGC14 only on transport evidence -> QFP24. Drop half-width wire and PGC16.**
 - 2026-10-05T20:59:37.128575+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T21:51:29.617714+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T21:51:33.037255+00:00 (updated-by): Updated: section:ledger-events
