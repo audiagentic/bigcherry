@@ -128,6 +128,8 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 
 2026-10-05 1332 rework results (qfp17-chunk-prof, 31.8K-token prefill under rocprof, 240K f16, flashnext): ub512 c0 936 t/s; ub512 c256 923 (-1.4%, was -7% before the compact causal filter); ub1024 c256 1052 (+12%); ub1024 c512 1097 (+17%, now fits). Kernel time summed over GPUs: matmul 27.7 s (ub512) -> 19.4 s (ub1024, -30%: the actual gain); flash attention 5.5 s unchunked, 7.3 s at c256, 5.5 s at c512 (chunk cost = FA tile/launch efficiency, recovered at c512); mask build ~0.9 s, concat ~0.25 s (negligible); RCCL AllReduce 22-23 s (~30% of all kernel time - prefill AllReduce work deferred per owner); k_get_rows_float 1.0 -> 4.9 s from the compact causal gather (single-element rows) - follow-up: cheaper gather (e.g. only tail cells, pools already carry visibility via -inf scores; verify multi-sequence) or a fused gather. MTP 24K: speed unchanged (75.1 vs 75.0/76.0), text = f32-side near-tie. No-MTP decode still crashed on that build: GGML_SCHED_DEBUG_REALLOC=1 showed 'unexpected graph reallocation' (last 49-token ubatch took the dense path -> topology change after reserve, #29958 class) -> fixed in 9de9f46f (K = ceil(n_ubatch/chunk) fixed chunks for every batch >= K tokens). Confirmation queued (queue-chunk-confirm: 80K fill unprofiled 512:0/1024:256/1024:512 + no-MTP decode + MTP identity).
 
+chunk8 (2026-10-05, build b-chunk8 = deploy-v6-plus-chunk with 1007 + fixed 1332): no-MTP crash RESOLVED by patch 1007 - chunk 256 completes (39.1 t/s decode vs 38.4 chunk 0, rc=0). Text identity still OPEN: no-MTP greedy md5 differs (c0 eda3ae34 vs c256 0db7bf7a) and 24K MTP text differs (acceptance 169/258 vs 173/242; 41.6 vs 41.5/41.3 ms/step; 70.8 vs 74.3/74.7 t/s). 80K sweep: ub1024 c512 947.4/945.0 prefill, 66.2/67.4 decode vs ub512 c0 868.6/891.3, 60.5/61.2. Next: move 1007 to patch-set.upstream-fixes; rework 1332 to a materialised contiguous per-chunk mask and drop the ggml.c FA assert relaxation (RV4220 top suspect); 1332 promotion blocked until text identity vs dense holds. External-notes follow-ups tracked in QFP28.
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -139,8 +141,10 @@ One owner per mechanism; no parallel chunk scheduler or cache format. Correctnes
 - RV4217
 - 2026-10-04T23:43:03.592762+00:00 (updated-by): Updated: section:notes
 - RV4219
+- RV4220
 
 ## Ledger-events
 
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T04:10:51.942507+00:00 (updated-by): Updated: section:notes
