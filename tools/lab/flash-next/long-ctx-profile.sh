@@ -5,7 +5,7 @@
 #   1) unprofiled: prefill + decode timings at several context depths (8K/32K/96K prompt), memory breakdown;
 #   2) rocprofv3 --kernel-trace --memory-copy-trace --stats on a 32K prompt + 128 decode, for the per-kernel
 #      split of prefill and decode at depth (attention vs MoE vs AllReduce vs copies).
-# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|apitrace|synctrace]
+# Usage: long-ctx-profile.sh <llama-server> <out-dir> [full|decode|perf|timing|probes|apitrace|synctrace]
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -63,6 +63,18 @@ for d in depths:
     text = (corpus * (1 + 4 * d // max(1, len(corpus))))[: 4 * d]  # ~4 chars/token
     import os
     cache = os.environ.get("CACHE") == "1"
+    if os.environ.get("PROBES"):  # fidelity probes: natural-continuation next-token distributions over one cached fill
+        fill = post({"prompt": text, "n_predict": 1, "cache_prompt": True, "temperature": 0})["timings"]
+        print(f"{name}: fill prefill {fill['prompt_n']} tok at {fill['prompt_per_second']:.1f} t/s", flush=True)
+        probes = []
+        for i in range(int(os.environ["PROBES"])):
+            off = (i * 104729) % max(1, len(corpus) - 2000)
+            r = post({"prompt": text + "\n\n" + corpus[off:off + 600], "n_predict": 1, "cache_prompt": True,
+                      "temperature": 0, "n_probs": 10})
+            probes.append(r.get("completion_probabilities", [{}])[0])
+        json.dump(probes, open(f"{out}/{name}.{d}.probes.json", "w"))
+        print(f"{name}: {len(probes)} probes saved", flush=True)
+        continue
     if cache:  # fill the KV cache first; the timed request then reuses it and only decodes
         fill = post({"prompt": text + "\n\nSummarise the above in detail:", "n_predict": 1, "cache_prompt": True})["timings"]
         print(f"{name}: fill prefill {fill['prompt_n']} tok at {fill['prompt_per_second']:.1f} t/s", flush=True)
@@ -140,6 +152,9 @@ PY
   exit 0
 elif [ "$mode" = prefillprof ]; then  # QFP17: kernel trace + stats of one uncached prefill fill at DEPTH (8 decode tokens)
   DECODE_N=8 CACHE=0 WRAP="rocprofv3 --kernel-trace --stats --output-format csv -d $out/rocprof --" run_pass prefillprof ${DEPTH:-20480}
+elif [ "$mode" = probes ]; then  # fidelity: PROBES next-token distributions after one cached fill at DEPTH
+  PROBES=${PROBES:-24} CACHE=1 run_pass probes ${DEPTH:-24576}
+  exit 0
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
   exit 0

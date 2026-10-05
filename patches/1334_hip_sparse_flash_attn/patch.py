@@ -39,8 +39,9 @@ _A_KERNEL = ('#include "fattn.cuh"\n'
              "// one list per group of ncols1 queries: a column is selected if any query of the group can see it\n")
 _N_KERNEL = r'''#include "fattn.cuh"
 
+#include <cstdlib>  // BigCherry 1334: getenv
+
 #if defined(GGML_USE_HIP)
-#include <cstdlib>
 
 // BigCherry 1334: sparse flash attention on RDNA WMMA is opt-in
 static bool bc_fa_sparse_enabled() {
@@ -188,6 +189,12 @@ _N_RDNA = (_A_RDNA +
            "            // only batches that reach the 8x8 kernel (more than 32/8 queries); smaller ones keep the exact-GQA shape\n"
            "            if (use_gqa_opt && gqa_ratio > 4 && Q->ne[1] > 32/8 &&\n"
            "                    ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8)) {\n"
+           "                static bool bc_hit = false;\n"
+           "                if (!bc_hit && getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {\n"
+           "                    bc_hit = true;\n"
+           "                    GGML_LOG_WARN(\"BIGCHERRY_PATCH_HIT patch=1334_hip_sparse_flash_attn n_kv=%lld n_queries=%lld n_kv_max=%d\\n\",\n"
+           "                        (long long) K->ne[1], (long long) Q->ne[1], (int) ggml_get_op_params_i32(dst, 4));\n"
+           "                }\n"
            "                ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1<DKQ, DV, 8>(ctx, dst);\n"
            "                return;\n"
            "            }\n"
