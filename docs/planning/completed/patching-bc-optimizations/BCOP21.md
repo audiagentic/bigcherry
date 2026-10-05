@@ -2,7 +2,7 @@
 id: BCOP21
 order: 21
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:50:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,12 +25,45 @@ Backfill of the earlier PHA08 audit. Upstream #28664 closed without merge while 
 4. Retain only HIP+CLIP+d_head==72 fallback while root cause is unresolved; no generic HIP FA disable.
 5. If a kernel fix is found, run >=20 repeated 2048/2560px encodes plus parity against matmul attention.
 
-## Related
+## Detailed Solution & Technical Design
 
-PHA08; llama.cpp #28608/#28664.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Current-pin reproduction and D=64/72/80 controls exist on AMD targets.
 - Root cause is proven or fallback is explicitly retained with rationale.
 - Kernel fix promotes only with >=5% VLM encode gain over fallback and no healthy-shape regression >2%.
+
+## Notes
+
+2026-10-05: superseded by PHA08 - findings, steps and gates folded into its notes. Not implemented; work stays open there.
+
+## Related
+
+PHA08; llama.cpp #28608/#28664.
+
+## Change Log
+
+- 2026-10-05T04:55:29.944252+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:55:59.117815+00:00 (state-transition): State: pending → superseded

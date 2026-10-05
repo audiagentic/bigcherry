@@ -2,7 +2,7 @@
 id: BCOP18
 order: 18
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:47:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,9 +25,29 @@ Backfill of the earlier MET05 audit. Distinguish resident-expert activation traf
 4. Keep ROCm3 outside the primary Meta/RCCL collective group.
 5. Promote whole-layer auxiliary execution before attempting expert-granular placement.
 
-## Related
+## Detailed Solution & Technical Design
 
-MET01, MET05, patch 1328.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -35,3 +55,16 @@ MET01, MET05, patch 1328.
 - Direct peer DMA and host staging are independently classified.
 - Auxiliary placement is based on measured service cost, not nominal PCIe bandwidth/FLOPS.
 - No second collective or placement registry is created.
+
+## Notes
+
+2026-10-05: superseded by MET05 - findings, steps and gates folded into its notes. Not implemented; work stays open there (1328 sweep not yet run).
+
+## Related
+
+MET01, MET05, patch 1328.
+
+## Change Log
+
+- 2026-10-05T04:55:19.956418+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:55:49.150073+00:00 (state-transition): State: pending → superseded

@@ -56,6 +56,9 @@ Router permutation unit test (inverse-mapped top-k sets and weights identical); 
 
 Requires MET01 (profile) and MET02 (range op). Decision gate: if throughput tracks the predicted curve, proceed to MET04/MET05.
 
+2026-10-05, folded in from BCOP16 (audit backfill) - fused CPU cold-tail gate: before any CPU-tail fusion, profile the tail service into gate/up/down matmul, activation/intermediate traffic, combine, scheduler and CPU service time. Attempt fused gate/up/activation/down only if non-matmul overhead is >=15% of CPU expert service time; otherwise reject. Reuse MET02 range semantics and MET01 placement (no new router/cache/expert store), keep decode and prefill gates separate, treat OpenVINO/fork fusion gains as mechanism evidence only, and no NUMA expert sharding without multi-NUMA measurements. Note: the current Brutus deployment keeps all experts on GPU, so this only matters if a CPU tail returns.
+
 ## Change Log
 
 - 2026-10-02T04:44:56.833804+00:00 (created-by): Created by agent
+- 2026-10-05T04:54:46.432888+00:00 (updated-by): Updated: section:notes

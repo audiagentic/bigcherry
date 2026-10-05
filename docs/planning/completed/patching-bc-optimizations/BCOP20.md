@@ -2,7 +2,7 @@
 id: BCOP20
 order: 20
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:49:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,9 +25,29 @@ Backfill of the earlier QFP08 audit. Existing traces identified repeated full-co
 4. Preserve producer/consumer lifetime and rejection-safe recurrent/KV state.
 5. Do not add cross-round lookahead until the handoff primitive itself is correct and profitable.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP08, FMTP03, QFP27.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -35,3 +55,16 @@ QFP08, FMTP03, QFP27.
 - End-to-end decode improves >=5% on one representative lane and >=3% on another, with no lane >2% slower.
 - Acceptance and target correctness remain unchanged.
 - No duplicate generic scheduler is introduced.
+
+## Notes
+
+2026-10-05: superseded by QFP08 - findings, steps and gates folded into its notes. Not implemented; the re-measurement of handoff synchronisation is the first step there.
+
+## Related
+
+QFP08, FMTP03, QFP27.
+
+## Change Log
+
+- 2026-10-05T04:55:26.617843+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:55:55.808887+00:00 (state-transition): State: pending → superseded

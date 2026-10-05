@@ -84,8 +84,11 @@ The 6900's value is absorbing many individually cold experts so CPU route mass s
 
 Implemented in the new `1328_aux_rocm_expert_backend` package with the exact v5+1327+1328 recipe, focused offline composition tests, and the ROCm3 12-cell layer/ub sweep queue. Hardware qualification remains pending; no performance/correctness promotion claim is made by this commit.
 
+2026-10-05, folded in from BCOP18 (audit backfill) - topology-aware 6900 XT qualification: separate resident-expert activation traffic from dynamic expert-weight transfer; the PCH-attached 6900 XT (8 GT/s x4) may work when weights stay resident even if it is poor as a miss-driven cache tier. (1) benchmark 4/10/32/128 KiB host-staged and any direct HIP peer transfers, independent of RCCL capability; (2) persistent pinned buffers, event-driven staging, ping/pong buffering, no per-token allocation or global sync; (3) score placement as route probability x (transfer in/out + expert compute + queue delay); (4) ROCm3 stays outside the primary Meta/RCCL collective group; (5) whole-layer auxiliary execution (the 1328 sweep, not yet run) before any expert-granular placement. Placement is decided on measured service cost, not nominal PCIe bandwidth.
+
 ## Change Log
 
 - 2026-10-02T04:45:07.116948+00:00 (created-by): Created by agent
 - 2026-10-04: Implemented patch 1328 design/package, recipe, mechanics tests, and ROCm3 sweep queue; retained pending state until hardware validation.
 - 2026-10-05: Corrected the plan heading to the implemented patch id 1328; hardware qualification remains pending.
+- 2026-10-05T04:54:53.020468+00:00 (updated-by): Updated: section:notes
