@@ -147,9 +147,12 @@ chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, 
 
 ## Ledger-events
 
+
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:10:51.942507+00:00 (updated-by): Updated: section:notes
 - chg_20261005_041827_fixed-a-crash-in-multi-gpu-ten_1501
 - 2026-10-05T04:18:31.126073+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:38:52.451161+00:00 (updated-by): Updated: section:notes
+- chg_20261005_060430_moved-the-llamacpp-pin-to-b11_6653
+- 2026-10-05T06:04:34.204505+00:00 (updated-by): Updated: section:ledger-events
