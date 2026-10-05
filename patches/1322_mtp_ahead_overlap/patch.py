@@ -5,7 +5,7 @@ the target verify, whose sync wait (25.5 / 31.4 ms) leaves the 6900 idle. With B
 
 1. Ahead draft (inside decode(), between the target llama_process() submit and llama_synchronize()): for a
    generating greedy slot whose verify batch carries a draft, the MTP drafter replays that draft as a forced front
-   from the authoritative seed (1321 dp.forced) and continues it into a tail (dp.n_tail = n_draft_max + 1): the
+   from the authoritative seed (1321 dp.forced) and continues it into a tail (dp.n_tail = speculative depth n_max + 1): the
    tail is the MTP prediction of the target's bonus token followed by the next front. The draft KV written beyond
    the checkpoint is removed again before common_speculative_process() reseeds it (same trim as after a normal
    draft), so the authoritative path is unchanged. Only for draft contexts with partial seq_rm (MTP head KV).
@@ -104,8 +104,10 @@ _N_DECODE = _A_DECODE + r"""            // bigcherry 1322: draft ahead on the dr
                     dp.result   = &slot.bc_ahead_scratch;
                     dp.result_q = nullptr;
                     dp.forced   = &slot.bc_ahead_front;
-                    // bonus-token prediction + a full next front, independent of this round's (possibly short) front
-                    dp.n_tail   = (int32_t) slot.get_n_draft_max() + 1;
+                    // bonus-token prediction + a full next front, independent of this round's (possibly short) front.
+                    // The front length is the speculative depth (n_max), capped by the room left in the slot:
+                    // get_n_draft_max() alone is the room in the context, not the depth
+                    dp.n_tail   = std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1;
                     dp.tail     = &slot.bc_ahead_tail;
                     common_speculative_draft(spec.get());
                     dp = saved;
@@ -133,9 +135,10 @@ _N_ACCEPT = ("                // bigcherry 1322: whole front accepted and the ta
              "                // rest of the tail continues this state (on draft hidden rows); promote it to the next round's draft\n"
              "                slot.bc_promoted.clear();\n"
              "                if (bc_mtp_ahead_on()) {\n"
-             "                    // only a full-length tail (bonus + n_draft_max) may replace a fresh draft: a short promoted\n"
+             "                    // only a full-length tail (bonus + n_max) may replace a fresh draft: a short promoted\n"
              "                    // front shrinks the verify batch and loses to a fresh full draft (RV4217 / deep-dive 2)\n"
-             "                    if (slot.bc_ahead_tail.size() == (size_t) slot.get_n_draft_max() + 1 &&\n"
+             "                    if (slot.bc_ahead_tail.size() ==\n"
+             "                                (size_t) std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1 &&\n"
              "                            accepted.size() == slot.spec_draft.size() + 1 &&\n"
              "                            slot.spec_draft == slot.bc_ahead_front && accepted.back() == slot.bc_ahead_tail[0]) {\n"
              "                        slot.bc_promoted.assign(slot.bc_ahead_tail.begin() + 1, slot.bc_ahead_tail.end());\n"
