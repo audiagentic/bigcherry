@@ -257,6 +257,7 @@ patches = [
     "1313_scale_act_fuse",
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
+    "1333_mixed_batch_on_demand",
 ]
 required-state = "validated"
 
@@ -544,10 +545,9 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live", "1332_qsa_token_chu
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live", "1332_qsa_token_chunk"]
 
-[experiment.deploy-v6-chunk-mixed-on-demand]
-# QFP22: deploy-v6-plus-chunk + 1333 (upstream #29622 mixed token/embd input branch built only for a mixed ubatch).
-# Pin-bump regression fix candidate: compare with deploy-v6-plus-chunk on the same pin and on the previous pin.
-patches = ["1331_alloc_peak_live", "1332_qsa_token_chunk", "1333_mixed_batch_on_demand"]
+[experiment.native-plus-1333]
+# QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
+patches = ["1333_mixed_batch_on_demand"]
 
 [experiment.deploy-v6-alloc-peak]
 # QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).
