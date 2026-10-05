@@ -731,3 +731,22 @@ label = "pin-b11233"
 head = "d77dd0806dc26fc418273ef99f88da11239ca41b"
 base = "d77dd0806dc26fc418273ef99f88da11239ca41b"
 active = true
+
+[[sources]]
+id = "charlie12345-rocmfpx"
+repo = "https://github.com/charlie12345/ROCmFPX"
+locator = "main"
+upstream = "https://github.com/ggml-org/llama.cpp"
+notes = """Standalone llama.cpp fork adding AMD-oriented ROCmFP2/3/4/6/8 GGUF weight formats (CPU reference, HIP and
+Vulkan kernels), MTP batched-verify changes and K/V cache routing. Primary target gfx1151 (Strix Halo). Tracked
+2026-10-05 for one bounded idea only: the integer-WMMA (W4A4, v_wmma_i32_16x16x16_iu4) batched MTP verify path
+(plan item QFP29). The weight formats themselves are out of scope (need re-quantised models). Nothing ported;
+first read was a README summary, code review pending under QFP29."""
+
+[[sources.snapshots]]
+label = "main-2026-10-05"
+head = "fb08d7cdb67082ddda15a25e64dc7ec413afc41c"
+base = "fb08d7cdb67082ddda15a25e64dc7ec413afc41c"
+reviewed-at = "2026-10-05"
+active = true
+note = "base == head: tracked as a moving fork, reviewed per idea (QFP29), not as a commit range."
