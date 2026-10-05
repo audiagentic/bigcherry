@@ -9,15 +9,18 @@ import re
 import sys
 
 FAMILIES = (
+    ("all-reduce / collectives", r"nccldevkernel|bc_cpu_root|bc_ar_|allreduce|all_reduce"),
     ("flash attention", r"flash_attn"),
-    ("lightning indexer / top-k", r"indexer|top_k|topk"),
-    ("MoE MMQ (mul_mat_id)", r"mul_mat_q|mmq"),
-    ("MMVQ / vec dot", r"mul_mat_vec|mmvq|vec_dot"),
-    ("quantize", r"quantize"),
-    ("GDN / SSM / recurrent", r"gdn|ssm|delta|gated"),
-    ("all-reduce / copies", r"allreduce|all_reduce|reduce|memcpy|copy|cpy"),
-    ("norm / activation / elementwise", r"norm|silu|gelu|sigmoid|unary|bin_bcast|scale|add|mul"),
-    ("set / get rows, mask build", r"set_rows|get_rows|fill|repeat|concat|pad"),
+    ("QSA lightning indexer / top-k", r"indexer|top_k_radix|lightning"),
+    ("MoE routing", r"topk_moe|moe_block_map"),
+    ("MMVQ (mul_mat_vec_q)", r"mul_mat_vec_q"),
+    ("MMQ (mul_mat_q, incl. MoE)", r"mul_mat_q|quantize_mmq"),
+    ("float matmul (mul_mat_f / mul_mat_vec_f / BLAS)", r"mul_mat_f|mul_mat_vec_f|cijk_"),
+    ("quantize Q8_1", r"quantize"),
+    ("GDN / SSM / recurrent", r"gated_delta|gdn|ssm_"),
+    ("copies", r"cpy|copybuffer|memcpy|fillbuffer"),
+    ("set / get rows, concat, mask build", r"set_rows|get_rows|k_fill|repeat|concat|pad"),
+    ("norm / activation / elementwise", r"norm|silu|gelu|sigmoid|unary|bin_bcast|scale|k_add|k_mul|hc_pre"),
 )
 
 
