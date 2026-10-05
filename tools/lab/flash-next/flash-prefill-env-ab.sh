@@ -1,6 +1,7 @@
 #!/bin/bash
 # Flash-Next long-context prefill ABBA on ONE binary: A = caller env, B = caller env + the given extra env
 # (e.g. BIGCHERRY_FA_SPARSE=1). long-ctx-profile timing pass per arm: fill prefill t/s, decode t/s, acceptance.
+# The extra env is applied last, so it may also override UB and B for arm B.
 # Usage: flash-prefill-env-ab.sh <depth> <llama-server> <out-root> <VAR=value>...
 set -u
 depth=$1 bin=$2 root=$3; shift 3
@@ -11,7 +12,7 @@ for arm in A B B A; do
   if [ "$arm" = A ]; then
     out=$(UB=${UB:-512} B=${UB:-512} DEPTH=$depth bash "$s" "$bin" "$root/d$depth-$n-A" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
   else
-    out=$(env "$@" UB=${UB:-512} B=${UB:-512} DEPTH=$depth bash "$s" "$bin" "$root/d$depth-$n-B" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
+    out=$(env UB=${UB:-512} B=${UB:-512} DEPTH=$depth "$@" bash "$s" "$bin" "$root/d$depth-$n-B" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
   fi
   echo "d$depth $n $arm: $(echo $out | tr '\n' ' ')"
 done
