@@ -529,3 +529,14 @@ Before phase-B code, extend `test-backend-ops` or add a minimal FA microbenchmar
 Record sparse-list `count/max_count`, FA kernel wall, output max/mean error, VGPR/SGPR/LDS/spills and occupancy. Continue only if correctness is exact to the dense allowed-set semantics and direct sparse FA is >=2x (prefer <20 ms versus the ~97 ms model bucket). Then run QFP17 ABBA at ~100K and ~200K, flag 0/1, followed by composition with 1332 ub1024 only after each is independently proven.
 
 Correctness gate: backend output vs dense + CPU-f32 reference; model logits/top-k at the known near-tie rather than byte identity against MTP; multi-request/cache-reuse stress; decode control <=1%.
+
+### Correction - production KV heads / gather scratch
+
+The memory arithmetic in `1295 decode gather: why it does not scale to ub512` above used `Hkv=4`. Production b11402 Qwen4Exp is **24 query heads / 2 KV heads** (GQA ratio 12). Correct f16 materialized-gather scratch at `Q=512`, `D=256`, `Hkv=2` is:
+
+- `n_sel=2051`: per K or V = `512*2*256*2051*2` bytes = **1.0015 GiB**; K+V = **2.0029 GiB**.
+- padded `n_sel=2304`: per K or V = **1.125 GiB**; K+V = **2.25 GiB**.
+- I32 selection list: **4.006 MiB** unpadded / **4.5 MiB** padded.
+- padded query tiles `Q={8,16,32}`: K+V scratch = **{36,72,144} MiB**.
+
+The earlier `Hkv=4` / `4.50 GiB` total figures are superseded. The design conclusion is unchanged: full-ub512 materialized gather is still too expensive versus direct selected-index K/V loads; small query-tiled gather remains useful only as a correctness oracle or first prototype.
