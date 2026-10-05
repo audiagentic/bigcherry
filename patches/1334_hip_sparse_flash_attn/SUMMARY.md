@@ -3,7 +3,7 @@
 **Status:** validated
 **Plan item:** QFP25/QFP17
 
-Kind: enhancement, flag `BIGCHERRY_FA_SPARSE` (default 0).
+Kind: enhancement, on by default; `BIGCHERRY_FA_SPARSE=0` is the off switch.
 
 Enables upstream's sparse flash attention on RDNA3/RDNA4 WMMA. Upstream compacts the attention mask into one index
 list per tile of queries and gathers only those K/V cells in the MMA kernel, but compiles the path out for HIP and

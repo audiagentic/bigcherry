@@ -1,4 +1,4 @@
-"""1334 (QFP25): upstream's sparse flash attention on RDNA WMMA (BIGCHERRY_FA_SPARSE=1).
+"""1334 (QFP25): upstream's sparse flash attention on RDNA WMMA (on by default, BIGCHERRY_FA_SPARSE=0 turns it off).
 
 Qwen4Exp QSA attention is dense flash attention over all n_kv cells with a -inf mask; each query can see about
 indexer_top_k (2048) cells. Upstream already has the sparse form for it: the mask is compacted into one index list per
@@ -9,7 +9,7 @@ kernel reads the whole cache: flash attention costs 32 ms per 512-token ubatch a
 a Flash-Next prefill and 97 ms averaged over 100K (21% of each XTX's kernel time there, and the R9700, which holds no
 attention, idles in the all-reduce meanwhile).
 
-This patch enables that path on HIP for RDNA3/RDNA4 WMMA behind BIGCHERRY_FA_SPARSE=1:
+This patch enables that path on HIP for RDNA3/RDNA4 WMMA (BIGCHERRY_FA_SPARSE=0 is the off switch):
 
 1. A HIP version of the index kernel. Upstream's uses the CUDA warp primitives (__ballot_sync / __popc, 32-lane
    warps); the HIP one is the same algorithm on the AMD wave primitives (__ballot 64-bit lane mask, __popcll, warpSize
@@ -22,7 +22,7 @@ This patch enables that path on HIP for RDNA3/RDNA4 WMMA behind BIGCHERRY_FA_SPA
    way the generic rule does for a ratio above 4.
 4. The two dispatch sites (switch_ncols1 and the kernel-pointer selection) are compiled for HIP.
 
-Off (default): unchanged kernels and selection. The dense path remains the fallback for every shape the sparse
+BIGCHERRY_FA_SPARSE=0: unchanged kernels and selection. A model whose graph sets no n_kv_max is unaffected either way. The dense path remains the fallback for every shape the sparse
 selection rejects (no mask, no n_kv_max, ALiBi, softcap, small caches).
 """
 
@@ -45,7 +45,7 @@ _N_KERNEL = r'''#include "fattn.cuh"
 
 // BigCherry 1334: sparse flash attention on RDNA WMMA is opt-in
 static bool bc_fa_sparse_enabled() {
-    static const bool on = getenv("BIGCHERRY_FA_SPARSE") != nullptr && atoi(getenv("BIGCHERRY_FA_SPARSE")) != 0;
+    static const bool on = getenv("BIGCHERRY_FA_SPARSE") == nullptr || atoi(getenv("BIGCHERRY_FA_SPARSE")) != 0;
     return on;
 }
 
@@ -163,7 +163,7 @@ _N_SHALL = ("#if defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n"
 
 _A_ARCH = "    return GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc) &&\n"
 _N_ARCH = ("#if defined(GGML_USE_HIP)\n"
-           "    // BigCherry 1334: the RDNA WMMA kernel runs the same sparse variant, opt-in (BIGCHERRY_FA_SPARSE=1)\n"
+           "    // BigCherry 1334: the RDNA WMMA kernel runs the same sparse variant (BIGCHERRY_FA_SPARSE=0 turns it off)\n"
            "    // (the WMMA kernel has no device code below 16 columns, so the single-query 1x8 variant stays dense)\n"
            "    const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;\n"
            "#else\n"
@@ -210,7 +210,7 @@ _N_CASE = ("#if !defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n"
 PATCHES = [
     FilePatch(
         path="ggml/src/ggml-cuda/fattn.cu",
-        description="1334: sparse flash attention index kernel and selection for HIP RDNA WMMA (BIGCHERRY_FA_SPARSE=1)",
+        description="1334: sparse flash attention index kernel and selection for HIP RDNA WMMA (off switch BIGCHERRY_FA_SPARSE=0)",
         language="none",
         edits=(
             Edit(id="fa-sparse-hip-kernel", anchor=_re.escape(_A_KERNEL), mode="replace", text=_N_KERNEL,
@@ -246,7 +246,7 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc("BIGCHERRY_FA_SPARSE", "0|1", "0",
-           "experimental: sparse flash attention on RDNA WMMA - masked attention with a per-query cell bound (Qwen4Exp QSA) "
+    EnvDoc("BIGCHERRY_FA_SPARSE", "0|1", "1",
+           "sparse flash attention on RDNA WMMA - masked attention with a per-query cell bound (Qwen4Exp QSA) "
            "reads only the cells its queries can see"),
 )

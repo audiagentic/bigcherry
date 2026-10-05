@@ -18,6 +18,7 @@ _DEFAULT_ON = {
     "BIGCHERRY_ACT_Q81": ("1310_act_q81", "1313_scale_act_fuse"),
     "BIGCHERRY_HC_Q81": ("1311_hc_pre_q81",),
     "BIGCHERRY_SCALE_ACT_FUSE": ("1313_scale_act_fuse",),
+    "BIGCHERRY_FA_SPARSE": ("1334_hip_sparse_flash_attn",),
 }
 _UNIVERSAL_FLAGS = tuple(_DEFAULT_ON) + ("GGML_HIP_Q8_1_CACHE_MODE",)
 

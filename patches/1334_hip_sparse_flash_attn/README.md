@@ -1,9 +1,10 @@
 # 1334_hip_sparse_flash_attn
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7). Mechanism is in SUMMARY.md; this
-file records why the patch is promoted into `[patch-set.validated-enhancements]`. The flag stays opt-in
-(`BIGCHERRY_FA_SPARSE`, default 0) and is switched on by the `flashnext` profile: only Qwen4Exp builds sparse
-attention masks today, so there is no second model to support a default-on flip.
+file records why the patch is promoted into `[patch-set.validated-enhancements]`. The path is on by default
+(`BIGCHERRY_FA_SPARSE=0` is the off switch): it is taken only when a graph sets `n_kv_max` on its attention, which
+only Qwen4Exp does today, so every other model runs the dense kernels exactly as before. The evidence below was taken
+with the flag set explicitly, before the default changed.
 
 ## Evidence
 
