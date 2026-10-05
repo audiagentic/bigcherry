@@ -258,6 +258,7 @@ patches = [
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
     "1333_mixed_batch_on_demand",
+    "1332_qsa_token_chunk",
     "1334_hip_sparse_flash_attn",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
@@ -542,11 +543,11 @@ patches = ["1286_draft_local_shared_tensors"]
 [experiment.candidate-v7]
 # QFP22/QFP21: promoted base (v6) + 1295 (QSA gather decode, BIGCHERRY_QSA_GATHER=1) + 1332 (QSA token chunks,
 # BIGCHERRY_QSA_CHUNK with -ub 1024) + 1331 (peak trace). The stacked long-context candidate.
-patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live", "1332_qsa_token_chunk"]
+patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 
 [experiment.deploy-v6-plus-chunk]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
-patches = ["1331_alloc_peak_live", "1332_qsa_token_chunk"]
+patches = ["1331_alloc_peak_live"]
 
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
