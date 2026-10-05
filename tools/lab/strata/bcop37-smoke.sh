@@ -3,7 +3,7 @@
 # generation on a fixed prompt, with VRAM sampled while it runs, the output decoded, and the raw log kept.
 # Writes <bundle>/gpu-smoke.txt and gpu-smoke.raw.log. Changes nothing in the Strata tree.
 # Usage: bcop37-smoke.sh <strata tree> <gfx target> <pack dir> <model gguf> <bundle> [extra strata args...]
-#        env: GPU (HIP index, default 2 = R9700), MAX_NEW (48), MAX_CONTEXT (4096), ROCM (shim root), PY (venv python)
+#        env: IDS (comma-separated prompt ids, overrides the pack tokenizer), GPU (HIP index, default 2 = R9700), MAX_NEW (48), MAX_CONTEXT (4096), ROCM (shim root), PY (venv python)
 set -u
 T=${1:?strata tree}; ARCH=${2:?gfx target}; P=${3:?pack dir}; M=${4:?model gguf}; B=${5:?bundle}; shift 5
 ROCM=${ROCM:-/mnt/data/bigcherry-work/external/strata-rocm-shim}
@@ -21,6 +21,7 @@ sys.path.insert(0, ".")
 from strata_tokenizer import Tokenizer
 tk = Tokenizer.from_pack(pathlib.Path(sys.argv[1]) / "tokenizer")
 print(",".join(str(i) for i in tk.encode(os.environ["PROMPT"], parse_special=True)))' "$P")
+[ -n "${IDS:-}" ] && ids=$IDS   # ids from another tokenizer (e.g. llama-tokenize), to separate tokenizer from engine
 [ -n "$ids" ] || { echo "SMOKE_FAILED: tokenizer produced no ids"; exit 1; }
 vram() { rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[$gpu\].*Total Used" | awk '{print int($NF/1048576)}'; }
 before=$(vram)
