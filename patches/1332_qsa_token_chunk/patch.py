@@ -22,7 +22,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_INC = "#include <algorithm>\n"
 _N_INC = r"""#include <algorithm>
