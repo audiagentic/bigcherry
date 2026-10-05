@@ -79,6 +79,10 @@ Required regression matrix before tuning: column counts immediately below/at/abo
 - Generic sparse `MUL_MAT_ID` dispatch/range work remains outside QFP10. Reuse it if present.
 - #29941/#29953 are baseline correctness behavior, not independent BigCherry performance patches.
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 Expected llama.cpp touch points after current-pin inspection:
@@ -117,8 +121,11 @@ Original RV4214 estimate was +1-3%, but it considered VDR rather than the full e
 
 2026-10-05 upstream scan: b11390 remains the latest release visible in the release feed. Fresh PR #29953 (`CUDA: fix inconsistent MMQ ncols selection`, opened 2026-10-04 15:22 UTC) is a direct follow-up to #29941. Its author reports master can round columns down for allocation but up for actual config selection. The proposed fix resolves J once and uses it for both Q8_1 padding and launch, while retaining the RDNA3/RDNA4 MoE average-token heuristic. This is a higher-priority prerequisite than new VDR/MMVDQ tuning because it affects validity of the measured path. #29948 FFN gate/up+GLU fusion remains dense-only; do not duplicate it into routed experts without routed-MMQ evidence.
 
+2026-10-05 upstream state: #29941 (CUDA: fix MMQ memory fault if n_expert >> n_ubatch) MERGED 2026-10-04T12:10Z, about three hours after our pin commit (050439614, 09:24Z) - not in the pin. It is a correctness fix that matches Flash-Next's shape (512 experts), so it is a candidate for an upstream-fix backport patch (10xx) or the next pin bump. #29953 (MMQ out-of-bounds reads) is still OPEN.
+
 ## Change Log
 
 - 2026-10-03T15:22:48.527804+00:00 (created-by): Created by agent
 - 2026-10-05: Reframed around full expert-service cost, direct-F32 IQ qualification, and merged #29941 MoE MMQ safety invariant; consolidated dispatch ownership and added explicit promotion gates.
 - 2026-10-05: Added fresh #29953 allocation/launch tile-consistency gate; consolidated MMQ config ownership and added J-boundary HIP regression matrix.
+- 2026-10-05T04:56:48.444740+00:00 (updated-by): Updated: section:notes

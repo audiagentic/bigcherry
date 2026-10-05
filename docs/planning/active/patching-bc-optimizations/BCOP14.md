@@ -25,12 +25,44 @@ Backfill follow-through for earlier optimization audits performed before the act
 4. For q1_0 test both MMVQ/decode and MMQ/prefill sites and verify byte-selector semantics before performance claims.
 5. Reuse HIP-autotune/PKC ownership for dispatch; do not create another architecture table.
 
-## Related
+## Detailed Solution & Technical Design
 
-PKC05/1273, HIP autotune; llama.cpp #29910, #29927.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Both upstream candidates are classified as adopted, rejected, already-upstream or pending with AMD measurements.
 - Correctness plus ISA/resource evidence accompanies performance data.
 - No duplicate dispatch registry is introduced.
+
+## Notes
+
+2026-10-05 check (step 1): both #29910 (Q2_K VGPR spills) and #29927 (amdgcn_perm q1_0 unpack) are still OPEN upstream and not in pin 050439614. The pin already uses __builtin_amdgcn_perm for a different unpack in vecdotq.cuh and mmq-load-tiles.cuh, so the intrinsic is proven to build on our toolchain. Item stays pending: no other plan item owns this (PKC05 is the 27B Q8_0 headroom item, not a fit). Remaining work is the hardware qualification in steps 2-4.
+
+## Related
+
+PKC05/1273, HIP autotune; llama.cpp #29910, #29927.
+
+## Change Log
+
+- 2026-10-05T04:56:45.106215+00:00 (updated-by): Updated: section:notes
