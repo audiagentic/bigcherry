@@ -43,8 +43,10 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    slowdown is a reason to hold the pin, not to shrug (b11402: Flash-Next decode -3%, 27B prefill -0.8..-1.4%).
 7. Completion gate and ledger event as in sections 5 and 6.
 8. Release: `python -m bigcherry release-notes <tag>` writes `docs/releases/notes/bc-<tag>.md` (ledger events, patch
-   changes and the bump record since the previous release). Commit it with the footer
-   `Release-As: <llama build number>.0.0` (b11402 -> `Release-As: 11402.0.0`). Once that commit is on `main`,
+   changes and the bump record since the previous release). Commit it with a conventional-commit subject and the
+   footer `Release-As: <llama build number>.0.0`, e.g. `chore: release notes bc-b11402` + `Release-As: 11402.0.0`.
+   The subject matters: release-please drops commits it cannot parse as conventional commits, footer included
+   (a subject like "release notes: ..." is rejected and the release falls back to a patch bump). Once that commit is on `main`,
    release-please opens the release PR; merging it creates the GitHub release, and the workflow adds the tag
    `bc-<tag>` and publishes the generated notes. Do not create release tags by hand.
 
