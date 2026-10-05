@@ -10,6 +10,8 @@ MUL(g, op(x)) is bit-identical), plus MMVQ-padded native Q8_1 published under th
 (1307's lookup resolves the final_output reshape to the MUL node). 1310's eligibility rules apply (BIGCHERRY_ACT_Q81=1,
 cache on, decode-shaped graph, row length a multiple of QK8_1, contiguous output); otherwise the unchanged launch runs.
 Requires 1310.
+
+Default on since 2026-10-05 with 1310 (BIGCHERRY_ACT_Q81 unset = on).
 """
 
 from __future__ import annotations
@@ -67,6 +69,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '0',
+    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '1 (on)',
            'also covers the elementwise MUL -> Q8_1 path (shared with 1310)'),
 )

@@ -17,8 +17,8 @@ req_60a41664e0de43d6) requires before any wiring happens:
     always an additional allocation, appended, never a realloc/copy/free of
     an existing one) -- required for HIP/CUDA graph-capture pointer
     stability
-  - the runtime mode gate defaults to off and is independent of
-    GGML_HIP_DISPATCH_MODE
+  - the runtime mode gate defaults to on (unset), fails closed to off on
+    an unrecognized value, and is independent of GGML_HIP_DISPATCH_MODE
   - stage 1 adds no caller: mmvq.cu (the one real call site of
     quantize_row_q8_1_cuda) must not reference this cache yet
   - the new files are wired into the HIP build via patches/
@@ -86,14 +86,13 @@ class Rd09CacheFoundationTests(unittest.TestCase):
 
     def test_mode_env_var_and_default(self):
         self.assertIn('std::getenv("GGML_HIP_Q8_1_CACHE_MODE")', self.impl_src)
-        # off is the fallback for null AND for any unrecognized string --
-        # fail closed on a typo rather than silently enabling the
-        # experimental path.
+        # unset means on (the variable is an off switch); a set but
+        # unrecognized string still fails closed to off.
         parse_fn = re.search(r"ggml_hip_q81_cache_mode parse_mode\(const char \* s\) \{(.*?)\n\}",
                               self.impl_src, re.DOTALL)
         self.assertIsNotNone(parse_fn)
         body = parse_fn.group(1)
-        self.assertIn("GGML_HIP_Q81_CACHE_OFF", body)
+        self.assertRegex(body, r"if \(s == nullptr\) \{\s+return GGML_HIP_Q81_CACHE_ON;")
         self.assertIn('strcmp(s, "on")', body)
         self.assertIn('strcmp(s, "verify")', body)
         # last statement before the closing brace must be the off fallback

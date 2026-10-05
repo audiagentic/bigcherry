@@ -10,6 +10,9 @@ blocks, quantize_q8_1 math) into a 1235 cache slab published under the key ggml_
 src1 == this node (1307's reshape-aware lookup also covers contiguous reshapes of it). Threads run over the padded
 index space so each 32-element group is 32 consecutive threads. Ineligible shapes or a failed reservation launch
 the unchanged kernel. Requires 1307.
+
+Default on since 2026-10-05 (BIGCHERRY_HC_Q81 unset = on); BIGCHERRY_HC_Q81=0 disables. Only hyper-connection
+models have the op, so it is inert elsewhere.
 """
 
 from __future__ import annotations
@@ -78,7 +81,7 @@ _LAUNCH_OLD = "    auto kernel = gated ? dsv4_hc_pre_f32<true> : dsv4_hc_pre_f32
 _LAUNCH_GATE = r"""#if defined(GGML_USE_HIP)
     // bigcherry 1311: emit the Q8_1 activation for this node's MMVQ consumer into the 1307 cache.
     {
-        static const bool bigcherry_hc_q81 = getenv("BIGCHERRY_HC_Q81") != nullptr && atoi(getenv("BIGCHERRY_HC_Q81")) != 0;
+        static const bool bigcherry_hc_q81 = getenv("BIGCHERRY_HC_Q81") == nullptr || atoi(getenv("BIGCHERRY_HC_Q81")) != 0;
         if (bigcherry_hc_q81 && ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF && ggml_is_contiguous(dst) &&
                 n_embd % QK8_1 == 0 && ggml_hip_q81_decode_graph && dst->ne[0] == n_embd && dst->ne[1] == n_tokens) {
             const int64_t n_embd_padded = GGML_PAD(n_embd, MATRIX_ROW_PADDING);
@@ -154,6 +157,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_HC_Q81', '0|1', '0',
-           'hyper-connection pre-mix writes the Q8_1 activation directly (needs Q8_1 cache)'),
+    EnvDoc('BIGCHERRY_HC_Q81', '0|1', '1 (on)',
+           'hyper-connection pre-mix writes the Q8_1 activation directly (needs Q8_1 cache); 0 disables'),
 )

@@ -11,6 +11,8 @@ quantize launch; any other consumer shape simply misses and quantizes as before.
 quantize_row_q8_1_cuda lays them (rows of GGML_PAD(ncols, MATRIX_ROW_PADDING), zero padding blocks), so a hit is
 bit-identical to the standalone quantization. Reservation failure (e.g. during graph capture) falls back to the
 unchanged kernel. Requires 1307 (cache wiring) and 1235 (cache).
+
+Default on since 2026-10-05 (BIGCHERRY_RMS_Q81 unset = on); BIGCHERRY_RMS_Q81=0 disables.
 """
 
 from __future__ import annotations
@@ -90,7 +92,7 @@ _FUSED_GATE = r"""#if defined(GGML_USE_HIP)
     // bigcherry 1309 (PRBE06): decode-shaped fused RMSNorm*weight also produces its Q8_1 activation into the 1307
     // cache, keyed exactly as ggml_cuda_mul_mat_vec_q keys src1 == mul_tensor, so its MMVQ consumer skips the
     // standalone quantize launch.
-    static const bool bigcherry_rms_q81 = getenv("BIGCHERRY_RMS_Q81") != nullptr && atoi(getenv("BIGCHERRY_RMS_Q81")) != 0;
+    static const bool bigcherry_rms_q81 = getenv("BIGCHERRY_RMS_Q81") == nullptr || atoi(getenv("BIGCHERRY_RMS_Q81")) != 0;
     if (bigcherry_rms_q81 && ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF && ne00 >= 1024 && ne00 % QK8_1 == 0 &&
             ggml_hip_q81_decode_graph && ggml_is_contiguous(mul_tensor)) {  // decode-shaped graph (1307), not a row cap
         const int64_t ne00_padded = GGML_PAD(ne00, MATRIX_ROW_PADDING);
@@ -170,6 +172,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_RMS_Q81', '0|1', '0',
-           'fused RMS-norm*weight writes the Q8_1 activation directly (needs Q8_1 cache)'),
+    EnvDoc('BIGCHERRY_RMS_Q81', '0|1', '1 (on)',
+           'fused RMS-norm*weight writes the Q8_1 activation directly (needs Q8_1 cache); 0 disables'),
 )
