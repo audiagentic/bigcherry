@@ -8,35 +8,27 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P1
-work: L
+work: S
 ---
 
-# Qualify topology-aware heterogeneous multi-GPU scheduling
+# Track heterogeneous multi-GPU placement qualification
 
 ## Description
 
-Develop the evidence and candidate model required to place work across unequal RDNA devices without assuming symmetric compute, VRAM, PCIe bandwidth or peer access. Production target includes 2x gfx1100 XTX plus gfx1201 R9700, with optional gfx1100 6900XT on the chipset path. RPL01 is the global decision owner; this item owns heterogeneous scheduling qualification and candidate mechanisms only.
+Action/disposition ledger for asymmetric multi-GPU placement. RPL01 is the cross-capability cost/recommendation owner; PHA03 owns topology/RCCL admission; llama.cpp's backend scheduler remains execution/allocation/copy owner. BCOP32 must not become another scheduler design.
 
-## Steps
+## Actions
 
-1. Consume canonical topology/admission evidence from PHA03 rather than rediscovering PCIe topology. Record per-device compute class, usable VRAM, host-device bandwidth, pairwise transfer capability, root-complex path and P2P/RCCL admission.
-2. Measure per-device service rates for dense, attention, MoE and MTP workloads. Do not use VRAM size or nominal FLOPS as a proxy for execution speed.
-3. Evaluate existing layer split/tensor split/scheduler-copy mechanisms first. Establish when simple weighted layer placement is sufficient.
-4. Model heterogeneous critical path: per-device compute, host copies, cross-device/collective cost, synchronization and idle bubbles. Feed observations/candidates to RPL01.
-5. Prototype only the smallest missing scheduling primitive if existing llama.cpp configuration cannot express a measured winning placement. Keep scheduler-core changes upstreamable and policy-free.
-6. Test failure/fallback semantics: unavailable auxiliary GPU, changed device order, insufficient VRAM, RCCL rejection and no-P2P topology must fail closed or select an already-qualified fallback.
+1. Feed measured per-device service rates and PHA03 topology/transport evidence into RPL01.
+2. Require RPL01 to score placements already expressible through current layer/tensor split and scheduler controls before proposing new machinery.
+3. Validate predictions against single-device, 2xXTX and 2xXTX+R9700 evidence; treat the chipset-routed 6900XT as a separate optional lane.
+4. If an observed >=5% winning placement cannot be expressed by current controls, open the smallest technical change under the existing scheduler/provider owner. Otherwise keep the result advisory/configuration-only.
+5. Record terminal disposition: `existing-controls`, `scheduler-seam-needed`, `not-predictive`, or `rejected-topology`.
 
-## Validation
+## Gate
 
-- Single-device controls for each GPU plus 2xXTX, 2xXTX+R9700 and optional 6900 topology.
-- PP512/2048 and TG128/512, MTP on/off, representative dense and MoE models.
-- Report device utilization, idle gaps, transfer/sync time, peak VRAM and end-to-end throughput.
-- Compare predicted critical path with observed wall time before any adaptive runtime policy.
+No runtime actuation or second placement engine is authorized here. No-P2P, PCIe asymmetry, VRAM limits and RCCL admission must be explicit inputs rather than inferred from device count.
 
-## Acceptance Criteria
+## Related
 
-- Heterogeneous placements are derived from measured device/topology costs, not equal-layer heuristics alone.
-- RPL01 remains the sole cross-capability placement decision owner.
-- PHA03 remains the topology/RCCL admission owner.
-- New scheduler machinery is permitted only when a >=5% measured opportunity cannot be expressed by existing controls.
-- No-P2P and chipset-routed devices are explicitly represented rather than treated as symmetric peers.
+RPL01; BCOP30; PHA03; MET01/MET05 where expert/auxiliary placement is involved.
