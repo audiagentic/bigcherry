@@ -44,11 +44,14 @@ class Patch1334Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             fa = (root / _FILES[0]).read_text(encoding="utf-8")
             mma = (root / _FILES[1]).read_text(encoding="utf-8")
-            # one HIP index kernel, defined before upstream's NVIDIA one, with no warp ballot
+            # one HIP index kernel, defined before upstream's NVIDIA one, on the AMD wave primitives
             hip = fa[fa.index("#if defined(GGML_USE_HIP)\n#include <cstdlib>"):fa.index("#endif // defined(GGML_USE_HIP)\n\n#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)")]
             self.assertEqual(hip.count("static __global__ void flash_attn_mask_to_sparse_indices("), 1)
-            self.assertNotIn("__ballot", hip)
-            self.assertNotIn("WARP_SIZE", hip)
+            self.assertIn("selected_wave[item] = __ballot(selected);", hip)
+            self.assertIn("__popcll(selected_wave[item] & lane_mask)", hip)
+            self.assertNotIn("__ballot_sync", hip)   # CUDA-only
+            self.assertNotIn("WARP_SIZE", hip)       # the macro is 32; the wave width comes from warpSize
+            self.assertIn("const int lane     = tid % warpSize;", hip)
             self.assertIn("indices[i] = -1;", hip)
             self.assertIn("counts_ptr[int64_t(sequence)*gridDim.x + group] = count;", hip)
             self.assertEqual(fa.count("static __global__ void flash_attn_mask_to_sparse_indices("), 2)

@@ -10,7 +10,7 @@ list per tile of queries and gathers only those K/V cells in the MMA kernel, but
 selects it on NVIDIA only. On AMD, Qwen4Exp QSA attention therefore reads the whole KV cache although each query can
 see about 2048 cells.
 
-The patch adds a HIP version of the index kernel (no warp ballots, wave-size independent), compiles the host side and
+The patch adds a HIP version of the index kernel (AMD wave ballot and popcount, correct for 32- or 64-lane waves), compiles the host side and
 the two dispatch sites for HIP, accepts RDNA WMMA in the selection when the flag is set, and makes the RDNA tile-shape
 choice pick ncols2 = 8 (the only shape with sparse kernels) when the sparse path would be taken.
 
