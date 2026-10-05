@@ -7,61 +7,109 @@ created-at: '2026-10-05T04:10:44.361443+00:00'
 breadth: ''
 skill: intermediate
 created-by: claude
-priority: P2
+priority: P1
 work: M
 ---
 
-# Triage Shali12/r9700-flash-next-notes findings into Flash-Next gates, profile and patches
+# Qualify external Flash-Next mechanisms with corruption-resistant performance gates
 
 ## Description
 
-Source: https://github.com/Shali12/r9700-flash-next-notes (FINDINGS.md, results/speed-stage1d/1e, options-and-memory; read 2026-10-05 via page summaries, numbers approximate). Their rig: one R9700 (gfx1201, 32 GB, ROCm 10.0.0, kernel 6.17) with most expert layers in system RAM (-ncmoe 35..47, MOE_EXPERT_CACHE_MIB=4096, MOE_EXPERT_CACHE_DEVMAP=1), stew675/llama-cpp-rdna-boosts r30 (v16, f108261) over llama.cpp 84e76d8a2 / b11173, KV q8_0. Ours is an all-GPU tensor split (2x gfx1100 + gfx1201, gfx1030 MTP drafter), so -ncmoe / expert-cache / --lazy-mode --load-mode tuning does not transfer directly. Candidate take-aways below need assessment (GPT review requested) before any becomes work.
+Source: https://github.com/Shali12/r9700-flash-next-notes plus stew675/llama-cpp-rdna-boosts r31+ investigation. Their host-expert configuration is not our normal all-GPU 2x gfx1100 + gfx1201 target, so host-expert mechanisms are controls/mechanism evidence rather than direct ports. The important transferable finding is methodological: a scheduler/data-movement optimisation can report a very large throughput gain while silently skipping real MoE work after the first ubatch/request. QFP28 therefore owns the Flash-Next performance-integrity gate and external-mechanism triage; it does not own QSA kernels (QFP04/QFP17/QFP22), persistent expert residency (MET01), aux-device execution (MET05/1328), or generic scheduler lifetime (QFP27).
+
+Fresh 2026-10-05 review of stew675 issue #85 and wip/moe-mmq-overread/RESOLUTION.md identifies two independent host-resident MMQ tail-overread holes. Quantized MUL_MAT_ID fast MMQ reads a complete K tile; partial expert buffers must therefore preserve the upstream copy_experts guard contract (expert_size_copy + min(expert_size,512)). The cache arena lacked zeroed tail/head storage, and the gather destination's one-time zero was invalidated when the graph allocator reused the region on later ubatches. NaN contamination could then skip routed expert work, making corrupt gather runs appear 2-4x faster. r31 fixes the arena with a zeroed tail pad and defaults gather off in favour of staging. This is directly relevant to BigCherry's 1295/1332 acceptance discipline even though those patches do not share this host-expert implementation.
+
+A later R9700 x16 measurement on the issue reports a second useful mechanism: correct staging is sensitive to ring capacity. On host-resident Flash-Next IQ3_XXS, increasing the staging ring from the default to 8 slots/4 GiB or 16 slots/8 GiB reportedly moved pp8192 at ub2048 from 1559 to 2174-2209 t/s (+39-42%), ub4096 +25%, ub8192 +21%, with byte-identical long temperature-0 outputs. Treat these as external evidence only. BigCherry should test capacity sizing only if/when MET01/MET06 leaves host experts in the production configuration; do not add a second staging implementation here.
 
 ## Steps
 
-1. Multi-request text gate. Their r29/r30 expert gather path (GGML_SCHED_DEVGATHER, default on until r31, stew675 issue #85) answered request 1 correctly then emitted '////' at full speed on every later request, on three quants; all gather-on speeds (1300-1500 t/s prefill vs ~630 off) were void. Our greedy-md5 identity check is single-request. Proposed: lab gate = 3 known-answer prompts on one server instance (one-line completion, runnable function, ~8K summary), fail on wrong answer or 200+ identical non-whitespace chars, run before any speed number; apply first to 1295 (QSA gather, v7 not run-to-run stable) and 1332 (chunked text differs from dense).
-2. Check lineage: does 1295 or any tracked stew675-rdna-boosts snapshot share code with the DEVGATHER path; is the r30 patch repo (stew675/llama-cpp-rdna-boosts) covered by config/external-sources.toml; what changed in r31+.
-3. Q3 quant for context >300K: ISTA GSQ-RCO IQ3_XXS 75.8 GB vs AtomicChat Q4_K_M 94.5 GB (Unsloth Q3_K_XL 90.0 GB, IQ4_XS 93.7 GB - not worth it). ISTA is calibrated on xhigh reasoning traces; authors say the gap grows at lower effort. A fit arm needs a quality check at medium effort, not only a load test. KV stays f16/q8_0.
-4. Draft depth: depth 3 beat depth 5 (acceptance 0.80-0.90 vs 0.63-0.81; 52-55 vs 48-54 t/s). ABA --spec-draft-n-max on our gfx1030 drafter; winner into profile/flashnext.ini.
-5. Sampling/reasoning profile: model card min_p 0.0 (llama.cpp default 0.05, measured negligible); xhigh run looped emitting '9' after 28K thinking tokens (medium: 4,645 tokens, 2.2 min, 29/29). Consider --min-p 0 and a --reasoning-budget cap in profile.
-6. Grammar bug: tools + JSON schema -> HTTP 400 'failed to parse grammar ... expecting newline or end at ::= | " " | "\n"{1,2} [ \t]{0,20}' on base 84e76d8a2 (tool-eval-bench TC-65/66/67/69). Reproduce on our pin (050439614); if present, upstream-fix patch candidate (10xx).
-7. 'seq_rm: rollback crossed a batch boundary' warning when one slot prefills while another drafts; their set has GGML_CUDA_GDN_CHUNKED. Compare that chunking mechanism with 1332 and grep our multi-slot logs.
-8. Power cap: 220 W vs 300 W cost ~3% prefill, -9 C. Optional arm to test whether a cap reduces Brutus run-to-run drift.
-9. Observations only: draft head costs ~3 GB VRAM/slot growing with prompt; GPU working memory follows the deepest slot not the slot total; decode falls 37 -> 27.5 t/s from short to 130K context (no draft), 20.4 t/s at 262K.
+1. Land one reusable multi-request/multi-ubatch correctness gate under tools/lab/flash-next/. It must keep one server process alive and run, in order: short known-answer prompt; >=2-ubatch deterministic prompt; executable Python-function prompt; long summary/needle prompt; deliberate interrupted/aborted generation followed by another known-answer prompt; then repeat the short prompt. Capture response text/hash, HTTP status, server log, token counts and elapsed time. Fail on wrong answer, nontermination, >=200 repeated non-whitespace characters, non-finite logits if exposed, or post-abort corruption. Do not record performance for a failing arm.
+2. Prove the gate is sensitive before trusting it: run against an injected-corruption fixture or a known-bad external gather build. A gate that cannot reject known corruption is BLOCKED, not PASS.
+3. Add a bandwidth/work plausibility check for data-movement experiments. For every host-expert arm record bytes expected to cross H2D per ubatch/layer, measured copy bytes if tracing exposes them, elapsed prefill time, and implied GB/s. Reject a result if implied required transport materially exceeds the measured link ceiling unless profiling proves reuse/residency removed those bytes. This prevents NaN/skipped-work speedups from entering the ledger.
+4. Apply the gate first to 1332 chunked QSA and 1295 QSA gather because both currently have text-identity concerns. 1332 remains blocked until dense-vs-chunk deterministic text/logit identity is understood; throughput alone cannot promote it. 1295 must survive multiple sequential requests, not only a single greedy-md5 lane.
+5. Keep external gather lineage separate. Check whether any tracked stew675 snapshot or 1295 shares the host-expert DEVGATHER code. If no code lineage exists, document 'mechanism-only/no shared code' and do not create a patch dependency.
+6. Host-expert staging-ring experiment is conditional on MET01/MET06 selecting host residency. Reuse the upstream/fork scheduler staging path. Sweep slots/capacity while holding resident VRAM equal; size candidate capacity from largest staged tensor x in-flight copies, bounded by explicit VRAM headroom. Measure copy/compute overlap, H2D GB/s, PP, TG and peak VRAM. No private QFP28 ring.
+7. Q3 quant for context >300K remains a fit arm: ISTA GSQ-RCO IQ3_XXS ~75.8 GB versus ~94.5 GB AtomicChat Q4_K_M. Require medium-effort quality/eval, not load success alone. KV remains separately controlled f16/q8_0.
+8. Draft depth: ABA --spec-draft-n-max 2/3/4/5 on the gfx1030 drafter at short/24K/80K. Rank by accepted target tokens per wall-second, not acceptance alone. Winner belongs in profile/flashnext.ini; QFP05/FMTP policy remains owner of draft-kernel/vocab mechanisms.
+9. Sampling/reasoning: verify model-card min_p=0 against current server defaults and test reasoning-budget only as a profile policy. Do not conflate sampling changes with kernel speed measurements.
+10. Reproduce the tools+JSON-schema grammar failure on BigCherry's current pin before filing/porting anything. If absent, close that sub-slice as upstream-fixed. If present, isolate to a minimal request and assign a separate upstream-fix item.
+11. Search multi-slot logs for 'seq_rm: rollback crossed a batch boundary'. If present, reduce to a scheduler/cache correctness reproducer and hand ownership to the relevant lifecycle/cache item rather than adding another QFP28 mechanism.
+12. Optional power-cap arm: 220 W vs default only if it reduces coefficient of variation enough to improve benchmark discrimination. Never promote a power cap as a throughput optimisation from temperature alone.
 
 ## Detailed Solution & Technical Design
 
+### Performance-integrity invariant
 
+A candidate result is eligible for comparison only when all three are true:
+
+- semantic work is preserved across multiple ubatches and requests;
+- observed transport/work is physically plausible for the measured hardware;
+- the candidate does not change graph/runtime state in a way that invalidates the control.
+
+For host expert movement, compute a conservative transport lower bound from the selected expert payload actually required by the algorithm. Compare `required_bytes / measured_prefill_seconds` with independently measured pinned-H2D bandwidth. A result above the physical ceiling is not a performance win until profiling proves those bytes were avoided by caching/residency. This is a diagnostic, not a rigid equality check: cache hits and overlap must be accounted explicitly.
+
+### MMQ partial-buffer contract learned from r31
+
+Any future BigCherry partial/pruned quantized expert buffer must provide finite readable storage for the kernel's legal tile over-read. Do not rely on allocator adjacency or one-time initialization of graph-owned memory. The reviewed r31 fix uses:
+
+```c
+head_pad   = min(expert_bytes, 512);
+arena_size = arena_slots * expert_bytes + head_pad;
+allocate(arena_size);
+zero(arena_size);
+```
+
+This is mechanism guidance, not a direct port. If BigCherry introduces a partial expert arena, derive the actual guard size from the pinned upstream MMQ/copy_experts contract rather than hard-coding 512 without verification.
+
+### Staging-ring qualification
+
+If host experts become relevant, compare the existing staging path at equal model placement with capacity arms. Required instrumentation: staged tensor size, slots in flight, ring bytes, fallback count, H2D copy count/bytes, copy-engine occupancy, kernel/copy overlap and peak free VRAM. The optimisation target is service time saved per GiB, consistent with MET01; a larger ring that steals enough VRAM to evict profitable resident experts is a net regression even if staging itself is faster.
 
 ## Code Samples & Guidance
 
+Gate output should be machine-readable JSONL, one record per request plus one summary. Suggested fields: `build_id`, `arm`, `request_index`, `prompt_class`, `prompt_tokens`, `output_tokens`, `output_sha256`, `known_answer_pass`, `repeat_run_max`, `aborted_previous`, `elapsed_ms`, `pp_tps`, `tg_tps`, `expected_h2d_bytes`, `observed_h2d_bytes`, `implied_h2d_gbps`, `link_h2d_gbps`, `verdict`.
 
+Do not use token/s as the first assertion. Correctness and plausibility execute before benchmark aggregation.
 
 ## Files
 
-
+- `tools/lab/flash-next/` — reusable correctness/plausibility gate and fixtures.
+- `docs/planning/active/patching-qwen-flash-next/QFP28.md` — external triage and results.
+- `profile/flashnext.ini` — only validated profile-policy winners.
+- `config/external-sources.toml` — register a fork snapshot only when code is actually adopted/tracked; a research citation alone does not justify a patch dependency.
 
 ## Validation
 
-Each adopted step lands as its own change with lab script under tools/lab/flash-next/, results in this item, profile changes in profile/*.ini. Text gate must demonstrably fail on a known-corrupt arm (or injected corruption) before it is trusted.
+Run the gate on control and candidate in the same server/process mode used for production. Minimum: 3 repetitions per arm for correctness, then ABBA/5-rep performance only after PASS. Include at least one prompt spanning >1 ubatch and one post-abort request. For 1295/1332 include 24K/80K and the longest practical lane where their optimisation is intended to matter. Any semantic failure voids all throughput from that arm.
+
+Host-staging qualification additionally requires a pinned-H2D calibration on the tested PCIe topology and profiler evidence for copy bytes/overlap. Report per-GPU topology because x4/x8/x16 changes the ceiling materially.
 
 ## Effort & Risk
 
-
+Gate: S/M, low implementation risk, high value. Host-staging capacity test: M, conditional. Directly porting external gather: high correctness risk and explicitly out of scope until a proven need and lineage review exist.
 
 ## Standards
 
-
+One owner per mechanism. External numbers are evidence, never BigCherry validation. Correctness before speed. No promotion from a single request, single seed, or throughput-only run. No duplicate scheduler ring/cache implementation.
 
 ## Acceptance Criteria
 
-
+- Reusable multi-request/multi-ubatch gate exists and rejects a known-corrupt fixture/build.
+- 1295 and 1332 cannot be performance-promoted without passing it.
+- Data-movement experiments include transport plausibility evidence.
+- External DEVGATHER lineage is resolved as shared-code or mechanism-only.
+- Any staging-ring candidate shows >=5% end-to-end PP/TTFT gain at equal effective model residency, <=2% TG regression, no correctness failure, and no unacceptable VRAM/context loss.
+- Draft-depth/profile changes are promoted only on accepted-target-tokens/s plus quality/correctness controls.
+- No new generic gather/ring/cache mechanism is created in QFP28.
 
 ## Notes
 
-Not verified locally: DEVGATHER lineage vs 1295, external-sources coverage of the r30 patch repo, grammar bug on our pin. GPT assessment requested 2026-10-05.
+2026-10-05 scan: latest llama.cpp release remains b11401 (a7fb71f, 2026-10-05 00:36 UTC). New PRs #29971/#29972 are Hexagon/fuzzing work and do not supersede this slice. Relevant open work remains #29963 (host-RAM MoE pipeline), #29958 (constant graph/reallocation), #29953 (MMQ OOB), #29948 (MMQ+GLU fusion), #29927 (AMD perm), #29910 (Q2_K VGPR), #29901 (lightning indexer). QFP28 should not duplicate them.
+
+Deep review result: prioritize the correctness/plausibility gate over another kernel patch. The r31 investigation demonstrates that a corrupt MoE path can look 2-4x faster precisely because work is skipped. This is more urgent for current 1332/1295 qualification than importing another external optimisation.
 
 ## Change Log
 
 - 2026-10-05T04:10:44.361443+00:00 (created-by): Created by claude
-- 2026-10-05T04:11:07.895131+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:notes
+- 2026-10-05T04:11:07.895131+00:00 (updated-by): Updated initial external findings
+- 2026-10-05: Deep-scanned r31 gather corruption/root cause; consolidated QFP28 around multi-request correctness + bandwidth-plausibility gates; added conditional staging-ring qualification and ownership boundaries.
