@@ -163,7 +163,8 @@ _N_SHALL = ("#if defined(GGML_USE_MUSA)  // BigCherry 1334: compiled for HIP\n"
 _A_ARCH = "    return GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc) &&\n"
 _N_ARCH = ("#if defined(GGML_USE_HIP)\n"
            "    // BigCherry 1334: the RDNA WMMA kernel runs the same sparse variant, opt-in (BIGCHERRY_FA_SPARSE=1)\n"
-           "    const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled();\n"
+           "    // (the WMMA kernel has no device code below 16 columns, so the single-query 1x8 variant stays dense)\n"
+           "    const bool bc_arch_ok = amd_wmma_available(cc) && bc_fa_sparse_enabled() && ncols1*ncols2 >= 16;\n"
            "#else\n"
            "    const bool bc_arch_ok = GGML_CUDA_CC_IS_NVIDIA(cc) && turing_mma_available(cc);\n"
            "#endif // defined(GGML_USE_HIP)\n"
@@ -184,7 +185,9 @@ _N_RDNA = (_A_RDNA +
            "        // BigCherry 1334: the sparse kernels exist at ncols2 = 8 only; when the sparse path would be taken, reading\n"
            "        // n_kv_max instead of n_kv cells outweighs the padded GQA tile (same choice as the generic rule below)\n"
            "        if constexpr (ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(DKQ, DV, 8, 8)) {\n"
-           "            if (use_gqa_opt && gqa_ratio > 4 && ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8)) {\n"
+           "            // only batches that reach the 8x8 kernel (more than 32/8 queries); smaller ones keep the exact-GQA shape\n"
+           "            if (use_gqa_opt && gqa_ratio > 4 && Q->ne[1] > 32/8 &&\n"
+           "                    ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8)) {\n"
            "                ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1<DKQ, DV, 8>(ctx, dst);\n"
            "                return;\n"
            "            }\n"
@@ -213,7 +216,7 @@ PATCHES = [
                  guard=r"defined\(GGML_USE_MUSA\)  // BigCherry 1334: compiled for HIP\n    GGML_UNUSED_VARS\(cc, dst, ncols1, ncols2\);",
                  rationale="shall_use_sparse HIP stub.", expect_matches=1, max_span_lines=4),
             Edit(id="fa-sparse-arch", anchor=_re.escape(_A_ARCH), mode="replace", text=_N_ARCH,
-                 guard=r"const bool bc_arch_ok = amd_wmma_available\(cc\) && bc_fa_sparse_enabled\(\);",
+                 guard=r"const bool bc_arch_ok = amd_wmma_available\(cc\) && bc_fa_sparse_enabled\(\) && ncols1\*ncols2 >= 16;",
                  rationale="Architecture term of the sparse selection.", expect_matches=1, max_span_lines=2),
             Edit(id="fa-sparse-switch-ncols1", anchor=_re.escape(_A_NCOLS1), mode="replace", text=_N_NCOLS1,
                  guard=r"defined\(GGML_USE_MUSA\)  // BigCherry 1334: compiled for HIP\n    if constexpr \(ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse\(DKQ, DV, 1, ncols2\)\)",
