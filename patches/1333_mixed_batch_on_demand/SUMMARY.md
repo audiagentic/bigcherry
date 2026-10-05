@@ -38,5 +38,6 @@ against the old-pin build in one session: Flash-Next 41.1 ms/step vs 41.8 / 41.4
 - Hardware confirmation of the on-demand form and the mixed-batch test: README.md.
 - Which part of the branch costs the time has not been profiled (for Flash-Next the token embedding table is on the
   CPU, so the second lookup adds a CPU-side node to every graph).
-- 27B prefill at 32K stays about 0.4% below the old pin with either form of the patch; that part of the b11402
-  regression is not from #29622.
+- 27B prefill at 32K stays about 0.3% below the old pin with either form of the patch; that part of the b11402
+  regression is not from #29622. It appears between upstream 0eb6d9a81 and 2ca15f540, i.e. with #29612 (CUDA
+  swizzling refactor), by elimination (QFP22).
