@@ -549,6 +549,11 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
+[experiment.moe-copy-callback]
+# MET01: production set + 1336 (upstream #29943 scheduler copy callback; BIGCHERRY_MOE_COPY=0 is the observation-only
+# control). Only acts when MoE experts are host-resident (e.g. a single GPU with -ncmoe).
+patches = ["1336_sched_copy_callback"]
+
 [experiment.indexer-tile]
 # QFP17: production set + 1335 (upstream #29901 tiled lightning indexer; BIGCHERRY_INDEXER_TILE=0 turns it off).
 patches = ["1335_tiled_lightning_indexer"]
