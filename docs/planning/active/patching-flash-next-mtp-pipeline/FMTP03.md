@@ -173,13 +173,18 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 2026-10-05 re-run on pin b11402 (build b-ahead-b11402 = deploy-v6-plus-ahead incl. 1333; queue-ahead-screen.sh): BROKEN at run time with BIGCHERRY_MTP_AHEAD=1 - llama-server aborts in llama_context::output_reserve, llama-context.cpp:2321 GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max), reached from server_context_impl::decode (24K, first look-ahead arm; run /mnt/data/bigcherry-work/runs/ahead-b11402-d24576-r1/new/timing.server.log). The same binary with look-ahead off is normal (42.2 / 42.3 ms/step, 173/242 and 176/233). 1321 + 1322 still apply and compose cleanly (37/37), so the pin-bump tooling could not see this; it worked on pin 0504396. Upstream sizes each context's output buffer from the speculative depth (server_output_limits -> common_speculative_get_output_limits; draft context n_outputs_max = n_parallel in common/speculative.cpp), and the look-ahead path requests more output rows than that. Not yet determined: which context trips it (target verify of a promoted front, or the drafter's forced-front + tail decode) and which upstream commit introduced or tightened the limit. Fix belongs in the patch that owns the behaviour (1322 enables look-ahead; raise the relevant limit when BIGCHERRY_MTP_AHEAD is on). Production is unaffected: both patches are experimental and off by default. Steps 2-5 of the schedule above are blocked on this.
 
+2026-10-05 fix and re-screen on b11402 (build b-ahead-b11402b). Cause of the abort: commit 517f99f4 set the tail length from slot.get_n_draft_max(), which is the room left in the context, not the speculative depth; the tail ran away and tripped the output-row limit. Not a bump regression (limit and assert are identical on both pins). Fixed in 1322 (a4160039): tail = min(get_n_draft_max(), common_speculative_n_max(spec)) + 1, same bound in the full-length promotion check. Re-screen, look-ahead on vs off, same binary, two ABA sets per depth, greedy text identical in every run: 24K 38.4 / 38.0 ms/step vs 41.2-41.4 (-7..8%) but 74.9 / 76.6 t/s vs 74.8-77.4; 80K 46.8 ms/step vs 49.4-49.6 (-5%) but 55.2 vs 55.1-55.6 t/s. Promoted rounds 24/64 (38%) at 24K, 17/64 (27%) at 80K; look-ahead host 15.9 / 20.7 ms per round, inside the verify window.
+
+Why t/s does not move (step 2 of the schedule - the server already prints per-position acceptance): 24K fresh fronts are accepted at (0.87, 0.71, 0.61) per position; with look-ahead the mix is (0.83, 0.61, 0.50). With 38% of rounds promoted that implies promoted fronts are accepted at about (0.75, 0.45, 0.32): 1.5 accepted tokens per promoted round against 2.2 for a fresh one. A promoted round saves the ~6.4 ms serial draft (41 -> ~35 ms) but emits 2.5 tokens instead of 3.2, i.e. ~72 t/s against ~77 t/s for a fresh round - a net loss per promoted round. 80K: fresh (0.79, 0.59, 0.41), mix (0.74, 0.52, 0.36). This contradicts the Gate 0 calibration (promoted-tail yield 72-75%): the calibration continued a chain reseeded from the target's hidden row, whereas a promoted front is built on draft hidden rows (the target row does not exist until verify ends). Break-even needs about 1.7 accepted tokens per promoted round.
+
+Next experiment (authored, queued): gate promotion on confidence without shortening the front - 1321 reports the tail's lowest draft probability (tail_min_p), 1322 promotes a full-length tail only if that is >= BIGCHERRY_MTP_AHEAD_PROMOTE_P (default 0 = always); otherwise the round drafts fresh. Sweep 0.5 / 0.7 / 0.9 at 24K and 80K (queue-ahead-gate.sh). This differs from the removed tail_p_min cut (RV4217), which truncated the tail and so replaced full fresh drafts with short promoted ones. Ceiling if it works: promoted share x draft share of a round, roughly 2-3% decode. If no threshold beats the baseline in t/s, park FMTP04-FMTP06 and record 1321/1322 as evaluated, not promotable.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
 - 2026-10-05: Consolidated FMTP03 onto landed 1321 forced-front/tail primitive; removed planned duplicate helper/lease architecture and added slack-bounded tail policy.
 
 ## Ledger-events
-
 
 - chg_20261004_161430_experimental-the-mtp-drafter_7189
 - 2026-10-04T16:14:37.089254+00:00 (updated-by): Updated: section:ledger-events
@@ -191,3 +196,4 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 - 2026-10-05T10:30:54.194436+00:00 (updated-by): Updated: section:notes
 - chg_20261005_113349_the-fused-decode-kernels-now-a_9568
 - 2026-10-05T11:33:55.911140+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T11:54:24.188114+00:00 (updated-by): Updated: section:notes

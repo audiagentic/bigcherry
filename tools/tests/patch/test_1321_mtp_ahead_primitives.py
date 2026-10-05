@@ -56,6 +56,10 @@ class Patch1321Mechanics(unittest.TestCase):
             self.assertIn("if (bc_front <= result.size() && dp.n_tail <= 0)", mtp)
             self.assertIn("const size_t bc_front    = dp.forced ? bc_n_forced : (size_t) params.n_max;", mtp)
             self.assertIn("dp.tail->push_back(id);", mtp)
+            # the tail reports its lowest draft probability, reset when a tail draft starts
+            self.assertIn("float *              tail_min_p = nullptr;", h)
+            self.assertIn("*dp.tail_min_p = 1.0f;", mtp)
+            self.assertIn("*dp.tail_min_p = std::min(*dp.tail_min_p, cur_p->data[0].p);", mtp)
             self.assertIn("GGML_ASSERT(dp.forced == nullptr || (int) dp.forced->size() <= params.n_max);", mtp)
             self.assertIn("bigcherry 1321: a tail only continues a front that is verified", mtp)
             snap = {f: (root / f).read_text(encoding="utf-8") for f in _FILES}

@@ -57,6 +57,10 @@ class Patch1322Mechanics(unittest.TestCase):
             self.assertIn("(size_t) std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1 &&", out)
             self.assertIn("accepted.size() == slot.spec_draft.size() + 1", out)
             self.assertIn("accepted.back() == slot.bc_ahead_tail[0]", out)
+            # promotion is gated on the tail's lowest draft probability (BIGCHERRY_MTP_AHEAD_PROMOTE_P, 0 = always)
+            self.assertIn("dp.tail_min_p = &slot.bc_ahead_tail_min_p;", out)
+            self.assertIn("slot.bc_ahead_tail_min_p >= bc_mtp_ahead_promote_p()) {", out)
+            self.assertIn('getenv("BIGCHERRY_MTP_AHEAD_PROMOTE_P")', out)
             # the tail is bounded by the speculative depth, never by the room left in the context alone
             self.assertIn("dp.n_tail   = std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1;", out)
             self.assertNotIn("(int32_t) slot.get_n_draft_max() + 1", out)
