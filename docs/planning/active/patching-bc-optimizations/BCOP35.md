@@ -8,35 +8,28 @@ breadth: ''
 skill: advanced
 created-by: agent
 priority: P3
-work: L
+work: S
 ---
 
-# Evaluate context-parallel and distributed long-context attention
+# Gate context-parallel long-context attention
 
 ## Description
 
-Investigate whether long-context inference can use multiple AMD GPUs by partitioning attention/KV work rather than only model layers. The production topology has no usable GPU P2P, so communication volume and synchronization are first-class gates. This item is experimental until a lower-bound model demonstrates feasibility.
+Action/disposition ledger for determining whether distributed attention/KV work is viable on BigCherry's no-P2P topology. Existing Flash Attention, sparse-attention, KV/cache and RPL01 owners remain authoritative. Do not create a context-parallel runtime until communication feasibility is demonstrated.
 
-## Steps
+## Actions
 
-1. Define candidate decompositions: sequence/context shards, KV-cache shards, head shards and hybrid layer/context placement. Prefer upstream llama.cpp primitives if/when available.
-2. Derive required communication for Q/K/V, attention statistics/output reductions and KV updates for decode and prefill separately.
-3. Measure host-mediated transfer and collective controls on gfx1100/gfx1201; do not assume RCCL admission or benefit.
-4. Build an offline trace/cost simulator using actual model dimensions, context lengths and batch sizes. Identify crossover regions where reduced per-device attention/KV work exceeds communication cost.
-5. Prototype only a correctness path for the strongest candidate. Preserve exact attention semantics before considering reduced-communication approximations.
-6. Test interaction with Flash Attention, sparse attention, quantized KV cache, MTP/speculation and RPL01 placement. Existing owners retain their local policy.
-7. Remove the prototype if the no-P2P production topology cannot meet the end-to-end gate.
+1. Derive communication lower bounds for sequence/KV/head partition candidates separately for prefill and decode using actual target model dimensions.
+2. Apply measured host-mediated/collective transport costs from PHA03/related topology evidence and compare against removable attention time at 32K/64K/128K/256K-class contexts.
+3. Reject candidates whose physical lower bound cannot support >=5% end-to-end gain.
+4. For a surviving candidate, create only an offline/synthetic correctness-cost prototype first; no persistent runtime implementation until exact attention semantics and crossover are demonstrated.
+5. Route any proven implementation into the existing attention/KV/backend scheduler ownership, with RPL01 comparing placement cost.
+6. Record terminal disposition: `infeasible-no-P2P`, `upstream-mechanism-watch`, `prototype-justified`, or `existing-sparse-FA-sufficient`.
 
-## Validation
+## Gate
 
-- Short-context negative controls plus 32k/64k/128k/256k-class contexts where supported.
-- Prefill and decode measured separately.
-- Report KV bytes/device, bytes transferred/token, sync count, attention kernel time, idle time, VRAM and end-to-end PP/TG.
-- Greedy/logit correctness contract before performance claims.
+No NVLink/P2P assumptions. Correctness precedes timing. Failed prototypes are removed. Existing sparse FA gains must be treated as the control because they reduce the remaining benefit available to context parallelism.
 
-## Acceptance Criteria
+## Related
 
-- Communication lower bound and measured transport demonstrate a plausible >=5% end-to-end opportunity before permanent implementation.
-- No assumption of NVLink/P2P is embedded in the design.
-- Existing Flash Attention/KV/cache implementations are reused rather than forked without evidence.
-- Failed experiments are removed or retained only as non-production research tooling.
+RPL01; PHA03; QFP/Flash-Attention and KV-cache owners; BCOP32.
