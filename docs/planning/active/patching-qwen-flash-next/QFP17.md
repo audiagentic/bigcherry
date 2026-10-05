@@ -111,6 +111,12 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 2026-10-05 queue-chunk3 (1332 with n_tokens > chunk gate): MTP serving at 24K fine (ms/step 41.2 all arms; text = f32-side near-tie). No-MTP single-token decode after a chunked prefill still segfaults in ggml_backend_meta_graph_compute (null write) even though decode itself takes the dense path; chunk 0 decodes fine (38.6 t/s). Likely stale meta-backend bookkeeping for the per-chunk views of the kq_mask INPUT created during prefill. Next fix if resumed: never view the input - copy the chunk's kq_mask rows with ggml_get_rows from a small per-chunk I32 row-index graph input (needs an llm_graph_input set_input hook), or fix the meta view bookkeeping. Parked as experimental: payoff is ub1024 fitting at 240K with only +1.5-6% prefill at an 80K fill; bigger prefill wins need removing the dense kq_mask input (step 3).
 
+2026-10-05 prefill attribution on pin b11402 (build b-defon-b11402, production config 240K f16 ub512, rocprofv3 kernel trace of one uncached fill, tools/lab/flash-next/queue-prefill-profile.sh + prefill-kernel-table.py; runs prefillprof-b11402-d20480 / -d81920). Per-device GPU kernel time, XTX0 / XTX1 / R9700.
+31.8K tokens (1021 t/s under profiling, 62 ubatches, ~23.5 s kernel time per device): all-reduce 7.1 / 6.7 / 7.7 s (30 / 29 / 33%); MMQ incl. MoE 6.2 / 6.2 / 6.4 s (26-27%); float matmul 3.6 / 3.6 / 2.9 s (15 / 15 / 13%); flash attention 1.96 / 1.96 / 0 s (8%; was 2.39 s on pin 0504396 for the same prompt); indexer + top-k 0.47 / 0.47 / 0.68 s (2-3%); GDN 0.6 / 0.6 / 1.1 s.
+99.3K tokens (828 t/s, 194 ubatches, ~89.5 s kernel time per device, 120 s wall): all-reduce 22.2 / 20.9 / 35.6 s (25 / 23 / 40%); MMQ 19.4 / 19.7 / 20.1 s (22%); flash attention 18.9 / 18.9 / 0 s (21%); float matmul 11.1 / 11.2 / 9.0 s (12 / 13 / 10%); indexer + top-k 4.3 / 4.4 / 6.3 s (5 / 5 / 7%); GDN 1.8 / 1.9 / 3.5 s. Drafter (6900 XT): 12.4 s, 56% flash attention.
+Per ubatch: all-reduce on the XTX is constant at ~114 ms (7.1 s / 62 and 22.2 s / 194), MMQ constant at ~100 ms, float matmul ~57 ms; flash attention grows with context, 32 ms average over the first 32K and 97 ms average over 100K, so it passes all-reduce somewhere past 100K; the indexer grows too (7.6 -> 22 ms). The R9700 holds no attention (BIGCHERRY_ATTN_TS 1,1,0), and its extra all-reduce time (35.6 s vs ~21.5 s) matches the XTX attention time it waits for: at long context the R9700 idles inside the collective while the XTX run attention.
+Consequences for ordering: (a) all-reduce is the largest block up to ~100K (about 18% of wall at 100K, 21% at 32K); (b) at the long-context end, attention + indexer is 26% of XTX kernel time at 100K and still growing, so QFP25 (sparse prefill attention, cost ~ n_sel instead of n_kv) and the rank imbalance it causes on the R9700 move up with context; (c) MMQ is a constant 22-27%; (d) the upstream tiled indexer (#29901) is worth at most 5-7% of kernel time at 100K. 1332 chunk does not reduce attention work, it only allows ub1024.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -121,7 +127,6 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 ## Ledger-events
 
-
 - chg_20261004_161454_found-what-limits-the-larger-p_4462
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-04T16:15:06.578561+00:00 (updated-by): Updated: section:notes
@@ -130,3 +135,4 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 - 2026-10-04T19:37:51.020304+00:00 (updated-by): Updated: section:notes
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:53.025717+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T12:52:50.061761+00:00 (updated-by): Updated: section:notes
