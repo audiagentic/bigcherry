@@ -179,6 +179,8 @@ Why t/s does not move (step 2 of the schedule - the server already prints per-po
 
 Next experiment (authored, queued): gate promotion on confidence without shortening the front - 1321 reports the tail's lowest draft probability (tail_min_p), 1322 promotes a full-length tail only if that is >= BIGCHERRY_MTP_AHEAD_PROMOTE_P (default 0 = always); otherwise the round drafts fresh. Sweep 0.5 / 0.7 / 0.9 at 24K and 80K (queue-ahead-gate.sh). This differs from the removed tail_p_min cut (RV4217), which truncated the tail and so replaced full fresh drafts with short promoted ones. Ceiling if it works: promoted share x draft share of a round, roughly 2-3% decode. If no threshold beats the baseline in t/s, park FMTP04-FMTP06 and record 1321/1322 as evaluated, not promotable.
 
+2026-10-05 PAUSED by owner ("We can pause fmtp"); work moves to the next prefill patch round. State at pause: 1321 + 1322 work on b11402 and are greedy-identical but give no t/s gain (analysis above); the confidence-gated promotion (BIGCHERRY_MTP_AHEAD_PROMOTE_P, default 0) is authored, tested offline and pushed (d7150609) but NOT run on hardware - its queued sweep (queue-ahead-gate.sh b11402g 0.5 0.7 0.9) was cancelled before starting. To resume: run that sweep first; if no threshold beats the baseline in t/s, park FMTP04-FMTP06 and record 1321/1322 as evaluated, not promotable. 1268 still fails to apply over the build and blocks FMTP05.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
@@ -197,3 +199,4 @@ Next experiment (authored, queued): gate promotion on confidence without shorten
 - chg_20261005_113349_the-fused-decode-kernels-now-a_9568
 - 2026-10-05T11:33:55.911140+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T11:54:24.188114+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T12:09:05.985106+00:00 (updated-by): Updated: section:notes
