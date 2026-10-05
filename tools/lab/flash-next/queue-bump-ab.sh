@@ -1,5 +1,6 @@
 #!/bin/bash
-# Pin-bump decode recheck: 24K MTP decode ABA of two existing build runs (base, new, base).
+# Pin-bump recheck of two existing build runs: Flash-Next 24K MTP decode ABA (base, new, base), then the
+# 27B dual-XTX production ABBA at 10K and 32K (prod27b-ab.sh).
 # Usage: queue-bump-ab.sh <base build run> <new build run> <run tag>
 set -u
 PREV=${1:?previous build run}
@@ -17,10 +18,12 @@ jobs=$(mktemp)
 R=/mnt/data/bigcherry-work/runs
 cat > "$jobs" <<JOBS
 VIS=0,1,2,3 SCRIPT $TAG-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @$PREV @$NEW $R/$TAG-d24k
+VIS=0,1 SCRIPT $TAG-27b tools/lab/flash-next/prod27b-ab.sh @$PREV @$NEW $R/$TAG-27b
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 echo "== $NEW d24k (base = $PREV)"; grep -E "^base-|^new|SERVER_FAILED" $R/$TAG-d24k.log
 md5sum $R/$TAG-d24k/*/*.greedy.txt | awk '{print $1}' | sort | uniq -c
+echo "== 27B (A = $PREV, B = $NEW)"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/$TAG-27b.log
 echo ALL_JOBS_DONE
