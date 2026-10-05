@@ -41,7 +41,12 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
    (reversed Flash-Next ABA plus the 27B dual-XTX ABBA at 10K/32K). One ABA is three samples; the reversed run
    makes six and settles a 2-3% difference. Identical greedy text and acceptance are required; a consistent
    slowdown is a reason to hold the pin, not to shrug (b11402: Flash-Next decode -3%, 27B prefill -0.8..-1.4%).
-7. Completion gate, ledger event and `supports/` tag as in sections 5 and 6.
+7. Completion gate and ledger event as in sections 5 and 6.
+8. Release: `python -m bigcherry release-notes <tag>` writes `docs/releases/notes/bc-<tag>.md` (ledger events, patch
+   changes and the bump record since the previous release). Commit it with the footer
+   `Release-As: <llama build number>.0.0` (b11402 -> `Release-As: 11402.0.0`). Once that commit is on `main`,
+   release-please opens the release PR; merging it creates the GitHub release, and the workflow adds the tag
+   `bc-<tag>` and publishes the generated notes. Do not create release tags by hand.
 
 Still manual: the Brutus pull/build/smoke, and the completion gate.
 

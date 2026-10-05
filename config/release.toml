@@ -1,0 +1,43 @@
+# BigCherry release configuration (read by `bigcherry release-notes`).
+#
+# One release per llama.cpp pin bump, named with the prefix below (b11402 -> bc-b11402). release-please on GitHub owns
+# the release PR, tag and GitHub release (release-please-config.json, .github/workflows/release-please.yml); this file
+# configures the release text it publishes. The notes are generated from: the change ledger (events since the previous release), the patch registry
+# (patches added, promoted, changed or retired since the previous release, and build-membership changes) and the
+# bump's release record (smoke numbers, regressions found and their disposition).
+version = 1
+
+tag-prefix = "bc-"
+notes-dir = "docs/releases/notes"
+ledger = "docs/releases/CURRENT_RELEASE_LEDGER.ndjson"
+release-records = "releases"
+recipes = "config/recipes.toml"
+# patch sets whose membership is "in the production build"
+build-patch-sets = ["upstream-fixes", "validated-enhancements"]
+# an older tag family that may mark the previous release when no tag with tag-prefix exists yet
+previous-tag-fallback-prefixes = ["supports/"]
+
+# ledger change-class -> section heading, in output order; classes not listed are omitted from the notes
+[[ledger-section]]
+class = "feature"
+heading = "New and changed"
+
+[[ledger-section]]
+class = "code-fix"
+heading = "Fixes"
+
+[[ledger-section]]
+class = "audit"
+heading = "Findings and measurements"
+
+[[ledger-section]]
+class = "refactor"
+heading = "Internal changes"
+
+[[ledger-section]]
+class = "workflow"
+heading = "Tooling and workflow"
+
+[[ledger-section]]
+class = "config"
+heading = "Configuration"

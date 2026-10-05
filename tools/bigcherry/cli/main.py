@@ -567,6 +567,17 @@ def build_parser() -> argparse.ArgumentParser:
     pin_bump_cmd.add_argument("--report-dir", default=None)
     pin_bump_cmd.set_defaults(func=cmd_pin_bump)
 
+    release_notes_cmd = sub.add_parser(
+        "release-notes",
+        help="per-bump release notes: write docs/releases/notes/<prefix><llama tag>.md "
+        "from the ledger, the patch registry and the bump's release record "
+        "(config/release.toml). release-please publishes them with the release.",
+    )
+    release_notes_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11402)")
+    release_notes_cmd.add_argument("--ref", default="HEAD", help="release commit (default: HEAD)")
+    release_notes_cmd.add_argument("--stdout", action="store_true", help="print the notes instead of writing the file")
+    release_notes_cmd.set_defaults(func=cmd_release_notes)
+
     replay_inspect_cmd = sub.add_parser(
         "replay-inspect",
         help=(
@@ -1780,6 +1791,27 @@ def cmd_repin(args: argparse.Namespace) -> int:
 
 def cmd_pin_status(args: argparse.Namespace) -> int:
     return _release_pin.cmd_pin_status(args)
+
+
+def cmd_release_notes(args: argparse.Namespace) -> int:
+    import sys as _sys
+
+    from ..core import paths as _paths
+    from ..release import notes as _notes
+
+    repo_root = _paths.REPO_ROOT
+    try:
+        config = _notes.load_config(repo_root)
+        if args.stdout:
+            _sys.stdout.write(_notes.render(repo_root, config, args.llama_tag, args.ref))
+        else:
+            out = _notes.write_notes(repo_root, config, args.llama_tag, args.ref)
+            print(f"release-notes: wrote {out}")
+            print("  commit it with a `Release-As: <llama build number>.0.0` footer; release-please opens the release PR on main")
+    except _notes.ReleaseNotesError as exc:
+        print(f"release-notes: {exc}", file=_sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_pin_bump(args: argparse.Namespace) -> int:

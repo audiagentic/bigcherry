@@ -1,5 +1,5 @@
 {
-  "bigcherry_revision": "a8f8435ef28bd8170778e7260f283261501820ac",
+  "bigcherry_revision": "4fc868b6ff93bf84d71671c1ed4c353a93e508c4",
   "known_good_patch_ids": [
     "0100_cmake_options",
     "0200_dispatch_hook",
@@ -11,7 +11,9 @@
     "0700_coverage_counters",
     "0860_allreduce_provider_cli",
     "0910_feature_sets",
+    "1006_rdna4_mmq_q6k_codegen_fix",
     "1007_meta_subgraph_realloc_fix",
+    "1200_rd19_single_gpu_meta_bypass",
     "1225_hi85_nccl_heterogeneous_arch_guard",
     "0840_hybrid_allreduce_dispatch",
     "1235_rd09_q81_activation_cache_foundation",
@@ -34,9 +36,10 @@
     "1312_mul_q81",
     "1313_scale_act_fuse",
     "1326_sched_async_host_inputs",
-    "1327_qsa_host_remap"
+    "1327_qsa_host_remap",
+    "1333_mixed_batch_on_demand"
   ],
-  "overlay_digest": "2541c8d3318700d87ddc1ff7401ca3937b926401b417557e22d8a31f23fd85db",
+  "overlay_digest": "5a105d0e3c4485f615af18ca4af00724d1491cce0391550ff910cacbdcdf9d80",
   "patch_application_semantics_version": 1,
   "patches": [
     {
@@ -1547,6 +1550,59 @@
           "edits": [
             {
               "actual_matches": null,
+              "anchor": "sum\\[\\(j0/tile_C::J \\+ n\\)\\*tile_C::ne \\+ l\\] \\+= C\\.x\\[l\\] \\* sc\\[k01/4\\] \\* x_df\\[i\\*sram_stride\\] \\* dB;",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q6k-mma-float-promotion",
+              "expect_matches": 1,
+              "rationale": "the Q6_K MMA accumulation inside ggml_cuda_mmq_vec_dot_q6_K_q8_1_mma",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq-vec-dot.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ <cstdint>\\\n\\\nstatic\\ void\\ ggml_cuda_mul_mat_q_switch_type\\(ggml_backend_cuda_context\\ \\&\\ ctx,\\ const\\ mmq_args\\ \\&\\ args,",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-includes-atomic",
+              "expect_matches": 1,
+              "rationale": "add <atomic> for the once-per-process activation flag",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ mul_mat_q_case<GGML_TYPE_Q6_K>\\(ctx,\\ args,\\ stream,\\ forced_J\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-q6k-dispatch-marker",
+              "expect_matches": 1,
+              "rationale": "insert immediately before the unique Q6_K mul_mat_q_case dispatch call; the call remains unchanged so RD07 can independently target it in either order",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cu"
+        }
+      ],
+      "implementation_digest": "abbae6f28ccae6bb2649fd155d009d3db45a060cbb457d9a7ae992b77a79588a",
+      "patch_id": "1006_rdna4_mmq_q6k_codegen_fix",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
               "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(size_t\\ i\\ =\\ 0;\\ i\\ <\\ n_subgraphs;\\ i\\+\\+\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ bcj\\.cgraphs\\[i\\]\\.cgraph_main\\ =\\ ggml_new_graph_custom\\(backend_ctx\\->ctx\\.get\\(\\),\\ cgraph\\->n_nodes,\\ /\\*grads\\ =\\*/\\ false\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n",
               "applies_if": null,
               "context": null,
@@ -1562,6 +1618,43 @@
       ],
       "implementation_digest": "4a3f24be21a26f993e9c5caae46fbdeb8a0ba4b15c1815bb4adbc2f1426799eb",
       "patch_id": "1007_meta_subgraph_realloc_fix",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "            LLAMA_LOG_INFO\\(.*__func__, n_devs\\);\n            for \\(size_t i = 0; i < n_devs; \\+\\+i\\) \\{\n                LLAMA_LOG_INFO\\(.*__func__, i, ggml_backend_dev_name\\(params\\.devices\\[i\\]\\)\\);\n            \\}\n            model->get_split_state_ud\\.n_devices = n_devs;\n            model->get_split_state_ud\\.model = model;\n            model->devices\\.push_back\\(\\{\n                true, ggml_backend_meta_device\\(\n                params\\.devices, n_devs, llama_meta_device_get_split_state, &model->get_split_state_ud\\)\n            \\}\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd19-single-device-explicit-list",
+              "expect_matches": 1,
+              "rationale": "llama_prepare_model_devices: the explicit-device tensor-split branch (LLAMA_SPLIT_MODE_TENSOR with params.devices set), where the Meta device is created",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ GGML_ASSERT\\(!devs\\.empty\\(\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ model\\->get_split_state_ud\\.n_devices\\ =\\ devs\\.size\\(\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ model\\->get_split_state_ud\\.model\\ \\ \\ \\ \\ =\\ model;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ gpus\\.push_back\\(\\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ true,\\ ggml_backend_meta_device\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ devs\\.data\\(\\),\\ devs\\.size\\(\\),\\ llama_meta_device_get_split_state,\\ \\&model\\->get_split_state_ud\\)\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd19-single-device-default-selection",
+              "expect_matches": 1,
+              "rationale": "llama_prepare_model_devices: the default device selection branch (all backends), second Meta device creation site",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama.cpp"
+        }
+      ],
+      "implementation_digest": "7dcc260926ef2de85fbbe625d1184f9cd41bcf3068b2b2533d9645b2378ab5dd",
+      "patch_id": "1200_rd19_single_gpu_meta_bypass",
       "requires": [],
       "state": "validated",
       "status": "CLEAN"
@@ -2833,7 +2926,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "a699f12df7bdd46d508e64fb8183b45bd29c642e8d1b344582761ea75f7b35ae",
+      "implementation_digest": "ec2737c3609e55d6f81b0df038d6b8db39216a1e660bbc6994495f155d94cceb",
       "patch_id": "1307_q81_activation_cache_mmvq",
       "requires": [
         "1235_rd09_q81_activation_cache_foundation",
@@ -2956,7 +3049,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "abdbad7c9349077348705f16f2383c6e82762ab091291aa3d62ddf9c1ed5b990",
+      "implementation_digest": "08d0f8de728094a33da18341538ac5efd6e2a9124e0a8d087f02883c4bb28a2f",
       "patch_id": "1309_rms_norm_mul_q81",
       "requires": [
         "1307_q81_activation_cache_mmvq",
@@ -3034,7 +3127,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "b70b44bb1cf347fb9534bd7a51fcbc02491a0f3a349821047a50bc5a19cd8354",
+      "implementation_digest": "6f7304b179b45b4308c38054f59ecc3fab4b42e5abdd2f2b2a2ab43594f3c292",
       "patch_id": "1310_act_q81",
       "requires": [
         "1307_q81_activation_cache_mmvq",
@@ -3101,7 +3194,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "632b9a76ff9f0ed58b850c2325d5b330921200dc2ca4b88fa6611f060fc46456",
+      "implementation_digest": "1d67503b3caa22e69ab33dd02456b163039625c89e59c85da3fc8c19fd596526",
       "patch_id": "1311_hc_pre_q81",
       "requires": [
         "1307_q81_activation_cache_mmvq",
@@ -3146,7 +3239,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "a62bd3d649dc6c989364ad4e6f21f8a17c6f885f0cbee152352e39dc9627f343",
+      "implementation_digest": "3683db2f031f56d3440c297742fa0248b0ca574c0ad796a5bd7554aa1bae3d1e",
       "patch_id": "1312_mul_q81",
       "requires": [
         "1307_q81_activation_cache_mmvq",
@@ -3224,7 +3317,7 @@
           "path": "ggml/src/ggml.c"
         }
       ],
-      "implementation_digest": "8549194bd6b5a3af71835ade56f3bd2bdd4c7b38b6f65babce02f67738b8a7c2",
+      "implementation_digest": "6ac6ceb632a8a53926cb8621c8f158c0eebcafb6d857862de26ffe8c26f743ff",
       "patch_id": "1313_scale_act_fuse",
       "requires": [
         "1307_q81_activation_cache_mmvq",
@@ -3381,9 +3474,35 @@
       ],
       "state": "validated",
       "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ const\\ bool\\ has_mixed\\ =\\ llm_arch_supports_mixed_batch\\(arch\\)\\ \\&\\&\\ cparams\\.ctx_type\\ ==\\ LLAMA_CONTEXT_TYPE_DEFAULT;\\\n\\ \\ \\ \\ if\\ \\(has_mixed\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mixed-batch-on-demand",
+              "expect_matches": 1,
+              "rationale": "The has_mixed decision in llm_graph_context::build_inp_embd, directly before the branch is built.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-graph.cpp"
+        }
+      ],
+      "implementation_digest": "ab74ac56af896f4089e7e50e86c94ffcd0cca66acd59d88af492be2f904e7c51",
+      "patch_id": "1333_mixed_batch_on_demand",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
     }
   ],
-  "previous_upstream_revision": "0504396140d1c882f5f6ee34466a42db7ae90114",
+  "previous_upstream_revision": null,
   "schema_version": 2,
   "selector": {
     "module_hashes": [
@@ -3428,8 +3547,16 @@
         "01decac6353cea16211d68d1b3da29aa97be26d384180655e3eb201f01000d93"
       ],
       [
+        "1006_rdna4_mmq_q6k_codegen_fix",
+        "abbae6f28ccae6bb2649fd155d009d3db45a060cbb457d9a7ae992b77a79588a"
+      ],
+      [
         "1007_meta_subgraph_realloc_fix",
         "4a3f24be21a26f993e9c5caae46fbdeb8a0ba4b15c1815bb4adbc2f1426799eb"
+      ],
+      [
+        "1200_rd19_single_gpu_meta_bypass",
+        "7dcc260926ef2de85fbbe625d1184f9cd41bcf3068b2b2533d9645b2378ab5dd"
       ],
       [
         "1225_hi85_nccl_heterogeneous_arch_guard",
@@ -3489,7 +3616,7 @@
       ],
       [
         "1307_q81_activation_cache_mmvq",
-        "a699f12df7bdd46d508e64fb8183b45bd29c642e8d1b344582761ea75f7b35ae"
+        "ec2737c3609e55d6f81b0df038d6b8db39216a1e660bbc6994495f155d94cceb"
       ],
       [
         "1308_qwen4exp_rollback_copy_no_cont",
@@ -3497,23 +3624,23 @@
       ],
       [
         "1309_rms_norm_mul_q81",
-        "abdbad7c9349077348705f16f2383c6e82762ab091291aa3d62ddf9c1ed5b990"
+        "08d0f8de728094a33da18341538ac5efd6e2a9124e0a8d087f02883c4bb28a2f"
       ],
       [
         "1310_act_q81",
-        "b70b44bb1cf347fb9534bd7a51fcbc02491a0f3a349821047a50bc5a19cd8354"
+        "6f7304b179b45b4308c38054f59ecc3fab4b42e5abdd2f2b2a2ab43594f3c292"
       ],
       [
         "1311_hc_pre_q81",
-        "632b9a76ff9f0ed58b850c2325d5b330921200dc2ca4b88fa6611f060fc46456"
+        "1d67503b3caa22e69ab33dd02456b163039625c89e59c85da3fc8c19fd596526"
       ],
       [
         "1312_mul_q81",
-        "a62bd3d649dc6c989364ad4e6f21f8a17c6f885f0cbee152352e39dc9627f343"
+        "3683db2f031f56d3440c297742fa0248b0ca574c0ad796a5bd7554aa1bae3d1e"
       ],
       [
         "1313_scale_act_fuse",
-        "8549194bd6b5a3af71835ade56f3bd2bdd4c7b38b6f65babce02f67738b8a7c2"
+        "6ac6ceb632a8a53926cb8621c8f158c0eebcafb6d857862de26ffe8c26f743ff"
       ],
       [
         "1326_sched_async_host_inputs",
@@ -3522,6 +3649,10 @@
       [
         "1327_qsa_host_remap",
         "9ec68fbd297720379734b5557e8947e265cc78408ab52313afb4ab13665516f9"
+      ],
+      [
+        "1333_mixed_batch_on_demand",
+        "ab74ac56af896f4089e7e50e86c94ffcd0cca66acd59d88af492be2f904e7c51"
       ]
     ],
     "patch_ids": [
@@ -3535,7 +3666,9 @@
       "0700_coverage_counters",
       "0860_allreduce_provider_cli",
       "0910_feature_sets",
+      "1006_rdna4_mmq_q6k_codegen_fix",
       "1007_meta_subgraph_realloc_fix",
+      "1200_rd19_single_gpu_meta_bypass",
       "1225_hi85_nccl_heterogeneous_arch_guard",
       "0840_hybrid_allreduce_dispatch",
       "1235_rd09_q81_activation_cache_foundation",
@@ -3558,9 +3691,10 @@
       "1312_mul_q81",
       "1313_scale_act_fuse",
       "1326_sched_async_host_inputs",
-      "1327_qsa_host_remap"
+      "1327_qsa_host_remap",
+      "1333_mixed_batch_on_demand"
     ],
-    "patch_set_id": "27ddea961c58f91193a12f7da617511e",
+    "patch_set_id": "176943aa55368ad36d1148babed61aad",
     "schema_version": 2,
     "selector_kind": "source",
     "selector_name": "bigcherry",
@@ -3569,12 +3703,12 @@
   },
   "summary": {
     "blocked_by_dependency": 0,
-    "clean": 34,
+    "clean": 37,
     "failed": 0,
     "not_applicable": 0,
     "quarantined": 0,
     "reconciliation_required": false,
-    "total": 34,
+    "total": 37,
     "upstream_absorbed": 0
   },
   "upstream_revision": "d89651a7b205c03c4a0b13cd0646d400dc929f79"
