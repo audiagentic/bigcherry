@@ -2,7 +2,7 @@
 id: BCOP09
 order: 9
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:38:00+00:00'
 breadth: ''
 skill: advanced
@@ -25,12 +25,45 @@ Follow-through for MET06. Before building a new expert-granular GGUF loader/mate
 4. Proceed to MET06 expert-granular materialization only if coarse whole-layer placement leaves >=5% PP/TG opportunity or >=1 GiB avoidable resident expert memory at equal throughput.
 5. If expert slicing proceeds, preserve canonical host weights and coalesce contiguous expert slabs; avoid duplicate host/GPU backing with cache paths.
 
-## Related
+## Detailed Solution & Technical Design
 
-MET01, MET05, MET06, QFP27; llama.cpp #29963.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
 - Transient/pinned/prefetched host-weight paths have AMD measurements.
 - The expert-slicing implementation gate is explicitly passed or failed.
 - No duplicate scheduler/staging/cache implementation is created.
+
+## Notes
+
+2026-10-05 review: superseded by owner item MET06, which is the same gate (#29963 transient/pinned/prefetch qualification, 5% / 1 GiB thresholds). Not implemented; work stays open under MET06.
+
+## Related
+
+MET01, MET05, MET06, QFP27; llama.cpp #29963.
+
+## Change Log
+
+- 2026-10-05T04:37:09.563871+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:55.079395+00:00 (state-transition): State: pending → superseded

@@ -2,7 +2,7 @@
 id: BCOP07
 order: 7
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:36:00+00:00'
 breadth: ''
 skill: advanced
@@ -26,9 +26,29 @@ Follow-through for QFP22/1332 audits. Patch 1007 has acted on the stale Meta sub
 5. If view bookkeeping remains unsafe after 1007, A/B corrected views against fixed-shape GET_ROWS materialization and reject GET_ROWS if it costs >3% prefill wall.
 6. Run chunk 128/256/512, ub512/1024, 1K/24K/80K+, MTP/no-MTP, sequential-request and tail-chunk correctness matrix.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP17, QFP22, patch 1332, patch 1007; llama.cpp #29958.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -37,3 +57,16 @@ QFP17, QFP22, patch 1332, patch 1007; llama.cpp #29958.
 - ub1024 long-context memory saving and >=5% PP gain survive correctness qualification.
 - <=2% TG regression.
 - QFP22/1332 ledger is updated to promote or reject the patch.
+
+## Notes
+
+2026-10-05 review: superseded by owner item QFP22, which already carries the realloc-debug, #29958 fixed-topology and GET_ROWS steps. Done so far: patch 1007 validated and in patch-set.upstream-fixes; 1332 reworked to a contiguous per-chunk mask (build b-chunk9 running). Still open under QFP22: dense-vs-chunk text identity, the chunk/ubatch/depth matrix, promote or reject.
+
+## Related
+
+QFP17, QFP22, patch 1332, patch 1007; llama.cpp #29958.
+
+## Change Log
+
+- 2026-10-05T04:37:02.864950+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:48.421081+00:00 (state-transition): State: pending → superseded

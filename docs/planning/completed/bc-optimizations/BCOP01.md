@@ -2,7 +2,7 @@
 id: BCOP01
 order: 1
 plan: bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-05T04:30:00+00:00'
 breadth: ''
 skill: advanced
@@ -28,9 +28,29 @@ Current branch evidence already shows QSA chunking can make ub1024 fit at 240K, 
 5. Adopt/port #29901 only if it meets QFP17's AMD promotion gate; do not duplicate its kernel locally if the pinned upstream already contains it.
 6. Update QFP17/QFP22 and patch ledger with final promote/reject result.
 
-## Related
+## Detailed Solution & Technical Design
 
-QFP17, QFP22, patch 1332, patch 1007; upstream llama.cpp #29901.
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
 
 ## Acceptance Criteria
 
@@ -39,3 +59,16 @@ QFP17, QFP22, patch 1332, patch 1007; upstream llama.cpp #29901.
 - Peak-memory and PP/TG deltas are recorded at representative long-context lanes.
 - No duplicate QSA/indexer implementation is introduced.
 - QFP17/QFP22 and ledger agree on final ownership/status.
+
+## Notes
+
+2026-10-05 review: superseded by owner items QFP17 (carries #29901 qualification, VGPR/spill and ub512/1024/2048 gates) and QFP22 (1332 identity). Not implemented; the work stays open under those owners. #29901 is not in pin 050439614.
+
+## Related
+
+QFP17, QFP22, patch 1332, patch 1007; upstream llama.cpp #29901.
+
+## Change Log
+
+- 2026-10-05T04:36:42.727836+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T04:37:28.360312+00:00 (state-transition): State: pending → superseded
