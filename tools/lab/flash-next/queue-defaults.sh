@@ -28,6 +28,7 @@ cat > "$jobs" <<JOBS
 VIS=0,1,2,3 BUILD $NEW bigcherry:stock:linux-multi deploy-v6-plus-chunk gfx1100,gfx1201,gfx1030
 VIS=0,1 SCRIPT defon-$TAG-27b tools/lab/flash-next/prod27b-ab.sh @$OLD @$NEW $R/defon-$TAG-27b
 VIS=0,1 SCRIPT defon-$TAG-27b-off tools/lab/flash-next/prod27b-ab.sh @$NEW @$NEW $R/defon-$TAG-27b-off $OFF
+VIS=0,1 SCRIPT defon-$TAG-27b-async tools/lab/flash-next/prod27b-ab.sh @$NEW @$NEW $R/defon-$TAG-27b-async BIGCHERRY_SCHED_ASYNC_INPUTS=1
 VIS=0,1,2,3 SCRIPT defon-$TAG-flash tools/lab/flash-next/quick-ab-depth.sh 24576 @$OLD @$NEW $R/defon-$TAG-flash
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
@@ -35,6 +36,7 @@ echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 echo "== 27B, no flags: A = $OLD (path off by default), B = $NEW (path on by default)"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/defon-$TAG-27b.log
 echo "== 27B, $NEW: A = defaults (on), B = switched off explicitly"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/defon-$TAG-27b-off.log
+echo "== 27B, $NEW: A = defaults, B = + async host inputs (1326, the one production patch still opt-in)"; grep -E "^d[0-9]|SERVER_FAILED|^ +[0-9]" $R/defon-$TAG-27b-async.log
 echo "== Flash-Next 24K, flashnext profile: base = $OLD, new = $NEW"; grep -E "^base-|^new|SERVER_FAILED" $R/defon-$TAG-flash.log
 md5sum $R/defon-$TAG-flash/*/*.greedy.txt 2>/dev/null | awk '{print $1}' | sort | uniq -c
 echo ALL_JOBS_DONE
