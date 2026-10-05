@@ -15,6 +15,7 @@ New common_speculative_draft_params fields (defaults keep today's behaviour exac
     const llama_tokens * forced = nullptr;  // promoted front, forced in order (greedy drafting only)
     int32_t              n_tail = 0;        // extra tokens to draft past n_max into *tail
     llama_tokens *       tail   = nullptr;  // output; cleared at draft() start when n_tail > 0
+    float *              tail_min_p = nullptr;  // optional output: lowest draft probability among the tail tokens
 Only the single-head non-shared MTP path supports them (asserted); chained heads and shared-KV MTP do not.
 No scheduling change: the server does not set the fields yet (FMTP03).
 """
@@ -39,7 +40,8 @@ _N_H = _A_H + (
     "    // the front into *tail (disjoint from *result). Defaults keep the ordinary draft.\n"
     "    const llama_tokens * forced = nullptr;\n"
     "    int32_t              n_tail = 0;\n"
-    "    llama_tokens *       tail   = nullptr;\n")
+    "    llama_tokens *       tail   = nullptr;\n"
+    "    float *              tail_min_p = nullptr;  // optional: lowest draft probability among the tail tokens\n")
 
 _A_SEED = ("            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);\n"
            "            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });\n")
@@ -52,6 +54,9 @@ _N_SEED = ("            // bigcherry 1321: forced front / live tail are single-h
            "            GGML_ASSERT(dp.forced == nullptr || (int) dp.forced->size() <= params.n_max);\n"
            "            if (dp.n_tail > 0) {\n"
            "                dp.tail->clear();\n"
+           "                if (dp.tail_min_p != nullptr) {\n"
+           "                    *dp.tail_min_p = 1.0f;\n"
+           "                }\n"
            "            }\n"
            + _A_SEED)
 
@@ -109,6 +114,9 @@ _N_STEP = """                auto & dp = dparams.at(seq_id);
 
                 if (bc_in_tail) {
                     dp.tail->push_back(id);
+                    if (dp.tail_min_p != nullptr) {
+                        *dp.tail_min_p = std::min(*dp.tail_min_p, cur_p->data[0].p);
+                    }
                     if (dp.n_tail <= (int) dp.tail->size()) {
                         drafting[seq_id] = false;
                         n_drafting--;

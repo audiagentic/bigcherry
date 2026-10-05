@@ -36,6 +36,12 @@ static bool bc_mtp_ahead_on() {
     return on;
 }
 
+// promote a tail only when every one of its tokens was drafted with at least this probability (0 = always)
+static float bc_mtp_ahead_promote_p() {
+    static const float p = getenv("BIGCHERRY_MTP_AHEAD_PROMOTE_P") != nullptr ? (float) atof(getenv("BIGCHERRY_MTP_AHEAD_PROMOTE_P")) : 0.0f;
+    return p;
+}
+
 struct bc_mtp_ahead_stats {
     int64_t rounds = 0, ahead = 0, ahead_tokens = 0, promoted = 0, promoted_tokens = 0, ahead_us = 0;
 };
@@ -55,6 +61,7 @@ _N_MEMBERS = _A_MEMBERS + (
     "    // next round's draft\n"
     "    llama_tokens bc_ahead_front;\n"
     "    llama_tokens bc_ahead_tail;\n"
+    "    float bc_ahead_tail_min_p = 1.0f;  // lowest draft probability among bc_ahead_tail\n"
     "    llama_tokens bc_ahead_scratch;\n"
     "    llama_tokens bc_promoted;\n")
 
@@ -109,6 +116,7 @@ _N_DECODE = _A_DECODE + r"""            // bigcherry 1322: draft ahead on the dr
                     // get_n_draft_max() alone is the room in the context, not the depth
                     dp.n_tail   = std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1;
                     dp.tail     = &slot.bc_ahead_tail;
+                    dp.tail_min_p = &slot.bc_ahead_tail_min_p;
                     common_speculative_draft(spec.get());
                     dp = saved;
                     dp.drafting = false;
@@ -140,7 +148,9 @@ _N_ACCEPT = ("                // bigcherry 1322: whole front accepted and the ta
              "                    if (slot.bc_ahead_tail.size() ==\n"
              "                                (size_t) std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1 &&\n"
              "                            accepted.size() == slot.spec_draft.size() + 1 &&\n"
-             "                            slot.spec_draft == slot.bc_ahead_front && accepted.back() == slot.bc_ahead_tail[0]) {\n"
+             "                            slot.spec_draft == slot.bc_ahead_front && accepted.back() == slot.bc_ahead_tail[0] &&\n"
+             "                            // a low-confidence tail is accepted less than a fresh target-seeded draft: keep the fresh one\n"
+             "                            slot.bc_ahead_tail_min_p >= bc_mtp_ahead_promote_p()) {\n"
              "                        slot.bc_promoted.assign(slot.bc_ahead_tail.begin() + 1, slot.bc_ahead_tail.end());\n"
              "                    }\n"
              "                    slot.bc_ahead_tail.clear();\n"
@@ -185,4 +195,6 @@ PATCHES = [
 ENV_DOCS = (
     EnvDoc("BIGCHERRY_MTP_AHEAD", "0|1", "0",
            "experimental: draft the next MTP front on the draft GPU during target verify and promote it on full acceptance"),
+    EnvDoc("BIGCHERRY_MTP_AHEAD_PROMOTE_P", "0..1", "0 (always promote)",
+           "with BIGCHERRY_MTP_AHEAD: promote an ahead tail only if every tail token was drafted with at least this probability"),
 )
