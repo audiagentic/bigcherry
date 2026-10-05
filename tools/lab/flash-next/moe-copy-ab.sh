@@ -7,6 +7,7 @@
 # Each arm serves, in one process: a short greedy request, the same request again, a multi-ubatch prompt, and the
 # short request a third time (second-request and workload-shift integrity). Reports per request md5 of the text,
 # prefill and decode t/s, and the callback counters the binary prints at exit (BIGCHERRY_PATCH_TRACE).
+# ARMS=cache runs the 1337 expert-cache lanes instead: no cache, --moe-cache-mib for each of CACHE_MIB, no cache.
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
 # Only HIP_VISIBLE_DEVICES selects the card: also setting ROCR_VISIBLE_DEVICES filters twice and leaves no device.
@@ -17,10 +18,13 @@ model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash
 gpu=${GPU:-2}
 args=(-m "$model" -ngl 99 --n-cpu-moe ${NCMOE:-41} --fit off -c ${CTX:-16384} -ub 512 -b 2048 --flash-attn on --parallel 1
       --threads 16 -lv 4 -ot '^(per_layer_token_embd|token_embd)\.weight$=CPU' -ctk f16 -ctv f16)
-run() {  # <arm> [VAR=value...]
+run() {  # <arm> [VAR=value...] [-- server args...]
   local arm=$1; shift
+  local envs=() extra=()
+  while [ $# -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done
+  [ $# -gt 0 ] && { shift; extra=("$@"); }
   local port=$((47000 + RANDOM % 2000)) log="$out/$arm.server.log"
-  env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "$@" "$bin" "${args[@]}" --port "$port" > "$log" 2>&1 &
+  env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "${envs[@]}" "$bin" "${args[@]}" "${extra[@]}" --port "$port" > "$log" 2>&1 &
   local pid=$! ok=0
   for _ in $(seq 900); do
     curl -sf "http://127.0.0.1:$port/health" >/dev/null && { ok=1; break; }
@@ -52,12 +56,19 @@ PY
   kill -0 "$pid" 2>/dev/null && { echo "$arm: shutdown hung, SIGKILL"; kill -9 "$pid"; }
   wait "$pid" 2>/dev/null
   echo "$arm: $(grep -o "BIGCHERRY_PATCH_HIT patch=1336.*" "$log" | tail -1)"
+  grep -iE "moe.?cache" "$log" | head -4 | cut -c1-200 | sed "s/^/$arm: /"
 }
 for shard in "${model%-00001-of-*}"-0000[12]-*.gguf; do cat "$shard" > /dev/null; done   # warm the page cache
-run O BIGCHERRY_MOE_COPY=0
-run S
-run R BIGCHERRY_MOE_COPY_DENSE_PCT=0
-run S2
+if [ "${ARMS:-copy}" = cache ]; then   # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
+  run C0
+  for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
+  run C0b
+else
+  run O BIGCHERRY_MOE_COPY=0
+  run S
+  run R BIGCHERRY_MOE_COPY_DENSE_PCT=0
+  run S2
+fi
 echo "identity across arms (md5 -> files):"
 md5sum "$out"/*.short1.txt "$out"/*.short2.txt "$out"/*.short3.txt "$out"/*.long.txt | awk '{print $1}' | sort | uniq -c
 echo "per request:"; for r in short1 short2 short3 long; do echo "  $r: $(md5sum "$out"/*.$r.txt | awk '{print substr($1,1,12)}' | sort | uniq -c | tr '\n' ' ')"; done

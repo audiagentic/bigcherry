@@ -554,6 +554,10 @@ patches = ["1331_alloc_peak_live"]
 # control). Only acts when MoE experts are host-resident (e.g. a single GPU with -ncmoe).
 patches = ["1336_sched_copy_callback"]
 
+[experiment.moe-expert-cache]
+# MET01: production set + 1336 + 1337 (upstream #29887 GPU cache for host-resident MoE experts, --moe-cache-mib N).
+patches = ["1336_sched_copy_callback", "1337_moe_expert_caching"]
+
 [experiment.indexer-tile]
 # QFP17: production set + 1335 (upstream #29901 tiled lightning indexer; BIGCHERRY_INDEXER_TILE=0 turns it off).
 patches = ["1335_tiled_lightning_indexer"]
