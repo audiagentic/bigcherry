@@ -9,6 +9,7 @@
 # prefill and decode t/s, and the callback counters the binary prints at exit (BIGCHERRY_PATCH_TRACE).
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
+# Only HIP_VISIBLE_DEVICES selects the card: also setting ROCR_VISIBLE_DEVICES filters twice and leaves no device.
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
@@ -19,7 +20,7 @@ args=(-m "$model" -ngl 99 --n-cpu-moe ${NCMOE:-41} --fit off -c ${CTX:-16384} -u
 run() {  # <arm> [VAR=value...]
   local arm=$1; shift
   local port=$((47000 + RANDOM % 2000)) log="$out/$arm.server.log"
-  env HIP_VISIBLE_DEVICES=$gpu ROCR_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "$@" "$bin" "${args[@]}" --port "$port" > "$log" 2>&1 &
+  env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "$@" "$bin" "${args[@]}" --port "$port" > "$log" 2>&1 &
   local pid=$! ok=0
   for _ in $(seq 900); do
     curl -sf "http://127.0.0.1:$port/health" >/dev/null && { ok=1; break; }
@@ -27,6 +28,8 @@ run() {  # <arm> [VAR=value...]
     sleep 1
   done
   if [ "$ok" != 1 ]; then echo "$arm: SERVER_FAILED"; grep -E " E |error|assert|abort" "$log" | tail -5; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
+  # a run that silently fell back to the CPU is not a measurement of the copy path
+  if grep -q "no usable GPU found" "$log"; then echo "$arm: SERVER_FAILED (no GPU: $(grep -m1 "failed to initialize" "$log" | cut -c1-120))"; kill "$pid"; wait "$pid" 2>/dev/null; return; fi
   echo "$arm: vram $(rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[$gpu\].*Total Used" | awk '{print int($NF/1048576)" MiB"}')"
   python3 - "$port" "$out" "$arm" "${LONG_TOKENS:-4096}" "${N_PREDICT:-128}" <<'PY'
 import hashlib, json, sys, urllib.request
@@ -36,7 +39,7 @@ def post(body):
     req = urllib.request.Request(f"http://127.0.0.1:{port}/completion", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=3600).read())
 short = "Write a Python function that merges two sorted lists into one sorted list, then explain its complexity.\n"
-long = corpus[: 4 * long_tokens] + "\n\nSummarise the text above in three sentences.\n"
+long = corpus[: 4 * long_tokens] + "\n\nIn summary, the text above"
 for name, prompt, n in (("short1", short, n_predict), ("short2", short, n_predict), ("long", long, 64), ("short3", short, n_predict)):
     r = post({"prompt": prompt, "n_predict": n, "temperature": 0, "cache_prompt": False, "seed": 1})
     t = r["timings"]
