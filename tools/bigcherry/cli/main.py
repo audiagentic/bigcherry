@@ -1846,7 +1846,7 @@ def cmd_pin_bump(args: argparse.Namespace) -> int:
         print(f"pin-bump: {len(outstanding)} patch(es) outside the build need reconciliation "
               f"({report_dir / 'patch-failures.json'}):")
         for failure in outstanding:
-            print(f"  {failure['patch_id']}  {failure['status']}  state={failure['state']}  probe={failure['probe']}")
+            print(f"  {failure['patch_id']}  {failure['status']}  probe={failure['probe']}")
             for edit in failure["failed_edits"]:
                 print(f"      {edit['path']}  {edit['edit_id']}  {edit['reason_code']} "
                       f"(matches {edit['actual_matches']}, expected {edit['expect_matches']})")

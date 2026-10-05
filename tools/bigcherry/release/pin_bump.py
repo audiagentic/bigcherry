@@ -491,7 +491,7 @@ def classify_patch_coverage(
         entry = merged.get(patch_id)
         if entry is None:
             outstanding.append({"patch_id": patch_id, "status": "UNDISCOVERED", "probe": "none",
-                                "state": catalog_states.get(patch_id, ""), "failed_edits": []})
+                                "failed_edits": []})
             continue
         probe = "all-patches"
         if entry["status"] != "UPSTREAM_ABSORBED":
@@ -502,7 +502,7 @@ def classify_patch_coverage(
                     continue
                 entry, probe = focal, "focal-overlay"
         outstanding.append({"patch_id": patch_id, "status": entry["status"], "probe": probe,
-                            "state": catalog_states.get(patch_id, ""), "failed_edits": failed_edits(entry)})
+                            "failed_edits": failed_edits(entry)})
     coverage = result.as_dict()
     coverage["composition_only_patch_ids"] = composition_only
     coverage["outstanding"] = outstanding
@@ -1103,9 +1103,26 @@ def _run_phases(
         # closed. Unconditional, immediately before apply, covers both.
         if state.next_phase == "apply":
             _require_coverage_report(state, recipe_report_path)
-            result = patch_rebase.apply_known_good(
-                vendor_root, recipe_report_path, force=False, dry_run=False
-            )
+            try:
+                result = patch_rebase.apply_known_good(
+                    vendor_root, recipe_report_path, force=False, dry_run=False
+                )
+            except patch_rebase.StaleRebaseReportError as exc:
+                # The controller checkout or the registry moved after coverage ran
+                # (e.g. a commit landed mid-bump): coverage must be recomputed.
+                state.completed_phases.remove("coverage")
+                state.next_phase = "coverage"
+                state.coverage_report_sha256 = ""
+                state.save(report_dir)
+                raise PinBumpStop(
+                    "apply",
+                    "COVERAGE_REPORT_STALE",
+                    str(exc),
+                    recommended_actions=[
+                        "do not commit in this checkout while a bump is running",
+                        "rerun `bigcherry pin-bump --resume` (coverage is recomputed)",
+                    ],
+                ) from exc
             if not result.ok:
                 raise PinBumpStop(
                     "apply",
