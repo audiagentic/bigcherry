@@ -11,53 +11,74 @@ priority: P2
 work: L
 ---
 
-# HIP Flash-Attention D=72 VLM aperture-violation workaround (#28664)
+# HIP Flash-Attention D=72 VLM aperture violation: root-cause before fallback (#28608/#28664)
 
 ## Description
 
-Evaluate the reported 2x RX 7900 XTX HIP tiled Flash-Attention D=72 aperture violation for vision workloads and qualify a narrow fallback only if the current pin reproduces it.
+Resolve the gfx1100 HIP tiled Flash-Attention D=72 aperture violation for VLM workloads. Prefer a kernel/root-cause fix; retain the CLIP-only matmul fallback as a narrow safety valve. Upstream PR #28664 closed without merge while issue #28608 retains evidence of the fault, so the workaround must not be assumed present merely because the PR existed.
 
 ## Steps
 
-1. Resolve PR #28664 status, head, ancestry, and exact affected source. 2. Reproduce on supported XTX/VLM image sizes with native controls and capture HSA fault evidence. 3. If absent upstream, author a package-only narrow patch that disables HIP FA only for D=72 under the proven predicate and falls back to matmul attention. 4. Validate correctness, no HSA faults, and unchanged non-D=72/text-only behavior. 5. Keep default enablement and promotion gated until complete evidence exists.
+1. Reproduce on the current llama.cpp pin (`050439614`) on dual XTX with representative Qwen/Gemma mmproj lanes at 1024/1600/2048/2560px; record Q sequence length and exact `flash_attn_tile<D,D,cols_per_block,...>` instantiation.
+2. Reproduce with one XTX as a topology control and `cols_per_block=32/64`. Treat tile width as diagnostic only: upstream evidence says 32 can move the crash earlier.
+3. Instrument `ggml/src/ggml-cuda/fattn-tile.cuh` and helpers for Q/K/V/O bounds, shared-memory offsets, padded sequence extents, vectorized D=72 tail loads/stores, launch dimensions, workspace sizes, and allocation byte ranges. Compare generated gfx1100 ISA/resource use against D=64/80 controls and gfx1201 where supported.
+4. Test the D=72 non-power-of-two/vector-tail hypothesis with guarded tail-safe loads/stores for final lanes before considering broad kernel changes.
+5. If no kernel fix is proven, retain only the #28664-style `tools/mtmd/clip.cpp::clip_graph::build_attn` fallback: HIP + CLIP + `d_head == 72`. Never disable main-model FA or all HIP FA.
+6. Feed architecture/shape policy through existing HIP-autotune ownership; do not add a second dispatch registry. Retire a local fallback when upstream lands an equivalent targeted fix.
 
 ## Detailed Solution & Technical Design
 
-This is a patch qualification item, not a generic FA disable. The reported issue is specific to HIP tiled FA, D=72, larger VLM images, and 2x XTX; post-workaround success is external evidence only. Reuse package-only patch contracts, current-pin ancestry, fail-closed apply/idempotence, correctness evidence, and promotion gates. Retire any local patch if an equivalent upstream fix is pinned.
+Issue #28608 provides useful boundary evidence: the failure resolves in `flash_attn_tile<72,72,64,1,false>`, scales with image/sequence size, and forcing a narrower tile does not cure it. That makes D=72 tail geometry, storage sizing, vector-width assumptions, or another allocation/indexing invariant higher-value hypotheses than the 64-column selection itself.
+
+The optimisation opportunity is to recover tiled FA for D=72 rather than permanently paying matmul-attention cost. Audit vectorized `D/pack` loops, final-pack masking, padded key/query lengths, and any storage sized by floor division while wider loads/stores are issued. The image-size threshold may expose an address error that exists at shorter lengths but remains in-bounds.
+
+PHA08 owns only the D=72 correctness gate and narrow candidate fix. Generic FA architecture/shape tuning remains with `patching-hip-autotune`; generic kernel work remains in the normal patch/upstream path. Related aperture-violation reports are comparison evidence only unless traces resolve to the same defect.
 
 ## Code Samples & Guidance
 
+Debug invariants should validate byte ranges, not only logical element indices:
 
+```cpp
+// debug-only pseudocode; use actual tensor strides/types
+const size_t last_byte = base + logical_index * elem_size + vector_width_bytes;
+GGML_ASSERT(last_byte <= allocation_end);
+```
+
+For a proven D-tail defect, prefer a compile-time/tail predicate inside the existing load/store helper over cloning a D=72 kernel.
 
 ## Files
 
-patches/<new-id>/**; tools/bigcherry/patch/**; tools/bigcherry/tuning/correctness_evidence.py; tools/tests/patch/**; tools/tests/tuning/**; docs/evidence/<run-id>/
+`ggml/src/ggml-cuda/fattn-tile.cuh`; related FA helpers/dispatch; `tools/mtmd/clip.cpp`; `patches/<new-id>/**`; `tools/bigcherry/patch/**`; `tools/bigcherry/tuning/correctness_evidence.py`; `tools/tests/patch/**`; `tools/tests/tuning/**`; `docs/evidence/<run-id>/`.
 
 ## Validation
 
-PR/current-pin ancestry; 1024/2048/2560px image matrix on 2x XTX; D=72 fault absence; numerical/output parity against matmul fallback; non-D=72 and text-only controls; patch apply/idempotence/rebase; promotion evidence.
+Current pin plus a suitable upstream control; 1x/2x XTX; gfx1201 comparison where supported; 1024/1600/2048/2560px; D=64/72/80 controls; cols-per-block 32/64 diagnostic only; FA candidate versus CLIP matmul fallback. Capture HSA fault absence, logits/embedding parity, image encode latency, peak VRAM/workspace, kernel time, VGPR/SGPR/spills, and text-only throughput. Run at least 20 repeated 2048/2560px encodes before accepting a memory-safety fix.
 
 ## Effort & Risk
 
-
+Medium-high. A narrow fallback is low risk; a kernel fix is higher value but must prove the exact OOB/codegen predicate. Avoid speculative compiler workarounds without ISA/bounds evidence.
 
 ## Standards
 
-
+Package-only changes remain fail-closed, idempotent, ancestry-pinned, benchmarked, and removable. No broad backend disablement.
 
 ## Acceptance Criteria
 
-Either current-pin/non-reproduction evidence closes the gap without a patch, or a narrow package-only workaround passes apply/idempotence, VLM correctness, fault absence, and non-regression gates. No broad HIP FA disablement is introduced.
+Preferred: a D=72 tiled-FA fix completes 20x 2048/2560px runs on gfx1100 with no aperture violation, numerical parity to matmul fallback, and >=5% VLM encode improvement versus fallback with no >2% healthy-shape regression. Otherwise, a narrow HIP+CLIP+D=72 fallback passes correctness/fault/non-regression gates. Current-pin non-reproduction requires the same stress matrix before closing the item.
 
 ## Notes
 
-Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900 XTX HIP Flash-Attention crash'; source https://github.com/ggml-org/llama.cpp/pull/28664. Existing PHA06 is a different completed item; this is a new D=72 issue.
+Provenance: shared ChatGPT conversation, 11 Sep 2026, '#28664 — direct 2×7900 XTX HIP Flash-Attention crash'; source https://github.com/ggml-org/llama.cpp/pull/28664. Existing PHA06 is a different completed item.
 
-2026-10-05, folded in from BCOP21 (audit backfill) - root-cause before retaining the fallback: upstream #28664 closed without merge while #28608 keeps evidence of gfx1100 faults in flash_attn_tile<72,72,64,1,false>. (1) Reproduce on the current pin (050439614) with D=64/72/80 controls on gfx1100 and gfx1201; (2) inspect vector/tail bounds, padded sequence extents, shared-memory offsets, workspace sizing, generated ISA and resource use; (3) test the D=72 tail/storage-invariant hypothesis rather than assuming tile width is causal; (4) until root cause is known keep only the narrow HIP+CLIP+d_head==72 fallback, no generic HIP FA disable; (5) a kernel fix needs >=20 repeated 2048/2560px encodes plus parity against matmul attention, and promotes only with >=5% VLM encode gain over the fallback and no healthy-shape regression >2%.
+2026-10-05, folded in from BCOP21 (audit backfill) - root-cause before retaining the fallback: upstream #28664 closed without merge while #28608 keeps evidence of gfx1100 faults in `flash_attn_tile<72,72,64,1,false>`. Reproduce on current pin `050439614` with D=64/72/80 controls on gfx1100/gfx1201; inspect vector/tail bounds, padded extents, shared-memory offsets, workspace sizing, generated ISA and resources; keep only the narrow HIP+CLIP+d_head==72 fallback until root cause is known.
+
+Sources: https://github.com/ggml-org/llama.cpp/issues/28608 ; https://github.com/ggml-org/llama.cpp/pull/28664
 
 ## Change Log
 
 - 2026-09-11T22:57:38.584940+00:00 (created-by): Created by agent
+- 2026-10-05: BCOP21 audit backfill added root-cause gate.
+- 2026-10-05: Transplanted the structured D=72 root-cause/tail-geometry plan from `automation-qfp-indexer-20261004`, preserving current-pin audit guidance.
 
 ## Ledger-events
 
