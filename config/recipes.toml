@@ -258,6 +258,8 @@ patches = [
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
     "1333_mixed_batch_on_demand",
+    "1006_rdna4_mmq_q6k_codegen_fix",
+    "1200_rd19_single_gpu_meta_bypass",
 ]
 required-state = "validated"
 
