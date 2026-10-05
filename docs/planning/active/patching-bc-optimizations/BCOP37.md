@@ -21,6 +21,52 @@ This item is deliberately prescriptive. Agents MUST NOT spend time trying to mak
 
 BCOP37 is an evidence/disposition item. It does not own a new scheduler, expert router/cache, loader, HIP backend, MTP implementation, or benchmark framework.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+BCOP37 completes when:
+
+- the AMD source lineage is identified and pinned without attempting an unauthorized port;
+- a real HIP GPU smoke test passes, or a precise current-source blocker is captured;
+- matched Strata/BigCherry evidence is produced where technically possible;
+- expert-cache, cold-expert, KV, speculation and topology mechanisms are characterized to the extent exposed by the runtime;
+- raw evidence is preserved;
+- each useful mechanism is assigned to an existing BigCherry owner;
+- no duplicate runtime subsystem was created.
+
+## Notes
+
+2026-10-06: `ro99/strata@015b075079c51a7aec670ee24924f920f5e7bb2b` was tested as if it were the AMD target. Source inspection showed it was unsuitable for this qualification: CUDA-oriented backend/stub behavior locally, no required Qwen Flash-Next/qwen4exp path and no matching GGUF path. No GPU time was spent. This revision is now explicitly architecture-reference-only for BCOP37; agents must not repeat this dead end. The next executable path is current `Maxritz/Strata-rocm` or a demonstrably newer/superseding AMD lineage, pinned after capability verification.
+
+2026-10-06 STEP 0 PASSED FROM SOURCE (no local code changes, no build, no GPU time). Chosen source: https://github.com/Maxritz/Strata-rocm, branch main, SHA 2ed00de617659e3e238bdc0ae7523e1e99ef4e38 (2026-10-01), clone at Brutus /mnt/data/bigcherry-work/external/Strata-rocm. Bundle: /mnt/data/bigcherry-work/runs/bcop37-20261006-0908/source-capability.txt. Prerequisites: (1) real HIP backend - CMake option STRATA_ENABLE_HIP, .cu sources compiled with -x hip --offload-arch=<CMAKE_HIP_ARCHITECTURES>, hipSetDevice/hip allocation in src/core/device.cu, pinned.cu; (2) qwen4exp registered in src, docs/MODEL_SUPPORT.md lists Qwen3.8-Flash-Next 10x512 GGUFs as running; (3) GGUF reader (src/artifact/gguf_reader.cpp), IQ4_XS present in dequant and in the MoE MMQ type switch; packs are built by tools/iq_pack.py, which states it keeps every quantized tensor in its GGUF form (to be proved on our file before a lane is labelled MATCHED); (4) arch list is a CMake variable and the tree says it rejects no arch; externally verified only on gfx1201 (RX 9070 XT) and gfx1031 - gfx1100 is a local unknown; (5) expert cache / hybrid code present (expert_cache.cpp, expert_source.cpp, pinned.cu, --expert-ram-gb, --gpu-miss, --kv-resident, mtp.cpp). Limits seen in source, to confirm at run time: one GPU per process (no multi-GPU split flag found), so BCOP37's multi-GPU step can only be 'not supported by the runtime'; compiled shape 2560 embd / n_ff 640 / top-10, so strata --model-info on the BigCherry UD-IQ4_XS file is the model-compatibility gate; engine takes token IDs (tools/strata_tokenizer.py) rather than text. Next: Steps 1-3 (system.txt, model-compatibility.txt, clean gfx1201 build) once the prefill measurements already running on Brutus finish - no build while a measurement runs.
+
 ## Authoritative source selection
 
 ### Architecture reference only
@@ -414,18 +460,6 @@ Multi-GPU/adaptive complexity requires >=5% over the best simpler qualified conf
 
 Reject/defer gains that disappear after matching quant, context, prompt caching, speculation, paging and correctness.
 
-## Acceptance Criteria
+## Change Log
 
-BCOP37 completes when:
-
-- the AMD source lineage is identified and pinned without attempting an unauthorized port;
-- a real HIP GPU smoke test passes, or a precise current-source blocker is captured;
-- matched Strata/BigCherry evidence is produced where technically possible;
-- expert-cache, cold-expert, KV, speculation and topology mechanisms are characterized to the extent exposed by the runtime;
-- raw evidence is preserved;
-- each useful mechanism is assigned to an existing BigCherry owner;
-- no duplicate runtime subsystem was created.
-
-## Notes
-
-2026-10-06: `ro99/strata@015b075079c51a7aec670ee24924f920f5e7bb2b` was tested as if it were the AMD target. Source inspection showed it was unsuitable for this qualification: CUDA-oriented backend/stub behavior locally, no required Qwen Flash-Next/qwen4exp path and no matching GGUF path. No GPU time was spent. This revision is now explicitly architecture-reference-only for BCOP37; agents must not repeat this dead end. The next executable path is current `Maxritz/Strata-rocm` or a demonstrably newer/superseding AMD lineage, pinned after capability verification.
+- 2026-10-05T22:08:13.471487+00:00 (updated-by): Updated: section:notes
