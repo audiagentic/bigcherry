@@ -1,6 +1,7 @@
 #!/bin/bash
 # QFP25 / 1334: build the production set + 1334, then on that one binary compare BIGCHERRY_FA_SPARSE off / on:
-# prefill ABBA at each depth (flash-prefill-env-ab.sh) and a 24K MTP decode ABA (quick-ab-depth.sh).
+# prefill ABBA at each depth (flash-prefill-env-ab.sh), a 24K MTP decode ABA (quick-ab-depth.sh) and the no-MTP
+# output-distribution gate (flash-probs-ab.sh).
 # Usage: queue-sparse-fa.sh <tag> <depth>... [wait=<log with ALL_JOBS_DONE>]
 set -u
 TAG=${1:?tag}; shift
@@ -27,6 +28,11 @@ for d in "${DEPTHS[@]}"; do
     echo "VIS=0,1,2,3 SCRIPT sparsefa-$TAG-pp$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/sparsefa-$TAG-pp$d BIGCHERRY_FA_SPARSE=1" >> "$jobs"
 done
 echo "VIS=0,1,2,3 SCRIPT sparsefa-$TAG-d24k tools/lab/flash-next/quick-ab-depth.sh 24576 @$RUN @$RUN $R/sparsefa-$TAG-d24k BIGCHERRY_FA_SPARSE=1" >> "$jobs"
+# output-distribution gate without MTP: 24K depth (38.7K tokens; the sparse path starts at ~32.8K cells, and a CPU f32
+# reference text exists for this prompt) and the first prefill depth
+for d in 24576 "${DEPTHS[0]}"; do
+    echo "VIS=0,1,2,3 SCRIPT sparsefa-$TAG-probs$d tools/lab/flash-next/flash-probs-ab.sh $d @$RUN $R/sparsefa-$TAG-probs$d BIGCHERRY_FA_SPARSE=1" >> "$jobs"
+done
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
@@ -34,4 +40,5 @@ grep -E "error:|Error|FAILED" $R/$RUN.log | head -12
 for d in "${DEPTHS[@]}"; do echo "== prefill depth $d (A = sparse off, B = on)"; grep -E "^d[0-9]|^md5|SERVER_FAILED" $R/sparsefa-$TAG-pp$d.log; done
 echo "== 24K MTP decode (base = off, new = on)"; grep -E "^base-|^new|SERVER_FAILED" $R/sparsefa-$TAG-d24k.log
 md5sum $R/sparsefa-$TAG-d24k/*/*.greedy.txt 2>/dev/null | awk '{print $1}' | sort | uniq -c
+for d in 24576 "${DEPTHS[0]}"; do echo "== output distributions, no MTP, depth $d (A = sparse off, B = on)"; grep -E "^A1|^B:|^A2|floor|change|text md5|PROBS_MISSING" $R/sparsefa-$TAG-probs$d.log; done
 echo ALL_JOBS_DONE
