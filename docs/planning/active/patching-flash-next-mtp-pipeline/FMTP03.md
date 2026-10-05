@@ -171,6 +171,8 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 2026-10-05 schedule (owner go-ahead): (1) re-run the 1321 + 1322 screen on the current pin and baseline (b11402 with 1333; every earlier number is from pin 0504396) - tools/lab/flash-next/queue-ahead-screen.sh b11402 2, two ABA sets per depth; (2) per-position acceptance telemetry for promoted vs fresh fronts; (3) promotion policy - note 1322 already promotes only full-length tails, so the remaining option from the list above is preparing a target-seeded fresh draft in the overlap window, or accepting the per-step gain where acceptance holds; (4) repair 1268 before FMTP05; (5) FMTP05 then FMTP07. The greedy difference seen in the confidence-cut arms stays unresolved and needs the QFP28 multi-request text gate before FMTP07.
 
+2026-10-05 re-run on pin b11402 (build b-ahead-b11402 = deploy-v6-plus-ahead incl. 1333; queue-ahead-screen.sh): BROKEN at run time with BIGCHERRY_MTP_AHEAD=1 - llama-server aborts in llama_context::output_reserve, llama-context.cpp:2321 GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max), reached from server_context_impl::decode (24K, first look-ahead arm; run /mnt/data/bigcherry-work/runs/ahead-b11402-d24576-r1/new/timing.server.log). The same binary with look-ahead off is normal (42.2 / 42.3 ms/step, 173/242 and 176/233). 1321 + 1322 still apply and compose cleanly (37/37), so the pin-bump tooling could not see this; it worked on pin 0504396. Upstream sizes each context's output buffer from the speculative depth (server_output_limits -> common_speculative_get_output_limits; draft context n_outputs_max = n_parallel in common/speculative.cpp), and the look-ahead path requests more output rows than that. Not yet determined: which context trips it (target verify of a promoted front, or the drafter's forced-front + tail decode) and which upstream commit introduced or tightened the limit. Fix belongs in the patch that owns the behaviour (1322 enables look-ahead; raise the relevant limit when BIGCHERRY_MTP_AHEAD is on). Production is unaffected: both patches are experimental and off by default. Steps 2-5 of the schedule above are blocked on this.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
@@ -185,3 +187,4 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 - 2026-10-04T17:00:27.817054+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T17:31:34.739948+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T10:04:16.532717+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T10:30:54.194436+00:00 (updated-by): Updated: section:notes
