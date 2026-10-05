@@ -45,6 +45,14 @@ Use this when the pin is at most a few days old. Anything that stops here drops 
 
 Still manual: the Brutus pull/build/smoke, and the completion gate.
 
+If a regression needs a bisect: build each upstream point from a separate clone with a local-only branch that sets
+`pinned` to the commit (the queue's `@build-run` names are shared through the work root, so existing scripts compare
+across clones). That clone must have its OWN `vendor/llama.cpp` - `/mnt/data/bigcherry-work/test-clone` symlinks it
+to the main workspace, so every `bigcherry pull` there moves the campaign tree's vendor checkout and the completion
+gate then reports a mismatch. Afterwards put it back (`git -C vendor/llama.cpp checkout <tag>` in the main
+workspace) before running `pin-status --complete`. Compare every bisect point against the SAME reference binary;
+a five-point bisect of 14 commits took about 20 minutes per point (7 build + 13 for the Flash-Next and 27B runs).
+
 ## 0. Orient before touching anything
 
 ```
