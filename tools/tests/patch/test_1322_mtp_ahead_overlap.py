@@ -54,10 +54,12 @@ class Patch1322Mechanics(unittest.TestCase):
             self.assertLess(trim, sync)
             self.assertLess(sync, dec.index("common_speculative_process(spec.get(), batch.view);"))
             # promotion only on full acceptance of the same front with the predicted bonus token
-            self.assertIn("slot.bc_ahead_tail.size() == (size_t) slot.get_n_draft_max() + 1", out)
+            self.assertIn("(size_t) std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1 &&", out)
             self.assertIn("accepted.size() == slot.spec_draft.size() + 1", out)
             self.assertIn("accepted.back() == slot.bc_ahead_tail[0]", out)
-            self.assertIn("dp.n_tail   = (int32_t) slot.get_n_draft_max() + 1;", out)
+            # the tail is bounded by the speculative depth, never by the room left in the context alone
+            self.assertIn("dp.n_tail   = std::min<int32_t>(slot.get_n_draft_max(), common_speculative_n_max(spec.get())) + 1;", out)
+            self.assertNotIn("(int32_t) slot.get_n_draft_max() + 1", out)
             self.assertNotIn("PMIN", out)
             # promoted draft skips the serial draft but keeps the fresh-draft checkpoint path
             prom = out.index("bigcherry 1322: a promoted ahead tail is this round's draft")
