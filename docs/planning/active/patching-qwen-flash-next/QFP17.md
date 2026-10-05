@@ -107,7 +107,7 @@ CORRECTION 2026-10-04: 1237 + 1265 (MoE MMQ compact grid) and 1253 (chunked GDN 
 
 2026-10-05 1332 (QSA masks + attention per token chunk; one kq_mask view per chunk shared across QSA layers - per-layer input views were materialised by the meta backend: 3 GiB OOM at ub512). Results (v6, 240K f16, 80K fill): ub512 unchunked 868-895 prefill / 59-63 decode; ub512 chunk256 806-827 / 61.8-61.9 (compute buffer 1020.9 -> 785.6 MiB, ROCm3 616 -> 505); ub1024 chunk256 FITS for the first time: 898-901 prefill / 60.0-60.9 decode (+1-3% prefill vs v6 ub512). Sweep queued: 512:0, 1024:256, 1024:512, 2048:512, 2048:1024 (queue-ubchunk). OPEN CORRECTNESS QUESTION: 1332's 24K greedy text diverges from v6 at byte 41 into exactly the same alternative text as 1330 did ('summarize the entire document they've provided in detail' vs 'summarize in detail the content of the four documents'); two independent rebuilds of the QSA mask agreeing suggests the production mask path differs semantically, not just numerically. Settle with a CPU f32 reference (long-ctx-profile CPU_REF=1) or single-device run at the divergent token before adopting either; check whether the unpatched dense-mask path has a meta-backend split/mirroring issue.
 
-2026-10-05 mask correctness RESOLVED (queue-maskref2, 24K prompt = 38.7K tokens, no MTP, 16 tokens): v6 GPU (no MTP) and the CPU f32 reference produce the same text ('summarize the entire document they've provided in'), matching 1330/1332's output. The divergent text is v6 WITH MTP ('in detail the content of the four documents'): token 9 is a near-tie (top-1 0.479 v6 / 0.566 f32) that MTP verify-batch numerics flip. Not a mask bug; greedy byte-identity vs v6+MTP is too strict at near-ties - use agreement with the f32 reference / top-k prob match for mask-path changes. 1332 single-token decode segfaulted in ggml_backend_meta_graph_compute (whole-mask view of the kq_mask input) -> fixed by chunking only when n_tokens > chunk (decode/MTP verify keep the dense path); queue-chunk3 re-checks. Sweep: only ub1024 + chunk256 fits (prefill 904 vs 851-891 t/s at 80K fill, decode unchanged); ub1024 chunk512 and ub2048 do not fit.
+2026-10-05 mask correctness RESOLVED (queue-maskref2, 24K prompt = 38.7K tokens, no MTP, 16 tokens): v6 GPU (no MTP) and the CPU f32 reference produce the same text ('summarize the entire document they've provided in'), matching 1330/1332's output. The divergent text is v6 WITH MTP ('in detail the content of the four documents'): token 9 is a near-tie (top-1 0.479 v6 / 0.566 f32) that MTP verify-batch numerics flip. Not a mask bug; greedy byte-identity vs v6+MTP is too strict at near-ties - use agreement with the f32 reference / top-k prob match for mask-path changes. 1332 single-token decode segfaulted in ggml_backend_meta_graph_compute (whole-mask view of the kq_mask input) -> fixed by chunking only when n_tokens > chunk (decode/MTP verify keep the dense path); queue-chunk3 re-checks.
 
 2026-10-05 queue-chunk3 (1332 with n_tokens > chunk gate): MTP serving at 24K fine (ms/step 41.2 all arms; text = f32-side near-tie). No-MTP single-token decode after a chunked prefill still segfaults in ggml_backend_meta_graph_compute (null write) even though decode itself takes the dense path; chunk 0 decodes fine (38.6 t/s). Likely stale meta-backend bookkeeping for the per-chunk views of the kq_mask INPUT created during prefill. Next fix if resumed: never view the input - copy the chunk's kq_mask rows with ggml_get_rows from a small per-chunk I32 row-index graph input (needs an llm_graph_input set_input hook), or fix the meta view bookkeeping. Parked as experimental: payoff is ub1024 fitting at 240K with only +1.5-6% prefill at an 80K fill; bigger prefill wins need removing the dense kq_mask input (step 3).
 
@@ -136,3 +136,62 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:53.025717+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T12:52:50.061761+00:00 (updated-by): Updated: section:notes
+
+## Plan Review - 2026-10-05 prefill round
+
+Scope: b11402 `d89651a7b205`, Brutus 3-rank Meta split `0.31,0.27,0.42`, attention/KV on the two XTX, f16 KV, ub512. Shared-branch note: while this review was running, patch `1334_hip_sparse_flash_attn` landed behind `BIGCHERRY_FA_SPARSE=1`; treat QFP25 as an implementation-ready hardware-proof item, not a future design project. MTP look-ahead is out of scope.
+
+### Amdahl / priority order
+
+Use critical-path wall, not summed rank kernel percentages. The current-pin profile gives ~31.1 s wall at 31.8K (`31793/1021`) and 120 s at 99.3K. Bounds below are the optimistic wall fraction removable if that candidate eliminated its owned work completely.
+
+| Rank | Candidate | 31.8K / 99.3K hard wall bound | Expected E2E / effort-risk | Decision |
+|---|---|---:|---|---|
+| 0 | Existing provider/protocol screen | AR bound 22.8% / 18.5% | 0-5%, S/low | Run before new collective code; may make PGC14/PGC15 unnecessary or change their baseline. |
+| 1 | QFP25 / `1334_hip_sparse_flash_attn` | FA 6.3% / 15.8%, rising strongly with context | ~4-12% at 100K+ if sparse WMMA behaves; S-M/medium now that code exists | **First hardware proof.** Also removes the XTX-attention wait seen as inflated R9700 collective time. |
+| 2 | 1332 ub1024 + QSA chunk256 | collective-only ceiling 22.8% / 18.5%; whole-MMQ ceiling 20.6% / 16.8%; actual mechanism only amortizes fixed costs/improves batch geometry | **measured +1.5..7%** at 80K; S/medium | **Second hardware proof** on b11402 at 32K/100K/200K. |
+| 3 | PGC15 token-tiled compute/AR overlap | all AR 22.8% / 18.5%; phase-1 one-of-two reductions <=11.4% / 9.3% | phase-1 ~3-6%, full ~6-10%; L/high | Implement only after provider screen; phase-1 outline in PGC15. |
+| 4 | upstream #29901 tiled lightning indexer | max-rank indexer+top-k 2.2% / 5.3% | ~1-3%; S-M/low | Merged upstream after b11402; exact backport/HIP qualification is cheap. |
+| 5 | PGC14 RCCL transport/protocol | AR 22.8% / 18.5% | 0-3% likely; S screen, L if transport code | Continue only if RCCL protocol/topology sweep exposes a real loss. |
+| 6 | QFP26 grouped MoE MMQ + gate/up fusion | whole MMQ 20.6% / 16.8%; QFP26 owns only a subset | ~3-6% if grouping/fusion removes repeated quantize/dispatch; L/high | After sparse FA/ub1024/indexer; preserve 1237/1265 expert maps. |
+| 7 | QFP24 pinned input ring | only defensible ceiling is the ~30% GPU-idle envelope; input copies are a subset | prior unsafe +3.7/+7.2%, safe staging -2%; expected 0-3%; M/high lifetime risk | Park until timeline proves pageable/pinned input stalls remain exposed after 1326. |
+| 8 | PGC12 phase-aware provider | 0 incremental for current prefill: large messages already route RCCL | ~0%; S | Keep as policy owner, not a new optimization. |
+
+Drop/park for this round:
+
+- **PGC16 fewer AllReduces: no foldable Qwen4Exp pair.** The two reductions/layer are not independent. `build_layer_attn()` ends in the tensor-split `wo` projection (`attn_output`); its reduced output immediately feeds `build_hc_combine()` (sigmoid/scale/multiply/add or fused HC post), then `build_hc_mix()`/normalization before the FFN/MoE branch exists. The FFN reduction therefore depends on the first reduction. The Meta backend's existing `get_i_delayed()` already folds the only safe algebraic case (`PARTIAL a`, independent `PARTIAL b`, then MIRRORED `ADD`); this graph cannot satisfy it. Hypothetical half-AR bound is 11.4%/9.3%, **actual eligible-pair bound is 0**.
+- **New half-width prefill wire: drop.** b11402 RCCL already converts large F32 reductions to BF16 for `n_backends==3 && ne>=131072`. A 2560x512 reduction has 1,310,720 elements: logical F32 size 5.24 MiB, RCCL payload ~2.62 MiB plus F32<->BF16 conversions. `1272_ar_host_compressed_wire` is the two-GPU internal-provider codec and `1250` is P2P-oriented; neither improves this active 3-rank RCCL path. Q8 would add a new numerical/quality trade for a problem already halved.
+- **GDN:** 1253 is already promoted. Hard residual ceiling is only 3.5%/2.9% of wall and any second-order chunk tuning owns a fraction of that; park unless the 200K profile grows materially.
+
+### Gate 0: settle the provider before PGC15
+
+The observed `ncclDevKernel_Generic_4` is RCCL. On Linux b11402 `ggml_backend_cuda_comm_init()` defaults to NCCL/RCCL; the 3-rank 5.2 MiB logical F32 call takes the large BF16 branch in `ggml_backend_cuda_comm_allreduce_nccl()`. Stock `ggml_backend_cuda_comm_allreduce_internal()` asserts `n_backends == 2`, so it is not a 3-rank alternative. `1244_gp11_internal_allreduce_nway_root` is the only existing 3-rank internal/root candidate. The CPU-root large path is already negative evidence: 1291 records a prior 32 MiB large-path prefill change around 1450 -> 1060 t/s.
+
+Run the existing balanced `tools/lab/flash-next/prefill-provider-sweep.sh` at ~32K and ~100K before writing PGC15 transport code:
+
+1. `--allreduce ccl` versus `--allreduce adaptive`; they should converge to the same RCCL large path. A difference means dispatch/policy overhead or wrong phase classification and belongs to PGC12/0840.
+2. CPU-root large diagnostic: `--allreduce host BIGCHERRY_AR_CPU_ROOT_LARGE_MAX_BYTES=8388608` and `BIGCHERRY_AR_CPU_ROOT_CHUNK_BYTES={524288,1048576,2097152}`. Expect rejection unless the new pin/topology overturns the existing large-path loss.
+3. `--allreduce root3` with the 1244 experiment composition; compare the same 5.24 MiB logical shape. If root3 wins >=3% E2E with parity, promote/repair that provider before PGC15.
+4. RCCL protocol proof: `NCCL_DEBUG=INFO`, `NCCL_DEBUG_SUBSYS=INIT,GRAPH,COLL`; then diagnostic `NCCL_ALGO=Ring|Tree` and supported `NCCL_PROTO=Simple|LL|LL128`. Do not infer protocol from `ncclDevKernel_Generic_4`. With no P2P, verify the logged SHM/PCIe route and measured bandwidth rather than assuming it.
+
+The 38.9 ms max is not representative transport latency given 0.89 ms median / 2.03 ms p90. Align the same collective ordinal across ranks. If one rank enters ~39 ms before peers and peers have normal kernel duration, the long kernel is arrival skew/wait (the 100K R9700 profile already demonstrates this class: its excess AR time tracks XTX attention). If all ranks enter together and all run long, investigate RCCL/OS/PCIe/protocol stalls. One long rank is not evidence for a slower wire protocol.
+
+### Rank 2 concrete: 1332 ub1024 proof
+
+Use the existing implementation, not a new patch: `BIGCHERRY_QSA_CHUNK=256`, outer `-ub 1024 -b 1024`; keep the existing small-batch gate so decode/MTP-sized batches use the dense path. Compare against `-ub 512`, chunk off, from the same b11402 composition. At fixed prompt length the model still performs 96 reductions per outer ubatch, but ub1024 approximately halves ubatch count while doubling reduction payload; bytes/token are nearly unchanged. The expected gain is therefore launch/conversion amortization plus better MMQ/float-matmul geometry, not a 2x communication reduction.
+
+Mechanism gate: kernel census must show ~half the ubatches and ~half the 96-AR bursts for a fixed fill, with no new QSA launch explosion; record RCCL total time/token, MMQ time/token and peak VRAM. ABBA: 32K/100K/200K, at least 4 arms/config after clocks stabilize. Correctness: CPU-f32/top-k reference at the known near-tie, no-MTP greedy where margin is safe, QFP28 multi-request/cache-reuse state gate, and decode control <=1%. Promote only if current-pin 100K or 200K prefill is >=3% faster (or a depth-specific larger win is reproducible) and 240K reserve remains safe.
+
+### Proof standard for the remaining round
+
+| Candidate | Mechanism proof | Performance proof | Correctness gate |
+|---|---|---|---|
+| 1334 / QFP25 | rocprof: sparse index compaction + sparse `flash_attn_ext_f16` selected; FA reads/work scale with selected cells, XTX FA wall falls and R9700 collective-wait tail falls | ABBA ~100K/~200K, flag 0/1; then compose with 1332 | `test-backend-ops` sparse FA on gfx1100+gfx1201; logits/top-k vs dense and CPU-f32; multi-request gate |
+| 1332 | ubatch/AR census and peak allocator trace | ABBA ub512:c0 vs ub1024:c256 at 32K/100K/200K | CPU-f32/top-k + multi-request/cache reuse; decode <=1% |
+| PGC15 | timeline must visibly overlap producer tile `i+1` with range AR tile `i`; trace range offsets/slots/provider | same-build flag 0 vs tile128/256 ABBA 32K/100K/200K; first isolate from 1334, then compose | direct range-vs-whole provider test; model logits/top-k vs CPU-f32 because BF16 collective segmentation may change low bits; multi-request + graph replay |
+| #29901 | tiled lightning-indexer kernel selected; kernel wall/resource census on both XTX/R9700 placements | ABBA 100K/200K; require >=2% E2E or retain upstream-only | backend-op lightning indexer + model logits/top-k |
+| PGC14 | RCCL debug confirms transport/protocol; per-call latency/bandwidth improves with same count | ABBA 32K/100K; >=2% E2E before code carry | same BF16 reduction/logit reference; no provider-state drift |
+| QFP26 | grouped expert map reused; fewer quantize/MMQ launches and gate/up reads with same routed IDs | ABBA 32K/100K/200K; profile MMQ/quantize separately | deterministic expert IDs, backend-op `MUL_MAT_ID`, logits/top-k vs reference |
+| QFP24 | timeline proves host-input copy/sync bubbles removed, no hidden staging overwrite | ABBA short + 100K prefill | repeated/multi-request stress; exact input bytes and output reference |
+
+Order of execution: **provider/protocol screen -> 1334 hardware proof -> 1332 current-pin proof -> PGC15 phase-1 microbench/patch -> #29901 -> PGC14 only if screen justifies it -> QFP26 -> QFP24.**

@@ -323,3 +323,157 @@ PGC12 identified overlap as the main prefill collective lever. PGC15 is the conc
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created by agent from prefill plan scan.
 - 2026-10-05: Added source-shaped implementation skeleton grounded in llama.cpp 0504396 Meta/provider ABI and backend event model.
+
+## Phase-1 patch outline - b11402 / Brutus prefill round
+
+This supersedes only the old-pin implementation details above; the ownership and fail-closed design remain. Current pin is llama.cpp b11402 `d89651a7b205`. Active 3-rank provider is RCCL/NCCL, and its implementation is in `ggml/src/ggml-cuda/ggml-cuda.cu`. **Do not edit `allreduce.cu` in phase 1**: that file implements the upstream internal provider, whose b11402 entry point asserts `n_backends == 2`; Brutus prefill has 3 ranks. Add internal/root3 range support only after RCCL overlap is proven.
+
+### Exact b11402 seams / anchors
+
+1. `ggml/include/ggml-backend.h`: beside `ggml_backend_comm_allreduce_tensor_t`. Add optional range capability typedefs; leave the existing callback untouched.
+2. `ggml/src/ggml-backend-meta.cpp` around b11402 lines ~1800-1845, `struct ggml_backend_meta_context`: existing anchors are `void * comm_ctx = nullptr;` and `ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;`. Add range callback + preflight callback and proc-address lookup in the constructor.
+3. `ggml/src/ggml-backend-meta.cpp` around ~2430-2470, `ggml_backend_meta_graph_compute()`: current anchor is the loop which runs every rank's `bcj.cgraphs[i].cgraph_main`, then builds `nodes` from the last node and calls `backend_ctx->comm_allreduce(...)`. This is the serialization point to replace only for a preflight-qualified tiled boundary.
+4. `src/models/qwen4exp.cpp`, `llama_model_qwen4exp::graph::build_layer_attn()` (b11402 ~930-1050): the first producer is already named by the anchor `cur = build_lora_mm(model.layers[il].wo, cur, model.layers[il].wo_s); cb(cur, "attn_output", il);`. **No model edit is required in phase 1.** Meta qualifies the terminal simple-backend node corresponding to this `GGML_OP_MUL_MAT` boundary.
+5. `ggml/src/ggml-cuda/ggml-cuda.cu` around ~1000-1200, `ggml_backend_cuda_comm_allreduce_nccl()`: factor the large/small collective body into a private range helper accepting element offset/count and an explicit stream array. Production tile ranges remain above the 3-rank BF16 threshold for tile sizes >=64, so preserve the current F32->BF16 / RCCL BF16 / BF16->F32 behavior.
+6. `ggml/src/ggml-cuda/ggml-cuda.cu`, `ggml_backend_cuda_reg_get_proc_address()`: export the two optional range symbols. Existing whole-tensor provider remains the fallback.
+
+### Patch package
+
+Next free ID at review time: `patches/1335_prefill_ar_tile_overlap/` (recheck before creation). Proposed flag defaults OFF:
+
+```python
+GROUP = "core"
+STATE = "untested"
+
+ENV_DOCS = (
+    EnvDoc("BIGCHERRY_AR_TILE_TOKENS", "<tokens>", "0",
+           "prefill attention-output token tile size for compute/AllReduce overlap; 0 disables"),
+    EnvDoc("BIGCHERRY_AR_TILE_TRACE", "0|1", "0",
+           "log tiled AllReduce eligibility, ranges, slots and fallback reasons"),
+)
+```
+
+Initial accepted values: 128/256; 64/512 may be diagnostic only. Use ordinary `Edit` anchors against the exact strings above; no broad regex replacement of provider code. Unit tests must apply/idempotence-check every edit and assert default-off preserves the original whole-provider call.
+
+### Communication ABI: add preflight, not partial fallback
+
+A callback failure after tile 0 has executed cannot safely fall back to the whole-tensor path. Add a provider preflight so all failure happens before any tiled producer work:
+
+```cpp
+typedef bool (*ggml_backend_comm_allreduce_tensor_range_supported_t)(
+        void * comm_ctx, struct ggml_tensor ** tensors,
+        size_t max_offset, size_t max_size);
+
+typedef bool (*ggml_backend_comm_allreduce_tensor_range_t)(
+        void * comm_ctx, struct ggml_tensor ** tensors,
+        size_t offset, size_t size, uint32_t slot,
+        bool wait_for_completion);
+```
+
+Meta takes the tiled path only if `range_supported()` succeeds for every planned range. After that, a runtime range failure is an execution error, not a silent whole-tensor retry.
+
+### First producer: attention `wo`, not FFN/MoE
+
+Qwen4Exp has two reductions/layer, but start with the attention output projection. It is a plain terminal `GGML_OP_MUL_MAT` (`attn_output`) whose logical activation/output token axis is contiguous. FFN/MoE is deliberately phase 2: its terminal partial result depends on routed `MUL_MAT_ID`, expert compaction, gate/up work and weighted expert reduction; tiling it changes expert grouping and interacts directly with 1237/1265.
+
+At Meta graph rebuild, qualify the simple-backend subgraph only when its last real node is the attention-output `MUL_MAT`. Build persistent auxiliary graphs, do not mutate the original graph at execution time:
+
+- `prefix`: all nodes before terminal `wo`, executed once for the whole ubatch;
+- `producer[tile]`: a one-node shallow clone of `wo` with an input view and output/data range for `[t0, t0+nt)`; `ne[1]=nt` reaches the backend launch/grid;
+- original whole cgraph remains untouched for fallback.
+
+For the first version require F32 contiguous activation/output with token axis 1:
+
+```text
+src1 offset = t0 * src1->nb[1]
+dst  offset = t0 * dst ->nb[1]
+bytes/tile  = nt * dst->nb[1]
+```
+
+Require `src1->nb[1] == src1->ne[0]*sizeof(float)` and the equivalent output invariant. A mere Meta view without changing the producer node dimensions is not sufficient.
+
+Execution for one qualified boundary:
+
+```text
+all ranks: graph_compute_async(prefix)
+for tile i:
+    all ranks: graph_compute_async(producer[i]) on normal compute stream
+    provider: record ready[i] on compute stream
+    provider comm stream waits ready[i]
+    provider: F32->BF16(range i), RCCL BF16 AllReduce(range i), BF16->F32(range i)
+    provider returns without making compute wait
+    -> producer[i+1] may now overlap collective[i]
+last tile:
+    record done on comm stream; normal compute stream waits done
+continue with existing next Meta subgraph
+```
+
+One provider comm stream per device serializes tile collectives; therefore waiting on the last tile's done event also orders every earlier tile. No host/device synchronize in the hot path.
+
+### RCCL stream/event ownership
+
+Extend the existing CUDA communication context, not Meta, with persistent resources:
+
+```cpp
+struct bc_ar_range_slot {
+    cudaEvent_t ready[GGML_CUDA_MAX_DEVICES] = {};
+};
+struct bc_ar_range_state {
+    cudaStream_t comm[GGML_CUDA_MAX_DEVICES] = {};
+    bc_ar_range_slot slot[4];
+    cudaEvent_t done[GGML_CUDA_MAX_DEVICES] = {};
+    // persistent BF16 scratch per rank, sized for max tile elements
+};
+```
+
+Create `cudaStreamNonBlocking` streams/events at comm init and destroy them in comm free. For each rank, obtain the private `ggml_backend_cuda_context` already held in the provider and use `cuda_ctx->stream()` as the producer stream. `cudaEventRecord(ready, compute)` -> `cudaStreamWaitEvent(comm, ready)`. Run conversion and `ncclAllReduce` on `comm`. Record `done` after the BF16->F32 conversion. On final tile issue `cudaStreamWaitEvent(compute, done)`.
+
+Do not allocate `ggml_cuda_pool_alloc` scratch independently per tile: use provider-owned persistent BF16 scratch sized during preflight/init so asynchronous tile lifetimes cannot return pool memory early. Range offset/size must be 4-byte aligned and map to integral F32 elements.
+
+### CUDA/HIP graph capture/replay
+
+`ggml_backend_cuda_graph_compute()` captures per-cgraph using stable graph identity. Tiled producer graphs therefore have to be created during Meta rebuild with fixed shape/offset and stable UID; do not create/resize tensors during replay. Phase 1 requires `n_tokens % tile_tokens == 0`; the final short ubatch or any variable tail falls back to the untouched whole graph. Communication remains outside each producer graph capture: `graph_compute_async(producer[i])` enqueues/captures the producer on the compute stream, then the provider records a ready event and launches RCCL on its separate stream.
+
+Fail closed if a stable persistent tile graph cannot be constructed without changing graph shape/UID. Do not globally disable CUDA/HIP graphs to make the experiment work.
+
+### Fail-closed matrix
+
+Whole-tensor path is selected before execution unless all are true:
+
+- `BIGCHERRY_AR_TILE_TOKENS` is 128 or 256;
+- HIP/RCCL range callbacks and preflight are present; first version may require exactly 3 ranks;
+- boundary terminal op is the Qwen4Exp attention-output plain `GGML_OP_MUL_MAT`, not `MUL_MAT_ID`/recurrent/GDN;
+- split state is PARTIAL and every rank contributes (`GGML_TENSOR_FLAG_COMPUTE` set); no zero-sized rank special case;
+- source/output are F32, tightly token-contiguous, aligned, same token count/stride on every rank;
+- `n_tokens % tile_tokens == 0`; no tail graph;
+- all range offsets/sizes agree across ranks and pass provider preflight;
+- persistent tile cgraphs/resources were built for the current graph UID;
+- no unsupported view/permutation/padding aliases the output range.
+
+Trace each rejection once under `BIGCHERRY_AR_TILE_TRACE=1`; never silently run a partially tiled boundary.
+
+### Smallest proof before the full patch
+
+Add a standalone lab program first, e.g. `tools/lab/rccl/ar-overlap-tiled.hip`, using the **actual three Brutus ranks and two HIP streams per device**:
+
+1. allocate F32 `[2560,512]` output per GPU plus persistent BF16 tile scratch;
+2. compute stream launches an adjustable synthetic producer into tile i (or a representative HIP GEMM if convenient), records ready;
+3. comm stream waits ready, converts tile to BF16, calls RCCL AllReduce on the tile, converts back, records done;
+4. compute stream immediately launches producer tile i+1;
+5. compare serial vs pipelined tile `{128,256}` with identical producer work and RCCL bytes.
+
+Stop before package implementation unless rocprof shows real temporal overlap (`producer[i+1]` concurrent with `ncclDevKernel... [i]`) and pipeline wall beats serial. This also exposes CU contention: RCCL is a compute kernel on HIP, so theoretical stream concurrency is not proof of useful overlap.
+
+### Tests / proof
+
+Patch tests:
+
+- apply + idempotence for header/Meta/provider edits;
+- eligibility mapper: contiguous good cases; noncontiguous, tail, rank-shape mismatch, wrong op/type/provider all reject before execution;
+- provider direct test over multiple ranges and repeated generations; event slots wrap without stale waits;
+- graph replay: same request shape repeatedly plus cache reuse/multi-request; stable graph UIDs, no dynamic realloc;
+- default-off output and provider call path unchanged.
+
+Numerics: b11402's production 3-rank RCCL path is BF16 for these ranges, so do **not** demand generic byte identity with exact-F32 AllReduce. Compare tiled RCCL against whole RCCL using the same BF16 policy, record max abs/ULP/logit deltas, and gate model output against CPU-f32/top-k at near ties. For any F32-under-threshold direct test, require exact equality.
+
+Mechanism acceptance: rocprof timeline proves overlap and `BIGCHERRY_AR_TILE_TRACE` shows only attention-output boundaries firing. Performance: same-build flag-off vs tile128/256 ABBA at ~32K/~100K/~200K, >=4 arms/config, clocks stable; first test isolated from 1334/other new prefill changes, then compose. Phase-1 promotion threshold: >=3% representative E2E prefill or >=30% of the attention-output reduction wall hidden with no offsetting regression. Full PGC15's existing >=10% target remains the bar before generalizing to multiple producer families. Decode control <=1%.
