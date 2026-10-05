@@ -9,6 +9,10 @@ skips the quantize launch on a hit; a miss quantizes into a stable cache slab an
 falls back to the original per-call pool allocation and quantizer. A generation begins at every
 ggml_backend_cuda_graph_compute, and slab growth is blocked while a HIP graph is being captured (1235's contract),
 so captured graphs only ever reference never-relocated slab memory. Requires 1235 (cache) and 1241 (anchor shape).
+
+Default on (GGML_HIP_Q8_1_CACHE_MODE unset = on, changed 2026-10-05: a universally useful path is on by default,
+the variable is the off switch); GGML_HIP_Q8_1_CACHE_MODE=off disables it. The default lives in the overlay parser
+(src/ggml/src/ggml-cuda/hip-q81-cache.cpp).
 """
 
 from __future__ import annotations
@@ -244,8 +248,8 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('GGML_HIP_Q8_1_CACHE_MODE', 'off|on|verify', 'off',
-           'reuse one Q8_1 quantization of an activation across MMVQ consumers (foundation 1235)'),
+    EnvDoc('GGML_HIP_Q8_1_CACHE_MODE', 'off|on|verify', 'on',
+           'reuse one Q8_1 quantization of an activation across MMVQ consumers (foundation 1235); off disables it and the fusions that write it'),
     EnvDoc('BIGCHERRY_Q81_TRACE', 'set', 'unset',
            'log Q8_1 cache hits/misses'),
 )

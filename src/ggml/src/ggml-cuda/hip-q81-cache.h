@@ -54,7 +54,7 @@ enum ggml_hip_q81_cache_mode {
     GGML_HIP_Q81_CACHE_VERIFY = 2,
 };
 
-// GGML_HIP_Q8_1_CACHE_MODE=off|on|verify, default off. Checked once and
+// GGML_HIP_Q8_1_CACHE_MODE=off|on|verify, default on (unset). Checked once and
 // cached (same checked-once-atomic shape as ggml_hip_tuner's own env
 // lookups), not re-read on every call. Deliberately independent of
 // GGML_HIP_DISPATCH_MODE: this cache sits underneath MMVQ activation

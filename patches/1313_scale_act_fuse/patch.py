@@ -10,6 +10,8 @@ separate scale_f32 / unary_op kernels, so the result is bit-identical. When the 
 feeding MMVQ) and 1310's rules hold (BIGCHERRY_ACT_Q81=1, cache on, decode-shaped graph, row length a multiple of
 QK8_1), the same launch also writes MMVQ-padded native Q8_1 blocks under the key MMVQ looks up, exactly as 1310 does
 for the unfused activation. Anything else is not fused. Requires 1310 (shared Q8_1 cache include in unary.cu).
+
+Default on since 2026-10-05 (BIGCHERRY_SCALE_ACT_FUSE and BIGCHERRY_ACT_Q81 unset = on); =0 disables.
 """
 
 from __future__ import annotations
@@ -74,7 +76,7 @@ static void bc_scale_act_launch(ggml_backend_cuda_context & ctx, const ggml_tens
     static_assert(block % QK8_1 == 0, "1313: block must cover whole Q8_1 groups");
     const int64_t ne0 = dst->ne[0], ne1 = dst->ne[1], ne2 = dst->ne[2], ne3 = dst->ne[3];
 
-    static const bool act_q81 = getenv("BIGCHERRY_ACT_Q81") != nullptr && atoi(getenv("BIGCHERRY_ACT_Q81")) != 0;
+    static const bool act_q81 = getenv("BIGCHERRY_ACT_Q81") == nullptr || atoi(getenv("BIGCHERRY_ACT_Q81")) != 0;
     if (scale1 == nullptr && act_q81 && ggml_hip_q81_decode_graph && ne0 % QK8_1 == 0 &&
             ggml_hip_q81_cache_mode_get() != GGML_HIP_Q81_CACHE_OFF) {
         const int64_t ne0_padded = GGML_PAD(ne0, MATRIX_ROW_PADDING);  // MMVQ's padded src1 row
@@ -137,7 +139,7 @@ _FUSE_ANCHOR = ("    if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_SCALE, GGML_OP_
 _FUSE_TEXT = r"""
 #if defined(GGML_USE_HIP)
     // bigcherry 1313: SCALE -> UNARY(SILU|SIGMOID) [-> SCALE] in one launch (BIGCHERRY_SCALE_ACT_FUSE=1).
-    static const bool bc_scale_act = getenv("BIGCHERRY_SCALE_ACT_FUSE") != nullptr && atoi(getenv("BIGCHERRY_SCALE_ACT_FUSE")) != 0;
+    static const bool bc_scale_act = getenv("BIGCHERRY_SCALE_ACT_FUSE") == nullptr || atoi(getenv("BIGCHERRY_SCALE_ACT_FUSE")) != 0;
     if (bc_scale_act && node->op == GGML_OP_SCALE && i + 1 < cgraph->n_nodes) {
         ggml_tensor * act = cgraph->nodes[i + 1];
         const auto plain_f32 = [](const ggml_tensor * t) { return t->type == GGML_TYPE_F32 && ggml_is_contiguous(t); };
@@ -220,6 +222,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_SCALE_ACT_FUSE', '0|1', '0',
-           'fuse scale + activation into the Q8_1 writer'),
+    EnvDoc('BIGCHERRY_SCALE_ACT_FUSE', '0|1', '1 (on)',
+           'fuse scale + activation into the Q8_1 writer; 0 disables'),
 )

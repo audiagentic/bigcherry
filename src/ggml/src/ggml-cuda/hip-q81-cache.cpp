@@ -20,8 +20,10 @@
 namespace {
 
 ggml_hip_q81_cache_mode parse_mode(const char * s) {
+    // unset: on. The cache and the fusions that write it are validated for any quantized model, so the variable
+    // is an off switch, not an opt-in.
     if (s == nullptr) {
-        return GGML_HIP_Q81_CACHE_OFF;
+        return GGML_HIP_Q81_CACHE_ON;
     }
     if (std::strcmp(s, "on") == 0) {
         return GGML_HIP_Q81_CACHE_ON;
@@ -29,8 +31,8 @@ ggml_hip_q81_cache_mode parse_mode(const char * s) {
     if (std::strcmp(s, "verify") == 0) {
         return GGML_HIP_Q81_CACHE_VERIFY;
     }
-    // "off" and anything unrecognized both mean off -- fail closed rather
-    // than silently enabling an experimental path on a typo.
+    // "off" and anything unrecognized both mean off -- a set but mistyped
+    // value fails closed.
     return GGML_HIP_Q81_CACHE_OFF;
 }
 

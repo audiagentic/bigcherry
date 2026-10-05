@@ -10,6 +10,8 @@ quantize launch; other consumers miss and quantize as before. Each 32-element gr
 one block (block size and row length are multiples of 32), so group reductions are width-32 warp reductions and the
 Q8_1 math (amax/127, roundf, half2(d, sum)) matches quantize_q8_1 bit for bit. Reservation failure (e.g. during
 graph capture) or an ineligible shape runs the unchanged kernel. Requires 1307.
+
+Default on since 2026-10-05 (BIGCHERRY_ACT_Q81 unset = on); BIGCHERRY_ACT_Q81=0 disables.
 """
 
 from __future__ import annotations
@@ -78,7 +80,7 @@ template <float (*op)(float), bool gated>
 // contiguous reshape_3d(ne0*ne1, ne2, ne3) whose row needs MMVQ padding (1307's flattened-reshape lookup).
 static bool bc_act_q81_try(ggml_backend_cuda_context & ctx, ggml_tensor * dst, const float * x, const float * g,
         const int64_t o0, const int64_t o1, const bool flatten01) {
-    static const bool enabled = getenv("BIGCHERRY_ACT_Q81") != nullptr && atoi(getenv("BIGCHERRY_ACT_Q81")) != 0;
+    static const bool enabled = getenv("BIGCHERRY_ACT_Q81") == nullptr || atoi(getenv("BIGCHERRY_ACT_Q81")) != 0;
     if (!enabled || ggml_hip_q81_cache_mode_get() == GGML_HIP_Q81_CACHE_OFF || dst->type != GGML_TYPE_F32 ||
             !ggml_is_contiguous(dst)) {
         return false;
@@ -200,6 +202,6 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '0',
-           'activation ops write the Q8_1 activation directly for the next MMVQ (needs Q8_1 cache)'),
+    EnvDoc('BIGCHERRY_ACT_Q81', '0|1', '1 (on)',
+           'activation ops write the Q8_1 activation directly for the next MMVQ (needs Q8_1 cache); 0 disables'),
 )
