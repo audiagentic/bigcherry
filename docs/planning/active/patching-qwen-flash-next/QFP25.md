@@ -438,3 +438,94 @@ One compact selection producer shared with dense fallback; explicit op/capabilit
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created as QFP17 QSA-SPARSE-PP implementation owner.
 - 2026-10-05: Added concrete qwen4exp graph refactor, explicit GGML op, backend dispatch and HIP kernel skeleton grounded in the 0504396 dense-mask code.
+
+## b11402 implementation review - 2026-10-05 prefill round
+
+This section supersedes the **implementation order**, not the long-term direct-selected-index design above. Current pin is b11402 `d89651a7b205`. While this review was in progress, `patches/1334_hip_sparse_flash_attn` landed on `patch-refactor`; use it as the smallest hardware proof before adding a Qwen-specific op.
+
+### What QSA computes at this pin
+
+`src/models/qwen4exp.cpp::build_inp_kpool()` fixes the compact-list bound as:
+
+```cpp
+inp->n_sel = kpool*min(n_pool, indexer_top_k/kpool) + kpool - 1;
+```
+
+Production `kpool=4`, `indexer_top_k=2048` therefore gives **2051 individual KV-cell indices/query** once enough pools exist: 512 selected pools are expanded by `ggml_get_rows(pool_idxs, top_k)` to 2048 member-cell indices and concatenated with the 3-cell incomplete tail.
+
+`build_qsa_sel()` then converts that compact set into dense semantics:
+
+1. lightning indexer scores pools; `TOP_K` selects pools;
+2. `pool_idxs` expands selected pools to cells and `tail_idxs` is appended;
+3. dead/invisible slots are remapped to private dump rows `n_kv + slot` so duplicate dead writes are harmless;
+4. `mask_all [n_kv+n_sel,n_tokens]` is filled `-inf`, selected rows are scattered to zero, then a view drops dump rows;
+5. ordinary causal `kq_mask` is added.
+
+`build_attn_qsa()` stores new K/V, reshapes that dense mask, points K/V at the **full cache**, and calls `build_attn_mha(..., mask, ..., n_sel, ...)`. At b11402 the CUDA FA implementation contains sparse MMA variants but mask compaction/selection is compiled out for HIP, so the production RDNA path executes dense FA over `n_kv`; the `-inf` mask suppresses unselected probabilities but does not avoid their K/V scan.
+
+### 1295 decode gather: why it does not scale to ub512
+
+`1295_qsa_gather_decode` retains the pre-remap compact `sel_idx` and, only for `n_tokens <= 8`, contiguous single-stream K/V and a large enough cache, gathers each query's selected K/V rows before FA. It pads the 2051 selections to 2304 and materializes tensors equivalent to `[D=256, Hkv=4, 2304, n_tokens]` in f16.
+
+At 512 queries this is **2.25 GiB for K + 2.25 GiB for V = 4.50 GiB/ubatch**. Even without its 256-cell padding, 2051 selections are ~2.003 GiB each / ~4.006 GiB K+V; the I32 index list itself is only ~4.0 MiB. Therefore per-query gather + ordinary FA is a useful reference/microbenchmark, not the production prefill implementation.
+
+### Prefill design options
+
+1. **Materialized per-query gather + compact ordinary FA.** Simplest semantics and reuses 1295. Reject for production ub512 because of the 4.0-4.5 GiB K/V scratch above. Keep only as a small-query correctness oracle or very small query tile.
+2. **Selected-index FA, direct K/V indirection. Preferred.** Keep K/V in the cache; for each query/query tile load only K/V rows named by the compact selection. b11402 already has the essential sparse MMA loader (`flash_attn_ext_f16<..., use_sparse_kernel=true>`); `1334_hip_sparse_flash_attn` is the lowest-risk first experiment because it enables the upstream mask->indices + indirect-K/V path on RDNA instead of inventing new attention math. If it wins, phase B should bypass dense-mask compaction and feed Qwen's compact cell list directly to the same loader, eliminating the remaining `O(n_kv*n_query)` QSA mask.
+3. **Block-sparse over k-pool structure.** Preserve selected pool blocks and reuse K/V tiles across queries that chose the same pool. Potentially best locality, but 512 queries have different selections; the union can become dense and grouping/sort/dedup becomes a second scheduler. Defer until direct-index FA is measured.
+
+At the measured first-100K point, dense FA is ~97 ms/ubatch on each XTX. Selection density is ~2051/100000 = 2.05%, so the arithmetic/data-read ideal is only a few ms; random-indirect loads and online-softmax overhead dominate before that floor. First practical target: **8-20 ms/ubatch**. Saving 77-89 ms versus 97 ms is ~12-14% of observed 100K wall; hard FA Amdahl is 18.9/120 = 15.8% wall (maximum throughput uplift +18.7%). At 200K, linear-context extrapolation makes dense FA ~194 ms/ubatch and ~25.1% of the ~304.7 s wall; a roughly fixed selected-set kernel in the 8-20 ms range would save ~23-24% E2E, below the +33.5% hard Amdahl speedup ceiling.
+
+### 1334 correctness condition before model acceptance
+
+1334 enables upstream's **query-group union** compaction. Its RDNA path selects the `(D=256,DV=256,ncols1=8,ncols2=8)` sparse specialization. `flash_attn_mask_to_sparse_indices<8>` ORs visibility across eight queries but allocates/caps each group's list at `n_kv_max`; Qwen passes the per-query bound (`n_sel`, ~2051), not a proven eight-query union bound. If eight queries select different pools, the union can exceed 2051 and truncation would silently omit valid KV rows.
+
+Therefore the first backend test must include both:
+
+- 512 queries sharing the same 2051-cell mask (performance/mechanism case);
+- rotating/disjoint 2051-cell masks across each 8-query group (correctness/adversarial union case).
+
+Compare against dense FA/CPU f32 and inspect compacted `counts`. **Do not run 1334 as a production model arm unless every group is untruncated.** If wide union is unsafe, force/instantiate `ncols1=1` as the next experiment; that uses the same indirect sparse loader with one query/list and avoids union semantics. Only after that proof should a direct-Qwen compact-index op be implemented.
+
+### Exact b11402 seams
+
+Qwen graph:
+
+- `src/models/qwen4exp.cpp::build_inp_kpool()`: `inp->n_sel = ...` is the authoritative compact-list bound.
+- `build_qsa_sel()`: anchors are `sel_idx = ggml_concat(ctx0, sel_idx, inp_kpool->tail_idxs, 0);`, the following `ggml_build_forward_expand(gf, sel_idx);`, and later `sel_idx = ggml_cast(ctx0, idx_f, GGML_TYPE_I32);`. Phase B should return/retain the compact live-cell representation here and materialize `mask_all` only for fallback.
+- `build_attn_qsa()`: seam is after K/V cache writes and before `// the selection mask already carries the causal mask`; phase B dispatches direct selected-index FA here.
+- `build_layer_attn()`: existing `if (sel) { cur = build_attn_qsa(...) }` remains the model-level fallback switch.
+
+FA/backend:
+
+- `ggml/src/ggml-cuda/fattn.cu`: `flash_attn_mask_to_sparse_indices`, `ggml_cuda_flash_attn_ext_compact_mask`, `ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse`, `...switch_ncols1`, `...switch_ncols2`.
+- `ggml/src/ggml-cuda/fattn-mma-f16.cuh`: `flash_attn_ext_f16<..., use_sparse_kernel>` and `ggml_cuda_flash_attn_ext_mma_f16_case`; reuse its sparse index K/V load rather than a scalar attention kernel if the RDNA specialization proves correct/performs.
+- Only if phase B requires an explicit op: `ggml/include/ggml.h`, `ggml/src/ggml.c`, `ggml/src/ggml-cuda/ggml-cuda.cu` supports/compute dispatch, and Meta split handling for the new op. Do not add these API seams merely to qualify 1334.
+
+### BigCherry package outline after 1334 proof
+
+Do not create a competing patch now. `1334_hip_sparse_flash_attn` is already the opt-in phase-A package (`BIGCHERRY_FA_SPARSE=1`, default off). If phase A proves the RDNA loader but dense compaction remains material, create a **new next-free-ID** package (recheck the shared branch; do not assume 1335) for direct Qwen indices, e.g. `qsa_selected_index_fattn`.
+
+Edits for that phase-B package:
+
+- `qwen4exp.cpp`: expose compact selected cells from `build_qsa_sel`; direct sparse dispatch before dense mask materialization; fallback constructs the existing mask unchanged.
+- FA source: entry that accepts `I32 [n_sel,n_query]` directly; reuse sparse MMA K/V indirection and online-softmax implementation.
+- GGML/backend/Meta only if a distinct op is required after trying a private/fused-node seam.
+- env docs: `BIGCHERRY_QSA_SEL_FA=0|1` default `0`; optional `BIGCHERRY_QSA_SEL_FA_MIN_KV=<cells>` default `32768`. Keep `BIGCHERRY_QSA_GATHER` for <=8-token 1295; do not overload it.
+- patch tests: exact anchors/apply/idempotence, default-off source identity, unsupported shape/backend fallback, no dense-QSA allocation on selected path.
+
+Fail closed unless production prerequisites match: HIP RDNA3/RDNA4, f16 K/V first, D=256 production head layout, valid I32 selection bounds, supported contiguous cache layout, no multi-stream/transposed-V special case, and context above threshold. Unsupported cases execute current dense QSA; <=8-token decode may continue using 1295 independently.
+
+### Smallest proof / hardware gate
+
+Before phase-B code, extend `test-backend-ops` or add a minimal FA microbenchmark for **KV=100000, Q=512, D=256, production GQA layout, n_sel=2051**, f16 K/V on gfx1100 and gfx1201:
+
+1. dense masked FA baseline;
+2. 1334 sparse, shared selected set;
+3. 1334 sparse, rotating/disjoint selected sets per 8-query group;
+4. if arm 3 truncates/fails, sparse `ncols1=1` prototype with the same masks.
+
+Record sparse-list `count/max_count`, FA kernel wall, output max/mean error, VGPR/SGPR/LDS/spills and occupancy. Continue only if correctness is exact to the dense allowed-set semantics and direct sparse FA is >=2x (prefer <20 ms versus the ~97 ms model bucket). Then run QFP17 ABBA at ~100K and ~200K, flag 0/1, followed by composition with 1332 ub1024 only after each is independently proven.
+
+Correctness gate: backend output vs dense + CPU-f32 reference; model logits/top-k at the known near-tie rather than byte identity against MTP; multi-request/cache-reuse stress; decode control <=1%.
