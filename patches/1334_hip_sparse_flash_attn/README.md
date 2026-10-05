@@ -49,3 +49,19 @@ the CPU backend by test-backend-ops.
 
 The size of the dense-vs-f32 distance is a property of the model on this stack, not of this patch; it is tracked
 separately (QFP28).
+
+## Native llama.cpp comparison
+
+`tools/lab/flash-next/queue-native-flash.sh b-sparsefa-b11402c b-native-b11402 native-sparse` with
+`BIGCHERRY_FA_SPARSE=1` (2026-10-06): the production set with this patch on against native llama.cpp b11402 (source
+`llama-native`, no patches; native compiles the sparse path out for HIP and runs the dense kernel). Flash-Next, 64K
+context f16 (native cannot load the 240K f16 deployment), ABA.
+
+| Depth | production + 1334 | native |
+|---|---|---|
+| 63.1K-token prefill (t/s) | 1029.4 / 1030.1 | 907.6 |
+| decode at 8K (ms/step) | 37.0 / 36.9 | 50.4 |
+| decode at 48K (ms/step) | 45.2 / 44.2 | 67.6 |
+
+The decode gap is the existing production set (it measured 37.1 / 43.9 against 49.9 / 67.3 before this patch); the
+prefill gap at this depth is +13% over native.

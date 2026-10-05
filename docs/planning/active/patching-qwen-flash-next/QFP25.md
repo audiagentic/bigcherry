@@ -434,6 +434,10 @@ One compact selection producer shared with dense fallback; explicit op/capabilit
 - E2E long-context prefill >=8% improvement on one production lane, decode <=1% regression.
 - Unsupported backend/type/shape falls back to dense QSA/1332 safely.
 
+## Notes
+
+2026-10-06 PROOF (pin b11402, build b-sparsefa-b11402c, run sparseproof-b11402c). (1) test-backend-ops FLASH_ATTN_EXT n_kv_max cases vs CPU: 18/18 on ROCm0-3 with BIGCHERRY_FA_SPARSE 0 and 1; activation marker BIGCHERRY_PATCH_HIT patch=1334 n_kv=8192 n_queries=64 n_kv_max=512 present with flag 1, absent with 0. (2) Fidelity (flash-fidelity.sh, 24 next-token probes over one cached fill, no MTP): 38.7K-token fill D vs CPU f32 top-1 22/24 TV mean 0.146; S vs CPU f32 22/24 TV mean 0.128; S vs D 20/24 TV 0.127; D2 vs D identical. 99.3K fill S vs D 20/24 TV 0.110; D2 vs D identical. Sparse is no further from f32 than dense; non-identity explained by summation order feeding the discrete QSA top-k selection. (3) Speed already recorded: +13% at ~99K, +28% at ~202K, 24K MTP decode unchanged. DECISION: 1334 promoted to validated, added to validated-enhancements, flag stays opt-in and is set by the flashnext profile (only Qwen4Exp builds sparse masks, so no second model for a default-on flip). Experiment sparse-fa removed. Follow-up finding for QFP28: the dense GPU path itself is TV 0.146 from CPU f32 on this model.
+
 ## Change Log
 
 - 2026-10-05T00:00:00+00:00 (created-by): Created as QFP17 QSA-SPARSE-PP implementation owner.
@@ -553,3 +557,9 @@ Revised failure branch for the smallest proof:
 4. in that case, the next correctness implementation is the phase-B **per-query direct Qwen selected-index path** (or a new one-query-capable HIP FA specialization), not a forced 1x8 instantiation of the current WMMA kernel.
 
 This supersedes only the earlier `ncols1=1` fallback sentence/arm; the shared-mask/adversarial-union tests, direct-index design, seams and acceptance gates remain unchanged.
+- 2026-10-05T20:59:29.529689+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261005_205930_flash-next-long-context-prefil_8173
+- 2026-10-05T20:59:33.795432+00:00 (updated-by): Updated: section:ledger-events
