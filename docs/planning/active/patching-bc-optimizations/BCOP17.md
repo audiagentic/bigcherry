@@ -1,7 +1,7 @@
 ---
 id: BCOP17
 order: 17
-plan: bc-optimizations
+plan: patching-bc-optimizations
 state: pending
 created-at: '2026-10-05T04:46:00+00:00'
 breadth: ''
