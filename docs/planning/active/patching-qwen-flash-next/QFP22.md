@@ -132,6 +132,8 @@ chunk8 (2026-10-05, build b-chunk8 = deploy-v6-plus-chunk with 1007 + fixed 1332
 
 chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, no ggml.c assert relaxation; commit abd5010b): REJECTED and reverted. (a) ub1024 chunk 512 no longer loads at 240K f16 - ROCm out of memory on device 2 (R9700) during reserve, because the contiguous copy sits next to the scattered mask and removes the saving the patch exists for. (b) Text still differs from dense with the contiguous mask: no-MTP chunk 256 md5 dcf5a52d vs dense eda3ae34 (strided build gave 0db7bf7a), so the strided view / relaxed assert is NOT the sole cause of the dense-vs-chunk difference (RV4220 top suspect not confirmed). Baselines unchanged: 24K MTP 41.5/41.1 ms/step, 80K ub512 870.9 t/s prefill, 60.5 decode; no-MTP chunk 256 39.2 t/s vs 37.0. Next: md5 identity cannot separate last-bit kernel-tiling differences from corruption - compare per-token logits/top-k of chunked vs dense (and vs chunk sizes) and run the QFP28 multi-request gate before any promotion decision.
 
+Pin bump b11402 regression resolved (2026-10-05). Bisect on Brutus (builds at b11401, 0eb6d9a81 #29940, 2ca15f540 #29612, 0bb496dbd #29622, each vs b11402, same recipe; old-pin and new-pin patched source trees differ only in the 107 upstream-changed files): #29435, the MMQ commits and #29612 cleared; #29622 (mixed token/embd batches) is the cause on both models - this contradicts the GPT ranking recorded above (#29612 primary). Fix: patch 1333_mixed_batch_on_demand (mixed select branch built only for a mixed ubatch, no flag), validated and in validated-enhancements: Flash-Next 24K MTP 41.2 ms/step (old pin 41.8, unpatched b11402 43.4/44.4); 27B prefill 10K 1290 (old 1291), 32K 1245 (old 1250, unpatched 1235); mixed-batch checks pass on all devices. Open: native-llama.cpp comparison (queue-native-1333.sh, running), 0.4% 27B 32K prefill residual with another cause, upstream report, mixed batches at real model size, two stray samples on Brutus late in the session (1145.7 t/s prefill; 44.4 ms/step on the old-pin build). Outside the build, surfaced by the improved pin-bump: 1268 fails over the build selection (common/speculative.cpp), 1250 blocked by dependency, test_1314 fails on a pristine tree - none caused by the bump.
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -147,7 +149,6 @@ chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, 
 
 ## Ledger-events
 
-
 - chg_20261004_235349_long-context-flash-next-candid_9064
 - 2026-10-04T23:53:59.321183+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:10:51.942507+00:00 (updated-by): Updated: section:notes
@@ -156,6 +157,8 @@ chunk9 (2026-10-05, b-chunk9 = 1332 with a ggml_cont contiguous per-chunk mask, 
 - 2026-10-05T04:38:52.451161+00:00 (updated-by): Updated: section:notes
 - chg_20261005_060430_moved-the-llamacpp-pin-to-b11_6653
 - 2026-10-05T06:04:34.204505+00:00 (updated-by): Updated: section:ledger-events
+
+- chg_20261005_082539_recovered-a-slowdown-introduce_6606
 
 ## Plan Review — 2026-10-05: b11402 HIP regression triage
 
@@ -230,3 +233,5 @@ If #29612 is confirmed, add a narrow BigCherry upstream-fix patch that restores 
 If #29622 is confirmed instead, optimize the homogeneous raw-token fast path in `llama_batch_allocr`/MTP hook handling rather than reverting mixed-batch support; report upstream if stock llama.cpp reproduces the host-submit regression. If #29941 is unexpectedly implicated, retain its corrected allocation and optimize/reuse the scratch/pool behavior or reconcile 0300/1237 workspace sizing; never reintroduce the under-allocation.
 
 Promotion/pin decision: keep b11402 correctness only if required by an upstream fix; otherwise the performance gate remains open until the #29612 boundary/profile test is resolved. No BigCherry patch/code change is authorized by this review alone.
+- 2026-10-05T08:25:42.858557+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-05T08:25:48.546505+00:00 (updated-by): Updated: section:notes
