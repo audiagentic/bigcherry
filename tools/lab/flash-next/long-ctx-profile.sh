@@ -27,6 +27,17 @@ if [ "${CPU_REF:-}" = 1 ]; then  # f32 CPU reference (no tensor split, no flash 
         --threads 20 -lv 4 -ctk f16 -ctv f16)
 fi
 export HIP_VISIBLE_DEVICES=0,1,2,3 ROCR_VISIBLE_DEVICES=0,1,2,3
+# A model evicted from the page cache (e.g. by a 27B run in between) loads through mmap at ~24 MB/s (17 minutes
+# observed, 2026-10-05); a sequential read of the shards first is ~780 MB/s. Only shards under half resident: the
+# model (94 GB) does not fit the host page cache (91 GB) whole, and a normal load is fine at ~60% resident.
+for shard in "${model%-00001-of-*}"-*.gguf; do
+  [ -f "$shard" ] || continue
+  cached=$(python3 "$(cd "$(dirname "$0")" && pwd)/page-cache-fraction.py" "$shard" 2>/dev/null)
+  if [ -n "$cached" ] && [ "$cached" -lt 50 ]; then
+    echo "warming page cache: $(basename "$shard") (${cached}% resident)"
+    cat "$shard" > /dev/null
+  fi
+done
 run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
   local name=$1; shift
   local port=$((45000 + RANDOM % 2000)) log="$out/$name.server.log"
