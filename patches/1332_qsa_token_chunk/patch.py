@@ -40,11 +40,18 @@ static int64_t bc_qsa_chunks(uint32_t n_ubatch) {
     const int64_t c = bc_qsa_chunk();
     return c > 0 ? ((int64_t) n_ubatch + c - 1) / c : 0;
 }
+
+// bigcherry 1332: batches of at most 8 tokens (decode, MTP verify and draft) keep the dense mask: splitting a
+// handful of tokens into K attention calls cost ~8% per decode step at 24K depth and saves no scratch
+static bool bc_qsa_chunked(uint32_t n_ubatch, int64_t n_tokens) {
+    const int64_t k = bc_qsa_chunks(n_ubatch);
+    return k >= 2 && n_tokens >= k && n_tokens > 8;
+}
 """
 
 _A_CAUSAL = "    ggml_tensor * idx_f = ggml_cast(ctx0, sel_idx, GGML_TYPE_F32);\n"
 _N_CAUSAL = (
-    "    if (bc_qsa_chunks(cparams.n_ubatch) >= 2 && n_tokens >= bc_qsa_chunks(cparams.n_ubatch)) {\n"
+    "    if (bc_qsa_chunked(cparams.n_ubatch, n_tokens)) {\n"
     "        // bigcherry 1332: apply the causal mask while the selection is compact - gather kq_mask at each token's\n"
     "        // selected cells (0 visible, -inf invisible), mark invisible selections dead so they go to their dump rows;\n"
     "        // the scattered mask is then final (no dense [n_kv, T] ADD and no per-chunk views of the kq_mask input)\n"
@@ -61,10 +68,10 @@ _N_CAUSAL = (
 
 _A_SEL = "    ggml_tensor * sel = ggml_set_rows(ctx0, mask_all, zeros, ggml_reshape_3d(ctx0, sel_idx, n_sel, n_tokens, 1));\n"
 _N_SEL = ("    // bigcherry 1332: build_attn_qsa builds the masks per token chunk from the indices. The graph topology depends\n"
-          "    // only on context constants (llama.cpp #29958): every batch with at least K = ceil(n_ubatch / chunk) tokens\n"
-          "    // uses exactly K chunks, smaller batches (decode, MTP verify) the dense mask - a topology change after\n"
-          "    // reserve forces a scheduler reallocation, which crashed the meta backend\n"
-          "    if (bc_qsa_chunks(cparams.n_ubatch) >= 2 && n_tokens >= bc_qsa_chunks(cparams.n_ubatch)) {\n"
+          "    // only on context constants (llama.cpp #29958): every batch of more than 8 and at least K = ceil(n_ubatch /\n"
+          "    // chunk) tokens uses exactly K chunks, smaller batches (decode, MTP verify) the dense mask - a varying chunk\n"
+          "    // count after reserve forces a scheduler reallocation, which crashed the meta backend\n"
+          "    if (bc_qsa_chunked(cparams.n_ubatch, n_tokens)) {\n"
           "        return sel_idx;        // I32 [n_sel, n_tokens], dead slots already remapped to their dump rows\n"
           "    }\n"
           + _A_SEL)
