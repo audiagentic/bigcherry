@@ -1,0 +1,186 @@
+{
+  "artifact_version": 1,
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 34,
+      "total": 34,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "a8f8435ef28bd8170778e7260f283261501820ac",
+  "first_seen": "2026-10-05T04:59:21.358476+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "CMakeLists.txt": {
+        "feature-sets-cmake": "applied"
+      },
+      "common/arg.cpp": {
+        "cpu-root-arg-help": "applied"
+      },
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "applied",
+        "hip-autotune-validation": "applied"
+      },
+      "ggml/src/ggml-backend-meta.cpp": {
+        "meta-set-async-fallback": "applied"
+      },
+      "ggml/src/ggml-backend-reg.cpp": {
+        "feature-sets-get-reg": "applied",
+        "feature-sets-load-all": "applied",
+        "feature-sets-reg-decl": "applied"
+      },
+      "ggml/src/ggml-backend.cpp": {
+        "sched-async-inputs": "applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cu": {
+        "ar-bf16-threshold-setter-def": "applied",
+        "ar-bf16-threshold-setter-musa-stub": "applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cuh": {
+        "ar-bf16-threshold-setter-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "rd09-q81-cache-context-member": "applied"
+      },
+      "ggml/src/ggml-cuda/dsv4-hc.cu": {
+        "hc-q81-dispatch": "applied",
+        "hc-q81-include": "applied",
+        "hc-q81-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "nro04-gdn_dispatch-01": "applied",
+        "nro04-gdn_dispatch-02": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh": {
+        "nro04-header-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu": {
+        "nro04-bf16_gfx12-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu": {
+        "nro04-bf16_gfx11-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "scale-act-match": "applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-dispatch.cu": {
+        "rd30-workspace-moe": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "ggml_hip_family_mmq-diagnostics-only-count": "applied",
+        "mmq-coverage-count": "applied",
+        "mmq-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd30b-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "ggml_hip_family_mmvf-diagnostics-only-count": "applied",
+        "mmvf-coverage-count": "applied",
+        "mmvf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "q81-mmvq-consumer": "applied",
+        "q81-mmvq-include": "applied",
+        "q81-mmvq-quantize": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-cuda/norm.cu": {
+        "rms-q81-dispatch": "applied",
+        "rms-q81-include": "applied",
+        "rms-q81-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/top-k.cu": {
+        "topk-det-flag": "applied",
+        "topk-launch-ties": "applied",
+        "topk-tie-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/unary.cu": {
+        "scale-act-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/unary.cuh": {
+        "scale-act-decl": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "rd09-q81-cache-source": "applied"
+      },
+      "ggml/src/ggml.c": {
+        "env-docs-1327_qsa_host_remap": "applied"
+      },
+      "src/llama-context.cpp": {
+        "context-draft-vocab-trim": "applied"
+      },
+      "src/llama-context.h": {
+        "context-draft-vocab-trim-buffers": "applied"
+      },
+      "src/llama-cparams.h": {
+        "cparams-draft-vocab-trim": "applied"
+      },
+      "src/llama-memory-hybrid-idx.cpp": {
+        "kpool-tail-append": "applied",
+        "kpool-tail-cut": "applied",
+        "kpool-tail-no-rebuild": "applied"
+      },
+      "src/llama-model.cpp": {
+        "attn-ts-config": "applied",
+        "attn-ts-include": "applied",
+        "attn-ts-rotation": "applied",
+        "attn-ts-select": "applied",
+        "attn-ts-vector": "applied"
+      },
+      "src/models/qwen4exp.cpp": {
+        "qsa-remap-build": "applied",
+        "qsa-remap-include": "applied",
+        "qsa-remap-members": "applied",
+        "qsa-remap-set-input": "applied",
+        "qsa-remap-use": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "nro04-tests-01": "applied",
+        "nro04-tests-02": "applied",
+        "nro04-tests-03": "applied",
+        "nro04-tests-04": "applied",
+        "nro04-tests-05": "applied"
+      },
+      "tools/llama-bench/llama-bench.cpp": {
+        "cpu-root-bench-help": "applied"
+      },
+      "tools/server/main.cpp": {
+        "feature-sets-server-main": "applied"
+      }
+    }
+  },
+  "promotion": null,
+  "release_tag": "b11402",
+  "revision": "d89651a7b205c03c4a0b13cd0646d400dc929f79",
+  "stage": "patched",
+  "tree_state": "",
+  "updated_at": "2026-10-05T05:08:13.757046+00:00"
+}

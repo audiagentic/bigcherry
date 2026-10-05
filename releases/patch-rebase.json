@@ -1,0 +1,3581 @@
+{
+  "bigcherry_revision": "a8f8435ef28bd8170778e7260f283261501820ac",
+  "known_good_patch_ids": [
+    "0100_cmake_options",
+    "0200_dispatch_hook",
+    "0300_mmq_forced_j",
+    "0400_mmvf_forced_block",
+    "0500_mmf_forced_nwarps",
+    "0600_mmvq_geometry",
+    "0650_mmvq_native_variant",
+    "0700_coverage_counters",
+    "0860_allreduce_provider_cli",
+    "0910_feature_sets",
+    "1007_meta_subgraph_realloc_fix",
+    "1225_hi85_nccl_heterogeneous_arch_guard",
+    "0840_hybrid_allreduce_dispatch",
+    "1235_rd09_q81_activation_cache_foundation",
+    "1237_rd30_moe_mmq_compact_grid",
+    "1241_rd33_mmvq_q8_0_f32_decode",
+    "1253_nro04_gfx1100_bf16_chunked_gdn",
+    "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+    "1274_mmvq_kquant_f32_decode",
+    "1291_ar_cpu_root",
+    "1292_kpool_tail_truncate",
+    "1294_topk_deterministic_ties",
+    "1297_draft_vocab_trim",
+    "1302_cuda_graph_oom_evict",
+    "1303_attn_kv_tensor_split",
+    "1307_q81_activation_cache_mmvq",
+    "1308_qwen4exp_rollback_copy_no_cont",
+    "1309_rms_norm_mul_q81",
+    "1310_act_q81",
+    "1311_hc_pre_q81",
+    "1312_mul_q81",
+    "1313_scale_act_fuse",
+    "1326_sched_async_host_inputs",
+    "1327_qsa_host_remap"
+  ],
+  "overlay_digest": "2541c8d3318700d87ddc1ff7401ca3937b926401b417557e22d8a31f23fd85db",
+  "patch_application_semantics_version": 1,
+  "patches": [
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^option\\(GGML_HIP_EXPORT_METRICS.*$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hip-autotune-options",
+              "expect_matches": 1,
+              "rationale": "the end of the GGML_HIP_* option block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^option\\(GGML_WEBGPU\\b.*$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hip-autotune-validation",
+              "expect_matches": 1,
+              "rationale": "after the backend option list, where all referenced options are declared",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/CMakeLists.txt"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^file\\(GLOB\\s+SRCS\\s+\\\"\\.\\./ggml-cuda/template-instances/mmf\\*\\.cu\\\"\\)\\nlist\\(APPEND GGML_SOURCES_ROCM \\$\\{SRCS\\}\\)$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hip-autotune-definitions",
+              "expect_matches": 1,
+              "rationale": "the end of the GGML_SOURCES_ROCM glob block",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-hip/CMakeLists.txt"
+        }
+      ],
+      "implementation_digest": "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50",
+      "patch_id": "0100_cmake_options",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"ggml-cuda/mmvq\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "dispatch-include",
+              "expect_matches": 1,
+              "rationale": "upstream's ggml-cuda include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"ggml-cuda/hip-autotune-dispatch\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "record-include-and-blas-type-helpers",
+              "expect_matches": 1,
+              "rationale": "record-mode BLAS observation helpers beside dispatch includes",
+              "reason_code": null,
+              "status": "already-applied"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^                    \\(const float \\*\\) beta,  \\(float       \\*\\)  dst_ptr, ne0\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-api-sgemm-telemetry",
+              "expect_matches": 1,
+              "rationale": "the completed native single-matrix F32 BLAS call",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^                    CUBLAS_GEMM_DEFAULT_TENSOR_OP\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-api-gemmex-telemetry",
+              "expect_matches": 1,
+              "rationale": "the completed native single-matrix typed BLAS call",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-api-strided-telemetry",
+              "expect_matches": 2,
+              "rationale": "the completed native strided-batched BLAS call",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^                CUBLAS_GEMM_DEFAULT_TENSOR_OP\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-api-pointer-batched-telemetry",
+              "expect_matches": 2,
+              "rationale": "the completed native pointer-batched BLAS call",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(\\n    ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0,\\n    const ggml_tensor \\* src1, ggml_tensor \\* dst,\\n    const void \\* execution_options = nullptr\\);\\n\\nvoid ggml_cuda_mul_mat_cublas_dispatch\\(\\n        ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0,\\n        const ggml_tensor \\* src1, ggml_tensor \\* dst,\\n        const ggml_hip_blas_execution_options_v1 \\* options\\) \\{\\n    ggml_cuda_mul_mat_cublas\\(ctx, src0, src1, dst, options\\);\\n\\}$",
+              "applies_if": "const void \\* execution_options = nullptr\\);\\n\\nvoid ggml_cuda_mul_mat_cublas_dispatch",
+              "context": null,
+              "edit_id": "cublas-forwarder-default-migrate",
+              "expect_matches": 1,
+              "rationale": "keep the forward declaration portable when dispatch is compiled out",
+              "reason_code": null,
+              "status": "not-applicable-by-design"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(\\n    ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0,\\n    const ggml_tensor \\* src1, ggml_tensor \\* dst\\);\\n\\nvoid ggml_cuda_mul_mat_cublas_dispatch\\(\\n        ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0,\\n        const ggml_tensor \\* src1, ggml_tensor \\* dst\\) \\{\\n    ggml_cuda_mul_mat_cublas\\(ctx, src0, src1, dst\\);\\n\\}$",
+              "applies_if": "void ggml_cuda_mul_mat_cublas_dispatch\\(",
+              "context": null,
+              "edit_id": "cublas-forwarder-options-migrate",
+              "expect_matches": 1,
+              "rationale": "migrate an already-applied four-argument BLAS forwarder to the runtime-options ABI",
+              "reason_code": null,
+              "status": "not-applicable-by-design"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cublas-forwarder",
+              "expect_matches": 1,
+              "rationale": "the cuBLAS dense entry point, which is file-local upstream",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas_impl\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-impl-options",
+              "expect_matches": 1,
+              "rationale": "thread a runtime-only BLAS experiment option through the existing templated launcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst, const void \\* execution_options\\) \\{$",
+              "applies_if": "static void ggml_cuda_mul_mat_cublas\\(ggml_backend_cuda_context.*const void \\* execution_options\\)",
+              "context": null,
+              "edit_id": "blas-experiment-static-default-migrate",
+              "expect_matches": 1,
+              "rationale": "add the default only at the definition so non-dispatch upstream call sites remain source-compatible",
+              "reason_code": null,
+              "status": "not-applicable-by-design"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-static-options",
+              "expect_matches": 1,
+              "rationale": "accept runtime-only options without changing native call sites",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    if \\(prefer_f32_output\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-f16-output-route",
+              "expect_matches": 1,
+              "rationale": "make the supported F16 temporary-output experiment explicit and fail-closed",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "(?s)^#ifdef GGML_HIP_DISPATCH\\s+if \\(execution_options != nullptr\\) \\{.*?#endif",
+              "applies_if": "GGML_ASSERT\\(options->compute_type == GGML_HIP_BLAS_EXPERIMENT_COMPUTE_F16\\)",
+              "context": null,
+              "edit_id": "blas-experiment-f16-output-route-migrate",
+              "expect_matches": 1,
+              "rationale": "migrate an already-applied HI17 vendor hook to explicit option validation and telemetry",
+              "reason_code": null,
+              "status": "already-applied"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>\\(ctx, src0, src1, dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-f16-impl-argument-f32",
+              "expect_matches": 1,
+              "rationale": "carry the runtime-only option through the F32 native branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_BF16>\\(ctx, src0, src1, dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-f16-impl-argument-bf16",
+              "expect_matches": 1,
+              "rationale": "carry the runtime-only option through the BF16 native branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^            ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F16>\\(ctx, src0, src1, dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-experiment-f16-impl-argument-f16",
+              "expect_matches": 1,
+              "rationale": "carry the runtime-only option through the F16 native branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    GGML_ASSERT\\(ggml_is_contiguous\\(dst\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-metadata-state",
+              "expect_matches": 1,
+              "rationale": "the native BLAS implementation entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    const char \\* bigcherry_effective_call_api\\s+const char \\* bigcherry_execution_options.*\\n\\s*=.*$",
+              "applies_if": "bigcherry_effective_call_api\\s+const char \\* bigcherry_execution_options",
+              "context": null,
+              "edit_id": "blas-metadata-state-migrate-malformed-execution-options",
+              "expect_matches": 1,
+              "rationale": "repair an earlier prefix-anchor migration before applying the stable state migration",
+              "reason_code": null,
+              "status": "already-applied"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    const char \\* bigcherry_effective_call_api.*$",
+              "applies_if": "bigcherry_effective_call_api",
+              "context": null,
+              "edit_id": "blas-metadata-state-migrate-execution-options",
+              "expect_matches": 1,
+              "rationale": "migrate an already-applied BLAS metadata state block to include runtime option state",
+              "reason_code": null,
+              "status": "already-applied"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        if \\(ggml_is_contiguously_allocated\\(src0\\)\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-source-a-contiguous-metadata",
+              "expect_matches": 1,
+              "rationale": "the native BLAS source-A conversion branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        \\} else \\{\\n            const auto convert_func = traits::convert_nc\\(src0->type\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-source-a-noncontiguous-metadata",
+              "expect_matches": 1,
+              "rationale": "the native BLAS non-contiguous source-A conversion branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        if \\(ggml_is_contiguously_allocated\\(src1\\)\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-source-b-contiguous-metadata",
+              "expect_matches": 1,
+              "rationale": "the native BLAS source-B conversion branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        \\} else \\{\\n            const auto convert_func = traits::convert_nc\\(src1->type\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-source-b-noncontiguous-metadata",
+              "expect_matches": 1,
+              "rationale": "the native BLAS non-contiguous source-B conversion branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^            dst_ptr = \\(char \\*\\) dst_temp\\.alloc\\(ne_dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-output-temporary-metadata",
+              "expect_matches": 1,
+              "rationale": "the native BLAS temporary output conversion branch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    if \\(cu_data_type != CUDA_R_32F\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-metadata-emission",
+              "expect_matches": 1,
+              "rationale": "the completed native BLAS call, before output conversion",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        \\(uint64_t\\) bigcherry_source_a_temp_bytes,",
+              "applies_if": "bigcherry_blas_metadata = \\{[\\s\\S]*\\(uint64_t\\) bigcherry_source_a_temp_bytes",
+              "context": null,
+              "edit_id": "blas-metadata-emission-migrate-execution-options",
+              "expect_matches": 1,
+              "rationale": "migrate an already-applied BLAS metadata initializer to include runtime option state",
+              "reason_code": null,
+              "status": "already-applied"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst\\) \\{\\n    GGML_TENSOR_BINARY_OP_LOCALS$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mul-mat-hook",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat, before its family ladder",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_backend_cuda_free\\(ggml_backend_t backend\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "dispatch-flush-hook",
+              "expect_matches": 1,
+              "rationale": "backend teardown, the last point at which anything the dispatch layer accumulated can still be written out",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_id\\(ggml_backend_cuda_context & ctx, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mul-mat-id-hook",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat_id",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        }
+      ],
+      "implementation_digest": "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540",
+      "patch_id": "0200_dispatch_hook",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>\\nvoid mul_mat_q_switch_J\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream\\) \\{\\n[\\s\\S]*?GGML_ABORT\\([^)]*\\);\\n            break;\\n    \\}\\n\\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-helpers-and-switch",
+              "expect_matches": 1,
+              "rationale": "the whole of mul_mat_q_switch_J: its scan and its sixteen-case switch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^template <ggml_type type, ggml_prec prec_src1 = GGML_PREC_Q8>\\nvoid mul_mat_q_case\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-case-signature",
+              "expect_matches": 1,
+              "rationale": "the definition of mul_mat_q_case",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "mul_mat_q_switch_J<type, fallback, prec_src1>\\(ctx, args, stream\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-case-forward",
+              "expect_matches": 2,
+              "rationale": "both fallback branches inside mul_mat_q_case",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    template void mul_mat_q_case<type>\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream\\) \\\\",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-instantiation-macro",
+              "expect_matches": 1,
+              "rationale": "the explicit-instantiation macro DECL_MMQ_CASE",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    template void mul_mat_q_case<type, GGML_PREC_Q4>\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream\\) \\\\",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-instantiation-macro-w4a4",
+              "expect_matches": 1,
+              "rationale": "the W4A4 explicit-instantiation macro DECL_MMQ_CASE_W4A4",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_q\\(\\n        ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-public-decl",
+              "expect_matches": 1,
+              "rationale": "the declaration of the public MMQ entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_q_switch_type\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream, const ggml_prec prec_src1\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-type-switch-signature",
+              "expect_matches": 1,
+              "rationale": "the per-type MMQ dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "(mul_mat_q_case<GGML_TYPE_[A-Z0-9_]+(?:, GGML_PREC_Q4)?>)\\(ctx, args, stream\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-type-switch-forward",
+              "expect_matches": 24,
+              "rationale": "every per-type case in the MMQ type dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_q\\(\\n        ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-public-param",
+              "expect_matches": 1,
+              "rationale": "the public MMQ entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "ggml_cuda_mul_mat_q_switch_type\\(ctx, args, stream, prec_src1\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-public-forward",
+              "expect_matches": 2,
+              "rationale": "the dense and MUL_MAT_ID calls into the type dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^bool ggml_cuda_should_use_mmq\\(enum ggml_type type, int cc, int64_t ne11, int64_t n_experts\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-eligibility-and-entry",
+              "expect_matches": 1,
+              "rationale": "the function following ggml_cuda_mul_mat_q",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cu"
+        }
+      ],
+      "implementation_digest": "09bc10f228adae7a860169d6d14d459d0dd4e41e0d8744d40b7b7068cdf78657",
+      "patch_id": "0300_mmq_forced_j",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "    const ggml_cuda_mm_fusion_args_host \\* fusion = nullptr\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-public-decl",
+              "expect_matches": 1,
+              "rationale": "the declaration of ggml_cuda_mul_mat_vec_f",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvf.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "        const int64_t nsamples_or_ntokens, const int64_t ids_stride, cudaStream_t stream\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-launcher-param",
+              "expect_matches": 1,
+              "rationale": "launch_mul_mat_vec_f_cuda's parameter list",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    for \\(int64_t block_size = 2\\*warp_size; block_size <= max_block_size; block_size \\+= warp_size\\) \\{\\n        const int64_t niter = \\(ncols \\+ 2\\*block_size - 1\\) / \\(2\\*block_size\\);\\n        if \\(niter < niter_best\\) \\{\\n            niter_best      = niter;\\n            block_size_best = block_size;\\n        \\}\\n    \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-block-apply",
+              "expect_matches": 1,
+              "rationale": "upstream's block-size scan, whose answer a forced value replaces",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "        const int64_t ids_stride, cudaStream_t stream\\) \\{\\n\\n    const bool has_ids = ids != nullptr;",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-ncols-param",
+              "expect_matches": 1,
+              "rationale": "mul_mat_vec_f_cuda_switch_ncols_dst's parameter list",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "ncols_dst, ids_stride, stream\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-forward-ncols-dst",
+              "expect_matches": 2,
+              "rationale": "the two multi-token-id launcher calls",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "nsamples_dst, ids_stride, stream\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-forward-nsamples",
+              "expect_matches": 8,
+              "rationale": "the eight ncols_dst-case launcher calls",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "        const int64_t ids_stride, enum ggml_prec prec, cudaStream_t stream\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-cuda-param",
+              "expect_matches": 1,
+              "rationale": "mul_mat_vec_f_cuda's parameter list",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    if constexpr\\(std::is_same_v<T, half>\\) \\{\\n        if \\(prec == GGML_PREC_DEFAULT\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-acc-apply",
+              "expect_matches": 1,
+              "rationale": "the F16 accumulator branch in mul_mat_vec_f_cuda",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "stride_sample_dst, ids_stride, stream\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-forward-switch-ncols",
+              "expect_matches": 2,
+              "rationale": "the two mul_mat_vec_f_cuda_switch_ncols_dst calls, one per accumulator mode",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_vec_f\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst,\\n    const ggml_cuda_mm_fusion_args_host \\* fusion\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-public-param",
+              "expect_matches": 1,
+              "rationale": "the public MMVF entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "ids_stride, prec, ctx\\.stream\\(\\)\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-forward-public",
+              "expect_matches": 3,
+              "rationale": "the three per-type calls in the public entry",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_op_mul_mat_vec_f\\($",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-eligibility-and-entry",
+              "expect_matches": 1,
+              "rationale": "the function following ggml_cuda_mul_mat_vec_f",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvf.cu"
+        }
+      ],
+      "implementation_digest": "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf",
+      "patch_id": "0400_mmvf_forced_block",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "        cudaStream_t stream, const mmf_ids_data \\* ids_data\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-dispatcher-params",
+              "expect_matches": 3,
+              "rationale": "the shared parameter-list tail of mul_mat_f_cuda, mul_mat_f_switch_cols_per_block and mul_mat_f_switch_rows_per_block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "        cudaStream_t stream, const mmf_ids_data \\* ids_data\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-instantiation-macro",
+              "expect_matches": 1,
+              "rationale": "the explicit-instantiation macro DECL_MMF_CASE_HELPER",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "stream, ids_data\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-dispatcher-forward",
+              "expect_matches": 18,
+              "rationale": "every call between the three MMF dispatchers",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    for \\(int64_t nwarps = 2; nwarps <= max_block_size/warp_size; nwarps\\+\\+\\) \\{\\n        const int64_t niter = \\(ncols_x \\+ nwarps\\*warp_size\\*2 - 1\\) / \\(nwarps\\*warp_size\\*2\\);\\n        if \\(niter < niter_best\\) \\{\\n            niter_best  = niter;\\n            nwarps_best = nwarps;\\n        \\}\\n    \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-nwarps-apply",
+              "expect_matches": 1,
+              "rationale": "upstream's nwarps scan, which must precede the shared-memory computation",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_f\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-public-decl",
+              "expect_matches": 1,
+              "rationale": "the declaration of the public MMF entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^bool ggml_cuda_should_use_mmf\\(enum ggml_type type, int cc, int warp_size,",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-capability-declaration",
+              "expect_matches": 1,
+              "rationale": "declare the shared upstream-owned MMF hard capability predicate",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmf.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^bool ggml_cuda_should_use_mmf\\(enum ggml_type type, int cc, int warp_size,",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-capability-helper",
+              "expect_matches": 1,
+              "rationale": "the upstream MMF selector opening, before its hard capability checks",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    if \\(ggml_is_quantized\\(type\\)\\) \\{[\\s\\S]*?    if \\(GGML_CUDA_CC_IS_CDNA3\\(cc\\) && type == GGML_TYPE_BF16\\) \\{\\n        return false;\\n    \\}\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-selector-uses-capability",
+              "expect_matches": 1,
+              "rationale": "replace duplicated hard capability checks with the shared helper",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_f\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-public-param",
+              "expect_matches": 1,
+              "rationale": "the public MMF entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "ctx\\.stream\\(\\), ids_info_ptr\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-public-forward",
+              "expect_matches": 3,
+              "rationale": "the three per-type calls into the rows_per_block dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^bool ggml_cuda_should_use_mmf\\(enum ggml_type type, int cc, int warp_size, const int64_t \\* src0_ne,$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-eligibility-and-entry",
+              "expect_matches": 1,
+              "rationale": "the function following ggml_cuda_mul_mat_f",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmf.cu"
+        }
+      ],
+      "implementation_digest": "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c",
+      "patch_id": "0500_mmf_forced_nwarps",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"mmvq\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-autotune-include",
+              "expect_matches": 1,
+              "rationale": "the mmvq.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>\\n__launch_bounds__\\(calc_nwarps\\(type, ncols_dst, get_device_table_id\\(\\), small_k, halve_iters\\)\\*ggml_cuda_get_physical_warp_size\\(\\), 1\\)\\nstatic __global__ void mul_mat_vec_q\\(",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-kernel-template",
+              "expect_matches": 1,
+              "rationale": "the MMVQ kernel's template header and launch bounds",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    constexpr int nwarps = calc_nwarps\\(type, ncols_dst, table_id, small_k, halve_iters\\);\\n    constexpr int rows_per_cuda_block = calc_rows_per_block\\(ncols_dst, table_id, small_k, nwarps\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-kernel-geometry",
+              "expect_matches": 1,
+              "rationale": "the two constexpr locals the kernel derives its geometry from",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^template<ggml_type type>\\nstatic std::pair<dim3, dim3> calc_launch_params\\(\\n        const int ncols_dst, const int nrows_x, const int nchannels_dst, const int nsamples_or_ntokens,\\n        const int warp_size, const mmvq_parameter_table_id table_id, const bool small_k = false, const bool halve_iters = false\\) \\{\\n    const int nwarps = calc_nwarps\\(type, ncols_dst, table_id, small_k, halve_iters\\);\\n    const int rpb = calc_rows_per_block\\(ncols_dst, table_id, small_k, nwarps\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-launch-params",
+              "expect_matches": 1,
+              "rationale": "calc_launch_params, which must agree with the compiled geometry",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false>\\nstatic void mul_mat_vec_q_switch_fusion\\(",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-switch-fusion-template",
+              "expect_matches": 1,
+              "rationale": "the fusion dispatcher that instantiates the kernel",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^template <ggml_type type>\\nstatic void mul_mat_vec_q_moe_launch\\(",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-launch-instance",
+              "expect_matches": 1,
+              "rationale": "the function following mul_mat_vec_q_switch_fusion",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "mul_mat_vec_q<type, c_ncols_dst, (true|false), small_k, halve_iters>",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-kernel-forward",
+              "expect_matches": 2,
+              "rationale": "the two kernel instantiations in the fusion dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        }
+      ],
+      "implementation_digest": "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925",
+      "patch_id": "0600_mmvq_geometry",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"common\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-cuh-include",
+              "expect_matches": 1,
+              "rationale": "the single include at the top of mmvq.cuh",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_vec_q\\(ggml_backend_cuda_context & ctx,\\n    const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst, const ggml_cuda_mm_fusion_args_host \\* fusion = nullptr\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-cuh-signature",
+              "expect_matches": 1,
+              "rationale": "the declaration of the dense MMVQ entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^        const int ids_stride, cudaStream_t stream\\) \\{\\n\\n    GGML_ASSERT\\(ncols_x % ggml_blck_size\\(type\\) == 0\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-switch-ncols-signature",
+              "expect_matches": 1,
+              "rationale": "mul_mat_vec_q_switch_ncols_dst's parameter list, identified by the assertion that opens its body",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        const int ids_stride, cudaStream_t stream\\) \\{\\n    switch \\(type_x\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-switch-type-signature",
+              "expect_matches": 1,
+              "rationale": "mul_mat_vec_q_switch_type's parameter list, identified by the type switch that opens its body",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^                 nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, stream\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-switch-type-forward",
+              "expect_matches": 23,
+              "rationale": "the forwarding call in each case of mul_mat_vec_q_switch_type",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    const bool has_ids = ids != nullptr;$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-forced-route",
+              "expect_matches": 1,
+              "rationale": "the last local mul_mat_vec_q_switch_ncols_dst computes before it starts choosing a launch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_vec_q\\(\\n        ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, const ggml_tensor \\* ids, ggml_tensor \\* dst,\\n        const ggml_cuda_mm_fusion_args_host \\* fusion\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-public-signature",
+              "expect_matches": 1,
+              "rationale": "ggml_cuda_mul_mat_vec_q, the dense MMVQ entry point",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        ne03,              ne3,           s03, s13,              s3,               ids_stride, stream\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-public-forward",
+              "expect_matches": 1,
+              "rationale": "the switch_type call at the end of ggml_cuda_mul_mat_vec_q",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_op_mul_mat_vec_q\\($",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-variant-entry",
+              "expect_matches": 1,
+              "rationale": "the function following ggml_cuda_mul_mat_vec_q, so the variant entry point sits after the function it calls",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        }
+      ],
+      "implementation_digest": "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10",
+      "patch_id": "0650_mmvq_native_variant",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"mmid\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-coverage-include",
+              "expect_matches": 1,
+              "rationale": "the mmq.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^        int forced_J\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmq-coverage-count",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat_q, after the HI06 patch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ggml_hip_dispatch_is_reentrant\\(\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_hip_coverage_count_executed\\(GGML_HIP_FAMILY_MMQ\\);\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ggml_hip_family_mmq-diagnostics-only-count",
+              "expect_matches": 1,
+              "rationale": "HI168: exclude the family counter and its TLS probe in production",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"vecdotq\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-coverage-include",
+              "expect_matches": 1,
+              "rationale": "the mmvq.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^void ggml_cuda_mul_mat_vec_q\\(\\n        ggml_backend_cuda_context & ctx,[^\\n]*\\n(?:[^\\n]*\\n)*?[^\\n]*\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvq-coverage-count",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat_vec_q",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ggml_hip_dispatch_is_reentrant\\(\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_hip_coverage_count_executed\\(GGML_HIP_FAMILY_MMVQ\\);\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ggml_hip_family_mmvq-diagnostics-only-count",
+              "expect_matches": 1,
+              "rationale": "HI168: exclude the family counter and its TLS probe in production",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"mmvf\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-coverage-include",
+              "expect_matches": 1,
+              "rationale": "the mmvf.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    int forced_block_size, int forced_acc_f16\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmvf-coverage-count",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat_vec_f, after the HI07 patch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ggml_hip_dispatch_is_reentrant\\(\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_hip_coverage_count_executed\\(GGML_HIP_FAMILY_MMVF\\);\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ggml_hip_family_mmvf-diagnostics-only-count",
+              "expect_matches": 1,
+              "rationale": "HI168: exclude the family counter and its TLS probe in production",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvf.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"mmf\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-coverage-include",
+              "expect_matches": 1,
+              "rationale": "the mmf.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    int forced_nwarps\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mmf-coverage-count",
+              "expect_matches": 1,
+              "rationale": "the top of ggml_cuda_mul_mat_f, after the HI08 patch",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ggml_hip_dispatch_is_reentrant\\(\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_hip_coverage_count_executed\\(GGML_HIP_FAMILY_MMF\\);\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ggml_hip_family_mmf-diagnostics-only-count",
+              "expect_matches": 1,
+              "rationale": "HI168: exclude the family counter and its TLS probe in production",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmf.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^#include \"ggml-cuda/mmvq\\.cuh\"$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-coverage-include",
+              "expect_matches": 1,
+              "rationale": "the ggml-cuda.cu include block",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^static void ggml_cuda_mul_mat_cublas\\(ggml_backend_cuda_context & ctx, const ggml_tensor \\* src0, const ggml_tensor \\* src1, ggml_tensor \\* dst(?:, const void \\* execution_options(?: = nullptr)?)?\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "blas-coverage-count",
+              "expect_matches": 1,
+              "rationale": "the definition of the cuBLAS dense entry point, before or after the dispatch ABI edit",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ggml_hip_dispatch_is_reentrant\\(\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_hip_coverage_count_executed\\(GGML_HIP_FAMILY_BLAS\\);\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ggml_hip_family_blas-diagnostics-only-count",
+              "expect_matches": 1,
+              "rationale": "HI168: exclude the family counter and its TLS probe in production",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        }
+      ],
+      "implementation_digest": "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf",
+      "patch_id": "0700_coverage_counters",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^static bool ggml_backend_cuda_comm_try_allreduce_internal\\($",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-provider-config",
+              "expect_matches": 1,
+              "rationale": "define process-wide CLI configuration before 0840's adaptive per-call dispatcher",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    const char \\* env = getenv\\(\\\"GGML_CUDA_ALLREDUCE\\\"\\);\\n    if \\(!env\\) \\{\\n        // Platform default: Linux uses NCCL, otherwise \\(generally Windows\\) internal\\n#if defined\\(__linux__\\)\\n        ggml_backend_cuda_comm_init_nccl\\(ret\\);\\n#else\\n        ggml_backend_cuda_comm_init_internal\\(ret\\);\\n#endif // defined\\(__linux__\\)\\n    \\} else \\{\\n        std::string env_str\\(env\\);\\n        if \\(env_str == \\\"nccl\\\"\\) \\{\\n            ggml_backend_cuda_comm_init_nccl\\(ret\\);\\n        \\} else if \\(env_str == \\\"internal\\\"\\) \\{\\n            ggml_backend_cuda_comm_init_internal\\(ret\\);\\n        \\} else if \\(env_str == \\\"none\\\"\\) \\{\\n            ggml_backend_cuda_comm_init_none\\(ret\\);\\n        \\} else \\{\\n            GGML_LOG_WARN\\(\\\"unknown GGML_CUDA_ALLREDUCE value: %s\\\\n\\\", env\\);\\n            ggml_backend_cuda_comm_init_none\\(ret\\);\\n        \\}\\n    \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-provider-init",
+              "expect_matches": 1,
+              "rationale": "select only from the validated explicit configuration; auto preserves the stock platform default until 0840 scopes adaptive",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    if \\(strcmp\\(name, \\\"ggml_backend_comm_init\\\"\\) == 0\\) \\{\\n        return \\(void \\*\\)ggml_backend_cuda_comm_init;\\n    \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-provider-proc",
+              "expect_matches": 1,
+              "rationale": "publish the configuration setter beside the existing communication proc-address seam",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^static bool common_params_parse_ex\\(int argc, char \\*\\* argv, common_params_context & ctx_arg\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-config-helper",
+              "expect_matches": 1,
+              "rationale": "callbacks record values; parse switch bytes and apply one backend config after parse_cli_args",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "add_opt\\(common_arg\\(\\n        \\{\"-ts\", \"--tensor-split\"\\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-cli-options",
+              "expect_matches": 1,
+              "rationale": "keep AllReduce controls adjacent to multi-GPU split-mode controls",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    parse_cli_args\\(\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "allreduce-config-apply",
+              "expect_matches": 1,
+              "rationale": "apply the recorded AllReduce configuration once after every CLI/env option is parsed",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "common/arg.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^static void print_usage\\(int /\\* argc \\*/, char \\*\\* argv\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "bench-allreduce-config-helper",
+              "expect_matches": 1,
+              "rationale": "keep benchmark scalar state and registry bridge immediately before usage/parser code",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    printf\\(\"  -sm, --split-mode <none\\|layer\\|row\\|tensor>         \\(default: %s\\)\\\\n\", join\\(transform_to_str\\(cmd_params_defaults\\.split_mode, split_mode_str\\), \",\"\\)\\.c_str\\(\\)\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "bench-allreduce-usage",
+              "expect_matches": 1,
+              "rationale": "document benchmark AllReduce controls beside split-mode",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "                params\\.split_mode\\.insert\\(params\\.split_mode\\.end\\(\\), modes\\.begin\\(\\), modes\\.end\\(\\)\\);\\n            \\} else if \\(arg == \\\"-lm\\\" \\|\\| arg == \\\"--load-mode\\\"\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "bench-allreduce-parser",
+              "expect_matches": 1,
+              "rationale": "parse AllReduce controls as scalar benchmark settings; comma-list syntax is invalid",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    cmd_params params = parse_cmd_params\\(argc, argv\\);$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "bench-allreduce-apply",
+              "expect_matches": 1,
+              "rationale": "backends are already loaded; apply the parsed AllReduce configuration before device/model setup",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "tools/llama-bench/llama-bench.cpp"
+        }
+      ],
+      "implementation_digest": "34a98b5325401c0adaaf95aecd8c6be4c6dd9e422189276bde4655462ae28f52",
+      "patch_id": "0860_allreduce_provider_cli",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ <signal\\.h>\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets",
+              "expect_matches": 1,
+              "rationale": "ggml.c standard include block (signal.h).",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "struct\\ ggml_context\\ \\*\\ ggml_init\\(struct\\ ggml_init_params\\ params\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-ggml-init",
+              "expect_matches": 1,
+              "rationale": "First line of ggml_init.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"ggml\\-impl\\.h\"\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-reg-decl",
+              "expect_matches": 1,
+              "rationale": "ggml-backend-reg.cpp include block.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "static\\ ggml_backend_registry\\ \\&\\ get_reg\\(\\)\\ \\{\\\n\\ \\ \\ \\ static\\ ggml_backend_registry\\ reg;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-get-reg",
+              "expect_matches": 1,
+              "rationale": "get_reg(), before the static registry.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "void\\ ggml_backend_load_all_from_path\\(const\\ char\\ \\*\\ dir_path\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-load-all",
+              "expect_matches": 1,
+              "rationale": "ggml_backend_load_all_from_path entry.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-backend-reg.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "int\\ main\\(int\\ argc,\\ char\\ \\*\\*\\ argv\\)\\ \\{\\\n\\ \\ \\ \\ return\\ llama_server\\(argc,\\ argv\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-server-main",
+              "expect_matches": 1,
+              "rationale": "llama-server main.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "tools/server/main.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "llama_model\\ \\*\\ llama_model_create\\(llama_model_loader\\ \\&\\ ml,\\ const\\ llama_model_params\\ \\&\\ params\\)\\ \\{\\\n\\ \\ \\ \\ llm_arch\\ arch\\ =\\ ml\\.get_arch\\(\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-auto-arch",
+              "expect_matches": 1,
+              "rationale": "llama_model_create, once the arch is known.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-model.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "add_subdirectory\\(src\\)\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "feature-sets-cmake",
+              "expect_matches": 1,
+              "rationale": "Root CMakeLists, after ggml is added.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "CMakeLists.txt"
+        }
+      ],
+      "implementation_digest": "01decac6353cea16211d68d1b3da29aa97be26d384180655e3eb201f01000d93",
+      "patch_id": "0910_feature_sets",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(size_t\\ i\\ =\\ 0;\\ i\\ <\\ n_subgraphs;\\ i\\+\\+\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ bcj\\.cgraphs\\[i\\]\\.cgraph_main\\ =\\ ggml_new_graph_custom\\(backend_ctx\\->ctx\\.get\\(\\),\\ cgraph\\->n_nodes,\\ /\\*grads\\ =\\*/\\ false\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "meta-recreate-all-subgraphs",
+              "expect_matches": 1,
+              "rationale": "The only cgraph_main allocation, directly after backend_ctx->ctx.reset in graph_compute.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-backend-meta.cpp"
+        }
+      ],
+      "implementation_digest": "4a3f24be21a26f993e9c5caae46fbdeb8a0ba4b15c1815bb4adbc2f1426799eb",
+      "patch_id": "1007_meta_subgraph_realloc_fix",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "static void ggml_backend_cuda_comm_init_none\\(ggml_backend_cuda_comm_context \\* ret\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "gp02-admission-function",
+              "expect_matches": 1,
+              "rationale": "defined once, before every comm_init_* function, so both this guard's own call site and 0840's independent hybrid init can reference it regardless of patch application order",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(info\\.device_count\\ >\\ info\\.physical_device_count\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ GGML_LOG_WARN\\([^\\n]*\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ [^\\n]*\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_cuda_comm_init_internal\\(ret\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ return;\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hi85-nccl-admission-guard",
+              "expect_matches": 1,
+              "rationale": "right after the existing virtual-device decline check, same function, same pattern -- both checks must run before ncclCommInitAll is ever called",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        }
+      ],
+      "implementation_digest": "efb7f17a2e5a9d72ffd608bfd5b1fc3d1b6e8ef83e74ca66cd2e6f0ebb3ddeee",
+      "patch_id": "1225_hi85_nccl_heterogeneous_arch_guard",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^    try_allreduce_fn            try_allreduce = nullptr;$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hybrid-provider-context-field",
+              "expect_matches": 1,
+              "rationale": "adaptive records the provider selected per call without depending on 0830 telemetry",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "^    try_allreduce_fn            try_allreduce = nullptr;$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hybrid-switch-context-field",
+              "expect_matches": 1,
+              "rationale": "snapshot the adaptive crossover per communication context instead of rereading process-global CLI state",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "static bool ggml_backend_cuda_comm_try_allreduce_internal\\(\\n        ggml_backend_cuda_comm_context \\* comm_ctx, struct ggml_tensor \\*\\* tensors\\) \\{\\n    return ggml_backend_cuda_comm_allreduce_internal\\(comm_ctx, tensors\\);\\n\\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hybrid-try-allreduce",
+              "expect_matches": 1,
+              "rationale": "insert the adaptive dispatcher beside the plain internal wrapper",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "static void ggml_backend_cuda_comm_init_nccl\\(ggml_backend_cuda_comm_context \\* ret\\) \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hybrid-init",
+              "expect_matches": 1,
+              "rationale": "adaptive initialization is independent of the stock greedy provider chain",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "    if \\(provider == \\\"auto\\\"\\) \\{\\n#if defined\\(__linux__\\)\\n        provider = \\\"ccl\\\";\\n#else\\n        provider = \\\"host\\\";\\n#endif\\n    \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "adaptive-auto-default",
+              "expect_matches": 1,
+              "rationale": "default to adaptive only for the validated HIP tensor-parallel dual-gfx1100 envelope with RCCL-safe participants",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    if \\(p == \\\"adaptive\\\" \\|\\| p == \\\"p2p\\\" \\|\\| p == \\\"root3\\\"\\) \\{\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "adaptive-provider-available",
+              "expect_matches": 1,
+              "rationale": "0840 provides adaptive, so remove only adaptive from 0860's unavailable list",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "    \\} else if \\(provider == \\\"butterfly\\\"\\) \\{\\n        ggml_backend_cuda_comm_init_none\\(ret\\);\\n    \\} else \\{\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "adaptive-provider-init",
+              "expect_matches": 1,
+              "rationale": "select adaptive beside 0860's implemented providers",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "ggml_cuda_ar_pipeline\\ \\*\\ ggml_cuda_ar_pipeline_init\\(\\\n\\ \\ \\ \\ const\\ int\\ \\*\\ devices,\\ size_t\\ n_devices\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ar-bf16-threshold-setter-decl",
+              "expect_matches": 1,
+              "rationale": "Adaptive (0840) selects an exact F32 host wire without an environment variable.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/allreduce.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "ggml_cuda_ar_pipeline\\ \\*\\ ggml_cuda_ar_pipeline_init\\(const\\ int\\ \\*\\ devices,\\ size_t\\ n_devices\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ar-bf16-threshold-setter-def",
+              "expect_matches": 1,
+              "rationale": "The pipeline struct is private to allreduce.cu; set the field beside its init.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "void\\ ggml_cuda_ar_pipeline_free\\(ggml_cuda_ar_pipeline\\ \\*\\)\\ \\{\\\n\\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "ar-bf16-threshold-setter-musa-stub",
+              "expect_matches": 1,
+              "rationale": "Keep the declared API defined in the MUSA build too.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/allreduce.cu"
+        }
+      ],
+      "implementation_digest": "dd2f8bb4f7c903ef519c74f0e47586a6f4a7e77e2e4f90364586419ebaabce91",
+      "patch_id": "0840_hybrid_allreduce_dispatch",
+      "requires": [
+        "0860_allreduce_provider_cli",
+        "1225_hi85_nccl_heterogeneous_arch_guard"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "file\\(GLOB   SRCS \"\\.\\./ggml-cuda/template-instances/mmf\\*\\.cu\"\\)\\nlist\\(APPEND GGML_SOURCES_ROCM \\$\\{SRCS\\}\\)",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd09-q81-cache-source",
+              "expect_matches": 1,
+              "rationale": "the end of the GGML_SOURCES_ROCM glob block -- the same stable anchor 0100_cmake_options.py's own dispatch-sources edit uses, so this addition composes with it regardless of application order",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-hip/CMakeLists.txt"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "~ggml_backend_cuda_context\\(\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd09-q81-cache-context-member",
+              "expect_matches": 1,
+              "rationale": "right after ggml_backend_cuda_context's own destructor declaration -- a stable, unique anchor inside the struct body",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/common.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "#include \"ggml-cuda/common\\.cuh\"",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd09-q81-cache-include",
+              "expect_matches": 1,
+              "rationale": "after the upstream common.cuh include at the top of the include block (an upstream line, so 1235 does not depend on 0830/1224 adding their telemetry header)",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "ggml_backend_cuda_context::~ggml_backend_cuda_context\\(\\) \\{\\n    std::unique_lock<std::mutex> lock\\(ggml_cuda_lock\\);\\n    ggml_cuda_lock_cv\\.wait\\(lock, \\[\\]\\{ return ggml_cuda_lock_counter\\.load\\(std::memory_order_relaxed\\) == 0; \\}\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd09-q81-cache-destructor",
+              "expect_matches": 1,
+              "rationale": "the start of ggml_backend_cuda_context's destructor body, before its existing copy_event/streams/cublas_handles teardown",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        }
+      ],
+      "implementation_digest": "4869c576e3229843aeab6019eb7a4f57973b4f74ed5110b341e722eaf69813c5",
+      "patch_id": "1235_rd09_q81_activation_cache_foundation",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "^template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>\\nstatic void launch_mul_mat_q\\(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream\\) \\{$",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-helpers",
+              "expect_matches": 1,
+              "rationale": "insert the compact-map helpers and prep kernel directly before launch_mul_mat_q (template line included so the template stays attached to the function), which is the only caller",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ const\\ uint3\\ sample_ratio,\\ const\\ uint3\\ nsamples_y,\\ const\\ int\\ stride_sample_x,\\ const\\ int\\ stride_sample_y,\\ const\\ int\\ stride_sample_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ uint3\\ ntx\\)\\ \\{",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-kernel-signature",
+              "expect_matches": 1,
+              "rationale": "extend the mul_mat_q kernel signature with the compact-map parameters",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ constexpr\\ \\(!ggml_cuda_mmq_get_stream_k\\(type,\\ J,\\ fallback,\\ prec_src1\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ uint2\\ tmp2\\ =\\ fast_div_modulo\\(blockIdx\\.z,\\ nchannels_y\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ wt\\ =\\ tmp2\\.x;\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ zt\\ =\\ tmp2\\.y;\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ jt\\ =\\ blockIdx\\.y;\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ it\\ =\\ blockIdx\\.x;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-kernel-body-derive",
+              "expect_matches": 1,
+              "rationale": "derive wt/zt/jt from the compact block map when present, exactly as before otherwise; everything downstream (col_low/col_high/offset_y/offset_dst/offset_x) is unchanged because zt and jt keep their original meaning",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!config\\.stream_k\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ mul_mat_q<type,\\ J,\\ fallback,\\ prec_src1><<<block_nums_xy_tiling,\\ block_dims,\\ nbytes_shared,\\ stream>>>\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\(args\\.x,\\ args\\.y,\\ args\\.ids_dst,\\ args\\.expert_bounds,\\ args\\.dst,\\ nullptr,\\ args\\.y_scale,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ blocks_per_ne00_fd,\\ args\\.nrows_x,\\ args\\.ncols_dst,\\ args\\.stride_row_x,\\ args\\.ncols_y,\\ args\\.nrows_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ channel_ratio_fd,\\ nchannels_y_fd,\\ args\\.stride_channel_x,\\ args\\.stride_channel_y,\\ args\\.stride_channel_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ sample_ratio_fd,\\ nsamples_y_fd,\\ args\\.stride_sample_x,\\ args\\.stride_sample_y,\\ args\\.stride_sample_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ntx_fd\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ return;\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-launch-nonstreamk",
+              "expect_matches": 1,
+              "rationale": "build the compact block map and launch a compacted grid.y when eligible; fails closed to the exact legacy block_nums_xy_tiling grid otherwise",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ mul_mat_q<type,\\ J,\\ fallback,\\ prec_src1><<<block_nums_stream_k,\\ block_dims,\\ nbytes_shared,\\ stream>>>\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\(args\\.x,\\ args\\.y,\\ args\\.ids_dst,\\ args\\.expert_bounds,\\ args\\.dst,\\ tmp_fixup\\.ptr,\\ args\\.y_scale,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ blocks_per_ne00_fd,\\ args\\.nrows_x,\\ args\\.ncols_dst,\\ args\\.stride_row_x,\\ args\\.ncols_y,\\ args\\.nrows_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ channel_ratio_fd,\\ nchannels_y_fd,\\ args\\.stride_channel_x,\\ args\\.stride_channel_y,\\ args\\.stride_channel_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ sample_ratio_fd,\\ nsamples_y_fd,\\ args\\.stride_sample_x,\\ args\\.stride_sample_y,\\ args\\.stride_sample_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ ntx_fd\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-launch-streamk-params",
+              "expect_matches": 1,
+              "rationale": "stream-K's own launch gains only null compact-map parameters -- stream-K's tile enumeration is untouched",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ ne_get_rows\\ =\\ \\(size_t\\)\\ \\(sig\\.ne1\\[2\\]\\ \\*\\ sig\\.n_expert_used\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ size_t\\ id_bytes\\ =\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ 2\\ \\*\\ ne_get_rows\\ \\*\\ sizeof\\(int32_t\\)\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\+\\ \\(size_t\\)\\ \\(sig\\.n_expert\\ \\+\\ 1\\)\\ \\*\\ sizeof\\(int32_t\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ return\\ activation_bytes\\ \\+\\ id_bytes;\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30-workspace-moe",
+              "expect_matches": 1,
+              "rationale": "add the compact block-map's pool bytes to the MUL_MAT_ID workspace upper bound",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/hip-autotune-dispatch.cu"
+        }
+      ],
+      "implementation_digest": "654119505f070b6270093c1cb1a3165b157a42e962c4d6b5652a381955c7a7b1",
+      "patch_id": "1237_rd30_moe_mmq_compact_grid",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <ggml_type\\ type,\\ int\\ ncols_dst,\\ bool\\ has_fusion,\\ bool\\ small_k\\ =\\ false,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ bool\\ halve_iters\\ =\\ false,\\ int\\ nwarps_explicit\\ =\\ 0,\\ int\\ rows_per_block_explicit\\ =\\ 0>",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-template-param",
+              "expect_matches": 1,
+              "rationale": "add a defaulted f32_act template parameter to mul_mat_vec_q (with the new device helper prepended in the replacement text -- anchors are matched against a noise-stripped file and comments are blanked before matching, so the helper cannot be anchored on the comment above this line). Every pre-existing instantiation is unaffected since the new parameter defaults to false",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ const\\ block_q8_1\\ \\*\\ y\\ =\\ \\(\\(const\\ block_q8_1\\ \\*\\)\\ vy\\)\\ \\+\\ sample_y\\*stride_sample_y\\ \\+\\ channel_y\\*stride_channel_y;\\\n\\ \\ \\ \\ const\\ int\\ kbx_offset\\ =\\ sample_x\\*stride_sample_x\\ \\+\\ channel_x\\*stride_channel_x\\ \\+\\ row0\\*stride_row_x;",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-y-decl",
+              "expect_matches": 1,
+              "rationale": "declare y_f32 alongside y, populating whichever the f32_act flag selects; split from the loop body below so this anchor does not need to span the kby line's trailing comment (blanked before matching)",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\#pragma\\ unroll\\\n\\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(int\\ j\\ =\\ 0;\\ j\\ <\\ ncols_dst;\\ \\+\\+j\\)\\ \\{\\\n\\#pragma\\ unroll\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ for\\ \\(int\\ i\\ =\\ 0;\\ i\\ <\\ rows_per_cuda_block;\\ \\+\\+i\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ tmp\\[j\\]\\[i\\]\\ \\+=\\ vec_dot_q_cuda\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ vx,\\ \\&y\\[j\\*stride_col_y\\ \\+\\ kby\\],\\ kbx_offset\\ \\+\\ i\\*stride_row_x\\ \\+\\ kbx,\\ kqs\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ constexpr\\ \\(has_fusion\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(use_gate\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ tmp_gate\\[j\\]\\[i\\]\\ \\+=\\ vec_dot_q_cuda\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ vgate,\\ \\&y\\[j\\*stride_col_y\\ \\+\\ kby\\],\\ kbx_offset\\ \\+\\ i\\*stride_row_x\\ \\+\\ kbx,\\ kqs\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\ \\ \\ \\ \\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-loop-body",
+              "expect_matches": 1,
+              "rationale": "branch the activation read and dot-product call on f32_act at compile time; the else branch is the original code, byte-for-byte",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "template<ggml_type\\ type,\\ int\\ c_ncols_dst,\\ bool\\ small_k\\ =\\ false,\\ bool\\ halve_iters\\ =\\ false,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ int\\ nwarps_explicit\\ =\\ 0,\\ int\\ rows_per_block_explicit\\ =\\ 0>\\\nstatic\\ void\\ mul_mat_vec_q_switch_fusion\\(",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-switch-fusion-template",
+              "expect_matches": 1,
+              "rationale": "add a defaulted f32_act template parameter to mul_mat_vec_q_switch_fusion",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_kernel_launch\\(mul_mat_vec_q<type,\\ c_ncols_dst,\\ true,\\ small_k,\\ halve_iters,\\ nwarps_explicit,\\ rows_per_block_explicit>,\\ launch_params,",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-switch-fusion-true",
+              "expect_matches": 1,
+              "rationale": "thread f32_act into the has_fusion=true kernel instantiation",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_cuda_kernel_launch\\(mul_mat_vec_q<type,\\ c_ncols_dst,\\ false,\\ small_k,\\ halve_iters,\\ nwarps_explicit,\\ rows_per_block_explicit>,\\ launch_params,\\\n\\ \\ \\ \\ \\ \\ \\ \\ vx,\\ vy,\\ ids,\\ fusion,\\ dst,\\ ncols_x,\\ nchannels_y,\\ stride_row_x,\\ stride_col_y,\\ stride_col_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ channel_ratio,\\ stride_channel_x,\\ stride_channel_y,\\ stride_channel_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ sample_ratio,\\ stride_sample_x,\\ stride_sample_y,\\ stride_sample_dst,\\ ids_stride\\);\\\n\\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-switch-fusion-false-and-launcher",
+              "expect_matches": 1,
+              "rationale": "thread f32_act into the has_fusion=false kernel instantiation, and add the host launcher that calls this function with f32_act=true directly after it -- placed here because both depend on the same calc_launch_params/table_id machinery already in scope in this part of the file",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ const\\ int64_t\\ ne10_padded\\ =\\ GGML_PAD\\(ne10,\\ MATRIX_ROW_PADDING\\);\\\n\\ \\ \\ \\ ggml_cuda_pool_alloc<char>\\ src1_q8_1\\(ctx\\.pool\\(\\),\\ ne13\\*ne12\\ \\*\\ ne11\\*ne10_padded\\ \\*\\ sizeof\\(block_q8_1\\)/QK8_1\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd33-eligibility-gate",
+              "expect_matches": 1,
+              "rationale": "insert the eligibility gate before the q8_1 allocation/quantization it exists to skip; falls through unchanged to the existing quantize path whenever ineligible",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        }
+      ],
+      "implementation_digest": "0a6ff0fefe880e160f3907222405d6c8e555cc1ded846c65d95b3dac127dbe89",
+      "patch_id": "1241_rd33_mmvq_q8_0_f32_decode",
+      "requires": [
+        "0600_mmvq_geometry"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [
+        "1221_rd50_gdn_chunked_recurrence"
+      ],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\A",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-header-01",
+              "expect_matches": 1,
+              "rationale": "nro04-header: create ggml/src/ggml-cuda/gated_delta_net_chunked.cuh",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\A",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-bf16_gfx11-01",
+              "expect_matches": 1,
+              "rationale": "nro04-bf16_gfx11: create ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\A",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-bf16_gfx12-01",
+              "expect_matches": 1,
+              "rationale": "nro04-bf16_gfx12: create ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"gated_delta_net\\.cuh\"\\\n\\#include\\ \"ggml\\-cuda/common\\.cuh\"\\\n\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-gdn_dispatch-01",
+              "expect_matches": 1,
+              "rationale": "nro04-gdn_dispatch hunk 1: upstream lines 2-1 -> result lines 2-2",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ const\\ bool\\ keep_rs\\ =\\ K\\ >\\ 1;\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ float\\ \\*\\ state_d\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ =\\ dst_d\\ \\+\\ S_v\\ \\*\\ H\\ \\*\\ n_tokens\\ \\*\\ n_seqs;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-gdn_dispatch-02",
+              "expect_matches": 1,
+              "rationale": "nro04-gdn_dispatch hunk 2: upstream lines 289-288 -> result lines 290-352",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/gated_delta_net.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ double\\ err\\ =\\ ud\\->tc\\->err\\(f1\\.data\\(\\),\\ f2\\.data\\(\\),\\ f1\\.size\\(\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(err\\ >\\ ud\\->tc\\->max_err\\(ud\\->backend1\\)\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-tests-01",
+              "expect_matches": 1,
+              "rationale": "nro04-tests hunk 1: upstream lines 1530-1529 -> result lines 1530-1533",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(err\\ >\\ ud\\->tc\\->max_err\\(ud\\->backend1\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ printf\\(\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ,\\ ggml_op_desc\\(t1\\),\\ err,\\ ud\\->tc\\->max_err\\(ud\\->backend1\\)\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ud\\->ok\\ =\\ false;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-tests-02",
+              "expect_matches": 1,
+              "rationale": "nro04-tests hunk 2: upstream lines 1533-1537 -> result lines 1537-1587",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ std::string\\ vars\\(\\)\\ override\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ return\\ VARS_TO_STR9\\(type,\\ head_count,\\ head_size,\\ n_seq_tokens,\\ n_seqs,\\ v_repeat,\\ permuted,\\ kda,\\ K\\);\\\n\\ \\ \\ \\ \\}\\\n\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-tests-03",
+              "expect_matches": 1,
+              "rationale": "nro04-tests hunk 3: upstream lines 4681-4680 -> result lines 4731-4748",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 64,\\ 4,\\ 1\\)\\);\\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 64,\\ 4,\\ 2\\)\\);\\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 8,\\ 32,\\ 4,\\ 2,\\ 2\\)\\);\\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 64,\\ 4,\\ 2,\\ 1,\\ true\\)\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-tests-04",
+              "expect_matches": 1,
+              "rationale": "nro04-tests hunk 4: upstream lines 11010-11009 -> result lines 11078-11089",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 4,\\ 128,\\ 1024,\\ 1\\)\\);\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\ \\ \\ \\ test_cases\\.emplace_back\\(new\\ test_gated_delta_net\\(GGML_TYPE_F32,\\ 32,\\ 128,\\ 64,\\ 1,\\ 1,\\ false,\\ true\\)\\);\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "nro04-tests-05",
+              "expect_matches": 1,
+              "rationale": "nro04-tests hunk 5: upstream lines 11533-11532 -> result lines 11613-11619",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "tests/test-backend-ops.cpp"
+        }
+      ],
+      "implementation_digest": "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44",
+      "patch_id": "1253_nro04_gfx1100_bf16_chunked_gdn",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ return\\ cc\\ ==\\ GGML_CUDA_CC_RDNA3;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rd30b-gate",
+              "expect_matches": 1,
+              "rationale": "1237's gate function body is its only code line; replaced whole.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmq.cuh"
+        }
+      ],
+      "implementation_digest": "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3",
+      "patch_id": "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+      "requires": [
+        "1237_rd30_moe_mmq_compact_grid"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <ggml_type\\ type,\\ int\\ ncols_dst,\\ bool\\ has_fusion,\\ bool\\ small_k\\ =\\ false,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ bool\\ halve_iters\\ =\\ false,\\ int\\ nwarps_explicit\\ =\\ 0,\\ int\\ rows_per_block_explicit\\ =\\ 0,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ bool\\ f32_act\\ =\\ false",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-helpers",
+              "expect_matches": 1,
+              "rationale": "Attach to 1241's post-patch f32_act template header (without its closing >, which 1273 extends with iq_vdr) so the dependency is explicit and fail-closed.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ tmp\\[j\\]\\[i\\]\\ \\+=\\ vec_dot_q8_0_f32\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ vx,\\ y_f32\\ \\+\\ j\\*stride_col_y\\ \\+\\ kbx\\*qk,\\ kbx_offset\\ \\+\\ i\\*stride_row_x\\ \\+\\ kbx,\\ kqs\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-vx-dispatch",
+              "expect_matches": 1,
+              "rationale": "Generalize 1241's dense F32 dot call from Q8_0 to the compile-time weight type.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ tmp_gate\\[j\\]\\[i\\]\\ \\+=\\ vec_dot_q8_0_f32\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ vgate,\\ y_f32\\ \\+\\ j\\*stride_col_y\\ \\+\\ kbx\\*qk,\\ kbx_offset\\ \\+\\ i\\*stride_row_x\\ \\+\\ kbx,\\ kqs\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-gate-dispatch",
+              "expect_matches": 1,
+              "rationale": "Keep fused gate weights on the same compile-time Q6_K F32 helper.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <int\\ c_ncols_dst>\\\nstatic\\ void\\ ggml_cuda_mmvq_q8_0_f32_decode\\(\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ void\\ \\*\\ vx,\\ const\\ float\\ \\*\\ vy,\\ const\\ ggml_cuda_mm_fusion_args_device\\ fusion,\\ float\\ \\*\\ dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ ncols_x,\\ const\\ int\\ nrows_x,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ stride_row_x,\\ const\\ int\\ stride_col_y,\\ const\\ int\\ stride_col_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ nchannels_x,\\ const\\ int\\ nchannels_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ stride_channel_x,\\ const\\ int\\ stride_channel_y,\\ const\\ int\\ stride_channel_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ nsamples_x,\\ const\\ int\\ nsamples_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int\\ stride_sample_x,\\ const\\ int\\ stride_sample_y,\\ const\\ int\\ stride_sample_dst,\\\n\\ \\ \\ \\ \\ \\ \\ \\ cudaStream_t\\ stream\\)\\ \\{\\\n\\\n\\ \\ \\ \\ constexpr\\ ggml_type\\ type\\ =\\ GGML_TYPE_Q8_0;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-generic-launcher",
+              "expect_matches": 1,
+              "rationale": "Generalize 1241's launcher without changing its launch-parameter machinery.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_mmvq_q8_0_f32_decode<decltype\\(ncols\\)::value>\\(\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-q8-launch-call",
+              "expect_matches": 1,
+              "rationale": "Retarget 1241's existing Q8_0 gate to the generalized launcher; behavior remains Q8_0-specific.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(!ids\\ \\&\\&\\ src0\\->type\\ ==\\ GGML_TYPE_Q8_0\\ \\&\\&\\ ne1\\ ==\\ 1\\ \\&\\&\\ !forced\\.requested\\(\\)\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kquant-f32-eligibility-gate",
+              "expect_matches": 1,
+              "rationale": "Run before 1241's Q8_0 gate and before the shared Q8_1 activation allocation/quantization.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        }
+      ],
+      "implementation_digest": "963566626de286dc99dbd6f36b05abe07c7c533716de67640f8f8dd6106f3d5e",
+      "patch_id": "1274_mmvq_kquant_f32_decode",
+      "requires": [
+        "1241_rd33_mmvq_q8_0_f32_decode"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "struct\\ ggml_backend_cuda_comm_context\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-forward-decl",
+              "expect_matches": 1,
+              "rationale": "The comm context owns and frees the cpu-root state, defined later with the provider.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_cuda_ar_pipeline\\ \\*\\ \\ \\ \\ \\ ar_pipeline\\ =\\ nullptr;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-context-field",
+              "expect_matches": 1,
+              "rationale": "Per-communicator cpu-root state, beside the internal pipeline.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_ar_pipeline_free\\(ar_pipeline\\);\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-context-free",
+              "expect_matches": 1,
+              "rationale": "Stop the worker and free the pinned buffers with the communicator.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ p\\ ==\\ \"adaptive\"\\ \\|\\|\\ p\\ ==\\ \"p2p\"\\ \\|\\|\\ p\\ ==\\ \"root3\"\\ \\|\\|\\ p\\ ==\\ \"butterfly\";\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-known-provider",
+              "expect_matches": 1,
+              "rationale": "Accept --allreduce cpu-root in 0860's provider validation.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "static\\ void\\ \\*\\ ggml_backend_cuda_comm_init\\(ggml_backend_t\\ \\*\\ backends,\\ size_t\\ n_backends\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-impl",
+              "expect_matches": 1,
+              "rationale": "Provider implementation after the NCCL helpers and init chain it reuses.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\}\\ else\\ if\\ \\(provider\\ ==\\ \"adaptive\"\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_backend_cuda_comm_init_hybrid\\(ret\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-init-dispatch",
+              "expect_matches": 1,
+              "rationale": "Select cpu-root beside 0840's adaptive provider.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\"multi\\-GPU\\ AllReduce\\ provider:\\ auto\\|ccl\\|host\\|adaptive\\|p2p\\|root3\\|butterfly\\ \\(default:\\ auto\\)\"",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-arg-help",
+              "expect_matches": 1,
+              "rationale": "Help text only; validation is in ggml_backend_comm_set_config.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "common/arg.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\-\\-allreduce\\ <auto\\|ccl\\|host\\|adaptive\\|p2p\\|root3\\|butterfly>\\ \\(default:\\ auto\\)",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cpu-root-bench-help",
+              "expect_matches": 1,
+              "rationale": "Help text only.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "tools/llama-bench/llama-bench.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1291_ar_cpu_root",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "4433e3272fb5a96397d43dd8f3635177fe073c3d644ff2b1f148bdee6008c382",
+      "patch_id": "1291_ar_cpu_root",
+      "requires": [
+        "0840_hybrid_allreduce_dispatch",
+        "0860_allreduce_provider_cli",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "(?m)^        size_t n_kept = 0;\\n        if \\(mem_idx_stale\\[s\\] == POS_CLEAN && !sq\\.cells\\.empty\\(\\) && !sp\\.empty\\(\\) &&\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kpool-tail-cut",
+              "expect_matches": 1,
+              "rationale": "Only kpool_layout_update() starts its per-sequence append check with this exact pair.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(mem_idx_stale\\[s\\]\\ ==\\ POS_CLEAN\\ \\&\\&\\ !sq\\.cells\\.empty\\(\\)\\ \\&\\&\\ !sp\\.empty\\(\\)\\ \\&\\&\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kpool-tail-append",
+              "expect_matches": 1,
+              "rationale": "A cut layout takes the clean append path.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(sq\\.cells\\.size\\(\\)\\ !=\\ sp\\.size\\(\\)\\ \\|\\|\\ mem_idx_stale\\[s\\]\\ !=\\ POS_CLEAN\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "kpool-tail-no-rebuild",
+              "expect_matches": 1,
+              "rationale": "A cut layout skips the full rebuild unless the cell counts disagree.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-memory-hybrid-idx.cpp"
+        }
+      ],
+      "implementation_digest": "d3980a4dc29e259fef2e41505875ade28445220a211db3400f4963f2c940bc86",
+      "patch_id": "1292_kpool_tail_truncate",
+      "requires": [],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [
+        "1256_nro07_topk_hybrid"
+      ],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "(?m)^static void top_k_radix_cuda\\(",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "topk-tie-kernel",
+              "expect_matches": 1,
+              "rationale": "Defined before the launcher that uses it.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ src,\\ dst,\\ states,\\ ncols,\\ k,\\ blocks_per_row\\);\\\n\\}",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "topk-launch-ties",
+              "expect_matches": 1,
+              "rationale": "The single gather launch at the end of top_k_radix_cuda.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ top_k_radix_reset_counters\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "topk-det-flag",
+              "expect_matches": 1,
+              "rationale": "Read the switch once in the launcher before the gather launches.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/top-k.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1294_topk_deterministic_ties",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "b56cd8f15b5bfa540c6a4a6a9c9916d71bfeb8d052c7c87dc447c2fc6d5cc009",
+      "patch_id": "1294_topk_deterministic_ties",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ llama_context\\ \\*\\ ctx_other;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "cparams-draft-vocab-trim",
+              "expect_matches": 1,
+              "rationale": "Graph builders read cparams; the owning context sets these.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-cparams.h"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_backend_buffer_ptr\\ buf_output;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "context-draft-vocab-trim-buffers",
+              "expect_matches": 1,
+              "rationale": "The trimmed head must live as long as the draft context.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-context.h"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(cparams\\.rope_scaling_type\\ ==\\ LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "context-draft-vocab-trim",
+              "expect_matches": 1,
+              "rationale": "In the context constructor after cparams setup; the model is fully loaded here.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-context.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ nullptr,\\ nullptr,\\ il\\);\\\n\\ \\ \\ \\ cb\\(cur,\\ \"result_norm\",\\ \\-1\\);\\\n\\ \\ \\ \\ res\\->t_embd\\ =\\ cur;\\\n\\\n\\ \\ \\ \\ cur\\ =\\ build_lora_mm\\(model\\.output,\\ cur,\\ model\\.output_s\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "mtp-trimmed-head",
+              "expect_matches": 1,
+              "rationale": "The MTP graph's head (its hc mix ends with il, the target graph's with -1).",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/models/qwen4exp.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1297_draft_vocab_trim",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "b111e58b8189253f5b1a8b933d8c422b14f0f6d36790f829673c898bd89ff1f0",
+      "patch_id": "1297_draft_vocab_trim",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "static\\ void\\ ggml_cuda_graph_update_executable\\(ggml_backend_cuda_context\\ \\*\\ cuda_ctx,\\ const\\ void\\ \\*\\ graph_key\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "graph-oom-helper",
+              "expect_matches": 1,
+              "rationale": "Define the helper just ahead of the first instantiate site (the executable-update path).",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "CUDA_CHECK\\(cudaGraphInstantiate\\(\\&graph\\->instance,\\ graph\\->graph,\\ NULL,\\ NULL,\\ 0\\)\\);",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "graph-oom-sites",
+              "expect_matches": 2,
+              "rationale": "Both upstream instantiate sites (re-instantiate after a failed exec update, first instantiate before launch).",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1302_cuda_graph_oom_evict",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "47d92e1350f955be69d9e0066c4d6938867ccdc2028fed3e0015bf97415f340b",
+      "patch_id": "1302_cuda_graph_oom_evict",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ <cstring>\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "attn-ts-include",
+              "expect_matches": 1,
+              "rationale": "std::getenv for the env-selected attention split.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ static\\ const\\ std::regex\\ pattern_q_weight\\ \\ \\ \\ \\ \\ \\ \\ \\(\"blk\\\\\\\\\\.\\\\\\\\d\\*\\\\\\\\\\.attn_q\\.weight\"\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "attn-ts-config",
+              "expect_matches": 1,
+              "rationale": "Parse the attention split once at the head of llama_meta_device_get_split_state's pattern table.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ tensor_config\\ tc\\ =\\ get_tensor_config\\(\\);\\\n\\ \\ \\ \\ split_state\\.axis\\ =\\ tc\\.axis;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "attn-ts-select",
+              "expect_matches": 1,
+              "rationale": "Classify the tensor once its config (layer index) is known; pick the vector and rotation.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ const\\ float\\ \\*\\ tensor_split\\ =\\ ud\\->model\\->tensor_split\\(\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "attn-ts-vector",
+              "expect_matches": 1,
+              "rationale": "The split vector feeding the cumulative scan.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\(j\\ \\+\\ tc\\.rotation\\)\\ %\\ ud\\->n_devices",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "attn-ts-rotation",
+              "expect_matches": 3,
+              "rationale": "All three rotation uses in the scan/assignment take the family's (possibly unrotated) value.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/llama-model.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1303_attn_kv_tensor_split",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "66992fc84929ab3bf4f5afc6e035e1709ceef00f5bff8c2abe29ece1e53da586",
+      "patch_id": "1303_attn_kv_tensor_split",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"mmvq\\.cuh\"\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-mmvq-include",
+              "expect_matches": 1,
+              "rationale": "mmvq.cu's own header include; the cache API is HIP-only (1235 builds it for ggml-hip).",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ const\\ int64_t\\ ne10_padded\\ =\\ GGML_PAD\\(ne10,\\ MATRIX_ROW_PADDING\\);\\\n\\ \\ \\ \\ ggml_cuda_pool_alloc<char>\\ src1_q8_1\\(ctx\\.pool\\(\\),\\ ne13\\*ne12\\ \\*\\ ne11\\*ne10_padded\\ \\*\\ sizeof\\(block_q8_1\\)/QK8_1\\);\\\n\\ \\ \\ \\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int64_t\\ s11\\ =\\ src1\\->nb\\[1\\]\\ /\\ ts_src1;\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int64_t\\ s12\\ =\\ src1\\->nb\\[2\\]\\ /\\ ts_src1;\\\n\\ \\ \\ \\ \\ \\ \\ \\ const\\ int64_t\\ s13\\ =\\ src1\\->nb\\[3\\]\\ /\\ ts_src1;\\\n\\ \\ \\ \\ \\ \\ \\ \\ quantize_row_q8_1_cuda\\(src1_d,\\ nullptr,\\ src1_q8_1\\.get\\(\\),\\ src0\\->type,\\ ne10,\\ s11,\\ s12,\\ s13,\\ ne10_padded,\\ ne11,\\ ne12,\\ ne13,\\ stream\\);\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-mmvq-quantize",
+              "expect_matches": 1,
+              "rationale": "The single per-call src1 quantize in ggml_cuda_mul_mat_vec_q (after 1241's F32 early return).",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ src0\\->data,\\ src0\\->type,\\ src1_q8_1\\.get\\(\\),\\ ids_d,\\ fusion_local,\\ dst_d,\\ ne00,\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-mmvq-consumer",
+              "expect_matches": 1,
+              "rationale": "The one consumer of the quantized buffer in ggml_cuda_mul_mat_vec_q.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/mmvq.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "static\\ enum\\ ggml_status\\ ggml_backend_cuda_graph_compute\\(ggml_backend_t\\ backend,\\ ggml_cgraph\\ \\*\\ cgraph\\)\\ \\{\\\n\\ \\ \\ \\ ggml_backend_cuda_context\\ \\*\\ cuda_ctx\\ =\\ \\(ggml_backend_cuda_context\\ \\*\\)\\ backend\\->context;\\\n\\\n\\ \\ \\ \\ ggml_cuda_set_device\\(cuda_ctx\\->device\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-generation",
+              "expect_matches": 1,
+              "rationale": "Head of ggml_backend_cuda_graph_compute: one generation per graph evaluation.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ CUDA_CHECK\\(cudaStreamBeginCapture\\(cuda_ctx\\->stream\\(\\),\\ cudaStreamCaptureModeRelaxed\\)\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-capture-begin",
+              "expect_matches": 1,
+              "rationale": "Immediately after cudaStreamBeginCapture in graph_compute (works with or without 1231's marker block).",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_cuda_graph_evaluate_and_capture\\(cuda_ctx,\\ cgraph,\\ use_cuda_graph,\\ cuda_graph_update_required,\\ graph_key\\);\\\n\\\n\\ \\ \\ \\ return\\ GGML_STATUS_SUCCESS;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "q81-capture-end",
+              "expect_matches": 1,
+              "rationale": "After evaluate_and_capture, which ends any capture it began.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1307_q81_activation_cache_mmvq",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "a699f12df7bdd46d508e64fb8183b45bd29c642e8d1b344582761ea75f7b35ae",
+      "patch_id": "1307_q81_activation_cache_mmvq",
+      "requires": [
+        "1235_rd09_q81_activation_cache_foundation",
+        "1241_rd33_mmvq_q8_0_f32_decode",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ <algorithm>\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rollback-no-cont-include",
+              "expect_matches": 1,
+              "rationale": "First standard-library include of qwen4exp.cpp.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ ggml_build_forward_expand\\(gf,\\ ggml_cpy\\(ctx0,\\ ggml_cont\\(ctx0,\\ tail\\),\\ dst\\)\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rollback-no-cont",
+              "expect_matches": 1,
+              "rationale": "The per-slot snapshot write in the recurrent conv-state builder ([TAG_RECURRENT_ROLLBACK_SPLITS]); the only cpy(cont(tail), dst) in the file.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/models/qwen4exp.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1308_qwen4exp_rollback_copy_no_cont",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "5ec4e3b9103462d192d94fad334e1990d09bae86bc5c11f09207f0d6d0239ace",
+      "patch_id": "1308_qwen4exp_rollback_copy_no_cont",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"norm\\.cuh\"\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rms-q81-include",
+              "expect_matches": 1,
+              "rationale": "norm.cu's own header include; the cache API is HIP-only.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <int\\ block_size>\\\nstatic\\ __global__\\ void\\ rms_norm_back_f32\\(\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rms-q81-kernel",
+              "expect_matches": 1,
+              "rationale": "Next to the RMSNorm kernels, before rms_norm_back_f32.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ rms_norm_mul_f32_cuda\\(src0_d,\\ mul_d,\\ nullptr,\\ dst_d,\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "rms-q81-dispatch",
+              "expect_matches": 1,
+              "rationale": "ggml_cuda_op_rms_norm_fused's single launch (RMS_NORM+MUL without ADD); all of its strides and the mul broadcast shape are already computed above it.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/norm.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1309_rms_norm_mul_q81",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "abdbad7c9349077348705f16f2383c6e82762ab091291aa3d62ddf9c1ed5b990",
+      "patch_id": "1309_rms_norm_mul_q81",
+      "requires": [
+        "1307_q81_activation_cache_mmvq",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"convert\\.cuh\"\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "act-q81-include",
+              "expect_matches": 1,
+              "rationale": "unary.cu's convert.cuh include; the cache API is HIP-only.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <float\\ \\(\\*op\\)\\(float\\),\\ typename\\ T>\\\nstatic\\ __global__\\ void\\ unary_op_kernel\\(const\\ T\\ \\*\\ x,\\ T\\ \\*\\ dst,\\ const\\ int\\ k\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "act-q81-helper",
+              "expect_matches": 1,
+              "rationale": "Before the plain unary kernel, so both ggml_cuda_op_unary and ggml_cuda_op_unary_gated (defined later) can call it.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\}\\ else\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ unary_cuda<op>\\(\\(const\\ float\\ \\*\\)src0_d,\\ \\(float\\ \\*\\)dst_d,\\ ggml_nelements\\(src0\\),\\ stream\\);\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "act-q81-unary",
+              "expect_matches": 1,
+              "rationale": "F32 branch of ggml_cuda_op_unary.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ unary_gated_cuda<op>\\(src0_p,\\ src1_p,\\ \\(float\\ \\*\\)dst_d,\\ ggml_nelements\\(dst\\),\\ nc,\\ src0_o\\ /\\ sizeof\\(float\\),\\ src1_o\\ /\\ sizeof\\(float\\),\\ stream\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "act-q81-gated",
+              "expect_matches": 1,
+              "rationale": "F32 launch in ggml_cuda_op_unary_gated (after the swapped/split pointer setup).",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/unary.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1310_act_q81",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "b70b44bb1cf347fb9534bd7a51fcbc02491a0f3a349821047a50bc5a19cd8354",
+      "patch_id": "1310_act_q81",
+      "requires": [
+        "1307_q81_activation_cache_mmvq",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ \"dsv4\\-hc\\.cuh\"\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hc-q81-include",
+              "expect_matches": 1,
+              "rationale": "dsv4-hc.cu's own header include; the cache API is HIP-only.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "template\\ <bool\\ has_comb>\\\nstatic\\ __global__\\ void\\ dsv4_hc_post_f32\\(\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hc-q81-kernel",
+              "expect_matches": 1,
+              "rationale": "After dsv4_hc_pre_f32 and before dsv4_hc_post_f32.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ auto\\ kernel\\ =\\ gated\\ \\?\\ dsv4_hc_pre_f32<true>\\ :\\ dsv4_hc_pre_f32<false>;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "hc-q81-dispatch",
+              "expect_matches": 1,
+              "rationale": "ggml_cuda_op_dsv4_hc_pre's launch: shapes, strides, scale, block_size and block_dims are in scope.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/dsv4-hc.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1311_hc_pre_q81",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "632b9a76ff9f0ed58b850c2325d5b330921200dc2ca4b88fa6611f060fc46456",
+      "patch_id": "1311_hc_pre_q81",
+      "requires": [
+        "1307_q81_activation_cache_mmvq",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\}\\ else\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ unary_gated_cuda<op>\\(\\(const\\ float\\ \\*\\)\\ unary_src\\->data,\\ \\(const\\ float\\ \\*\\)\\ other_src\\->data,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\(float\\ \\*\\)\\ mul_node\\->data,\\ k,\\ nc,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ unary_stride\\ /\\ sizeof\\(float\\),\\ other_stride\\ /\\ sizeof\\(float\\),\\ stream\\);\\\n\\ \\ \\ \\ \\}\\\n\\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "unary-mul-q81",
+              "expect_matches": 1,
+              "rationale": "F32 launch at the end of ggml_cuda_op_unary_mul_impl; 1310's helper is defined earlier in unary.cu.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/unary.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1312_mul_q81",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "a62bd3d649dc6c989364ad4e6f21f8a17c6f885f0cbee152352e39dc9627f343",
+      "patch_id": "1312_mul_q81",
+      "requires": [
+        "1307_q81_activation_cache_mmvq",
+        "1310_act_q81",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "/\\*\\ fused\\ relu\\ \\+\\ sqr\\ \\*/\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "scale-act-kernel",
+              "expect_matches": 1,
+              "rationale": "Before the relu+sqr fusion: after op_silu/op_sigmoid and 1310's Q8_1 cache include.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/unary.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "void\\ ggml_cuda_op_relu_sqr\\(ggml_backend_cuda_context\\ \\&\\ ctx,\\ ggml_tensor\\ \\*\\ relu_node,\\ ggml_tensor\\ \\*\\ sqr_node\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "scale-act-decl",
+              "expect_matches": 1,
+              "rationale": "Next to the other fused-unary declarations used by ggml_cuda_try_fuse.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/unary.cuh"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ if\\ \\(ggml_cuda_can_fuse\\(cgraph,\\ i,\\ \\{\\ GGML_OP_SCALE,\\ GGML_OP_UNARY,\\ GGML_OP_SCALE\\ \\},\\ \\{\\ GGML_UNARY_OP_TANH\\ \\}\\)\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ ggml_cuda_op_softcap\\(\\*cuda_ctx,\\ cgraph\\->nodes\\[i\\ \\+\\ 2\\],\\ node\\);\\\n\\ \\ \\ \\ \\ \\ \\ \\ return\\ 2;\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "scale-act-match",
+              "expect_matches": 1,
+              "rationale": "Right after upstream's SCALE/TANH/SCALE softcap fusion, the last matcher in ggml_cuda_try_fuse.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-cuda/ggml-cuda.cu"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1313_scale_act_fuse",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "8549194bd6b5a3af71835ade56f3bd2bdd4c7b38b6f65babce02f67738b8a7c2",
+      "patch_id": "1313_scale_act_fuse",
+      "requires": [
+        "1307_q81_activation_cache_mmvq",
+        "1310_act_q81",
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ struct\\ ggml_tensor\\ \\*\\ input_cpy\\ =\\ tensor_copy\\(input,\\ split_backend_id,\\ sched\\->cur_copy\\);\\\n\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(input\\->flags\\ \\&\\ GGML_TENSOR_FLAG_INPUT\\)\\ \\{\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "sched-async-inputs",
+              "expect_matches": 1,
+              "rationale": "Top of the per-input copy loop in ggml_backend_sched_compute_splits, before the upstream user-input and inter-split branches.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-backend.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "static\\ void\\ ggml_backend_meta_set_tensor_async\\(ggml_backend_t\\ backend,\\ ggml_tensor\\ \\*\\ tensor,\\ const\\ void\\ \\*\\ data,\\ size_t\\ offset,\\ size_t\\ size\\)\\ \\{\\\n\\ \\ \\ \\ const\\ size_t\\ n_backends\\ =\\ ggml_backend_meta_n_backends\\(backend\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(offset\\ ==\\ 0\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(ggml_is_contiguous\\(tensor\\)\\);\\\n\\\n\\ \\ \\ \\ const\\ ggml_backend_meta_split_state\\ split_state\\ =\\ ggml_backend_meta_get_split_state\\(tensor,\\ /\\*assume_sync\\ =\\*/\\ false\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(split_state\\.n_segments\\ ==\\ 1\\);\\\n\\ \\ \\ \\ GGML_ASSERT\\(split_state\\.nr\\[0\\]\\ \\ \\ \\ \\ \\ ==\\ 1\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "meta-set-async-fallback",
+              "expect_matches": 1,
+              "rationale": "ggml_backend_meta_set_tensor_async (get_tensor_async has the same prologue but a different splice comment, so the anchor including the set comment is unique).",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml-backend-meta.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1326_sched_async_host_inputs",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "54c8a0220f862a450a553cd07012e724f4db821564954107d32a0543be4d50e6",
+      "patch_id": "1326_sched_async_host_inputs",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    },
+    {
+      "conflicts": [],
+      "files": [
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\#include\\ <algorithm>\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "qsa-remap-include",
+              "expect_matches": 1,
+              "rationale": "Standard include block of qwen4exp.cpp.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_tensor\\ \\*\\ new_pool_pos\\ \\ =\\ nullptr;\\ //\\ I32\\ \\[4\\*n_new\\]\\ \\ \\ \\ \\ \\ \\ \\ M\\-RoPE\\ position\\ of\\ each\\ new\\ block's\\ first\\ member\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "qsa-remap-members",
+              "expect_matches": 1,
+              "rationale": "llm_graph_input_kpool member list.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ \\ \\ \\ \\ mctx\\->set_input_kpool\\(pool_cells,\\ pool_idxs,\\ pool_mask,\\ tail_idxs,\\ nullptr,\\ false,\\ new_pool_idxs,\\ new_pool_rep,\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ubatch,\\ new_pool_pos\\);\\\n\\ \\ \\ \\ \\}\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "qsa-remap-set-input",
+              "expect_matches": 1,
+              "rationale": "kpool set_input after set_input_kpool.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ inp\\->n_sel\\ \\ \\ \\ \\ \\ =\\ kpool\\*std::min<uint32_t>\\(n_pool,\\ hparams\\.indexer_top_k\\ /\\ kpool\\)\\ \\+\\ kpool\\ \\-\\ 1;\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "qsa-remap-build",
+              "expect_matches": 1,
+              "rationale": "build_inp_kpool once n_sel is known.",
+              "reason_code": null,
+              "status": "applied-clean"
+            },
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ ggml_tensor\\ \\*\\ live_tail\\ =\\ ggml_cast\\(ctx0,\\ inp_kpool\\->tail_idxs,\\ GGML_TYPE_F32\\);\\\n\\ \\ \\ \\ live_tail\\ =\\ ggml_clamp\\(ctx0,\\ ggml_scale_bias\\(ctx0,\\ live_tail,\\ \\-1\\.0f,\\ \\(float\\)\\ n_kv\\),\\ 0\\.0f,\\ 1\\.0f\\);\\\n\\ \\ \\ \\ ggml_tensor\\ \\*\\ live\\ =\\ ggml_concat\\(ctx0,\\ live_pool,\\ live_tail,\\ 0\\);\\ //\\ \\[n_sel,\\ n_tokens\\]\\\n\\\n\\ \\ \\ \\ //\\ dump\\ rows\\ n_kv\\ \\+\\ slot\\ as\\ a\\ cumulative\\ sum:\\ the\\ meta\\ backend\\ cannot\\ split\\ an\\ arange,\\ which\\ has\\ no\\ source\\\n\\ \\ \\ \\ ggml_tensor\\ \\*\\ dump\\ \\ =\\ ggml_scale_bias\\(ctx0,\\ ggml_cumsum\\(ctx0,\\ ggml_fill\\(ctx0,\\ live,\\ 1\\.0f\\)\\),\\ 1\\.0f,\\ \\(float\\)\\ \\(n_kv\\ \\-\\ 1\\)\\);\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "qsa-remap-use",
+              "expect_matches": 1,
+              "rationale": "build_qsa_sel #29819 remap terms.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "src/models/qwen4exp.cpp"
+        },
+        {
+          "edits": [
+            {
+              "actual_matches": null,
+              "anchor": "\\ \\ \\ \\ //\\ bigcherry\\ 0910:\\ env\\ doc\\ table\\ end\\\n",
+              "applies_if": null,
+              "context": null,
+              "edit_id": "env-docs-1327_qsa_host_remap",
+              "expect_matches": 1,
+              "rationale": "0910_feature_sets env-doc table end marker.",
+              "reason_code": null,
+              "status": "applied-clean"
+            }
+          ],
+          "path": "ggml/src/ggml.c"
+        }
+      ],
+      "implementation_digest": "9ec68fbd297720379734b5557e8947e265cc78408ab52313afb4ab13665516f9",
+      "patch_id": "1327_qsa_host_remap",
+      "requires": [
+        "0910_feature_sets"
+      ],
+      "state": "validated",
+      "status": "CLEAN"
+    }
+  ],
+  "previous_upstream_revision": "0504396140d1c882f5f6ee34466a42db7ae90114",
+  "schema_version": 2,
+  "selector": {
+    "module_hashes": [
+      [
+        "0100_cmake_options",
+        "cbf35b4a9b53e3f2c62bf4911528e1d32488ca1087cdd56b35b6f8449188ab50"
+      ],
+      [
+        "0200_dispatch_hook",
+        "c153f61fbd60a5dae3a30f8f4ad1874114d61ba62e9d8728461be661027f4540"
+      ],
+      [
+        "0300_mmq_forced_j",
+        "09bc10f228adae7a860169d6d14d459d0dd4e41e0d8744d40b7b7068cdf78657"
+      ],
+      [
+        "0400_mmvf_forced_block",
+        "69cee69f4d902f958d06b29b4fd3898c1af2f1a0c6e9d158576169928030afaf"
+      ],
+      [
+        "0500_mmf_forced_nwarps",
+        "942d2a28fcb7d504a3cf4995125f05dd7dfcdaf2170edd1f527f6bda85b4343c"
+      ],
+      [
+        "0600_mmvq_geometry",
+        "e233f7df7df5dfc8f940e5e603d15b6aac94871c0a82ba9bc3f8e1b632f7c925"
+      ],
+      [
+        "0650_mmvq_native_variant",
+        "98d3d3b65d2adf7924b79ffb82bfddfef36ce89037485811f77344ca2735da10"
+      ],
+      [
+        "0700_coverage_counters",
+        "3a2e8b5b928e8d417f51815335b979b749baaa2c6c5f9fd1cf3bacf48649c6cf"
+      ],
+      [
+        "0860_allreduce_provider_cli",
+        "34a98b5325401c0adaaf95aecd8c6be4c6dd9e422189276bde4655462ae28f52"
+      ],
+      [
+        "0910_feature_sets",
+        "01decac6353cea16211d68d1b3da29aa97be26d384180655e3eb201f01000d93"
+      ],
+      [
+        "1007_meta_subgraph_realloc_fix",
+        "4a3f24be21a26f993e9c5caae46fbdeb8a0ba4b15c1815bb4adbc2f1426799eb"
+      ],
+      [
+        "1225_hi85_nccl_heterogeneous_arch_guard",
+        "efb7f17a2e5a9d72ffd608bfd5b1fc3d1b6e8ef83e74ca66cd2e6f0ebb3ddeee"
+      ],
+      [
+        "0840_hybrid_allreduce_dispatch",
+        "dd2f8bb4f7c903ef519c74f0e47586a6f4a7e77e2e4f90364586419ebaabce91"
+      ],
+      [
+        "1235_rd09_q81_activation_cache_foundation",
+        "4869c576e3229843aeab6019eb7a4f57973b4f74ed5110b341e722eaf69813c5"
+      ],
+      [
+        "1237_rd30_moe_mmq_compact_grid",
+        "654119505f070b6270093c1cb1a3165b157a42e962c4d6b5652a381955c7a7b1"
+      ],
+      [
+        "1241_rd33_mmvq_q8_0_f32_decode",
+        "0a6ff0fefe880e160f3907222405d6c8e555cc1ded846c65d95b3dac127dbe89"
+      ],
+      [
+        "1253_nro04_gfx1100_bf16_chunked_gdn",
+        "d9be6bd5e0fae89ac8f748202a77fe07a40e4da4314effdc23670b0287fb4c44"
+      ],
+      [
+        "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+        "5e6181b8c793921d25baf436d3ed7f8445606b7a5ab23a49231256e1c6a0f4f3"
+      ],
+      [
+        "1274_mmvq_kquant_f32_decode",
+        "963566626de286dc99dbd6f36b05abe07c7c533716de67640f8f8dd6106f3d5e"
+      ],
+      [
+        "1291_ar_cpu_root",
+        "4433e3272fb5a96397d43dd8f3635177fe073c3d644ff2b1f148bdee6008c382"
+      ],
+      [
+        "1292_kpool_tail_truncate",
+        "d3980a4dc29e259fef2e41505875ade28445220a211db3400f4963f2c940bc86"
+      ],
+      [
+        "1294_topk_deterministic_ties",
+        "b56cd8f15b5bfa540c6a4a6a9c9916d71bfeb8d052c7c87dc447c2fc6d5cc009"
+      ],
+      [
+        "1297_draft_vocab_trim",
+        "b111e58b8189253f5b1a8b933d8c422b14f0f6d36790f829673c898bd89ff1f0"
+      ],
+      [
+        "1302_cuda_graph_oom_evict",
+        "47d92e1350f955be69d9e0066c4d6938867ccdc2028fed3e0015bf97415f340b"
+      ],
+      [
+        "1303_attn_kv_tensor_split",
+        "66992fc84929ab3bf4f5afc6e035e1709ceef00f5bff8c2abe29ece1e53da586"
+      ],
+      [
+        "1307_q81_activation_cache_mmvq",
+        "a699f12df7bdd46d508e64fb8183b45bd29c642e8d1b344582761ea75f7b35ae"
+      ],
+      [
+        "1308_qwen4exp_rollback_copy_no_cont",
+        "5ec4e3b9103462d192d94fad334e1990d09bae86bc5c11f09207f0d6d0239ace"
+      ],
+      [
+        "1309_rms_norm_mul_q81",
+        "abdbad7c9349077348705f16f2383c6e82762ab091291aa3d62ddf9c1ed5b990"
+      ],
+      [
+        "1310_act_q81",
+        "b70b44bb1cf347fb9534bd7a51fcbc02491a0f3a349821047a50bc5a19cd8354"
+      ],
+      [
+        "1311_hc_pre_q81",
+        "632b9a76ff9f0ed58b850c2325d5b330921200dc2ca4b88fa6611f060fc46456"
+      ],
+      [
+        "1312_mul_q81",
+        "a62bd3d649dc6c989364ad4e6f21f8a17c6f885f0cbee152352e39dc9627f343"
+      ],
+      [
+        "1313_scale_act_fuse",
+        "8549194bd6b5a3af71835ade56f3bd2bdd4c7b38b6f65babce02f67738b8a7c2"
+      ],
+      [
+        "1326_sched_async_host_inputs",
+        "54c8a0220f862a450a553cd07012e724f4db821564954107d32a0543be4d50e6"
+      ],
+      [
+        "1327_qsa_host_remap",
+        "9ec68fbd297720379734b5557e8947e265cc78408ab52313afb4ab13665516f9"
+      ]
+    ],
+    "patch_ids": [
+      "0100_cmake_options",
+      "0200_dispatch_hook",
+      "0300_mmq_forced_j",
+      "0400_mmvf_forced_block",
+      "0500_mmf_forced_nwarps",
+      "0600_mmvq_geometry",
+      "0650_mmvq_native_variant",
+      "0700_coverage_counters",
+      "0860_allreduce_provider_cli",
+      "0910_feature_sets",
+      "1007_meta_subgraph_realloc_fix",
+      "1225_hi85_nccl_heterogeneous_arch_guard",
+      "0840_hybrid_allreduce_dispatch",
+      "1235_rd09_q81_activation_cache_foundation",
+      "1237_rd30_moe_mmq_compact_grid",
+      "1241_rd33_mmvq_q8_0_f32_decode",
+      "1253_nro04_gfx1100_bf16_chunked_gdn",
+      "1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2",
+      "1274_mmvq_kquant_f32_decode",
+      "1291_ar_cpu_root",
+      "1292_kpool_tail_truncate",
+      "1294_topk_deterministic_ties",
+      "1297_draft_vocab_trim",
+      "1302_cuda_graph_oom_evict",
+      "1303_attn_kv_tensor_split",
+      "1307_q81_activation_cache_mmvq",
+      "1308_qwen4exp_rollback_copy_no_cont",
+      "1309_rms_norm_mul_q81",
+      "1310_act_q81",
+      "1311_hc_pre_q81",
+      "1312_mul_q81",
+      "1313_scale_act_fuse",
+      "1326_sched_async_host_inputs",
+      "1327_qsa_host_remap"
+    ],
+    "patch_set_id": "27ddea961c58f91193a12f7da617511e",
+    "schema_version": 2,
+    "selector_kind": "source",
+    "selector_name": "bigcherry",
+    "source_name": "bigcherry",
+    "source_ref": "b11402"
+  },
+  "summary": {
+    "blocked_by_dependency": 0,
+    "clean": 34,
+    "failed": 0,
+    "not_applicable": 0,
+    "quarantined": 0,
+    "reconciliation_required": false,
+    "total": 34,
+    "upstream_absorbed": 0
+  },
+  "upstream_revision": "d89651a7b205c03c4a0b13cd0646d400dc929f79"
+}
