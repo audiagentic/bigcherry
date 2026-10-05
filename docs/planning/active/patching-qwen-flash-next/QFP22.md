@@ -136,6 +136,8 @@ Pin bump b11402 regression resolved (2026-10-05). Bisect on Brutus (builds at b1
 
 b11402 residual placed (2026-10-05, queue-27b-pairs.sh, existing bisect binaries, 4 samples a side, 27B dual-XTX prefill at 32K, greedy text and acceptance identical): old pin vs build at 0eb6d9a81 (#29940) 1250.9 / 1250.9 / 1251.9 / 1249.6 vs 1249.3 / 1250.3 / 1249.6 / 1251.3 t/s - no gap, so #29941/#29939/#29940 are cleared; old pin vs build at 2ca15f540 (#29612) 1249.9 / 1249.6 / 1249.8 / 1247.8 vs 1246.6 / 1245.6 / 1246.6 / 1245.7 t/s - complete separation, about 0.3%. Between the two points are only #29806 (CPU tinyBLAS) and #29612 (CUDA swizzling refactor: fattn-mma-f16.cuh, mma.cuh), so #29612 is the residual's cause by elimination (not isolated by its own build). No gap at 10K. Native b11402 + 1333 also reaches 1247 t/s at 32K, consistent with the residual being upstream's. Not measured: Flash-Next long-context prefill, where an FA load-path cost would be largest. Candidate mitigation (from the GPT review above): restore the pre-#29612 AMD MMA load/address path under the AMD WMMA guard. Native comparison for 1333 done: 27B prefill +1.3% at 10K, +0.8% at 32K on stock b11402 (patch README).
 
+Flash-Next long-context prefill across the bump (2026-10-05, queue-prefill-ab.sh, old-pin build b-chunk8 vs b11402 + 1333 build b-mixauto, production config 240K f16 ub512, ABBA, greedy text identical in all four runs at each depth): ~99K tokens (DEPTH 81920) old 793.4 / 834.8 vs new 871.1 / 872.1 t/s (+4..10%, old-pin runs 41 t/s apart); ~202K tokens (DEPTH 163840) old 614.4 / 621.3 vs new 663.0 / 663.4 t/s (+7..8%), decode 41.0 / 42.5 vs 42.2 / 42.4 t/s. Complete separation at both depths in favour of the new pin. So b11402 + 1333 is a net gain for Flash-Next long-context prefill; the 0.3% 27B 32K residual attributed to #29612 does not appear as a loss here and is not being pursued. Which upstream commit gives the long-context gain is not identified (#29435 whole-tile FA scheduling is the candidate; it was described as NVIDIA-gated in the GPT review, so that needs checking).
+
 ## Change Log
 
 - 2026-10-04T21:08:00.115435+00:00 (created-by): Created by agent
@@ -238,3 +240,4 @@ Promotion/pin decision: keep b11402 correctness only if required by an upstream 
 - 2026-10-05T08:25:42.858557+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T08:25:48.546505+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T08:53:19.695307+00:00 (updated-by): Updated: section:notes
+- 2026-10-05T10:17:44.499217+00:00 (updated-by): Updated: section:notes
