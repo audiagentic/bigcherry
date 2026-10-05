@@ -549,6 +549,10 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
+[experiment.indexer-tile]
+# QFP17: production set + 1335 (upstream #29901 tiled lightning indexer; BIGCHERRY_INDEXER_TILE=0 turns it off).
+patches = ["1335_tiled_lightning_indexer"]
+
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]

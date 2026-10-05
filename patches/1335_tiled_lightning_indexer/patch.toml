@@ -1,0 +1,17 @@
+schema = 1
+id = "1335_tiled_lightning_indexer"
+order = 1335
+state = "untested"
+kind = "upstream-backport"
+origin = "upstream-pr"
+backend = "hip"
+plan-ids = ["QFP17"]
+requires = ["0910_feature_sets"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = ["amd"]
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["optimization"]
