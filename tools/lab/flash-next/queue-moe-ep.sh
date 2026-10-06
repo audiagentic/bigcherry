@@ -1,5 +1,5 @@
 #!/bin/bash
-# MET04 / 1283 first end-to-end run: build the production set + 1281 + 1283 (experiment moe-expert-parallel), then on
+# MET04 / 1283 first end-to-end run: build the production set (which carries 1281 + 1283), then on
 # Flash-Next production (2x XTX + R9700 tensor split, MTP draft on the 6900 XT), per depth:
 #   1. ABBA on the one binary, A = row split (default), B = BIGCHERRY_MOE_EP=1 (whole experts per device, one delayed
 #      AllReduce per block): prefill t/s, decode t/s, acceptance, greedy text;
@@ -30,7 +30,7 @@ RUN=${RUN_OVERRIDE:-b-moeep-$TAG}
 N=moeep-$TAG${SUFFIX:-}
 jobs=$(mktemp)
 : > "$jobs"
-[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi moe-expert-parallel gfx1100,gfx1201,gfx1030" > "$jobs"
+[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030" > "$jobs"
 for d in "${depths[@]}"; do
   echo "VIS=0,1,2,3 SCRIPT $N-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/$N-d$d BIGCHERRY_MOE_EP=1 ${EP_EXTRA:-}" >> "$jobs"
 done

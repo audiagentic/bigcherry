@@ -1,6 +1,6 @@
 # 1281_moe_mul_mat_id_range
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MET02
 
 Kind: enhancement, a new ggml primitive. Nothing uses it yet; ordinary `ggml_mul_mat_id` is unchanged.
