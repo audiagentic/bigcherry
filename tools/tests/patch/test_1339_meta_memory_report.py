@@ -16,6 +16,7 @@ _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
 _PIN = "d89651a7b205"
 _META = "ggml/src/ggml-backend-meta.cpp"
+_CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 
 
 def _load():
@@ -36,37 +37,46 @@ def _pinned(path):
 
 
 _P = _load()
-_SRC = _pinned(_META)
+_SRC = {path: _pinned(path) for path in (_META, _CUDA)}
 
 
-@unittest.skipUnless(_SRC is not None, "pinned vendor repository not present")
+@unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
 class Patch1339Mechanics(unittest.TestCase):
-    def _root(self, td, text):
+    def _root(self, td, overrides=None):
         root = Path(td)
-        (root / _META).parent.mkdir(parents=True, exist_ok=True)
-        (root / _META).write_text(text, encoding="utf-8", newline="\n")
+        for path, text in _SRC.items():
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text((overrides or {}).get(path, text), encoding="utf-8", newline="\n")
         return root
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
-            root = self._root(td, _SRC)
+            root = self._root(td)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             src = (root / _META).read_text(encoding="utf-8")
-            arena = src[src.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {"):
-                        src.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(ggml_backend_buffer_type_t buft, ggml_tensor ** tensors, int n_tensors) {")]
+            # the definitions, not the forward declarations near the top of the file
+            arena = src[src.rindex("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {"):
+                        src.rindex("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(ggml_backend_buffer_type_t buft, ggml_tensor ** tensors, int n_tensors) {")]
             self.assertIn("BIGCHERRY_META_MEM compute dev=", arena)
             self.assertLess(arena.index("bufs.push_back(ggml_backend_buft_alloc_buffer("), arena.index("BIGCHERRY_META_MEM compute dev="))
             self.assertEqual(src.count("BIGCHERRY_META_MEM static dev="), 1)
             self.assertNotIn("BIGCHERRY_META_MEM static dev=", arena)
             self.assertIn("#include <cstdlib> // BigCherry 1339: getenv", src)
+            # fusion overlap counters: defined before the check, one count per call and one per refusal
+            cuda = (root / _CUDA).read_text(encoding="utf-8")
+            check = cuda[cuda.index("static bool ggml_cuda_check_fusion_memory_ranges("):]
+            self.assertLess(cuda.index("struct bc_fusion_overlap_stats_t {"), cuda.index("static bool ggml_cuda_check_fusion_memory_ranges("))
+            self.assertLess(check.index("bc_fusion_overlap_stats.checks++;"), check.index("bc_fusion_overlap_stats.refused++;"))
+            self.assertEqual(cuda.count("bc_fusion_overlap_stats.refused++;"), 1)
+            before = {p: (root / p).read_text(encoding="utf-8") for p in _SRC}
             again = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in again))
-            self.assertEqual(src, (root / _META).read_text(encoding="utf-8"))
+            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _SRC})
 
     def test_changed_allocation_loop_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
-            root = self._root(td, _SRC.replace("max_size = std::max(max_size, ggml_backend_buffer_get_size(bufs.back()));", "max_size = 0;"))
+            root = self._root(td, {_META: _SRC[_META].replace("max_size = std::max(max_size, ggml_backend_buffer_get_size(bufs.back()));", "max_size = 0;")})
             res = apply_all(_P.PATCHES, root)
             self.assertFalse(all(r.ok for r in res))
 

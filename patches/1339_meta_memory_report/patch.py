@@ -38,7 +38,48 @@ _N_STATIC = _A_STATIC + r"""        if (getenv("BIGCHERRY_META_MEM") != nullptr 
         }
 """
 
+# fusion candidates refused because an output overlaps a live input: the check compares real addresses, so the
+# count depends on the arena layout (MSM02: compact per-device arenas against the common arena with its holes)
+_A_FUSE_FN = "static bool ggml_cuda_check_fusion_memory_ranges(const ggml_cgraph * cgraph,\n"
+_N_FUSE_FN = r"""// BigCherry 1339: how often a fusion was refused for memory overlap, printed at exit under BIGCHERRY_META_MEM
+namespace {
+struct bc_fusion_overlap_stats_t {
+    uint64_t checks = 0, refused = 0;
+    ~bc_fusion_overlap_stats_t() {
+        if (checks > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+            fprintf(stderr, "BIGCHERRY_META_MEM fusion_overlap checks=%llu refused=%llu\n",
+                    (unsigned long long) checks, (unsigned long long) refused);
+        }
+    }
+};
+bc_fusion_overlap_stats_t bc_fusion_overlap_stats;
+}
+
+""" + _A_FUSE_FN
+
+_A_FUSE_OK = "    bool is_ok = true;\n"
+_N_FUSE_OK = "    bool is_ok = true;\n    bc_fusion_overlap_stats.checks++; // BigCherry 1339\n"
+
+_A_FUSE_REFUSE = "                    if (!found) {\n                        is_ok = false;\n"
+_N_FUSE_REFUSE = _A_FUSE_REFUSE + "                        bc_fusion_overlap_stats.refused++; // BigCherry 1339\n"
+
 PATCHES = [
+    FilePatch(
+        path="ggml/src/ggml-cuda/ggml-cuda.cu",
+        description="1339: count fusion candidates refused for memory overlap",
+        language="none",
+        edits=(
+            Edit(id="meta-mem-fusion-stats", anchor=_re.escape(_A_FUSE_FN), mode="replace", text=_N_FUSE_FN,
+                 guard=r"struct bc_fusion_overlap_stats_t \{", rationale="Directly before the overlap check.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="meta-mem-fusion-checks", anchor=_re.escape(_A_FUSE_OK), mode="replace", text=_N_FUSE_OK,
+                 guard=r"bc_fusion_overlap_stats\.checks\+\+;", rationale="Entry of the overlap check.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="meta-mem-fusion-refused", anchor=_re.escape(_A_FUSE_REFUSE), mode="replace", text=_N_FUSE_REFUSE,
+                 guard=r"bc_fusion_overlap_stats\.refused\+\+;", rationale="The one place the check refuses a fusion.",
+                 expect_matches=1, max_span_lines=3),
+        ),
+    ),
     FilePatch(
         path="ggml/src/ggml-backend-meta.cpp",
         description="1339: BIGCHERRY_META_MEM=1 prints the per-device size of every meta buffer",
