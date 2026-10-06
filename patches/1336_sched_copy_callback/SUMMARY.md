@@ -1,6 +1,6 @@
 # 1336_sched_copy_callback
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MET01
 
 Kind: upstream backport (llama.cpp PR #29943, not merged at the b11402 pin).
@@ -24,4 +24,7 @@ Superseded when the pin reaches a llama.cpp release that contains #29943.
 
 ## Evidence
 
-- Build on HIP, observation-only identity, selective identity with non-zero counters, multi-request integrity: pending.
+Result (b11402, 2026-10-06; details in README.md): on the R9700 and on a 7900 XTX with experts in host memory the
+selective path gives the same text and the same speed as the production build without the patch, the observation
+mode proves the callback is the path in use (whole copies cost 30-34% of prefill), and repeated requests in one
+process are identical.

@@ -261,6 +261,7 @@ patches = [
     "1332_qsa_token_chunk",
     "1334_hip_sparse_flash_attn",
     "1335_tiled_lightning_indexer",
+    "1336_sched_copy_callback",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -550,11 +551,6 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
-[experiment.moe-copy-callback]
-# MET01: production set + 1336 (upstream #29943 scheduler copy callback; BIGCHERRY_MOE_COPY=0 is the observation-only
-# control). Only acts when MoE experts are host-resident (e.g. a single GPU with -ncmoe).
-patches = ["1336_sched_copy_callback"]
-
 [experiment.moe-expert-parallel]
 # MET04: production set + 1281 (range MUL_MAT_ID) + 1283 (whole experts per device inside the tensor split,
 # BIGCHERRY_MOE_EP=1, one delayed AllReduce per MoE block).
@@ -566,7 +562,7 @@ patches = ["1281_moe_mul_mat_id_range"]
 
 [experiment.moe-expert-cache]
 # MET01: production set + 1336 + 1337 (upstream #29887 GPU cache for host-resident MoE experts, --moe-cache-mib N).
-patches = ["1336_sched_copy_callback", "1337_moe_expert_caching"]
+patches = ["1337_moe_expert_caching"]
 
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
