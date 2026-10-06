@@ -160,11 +160,15 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                     ggml_backend_buft_get_device(ggml_backend_buffer_get_type(t->buffer)) == meta_backend->device) {
                 ggml_tensor * ret = ggml_backend_meta_buffer_simple_tensor(t, j);
                 GGML_ASSERT(ret != nullptr);
-                if (ret->buffer == nullptr && ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {
-                    // BigCherry 1340 (MSM02): a zero-sized deferred tensor is external to the simple gallocr.
+                if (ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {
+                    // BigCherry 1340 (MSM02): a zero-sized tensor is external to the simple gallocr.
                     // Backend alloc-size hooks are allowed to inspect op shapes (FLASH_ATTN_EXT divides Q/K head
                     // counts), so asking them to size a disabled 0-head tensor can fault before allocation.
-                    GGML_ASSERT((ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);
+                    // This includes zero-sized STATIC slices (a device with no attention share holds empty
+                    // weight / KV slices): alloc_buffer_n gives them a dummy buffer but no data, and the gallocr
+                    // treats data == NULL as "allocate me", which asserts on the buffer that is already set
+                    // (ggml_backend_tensor_alloc: GGML_ASSERT(tensor->buffer == NULL), seen on the R9700).
+                    GGML_ASSERT(ret->buffer != nullptr || (ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);
                     GGML_ASSERT(t->data != nullptr);
                     ret->data = t->data; // Meta's fake logical address: allocator sentinel only, never dereferenced.
                 }
