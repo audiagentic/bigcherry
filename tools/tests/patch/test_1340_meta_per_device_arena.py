@@ -85,6 +85,11 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("bc.arena_galloc.reset();", meta)
             self.assertLess(meta.index("bc.arena_galloc.reset();"), meta.index("ggml_backend_free(bc.backend);"))
             self.assertIn("bool ggml_backend_meta_alloc_graph(", meta)
+            self.assertIn('getenv("BIGCHERRY_META_ARENA_FASTBIND")', meta)
+            self.assertIn("arena_plan_n_nodes = -1;", meta)
+            self.assertIn("arena_plan_n_leafs = -1;", meta)
+            self.assertIn("ggml_gallocr_alloc_graph_reuse(bcj.arena_galloc.get(), &simple_graph)", meta)
+            self.assertIn("!logical_replanned &&", meta)
             self.assertIn("ggml_gallocr_reserve(bcj.arena_galloc.get(), &simple_graph)", meta)
             self.assertIn("ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph)", meta)
             # zero-sized slices are external whether deferred (no buffer) or static (dummy buffer, no data)
@@ -98,15 +103,22 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("ggml_gallocr_needs_realloc(bcj.arena_galloc.get(), &simple_graph)", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_end", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_begin", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end", meta)
+            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_begin fast_bind=%d", meta)
+            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end fast_bind=%d", meta)
             self.assertIn("bufs.resize(n_simple_bufts, nullptr);", meta)
             self.assertIn("if (t_ij->view_src->data != nullptr)", meta)
-            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph, logical_replanned)", backend)
+            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph, true)", backend)
+            self.assertIn("bool logical_replanned = false;", backend)
+            self.assertIn("logical_replanned = true;", backend)
             self.assertIn("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph)",
                           (root / _ALLOC).read_text(encoding="utf-8"))
-            self.assertIn("GGML_API bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph);",
-                          (root / _ALLOC_H).read_text(encoding="utf-8"))
+            alloc_src = (root / _ALLOC).read_text(encoding="utf-8")
+            alloc_hdr = (root / _ALLOC_H).read_text(encoding="utf-8")
+            self.assertIn("GGML_API bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
+            self.assertIn("GGML_API bool ggml_gallocr_alloc_graph_reuse(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
+            self.assertIn("bool ggml_gallocr_alloc_graph_reuse(ggml_gallocr_t galloc, struct ggml_cgraph * graph)", alloc_src)
+            self.assertIn("return ggml_gallocr_alloc_graph_reuse(galloc, graph);", alloc_src)
             self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
             # a reserve is not followed by a compute, so it rotates the simple-tensor containers itself
             self.assertIn("void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph) {", meta)
@@ -150,6 +162,7 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
             self.assertIn("std::vector<ggml_tensor *>           arena_nodes;", meta)
             self.assertIn("failed to allocate per-device Meta arena", backend)
+            self.assertIn("logical_replanned", backend)
 
     def test_zero_slice_bypasses_flash_attn_backend_sizing(self):
         with tempfile.TemporaryDirectory() as td:
