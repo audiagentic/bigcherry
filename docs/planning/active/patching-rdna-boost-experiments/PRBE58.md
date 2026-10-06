@@ -78,3 +78,36 @@ Successor key: patching-rdna-boost-experiments-rd72
 - 2026-09-24T04:52:14.738266+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T04:53:38.311212+00:00 (updated-by): Updated: section:notes
 - 2026-09-24T05:09:30.649556+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+
+
+## 2026-10-07 optimisation audit: measure the handoff before porting it
+
+PRBE58 remains the owner of **embedded-MTP hidden-state handoff traffic only**. The older four-path design is too broad for the current tree and hardware: on the production topology normal GPU peer access is unavailable, so a generic P2P branch is not a useful first implementation, while same-device aliasing can only help if target hidden-state production and the MTP consumer are already co-resident. PRBE57 owns placement; PNRO10/1261 owns ctx_other scheduler-backend coverage for genuinely different draft-model device lists. Do not duplicate either mechanism here.
+
+Current upstream evidence further narrows the boundary. llama.cpp PR #26636 adds ctx_other model backends to a speculative context so shared pre-allocated tensors can be scheduled when target and draft device lists differ. BigCherry's PNRO10/1261 is the same class of mechanism, and its 2026-09-30 evidence says it does **not** activate for embedded MTP on a tensor split because the draft shares the main model devices. Therefore adding scheduler backends is not a hidden-state transfer optimisation for the production embedded-MTP lane. Upstream #26827/#28252 also show that multi-ubatch MTP has a real mutable-state ordering constraint: do not overlap or alias handoff storage across unfinished ubatches merely to reduce copies.
+
+### Cheapest discriminator
+
+Before any 41a8ca78-derived port, add observation-only accounting at the existing target-hidden-state -> MTP input boundary. For each speculative round record:
+
+- producer backend/device and consumer backend/device;
+- hidden-state row bytes and rows transferred;
+- number and direction of backend copies plus host-visible staging copies;
+- copy submit/completion time and synchronization attributable to the handoff;
+- whether source/destination storage aliases, remains device-resident, or crosses host memory;
+- MTP depth, accepted/drafted tokens, context depth, and ubatch count.
+
+Run MTP depth 1/3/7 at shallow, ~80K and >=160K context on gfx1100/gfx1201 production ordering, plus single-GPU and MTP-off controls. Include a prompt that forces multiple internal ubatches. This is an attribution lane, not a performance claim.
+
+### Decision / implementation gate
+
+1. If measured handoff copies + waits are **<3% of MTP decode wall time**, close the copy-reduction sub-slice; do not port 41a8ca78.
+2. If >=3% and producer == consumer backend with source lifetime covering the MTP graph, prototype only a borrowed device-resident view/reference. Ownership stays with the producing context; the consumer may not free/reallocate it. Generation/ubatch identity must prevent reuse while work is in flight.
+3. If >=3% and producer != consumer, first let PRBE57 choose the home backend from measured topology. With no normal P2P on the production machine, use the existing backend-copy/staging primitive and persistent reusable buffers; do not add a private P2P transport. A direct device path may be architecture-gated only if runtime capability is actually reported and measured.
+4. Preserve the existing baseline handoff as fallback. No new scheduler, allocator, placement table, or ctx_other backend enumerator belongs in PRBE58.
+
+### Correctness and promotion
+
+Require greedy/token identity, byte-identical handoff rows for a deterministic fixture, unchanged MTP accepted/drafted counts, multi-request same-process, forced partial rejection/rollback, and multi-ubatch long-context coverage. Count expected versus observed bytes/copies so a speedup caused by missing handoff work fails immediately. Promotion requires CI95-low-positive **>=3% end-to-end MTP decode improvement** on at least one production architecture with **<=1% regression** on the other production architecture and no prompt-throughput regression >1%. Otherwise retain baseline and close the sub-slice.
+
+External references inspected for this audit: llama.cpp #26636 (ctx_other backend coverage; open, updated 2026-09-18), #26827/#28252 (MTP multi-ubatch serialization/order correctness), and MrLordCat/llama.cpp-rdna-lab current performance evidence showing MTP is valuable on dual-RDNA4 but strongly context/backend dependent. These are mechanism/correctness evidence, not BigCherry handoff measurements.
