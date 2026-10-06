@@ -553,3 +553,7 @@ Two corrections override the earlier implementation sketch before 1342 is coded.
 Also strengthen activation evidence: the range-only wrapper/kernel symbol must be visible in profiling, while the ordinary non-range scatter symbol/path remains unchanged.
 
 Verdict after these corrections: implementable and worth benchmarking; end-to-end value remains gated by the existing >=3% qualified prefill threshold.
+
+## Reviews
+
+- RV4221
