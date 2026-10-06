@@ -59,6 +59,14 @@ For Q1_0, preserve CUDA behavior and scope native AMD builtin use strictly to HI
 
 For Q2_K, reject spilling variants when a zero-spill equivalent exists, but still require end-to-end confirmation because lower VGPR pressure can trade against ILP.
 
+## Stream-K follow-up: upstream PR #30022
+
+PR #30022 is a draft GCN tuning series, not RDNA evidence. Its useful mechanism is narrower than its title: `launch_mul_mat_q()` computes regular-tile efficiency, uses `nsm * config.occupancy` Stream-K blocks for GCN, bypasses Stream-K when tiled efficiency is >=90% or there is enough tiled work, and restores full wave64 fixup parallelism instead of the NVIDIA-oriented half-sized fixup. It also flips many entries in `mmq-config-gcn.cuh` to Stream-K and retunes selected tile widths.
+
+Do **not** port the GCN config table or thresholds to gfx1100/gfx1201. The PR explicitly gates the new policy with `GGML_CUDA_CC_IS_GCN(cc)`, leaves CDNA as TODO, has no benchmark data yet, and states that Q1_0/Q2_K retesting waits on #29927/#29910 plus #30021. For BigCherry this is therefore a mechanism probe only: if PKC05 profiling shows MMQ shapes with low regular-tile efficiency or fixup overhead on RDNA, reuse the existing HIP-autotune lane to compare native tiled versus current Stream-K with the same shape; otherwise terminate this branch of work without adding dispatch state.
+
+Cheap discriminator before hardware: extend the existing evidence extraction to record `ntiles_dst`, CU count, selected MMQ occupancy, regular-tile efficiency and whether Stream-K/fixup launched for representative Q8/Q2/Q1 shapes. Only schedule an RDNA A/B if Stream-K is selected while regular tiling is >=90% efficient, or fixup time is >=3% of MMQ kernel wall time. Promotion requires >=3% repeated kernel-time improvement and >=1% end-to-end improvement with no >1% regression across primary pp/tg controls. Failure closes the Stream-K sub-slice; it does not create a new scheduler or dispatch table.
+
 ## Evidence schema
 
 ```text
@@ -111,6 +119,7 @@ Q1 direct qualification is low implementation risk but high extrapolation risk. 
 - https://github.com/ggml-org/llama.cpp/pull/29910
 - https://github.com/ggml-org/llama.cpp/pull/29927
 - https://github.com/ggml-org/llama.cpp/pull/28398
+- https://github.com/ggml-org/llama.cpp/pull/30022
 
 ## Notes
 
@@ -120,3 +129,4 @@ This absorbs the strongest useful side-branch quant-kernel mechanisms into the e
 
 - 2026-10-01T05:39:29.192524+00:00 (created-by): Created by agent
 - 2026-10-05: Transplanted Q2_K register-pressure and Q1_0 AMD-native unpack qualification from `automation-qfp-indexer-20261004`; aligned upstream status to current pin `050439614` and preserved single-owner dispatch policy.
+- 2026-10-07: Classified draft upstream #30022 as GCN-only evidence; added bounded RDNA Stream-K/fixup discriminator under existing PKC05/HIP-autotune ownership.
