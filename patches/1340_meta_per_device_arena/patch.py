@@ -150,6 +150,25 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
     ggml_backend_meta_context * backend_ctx = (ggml_backend_meta_context *) meta_backend->context;
     const size_t n_backends = backend_ctx->backend_configs.size();
 
+    // what the per-device layout costs per graph, printed at exit under BIGCHERRY_META_MEM
+    struct bc_arena_time_t {
+        uint64_t calls = 0;
+        int64_t  us    = 0;
+        ~bc_arena_time_t() {
+            if (calls > 0 && getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+                fprintf(stderr, "BIGCHERRY_META_MEM arena_time calls=%llu total_ms=%.1f us_per_call=%.1f\n",
+                        (unsigned long long) calls, us / 1000.0, (double) us / calls);
+            }
+        }
+    };
+    static bc_arena_time_t bc_arena_time;
+    const int64_t bc_t0 = ggml_time_us();
+    struct bc_arena_timer_t {
+        int64_t t0;
+        bc_arena_time_t & acc;
+        ~bc_arena_timer_t() { acc.calls++; acc.us += ggml_time_us() - t0; }
+    } bc_arena_timer = { bc_t0, bc_arena_time };
+
     for (size_t j = 0; j < n_backends; j++) {
         auto & bcj = backend_ctx->backend_configs[j];
 

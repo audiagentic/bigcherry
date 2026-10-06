@@ -18,7 +18,7 @@ GROUP = "core"
 STATE = "untested"
 
 _A_INC = "#include <cstdint>\n#include <cstring>\n"
-_N_INC = "#include <cstdint>\n#include <cstdlib> // BigCherry 1339: getenv\n#include <cstring>\n"
+_N_INC = "#include <cstdint>\n#include <cstdio>\n#include <cstdlib> // BigCherry 1339: getenv\n#include <cstring>\n"
 
 _A_COMPUTE = "        max_size = std::max(max_size, ggml_backend_buffer_get_size(bufs.back()));\n    }\n"
 _N_COMPUTE = _A_COMPUTE + r"""    if (getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
