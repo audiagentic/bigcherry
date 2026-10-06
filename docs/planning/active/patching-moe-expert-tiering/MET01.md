@@ -196,3 +196,28 @@ Promotion: >=5% end-to-end TG/effective-TG or PP improvement at equal expert-VRA
 - 2026-10-06T00:00:39.940430+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T00:15:41.239330+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T00:53:47.475427+00:00 (updated-by): Updated: section:notes
+
+
+## 2026-10-06 PCIe-x4 cache-policy audit
+
+Local 1337 evidence makes the topology gate decisive. The R9700 PCIe 4.0 x4 path measures about 6.7 GB/s effective H2D. No-cache decode is 18.4 t/s; 2/4/8 GiB LRU gives 9.0/11.4/16.7 t/s at 45.4/61.0/79.0% hit rate; 12/14 GiB gives 22.2/24.5 t/s at 87.9/90.2%. At equal VRAM, resident layers beat 8 GiB LRU in decode and prefill. Near 28-29 GB VRAM, 12 GiB LRU is only about 5% faster in decode but about 24% slower in prefill than resident layers. With the 6900 XT MTP sidecar, 12 GiB LRU is 26.3-26.6 t/s versus 26.8-29.1 t/s for equal-VRAM resident layers. Pure LRU therefore fails the general promotion gate on this topology; keep 1337 as an experimental/reference implementation, not a default policy.
+
+Host-expert prefill is separately transfer-amortization bound: ubatch 512/1024/2048/4096 measured 93.9/159.0/265.8/420.6 t/s with decode unchanged. Larger ubatch is the first prefill lever before new cache code.
+
+### Next bounded candidate
+
+Test static-hot residency before adding cache complexity. At equal total expert-VRAM budgets of 8/12/14 GiB compare whole-layer residency, static-hot experts from existing route profiles, pure 1337 LRU, and static-hot plus residual LRU only if static-hot leaves a useful miss residual. Rank static candidates by avoided H2D bytes times route frequency per resident byte. Report bytes/token, hit rate, promotions/evictions, measured link GB/s, decode t/s and prefill t/s. Do not repeat the already-negative 2/4 GiB pure-LRU sweep.
+
+The first gate is hardware-free: use existing route traces to predict H2D bytes avoided by static-hot placement. Require at least 20% fewer miss bytes/token than pure 1337 LRU at the same budget on held-out traces, without starving later layers/tensors. On fail, retain whole-layer residency and close static-hot for this topology. On pass, reuse MET01 placement state and the existing 1337 storage/cache seam; do not create another cache or scheduler owner.
+
+### External mechanism assessment
+
+ap03906101/moe-hotcache provides relevant HIP mechanism evidence: persistent per-expert VRAM slots, graph-visible route counters, per-tensor budgets, bounded background promotion, and static seed plus dynamic refinement. Its published compute GPU measured about 14 GB/s H2D and the project explicitly found a much slower chipset/x4 GPU unsuitable as a cache tier. That supports a topology-specific gate rather than assuming its gains transfer to BigCherry's about 6.7 GB/s R9700 link.
+
+Do not port its direct host-memory miss path before measured miss bytes/token show it can beat CPU expert execution here. Preserve its strongest lesson: decode and prefill require separate paths and every batch-size regime needs output verification. Correctness must cover batch sizes 1, 2-8, 9-31 and large prefill; at least three requests in one process with a workload shift; greedy fidelity; cache-size invariance; graph replay after refresh; and transfer-byte plausibility against measured PCIe bandwidth.
+
+External references:
+- https://github.com/ap03906101/moe-hotcache
+- https://github.com/ggml-org/llama.cpp/pull/29887
+- https://github.com/ggml-org/llama.cpp/pull/29943
+- https://github.com/ggml-org/llama.cpp/pull/29963

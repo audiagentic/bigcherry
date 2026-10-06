@@ -221,3 +221,12 @@ External references checked 2026-10-06:
 ## Change Log
 
 - 2026-10-06: created after cross-plan audit found no existing system-level placement/cost-model owner; deliberately bounded to observation + offline scoring before any runtime scheduling.
+
+
+## 2026-10-06 R9700 PCIe-x4 calibration case
+
+Add the current MET01/MET04 measurements as a required Phase-C hold-out. The placement model must predict three qualitative outcomes before advisory promotion: small 2-8 GiB demand caches lose to CPU/no-cache on the ~6.7 GB/s R9700 H2D path; equal-VRAM resident layers beat 8 GiB LRU and dominate prefill near the 12 GiB comparison; and moving expert-bearing layers onto the R9700 as a separate layer-split stage loses materially to production tensor split.
+
+For expert-residency candidates, record measured link bandwidth and miss bytes/token explicitly. Cache hit-rate alone is not a placement cost. The scorer should derive transfer_ms from measured bytes and topology-specific bandwidth when direct timing is unavailable, mark that value estimated, and fail plausibility if implied bandwidth materially exceeds the PHA03/topology measurement.
+
+This does not move cache-policy ownership into RPL01. MET01 still selects expert-residency candidates; RPL01 only checks whether their measured transfer/compute decomposition predicts the observed whole-system ordering.
