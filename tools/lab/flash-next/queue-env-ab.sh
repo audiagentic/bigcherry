@@ -2,7 +2,8 @@
 # Generic Flash-Next production ABBA on an existing build: A = production environment, B = the same plus AB_ENV
 # (flash-prefill-env-ab.sh per depth: prefill t/s, decode t/s, acceptance, greedy md5 per arm). For flags that must
 # not change the result (memory layout, diagnostics) the two md5 lines must be equal.
-# Usage: AB_ENV="VAR=value ..." queue-env-ab.sh <name> <build run id> <depth>...     env: CTX (245760), BC_MODEL
+# FIDELITY=1 adds the probe comparison (flash-fidelity.sh) at the first depth.
+# Usage: AB_ENV="VAR=value ..." queue-env-ab.sh <name> <build run id> <depth>...     env: CTX (245760), BC_MODEL, FIDELITY
 set -u
 NAME=${1:?name}; RUN=${2:?build run id}; shift 2
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -17,10 +18,12 @@ jobs=$(mktemp)
 for d in "$@"; do
   echo "VIS=0,1,2,3 SCRIPT $NAME-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/$NAME-d$d ${AB_ENV:?AB_ENV}" >> "$jobs"
 done
+[ "${FIDELITY:-0}" = 1 ] && echo "VIS=0,1,2,3 SCRIPT $NAME-fid tools/lab/flash-next/flash-fidelity.sh $1 @$RUN $R/$NAME-fid noref $AB_ENV" >> "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 for d in "$@"; do
   echo "== depth $d: A = production, B = $AB_ENV"; grep -E "^d[0-9]|^md5|SERVER_FAILED" $R/$NAME-d$d.log
 done
+[ "${FIDELITY:-0}" = 1 ] && { echo "== fidelity at depth $1: D = production, S = with $AB_ENV, D2 = production again"; grep -E " vs |SERVER_FAILED" $R/$NAME-fid.log; }
 echo ALL_RUNS_DONE
