@@ -10,6 +10,7 @@
 # ARMS=hop is the MET04 probe: every expert in VRAM, production tensor split (T) against a layer split over the two
 # XTX with the routed experts of the last HOP_LAYERS layers on the R9700 (L28, L14). MTP=1 adds the MTP sidecar on
 # the 6900 XT to every arm of any mode.
+# ARMS=profile runs the 1338 lanes (frequency profile pinned in the cache; CACHE_MIB one size, PROFILE optional).
 # ARMS=cache runs the 1337 expert-cache lanes instead: no cache, --moe-cache-mib for each of CACHE_MIB, no cache.
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
@@ -74,6 +75,7 @@ PY
   kill -0 "$pid" 2>/dev/null && { echo "$arm: shutdown hung, SIGKILL"; kill -9 "$pid"; }
   wait "$pid" 2>/dev/null
   echo "$arm: $(grep -o "BIGCHERRY_PATCH_HIT patch=1336.*" "$log" | tail -1)"
+  grep -oE "BIGCHERRY_PATCH_HIT patch=1338.*|llama_moe_cache: (ubatch|profile|wrote).*" "$log" | sed "s/^/$arm: /"
   grep -iE "moe.?cache" "$log" | head -4 | cut -c1-200 | sed "s/^/$arm: /"
 }
 for shard in "${model%-00001-of-*}"-0000[12]-*.gguf; do cat "$shard" > /dev/null; done   # warm the page cache
@@ -92,6 +94,13 @@ if [ "${ARMS:-copy}" = hop ]; then
   run T2 BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
 elif [ "${ARMS:-copy}" = ub ]; then   # host-expert prefill against the micro-batch size: one expert upload per ubatch
   for ub in ${UB_LIST:-512 1024 2048 4096}; do run U$ub -- -ub $ub -b $ub; done
+elif [ "${ARMS:-copy}" = profile ]; then # 1338: W = LRU cache and write a profile, P = profile pinned + large batches
+  mib=${CACHE_MIB:-22000}       # through the cache, PS = pinned, large batches off, W2 = LRU again. PROFILE = a profile
+  prof=${PROFILE:-$out/profile.bin}   # from elsewhere (held out) instead of the one W writes
+  run W BIGCHERRY_MOE_CACHE_PROFILE_OUT=$out/profile.bin -- --moe-cache-mib $mib
+  run P BIGCHERRY_MOE_CACHE_PROFILE=$prof -- --moe-cache-mib $mib
+  run PS BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=0 -- --moe-cache-mib $mib
+  run W2 -- --moe-cache-mib $mib
 elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
