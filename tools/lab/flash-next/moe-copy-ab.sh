@@ -75,7 +75,7 @@ PY
   kill -0 "$pid" 2>/dev/null && { echo "$arm: shutdown hung, SIGKILL"; kill -9 "$pid"; }
   wait "$pid" 2>/dev/null
   echo "$arm: $(grep -o "BIGCHERRY_PATCH_HIT patch=1336.*" "$log" | tail -1)"
-  grep -oE "BIGCHERRY_PATCH_HIT patch=1338.*|llama_moe_cache: (ubatch|profile|wrote).*" "$log" | sed "s/^/$arm: /"
+  grep -oE "BIGCHERRY_PATCH_HIT patch=1338.*|llama_moe_cache: (ubatch|profile|wrote|layer).*" "$log" | sort -u | head -8 | sed "s/^/$arm: /"
   grep -iE "moe.?cache" "$log" | head -4 | cut -c1-200 | sed "s/^/$arm: /"
 }
 for shard in "${model%-00001-of-*}"-0000[12]-*.gguf; do cat "$shard" > /dev/null; done   # warm the page cache
@@ -99,6 +99,7 @@ elif [ "${ARMS:-copy}" = profile ]; then # 1338: W = LRU cache and write a profi
   prof=${PROFILE:-$out/profile.bin}   # from elsewhere (held out) instead of the one W writes
   run W BIGCHERRY_MOE_CACHE_PROFILE_OUT=$out/profile.bin -- --moe-cache-mib $mib
   run P BIGCHERRY_MOE_CACHE_PROFILE=$prof -- --moe-cache-mib $mib
+  for pct in ${PIN_LIST:-}; do run P$pct BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_PIN_PCT=$pct -- --moe-cache-mib $mib; done   # pinned share sweep
   run PS BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=0 -- --moe-cache-mib $mib
   run W2 -- --moe-cache-mib $mib
 elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)

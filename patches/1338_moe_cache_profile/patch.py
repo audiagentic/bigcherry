@@ -75,6 +75,8 @@ _N_LRU_PLAN = _A_LRU_PLAN + r"""        if (n_pinned > 0) {
                 }
             }
             if (bc_unpinned > (size_t) (n_slots - n_pinned)) {
+                LLAMA_LOG_ERROR("llama_moe_cache: layer %d needs %zu unpinned slots, %d exist (%d pinned of %d)\n",
+                    il, bc_unpinned, n_slots - n_pinned, n_pinned, n_slots);
                 return false;
             }
         }
@@ -102,7 +104,17 @@ _N_PREPARE = _A_PREPARE + r"""        if (!bc_freq.empty()) { // BigCherry 1338:
         }
 """
 
-_A_CTOR_LOG = '        LLAMA_LOG_INFO("%s: %10s MoE cache size = '
+_A_REPLAY = "            if (l.planned_ids.size() != n_ids || !std::equal(l.planned_ids.begin(), l.planned_ids.end(), ids)) {\n"
+_N_REPLAY = _A_REPLAY + r"""                // BigCherry 1338: say which layer saw two different id sets in one graph
+                LLAMA_LOG_ERROR("llama_moe_cache: layer %d planned %zu ids this graph and is now asked for %zu different ones\n",
+                    entry->il, l.planned_ids.size(), n_ids);
+"""
+
+_A_PLANFAIL = "        if (!groups[entry->ig].lru.plan(entry->il, ids, n_ids, l.remapped_ids.data(), fills, n_hit)) {\n"
+_N_PLANFAIL = _A_PLANFAIL + r"""            LLAMA_LOG_ERROR("llama_moe_cache: layer %d: no plan for %zu ids in %d slots\n", entry->il, n_ids, groups[entry->ig].n_slots); // BigCherry 1338
+"""
+
+_A_CTOR_LOG ='        LLAMA_LOG_INFO("%s: %10s MoE cache size = '
 _N_CTOR_LOG = "        bc_prewarm(n_expert); // BigCherry 1338\n\n" + _A_CTOR_LOG
 
 _A_DTOR = "    ~impl() {\n        log_stats();\n    }\n"
@@ -267,6 +279,13 @@ PATCHES = [
                  expect_matches=1, max_span_lines=2),
             Edit(id="cache-profile-resolve", anchor=_re.escape(_A_RESOLVE), mode="replace", text=_N_RESOLVE,
                  guard=r"n_tokens > max_batch && !bc_large_batches", rationale="The batch-size gate of resolve().",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="cache-profile-replay-diag", anchor=_re.escape(_A_REPLAY), mode="replace", text=_N_REPLAY,
+                 guard=r"BigCherry 1338: say which layer saw two different id sets",
+                 rationale="The replay check of prepare(): a mismatch is a hard scheduler error, so name it.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="cache-profile-plan-diag", anchor=_re.escape(_A_PLANFAIL), mode="replace", text=_N_PLANFAIL,
+                 guard=r"no plan for %zu ids in %d slots", rationale="The plan call of prepare(): name a failed plan.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="cache-profile-count", anchor=_re.escape(_A_PREPARE), mode="replace", text=_N_PREPARE,
                  guard=r"BigCherry 1338: routing counts for the profile",
