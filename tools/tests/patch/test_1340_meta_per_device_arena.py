@@ -17,6 +17,9 @@ _V = _REPO / "vendor/llama.cpp"
 _PIN = "d89651a7b205"
 _META = "ggml/src/ggml-backend-meta.cpp"
 _BACKEND = "ggml/src/ggml-backend.cpp"
+_ALLOC = "ggml/src/ggml-alloc.c"
+_ALLOC_H = "ggml/include/ggml-alloc.h"
+_META_H = "ggml/include/ggml-backend.h"
 _MODEL = "src/llama-model.cpp"
 _FATTN = "ggml/src/ggml-cuda/fattn.cu"
 
@@ -43,8 +46,11 @@ _P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py
 _P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
 _P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py")
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
+_P1341 = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
 _P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
-_SRC = {path: _pinned(path) for path in (_META, _BACKEND, _MODEL, _FATTN, "ggml/src/ggml-cuda/ggml-cuda.cu")}
+_SRC = {path: _pinned(path) for path in (
+    _META, _BACKEND, _ALLOC, _ALLOC_H, _META_H, _MODEL, _FATTN, "ggml/src/ggml-cuda/ggml-cuda.cu"
+)}
 
 
 @unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
@@ -54,8 +60,11 @@ class Patch1340Mechanics(unittest.TestCase):
         for path, text in _SRC.items():
             (root / path).parent.mkdir(parents=True, exist_ok=True)
             (root / path).write_text(text, encoding="utf-8", newline="\n")
-        base = apply_all(_P1339.PATCHES, root)
-        self.assertTrue(all(r.ok for r in base), [e.detail for r in base for e in r.failed])
+        # 1340 is validated against the experiment stack in its real application order.
+        for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P1341):
+            relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
+            base = apply_all(relevant, root)
+            self.assertTrue(all(r.ok for r in base), [e.detail for r in base for e in r.failed])
         return root
 
     def test_apply_and_idempotent(self):
@@ -68,6 +77,11 @@ class Patch1340Mechanics(unittest.TestCase):
 
             self.assertIn('getenv("BIGCHERRY_META_PER_DEVICE_ARENA")', meta)
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("std::vector<ggml_tensor *>           arena_nodes;", meta)
+            self.assertIn("std::vector<ggml_tensor *>           arena_leafs;", meta)
+            self.assertIn("ggml_backend_meta_buffer_simple_tensors", meta)
+            self.assertNotIn("std::vector<ggml_tensor *> nodes(cgraph->n_nodes);", meta)
+            self.assertNotIn("std::vector<ggml_tensor *> leafs(cgraph->n_leafs);", meta)
             self.assertIn("bc.arena_galloc.reset();", meta)
             self.assertLess(meta.index("bc.arena_galloc.reset();"), meta.index("ggml_backend_free(bc.backend);"))
             self.assertIn("bool ggml_backend_meta_alloc_graph(", meta)
@@ -78,6 +92,10 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", meta)
             self.assertIn("ret->data = t->data; // Meta's fake logical address: allocator sentinel only", meta)
             self.assertIn("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f", meta)
+            self.assertIn("BIGCHERRY_META_MEM arena_time calls=%llu reserve_calls=%llu", meta)
+            self.assertIn("traversal_map_us=%lld needs_realloc_reserve_us=%lld bind_us=%lld", meta)
+            self.assertIn("top_n_nodes=%d:%llu,%d:%llu,%d:%llu", meta)
+            self.assertIn("ggml_gallocr_needs_realloc(bcj.arena_galloc.get(), &simple_graph)", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_end", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_begin", meta)
@@ -85,6 +103,10 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("bufs.resize(n_simple_bufts, nullptr);", meta)
             self.assertIn("if (t_ij->view_src->data != nullptr)", meta)
             self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph)",
+                          (root / _ALLOC).read_text(encoding="utf-8"))
+            self.assertIn("GGML_API bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph);",
+                          (root / _ALLOC_H).read_text(encoding="utf-8"))
             self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
             # a reserve is not followed by a compute, so it rotates the simple-tensor containers itself
             self.assertIn("void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph) {", meta)
@@ -109,9 +131,9 @@ class Patch1340Mechanics(unittest.TestCase):
                 (root / src_path).parent.mkdir(parents=True, exist_ok=True)
                 (root / src_path).write_text(text, encoding="utf-8", newline="\n")
 
-            # These are the validated patches in the owner's current Meta/Qwen4Exp layout that edit the same files.
-            # Restrict each package to these three source files; unrelated package edits have their own mechanics tests.
-            for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P):
+            # These are the validated patches in the owner's current Meta/Qwen4Exp layout that edit the fixture files.
+            # Unrelated package edits have their own mechanics tests.
+            for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P1341, _P):
                 relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
                 res = apply_all(relevant, root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
@@ -124,7 +146,9 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("bigcherry 1326", backend)
             self.assertIn("BigCherry 1336", backend)
             self.assertIn("BIGCHERRY_META_MEM compute dev=", meta)
+            self.assertIn("ggml_backend_meta_split_device_active", meta)
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("std::vector<ggml_tensor *>           arena_nodes;", meta)
             self.assertIn("failed to allocate per-device Meta arena", backend)
 
     def test_zero_slice_bypasses_flash_attn_backend_sizing(self):
