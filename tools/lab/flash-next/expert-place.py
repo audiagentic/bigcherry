@@ -15,7 +15,14 @@ to the expert axis of ffn_gate_exps / ffn_up_exps / ffn_down_exps and to the rou
 whole byte blocks inside the copied files; every other byte is untouched. Usage comes from a Strata-format profile
 (`STRP`, as 1338's BIGCHERRY_MOE_CACHE_PROFILE_OUT writes): (layer, expert) pairs ranked by routing frequency.
 
+The placement rule, which a load-time implementation (MET11) has to follow exactly: per layer, walk the experts from
+most to least used (profile order; experts the profile does not rank follow in index order); each one goes to the card
+with the highest credit among the cards that still have room, where every open card first gains its --traffic share
+and the chosen card then loses the sum of the open cards' shares (ties to the lower card index). The new order is card
+0's experts, then card 1's, ..., each hottest first.
+
 Usage: expert-place.py --profile P --caps 128,128,256 --traffic 1,1,1 --out-dir DIR SHARD1.gguf [SHARD2.gguf ...]
+       expert-place.py --profile P --caps 128,128,256 --traffic 1,1,1 --plan-only plan.json
 """
 import argparse
 import json
@@ -65,11 +72,12 @@ def place(ranked, caps, traffic):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("shards", nargs="+")
+    ap.add_argument("shards", nargs="*")
+    ap.add_argument("--plan-only", metavar="JSON", help="write only the placement map (no model copy): the reference a load-time placement (MET11) must reproduce")
     ap.add_argument("--profile", required=True)
     ap.add_argument("--caps", required=True, help="experts per card, in device order; must add up to the expert count")
     ap.add_argument("--traffic", required=True, help="share of the hot experts per card")
-    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--out-dir")
     a = ap.parse_args()
     caps = [int(x) for x in a.caps.split(",")]
     traffic = [float(x) for x in a.traffic.split(",")]
@@ -77,6 +85,13 @@ def main():
     if sum(caps) != n_expert or len(caps) != len(traffic) or min(traffic) <= 0:
         raise SystemExit(f"--caps must add up to {n_expert} and --traffic needs one positive share per card")
     order = [place(ranked[layer], caps, traffic) for layer in range(n_layer)]
+    plan = {"profile": str(a.profile), "caps": caps, "traffic": traffic, "n_layer": n_layer, "n_expert": n_expert, "order": order}
+    if a.plan_only:
+        Path(a.plan_only).write_text(json.dumps(plan), encoding="utf-8")
+        print(f"plan for {n_layer} layers x {n_expert} experts: caps {caps}, traffic {traffic}; map in {a.plan_only}")
+        return
+    if not a.shards or not a.out_dir:
+        raise SystemExit("give the model shards and --out-dir, or --plan-only")
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     done = {}
@@ -104,9 +119,7 @@ def main():
     missing = [layer for layer in range(n_layer) if len(done.get(layer, [])) < 4 and "ffn_gate_up_exps.weight" not in done.get(layer, [])]
     if missing:
         raise SystemExit(f"layers without the four expert tensors (gate, up, down, router): {missing[:8]}")
-    (out / "expert-placement.json").write_text(json.dumps({
-        "profile": str(a.profile), "caps": caps, "traffic": traffic, "n_layer": n_layer, "n_expert": n_expert,
-        "order": order}), encoding="utf-8")
+    (out / "expert-placement.json").write_text(json.dumps(plan), encoding="utf-8")
     print(f"placed {n_layer} layers x {n_expert} experts: caps {caps}, traffic {traffic}; map in {out / 'expert-placement.json'}")
 
 
