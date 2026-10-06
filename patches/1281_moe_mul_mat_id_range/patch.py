@@ -331,6 +331,122 @@ _N_MMQ_DEDUP = (
 _A_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper((const int32_t *) ids->data, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
 _N_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
 
+# ---- QFP30 chunk 2: range-only Q8_1 scatter kernel; not wired into MMQ yet -----------------------------
+_A_Q8_TEMPLATE = r'''template <mmq_q8_1_ds_layout ds_layout, bool scatter>
+static __global__ void quantize_mmq_q8_1(
+'''
+_N_Q8_TEMPLATE = r'''// BigCherry 1281 (QFP30): range_scatter is compile-time-only; false preserves the ordinary scatter specialization.
+template <mmq_q8_1_ds_layout ds_layout, bool scatter, bool range_scatter = false>
+static __global__ void quantize_mmq_q8_1(
+'''
+
+_A_Q8_SENTINEL = r'''        if constexpr (scatter) {
+            const int64_t i = ids[(int64_t) blockIdx.x * n_expert_used + slot];
+            ib = k_block*ne1 + i;
+        } else {
+'''
+_N_Q8_SENTINEL = r'''        if constexpr (scatter) {
+            const int64_t i = ids[(int64_t) blockIdx.x * n_expert_used + slot];
+            if constexpr (range_scatter) {
+                // BigCherry 1281 (QFP30): -1 is the only inactive range inverse-map sentinel.
+                // Every other value follows the ordinary indexing path so corrupt maps are not silently hidden.
+                if (i == -1) {
+                    continue;
+                }
+            }
+            ib = k_block*ne1 + i;
+        } else {
+'''
+
+_A_Q8_SCATTER_WRAPPER = r'''void quantize_scatter_mmq_q8_1_cuda(
+        const float * x, const int32_t * ids_src1_inv, void * vy, const ggml_type type_src0,
+        const int64_t ne00, const int64_t stride_token, const int64_t ne0,
+        const int64_t n_tokens, const int64_t nrows_dst, const int n_expert_used, cudaStream_t stream) {
+    GGML_ASSERT(ne00 % 4 == 0);
+    GGML_ASSERT(ne0 % QK8_1_MMQ == 0);
+
+    const int64_t block_num_y = (ne0 + 4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
+    const dim3 num_blocks(n_tokens, block_num_y, 1);
+    const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
+    switch (mmq_get_q8_1_ds_layout(type_src0)) {
+        case MMQ_Q8_1_DS_LAYOUT_D4:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        case MMQ_Q8_1_DS_LAYOUT_DS4:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        case MMQ_Q8_1_DS_LAYOUT_D2S6:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        default:
+            GGML_ABORT("fatal error");
+            break;
+    }
+}
+
+'''
+_N_Q8_SCATTER_WRAPPER = _A_Q8_SCATTER_WRAPPER + r'''// BigCherry 1281 (QFP30): range-only Q8_1 scatter wrapper; -1 inverse-map slots are inactive.
+void quantize_scatter_range_mmq_q8_1_cuda(
+        const float * x, const int32_t * ids_src1_inv, void * vy, const ggml_type type_src0,
+        const int64_t ne00, const int64_t stride_token, const int64_t ne0,
+        const int64_t n_tokens, const int64_t nrows_dst, const int n_expert_used, cudaStream_t stream) {
+    GGML_ASSERT(ne00 % 4 == 0);
+    GGML_ASSERT(ne0 % QK8_1_MMQ == 0);
+
+    const int64_t block_num_y = (ne0 + 4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ - 1) / (4*CUDA_QUANTIZE_BLOCK_SIZE_MMQ);
+    const dim3 num_blocks(n_tokens, block_num_y, 1);
+    const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
+    switch (mmq_get_q8_1_ds_layout(type_src0)) {
+        case MMQ_Q8_1_DS_LAYOUT_D4:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        case MMQ_Q8_1_DS_LAYOUT_DS4:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        case MMQ_Q8_1_DS_LAYOUT_D2S6:
+            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true, true><<<num_blocks, block_size, 0, stream>>>(
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+            break;
+        default:
+            GGML_ABORT("fatal error");
+            break;
+    }
+}
+
+'''
+
+_A_Q8_RANGE_DECL = r'''void quantize_scatter_mmq_q8_1_cuda(const float *   x,
+                                    const int32_t * ids_src1_inv,
+                                    void *          vy,
+                                    ggml_type       type_src0,
+                                    int64_t         ne00,
+                                    int64_t         stride_token,
+                                    int64_t         ne0,
+                                    int64_t         n_tokens,
+                                    int64_t         nrows_dst,
+                                    int             n_expert_used,
+                                    cudaStream_t    stream);
+'''
+_N_Q8_RANGE_DECL = _A_Q8_RANGE_DECL + r'''
+// BigCherry 1281 (QFP30): range-only scatter; ids_src1_inv may contain -1 for a non-local route.
+void quantize_scatter_range_mmq_q8_1_cuda(const float *   x,
+                                          const int32_t * ids_src1_inv,
+                                          void *          vy,
+                                          ggml_type       type_src0,
+                                          int64_t         ne00,
+                                          int64_t         stride_token,
+                                          int64_t         ne0,
+                                          int64_t         n_tokens,
+                                          int64_t         nrows_dst,
+                                          int             n_expert_used,
+                                          cudaStream_t    stream);
+'''
+
 # ---- phase B: which range ops the GPU takes, and no fusion for them ---------------------------------------------
 _A_CUDA_POLICY = (
     "// returns true when ggml_cuda_mul_mat_id takes the fallback path that requires stream synchronization\n"
@@ -958,6 +1074,36 @@ PATCHES = [
             Edit(id="mmid-range-translate", anchor=_re.escape(_A_MMID_DEF), mode="replace", text=_N_MMID_DEF,
                  guard=r"static __global__ void mm_ids_range_translate\(",
                  rationale="Before the public ids helper entry point.", expect_matches=1, max_span_lines=3),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/quantize.cu",
+        description="1281 QFP30 chunk 2: range-only Q8_1 scatter specialization and host wrapper",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-q8-template", anchor=_re.escape(_A_Q8_TEMPLATE), mode="replace", text=_N_Q8_TEMPLATE,
+                 guard=r"BigCherry 1281 \(QFP30\): range_scatter is compile-time-only",
+                 rationale="Add a compile-time-only range scatter variant; ordinary two-argument instantiations default false.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="mmid-range-q8-sentinel", anchor=_re.escape(_A_Q8_SENTINEL), mode="replace", text=_N_Q8_SENTINEL,
+                 guard=r"BigCherry 1281 \(QFP30\): -1 is the only inactive range inverse-map sentinel",
+                 rationale="Only the range specialization skips -1; every other value keeps the ordinary indexing path.",
+                 expect_matches=1, max_span_lines=5),
+            Edit(id="mmid-range-q8-wrapper", anchor=_re.escape(_A_Q8_SCATTER_WRAPPER), mode="replace", text=_N_Q8_SCATTER_WRAPPER,
+                 guard=r"BigCherry 1281 \(QFP30\): range-only Q8_1 scatter wrapper",
+                 rationale="Add an uncalled host wrapper launching the range specialization for all ordinary Q8_1 ds layouts.",
+                 expect_matches=1, max_span_lines=36),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/quantize.cuh",
+        description="1281 QFP30 chunk 2: declare the range-only Q8_1 scatter wrapper",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-q8-wrapper-decl", anchor=_re.escape(_A_Q8_RANGE_DECL), mode="replace", text=_N_Q8_RANGE_DECL,
+                 guard=r"BigCherry 1281 \(QFP30\): range-only scatter",
+                 rationale="Declare the uncalled range-only Q8_1 scatter wrapper beside the ordinary wrapper.",
+                 expect_matches=1, max_span_lines=12),
         ),
     ),
     FilePatch(

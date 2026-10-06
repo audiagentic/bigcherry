@@ -17,6 +17,8 @@ _V = _REPO / "vendor/llama.cpp"
 _PIN = "d89651a7b205"
 _NEW = "tests/test-mul-mat-id-range.cpp"
 _CPU = "ggml/src/ggml-cpu/ggml-cpu.c"
+_QCU = "ggml/src/ggml-cuda/quantize.cu"
+_QH = "ggml/src/ggml-cuda/quantize.cuh"
 
 
 def _load():
@@ -96,6 +98,27 @@ class Patch1281Mechanics(unittest.TestCase):
             for host in (mmvq, mmvf):
                 self.assertEqual(host.count("CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), ctx.stream()));"), 1)
             self.assertIn("ids_local[i] = local >= 0 && local < n_local ? (int32_t) local : INT_MAX;", mmid)
+            # QFP30 chunk 2: only the range Q8_1 scatter variant knows the -1 inactive-slot sentinel.
+            quantize, quantize_h = read(_QCU), read(_QH)
+            self.assertIn("void quantize_scatter_range_mmq_q8_1_cuda(", quantize)
+            self.assertIn("void quantize_scatter_range_mmq_q8_1_cuda(", quantize_h)
+            self.assertEqual(quantize.count("if (i == -1) {"), 1)
+            self.assertIn(
+                "if constexpr (range_scatter) {\n"
+                "                // BigCherry 1281 (QFP30): -1 is the only inactive range inverse-map sentinel.\n"
+                "                // Every other value follows the ordinary indexing path so corrupt maps are not silently hidden.\n"
+                "                if (i == -1) {\n",
+                quantize,
+            )
+            self.assertEqual(quantize.count("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true, true>"), 1)
+            self.assertEqual(quantize.count("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true, true>"), 1)
+            self.assertEqual(quantize.count("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true, true>"), 1)
+            # Ordinary wrapper text is an exact pinned-source anchor and remains byte-for-byte present after patching.
+            self.assertEqual(_SRC[_QCU].count(_P._A_Q8_SCATTER_WRAPPER), 1)
+            self.assertEqual(quantize.count(_P._A_Q8_SCATTER_WRAPPER), 1)
+            self.assertIn("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true><<<", _P._A_Q8_SCATTER_WRAPPER)
+            self.assertIn("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true><<<", _P._A_Q8_SCATTER_WRAPPER)
+            self.assertIn("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true><<<", _P._A_Q8_SCATTER_WRAPPER)
             self.assertIn("ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),", mmq)
             self.assertIn("const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && !bc_range;", mmq)
             self.assertIn("llama_build_and_test(test-mul-mat-id-range.cpp)", read("tests/CMakeLists.txt"))
