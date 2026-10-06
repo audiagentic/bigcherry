@@ -492,6 +492,7 @@ struct range_case {
     int     n_tokens;
     int     pattern;   // how the ids are chosen, see make_ids
     ggml_type type;
+    bool    broadcast; // activation [n_in, 1, n_tokens] instead of per-route [n_in, n_used, n_tokens]
 };
 
 static std::vector<int32_t> make_ids(const range_case & c, std::mt19937 & rng) {
@@ -545,7 +546,7 @@ static bool run_case(const range_case & c, int n_threads, std::mt19937 & rng) {
         ggml_quantize_chunk(c.type, (const float *) w_f32->data, w->data, 0, (int64_t) n_out * c.n_local, n_in, nullptr);
     }
 
-    ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_in, c.n_used, c.n_tokens);
+    ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_in, c.broadcast ? 1 : c.n_used, c.n_tokens);
     for (int64_t i = 0; i < ggml_nelements(x); i++) ((float *) x->data)[i] = dist(rng);
 
     const std::vector<int32_t> global = make_ids(c, rng);
@@ -586,9 +587,9 @@ static bool run_case(const range_case & c, int n_threads, std::mt19937 & rng) {
     }
     ok = ok && bad == 0;
 
-    printf("%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d type=%s threads=%d active=%d/%zu mismatches=%" PRId64 "\n",
+    printf("%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d type=%s threads=%d broadcast=%d active=%d/%zu mismatches=%" PRId64 "\n",
            ok ? "ok  " : "FAIL", c.id_base, c.n_local, c.n_used, c.n_tokens, c.pattern, ggml_type_name(c.type), n_threads,
-           n_active, global.size(), bad);
+           c.broadcast ? 1 : 0, n_active, global.size(), bad);
 
     ggml_free(ctx);
     return ok;
@@ -607,6 +608,7 @@ struct gpu_case {
     int       n_used;
     int       n_tokens;
     int       pattern;
+    bool      broadcast;
 };
 
 static std::vector<float> compute_on(ggml_backend_t backend, const gpu_case & c, bool range,
@@ -616,7 +618,7 @@ static std::vector<float> compute_on(ggml_backend_t backend, const gpu_case & c,
     ggml_context * ctx = ggml_init(ip);
 
     ggml_tensor * w = ggml_new_tensor_3d(ctx, c.type, n_in, n_out, c.n_local);
-    ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_in, c.n_used, c.n_tokens);
+    ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_in, c.broadcast ? 1 : c.n_used, c.n_tokens);
     ggml_tensor * t_ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, c.n_used, c.n_tokens);
     ggml_tensor * y = range ? ggml_mul_mat_id_range(ctx, w, x, t_ids, c.id_base) : ggml_mul_mat_id(ctx, w, x, t_ids);
 
@@ -655,7 +657,8 @@ static std::vector<float> compute_on(ggml_backend_t backend, const gpu_case & c,
 static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case & c, std::mt19937 & rng) {
     const int n_in = 256, n_out = 64;
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-    std::vector<float> w((size_t) n_in * n_out * c.n_local), x((size_t) n_in * c.n_used * c.n_tokens);
+    std::vector<float> w((size_t) n_in * n_out * c.n_local),
+                       x((size_t) n_in * (c.broadcast ? 1 : c.n_used) * c.n_tokens);
     for (float & v : w) v = dist(rng);
     for (float & v : x) v = dist(rng);
 
@@ -684,8 +687,8 @@ static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case 
 
     const std::vector<float> got  = compute_on(gpu, c, /*range =*/ true,  w, x, global, n_in, n_out);
     if (got.empty()) {
-        printf("skip %s type=%s tokens=%d used=%d: range op not supported on this device path\n",
-               ggml_backend_name(gpu), ggml_type_name(c.type), c.n_tokens, c.n_used);
+        printf("skip %s type=%s tokens=%d used=%d broadcast=%d: range op not supported on this device path\n",
+               ggml_backend_name(gpu), ggml_type_name(c.type), c.n_tokens, c.n_used, c.broadcast ? 1 : 0);
         return true;
     }
     const std::vector<float> want = compute_on(cpu, c, /*range =*/ false, w, x, local,  n_in, n_out);
@@ -722,12 +725,13 @@ static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case 
                 cref += (double) e * e;
             }
         }
-        printf("ctrl %s type=%s tokens=%d used=%d n_local=%d pattern=%d ordinary-op nmse=%.2e\n", ggml_backend_name(gpu),
-               ggml_type_name(c.type), c.n_tokens, c.n_used, c.n_local, c.pattern, cref > 0.0 ? cerr / cref : 0.0);
+        printf("ctrl %s type=%s tokens=%d used=%d n_local=%d pattern=%d broadcast=%d ordinary-op nmse=%.2e\n", ggml_backend_name(gpu),
+               ggml_type_name(c.type), c.n_tokens, c.n_used, c.n_local, c.pattern, c.broadcast ? 1 : 0,
+               cref > 0.0 ? cerr / cref : 0.0);
     }
-    printf("%s %s type=%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d active=%d/%zu nmse=%.2e nonzero_inactive=%" PRId64 " nan=%" PRId64 "\n",
+    printf("%s %s type=%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d broadcast=%d active=%d/%zu nmse=%.2e nonzero_inactive=%" PRId64 " nan=%" PRId64 "\n",
            ok ? "ok  " : "FAIL", ggml_backend_name(gpu), ggml_type_name(c.type), c.id_base, c.n_local, c.n_used, c.n_tokens,
-           c.pattern, n_active, global.size(), nmse, nonzero_inactive, nan);
+           c.pattern, c.broadcast ? 1 : 0, n_active, global.size(), nmse, nonzero_inactive, nan);
     return ok;
 }
 
@@ -735,7 +739,7 @@ static int run_gpu() {
     std::mt19937 rng(1281);
     ggml_backend_load_all();
     ggml_backend_t cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
-    int n_fail = 0, n_run = 0, n_dev = 0;
+    int n_fail = 0, n_run = 0, n_broadcast = 0, n_dev = 0;
     // MMID_RANGE_MIN_TOKENS / MMID_RANGE_MAX_TOKENS restrict the batch sizes, to test one kernel family at a time
     const int min_tokens = getenv("MMID_RANGE_MIN_TOKENS") ? atoi(getenv("MMID_RANGE_MIN_TOKENS")) : 0;
     const int max_tokens = getenv("MMID_RANGE_MAX_TOKENS") ? atoi(getenv("MMID_RANGE_MAX_TOKENS")) : INT_MAX;
@@ -758,8 +762,28 @@ static int run_gpu() {
                                 if (n_tokens < min_tokens || n_tokens > max_tokens) {
                                     continue;
                                 }
-                                const gpu_case c = { type, id_base, n_local, n_used, n_tokens, pattern };
+                                const gpu_case c = { type, id_base, n_local, n_used, n_tokens, pattern, false };
                                 n_run++;
+                                n_fail += run_gpu_case(gpu, cpu, c, rng) ? 0 : 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // QFP30 chunk 1: repeat the exact case matrix with the gate/up broadcast activation shape.
+        for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_IQ4_XS }) {
+            for (int32_t id_base : { 0, 5 }) {
+                for (int n_local : { 1, 4, 12 }) {
+                    for (int pattern : { 0, 1, 2 }) {
+                        for (int n_used : { 4, 10 }) {
+                            for (int n_tokens : { 1, 2, 4, 8, 9, 33, 300 }) {
+                                if (n_tokens < min_tokens || n_tokens > max_tokens) {
+                                    continue;
+                                }
+                                const gpu_case c = { type, id_base, n_local, n_used, n_tokens, pattern, true };
+                                n_run++;
+                                n_broadcast++;
                                 n_fail += run_gpu_case(gpu, cpu, c, rng) ? 0 : 1;
                             }
                         }
@@ -770,7 +794,8 @@ static int run_gpu() {
         ggml_backend_free(gpu);
     }
     ggml_backend_free(cpu);
-    printf("test-mul-mat-id-range --gpu: %d device(s), %d case(s), %d failed\n", n_dev, n_run, n_fail);
+    printf("test-mul-mat-id-range --gpu: %d device(s), %d case(s), %d broadcast, %d failed\n",
+           n_dev, n_run, n_broadcast, n_fail);
     return n_fail == 0 && n_dev > 0 ? 0 : 1;
 }
 
@@ -779,7 +804,7 @@ int main(int argc, char ** argv) {
         return run_gpu();
     }
     std::mt19937 rng(1281);
-    int n_fail = 0, n_run = 0;
+    int n_fail = 0, n_run = 0, n_broadcast = 0;
     for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_Q8_0 }) {
         for (int32_t id_base : { 0, 1, 7, INT32_MAX - 3 }) {
             for (int n_local : { 1, 2, 4 }) {
@@ -789,7 +814,7 @@ int main(int argc, char ** argv) {
                 for (int pattern : { 0, 1, 2 }) {
                     for (int n_tokens : { 1, 3, 40 }) {
                         for (int n_threads : { 1, 4 }) {
-                            const range_case c = { id_base, n_local, 4, n_tokens, pattern, type };
+                            const range_case c = { id_base, n_local, 4, n_tokens, pattern, type, false };
                             n_run++;
                             n_fail += run_case(c, n_threads, rng) ? 0 : 1;
                         }
@@ -798,7 +823,27 @@ int main(int argc, char ** argv) {
             }
         }
     }
-    printf("test-mul-mat-id-range: %d case(s), %d failed\n", n_run, n_fail);
+    // QFP30 chunk 1: same reference matrix, now with broadcast activation [n_in, 1, n_tokens].
+    for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_Q8_0 }) {
+        for (int32_t id_base : { 0, 1, 7, INT32_MAX - 3 }) {
+            for (int n_local : { 1, 2, 4 }) {
+                if ((int64_t) id_base + n_local - 1 > INT32_MAX) {
+                    continue;
+                }
+                for (int pattern : { 0, 1, 2 }) {
+                    for (int n_tokens : { 1, 3, 40 }) {
+                        for (int n_threads : { 1, 4 }) {
+                            const range_case c = { id_base, n_local, 4, n_tokens, pattern, type, true };
+                            n_run++;
+                            n_broadcast++;
+                            n_fail += run_case(c, n_threads, rng) ? 0 : 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    printf("test-mul-mat-id-range: %d case(s), %d broadcast, %d failed\n", n_run, n_broadcast, n_fail);
     return n_fail == 0 ? 0 : 1;
 }
 '''
