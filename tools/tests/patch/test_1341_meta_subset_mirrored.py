@@ -45,7 +45,7 @@ _P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py"
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
 _P1340 = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
 _P = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
-_SRC = {path: _pinned(path) for path in (_H, _META, _MODEL, _BACKEND)}
+_SRC = {path: _pinned(path) for path in (_H, _META, _MODEL, _BACKEND, "ggml/src/ggml-cuda/ggml-cuda.cu")}
 
 
 @unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
