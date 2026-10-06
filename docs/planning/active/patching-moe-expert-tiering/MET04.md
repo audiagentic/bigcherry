@@ -103,6 +103,8 @@ References:
 
 2026-10-06 - 1283 gained BIGCHERRY_MOE_EP_TS=a,b,c (expert shares per device in device order, not rotated, independent of -ts; fails on a malformed value or a device with no expert). Queued on Brutus behind the range-aware fusion rebuild (b11402r; the b11402q build failed on a patch-guard collision in 1281, fixed in 65ffcaea): chain12 = GPU range test + EP ABBA at 8K/24K with fused kernels; chain13 = layout variants at CTX 49152: EP_TS 1,1,2 (default -ts); dense on the XTXs with experts mostly on the R9700 (-ts 0.45,0.45,0.10 + EP_TS 1,1,3) at 8K/24K; R9700 with no dense share (-ts 1,1,0 + EP_TS 1,1,4, may not load).
 
+2026-10-06 EP ABBA with range-aware fused kernels (build b-moeep-b11402r, CTX 49152, default -ts 0.31,0.27,0.42; A = row split, B = BIGCHERRY_MOE_EP=1). 8K: prefill A 1040.1/1062.1 vs B 1060.7/1082.0 t/s; decode A 84.3/86.1 vs B 85.3/86.1. 24K: prefill A 1073.5/1070.1 vs B 1079.4/1071.4; decode A 72.5/76.0 vs B 75.2/75.7. Acceptance near equal (349/485 vs 353/472). Fidelity S vs D: top-1 21/24, TV mean 0.113 (inside the 0.146 dense GPU-vs-CPU envelope); D2 vs D identical. Reading: the earlier decode penalty (14.1 vs 13.5 ms/step) came from the missing fusion and is gone; at the same shares the expert split is equal to the row split in both prefill and decode - no gain, no loss. The value of EP is therefore placement freedom (expert shares apart from -ts, higher quants with a CPU tail), tested next in chain13. The range-only build b-moerange-b11402r failed on a clang bus error (compiler crash, not code); retry queued as b11402s for the GPU range test with fused kernels.
+
 ## External provenance and traceability
 
 This cache-before-EP direction has two distinct source lineages and they must remain distinguishable in reports:
@@ -138,3 +140,4 @@ MET01 now owns the remaining cache/residency question. Its next discriminator is
 - chg_20261006_061542_experimental-expert-parallel-t_6967
 - 2026-10-06T06:15:50.118909+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T06:15:58.527744+00:00 (updated-by): Updated: section:notes
+- 2026-10-06T06:50:43.713995+00:00 (updated-by): Updated: section:notes
