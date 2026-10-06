@@ -397,6 +397,7 @@ _TEST = r'''// BigCherry 1281: reference test of ggml_mul_mat_id_range on the CP
 #include "ggml-backend.h"
 #include "ggml-cpu.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <climits>
 #include <cmath>
@@ -580,8 +581,19 @@ static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case 
     for (float & v : w) v = dist(rng);
     for (float & v : x) v = dist(rng);
 
-    const range_case rc = { c.id_base, c.n_local, c.n_used, c.n_tokens, c.pattern, c.type };
-    const std::vector<int32_t> global = make_ids(rc, rng);
+    // Expert ids are DISTINCT within a token, as a top-k router produces them: the device's large-batch path groups
+    // one row per (token, expert) and does not support the same expert twice in one token (the CPU does).
+    // pattern 0: mostly held experts; 1: none held; 2: mixed around both ends of the range.
+    int64_t u_lo = c.id_base, u_hi = (int64_t) c.id_base + std::max(c.n_local, c.n_used);
+    if (c.pattern == 1) { u_lo = (int64_t) c.id_base + c.n_local; u_hi = u_lo + 16; }
+    if (c.pattern == 2) { u_lo = std::max<int64_t>(0, (int64_t) c.id_base - 3); u_hi = (int64_t) c.id_base + c.n_local + 13; }
+    std::vector<int32_t> universe;
+    for (int64_t g = u_lo; g < u_hi; g++) universe.push_back((int32_t) g);
+    std::vector<int32_t> global((size_t) c.n_used * c.n_tokens);
+    for (int t = 0; t < c.n_tokens; t++) {
+        std::shuffle(universe.begin(), universe.end(), rng);
+        for (int k = 0; k < c.n_used; k++) global[(size_t) t * c.n_used + k] = universe[k];
+    }
     std::vector<int32_t> local(global.size());
     std::vector<bool> active(global.size());
     int n_active = 0;
@@ -661,7 +673,7 @@ static int run_gpu() {
         n_dev++;
         for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_IQ4_XS }) {
             for (int32_t id_base : { 0, 5 }) {
-                for (int n_local : { 1, 4 }) {
+                for (int n_local : { 1, 4, 12 }) {
                     for (int pattern : { 0, 1, 2 }) {
                         for (int n_used : { 4, 10 }) {
                             for (int n_tokens : { 1, 2, 4, 8, 9, 33, 300 }) {
