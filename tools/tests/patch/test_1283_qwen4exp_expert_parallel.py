@@ -80,6 +80,12 @@ class Patch1283Mechanics(unittest.TestCase):
             self.assertLess(model.index("return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_2); // BigCherry 1283"),
                             model.index('return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1, "ffn_down.weight", "ffn_down_exps.weight");'))
             self.assertIn("return std::vector<int64_t>(segments.size(), 1);", model)
+            # separate expert shares: written after the -ts sizes, in device order, fail on a bad value
+            shares = model.index("static const std::vector<float> bc_ep_ts = ")
+            self.assertLess(model.index("split_state.ne[is*ud->n_devices"), shares)
+            self.assertLess(shares, model.index("        split_state.n_segments = segments.size();"))
+            self.assertIn("split_state.ne[j] = bc_high - bc_low;", model)
+            self.assertIn('throw std::runtime_error("BIGCHERRY_MOE_EP_TS: one share per device is required");', model)
             before = {p: (root / p).read_text(encoding="utf-8") for p in _SRC}
             again = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in again), [e.detail for r in again for e in r.failed])

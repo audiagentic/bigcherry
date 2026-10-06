@@ -67,6 +67,48 @@ _N_MODEL_GRAN = (
     "\n"
 ) + _A_MODEL_GRAN
 
+# optional expert shares that differ from -ts (e.g. dense weights mostly on two cards, experts mostly on the third)
+_A_MODEL_TS = "        split_state.n_segments = segments.size();\n"
+_N_MODEL_TS = (
+    "        if (bc_moe_ep && std::regex_match(tensor_name, bc_pattern_ffn_exps_weight)) {\n"
+    "            // BigCherry 1283: BIGCHERRY_MOE_EP_TS=a,b,c gives the experts their own shares in device order (no\n"
+    "            // per-layer rotation), independent of -ts which keeps sizing every other split tensor\n"
+    "            static const std::vector<float> bc_ep_ts = [] {\n"
+    "                std::vector<float> v;\n"
+    "                const char * s = getenv(\"BIGCHERRY_MOE_EP_TS\");\n"
+    "                while (s != nullptr && *s != '\\0') {\n"
+    "                    char * end = nullptr;\n"
+    "                    const float f = strtof(s, &end);\n"
+    "                    if (end == s || !(f > 0.0f) || (*end != ',' && *end != '\\0')) {\n"
+    "                        throw std::runtime_error(\"BIGCHERRY_MOE_EP_TS: expected positive comma-separated shares\");\n"
+    "                    }\n"
+    "                    v.push_back(f);\n"
+    "                    s = *end == ',' ? end + 1 : end;\n"
+    "                }\n"
+    "                return v;\n"
+    "            }();\n"
+    "            if (!bc_ep_ts.empty()) {\n"
+    "                if (bc_ep_ts.size() != ud->n_devices) {\n"
+    "                    throw std::runtime_error(\"BIGCHERRY_MOE_EP_TS: one share per device is required\");\n"
+    "                }\n"
+    "                GGML_ASSERT(segments.size() == 1);\n"
+    "                float bc_total = 0.0f;\n"
+    "                for (const float f : bc_ep_ts) {\n"
+    "                    bc_total += f;\n"
+    "                }\n"
+    "                int64_t bc_low = 0;\n"
+    "                float   bc_cum = 0.0f;\n"
+    "                for (size_t j = 0; j < ud->n_devices; j++) {\n"
+    "                    bc_cum += bc_ep_ts[j];\n"
+    "                    const int64_t bc_high = j + 1 == ud->n_devices ? segments[0].first : (int64_t) (segments[0].first * (bc_cum / bc_total));\n"
+    "                    GGML_ASSERT(bc_high > bc_low && \"BIGCHERRY_MOE_EP_TS: every device must hold at least one expert\");\n"
+    "                    split_state.ne[j] = bc_high - bc_low;\n"
+    "                    bc_low = bc_high;\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+) + _A_MODEL_TS
+
 # ---- ggml-backend-meta.cpp -----------------------------------------------------------------------------------------
 _A_META_RULE = (
     "    auto handle_mul_mat = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {\n"
@@ -189,6 +231,10 @@ PATCHES = [
                  guard=r"BigCherry 1283: experts are indivisible",
                  rationale="Before the FFN granularity rule (quant block multiples apply to rows, not to experts).",
                  expect_matches=1, max_span_lines=3),
+            Edit(id="moe-ep-shares", anchor=_re.escape(_A_MODEL_TS), mode="replace", text=_N_MODEL_TS,
+                 guard=r"static const std::vector<float> bc_ep_ts = ",
+                 rationale="After the -ts driven sizes are written, so the expert shares replace them.",
+                 expect_matches=1, max_span_lines=2),
         ),
     ),
     FilePatch(
@@ -219,4 +265,7 @@ ENV_DOCS = (
     EnvDoc("BIGCHERRY_MOE_EP", "0|1", "0",
            "tensor split: give each device whole routed experts (split along the expert index, sized by -ts) instead "
            "of a row slice of every expert; needs the range MUL_MAT_ID of 1281 on the GPU"),
+    EnvDoc("BIGCHERRY_MOE_EP_TS", "a,b,c", "(unset: -ts)",
+           "with BIGCHERRY_MOE_EP=1: expert shares per device in device order, independent of -ts and not rotated "
+           "per layer; every device must hold at least one expert"),
 )
