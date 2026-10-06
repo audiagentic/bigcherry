@@ -53,6 +53,9 @@ Package-only patch, fail-closed anchors, offline test; requires 1303.
 
 Depends on MSM01 for measurement; independent of MSM02 but the saving on the compute side only materialises with MSM02 (the masks are compute tensors in the common arena).
 
+2026-10-06 FIRST STEP ON HARDWARE (1341_meta_subset_mirrored by GPT, commit 6b897b6d; build b-metamem-b11402b2 = production set + 1339 + 1340 + 1341; BIGCHERRY_META_SUBSET_MIRROR=1 with BIGCHERRY_ATTN_TS=1,1,0; run metamem-b11402b2, depth 2048, one request per arm). Indexer cache MiB on ROCm0 / ROCm1 / ROCm2: flag off 288 / 288 / 288 (ctx 49152) and 1440 / 1440 / 1440 (ctx 245760); flag on 288 / 288 / 0 and 1440 / 1440 / 0 - in the production row split and in the owner's expert-split layout. Greedy text identical to the flag-off arm in both layouts and both contexts (md5 8668d7dd production, 2571b60b owner's layout); no error lines. So the R9700 gives back 1440 MiB at the full context with unchanged output; the production layout benefits too, because it already runs attention on the XTXs only. Offline tests pass. Pending for promotion (base framework change: identical output + no regression): ABBA on production at ctx 245760, depths 8K / 98K / 202K (queued, msm03-b2), then the compute-side masks (KQ / kpool / QSA), which need MSM02's per-device arena to show up as memory.
+
 ## Change Log
 
 - 2026-10-06T11:48:21.824495+00:00 (created-by): Created by agent
+- 2026-10-06T12:36:47.707067+00:00 (updated-by): Updated: section:notes
