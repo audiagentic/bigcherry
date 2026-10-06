@@ -117,27 +117,59 @@ Upstream reference verified 2026-10-04: https://github.com/ggml-org/llama.cpp/pu
 - 2026-10-04 (agent): Added upstream #29924 as a prerequisite correctness/performance baseline for temperature>0 n-gram + MTP lanes; preserved draft-mtp-only semantics.
 
 
-## 2026-10-06 WHIRL cost-model audit
+## 2026-10-06 WHIRL cost-model audit - corrected execution gate
 
-External mechanism provenance: `tsaipifong/whirl-llm` v0.1.3, `src/model/spec.cpp` and `docs/guide/en/speculative-decoding.md`.
+External mechanism provenance: `tsaipifong/whirl-llm` v0.1.3. Historical BigCherry provenance must also be preserved: 1255 is a local staged adaptation of `nasone32/llama.cpp-RDNA3-7900xtx-opt@10579a7365a3bc86c4f8e41aaab20e73e1571e5e`. WHIRL is a candidate refinement of the cost model, not the origin of adaptive MTP.
 
-Repository fact: 1255/1268 currently adapt depth from accepted-vs-drafted counts using fixed climb/drop thresholds. They do not measure verification-cycle time or maximize expected accepted tokens per wall-clock time. WHIRL's implemented `pickDrafts()` instead tracks conditional per-position acceptance, measures cycle time by draft count, chooses the depth maximizing `E(tokens)/T(cycle)`, retains the previous depth when within 3% of the best, and probes a neighbouring depth every 32 cycles. WHIRL reports that its best fixed depth varies materially by workload/context (code 6-8, prose 3-4, long context 2-3), while its automatic policy stays near the best fixed point. Treat those numbers as external gfx1201 evidence, not BigCherry measurements.
+### Blocking prerequisite
 
-This does **not** justify a second adaptive controller. PRBE52/1255/1268 remain the sole front-draft-depth owner. The unresolved question is whether replacing the heuristic controller with a measured E/T policy improves BigCherry after the existing 1210 correctness prerequisite and #29924 mixed-drafter semantic fix are satisfied.
+Do not start WHIRL-policy implementation or hardware comparison from the current 1268 package. `dispositions/1268_prbe52_adaptive_mtp_wiring.json` currently marks it `known_broken / FAILED_NEEDS_RECONCILIATION`: upstream probabilistic-MTP changes broke its begin-reset, draft-reset and depth-limit anchors, and it is not in the current build recipe.
 
-Cheapest discriminator, before implementation:
-1. Extend the existing 1317/1318 timing evidence parser or an offline script to replay recorded rounds as tuples `{n_draft,n_accepted,cycle_us,context,workload}`.
-2. Compare three policies offline on the same trace: fixed depth; current 1255 climb/drop; WHIRL-style `argmax_k E(k)/T(k)` with 3% hysteresis and 32-cycle neighbour probes.
-3. Score predicted accepted tokens per measured cycle time and policy regret versus the best fixed depth for each workload segment. Do not infer target throughput from acceptance alone.
-4. If E/T policy reduces aggregate regret by <5% versus 1255, or changes selected depth rarely enough to be operationally immaterial, stop: retain 1255 and record WHIRL as rejected-for-now evidence.
-5. If >=5%, replace the internals of the existing 1255 controller; do not add a parallel mode, state machine, CLI flag or dispatch table. Keep 1268's existing opt-in/configuration surface.
-6. Hardware gate on gfx1201 then gfx1100: fixed-best vs current adaptive vs E/T adaptive, ABBA >=5 repetitions across coding, prose, repetitive/tool-call and 8K/64K/128K context lanes. Require exact greedy IDs, multi-request same-process correctness, and >=5% median effective-TG improvement over current adaptive with <=2% regression in any held-out lane.
+Execution order is mandatory:
+1. reconcile 1268 against the current source pin;
+2. restore apply/idempotence/composition tests with 1255 + explicit 1210;
+3. prove adaptive-off equals fixed-depth behavior;
+4. pass 1210 greedy identity and repeated same-process correctness;
+5. only then collect adaptive-policy calibration/performance data.
 
-WHIRL's n-gram co-drafting is a separate proposer-selection mechanism. Upstream llama.cpp already supports simultaneous `draft-mtp,ngram-*` proposers, and current upstream evidence shows combining them can be neutral or slower when both independently draft. Therefore do not fold a WHIRL n-gram implementation into 1255/1268. First use upstream mixed-proposer support as the control after #29924; any later arbitration work needs evidence that proposer-selection overhead remains material.
+Historical 1268 throughput records whose validation contract failed greedy correctness are motivation only and must not be used as promotion evidence.
+
+### Correct discriminator: sampled depth calibration, not synthetic trace replay
+
+1317/1318 provide useful observed-round timing, but they do not record the counterfactual acceptance/time of draft depths that were not executed. Therefore an arbitrary trace cannot be replayed faithfully through fixed depth, current 1255 and WHIRL E/T policies.
+
+Initial calibration must use `parallel=1` because 1317's file-static accumulator is documented for single-slot interpretation. Deliberately exercise every candidate depth, initially `k={1,2,3,4}` or the supported range, and persist same-round tuples including:
+
+`{session,workload,context_bucket,k,n_drafted,n_accepted,cycle_us,draft_us,target_submit_us,target_sync_us,process_us,sample_us}`.
+
+Do not synthesize unobserved `T(k)`. Require adequate samples for every candidate action in each workload/context bucket used for policy fitting.
+
+Use calibration/train rounds to estimate conditional acceptance and `T(k)`; score held-out rounds. Compare:
+- best fixed depth;
+- current 1255 climb/drop;
+- WHIRL-style `argmax E(tokens|k)/T(cycle|k)` with 3% hysteresis and bounded neighbour probes.
+
+Score accepted target tokens per measured cycle time and regret versus best fixed. Report sample counts/uncertainty. This is an offline discriminator, not counterfactual proof of hardware throughput.
+
+If held-out predicted advantage over 1255 is <5%, stop and retain 1255. If >=5%, replace **only 1255 internals**; retain 1268's existing opt-in/configuration surface and do not add a second controller/mode.
+
+### Internal evidence supporting the objective
+
+FMTP03 already measured the relevant failure mode: representative ahead lanes reduced step time roughly 5-8% while effective throughput remained approximately neutral because promoted-front acceptance fell. That result strengthens the use of accepted target tokens per wall-clock cycle over acceptance-only or latency-only control.
+
+It does not authorize restarting FMTP02-FMTP07; that pipeline remains paused by owner decision and is independent of this front-depth experiment.
+
+### Hardware gate after offline promotion
+
+gfx1201 then gfx1100; fixed-best vs current adaptive vs E/T adaptive; ABBA >=5 repetitions across coding, prose, repetitive/tool-call and representative 8K/64K/128K contexts. Require exact greedy IDs, repeated same-process correctness, >=5% median effective-TG improvement over current adaptive, and <=2% regression in every held-out representative lane.
+
+WHIRL n-gram co-drafting remains out of scope. After #29924/equivalent, use upstream mixed proposer support as the control. No local proposer arbitration without a separate measured residual >=5%.
 
 Traceability:
+- https://github.com/nasone32/llama.cpp-RDNA3-7900xtx-opt commit 10579a7365a3bc86c4f8e41aaab20e73e1571e5e
 - https://github.com/tsaipifong/whirl-llm
 - https://github.com/tsaipifong/whirl-llm/blob/main/src/model/spec.cpp
 - https://github.com/tsaipifong/whirl-llm/blob/main/docs/guide/en/speculative-decoding.md
 - https://github.com/ggml-org/llama.cpp/issues/24507
 - https://github.com/ggml-org/llama.cpp/issues/23184
+
