@@ -109,7 +109,7 @@ class Patch1340Mechanics(unittest.TestCase):
             model = (root / _MODEL).read_text(encoding="utf-8")
             self.assertIn("BigCherry 1283: whole-expert MoE block.", meta)
             self.assertIn("BIGCHERRY_ATTN_TS", model)
-            self.assertIn("BigCherry 1326", backend)
+            self.assertIn("bigcherry 1326", backend)
             self.assertIn("BigCherry 1336", backend)
             self.assertIn("BIGCHERRY_META_MEM compute dev=", meta)
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
