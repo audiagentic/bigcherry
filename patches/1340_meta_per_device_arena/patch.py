@@ -175,19 +175,33 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
         simple_graph.nodes = nodes.data();
         simple_graph.leafs = leafs.data();
 
+        const bool mem_report = getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0;
         const bool fresh = bcj.arena_galloc == nullptr;
+        if (mem_report) {
+            GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=begin fresh=%d nodes=%d leafs=%d\n",
+                j, fresh ? 1 : 0, simple_graph.n_nodes, simple_graph.n_leafs);
+        }
         if (fresh) {
             bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
+            if (mem_report) {
+                GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin\n", j);
+            }
             if (!ggml_gallocr_reserve(bcj.arena_galloc.get(), &simple_graph)) {
                 return false;
             }
+            if (mem_report) {
+                GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_end\n", j);
+            }
+        }
+        if (mem_report) {
+            GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_begin\n", j);
         }
         if (!ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph)) {
             return false;
         }
-
-        if (getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0) {
+        if (mem_report) {
             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(bcj.backend);
+            GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end\n", j);
             GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f\n", j, ggml_backend_buft_name(buft),
                 ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0);
         }
