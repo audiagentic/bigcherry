@@ -123,6 +123,8 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 
 2026-10-06 RESULTS UPDATE. (a) ~202K ceiling table (sparseprof-d163840, build b-sparsefa-b11402c, sparse FA on, 202,447-token uncached prefill at 819.7 t/s, per 7900 XTX: 172.9 s kernel time in a 272.0 s span, 64% busy): all-reduce 46.6 s (17% of span, max gain 1.21x); MMQ 39.6 s (15%, 1.17x); float matmul 22.4 s (8%, 1.09x); QSA indexer + top-k 19.7 s (7%, 1.08x) - up from 3% at ~99K, it grows with depth; flash attention 12.8 s (5%, 1.05x); other 10.4 s; norm/activation 8.5 s; set/get rows + mask build 7.6 s (3%, 1.03x); GDN 3.7 s; GPU not in a kernel ~36% of the span (upper bound, includes warm-up and a few decode steps). Priority order implied at long context: attribute the idle share, all-reduce (PGC15/PGC14), MMQ, then the indexer (1335), with attention and mask work last. (b) 1335_tiled_lightning_indexer authored (backport of upstream #29901, commit 1b43d3116; off switch BIGCHERRY_INDEXER_TILE=0; activation marker; offline tests pass; experiment indexer-tile; queue-indexer-tile.sh, indexer-backend-test.sh). State untested: its Brutus run (backend test, prefill ABBA at 82K/164K, fidelity) was HELD on owner direction until the Strata bench (BCOP37) and the MET01 patch tests have had the host. (c) 1334 default-on check passed - see QFP25. (d) Status of the round: validated 1334 (+13% / +28% prefill), 1332 (+4% with ub 1024); rejected PGC16, provider switch, half-width wire; pending 1335 run, idle-time attribution, PGC15 phase 1, PGC14, QFP26, QFP24, QFP25 adapter then independent op.
 
+2026-10-06 1335 VALIDATED (build b-ixtile-b11402f, run chain2 / queue-indexer-tile.sh b11402f 81920 163840, Flash-Next production with MTP, sparse attention on in both arms, A = tile on, B = BIGCHERRY_INDEXER_TILE=0, ABBA). Prefill ~99K tokens 984.2 / 982.0 -> 1003.9 / 1015.4 t/s (+2.6%); ~202K tokens 847.9 / 846.7 -> 888.1 / 902.8 t/s (+5.6%); complete separation at both depths. Decode time per step unchanged (16.7 - 16.8 ms at ~99K, 21.9 - 22.1 ms at ~202K; t/s differs with the generated text). test-backend-ops LIGHTNING_INDEXER vs CPU 192/192 on ROCm0-3 with the tile off and on; activation marker present with the tile on only. Fidelity at a 99.3K-token fill: tile off vs on top-1 22/24, TV mean 0.086, max 0.421; repeat identical; no-MTP fill 1251.9 / 1252.8 vs 1201.9 t/s (+4.2%). Promoted to validated-enhancements, on by default; experiment indexer-tile removed. Round status: VALIDATED 1334 (sparse attention, default on), 1332 (ub 1024 + chunk), 1335 (tiled indexer). REJECTED PGC16, provider switch, half-width wire. RUNNING PGC14 RCCL protocol screen (queue-rccl-screen.sh b11402, five settings at ~99K). PENDING idle-time attribution, PGC15 phase 1, QFP26, QFP24, QFP25 adapter then independent op.
+
 ## Change Log
 
 - 2026-10-04T07:22:34.987044+00:00 (created-by): Created by agent
@@ -132,6 +134,7 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 - 2026-10-05: Deepened QFP17 around QSA-only query tiling and added independent HIP qualification of upstream #29901.
 
 ## Ledger-events
+
 
 - chg_20261004_161454_found-what-limits-the-larger-p_4462
 - 2026-10-04T16:14:57.881449+00:00 (updated-by): Updated: section:ledger-events
@@ -147,6 +150,7 @@ Consequences for ordering: (a) all-reduce is the largest block up to ~100K (abou
 
 - chg_20261005_215129_flash-next-long-context-prefil_7176
 
+- chg_20261006_025034_flash-next-long-context-prefil_2308
 ## Plan Review - 2026-10-05 prefill round
 
 Scope: b11402 `d89651a7b205`, Brutus 3-rank Meta split `0.31,0.27,0.42`, attention/KV on the two XTX, f16 KV, ub512. Shared-branch note: while this review was running, patch `1334_hip_sparse_flash_attn` landed behind `BIGCHERRY_FA_SPARSE=1`; treat QFP25 as an implementation-ready hardware-proof item, not a future design project. MTP look-ahead is out of scope.
@@ -231,3 +235,5 @@ Long-context per-unit-effort execution order after the provider diagnostic: **13
 - 2026-10-05T21:51:33.037255+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T21:59:38.345579+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T22:40:25.730438+00:00 (updated-by): Updated: section:notes
+- 2026-10-06T02:50:27.078366+00:00 (updated-by): Updated: section:notes
+- 2026-10-06T02:50:38.473961+00:00 (updated-by): Updated: section:ledger-events
