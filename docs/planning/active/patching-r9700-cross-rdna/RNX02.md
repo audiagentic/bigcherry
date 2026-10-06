@@ -142,3 +142,35 @@ For the QSA/indexer path, map graph construction in `src/models/qwen4exp.cpp` to
 - 2026-10-03T08:42:51.875082+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261003_104706_faster-long-context-decoding-f_1057
 - 2026-10-03T10:47:17.743572+00:00 (updated-by): Updated: section:ledger-events
+
+
+## 2026-10-07 optimisation audit — quantized-KV vector attention ownership
+
+### Disposition
+
+Patch 1298 already falsified the broad "keep MTP verify on the Q8 vector kernel" hypothesis: at ~30K cached with MTP3 it measured 58.9 ms/step versus 56.1/54.3 ms baseline (~6% slower). The cause recorded in 1298 is structural: the vector path lacks GQA sharing and re-reads quantized KV for verify columns, while the tile path amortizes one conversion/read across the GQA group. Do not revive a Q>2 selector override without new kernel-level evidence.
+
+Patch 1300 is a narrower n_tokens=1 experiment and remains untested. Its next gate must not be a selector-only A/B. Current upstream RDNA4 evidence (llama.cpp issue #27796, 2026-08-27) measured Q8_0 KV slower than F16 at D=256 and found the quantized vector kernel uses a flat `nthreads_KQ_q = 2`; the issue explicitly labels under-parallelization as a hypothesis, not a proven cause. That mechanism is directly testable on BigCherry and is upstream to 1300's selector decision.
+
+### Ownership and implementation gate
+
+RNX02 remains the sole owner of D=256 Q8 decode-attention extraction. Do not add a second FA dispatcher or KV staging mechanism. Reuse `ggml_cuda_get_best_fattn_kernel()`, the existing Q8 vector specialization in `fattn-vec.cuh`, and existing rocprof/patch-hit telemetry.
+
+Before spending a production E2E lane on 1300:
+
+1. On gfx1100 and gfx1201, profile the existing n=1 Q8_0/D=256 vector path at context depths 8K, 32K, 80K and >=160K where memory permits. Record vector-kernel time, achieved bandwidth, occupancy/VGPRs, and bytes implied by KV geometry.
+2. Run a disposable compile-time sweep of only `nthreads_KQ_q` values supported by the current vector template (baseline 2 plus the next legal values). Do not retain a runtime knob unless at least two production shapes require different winners.
+3. Require backend-reference/greedy parity for every candidate and unchanged work accounting. Reject any apparent speedup that reduces attended KV rows/heads.
+4. Continue with 1300 selector qualification only if the best legal vector tuning improves n=1 Q8 attention kernel time by >=5% on either gfx1100 or gfx1201 and does not regress the other architecture by >2%, or if profiling proves the competing tile path pays >=3% of decode wall in avoidable Q8->F16 staging.
+5. If neither condition holds, retire 1300 and close the dense-attention half of RNX02. Keep QSA/1301 separate as already specified.
+6. If the gate passes, run same-binary ABBA at 8K/80K/160K with MTP disabled first, then MTP enabled only to verify that n=1 target decode and multi-query verify retain their independently selected kernels. Promotion requires >=1% E2E decode gain and no MTP acceptance regression.
+
+### Consolidation
+
+1298 and 1300 are not two permanent mechanisms: 1298 is rejected evidence for Q>2; 1300 is only a bounded selector experiment for n=1. Any useful `nthreads_KQ_q` result belongs in the existing upstream vector-kernel tuning seam, not in a new scheduler/cache/dispatch table. If the sweep wins, fold the architecture/shape choice into RNX02's existing FA ownership and retire the experiment knob after qualification.
+
+### External evidence classification
+
+- **Measured upstream evidence:** llama.cpp #27796 reports gfx1201 Qwen3.6-27B D=256 at d16384: F16 23.44 t/s, Q8_0 22.43 t/s (-4%), Q4_0 18.56 t/s (-21%). This is useful RDNA4 mechanism evidence, not a BigCherry benchmark.
+- **Upstream hypothesis:** flat `nthreads_KQ_q = 2` may under-parallelize quantized KV dequantization. Treat only the sweep/profiler result as causal evidence.
+- **Measured BigCherry evidence:** 1298 MTP3 vector override was ~6% slower at ~30K and is rejected.
