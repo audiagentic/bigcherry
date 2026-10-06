@@ -173,6 +173,16 @@ External scan: llama.cpp PR #29918 (`--cache-reuse-hybrid`) demonstrates a relat
 
 2026-10-05 re-run on pin b11402 (build b-ahead-b11402 = deploy-v6-plus-ahead incl. 1333; queue-ahead-screen.sh): BROKEN at run time with BIGCHERRY_MTP_AHEAD=1 - llama-server aborts in llama_context::output_reserve, llama-context.cpp:2321 GGML_ASSERT(n_outputs_max <= cparams.n_outputs_max), reached from server_context_impl::decode (24K, first look-ahead arm; run /mnt/data/bigcherry-work/runs/ahead-b11402-d24576-r1/new/timing.server.log). The same binary with look-ahead off is normal (42.2 / 42.3 ms/step, 173/242 and 176/233). 1321 + 1322 still apply and compose cleanly (37/37), so the pin-bump tooling could not see this; it worked on pin 0504396. Upstream sizes each context's output buffer from the speculative depth (server_output_limits -> common_speculative_get_output_limits; draft context n_outputs_max = n_parallel in common/speculative.cpp), and the look-ahead path requests more output rows than that. Not yet determined: which context trips it (target verify of a promoted front, or the drafter's forced-front + tail decode) and which upstream commit introduced or tightened the limit. Fix belongs in the patch that owns the behaviour (1322 enables look-ahead; raise the relevant limit when BIGCHERRY_MTP_AHEAD is on). Production is unaffected: both patches are experimental and off by default. Steps 2-5 of the schedule above are blocked on this.
 
+### 2026-10-06 upstream scheduler-lifetime gate
+
+Before further FMTP03 hardware work, repair 1322's b11402 `n_outputs_max` failure, then qualify against upstream llama.cpp #27311's scheduler input ring/sanitizer and #30017/#30020 NextN topology/reservation handling. Do not add a BigCherry-private input/output ring, scheduler sanitizer, graph-shape cache, or ad-hoc reserve path.
+
+Run `GGML_SCHED_SANITIZE=1` and `GGML_SCHED_DEBUG_REALLOC=1` with ahead off/on for single request, repeated same-process requests, `-np 2+`, and a prompt forcing multiple internal ubatches. Require zero scheduler races, no unexpected warm reallocation after the documented reserve transition, greedy identity, and unchanged MTP acceptance versus the corresponding control. Record expected/observed NextN rows and every host readback/copy before graph reuse.
+
+#27311 explicitly rings graph inputs but not outputs: if a residual race remains, classify it first as graph-input reuse, output/readback reuse, or mutable MTP-KV state and extend the existing primitive at that ownership boundary. #26827's per-ubatch MTP synchronization is a correctness baseline for mutable-KV ordering, not an FMTP overlap optimization; do not replace the bounded overlap with a scheduler-wide synchronize.
+
+Only after correctness passes, re-run 24K/80K overlap qualification. If upstream lifetime/topology handling is clean but effective throughput remains neutral because promoted-front acceptance stays lower, close the overlap experiment rather than adding another scheduler/lifetime mechanism.
+
 ## Change Log
 
 - 2026-10-04T06:32:25.863452+00:00: Added initial same-thread overlap design.
