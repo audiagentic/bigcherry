@@ -557,6 +557,10 @@ patches = ["1331_alloc_peak_live"]
 # MET04: production set + 1339 (BIGCHERRY_META_MEM=1: per-device size of every tensor-split buffer).
 patches = ["1339_meta_memory_report"]
 
+[experiment.meta-memory]
+# MSM02/MSM03 qualification: measurement + per-device compute arena + cache_idx subset mirror.
+patches = ["1339_meta_memory_report", "1340_meta_per_device_arena", "1341_meta_subset_mirrored"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
