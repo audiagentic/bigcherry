@@ -553,6 +553,11 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
+[experiment.moe-cache-profile]
+# MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
+# through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
+patches = ["1337_moe_expert_caching", "1338_moe_cache_profile"]
+
 [experiment.moe-expert-cache]
 # MET01: production set + 1336 + 1337 (upstream #29887 GPU cache for host-resident MoE experts, --moe-cache-mib N).
 patches = ["1337_moe_expert_caching"]

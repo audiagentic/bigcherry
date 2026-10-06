@@ -1,0 +1,17 @@
+schema = 1
+id = "1338_moe_cache_profile"
+order = 1338
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["MET01"]
+requires = ["0910_feature_sets", "1337_moe_expert_caching"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["optimization"]
