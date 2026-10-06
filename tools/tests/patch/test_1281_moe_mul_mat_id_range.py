@@ -74,6 +74,10 @@ class Patch1281Mechanics(unittest.TestCase):
             self.assertLess(cpu.index("memset(dst->data, 0, ggml_nbytes(dst));"), cpu.index("    ggml_barrier(params->threadpool);\n\n    for (int cur_a = 0; cur_a < n_as; ++cur_a) {"))
             # the ordinary op keeps its range assertion
             self.assertIn("                assert(i02 >= 0 && i02 < n_as);\n", group)
+            # the repacked-weights CPU path groups rows itself and gets the same translation
+            repack = read("ggml/src/ggml-cpu/repack.cpp")
+            self.assertEqual(repack.count("const int64_t bc_local = (int64_t) i02 - (int64_t) bc_id_base;"), 1)
+            self.assertLess(repack.index("memset(dst->data, 0, ggml_nbytes(dst));"), repack.index("const int64_t bc_local"))
             # phase A: the GPU backend refuses the variant
             refuse = cuda.index("if (ggml_mul_mat_id_is_range(op)) {")
             self.assertIn("return false;", cuda[refuse:refuse + 330])

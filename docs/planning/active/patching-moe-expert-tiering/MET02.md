@@ -19,6 +19,51 @@ Generic ggml primitive: `ggml_mul_mat_id_range(ctx, weights[K,M,n_local], act, i
 
 This item owns range semantics and the optional compact active-lane representation only. MET01 owns placement/profile policy, MET03 owns tier graph/CPU-tail execution, MET04 owns cache-vs-EP policy, MET05 owns auxiliary-device execution, and MET06 owns compact expert materialisation. Do not create a second router, cache, placement table, expert store or scheduler.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+Planned patch root: `patches/1281_moe_mul_mat_id_range/` only after Phase A reference design is validated. Composed-tree targets are `ggml/include/ggml.h`, `ggml/src/ggml.c`, `ggml/src/ggml-cpu/ops.cpp`, current `ggml/src/ggml-cuda/` MMID/MMQ/MMVQ grouping helpers, existing HIP-autotune keys, and backend-op/tier integration tests.
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- CPU/reference Phase A exists and passes before GPU optimisation work begins.
+- Range semantics pass the full correctness matrix on CPU, gfx1100 and gfx1201; gfx1030 has reference/correctness coverage.
+- Ordinary `MUL_MAT_ID` has no material pp/tg regression.
+- No OOB/guard failure on partial MMQ tiles; native MMQ J/scratch ownership is reused.
+- Sparse compaction satisfies the promotion gate with expected-versus-observed active-work accounting.
+- HIP autotune owns any sparse/dense crossover; no second dispatch registry, router, cache, placement layer or scheduler is introduced.
+
+## Notes
+
+2026-10-05: implementation audit found 1281 is not yet present on the live branch. Converted the item to a three-phase semantic-first plan and bounded compact dispatch behind correctness/work-accounting gates. External grouped-expert implementations are mechanism evidence only; no CUDA/NVLink transport assumptions transfer to BigCherry AMD hardware.
+
+References: https://github.com/ggml-org/llama.cpp/issues/21948 ; https://github.com/ggml-org/llama.cpp/issues/27792 ; https://github.com/ggml-org/llama.cpp/pull/29911 ; https://github.com/ggml-org/llama.cpp/pull/29963 ; vLLM MoonEP/DeepEP grouped-expert paths.
+
+2026-10-06 PHASE A AUTHORED (owner direction: expert parallelism is a worthy goal for higher-quant testing, so the MET02 -> MET03 -> MET04 chain is started). patches/1281_moe_mul_mat_id_range (state untested, experiment moe-range). ggml_mul_mat_id_range(ctx, as, b, ids, id_base) = ggml_mul_mat_id plus op params i32[6] = marker 0x52414E47 and i32[7] = id_base (0..3 are used by precision / hints); accessors ggml_mul_mat_id_is_range / ggml_mul_mat_id_range_base. CPU: in the row grouping of ggml_compute_forward_mul_mat_id the id is widened to int64, the base subtracted, out-of-range ids skipped before any grouping or weight indexing; the whole dst is cleared on thread 0 before the barrier so an inactive lane is an exact +0. The ordinary op keeps its assertion and its path. HIP/CUDA supports_op refuses the variant (phase A: no global id may reach a GPU kernel). New test program tests/test-mul-mat-id-range.cpp (built by llama_build_and_test): bit-for-bit comparison with the ordinary op on hand-translated ids and +0 on inactive lanes, for id_base {0, 1, 7, INT32_MAX-3}, n_local {1, 2, 4}, all-active / all-inactive / mixed-with-boundaries, 1 / 3 / 40 tokens, 1 / 4 threads, F32 and Q8_0. n_local = 0 is not representable as a tensor and is not tested. Offline mechanics tests pass; applies on the pin and on the production-patched tree. GPT REVIEW req_61670b6161b94b09 (focused, five questions): op params 6/7 free at b11402 and preserved by the generic op_params memcpy - yes; memset before the barrier race-free - yes; supports_op refusal sufficient to keep it off the GPU (assignment, offload and fusion all pass through supports_op) - yes; exact +0 by memset appropriate - yes; OTHER ID READERS - two real hits: (a) the scheduler's selective expert copy asserts id < n_expert (in this tree that code is llama_context::sched_copy_experts once 1336 is applied) - not reachable in phase A because the op never lands on a GPU split, MUST be translated in phase B; (b) ggml-cpu/repack.cpp tensor_traits::forward_mul_mat_id groups rows from the ids itself for weights repacked at load - FIXED in the patch with the same translation and pre-barrier clear (edit mmid-range-cpu-repack). Limitation: the standalone test builds its weights in a plain context, so it exercises the generic CPU path, not the repacked one; a repack-buffer case is to be added with phase B. Build + reference test queued on Brutus (queue-moe-range.sh b11402j; that build predates the repack edit and will be rebuilt).
+
 ## 2026-10-05 implementation audit
 
 Repository fact: no `patches/1281_moe_mul_mat_id_range/` implementation exists on the current live branch; this is still a design item. Therefore the first deliverable must be a correctness-only CPU/reference implementation plus backend-op tests, not a speculative HIP compaction kernel.
@@ -127,28 +172,10 @@ Physical plausibility: measured active expert rows must equal routing-derived ex
 
 MET01 supplies placement/range ownership. MET03 consumes this primitive for tier graphs. MET04/MET05/MET06 must not introduce alternative range semantics. #29963's host-RAM pipeline parallelism is a separate whole-layer/scheduler mechanism and does not replace expert-range semantics; if it wins the target workload without expert tiering, MET03 may become unnecessary, but 1281 should not absorb its scheduler/event machinery.
 
-## Files
-
-Planned patch root: `patches/1281_moe_mul_mat_id_range/` only after Phase A reference design is validated. Composed-tree targets are `ggml/include/ggml.h`, `ggml/src/ggml.c`, `ggml/src/ggml-cpu/ops.cpp`, current `ggml/src/ggml-cuda/` MMID/MMQ/MMVQ grouping helpers, existing HIP-autotune keys, and backend-op/tier integration tests.
-
-## Acceptance Criteria
-
-- CPU/reference Phase A exists and passes before GPU optimisation work begins.
-- Range semantics pass the full correctness matrix on CPU, gfx1100 and gfx1201; gfx1030 has reference/correctness coverage.
-- Ordinary `MUL_MAT_ID` has no material pp/tg regression.
-- No OOB/guard failure on partial MMQ tiles; native MMQ J/scratch ownership is reused.
-- Sparse compaction satisfies the promotion gate with expected-versus-observed active-work accounting.
-- HIP autotune owns any sparse/dense crossover; no second dispatch registry, router, cache, placement layer or scheduler is introduced.
-
-## Notes
-
-2026-10-05: implementation audit found 1281 is not yet present on the live branch. Converted the item to a three-phase semantic-first plan and bounded compact dispatch behind correctness/work-accounting gates. External grouped-expert implementations are mechanism evidence only; no CUDA/NVLink transport assumptions transfer to BigCherry AMD hardware.
-
-References: https://github.com/ggml-org/llama.cpp/issues/21948 ; https://github.com/ggml-org/llama.cpp/issues/27792 ; https://github.com/ggml-org/llama.cpp/pull/29911 ; https://github.com/ggml-org/llama.cpp/pull/29963 ; vLLM MoonEP/DeepEP grouped-expert paths.
-
 ## Change Log
 
 - 2026-10-02T04:44:50.160922+00:00 (created-by): Created by agent
 - 2026-10-05: BCOP15 audit backfill added compact-dispatch gate.
 - 2026-10-05: Transplanted structured sparse-range dispatch, MMQ safety, precision, validation and ownership details from `automation-qfp-indexer-20261004`.
 - 2026-10-05: Deep audit made implementation sequencing semantic-first, added exact ownership/lifetime/work-accounting gates and bounded compaction against current upstream/fork mechanisms.
+- 2026-10-06T01:25:53.938882+00:00 (updated-by): Updated: section:notes

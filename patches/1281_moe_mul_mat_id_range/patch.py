@@ -9,7 +9,8 @@ parallelism (MET04) are built from: every device computes the experts it holds a
 The variant is a flag plus the signed base in the op params of the ordinary op (indices 6 and 7; 0..3 are taken by
 precision and hints). ggml_mul_mat_id is unchanged, and an op without the flag takes the identical path everywhere.
 
-Phase A scope (MET02): the constructor, two accessors, the CPU implementation, and a reference test program. The
+Phase A scope (MET02): the constructor, two accessors, both CPU implementations (the generic one and the one for
+weights repacked at load, ggml-cpu/repack.cpp), and a reference test program. The
 HIP backend REFUSES the range variant in supports_op, so the scheduler runs it on the CPU: no global id can reach a GPU
 kernel before phase B gives the GPU its own translation. No translated-ids tensor is materialised and nothing is
 allocated per call.
@@ -135,6 +136,49 @@ _N_CPU_GROUP = (
     "\n"
     "                MMID_MATRIX_ROW(i02, matrix_row_counts[i02]) = (struct mmid_row_mapping) {id, iid1};\n"
     "                matrix_row_counts[i02] += 1;\n"
+)
+
+# The CPU backend has a second MUL_MAT_ID implementation for weights it repacked at load (ggml-cpu/repack.cpp,
+# tensor_traits::forward_mul_mat_id). It groups rows from the ids itself, so it needs the same translation.
+_A_REPACK = (
+    "            // initialize matrix_row_counts\n"
+    "            memset(matrix_row_counts, 0, n_as * sizeof(int64_t));\n"
+    "\n"
+    "            // group rows by src0 matrix\n"
+    "            for (int32_t iid1 = 0; iid1 < ids->ne[1]; ++iid1) {\n"
+    "                for (int32_t id = 0; id < n_ids; ++id) {\n"
+    "                    const int32_t i02 =\n"
+    "                        *(const int32_t *) ((const char *) ids->data + iid1 * ids->nb[1] + id * ids->nb[0]);\n"
+    "\n"
+    "                    GGML_ASSERT(i02 >= 0 && i02 < n_as);\n"
+)
+_N_REPACK = (
+    "            // initialize matrix_row_counts\n"
+    "            memset(matrix_row_counts, 0, n_as * sizeof(int64_t));\n"
+    "\n"
+    "            // BigCherry 1281: range variant - ids are global, src0 holds the experts [bc_id_base, bc_id_base + n_as);\n"
+    "            // a lane whose expert is not held here is an exact +0 (cleared before the barrier below)\n"
+    "            const bool    bc_range   = ggml_mul_mat_id_is_range(op);\n"
+    "            const int32_t bc_id_base = ggml_mul_mat_id_range_base(op);\n"
+    "            if (bc_range) {\n"
+    "                memset(dst->data, 0, ggml_nbytes(dst));\n"
+    "            }\n"
+    "\n"
+    "            // group rows by src0 matrix\n"
+    "            for (int32_t iid1 = 0; iid1 < ids->ne[1]; ++iid1) {\n"
+    "                for (int32_t id = 0; id < n_ids; ++id) {\n"
+    "                    int32_t i02 =\n"
+    "                        *(const int32_t *) ((const char *) ids->data + iid1 * ids->nb[1] + id * ids->nb[0]);\n"
+    "\n"
+    "                    if (bc_range) {\n"
+    "                        const int64_t bc_local = (int64_t) i02 - (int64_t) bc_id_base;\n"
+    "                        if (bc_local < 0 || bc_local >= n_as) {\n"
+    "                            continue; // not held here: no row is grouped, no weight is indexed\n"
+    "                        }\n"
+    "                        i02 = (int32_t) bc_local;\n"
+    "                    }\n"
+    "\n"
+    "                    GGML_ASSERT(i02 >= 0 && i02 < n_as);\n"
 )
 
 _A_CUDA = (
@@ -338,6 +382,17 @@ PATCHES = [
                  guard=r"const int64_t bc_local = \(int64_t\) i02 - \(int64_t\) bc_id_base;",
                  rationale="The row grouping, the one place that interprets expert ids on the CPU.", expect_matches=1,
                  max_span_lines=13),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cpu/repack.cpp",
+        description="1281: the repacked-weights CPU MUL_MAT_ID translates global ids the same way",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-cpu-repack", anchor=_re.escape(_A_REPACK), mode="replace", text=_N_REPACK,
+                 guard=r"const bool    bc_range   = ggml_mul_mat_id_is_range\(op\);",
+                 rationale="tensor_traits::forward_mul_mat_id row grouping (found by review req_61670b6161b94b09).",
+                 expect_matches=1, max_span_lines=11),
         ),
     ),
     FilePatch(
