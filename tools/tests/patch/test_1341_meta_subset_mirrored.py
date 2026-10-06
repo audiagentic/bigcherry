@@ -109,7 +109,7 @@ class Patch1341Mechanics(unittest.TestCase):
             meta = (root / _META).read_text(encoding="utf-8")
             model = (root / _MODEL).read_text(encoding="utf-8")
             backend = (root / _BACKEND).read_text(encoding="utf-8")
-            self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)", meta)
             self.assertIn("uint32_t active_mask", (root / _H).read_text(encoding="utf-8"))
             self.assertIn("BIGCHERRY_META_MEM arena dev=%zu", meta)
             self.assertIn("BIGCHERRY_META_SUBSET_MIRROR", model)
