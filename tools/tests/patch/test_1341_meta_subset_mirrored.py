@@ -82,7 +82,7 @@ class Patch1341Mechanics(unittest.TestCase):
             self.assertIn("const size_t split_rotation =", model)
             # MSM03 step 2: the attention mask graph input follows the attention devices (behind its own flag)
             self.assertIn("static uint32_t bc_meta_attn_input_mask = 0;", meta)
-            self.assertIn('strstr(tensor->name, "attn_inp_kq_mask") != nullptr', meta)
+            self.assertIn('strstr(tensor->name, "kq_mask") != nullptr', meta)
             self.assertLess(meta.index("static uint32_t bc_meta_attn_input_mask = 0;"), meta.index("split_state.active_mask = bc_meta_attn_input_mask;"))
             self.assertIn("BIGCHERRY_META_SUBSET_MIRROR_INPUTS", model)
             self.assertLess(model.index('extern "C" void ggml_backend_meta_set_attn_input_mask(uint32_t active_mask);'), model.index("ggml_backend_meta_set_attn_input_mask(split_state.active_mask);"))
