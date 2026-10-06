@@ -618,6 +618,23 @@ static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case 
     }
     const double nmse = ref > 0.0 ? err / ref : 0.0;
     const bool ok = nan == 0 && nonzero_inactive == 0 && nmse < 5e-4;
+
+    if (!ok && getenv("MMID_RANGE_CONTROL") != nullptr) {
+        // control: the ORDINARY op on the same device with the hand-translated ids (inactive lanes use expert 0).
+        // If this is also far from the CPU on the active lanes, the failure is not in the range translation.
+        const std::vector<float> ctl = compute_on(gpu, c, /*range =*/ false, w, x, local, n_in, n_out);
+        double cerr = 0.0, cref = 0.0;
+        for (size_t lane = 0; lane < global.size(); lane++) {
+            if (!active[lane]) continue;
+            for (int i = 0; i < n_out; i++) {
+                const float e = want[lane * n_out + i], g = ctl[lane * n_out + i];
+                cerr += (double) (g - e) * (g - e);
+                cref += (double) e * e;
+            }
+        }
+        printf("ctrl %s type=%s tokens=%d used=%d n_local=%d pattern=%d ordinary-op nmse=%.2e\n", ggml_backend_name(gpu),
+               ggml_type_name(c.type), c.n_tokens, c.n_used, c.n_local, c.pattern, cref > 0.0 ? cerr / cref : 0.0);
+    }
     printf("%s %s type=%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d active=%d/%zu nmse=%.2e nonzero_inactive=%" PRId64 " nan=%" PRId64 "\n",
            ok ? "ok  " : "FAIL", ggml_backend_name(gpu), ggml_type_name(c.type), c.id_base, c.n_local, c.n_used, c.n_tokens,
            c.pattern, n_active, global.size(), nmse, nonzero_inactive, nan);
