@@ -1084,7 +1084,7 @@ PATCHES = [
             Edit(id="mmid-range-q8-template", anchor=_re.escape(_A_Q8_TEMPLATE), mode="replace", text=_N_Q8_TEMPLATE,
                  guard=r"BigCherry 1281 \(QFP30\): range_scatter is compile-time-only",
                  rationale="Add a compile-time-only range scatter variant; ordinary two-argument instantiations default false.",
-                 expect_matches=1, max_span_lines=2),
+                 expect_matches=1, max_span_lines=3),
             Edit(id="mmid-range-q8-sentinel", anchor=_re.escape(_A_Q8_SENTINEL), mode="replace", text=_N_Q8_SENTINEL,
                  guard=r"BigCherry 1281 \(QFP30\): -1 is the only inactive range inverse-map sentinel",
                  rationale="Only the range specialization skips -1; every other value keeps the ordinary indexing path.",
