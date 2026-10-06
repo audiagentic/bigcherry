@@ -84,10 +84,15 @@ if [ "${ARMS:-copy}" = hop ]; then
   exps() { echo "blk\\.($(seq -s'|' $((48 - $1)) 47))\\.ffn_(gate|up|down)_exps\\.weight=ROCm2"; }
   run T BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
   for n in ${HOP_LAYERS:-28 14}; do
-    run L$n BIGCHERRY_FEATURES=flashnext -- -dev ROCm0,ROCm1,ROCm2 -sm layer -ts 1,1,0 -ot "$(exps $n)"
+    # the layers that keep their experts (the first 48 - n) are ~1 GB each, the rest are light: give each XTX half
+    # of the heavy ones (an even 24 / 24 layer split put all of them on the first card and ran out of memory)
+    h=$(( (48 - n) / 2 ))
+    run L$n BIGCHERRY_FEATURES=flashnext -- -dev ROCm0,ROCm1,ROCm2 -sm layer -ts $h,$((48 - h)),0 -ot "$(exps $n)"
   done
   run T2 BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
-elif [ "${ARMS:-copy}" = cache ]; then  # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
+elif [ "${ARMS:-copy}" = ub ]; then   # host-expert prefill against the micro-batch size: one expert upload per ubatch
+  for ub in ${UB_LIST:-512 1024 2048 4096}; do run U$ub -- -ub $ub -b $ub; done
+elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
   run C0b
