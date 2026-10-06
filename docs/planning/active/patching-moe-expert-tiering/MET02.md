@@ -187,6 +187,9 @@ MET01 supplies placement/range ownership. MET03 consumes this primitive for tier
 
 ## Ledger-events
 
+
 - chg_20261006_025038_groundwork-for-running-moe-mod_5459
 - 2026-10-06T02:50:45.468950+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T04:14:18.031411+00:00 (updated-by): Updated: section:notes
+- chg_20261006_061542_experimental-expert-parallel-t_6967
+- 2026-10-06T06:15:46.589711+00:00 (updated-by): Updated: section:ledger-events
