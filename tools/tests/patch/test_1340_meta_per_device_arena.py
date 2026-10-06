@@ -75,7 +75,7 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph)", meta)
             # zero-sized slices are external whether deferred (no buffer) or static (dummy buffer, no data)
             self.assertIn("if (ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {", meta)
-            self.assertIn("GGML_ASSERT(ret->buffer != nullptr || (ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);", meta)
+            self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", meta)
             self.assertIn("ret->data = t->data; // Meta's fake logical address: allocator sentinel only", meta)
             self.assertIn("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f", meta)
             self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin", meta)
@@ -139,7 +139,7 @@ class Patch1340Mechanics(unittest.TestCase):
             helper = meta[meta.index("bool ggml_backend_meta_alloc_graph("):
                           len(meta)]
             self.assertIn("ggml_nelements(ret) == 0", helper)
-            self.assertIn("GGML_ASSERT(ret->buffer != nullptr || (ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
+            self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
             self.assertIn("ret->data = t->data;", helper)
             self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve("))
 
