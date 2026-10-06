@@ -66,7 +66,10 @@ Depends on MSM01 for measurement; independent of MSM02 but the saving on the com
 
 ## Ledger-events
 
+
 - chg_20261006_144829_flash-next-uses-about-14-gb-l_2832
 - 2026-10-06T14:48:32.643443+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T14:48:46.318179+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T19:37:35.322131+00:00 (updated-by): Updated: section:notes
+- chg_20261006_215029_opt-in-the-context-sized-atte_9948
+- 2026-10-06T21:50:32.670711+00:00 (updated-by): Updated: section:ledger-events
