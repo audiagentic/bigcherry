@@ -392,7 +392,8 @@ void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph) {
 
 _A_GALLOCR_NEEDS = r"""static bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
 """
-_N_GALLOCR_NEEDS = r"""bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
+_N_GALLOCR_NEEDS = r"""// BigCherry 1340 (MSM02): no longer static - the Meta backend times validation apart from binding
+bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
 """
 
 
@@ -606,7 +607,7 @@ PATCHES = [
         language="none",
         edits=(
             Edit(id="meta-arena-gallocr-needs-realloc", anchor=_re.escape(_A_GALLOCR_NEEDS), mode="replace", text=_N_GALLOCR_NEEDS,
-                 guard=r"bool ggml_gallocr_needs_realloc\(",
+                 guard=r"BigCherry 1340 \(MSM02\): no longer static",
                  rationale="Existing read-only predicate; Meta needs to time validation/reserve separately from bind.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="meta-arena-gallocr-fast-bind", anchor=_re.escape(_A_GALLOCR_ALLOC), mode="replace", text=_N_GALLOCR_ALLOC,

@@ -114,6 +114,10 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph)",
                           (root / _ALLOC).read_text(encoding="utf-8"))
             alloc_src = (root / _ALLOC).read_text(encoding="utf-8")
+            # the definition must lose its `static` (a guard that matched the original text once skipped this edit
+            # and the build failed: static declaration follows non-static declaration)
+            self.assertNotIn("static bool ggml_gallocr_needs_realloc(", alloc_src)
+            self.assertEqual(alloc_src.count("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {"), 1)
             alloc_hdr = (root / _ALLOC_H).read_text(encoding="utf-8")
             self.assertIn("GGML_API bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
             self.assertIn("GGML_API bool ggml_gallocr_alloc_graph_reuse(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
