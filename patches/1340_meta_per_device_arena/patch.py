@@ -168,7 +168,8 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                     // weight / KV slices): alloc_buffer_n gives them a dummy buffer but no data, and the gallocr
                     // treats data == NULL as "allocate me", which asserts on the buffer that is already set
                     // (ggml_backend_tensor_alloc: GGML_ASSERT(tensor->buffer == NULL), seen on the R9700).
-                    GGML_ASSERT(ret->buffer != nullptr || (ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);
+                    // Zero-sized COMPUTE nodes exist as well (attention-side nodes on a device with no attention
+                    // share; an assertion that they do not fired on the R9700): nothing is written to them.
                     GGML_ASSERT(t->data != nullptr);
                     ret->data = t->data; // Meta's fake logical address: allocator sentinel only, never dereferenced.
                 }

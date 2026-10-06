@@ -55,7 +55,8 @@ for d in "$R/$N"/*/; do
       else if (first ~ /^cache_/) cls = "KV cache"
       else if (first ~ /^blk\.|^token|^output|^per_layer/) cls = "weights"
       else cls = "other static (" first ")"
-      s[cls, dev] += size; seen[cls] = 1; if (dev > maxdev) maxdev = dev }
+      if (kind == "compute") { if (size > s[cls, dev]) s[cls, dev] = size } else s[cls, dev] += size   # arenas are re-reported per reserve: keep the largest
+      seen[cls] = 1; if (dev > maxdev) maxdev = dev }
     END { for (c in seen) { printf "  %-34s", c; for (d = 0; d <= maxdev; d++) printf " dev%d %9.1f", d, s[c, d]; printf "\n" } }' | sort
 done
 echo ALL_RUNS_DONE
