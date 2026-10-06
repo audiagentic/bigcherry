@@ -858,7 +858,7 @@ PATCHES = [
                  guard=r"range MUL_MAT_ID in a fused launch \(0 = ordinary\)", rationale="End of ggml_cuda_mm_fusion_args_host.",
                  expect_matches=1, max_span_lines=5),
             Edit(id="mmid-range-fusion-args", anchor=_re.escape(_A_FUSION_ARGS), mode="replace", text=_N_FUSION_ARGS,
-                 guard=r"int64_t id_count = 0;", rationale="Last field of ggml_cuda_mm_fusion_args_device.",
+                 guard=r"BigCherry 1281: range MUL_MAT_ID - src0 holds the experts", rationale="Last field of ggml_cuda_mm_fusion_args_device.",
                  expect_matches=1, max_span_lines=2),
         ),
     ),

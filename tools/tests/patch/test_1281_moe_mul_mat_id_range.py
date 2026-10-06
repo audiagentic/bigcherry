@@ -85,6 +85,9 @@ class Patch1281Mechanics(unittest.TestCase):
             policy = cuda.index("static bool bc_cuda_mul_mat_id_range_supported(")
             self.assertLess(policy, cuda.index("static bool ggml_cuda_mul_mat_id_needs_sync("))
             self.assertLess(policy, refuse)
+            # both fusion argument structs (host and device) carry the range; a guard collision once dropped one
+            common = read("ggml/src/ggml-cuda/common.cuh")
+            self.assertEqual(common.count("    int32_t id_base = 0;\n    int64_t id_count = 0;\n"), 2)
             # range nodes are never fused; the kernels translate and skip, the hosts clear dst first
             self.assertIn("ggml_mul_mat_id_is_range(ffn_up) || ggml_mul_mat_id_is_range(ffn_gate)", cuda)
             mmvq, mmvf, mmq, mmid = (read("ggml/src/ggml-cuda/" + f) for f in ("mmvq.cu", "mmvf.cu", "mmq.cu", "mmid.cu"))
