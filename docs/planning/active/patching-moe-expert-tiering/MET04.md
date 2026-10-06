@@ -141,6 +141,7 @@ MET01 now owns the remaining cache/residency question. Its next discriminator is
 
 ## Ledger-events
 
+
 - chg_20261006_025038_groundwork-for-running-moe-mod_5459
 - 2026-10-06T02:50:48.940076+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T03:34:37.269720+00:00 (updated-by): Updated: section:notes
@@ -153,3 +154,5 @@ MET01 now owns the remaining cache/residency question. Its next discriminator is
 - 2026-10-06T09:12:07.602725+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T10:54:01.904641+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T11:35:41.693673+00:00 (updated-by): Updated: section:notes
+- chg_20261006_144832_diagnostics-and-experimental-p_1077
+- 2026-10-06T14:48:42.860743+00:00 (updated-by): Updated: section:ledger-events
