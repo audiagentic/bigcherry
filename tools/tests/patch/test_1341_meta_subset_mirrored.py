@@ -18,6 +18,7 @@ _PIN = "d89651a7b205"
 _H = "ggml/include/ggml-backend.h"
 _META = "ggml/src/ggml-backend-meta.cpp"
 _MODEL = "src/llama-model.cpp"
+_BACKEND = "ggml/src/ggml-backend.cpp"
 
 
 def _load(name, path):
@@ -38,8 +39,10 @@ def _pinned(path):
 
 
 _P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
+_P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
+_P1340 = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
 _P = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
-_SRC = {path: _pinned(path) for path in (_H, _META, _MODEL)}
+_SRC = {path: _pinned(path) for path in (_H, _META, _MODEL, _BACKEND)}
 
 
 @unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
@@ -86,6 +89,26 @@ class Patch1341Mechanics(unittest.TestCase):
             again = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in again), [e.detail for r in again for e in r.failed])
             self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _SRC})
+
+    def test_meta_memory_experiment_composes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for src_path, text in _SRC.items():
+                (root / src_path).parent.mkdir(parents=True, exist_ok=True)
+                (root / src_path).write_text(text, encoding="utf-8", newline="\n")
+
+            for patch in (_P1303, _P1339, _P1340, _P):
+                res = apply_all(patch.PATCHES, root)
+                self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+
+            meta = (root / _META).read_text(encoding="utf-8")
+            model = (root / _MODEL).read_text(encoding="utf-8")
+            backend = (root / _BACKEND).read_text(encoding="utf-8")
+            self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("uint32_t active_mask", (root / _H).read_text(encoding="utf-8"))
+            self.assertIn("BIGCHERRY_META_MEM arena dev=%zu", meta)
+            self.assertIn("BIGCHERRY_META_SUBSET_MIRROR", model)
+            self.assertIn("failed to allocate per-device Meta arena", backend)
 
     def test_changed_seed_site_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
