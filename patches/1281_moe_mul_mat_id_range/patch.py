@@ -17,7 +17,7 @@ allocated per call.
 """
 import re as _re
 
-from bigcherry.patcher import Edit, EnvDoc, FilePatch
+from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
 STATE = "validated"
@@ -316,9 +316,8 @@ _N_MMQ_DEDUP = (
     "    const bool bc_range = ggml_mul_mat_id_is_range(dst);\n"
     "    // BigCherry 1281 (QFP30): a broadcast gate / up activation is quantised once per token and scattered to the\n"
     "    // compact rows of the experts held here, as upstream does for the ordinary op; a route that is not held keeps\n"
-    "    // the -1 the inverse map is filled with and gets no row. Qualification flag, default off.\n"
-    "    static const bool bc_range_dedup_on = getenv(\"BIGCHERRY_MOE_RANGE_DEDUP\") != nullptr && atoi(getenv(\"BIGCHERRY_MOE_RANGE_DEDUP\")) != 0;\n"
-    "    const bool bc_range_dedup = bc_range && bc_range_dedup_on && !use_native_fp4 && ne11 == 1 && n_expert_used > 1;\n"
+    "    // the -1 the inverse map is filled with and gets no row.\n"
+    "    const bool bc_range_dedup = bc_range && !use_native_fp4 && ne11 == 1 && n_expert_used > 1;\n"
     "    ggml_cuda_pool_alloc<int32_t> bc_ids_local(ctx.pool());\n"
     "    const int32_t * bc_ids = (const int32_t *) ids->data;\n"
     "    if (bc_range) {\n"
@@ -1202,9 +1201,4 @@ PATCHES = [
     ),
 ]
 
-ENV_DOCS = (
-    EnvDoc("BIGCHERRY_MOE_RANGE_DEDUP", "0|1", "0",
-           "range MUL_MAT_ID MMQ (expert split): quantise a broadcast gate / up activation once per token and scatter "
-           "it to the compact rows of the experts held on the device, as upstream does for the ordinary op; "
-           "qualification flag (QFP30), to be removed once bit-identity is confirmed"),
-)
+ENV_DOCS = ()
