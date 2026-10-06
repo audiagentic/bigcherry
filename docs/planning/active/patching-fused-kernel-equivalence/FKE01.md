@@ -53,6 +53,9 @@ Low risk (measurement and tests first). The op-level harness is the main work; p
 
 Owner question 2026-10-07: 'Should we validate the fused kernels against unfused'. Does not invalidate the promoted fusion patches' proofs (their evidence was taken with the path on); this adds an equivalence check that was never part of those proofs. Unblocks an identical-output gate for memory-layout changes (MSM02).
 
+2026-10-07 STEP 1, whole-set measurement (production Flash-Next, 3-GPU tensor split, ctx 49152, build b-metamem-b11402h2 with the 1340 flag off; ABBA, A = fusion on (production), B = GGML_CUDA_DISABLE_FUSION=1; run fke01-a). 8K depth: prefill 1072.2/1065.1 vs 1032.1/1026.7 (+4%); decode 86.3/85.9 vs 78.5/78.6 (+10%); acceptance 349/485, 348/488 vs 354/468. 24K depth: prefill 1073.5/1066.8 vs 1027.1/1028.2 (+4%); decode 76.4/76.7 vs 64.7/66.0 (+17%); acceptance 346/495 vs 339/513, 341/507. Probes at 8K (24 probes, C = CPU f32 reference): fused vs reference top-1 21/24, TV mean 0.0957; unfused vs reference top-1 22/24, TV mean 0.0784; fused vs unfused top-1 23/24, TV mean 0.0827 max 0.407; fused against itself 0.0000. READING: fusion as a set is clearly worth its speed (+4% prefill, +10..17% decode, complete separation). It is not bit-exact against the unfused path (TV 0.083), and on this probe set the unfused path is slightly closer to the CPU reference (0.078 vs 0.096, 22 vs 21 top-1) - a small gap on 24 probes, not a quality verdict, but it means the fused set carries a numeric cost that has never been attributed to individual fusions. With fusion off the overlap counter is silent (no checks), with it on 1107 of 19730 candidates were refused for overlap in this run. Next: inventory + per-fusion off switches, op-level equivalence test, per-fusion speed.
+
 ## Change Log
 
 - 2026-10-06T15:29:25.180488+00:00 (created-by): Created by agent
+- 2026-10-06T15:54:58.645699+00:00 (updated-by): Updated: section:notes
