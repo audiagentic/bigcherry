@@ -59,6 +59,14 @@ For a real GEMM/prefill coverage gap:
 - first document the selected non-vector kernel family, epilogue/store point, graph topology, expected launch reduction, and numerical/output-layout constraints;
 - only then decide whether that larger work remains PRBE37 or should be split into a new implementation item. No split is warranted until a real production gap is observed.
 
+## 2026-10-07 audit: MMQ prefill fusion
+
+Upstream draft #29948 provides the concrete non-vector design previously missing here: pair/interleave dense FFN up and gate rows and apply canonical GLU during MMQ write-back while retaining the existing fusion descriptor and graph allocation dependencies. Its current matcher is explicitly NVIDIA-only because the write-back depends on NVIDIA MMA accumulator layout. Published Qwen3.8-27B pp16384 gains are not RDNA evidence.
+
+AMD gate: first attribute the exact dense up+gate+GLU MMQ topology at ubatch 512/1024/2048 on gfx1100/gfx1201. Continue only if removable GLU/materialization cost is at least 3% of representative prefill wall time or 5% of MMQ+GLU critical-path time. On failure, park and wait for upstream AMD support. On pass, reuse #29948's matcher/fusion descriptor/allocation-dependency design and port only the interleaved-loader/write-back mechanism. Prove the AMD MFMA/WMMA accumulator lane mapping with a focused backend-op fixture rather than copying NVIDIA indexing. Require supported GLU/quant boundary correctness, fusion-off comparison, Qwen3.8-27B output agreement, at least 3% repeated production-lane prefill gain, no primary control regression above 1%, and no material VGPR/spill/occupancy regression. Otherwise remove/park the prototype.
+
+Ownership remains PRBE37. PRBE38 owns literal UNARY-to-MUL graphs; QFP13 owns decode launch ranking. Do not add another matcher, fusion descriptor, scheduler or dispatch table.
+
 ## Source Anchors
 
 Verified b11126 anchors:
