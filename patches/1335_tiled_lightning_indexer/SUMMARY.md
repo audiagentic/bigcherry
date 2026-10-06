@@ -1,6 +1,6 @@
 # 1335_tiled_lightning_indexer
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP17
 
 Kind: enhancement (upstream backport), on by default; `BIGCHERRY_INDEXER_TILE=0` is the off switch.
@@ -19,4 +19,6 @@ Superseded when the pin reaches a llama.cpp release that contains #29901.
 Motivation (b11402, rocprofv3 prefill trace): the indexer is 7.6 ms of each 512-token ubatch averaged over 32K
 tokens and 22 ms averaged over 100K. Upstream reports the indexer 16.4 -> 6.4 ms at kv 65536, 2048 tokens on CUDA.
 
-- Build on HIP, backend test, prefill ABBA, fidelity: pending.
+Result (b11402, Brutus, 2026-10-06; details in README.md): prefill +2.6% at ~99K tokens and +5.6% at ~202K, decode
+time per step unchanged, backend tests equal to CPU on all four GPUs with the kernel proven active, next-token
+fidelity inside the envelope of the other attention-path changes.
