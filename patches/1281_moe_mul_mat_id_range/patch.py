@@ -17,7 +17,7 @@ allocated per call.
 """
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "validated"
@@ -314,6 +314,11 @@ _N_MMQ_DEDUP = (
     "    // BigCherry 1281: range variant - group rows by LOCAL expert; lanes of experts that are not held are never\n"
     "    // grouped, their dst rows keep the +0 written here\n"
     "    const bool bc_range = ggml_mul_mat_id_is_range(dst);\n"
+    "    // BigCherry 1281 (QFP30): a broadcast gate / up activation is quantised once per token and scattered to the\n"
+    "    // compact rows of the experts held here, as upstream does for the ordinary op; a route that is not held keeps\n"
+    "    // the -1 the inverse map is filled with and gets no row. Qualification flag, default off.\n"
+    "    static const bool bc_range_dedup_on = getenv(\"BIGCHERRY_MOE_RANGE_DEDUP\") != nullptr && atoi(getenv(\"BIGCHERRY_MOE_RANGE_DEDUP\")) != 0;\n"
+    "    const bool bc_range_dedup = bc_range && bc_range_dedup_on && !use_native_fp4 && ne11 == 1 && n_expert_used > 1;\n"
     "    ggml_cuda_pool_alloc<int32_t> bc_ids_local(ctx.pool());\n"
     "    const int32_t * bc_ids = (const int32_t *) ids->data;\n"
     "    if (bc_range) {\n"
@@ -321,15 +326,35 @@ _N_MMQ_DEDUP = (
     "        bc_ids_local.alloc(bc_n_ids);\n"
     "        ggml_cuda_mm_ids_range_translate(bc_ids, bc_ids_local.get(), bc_n_ids, ggml_mul_mat_id_range_base(dst), (int32_t) ne02, stream);\n"
     "        bc_ids = bc_ids_local.get();\n"
-    "        CUDA_CHECK(cudaMemsetAsync(ids_src1.get(), 0, ne_get_rows*sizeof(int32_t), stream));\n"
+    "        CUDA_CHECK(cudaMemsetAsync(ids_src1.get(), bc_range_dedup ? 0xff : 0, ne_get_rows*sizeof(int32_t), stream));\n"
     "        CUDA_CHECK(cudaMemsetAsync(dst_d, 0, ggml_nbytes(dst), stream));\n"
     "    }\n"
     "\n"
-    "    const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && !bc_range;\n"
+    "    const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && (!bc_range || bc_range_dedup);\n"
 )
 
 _A_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper((const int32_t *) ids->data, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
 _N_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
+
+# ---- QFP30 chunk 3: the dedup branch of the Q8_1 quantiser calls the range-only scatter for range nodes
+_A_MMQ_SCATTER_CALL = r"""        } else if (dedup_bcast) {
+            quantize_scatter_mmq_q8_1_cuda(src1_d, ids_src1.get(), src1_q8_1.get(), src0->type, ne10,
+                                    /*stride_token=*/s12, ne10_padded, ne12, ne11_flat, n_expert_used, stream);
+"""
+_N_MMQ_SCATTER_CALL = r"""        } else if (dedup_bcast && bc_range_dedup) {
+            // BigCherry 1281 (QFP30): range node - inverse-map slots left at -1 are routes not held on this device
+            static bool bc_range_dedup_logged = false;
+            if (!bc_range_dedup_logged && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                bc_range_dedup_logged = true;
+                fprintf(stderr, "BIGCHERRY_PATCH_HIT patch=1281_moe_mul_mat_id_range path=range_dedup tokens=%lld used=%lld n_local=%lld\n",
+                        (long long) ne12, (long long) n_expert_used, (long long) ne02);
+            }
+            quantize_scatter_range_mmq_q8_1_cuda(src1_d, ids_src1.get(), src1_q8_1.get(), src0->type, ne10,
+                                    /*stride_token=*/s12, ne10_padded, ne12, ne11_flat, n_expert_used, stream);
+        } else if (dedup_bcast) {
+            quantize_scatter_mmq_q8_1_cuda(src1_d, ids_src1.get(), src1_q8_1.get(), src0->type, ne10,
+                                    /*stride_token=*/s12, ne10_padded, ne12, ne11_flat, n_expert_used, stream);
+"""
 
 # ---- QFP30 chunk 2: range-only Q8_1 scatter kernel; not wired into MMQ yet -----------------------------
 _A_Q8_TEMPLATE = r'''template <mmq_q8_1_ds_layout ds_layout, bool scatter>
@@ -1118,6 +1143,10 @@ PATCHES = [
             Edit(id="mmid-range-mmq-helper", anchor=_re.escape(_A_MMQ_HELPER), mode="replace", text=_N_MMQ_HELPER,
                  guard=r"ggml_cuda_launch_mm_ids_helper\(bc_ids, ids_src1\.get\(\)",
                  rationale="The ids helper call of the MMQ MUL_MAT_ID branch.", expect_matches=1, max_span_lines=2),
+            Edit(id="mmid-range-mmq-dedup-call", anchor=_re.escape(_A_MMQ_SCATTER_CALL), mode="replace", text=_N_MMQ_SCATTER_CALL,
+                 guard=r"BigCherry 1281 \(QFP30\): range node - inverse-map slots left at -1",
+                 rationale="The Q8_1 dedup branch of the activation quantiser: range nodes take the range-only scatter.",
+                 expect_matches=1, max_span_lines=4),
         ),
     ),
     FilePatch(
@@ -1172,3 +1201,10 @@ PATCHES = [
         ),
     ),
 ]
+
+ENV_DOCS = (
+    EnvDoc("BIGCHERRY_MOE_RANGE_DEDUP", "0|1", "0",
+           "range MUL_MAT_ID MMQ (expert split): quantise a broadcast gate / up activation once per token and scatter "
+           "it to the compact rows of the experts held on the device, as upstream does for the ordinary op; "
+           "qualification flag (QFP30), to be removed once bit-identity is confirmed"),
+)
