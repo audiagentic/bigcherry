@@ -111,78 +111,6 @@ _N_VIEW = r"""        if (t_ij->view_src != nullptr) {
             }
 """
 
-_A_ARENA_BUFT_SITE = r"""static ggml_guid_t ggml_backend_meta_guid() {
-"""
-_N_ARENA_BUFT_SITE = r"""// BigCherry 1340 (MSM02): gallocr planning wrapper for transformed zero-sized tensors.
-// Backend-specific alloc-size hooks (notably FLASH_ATTN_EXT) may assume nonzero dimensions.
-struct ggml_backend_meta_arena_buft_context {
-    ggml_backend_buffer_type_t simple_buft;
-};
-
-static const char * ggml_backend_meta_arena_buft_name(ggml_backend_buffer_type_t buft) {
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_name(ctx->simple_buft);
-}
-
-static ggml_backend_buffer_t ggml_backend_meta_arena_buft_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_alloc_buffer(ctx->simple_buft, size);
-}
-
-static size_t ggml_backend_meta_arena_buft_alignment(ggml_backend_buffer_type_t buft) {
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_get_alignment(ctx->simple_buft);
-}
-
-static size_t ggml_backend_meta_arena_buft_max_size(ggml_backend_buffer_type_t buft) {
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_get_max_size(ctx->simple_buft);
-}
-
-static size_t ggml_backend_meta_arena_buft_alloc_size(ggml_backend_buffer_type_t buft, const ggml_tensor * tensor) {
-    if (ggml_nelements(tensor) == 0) {
-        return 0;
-    }
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_get_alloc_size(ctx->simple_buft, tensor);
-}
-
-static bool ggml_backend_meta_arena_buft_is_host(ggml_backend_buffer_type_t buft) {
-    auto * ctx = (ggml_backend_meta_arena_buft_context *) buft->context;
-    return ggml_backend_buft_is_host(ctx->simple_buft);
-}
-
-static const ggml_backend_buffer_type_i ggml_backend_meta_arena_buft_iface = {
-    /* .get_name            = */ ggml_backend_meta_arena_buft_name,
-    /* .alloc_buffer        = */ ggml_backend_meta_arena_buft_alloc_buffer,
-    /* .alloc_buffer_n      = */ nullptr,
-    /* .get_alignment       = */ ggml_backend_meta_arena_buft_alignment,
-    /* .get_max_size        = */ ggml_backend_meta_arena_buft_max_size,
-    /* .get_alloc_size      = */ ggml_backend_meta_arena_buft_alloc_size,
-    /* .get_alloc_size_n    = */ nullptr,
-    /* .is_host             = */ ggml_backend_meta_arena_buft_is_host,
-};
-
-static ggml_backend_buffer_type_t ggml_backend_meta_arena_buft_new(ggml_backend_buffer_type_t simple_buft) {
-    auto * ctx = new ggml_backend_meta_arena_buft_context { simple_buft };
-    return new ggml_backend_buffer_type {
-        /* .iface   = */ ggml_backend_meta_arena_buft_iface,
-        /* .device  = */ ggml_backend_buft_get_device(simple_buft),
-        /* .context = */ ctx,
-    };
-}
-
-static void ggml_backend_meta_arena_buft_free(ggml_backend_buffer_type_t buft) {
-    if (buft == nullptr) {
-        return;
-    }
-    delete (ggml_backend_meta_arena_buft_context *) buft->context;
-    delete buft;
-}
-
-static ggml_guid_t ggml_backend_meta_guid() {
-"""
-
 _A_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         std::vector<ggml_tensor *>           nodes;
         std::vector<ggml_backend_buffer_ptr> bufs;
@@ -191,7 +119,6 @@ _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         std::vector<ggml_tensor *>           nodes;
         std::vector<ggml_backend_buffer_ptr> bufs;
         ggml_gallocr_ptr                     arena_galloc; // BigCherry 1340 (MSM02): transformed compute graph
-        ggml_backend_buffer_type_t            arena_buft = nullptr; // zero-size-safe planning wrapper
 """
 
 _A_DTOR = r"""        for (auto & bc : backend_configs) {
@@ -201,8 +128,6 @@ _A_DTOR = r"""        for (auto & bc : backend_configs) {
 _N_DTOR = r"""        for (auto & bc : backend_configs) {
             // BigCherry 1340 (MSM02): arena buffers belong to this simple backend, so release them first.
             bc.arena_galloc.reset();
-            ggml_backend_meta_arena_buft_free(bc.arena_buft);
-            bc.arena_buft = nullptr;
             ggml_backend_free(bc.backend);
         }
 """
@@ -235,6 +160,14 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                     ggml_backend_buft_get_device(ggml_backend_buffer_get_type(t->buffer)) == meta_backend->device) {
                 ggml_tensor * ret = ggml_backend_meta_buffer_simple_tensor(t, j);
                 GGML_ASSERT(ret != nullptr);
+                if (ret->buffer == nullptr && ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {
+                    // BigCherry 1340 (MSM02): a zero-sized deferred tensor is external to the simple gallocr.
+                    // Backend alloc-size hooks are allowed to inspect op shapes (FLASH_ATTN_EXT divides Q/K head
+                    // counts), so asking them to size a disabled 0-head tensor can fault before allocation.
+                    GGML_ASSERT((ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);
+                    GGML_ASSERT(t->data != nullptr);
+                    ret->data = t->data; // Meta's fake logical address: allocator sentinel only, never dereferenced.
+                }
                 return ret;
             }
             return t;
@@ -257,11 +190,7 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                 j, fresh ? 1 : 0, simple_graph.n_nodes, simple_graph.n_leafs);
         }
         if (fresh) {
-            ggml_backend_buffer_type_t simple_buft = ggml_backend_get_default_buffer_type(bcj.backend);
-            if (bcj.arena_buft == nullptr) {
-                bcj.arena_buft = ggml_backend_meta_arena_buft_new(simple_buft);
-            }
-            bcj.arena_galloc.reset(ggml_gallocr_new(bcj.arena_buft));
+            bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
             if (mem_report) {
                 GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin\n", j);
             }
@@ -375,10 +304,6 @@ PATCHES = [
             Edit(id="meta-arena-view-metadata", anchor=_re.escape(_A_VIEW), mode="replace", text=_N_VIEW,
                  guard=r"a deferred compute view is metadata-only until the per-device gallocr",
                  rationale="Views whose sources are deferred must remain unallocated for ggml_gallocr.", expect_matches=1, max_span_lines=3),
-            Edit(id="meta-arena-zero-safe-buft", anchor=_re.escape(_A_ARENA_BUFT_SITE), mode="replace", text=_N_ARENA_BUFT_SITE,
-                 guard=r"gallocr planning wrapper for transformed zero-sized tensors",
-                 rationale="Before the Meta backend context: wrap simple buft alloc sizing so empty transformed ops never enter backend-specific size hooks.",
-                 expect_matches=1, max_span_lines=2),
             Edit(id="meta-arena-backend-galloc", anchor=_re.escape(_A_BACKEND_CONFIG), mode="replace", text=_N_BACKEND_CONFIG,
                  guard=r"arena_galloc; // BigCherry 1340 \(MSM02\)",
                  rationale="One persistent allocator per simple backend.", expect_matches=1, max_span_lines=4),
