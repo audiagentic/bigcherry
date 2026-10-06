@@ -7,7 +7,7 @@ created-at: '2026-10-06T15:41:00+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P0
+priority: P1
 work: M
 ---
 
@@ -38,14 +38,15 @@ instead of one. The exact end-to-end impact is unmeasured; MMQ and collectives c
 dedup mechanism for range MMQ without changing expert placement, MMQ tile math, compact scheduling, reduction order, graph shape,
 or collective semantics.
 
-The benchmarkable first step is a new default-off experiment patch:
+Implement this directly inside `patches/1281_moe_mul_mat_id_range`, behind
+`BIGCHERRY_MOE_RANGE_DEDUP=0/1` (default 0) during qualification. This restores an upstream optimisation disabled by 1281,
+so 1281 remains the sole mechanism owner. If qualification is bit-identical with no regression, remove the permanent flag and make
+eligible Q8_1 broadcast range MMQ use dedup unconditionally. Keep the old path only for shapes/types to which dedup does not apply
+(per-route down projection and, until separately proven, native FP4).
 
-`patches/1342_moe_range_mmq_dedup/`
-
-with `BIGCHERRY_MOE_RANGE_DEDUP=1`.
-
-If it passes the gates below, fold the mechanism into 1281 (range semantics owner) and remove/retire 1342 rather than maintaining
-two permanent range-MMQ implementations.
+Priority is P1: range nodes require `BIGCHERRY_MOE_EP=1`, which is not deployed; production row split already uses upstream
+dedup. The reason to do this now is [MET08](../patching-moe-expert-tiering/MET08.md): expert split currently matches row-split
+prefill while doing about 10x the gate/up activation quantization work.
 
 ## Current code review
 
@@ -130,27 +131,18 @@ is needed.
 
 ## Steps
 
-1. Add experiment package `1342_moe_range_mmq_dedup`, default off, anchored to 1281's inserted range-MMQ code so it fails
-   closed if 1281 is absent or changes.
-2. For range MMQ gate/up only, initialize `ids_src1[]` to `-1` instead of zero and request the existing inverse map from
-   `mm_ids_helper`.
-3. Teach only the existing Q8_1 scatter quantizer to skip inverse entries equal to `-1`.
-4. Enable upstream `dedup_bcast` for range MMQ when `ne11 == 1`, `n_expert_used > 1`, Q8_1 activation quantization is
-   selected, and `BIGCHERRY_MOE_RANGE_DEDUP=1`.
-5. Keep `src1_q8_1` allocation size unchanged in v1. Do not copy `expert_bounds[n_local]` to the host and do not introduce
-   a synchronization just to shrink scratch.
-6. Leave down-projection MMQ unchanged: its input is per-route, not a `ne11 == 1` broadcast.
-7. Leave MMVQ/MMVF decode paths unchanged. This item is large-batch MMQ prefill only.
-8. Leave MXFP4/NVFP4 native-FP4 activation scatter unchanged in v1; on the AMD target `use_native_fp4` is false. Extend FP4
-   only after separate correctness evidence if it ever becomes relevant.
-9. Add an MMQ-forced range backend test with nonzero `id_base`, top-k routing and inactive local slots. Compare candidate to
-   the old range-MMQ path.
-10. Profile one 31-32K prefill lane before broad A/B. Continue end-to-end testing only if the Q8_1 quantizer time materially
-    drops and no extra synchronization/kernel appears.
-11. Run production ABBA at short and long context with the same binary, toggling only
-    `BIGCHERRY_MOE_RANGE_DEDUP=0/1`.
-12. Only if the separate range-id translation kernel remains material after this win, test a phase-2 helper fold. Do not combine
-    that change with v1.
+1. Modify `patches/1281_moe_mul_mat_id_range` directly. Add `BIGCHERRY_MOE_RANGE_DEDUP` default 0 as a qualification switch.
+2. For range MMQ broadcast gate/up, prefill `ids_src1[]` with `-1`, request `mm_ids_helper`'s inverse map, and use a range-only Q8_1 scatter specialization that skips only `-1`.
+3. Leave ordinary non-range scatter source/codegen unchanged. Leave per-route down projection, MMVQ/MMVF decode, and native-FP4 scatter unchanged in v1.
+4. Keep `src1_q8_1` allocation unchanged; add no host readback/synchronization.
+5. Extend `tests/test-mul-mat-id-range.cpp` with the real broadcast shape (`ne11 == 1`) and MMQ-forced cases. Cover flag off and flag on; require bit-identical F32 output.
+6. Include nonzero `id_base`, inactive local slots, hostile routing, partial-J final-local-expert cases, and dirty/reused pool memory. Range dedup must populate every compact row in `[0, expert_bounds[n_local])`.
+7. Prove ordinary non-range dedup unchanged and native FP4 remains on the old path.
+8. Profile one production-shaped ~31-32K lane first; mandatory before broad A/B. Require profiler evidence that range-only scatter executes, quantizer work falls from ~top-k copies/token to one/token, and no new synchronization/kernel/task-count change appears.
+9. Run same-binary ABBA with `tools/lab/flash-next/queue-env-ab.sh`: both arms export `BIGCHERRY_MOE_EP=1` plus identical expert shares; set `AB_ENV=BIGCHERRY_MOE_RANGE_DEDUP=1`; use greedy md5 and `FIDELITY=1`.
+10. Test ub512 first for isolation; also test validated QSA ub1024 + `BIGCHERRY_QSA_CHUNK=256` as a separate lane.
+11. Promotion gate: bit-identical backend/greedy output, activation evidence, and no repeatable prefill/decode/MTP/memory regression. Quantizer-time reduction is activation evidence, not an end-to-end materiality bar.
+12. If promoted, remove the qualification flag and keep dedup unconditional for eligible Q8_1 broadcast range MMQ. Only then consider the separate range-id helper-fold phase if profiling shows it material.
 
 ## Detailed Solution & Technical Design
 
@@ -254,7 +246,7 @@ for (int slot = 0; slot < nwrite; ++slot) {
         const int64_t i =
             ids[(int64_t) blockIdx.x * n_expert_used + slot];
 
-        // BigCherry 1342: range-MMQ inverse maps leave non-local route
+        // BigCherry 1281/QFP30: range-MMQ inverse maps leave non-local route
         // slots at -1. They have no compact row and need no quantized copy.
         if (i == -1) {
             continue;
@@ -288,7 +280,7 @@ is an upper bound and keeps scheduler/pool behaviour identical for a clean perfo
 
 ### 5. Interaction with 1237/1265 and QFP26
 
-1237's compact-grid path consumes `expert_bounds[]`; 1342 does not change them. Therefore:
+1237's compact-grid path consumes `expert_bounds[]`; QFP30 does not change them. Therefore:
 
 ```text
 1281 range-id translation
@@ -296,7 +288,7 @@ is an upper bound and keeps scheduler/pool behaviour identical for a clean perfo
         v
 mm_ids_helper
   |             |
-  |             +--> ids_src1 inverse map -> 1342 Q8_1 scatter
+  |             +--> ids_src1 inverse map -> range-only Q8_1 scatter
   |
   +--> ids_dst + expert_bounds -> existing MMQ / 1237 compact map
 ```
@@ -313,48 +305,23 @@ plus its scratch handling at >=0.5% of prefill wall or >=3% of routed-MoE wall a
 Phase 2 must preserve the exact helper output and be benchmarked separately. It is rejected by default; eliminating one small
 kernel is not justification for mixing it into the high-value v1 result.
 
-## Patch package
+## Patch integration
 
-Proposed package:
+Owner: `patches/1281_moe_mul_mat_id_range`.
 
-```text
-patches/1342_moe_range_mmq_dedup/
-  patch.py
-  README.md                 # only after hardware evidence/promotion
-tools/tests/patch/
-  test_1342_moe_range_mmq_dedup.py
-```
-
-`patch.py`:
-
-```python
-GROUP = "core"
-STATE = "untested"
-
-ENV_DOCS = (
-    EnvDoc(
-        "BIGCHERRY_MOE_RANGE_DEDUP", "0|1", "0",
-        "range MUL_MAT_ID MMQ: quantize a broadcast gate/up activation "
-        "once per token and scatter only to locally active compact rows; "
-        "Q8_1 activation path only"
-    ),
-)
-```
-
-Anchors should deliberately target 1281's BigCherry strings in `mmq.cu`, not pristine upstream text. That makes the dependency
-mechanical: applying 1342 without 1281 fails instead of accidentally modifying ordinary MMQ.
-
-If patch composition tooling supports an explicit dependency declaration, add 1281. 1283 is required for the production
-whole-expert benchmark, but 1342 correctness can also be tested against a standalone range op without 1283.
+During qualification, add `BIGCHERRY_MOE_RANGE_DEDUP` to 1281's env docs with default `0`. Update
+`tools/tests/patch/test_1281_moe_mul_mat_id_range.py` for patch mechanics/idempotence and exact guards. Do not create a second
+range-MMQ package. After successful qualification, remove the experiment switch and promote the eligible Q8_1 broadcast range
+path inside 1281.
 
 ## Files
 
 Implementation files:
 
-- `patches/1342_moe_range_mmq_dedup/patch.py` - experiment switch and anchored edits.
+- `patches/1281_moe_mul_mat_id_range/patch.py` - qualification switch and range-MMQ/scatter edits.
 - `ggml/src/ggml-cuda/mmq.cu` - range inverse-map initialization and range-enabled `dedup_bcast`.
 - `ggml/src/ggml-cuda/quantize.cu` - `-1` skip in Q8_1 scatter mode.
-- `tools/tests/patch/test_1342_moe_range_mmq_dedup.py` - patch composition/idempotence and exact guard assertions.
+- `tools/tests/patch/test_1281_moe_mul_mat_id_range.py` - patch composition/idempotence and exact guard assertions.
 - existing `tests/test-mul-mat-id-range.cpp` or an adjacent backend test - MMQ-forced range correctness fixture.
 - `tools/lab/flash-next/queue-env-ab.sh` - end-to-end same-binary A/B.
 - existing QFP17/QFP22 rocprof lane - kernel attribution.
@@ -371,111 +338,30 @@ Do not modify:
 
 ### Offline mechanics
 
-`test_1342_moe_range_mmq_dedup.py` must:
+Update 1281's patch test to prove idempotence/fail-closed anchors; flag-off preserves current 1281; enabled range mode uses a
+`-1` inverse-map sentinel and a range-only Q8_1 scatter specialization; ordinary non-range scatter remains source/codegen
+unchanged; production patch composition remains valid.
 
-1. apply 1281 then 1342 to pristine b11402 source;
-2. prove idempotence;
-3. prove 1342 fails closed if 1281's range-MMQ anchor is absent;
-4. assert flag-off leaves 1281's old `!bc_range` behaviour reachable;
-5. assert candidate range mode fills inverse map with `0xff`;
-6. assert only Q8_1 scatter mode accepts/skips `-1`;
-7. assert ordinary non-range dedup remains unchanged;
-8. compose with 1237/1265/1283 in the production patch order.
+### Backend correctness
 
-### Backend correctness fixture
+Force MMQ and test both `ne11 == 1` broadcast and existing per-route shapes. Include zero/nonzero bases, beginning/middle/end
+local ranges, top-k 2/4/10, zero-local-route tokens, skewed routing, and partial-J tails with deliberately dirty/reused pool memory.
+For eligible Q8_1 broadcast cases require bitwise F32 equality flag-off vs flag-on. Both forms use the same
+`quantize_mmq_q8_1` arithmetic; scale/sum state is derived only from the source row, so quantize-once+scatter should equal
+repeated quantization.
 
-Force a token count above the MMVQ/MMVF threshold so `MUL_MAT_ID` dispatches MMQ. Cases:
+If equality holds, close disabled dedup as a cause of MET09's expert-split vs row-split numeric difference; investigate the
+remaining arithmetic/summation-order causes there.
 
-- `id_base = 0` and nonzero `id_base`;
-- local expert ranges at beginning/middle/end of global expert space;
-- top-k `{2,4,10}`;
-- uniform routing;
-- one hot expert;
-- highly skewed/Zipf-like routing;
-- tokens with zero local routes;
-- local range containing only one of a token's routes;
-- tail token counts not aligned to MMQ J;
-- production quant types at least `IQ4_XS`, `IQ3_S`, `IQ4_NL`, `Q8_0` where backend support exists.
+### Hardware / promotion
 
-Compare:
+Profile one ~31-32K lane first and require visible range-scatter activation plus the expected quantizer-work drop, with no extra
+sync/kernel/task-count change. Then use `tools/lab/flash-next/queue-env-ab.sh` for same-binary ABBA with identical
+`BIGCHERRY_MOE_EP=1`/expert shares, `AB_ENV=BIGCHERRY_MOE_RANGE_DEDUP=1`, greedy md5 and `FIDELITY=1`. Run ub512 first;
+QSA ub1024 + chunk 256 is validated and may be a separate lane.
 
-```text
-A = 1281 range MMQ, dedup flag off
-B = 1281 + 1342, dedup flag on
-```
-
-Require exact/bitwise F32 destination equality for the same MMQ path. This is a data-movement change before unchanged Q8_1/MMQ
-math; numerical tolerance is not the intended contract.
-
-Also verify the ordinary non-range op against pristine b11402 and ensure native-FP4 configurations take the old path.
-
-### Hardware performance discriminator
-
-First profile one production-shaped run:
-
-```text
-model: Flash-Next UD-IQ4_XS
-target: 2x RX 7900 XTX (gfx1100) + R9700 (gfx1201)
-mode: tensor split + BIGCHERRY_MOE_EP=1
-KV: f16
-ubatch: 512
-prompt/depth: ~31.8K
-A: BIGCHERRY_MOE_RANGE_DEDUP=0
-B: BIGCHERRY_MOE_RANGE_DEDUP=1
-all other environment/profile values identical
-```
-
-Use the existing QFP17/QFP22 rocprof workflow. Required profiler evidence per device:
-
-- range gate/up calls switch from ordinary `quantize_mmq_q8_1<..., false>` to scatter
-  `quantize_mmq_q8_1<..., true>`;
-- quantizer grid token dimension changes from approximately `n_tokens * top_k` work to `n_tokens` work;
-- no extra host synchronization;
-- no change in MMQ task count, J selection, compact map, AllReduce count, or graph topology;
-- summed gate/up Q8_1 quantizer time per layer/device;
-- total routed-MMQ time and total prefill wall.
-
-If quantizer time does not drop >=30%, stop and diagnose activation/dispatch before broad A/B; the intended path is probably not
-executing.
-
-Then run same-binary ABBA, at least four samples per arm where practical:
-
-```text
-~8K prefill
-~32K prefill
-~80K or ~98K prefill
-~200K prefill if the current production context fits
-```
-
-Use ub512 first to isolate this mechanism from unresolved QSA chunk identity. Add ub1024 only after QFP22/1332 has a green
-correctness gate; do not use a correctness-blocked QSA path to claim the MoE result.
-
-Capture:
-
-- prefill t/s and TTFT;
-- per-rank quantizer, MMQ and RCCL/AllReduce kernel sums;
-- critical-rank wall;
-- peak compute/pool bytes;
-- greedy output hash;
-- decode/MTP throughput and acceptance as a regression lane.
-
-### Promotion gate
-
-Promote/fold into 1281 only if all hold:
-
-- MMQ-forced range backend output is bit-identical A/B across hostile routing cases;
-- production greedy output hash is identical A/B;
-- activation evidence proves range gate/up used scatter dedup;
-- range gate/up Q8_1 quantizer summed time drops >=50% on the critical rank in the profiler lane;
-- end-to-end prefill improves >=3% median on at least one representative 32K-or-longer lane with no >1% repeated regression
-  on another qualified lane;
-- no >1% decode/MTP regression;
-- no unexpected graph/scheduler reallocation;
-- peak compute memory does not increase >1%;
-- no new synchronization or D2H copy.
-
-If quantizer time drops strongly but E2E gain is <1.5%, park the patch and let QFP26's gate/up fusion subsume the opportunity.
-Do not carry permanent complexity for an invisible end-to-end gain.
+Promote on bit-identical output + activation evidence + no repeatable regression. There is no minimum end-to-end percentage bar;
+small wins count when nothing regresses.
 
 ## Expected performance model
 
@@ -514,26 +400,25 @@ Mitigations are strict Q8-only gating, exact backend equality, hostile routing, 
 - 1281 = range `MUL_MAT_ID` semantics.
 - 1283 = expert placement + delayed one-AllReduce block semantics.
 - No model-specific numeric tuning in code; QFP23 owns profile values.
-- Default off until hardware evidence.
+- Default off only during qualification; remove the switch after successful promotion.
 - No host readback/synchronization for scratch sizing.
 - No new graph op and no graph-topology change.
-- Record a negative result and stop if the Amdahl gate is not met.
+- Record the measured result; retain any bit-identical no-regression win regardless of end-to-end size.
 
 ## Acceptance Criteria
 
-- QFP30 plan has an isolated 1342 implementation path that composes with the current production patch set.
-- Flag-off is identical to current 1281.
-- Flag-on reuses upstream inverse-map/scatter machinery and skips only `-1` non-local routes.
-- MMQ range correctness is bit-identical to flag-off.
-- gfx1100 and gfx1201 both pass backend tests.
-- Profiler proves the expected gate/up quantizer work reduction.
-- Production ABBA meets the promotion gate or the experiment is explicitly parked.
-- A winner is folded into 1281; 1342 does not become a second permanent owner of range semantics.
-- QFP26 remains free to build its scheduler/fusion work on top without duplicate route maps or quantizers.
+- QFP30 is implemented inside 1281; no new patch id/package.
+- Qualification flag-off is identical to current 1281; eligible Q8_1 broadcast flag-on is bit-identical and uses the range-only scatter path.
+- Broadcast `ne11 == 1` MMQ range coverage exists for both flag states, including nonzero bases, inactive slots and dirty partial-J tails.
+- Ordinary non-range dedup is unchanged; per-route down projection and native FP4 remain on their existing paths.
+- Profiler proves the expected activation-quantizer work reduction without new synchronization/task-count changes.
+- Same-binary ABBA uses queue-env-ab, greedy md5 and `FIDELITY=1`; no repeatable regression is introduced.
+- On promotion, remove the qualification flag and make eligible Q8_1 broadcast range dedup unconditional.
+- QFP26 remains free to build scheduler/fusion work on top without duplicate route maps or quantizers.
 
 ## Notes
 
-Review result: the large Strata-style grouped/fused prefill project already exists as QFP26. This item is intentionally smaller:
+Review result: the large Strata-style grouped/fused prefill project already exists as QFP26. QFP30 is P1 and linked to MET08. It is intentionally smaller:
 restore an optimisation already present in b11402 ordinary routed MMQ but disabled by the first 1281 range implementation. It is
 a good pre-QFP26 benchmark because it is low-risk, requires no new matrix kernel, and gives a clean answer about how much of the
 current whole-expert prefill gap is activation preparation rather than MMQ/collectives.
@@ -541,18 +426,19 @@ current whole-expert prefill gap is activation preparation rather than MMQ/colle
 ## Change Log
 
 - 2026-10-06T15:41:00+00:00: created from current-head review of 1281/1283, b11402 MMQ/mmid/quantize paths and QFP26 ownership.
+- 2026-10-07: converged RV4221: P1/MET08; implementation stays in 1281; qualification-only flag; broadcast op test both states; QSA status corrected; queue-env ABBA specified; percentage promotion bars removed; MET09 dedup hypothesis closes on bit-identity; partial-J rationale corrected to the upstream padded-tail invariant.
 
 
 ## Self-review correction — 2026-10-07
 
-Two corrections override the earlier implementation sketch before 1342 is coded.
+Two corrections override the earlier implementation sketch before QFP30 is coded into 1281.
 
 1. Do not add the missing-slot check to the existing generic Q8_1 scatter instantiation. That would change ordinary non-range MoE codegen even with BIGCHERRY_MOE_RANGE_DEDUP=0. Add a range-only compile-time specialization/wrapper (for example a third template boolean with an if-constexpr missing-slot check), and call it only from the enabled range arm. The existing ordinary scatter wrapper/instantiation must stay source/codegen-equivalent.
-2. Range scatter fills only active compact rows. MMQ reads full J-wide Y tiles and masks the tail at writeback. Add a partial-J final-local-expert test after deliberately dirtying/reusing the GPU pool, and require bit-identical active outputs. If stale padded rows affect active results, add the smallest required guard/zero initialization and benchmark that cost separately; do not assume the sparse write is safe.
+2. MMQ reads full J-wide Y tiles and masks the tail at writeback. Upstream ordinary dedup already leaves only the padded tail beyond the final compact row unwritten; range dedup must not create holes inside `[0, expert_bounds[n_local])`. Keep the partial-J final-local-expert dirty-pool test as regression proof of that invariant. If padded-tail data affects active outputs, fix the shared MMQ invariant rather than treating it as range-specific.
 
 Also strengthen activation evidence: the range-only wrapper/kernel symbol must be visible in profiling, while the ordinary non-range scatter symbol/path remains unchanged.
 
-Verdict after these corrections: implementable and worth benchmarking; end-to-end value remains gated by the existing >=3% qualified prefill threshold.
+Verdict after these corrections: implementable and worth benchmarking; promotion requires bit identity, activation evidence and no regression, with no minimum end-to-end percentage bar.
 
 ## Reviews
 
