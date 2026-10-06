@@ -6,5 +6,6 @@ and never modify the Strata tree.
 
 - `bcop37-system.sh <bundle>` - step 1, host facts into `system.txt`.
 - `bcop37-build.sh <tree> <sha> <gfx> <bundle>` - step 3, clean documented ROCm build for one target with logs.
+- `bcop37-swift.sh <bundle>` - unmatched lane: merge, pack and GPU smoke on the Swift IQ2_XS file.
 
 Owner: BCOP37. Disposition: lab, remove when BCOP37 is closed.
