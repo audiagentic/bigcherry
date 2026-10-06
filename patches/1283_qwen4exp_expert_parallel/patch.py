@@ -154,6 +154,18 @@ _N_META_DELAY = (
     "                // Skip MIRRORED nodes that don't consume node\n"
 )
 
+# The AllReduce scratch is sized from the node where the PARTIAL result first appears. With the delay through an
+# expert-index block that node is the first projection ([n_ff, n_used, n_tokens]) while the AllReduce runs on the
+# delayed node, which can be larger (the down output is [n_embd, n_used, n_tokens] when the delay stops there).
+# From GPT's implementation draft (req_db241e25b4384013).
+_A_META_TMP = "                const int i_delayed = get_i_delayed(i);\n"
+_N_META_TMP = _A_META_TMP + (
+    "                if (i_delayed > i) {\n"
+    "                    // BigCherry 1283: the scratch must hold the node the AllReduce actually runs on\n"
+    "                    max_tmp_size = std::max(max_tmp_size, ggml_nbytes(cgraph->nodes[i_delayed]));\n"
+    "                }\n"
+)
+
 PATCHES = [
     FilePatch(
         path="src/llama-model.cpp",
@@ -189,6 +201,9 @@ PATCHES = [
                  guard=r"BigCherry 1283: whole-expert MoE block\.",
                  rationale="Head of get_i_delayed_branch, before the existing delay stages.", expect_matches=1,
                  max_span_lines=5),
+            Edit(id="moe-ep-tmp-size", anchor=_re.escape(_A_META_TMP), mode="replace", text=_N_META_TMP,
+                 guard=r"BigCherry 1283: the scratch must hold the node the AllReduce actually runs on",
+                 rationale="Subgraph loop, right after the delayed index is known.", expect_matches=1, max_span_lines=2),
         ),
     ),
 ]
