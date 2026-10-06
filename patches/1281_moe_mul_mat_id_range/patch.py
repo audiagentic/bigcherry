@@ -181,6 +181,84 @@ _N_REPACK = (
     "                    GGML_ASSERT(i02 >= 0 && i02 < n_as);\n"
 )
 
+# ---- phase B, part 1: the small-batch GPU kernels (MMVQ / MMVF) --------------------------------------------------
+# Drafted with GPT (req_e116405983eb4a28) and reworked: the kernels only translate the id and return early for a lane
+# whose expert is not held; the host clears dst on the stream before the launch, so an inactive lane is an exact +0
+# without a second copy of each kernel's output-write logic. id_count == 0 keeps today's path. Not reachable until
+# supports_op stops refusing the variant (after the MMQ / MMF / fallback paths and the fusion guards are in).
+_A_FUSION_ARGS = "    uint32_t shared_stride_col_dst = 0;\n"
+_N_FUSION_ARGS = _A_FUSION_ARGS + (
+    "    // BigCherry 1281: range MUL_MAT_ID - src0 holds the experts [id_base, id_base + id_count); 0 = ordinary op\n"
+    "    int32_t id_base = 0;\n"
+    "    int64_t id_count = 0;\n"
+)
+
+_A_MMVQ_K1 = (
+    "    channel_x  = shared_expert ? 0 : ncols_dst == 1 && ids ? ids[channel_dst] : fastdiv(channel_dst, channel_ratio);\n"
+    "    channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;\n"
+    "    sample_dst = blockIdx.z;\n"
+)
+_N_MMVQ_K1 = _A_MMVQ_K1 + (
+    "\n"
+    "    if (fusion.id_count != 0 && !shared_expert && ncols_dst == 1 && ids) {\n"
+    "        // BigCherry 1281: global id -> local expert; a lane this device does not hold keeps the +0 the host wrote\n"
+    "        const int64_t bc_local = (int64_t) ids[channel_dst] - (int64_t) fusion.id_base;\n"
+    "        if (bc_local < 0 || bc_local >= fusion.id_count) {\n"
+    "            return;\n"
+    "        }\n"
+    "        channel_x = (uint32_t) bc_local;\n"
+    "    }\n"
+)
+
+_A_MMVQ_K2 = "    const uint32_t channel_x = shared_expert ? 0 : ids[channel_dst + token_idx * ids_stride];\n"
+_N_MMVQ_K2 = (
+    "    uint32_t channel_x = shared_expert ? 0 : ids[channel_dst + token_idx * ids_stride];\n"
+    "    if (fusion.id_count != 0 && !shared_expert) {\n"
+    "        // BigCherry 1281: global id -> local expert; a lane this device does not hold keeps the +0 the host wrote\n"
+    "        const int64_t bc_local = (int64_t) ids[channel_dst + token_idx * ids_stride] - (int64_t) fusion.id_base;\n"
+    "        if (bc_local < 0 || bc_local >= fusion.id_count) {\n"
+    "            return;\n"
+    "        }\n"
+    "        channel_x = (uint32_t) bc_local;\n"
+    "    }\n"
+)
+
+_A_MMVF_K = (
+    "        channel_y  = ids ? fastmodulo(blockIdx.y, nchannels_y)                 : channel_dst;\n"
+    "        sample_dst = ids ? 0                                                   : blockIdx.z;\n"
+    "    }\n"
+)
+_N_MMVF_K = _A_MMVF_K + (
+    "\n"
+    "    if (ids && fusion.id_count != 0) {\n"
+    "        // BigCherry 1281: global id -> local expert; a lane this device does not hold keeps the +0 the host wrote\n"
+    "        const int64_t bc_local = (int64_t) channel_x - (int64_t) fusion.id_base;\n"
+    "        if (bc_local < 0 || bc_local >= fusion.id_count) {\n"
+    "            return;\n"
+    "        }\n"
+    "        channel_x = (int) bc_local;\n"
+    "    }\n"
+)
+
+_A_MMV_HOST = (
+    "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
+    "\n"
+    "    if (fusion) {\n"
+)
+_N_MMV_HOST = (
+    "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
+    "\n"
+    "    if (ids != nullptr && fusion == nullptr && ggml_mul_mat_id_is_range(dst)) {\n"
+    "        // BigCherry 1281: range variant. The kernel skips the lanes this device does not hold, so clear dst first\n"
+    "        // (stream ordered, no synchronisation): those lanes are then an exact +0.\n"
+    "        fusion_local.id_base  = ggml_mul_mat_id_range_base(dst);\n"
+    "        fusion_local.id_count = src0->ne[2];\n"
+    "        CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), ctx.stream()));\n"
+    "    }\n"
+    "\n"
+    "    if (fusion) {\n"
+)
+
 _A_CUDA = (
     "                if (op->op == GGML_OP_MUL_MAT_ID && ggml_get_op_params_i32(op, 3) == GGML_PREC_F32) {\n"
     "                    return false;\n"
@@ -393,6 +471,49 @@ PATCHES = [
                  guard=r"const bool    bc_range   = ggml_mul_mat_id_is_range\(op\);",
                  rationale="tensor_traits::forward_mul_mat_id row grouping (found by review req_61670b6161b94b09).",
                  expect_matches=1, max_span_lines=11),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/common.cuh",
+        description="1281 phase B: range base / count carried to the MMVQ / MMVF kernels",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-fusion-args", anchor=_re.escape(_A_FUSION_ARGS), mode="replace", text=_N_FUSION_ARGS,
+                 guard=r"int64_t id_count = 0;", rationale="Last field of ggml_cuda_mm_fusion_args_device.",
+                 expect_matches=1, max_span_lines=2),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/mmvq.cu",
+        description="1281 phase B: MMVQ kernels translate global expert ids and skip lanes that are not held",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-mmvq-kernel", anchor=_re.escape(_A_MMVQ_K1), mode="replace", text=_N_MMVQ_K1,
+                 guard=r"if \(fusion\.id_count != 0 && !shared_expert && ncols_dst == 1 && ids\) \{",
+                 rationale="mul_mat_vec_q, where the single-token kernel reads the expert id.", expect_matches=1,
+                 max_span_lines=4),
+            Edit(id="mmid-range-mmvq-moe-kernel", anchor=_re.escape(_A_MMVQ_K2), mode="replace", text=_N_MMVQ_K2,
+                 guard=r"    uint32_t channel_x = shared_expert \? 0 : ids\[channel_dst \+ token_idx \* ids_stride\];",
+                 rationale="mul_mat_vec_q_moe, where the multi-token kernel reads the expert id.", expect_matches=1,
+                 max_span_lines=2),
+            Edit(id="mmid-range-mmvq-host", anchor=_re.escape(_A_MMV_HOST), mode="replace", text=_N_MMV_HOST,
+                 guard=r"fusion_local\.id_count = src0->ne\[2\];",
+                 rationale="ggml_cuda_mul_mat_vec_q, before the fusion arguments are filled.", expect_matches=1,
+                 max_span_lines=4),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/mmvf.cu",
+        description="1281 phase B: MMVF kernel translates global expert ids and skips lanes that are not held",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-mmvf-kernel", anchor=_re.escape(_A_MMVF_K), mode="replace", text=_N_MMVF_K,
+                 guard=r"const int64_t bc_local = \(int64_t\) channel_x - \(int64_t\) fusion\.id_base;",
+                 rationale="mul_mat_vec_f, after both id-reading branches.", expect_matches=1, max_span_lines=4),
+            Edit(id="mmid-range-mmvf-host", anchor=_re.escape(_A_MMV_HOST), mode="replace", text=_N_MMV_HOST,
+                 guard=r"fusion_local\.id_count = src0->ne\[2\];",
+                 rationale="ggml_cuda_mul_mat_vec_f, before the fusion arguments are filled.", expect_matches=1,
+                 max_span_lines=4),
         ),
     ),
     FilePatch(
