@@ -76,7 +76,7 @@ class Patch1338Mechanics(unittest.TestCase):
             self.assertLess(plan.index("if (uniq.size() > (size_t) n_slots) {"), plan.index("bc_unpinned > (size_t) (n_slots - n_pinned)"))
             self.assertLess(plan.index("bc_unpinned > (size_t) (n_slots - n_pinned)"), plan.index("// hits go to the tail first"))
             # large batches only with a pinned set; upstream's slot-count gate is kept
-            self.assertIn("if ((n_tokens > max_batch && !bc_large_batches) || std::min(n_tokens*node->src[2]->ne[0], b.src->ne[2]) > groups[b.ig].n_slots) {", src)
+            self.assertIn("if ((n_tokens > max_batch && !bc_large_batches) ||\n                std::min(n_tokens*node->src[2]->ne[0], b.src->ne[2]) > groups[b.ig].n_slots - groups[b.ig].lru.n_pinned) {", src)
             self.assertIn("bc_large_batches = bc_pinned > 0 && (large == nullptr || atoi(large) != 0);", src)
             # prewarm runs once the banks exist; counts are taken once per layer and graph, after the replay shortcut
             ctor = src[src.index("    impl(const llama_model & model"):src.index("    bool resolve(")]
@@ -86,7 +86,7 @@ class Patch1338Mechanics(unittest.TestCase):
             # profile reader fails on a foreign model, and the tail keeps room for one generation ubatch
             self.assertIn('memcmp(magic, "STRP", 4) == 0', src)
             self.assertIn("layer / expert counts do not match the model", src)
-            self.assertIn("groups[ig].n_slots - 8*n_expert_used", src)
+            self.assertIn("const int64_t tail = groups[ig].n_slots >= 2*n_expert ? n_expert : 8*n_expert_used;", src)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1338_moe_cache_profile", src)
             before = src
             self._apply(root, _P)
