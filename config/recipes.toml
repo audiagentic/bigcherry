@@ -553,6 +553,10 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
+[experiment.meta-mem]
+# MET04: production set + 1339 (BIGCHERRY_META_MEM=1: per-device size of every tensor-split buffer).
+patches = ["1339_meta_memory_report"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
