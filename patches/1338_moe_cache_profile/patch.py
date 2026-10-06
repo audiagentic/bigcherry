@@ -92,6 +92,7 @@ _N_MEMBERS = _A_MEMBERS + r"""
     size_t bc_pinned_bytes = 0;
     std::vector<uint32_t> bc_freq;   // [n_layer*n_expert] routed count, when a profile is to be written
     std::string bc_profile_out;
+    FILE * bc_trace = nullptr;       // BIGCHERRY_MOE_CACHE_TRACE_OUT: routed ids per layer and position
 """
 
 # a batch is only given to the cache when its worst case fits the unpinned slots: a plan that fails later is a hard
@@ -104,6 +105,16 @@ _A_PREPARE = "        l.planned_ids.assign(ids, ids + n_ids);\n"
 _N_PREPARE = _A_PREPARE + r"""        if (!bc_freq.empty()) { // BigCherry 1338: routing counts for the profile
             for (size_t i = 0; i < n_ids; ++i) {
                 bc_freq[(size_t) entry->il*bc_n_expert + ids[i]]++;
+            }
+        }
+        if (bc_trace != nullptr && n_expert_used > 0 && n_ids % n_expert_used == 0) {
+            // BigCherry 1338: one record per position (Strata --dump-routing layout; the weights are not known here)
+            const int32_t head[2] = { entry->il, n_expert_used };
+            static const float zeros[64] = { 0.0f };
+            for (size_t i = 0; i < n_ids && n_expert_used <= 64; i += n_expert_used) {
+                fwrite(head, sizeof(int32_t), 2, bc_trace);
+                fwrite(ids + i, sizeof(int32_t), n_expert_used, bc_trace);
+                fwrite(zeros, sizeof(float), n_expert_used, bc_trace);
             }
         }
 """
@@ -199,6 +210,13 @@ _N_DTOR = r"""    // BigCherry 1338: Strata profile, `STRP`, u32 version, n_laye
             bc_profile_out = out;
             bc_freq.assign(layers.size()*n_expert, 0);
         }
+        const char * trace = getenv("BIGCHERRY_MOE_CACHE_TRACE_OUT");
+        if (trace != nullptr && *trace != '\0' && !no_alloc) {
+            bc_trace = fopen(trace, "wb");
+            if (bc_trace == nullptr) {
+                throw std::runtime_error(std::string("BIGCHERRY_MOE_CACHE_TRACE_OUT: cannot write ") + trace);
+            }
+        }
         // set to 1 without a profile, large batches go through the plain LRU: for a run that records prefill routing
         const char * large = getenv("BIGCHERRY_MOE_CACHE_LARGE");
         bc_large_batches = large != nullptr && atoi(large) != 0;
@@ -249,6 +267,9 @@ _N_DTOR = r"""    // BigCherry 1338: Strata profile, `STRP`, u32 version, n_laye
 
     ~impl() {
         log_stats();
+        if (bc_trace != nullptr) {
+            fclose(bc_trace);
+        }
         if (!bc_profile_out.empty()) {
             bc_write_profile();
         }
@@ -319,6 +340,9 @@ ENV_DOCS = (
     EnvDoc("BIGCHERRY_MOE_CACHE_LARGE", "0|1", "(1 with a pinned set, else 0)",
            "0 keeps ubatches above 32 tokens off the cache (1337's behaviour); 1 without a profile sends them "
            "through the plain LRU, for a run that records prefill routing into a profile"),
+    EnvDoc("BIGCHERRY_MOE_CACHE_TRACE_OUT", "<file>", "(unset)",
+           "with --moe-cache-mib: write the routed expert ids of every layer and position the cache sees (Strata "
+           "--dump-routing layout, weights zero), for placement and balance analysis"),
     EnvDoc("BIGCHERRY_MOE_CACHE_PROFILE_OUT", "<file>", "(unset)",
            "with --moe-cache-mib: count the routed experts the cache sees and write a profile at exit"),
 )
