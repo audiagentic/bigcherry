@@ -228,6 +228,9 @@ External references:
 
 ## Ledger-events
 
+
 - chg_20261006_025038_groundwork-for-running-moe-mod_5459
 - 2026-10-06T02:50:41.953811+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T04:52:30.132399+00:00 (updated-by): Updated: section:notes
+- chg_20261006_061539_scheduler-copy-callback-for-ho_3573
+- 2026-10-06T06:15:42.820366+00:00 (updated-by): Updated: section:ledger-events
