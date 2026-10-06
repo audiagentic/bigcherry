@@ -24,3 +24,10 @@ The fast path now copies each host input into scheduler-owned pageable staging (
 ## 2026-10-04 v5c re-measure (staged) and size cap
 
 v5c ABBA x2 with pageable staging: decode ~8K 79.1 -> 86.5 t/s (+9.4%), ~64K 57.1 -> 61.5 (+7.8%), greedy identical 8/8 per depth, but prefill -2.3% / -2% (the earlier +3.7/+7.2% prefill came from the unsafe zero-copy path). The fast path is now limited to inputs <= 4 MiB (decode KQ mask at 240K for a 4-token verify is ~2 MB; prefill masks ~10 MB take the upstream path), so prefill returns to v4 behaviour. A pinned staging ring with copy-slot events could recover the prefill gain safely (future work).
+
+
+## 2026-10-06 async-semantics clarification
+
+ROCm HIP documents that hipMemcpyAsync with non-pinned host memory is performed synchronously. The current scheduler-owned std::vector staging is pageable, so its production decode gain must not be described as true H2D overlap. Its value is that the source lifetime is made safe while the scheduler avoids the old per-input destination-backend synchronization; the HIP pageable transfer itself may block the host.
+
+This also explains why replacing the unsafe direct pinned source with pageable staging retained the decode win but lost the prefill gain. QFP16 now owns one bounded residual gate: measure whether large prefill input handling remains >=1 ms or >=3% of prefill wall time. Only then consider extending this same 1326 owner with a bounded pinned staging ring whose slots are protected by completion events from every consuming destination device. Otherwise retain the current <=4 MiB path and close the residual.
