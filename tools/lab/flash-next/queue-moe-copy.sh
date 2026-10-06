@@ -21,5 +21,5 @@ JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
-grep -E "^[A-Z0-9]+ (short|long)|^[A-Z0-9]+: |identity|^ +[0-9]+ |per request|^  (short|long)|SERVER_FAILED|BUILD_FAILED" $R/moecopy-$TAG-r9700${SUFFIX:-}.log | cut -c1-260
+grep -E "^[A-Za-z0-9]+ (short|long)|^[A-Za-z0-9]+: |identity|^ +[0-9]+ |per request|^  (short|long)|SERVER_FAILED|BUILD_FAILED" $R/moecopy-$TAG-r9700${SUFFIX:-}.log | cut -c1-260
 echo ALL_JOBS_DONE

@@ -7,6 +7,9 @@
 # Each arm serves, in one process: a short greedy request, the same request again, a multi-ubatch prompt, and the
 # short request a third time (second-request and workload-shift integrity). Reports per request md5 of the text,
 # prefill and decode t/s, and the callback counters the binary prints at exit (BIGCHERRY_PATCH_TRACE).
+# ARMS=hop is the MET04 probe: every expert in VRAM, production tensor split (T) against a layer split over the two
+# XTX with the routed experts of the last HOP_LAYERS layers on the R9700 (L28, L14). MTP=1 adds the MTP sidecar on
+# the 6900 XT to every arm of any mode.
 # ARMS=cache runs the 1337 expert-cache lanes instead: no cache, --moe-cache-mib for each of CACHE_MIB, no cache.
 # Usage: moe-copy-ab.sh <llama-server> <out-dir>      env: GPU (HIP index, default 2), NCMOE (41), CTX (16384),
 #                                                         LONG_TOKENS (4096), N_PREDICT (128)
@@ -16,15 +19,30 @@ bin=$1 out=$2
 mkdir -p "$out"
 model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 gpu=${GPU:-2}
-args=(-m "$model" -ngl 99 --n-cpu-moe ${NCMOE:-41} --fit off -c ${CTX:-16384} -ub 512 -b 2048 --flash-attn on --parallel 1
+base=(-m "$model" -ngl 99 --fit off -c ${CTX:-16384} -ub 512 -b 2048 --flash-attn on --parallel 1
       --threads 16 -lv 4 -ot '^(per_layer_token_embd|token_embd)\.weight$=CPU' -ctk f16 -ctv f16)
+args=("${base[@]}" --n-cpu-moe ${NCMOE:-41})
+# MTP sidecar on its own card (the 6900 XT), as in production: MTP=1 adds it to every arm
+draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf}
+mtp=()
+if [ "${MTP:-0}" = 1 ]; then
+  # single-card arms: the target card and the 6900 XT are visible as ROCm0 and ROCm1; hop arms see all four
+  if [ "${ARMS:-copy}" = hop ]; then DRAFT_DEV=3; else DRAFT_DEV=1; gpu=$gpu,3; args+=(-dev ROCm0); fi
+  mtp=(-md "$draft" -devd ROCm$DRAFT_DEV --no-spec-draft-backend-sampling
+       --spec-type draft-mtp --spec-draft-n-max ${SPEC_N:-3} -ctkd f16 -ctvd f16)
+  export BIGCHERRY_DRAFT_VOCAB_N=65536
+fi
+if [ "${ARMS:-copy}" = hop ]; then   # MET04 probe: every expert in VRAM, dense layers on the two XTX
+  gpu=0,1,2$([ "${MTP:-0}" = 1 ] && echo ,3)
+  args=("${base[@]}")
+fi
 run() {  # <arm> [VAR=value...] [-- server args...]
   local arm=$1; shift
   local envs=() extra=()
   while [ $# -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done
   [ $# -gt 0 ] && { shift; extra=("$@"); }
   local port=$((47000 + RANDOM % 2000)) log="$out/$arm.server.log"
-  env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "${envs[@]}" "$bin" "${args[@]}" "${extra[@]}" --port "$port" > "$log" 2>&1 &
+  env -u ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES=$gpu BIGCHERRY_PATCH_TRACE=1 "${envs[@]}" "$bin" "${args[@]}" "${mtp[@]}" "${extra[@]}" --port "$port" > "$log" 2>&1 &
   local pid=$! ok=0
   for _ in $(seq 900); do
     curl -sf "http://127.0.0.1:$port/health" >/dev/null && { ok=1; break; }
@@ -34,7 +52,7 @@ run() {  # <arm> [VAR=value...] [-- server args...]
   if [ "$ok" != 1 ]; then echo "$arm: SERVER_FAILED"; grep -E " E |error|assert|abort" "$log" | tail -5; kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return; fi
   # a run that silently fell back to the CPU is not a measurement of the copy path
   if grep -q "no usable GPU found" "$log"; then echo "$arm: SERVER_FAILED (no GPU: $(grep -m1 "failed to initialize" "$log" | cut -c1-120))"; kill "$pid"; wait "$pid" 2>/dev/null; return; fi
-  echo "$arm: vram $(rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[$gpu\].*Total Used" | awk '{print int($NF/1048576)" MiB"}')"
+  echo "$arm: vram $(rocm-smi --showmeminfo vram 2>/dev/null | grep "GPU\[[${gpu//,/}]\].*Total Used" | awk '{printf "%s%d", (NR>1?" / ":""), int($NF/1048576)} END {print " MiB (cards '"$gpu"')"}')"
   python3 - "$port" "$out" "$arm" "${LONG_TOKENS:-4096}" "${N_PREDICT:-128}" <<'PY'
 import hashlib, json, sys, urllib.request
 port, out, arm, long_tokens, n_predict = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])
@@ -59,7 +77,17 @@ PY
   grep -iE "moe.?cache" "$log" | head -4 | cut -c1-200 | sed "s/^/$arm: /"
 }
 for shard in "${model%-00001-of-*}"-0000[12]-*.gguf; do cat "$shard" > /dev/null; done   # warm the page cache
-if [ "${ARMS:-copy}" = cache ]; then   # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
+if [ "${ARMS:-copy}" = hop ]; then
+  # T  = production tensor split over the three cards (flashnext profile)
+  # Ln = layer split of everything over the two XTX, with the routed experts of the LAST n layers on the R9700:
+  #      each of those layers hands its activations XTX -> R9700 -> XTX through host memory (no P2P)
+  exps() { echo "blk\\.($(seq -s'|' $((48 - $1)) 47))\\.ffn_(gate|up|down)_exps\\.weight=ROCm2"; }
+  run T BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
+  for n in ${HOP_LAYERS:-28 14}; do
+    run L$n BIGCHERRY_FEATURES=flashnext -- -dev ROCm0,ROCm1,ROCm2 -sm layer -ts 1,1,0 -ot "$(exps $n)"
+  done
+  run T2 BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
+elif [ "${ARMS:-copy}" = cache ]; then  # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
   run C0b
