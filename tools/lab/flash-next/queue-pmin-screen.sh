@@ -19,6 +19,8 @@ export EXTRA_OT='^token_embd\.weight$=CPU' BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATT
 export BIGCHERRY_FEATURES=flashnext
 docker stop radiance-vllm >/dev/null 2>&1
 SETTINGS=("LLAMA_ARG_SPEC_DRAFT_P_MIN=0.6 SPEC_N=5" "LLAMA_ARG_SPEC_DRAFT_P_MIN=0.75 SPEC_N=5" "LLAMA_ARG_SPEC_DRAFT_P_MIN=0.9 SPEC_N=6" "LLAMA_ARG_SPEC_DRAFT_P_MIN=0.75 SPEC_N=3")
+# SETTINGS_LIST overrides the list: settings separated by ";" (e.g. adaptive depth on a build that carries 1268)
+if [ -n "${SETTINGS_LIST:-}" ]; then IFS=";" read -r -a SETTINGS <<< "$SETTINGS_LIST"; fi
 jobs=$(mktemp)
 : > "$jobs"
 for d in "${depths[@]}"; do
