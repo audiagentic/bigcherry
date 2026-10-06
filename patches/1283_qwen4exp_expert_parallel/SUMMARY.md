@@ -1,6 +1,6 @@
 # 1283_qwen4exp_expert_parallel
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MET04
 
 Kind: enhancement, flag `BIGCHERRY_MOE_EP` (default 0). Requires 1281.

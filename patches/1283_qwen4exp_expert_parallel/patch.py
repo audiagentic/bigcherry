@@ -31,7 +31,7 @@ import re as _re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "validated"
 
 # ---- src/llama-model.cpp -------------------------------------------------------------------------------------------
 # getenv / atoi need <cstdlib>, which this file does not include at b11402 (review req_f0dac9a3c42f4d88)

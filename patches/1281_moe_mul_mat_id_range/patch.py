@@ -20,7 +20,7 @@ import re as _re
 from bigcherry.patcher import Edit, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "validated"
 
 _A_H = (
     "    GGML_API struct ggml_tensor * ggml_mul_mat_id(\n"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# MET02 / 1281 phase A: build the production set + 1281 (experiment moe-range) and run the CPU reference test of
+# MET02 / 1281 phase A: build the production set (which carries 1281) and run the CPU reference test of
 # ggml_mul_mat_id_range. No model, no GPU work beyond the build.
 # Usage: queue-moe-range.sh <tag> [wait=<chain log with ALL_RUNS_DONE>]
 set -u
@@ -12,7 +12,7 @@ export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-N
 RUN=b-moerange-$TAG
 jobs=$(mktemp)
 cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi moe-range gfx1100,gfx1201,gfx1030
+VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030
 VIS=0,1,2,3 SCRIPT moerange-$TAG-test tools/lab/flash-next/mmid-range-test.sh @$RUN $R/moerange-$TAG-test
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"

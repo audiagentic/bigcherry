@@ -1,7 +1,7 @@
 schema = 1
 id = "1283_qwen4exp_expert_parallel"
 order = 1283
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
