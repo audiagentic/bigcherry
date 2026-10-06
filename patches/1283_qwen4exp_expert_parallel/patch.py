@@ -34,6 +34,10 @@ GROUP = "core"
 STATE = "untested"
 
 # ---- src/llama-model.cpp -------------------------------------------------------------------------------------------
+# getenv / atoi need <cstdlib>, which this file does not include at b11402 (review req_f0dac9a3c42f4d88)
+_A_MODEL_INC = "#include <cstdint>\n#include <cstring>\n#include <cmath>\n"
+_N_MODEL_INC = "#include <cstdint>\n#include <cstdlib>  // BigCherry 1283: getenv\n#include <cstring>\n#include <cmath>\n"
+
 _A_MODEL_PAT = '    static const std::regex pattern_ffn_down_shexp_weight ("blk\\\\.\\\\d*\\\\.ffn_down_shexp.weight");\n'
 _N_MODEL_PAT = _A_MODEL_PAT + (
     "    // BigCherry 1283: whole experts per device (split along the expert index) instead of rows of every expert\n"
@@ -172,6 +176,9 @@ PATCHES = [
         description="1283: BIGCHERRY_MOE_EP=1 splits the routed expert weights along the expert index",
         language="none",
         edits=(
+            Edit(id="moe-ep-include", anchor=_re.escape(_A_MODEL_INC), mode="replace", text=_N_MODEL_INC,
+                 guard=r"#include <cstdlib>  // BigCherry 1283: getenv", rationale="Standard includes of the file.",
+                 expect_matches=1, max_span_lines=4),
             Edit(id="moe-ep-flag", anchor=_re.escape(_A_MODEL_PAT), mode="replace", text=_N_MODEL_PAT,
                  guard=r"static const bool bc_moe_ep = ", rationale="After the FFN tensor-name patterns of the split-state callback.",
                  expect_matches=1, max_span_lines=2),
