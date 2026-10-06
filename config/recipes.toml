@@ -558,6 +558,10 @@ patches = ["1331_alloc_peak_live"]
 # MET04: production set + 1339 (BIGCHERRY_META_MEM=1: per-device size of every tensor-split buffer).
 patches = ["1339_meta_memory_report"]
 
+[experiment.fusion-bisect]
+# FKE01: production set + 1339 (overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
+patches = ["1339_meta_memory_report", "1342_fusion_bisect"]
+
 [experiment.meta-memory]
 # MSM02/MSM03 qualification: measurement + per-device compute arena + cache_idx subset mirror.
 patches = ["1339_meta_memory_report", "1340_meta_per_device_arena"]
