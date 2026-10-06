@@ -47,7 +47,8 @@ _N_INPUT_RULE = r"""            case GGML_OP_NONE: {
                 // BigCherry 1341 (MSM03 step 2): the attention mask input is context-sized and only read by attention;
                 // with a mask set it exists on the attention devices only, and so does everything MIRRORED that is
                 // derived from it (no upload to, and no mask arithmetic on, a device with no attention share).
-                if (bc_meta_attn_input_mask != 0 && strncmp(tensor->name, "attn_inp_kq_mask", 16) == 0) {
+                // (the scheduler names its copy of a graph input "<backend>#<name>#<n>", so the name is searched for)
+                if (bc_meta_attn_input_mask != 0 && strstr(tensor->name, "attn_inp_kq_mask") != nullptr) {
                     split_state.active_mask = bc_meta_attn_input_mask;
                 }
             } break;
