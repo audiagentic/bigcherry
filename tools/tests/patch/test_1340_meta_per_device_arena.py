@@ -18,6 +18,7 @@ _PIN = "d89651a7b205"
 _META = "ggml/src/ggml-backend-meta.cpp"
 _BACKEND = "ggml/src/ggml-backend.cpp"
 _MODEL = "src/llama-model.cpp"
+_FATTN = "ggml/src/ggml-cuda/fattn.cu"
 
 
 def _load(name, path):
@@ -43,7 +44,7 @@ _P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch
 _P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py")
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
 _P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
-_SRC = {path: _pinned(path) for path in (_META, _BACKEND, _MODEL)}
+_SRC = {path: _pinned(path) for path in (_META, _BACKEND, _MODEL, _FATTN)}
 
 
 @unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
@@ -121,6 +122,22 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("BIGCHERRY_META_MEM compute dev=", meta)
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
             self.assertIn("failed to allocate per-device Meta arena", backend)
+
+    def test_zero_slice_bypasses_flash_attn_backend_sizing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            fattn = (root / _FATTN).read_text(encoding="utf-8")
+            self.assertIn("const int gqa_ratio = Q->ne[2] / K->ne[2];", fattn)
+
+            res = apply_all(_P.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+            meta = (root / _META).read_text(encoding="utf-8")
+            helper = meta[meta.index("bool ggml_backend_meta_alloc_graph("):
+                          len(meta)]
+            self.assertIn("ggml_nelements(ret) == 0", helper)
+            self.assertIn("GGML_ASSERT((ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
+            self.assertIn("ret->data = t->data;", helper)
+            self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve("))
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
