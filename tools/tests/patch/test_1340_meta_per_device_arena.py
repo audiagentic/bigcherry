@@ -136,7 +136,7 @@ class Patch1340Mechanics(unittest.TestCase):
             helper = meta[meta.index("bool ggml_backend_meta_alloc_graph("):
                           len(meta)]
             self.assertIn("ggml_nelements(ret) == 0", helper)
-            self.assertIn("GGML_ASSERT((ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
+            self.assertIn("GGML_ASSERT(ret->buffer != nullptr || (ret->flags & GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
             self.assertIn("ret->data = t->data;", helper)
             self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve("))
 
