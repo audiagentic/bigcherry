@@ -14,8 +14,8 @@ tokens, so prefill still uploads every selected expert of every host layer per m
 With a profile (Strata's `STRP` format: pairs ranked by routing frequency) the top pairs are uploaded at start-up
 into pinned slots that are never evicted; the remaining slots stay an LRU. Because a prefill sweep can no longer
 evict the hot set, large batches use the cache as well: hits are computed from resident experts and only the
-misses are uploaded, into the LRU tail. A batch whose unpinned experts do not fit the tail falls back to 1336's
-selective upload. `BIGCHERRY_MOE_CACHE_PROFILE_OUT` writes a profile from the routing the cache sees.
+misses are uploaded, into the LRU tail. A batch is only given to the cache when its worst case fits the unpinned slots of
+its layer group; otherwise it takes 1336's selective upload as before. `BIGCHERRY_MOE_CACHE_PROFILE_OUT` writes a profile from the routing the cache sees.
 
 Nothing changes without the variables.
 

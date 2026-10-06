@@ -14,7 +14,8 @@ patch uses that:
      evicted; the rest of the slots stay an LRU.
   2. With a pinned set, large batches use the cache too (BIGCHERRY_MOE_CACHE_LARGE=0 turns that off): hits are
      computed from the resident experts and only the misses are uploaded, into the LRU tail, so a prefill sweep
-     cannot evict the hot set. A batch whose unpinned experts do not fit the tail falls back to 1336's upload.
+     cannot evict the hot set. A batch is only given to the cache when its worst case fits the unpinned slots
+     of its layer group; otherwise it takes 1336's upload as before.
   3. BIGCHERRY_MOE_CACHE_PROFILE_OUT=<file> counts the routed experts the cache sees and writes a profile at exit
      (ranked by count, then the pairs never routed, interleaved across layers), in the same format.
 
@@ -93,8 +94,11 @@ _N_MEMBERS = _A_MEMBERS + r"""
     std::string bc_profile_out;
 """
 
-_A_RESOLVE = "        if (n_tokens > max_batch || std::min("
-_N_RESOLVE = "        if ((n_tokens > max_batch && !bc_large_batches) || std::min("
+# a batch is only given to the cache when its worst case fits the unpinned slots: a plan that fails later is a hard
+# scheduler error, not a fallback (seen on a group with 998 slots, 848 pinned, and a 512-token batch needing 151)
+_A_RESOLVE = "        if (n_tokens > max_batch || std::min(n_tokens*node->src[2]->ne[0], b.src->ne[2]) > groups[b.ig].n_slots) {"
+_N_RESOLVE = ("        if ((n_tokens > max_batch && !bc_large_batches) ||\n"
+              "                std::min(n_tokens*node->src[2]->ne[0], b.src->ne[2]) > groups[b.ig].n_slots - groups[b.ig].lru.n_pinned) { // BigCherry 1338")
 
 _A_PREPARE = "        l.planned_ids.assign(ids, ids + n_ids);\n"
 _N_PREPARE = _A_PREPARE + r"""        if (!bc_freq.empty()) { // BigCherry 1338: routing counts for the profile
@@ -209,8 +213,10 @@ _N_DTOR = r"""    // BigCherry 1338: Strata profile, `STRP`, u32 version, n_laye
             if (groups[ig].n_slots == 0) {
                 continue;
             }
-            // the tail keeps room for the experts of one generation ubatch at least
-            quota[ig] = std::max<int64_t>(0, std::min<int64_t>((int64_t) groups[ig].n_slots*pct/100, groups[ig].n_slots - 8*n_expert_used));
+            // the unpinned tail keeps room for every expert of a layer when the group can afford it (then any batch
+            // fits), and for the experts of one generation ubatch otherwise (then large batches skip this group)
+            const int64_t tail = groups[ig].n_slots >= 2*n_expert ? n_expert : 8*n_expert_used;
+            quota[ig] = std::max<int64_t>(0, std::min<int64_t>((int64_t) groups[ig].n_slots*pct/100, groups[ig].n_slots - tail));
             for (int32_t il : groups[ig].layers) {
                 group_of[il] = ig;
             }
@@ -278,7 +284,7 @@ PATCHES = [
                  guard=r"BigCherry 1338: profile-pinned residency", rationale="Members of the cache implementation.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="cache-profile-resolve", anchor=_re.escape(_A_RESOLVE), mode="replace", text=_N_RESOLVE,
-                 guard=r"n_tokens > max_batch && !bc_large_batches", rationale="The batch-size gate of resolve().",
+                 guard=r"groups\[b\.ig\]\.n_slots - groups\[b\.ig\]\.lru\.n_pinned", rationale="The batch-size and capacity gate of resolve().",
                  expect_matches=1, max_span_lines=2),
             Edit(id="cache-profile-replay-diag", anchor=_re.escape(_A_REPLAY), mode="replace", text=_N_REPLAY,
                  guard=r"BigCherry 1338: say which layer saw two different id sets",
