@@ -555,6 +555,11 @@ patches = ["1331_alloc_peak_live"]
 # control). Only acts when MoE experts are host-resident (e.g. a single GPU with -ncmoe).
 patches = ["1336_sched_copy_callback"]
 
+[experiment.moe-expert-parallel]
+# MET04: production set + 1281 (range MUL_MAT_ID) + 1283 (whole experts per device inside the tensor split,
+# BIGCHERRY_MOE_EP=1, one delayed AllReduce per MoE block).
+patches = ["1281_moe_mul_mat_id_range", "1283_qwen4exp_expert_parallel"]
+
 [experiment.moe-range]
 # MET02 phase A: production set + 1281 (ggml_mul_mat_id_range, CPU reference; nothing in the graph uses it yet).
 patches = ["1281_moe_mul_mat_id_range"]
