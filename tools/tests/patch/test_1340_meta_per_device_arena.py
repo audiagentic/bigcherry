@@ -1,0 +1,98 @@
+"""Offline mechanics tests for 1340_meta_per_device_arena."""
+
+from __future__ import annotations
+
+import importlib.util
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from bigcherry.patcher import apply_all  # noqa: E402
+
+_REPO = Path(__file__).resolve().parents[3]
+_V = _REPO / "vendor/llama.cpp"
+_PIN = "d89651a7b205"
+_META = "ggml/src/ggml-backend-meta.cpp"
+_BACKEND = "ggml/src/ggml-backend.cpp"
+
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _pinned(path):
+    try:
+        res = subprocess.run(["git", "-C", str(_V), "show", f"{_PIN}:{path}"], capture_output=True, text=True,
+                             encoding="utf-8", check=True)
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return res.stdout
+
+
+_P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
+_P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
+_SRC = {path: _pinned(path) for path in (_META, _BACKEND)}
+
+
+@unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
+class Patch1340Mechanics(unittest.TestCase):
+    def _root(self, td):
+        root = Path(td)
+        for path, text in _SRC.items():
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text(text, encoding="utf-8", newline="\n")
+        base = apply_all(_P1339.PATCHES, root)
+        self.assertTrue(all(r.ok for r in base), [e.detail for r in base for e in r.failed])
+        return root
+
+    def test_apply_and_idempotent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            res = apply_all(_P.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+            meta = (root / _META).read_text(encoding="utf-8")
+            backend = (root / _BACKEND).read_text(encoding="utf-8")
+
+            self.assertIn('getenv("BIGCHERRY_META_PER_DEVICE_ARENA")', meta)
+            self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("bool ggml_backend_meta_alloc_graph(", meta)
+            self.assertIn("ggml_gallocr_reserve(bcj.arena_galloc.get(), &simple_graph)", meta)
+            self.assertIn("ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph)", meta)
+            self.assertIn("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f", meta)
+            self.assertIn("bufs.resize(n_simple_bufts, nullptr);", meta)
+            self.assertIn("if (t_ij->view_src->data != nullptr)", meta)
+            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
+
+            arena = meta[meta.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer("):
+                         meta.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(")]
+            self.assertLess(arena.index("if (ggml_backend_meta_per_device_arena_enabled())"),
+                            arena.index("bufs.push_back(ggml_backend_buft_alloc_buffer("))
+            self.assertIn("BIGCHERRY_META_MEM compute dev=", arena)
+
+            before = {p: (root / p).read_text(encoding="utf-8") for p in _SRC}
+            again = apply_all(_P.PATCHES, root)
+            self.assertTrue(all(r.ok for r in again), [e.detail for r in again for e in r.failed])
+            self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _SRC})
+
+    def test_changed_compute_allocator_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            path = root / _META
+            src = path.read_text(encoding="utf-8")
+            src = src.replace("    size_t max_size = 0;\n    std::vector<ggml_backend_buffer_t> bufs;\n",
+                              "    size_t max_size = 1;\n    std::vector<ggml_backend_buffer_t> bufs;\n", 1)
+            path.write_text(src, encoding="utf-8", newline="\n")
+            res = apply_all(_P.PATCHES, root)
+            self.assertFalse(all(r.ok for r in res))
+
+
+if __name__ == "__main__":
+    unittest.main()

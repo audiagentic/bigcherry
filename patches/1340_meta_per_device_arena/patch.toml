@@ -1,0 +1,17 @@
+schema = 1
+id = "1340_meta_per_device_arena"
+order = 1340
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["MSM02"]
+requires = ["0910_feature_sets", "1339_meta_memory_report"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["meta-backend", "tensor-parallel"]
