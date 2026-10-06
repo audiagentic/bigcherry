@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda/unary.cu"
@@ -33,7 +33,7 @@ class Patch1312Mechanics(unittest.TestCase):
     def _tree(self, td: str) -> Path:
         path = Path(td) / "ggml/src/ggml-cuda/unary.cu"
         path.parent.mkdir(parents=True)
-        shutil.copy2(_VENDOR, path)
+        copy_pinned(_VENDOR, path)
         return path
 
     def test_apply_after_1310_and_idempotent(self):

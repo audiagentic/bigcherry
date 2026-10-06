@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1274_mmvq_kquant_f32_decode/patch.py"
@@ -39,8 +39,8 @@ class Patch1274Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        shutil.copy2(_VENDOR / "mmvq.cu", cuda / "mmvq.cu")
-        shutil.copy2(_VENDOR / "vecdotq.cuh", cuda / "vecdotq.cuh")
+        copy_pinned(_VENDOR / "mmvq.cu", cuda / "mmvq.cu")
+        copy_pinned(_VENDOR / "vecdotq.cuh", cuda / "vecdotq.cuh")
         geometry = apply_all([_geometry.PATCH], root)
         assert all(r.ok for r in geometry), [e.detail for r in geometry for e in r.failed]
         return td, root, cuda / "mmvq.cu", cuda / "vecdotq.cuh"

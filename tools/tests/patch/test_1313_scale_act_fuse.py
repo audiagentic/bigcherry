@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _CUDA = _REPO / "vendor/llama.cpp/ggml/src/ggml-cuda"
@@ -37,7 +37,7 @@ class Patch1313Mechanics(unittest.TestCase):
             dst = root / "ggml/src/ggml-cuda"
             dst.mkdir(parents=True)
             for f in _FILES:
-                shutil.copy2(_CUDA / f, dst / f)
+                copy_pinned(_CUDA / f, dst / f)
             self.assertTrue(all(r.ok for r in apply_all(_P1310.PATCHES, root)))
             results = apply_all(_P1313.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])

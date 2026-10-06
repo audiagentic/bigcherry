@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend-meta.cpp"
@@ -27,7 +27,7 @@ class Patch1320Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / "ggml/src/ggml-backend-meta.cpp"
             path.parent.mkdir(parents=True)
-            shutil.copy2(_VENDOR, path)
+            copy_pinned(_VENDOR, path)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")

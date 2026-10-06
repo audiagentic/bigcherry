@@ -1,7 +1,7 @@
 # 1338_moe_cache_profile
 
 **Status:** untested
-**Plan item:** MET01
+**Plan item:** MET01/MET07
 
 Kind: enhancement, variables `BIGCHERRY_MOE_CACHE_PROFILE`, `BIGCHERRY_MOE_CACHE_PIN_PCT` (85),
 `BIGCHERRY_MOE_CACHE_LARGE` (1), `BIGCHERRY_MOE_CACHE_PROFILE_OUT`. Requires 1337 (`--moe-cache-mib`).

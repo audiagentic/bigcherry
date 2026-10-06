@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _PATCH_FILE = _REPO / "patches/1272_ar_host_compressed_wire/patch.py"
@@ -40,8 +40,8 @@ class Patch1272Mechanics(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        shutil.copy2(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
-        shutil.copy2(_VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
+        copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
+        copy_pinned(_VENDOR / "allreduce.cuh", cuda / "allreduce.cuh")
         return td, root, cuda / "allreduce.cu"
 
     def test_apply_branches_and_idempotent(self):

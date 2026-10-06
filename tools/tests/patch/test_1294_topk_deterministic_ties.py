@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "ggml/src/ggml-cuda/top-k.cu"
@@ -34,7 +34,7 @@ class Patch1294Mechanics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / _REL).parent.mkdir(parents=True)
-            shutil.copy2(_VENDOR, root / _REL)
+            copy_pinned(_VENDOR, root / _REL)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             out = (root / _REL).read_text(encoding="utf-8")

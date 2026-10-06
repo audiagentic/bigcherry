@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import tomllib
@@ -12,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import FilePatch, apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 from bigcherry.patch import patchset  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -79,8 +79,8 @@ class Patch1276AdaptiveNway(unittest.TestCase):
         root = Path(td.name)
         cuda = root / "ggml/src/ggml-cuda"
         cuda.mkdir(parents=True)
-        shutil.copy2(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
-        shutil.copy2(_VENDOR / "ggml-cuda.cu.comm-950-1260.txt", cuda / "ggml-cuda.cu")
+        copy_pinned(_VENDOR / "allreduce.cu", cuda / "allreduce.cu")
+        copy_pinned(_VENDOR / "ggml-cuda.cu.comm-950-1260.txt", cuda / "ggml-cuda.cu")
         return td, root, cuda / "allreduce.cu", cuda / "ggml-cuda.cu"
 
     def _apply_dependencies(self, root: Path):
