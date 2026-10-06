@@ -143,3 +143,12 @@ WHIRL v0.1.3 independently validates the value of measured cost/acceptance econo
 The useful transferable pattern is the policy shape already present here: measured wall-clock value, hysteresis and bounded probes rather than acceptance-only heuristics. Keep the two decisions separate because front-depth changes target verification batch size while FMTP05 changes work scheduled under an already-submitted target verification window.
 
 Source: https://github.com/tsaipifong/whirl-llm/blob/main/src/model/spec.cpp
+
+
+### Execution boundary after WHIRL audit
+
+This ownership note is architectural only. FMTP02-FMTP07 remain paused by the recorded owner decision in FMTP03; BCOP38/PRBE52 work does **not** resume this pipeline.
+
+Do not implement, benchmark or tune FMTP05 merely because PRBE52/1255 is being reconciled. Resume FMTP05 only after an explicit FMTP resume decision and the prerequisite FMTP03 path is again hardware-qualified.
+
+WHIRL front-depth calibration data is not automatically valid FMTP05 training data. FMTP05 needs its own observations of hidden overlap, overhang, bridge/full-front hit probability and target contention. It may consume the effective front depth selected by PRBE52, but must not reuse PRBE52's E/T controller state or infer ahead-work value from front-depth acceptance statistics alone.
