@@ -53,6 +53,9 @@ Package-only patch, fail-closed anchors, guards, expect_matches, offline test (b
 
 Base framework change (memory layout), not an RD enhancement: the gate is 'no regression + identical output + measured memory reduction'. Owner direction 2026-10-06: memory allocation should follow the split.
 
+2026-10-06 FIRST STEP ON HARDWARE (1340_meta_per_device_arena by GPT, commits 595f01f2 + d59d58b2; build b-metamem-b11402b2). Flag off: unchanged (arms P, O, Pm, Om run and match). BIGCHERRY_META_PER_DEVICE_ARENA=1: the server dies silently during load in all four configurations (production and owner's layout, ctx 49152 and 245760); the log ends after 'BIGCHERRY_META_MEM arena dev=0 ... 267.34' and 'dev=1 ... 267.34' (880.8 at 245K) with no line for dev=2 - the crash is in or right after the third device (R9700), which has zero-sized slices for every attention-side tensor. The two arenas that were created are smaller than the common arena (267.3 vs 285.3 MiB at 49K, 880.8 vs 1020.9 at 245K). Offline test fixed (it sliced the forward declaration). Crash handed back to GPT with the evidence (req_c2487aeea618417f); fix goes inside 1340.
+
 ## Change Log
 
 - 2026-10-06T11:48:08.966158+00:00 (created-by): Created by agent
+- 2026-10-06T12:36:51.392852+00:00 (updated-by): Updated: section:notes
