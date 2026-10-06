@@ -8,5 +8,7 @@ and never modify the Strata tree.
 - `bcop37-build.sh <tree> <sha> <gfx> <bundle>` - step 3, clean documented ROCm build for one target with logs.
 - `bcop37-swift.sh <bundle>` - unmatched lane: merge, pack and GPU smoke on the Swift IQ2_XS file.
 - `bcop37-swift-bench.sh <bundle> <depth>...` - Strata long-prompt prefill and decode speed on the Swift file.
+- `bcop37-routing.sh <bundle> [depth]` - routing traces for prose / code / json prompts, scored by `routing-skew.py`
+  (frequency placement against whole layers, transfer between request types, prefill upload set; feeds MET01).
 
 Owner: BCOP37. Disposition: lab, remove when BCOP37 is closed.
