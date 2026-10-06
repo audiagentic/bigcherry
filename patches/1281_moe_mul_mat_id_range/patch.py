@@ -248,11 +248,17 @@ _A_MMV_HOST = (
 _N_MMV_HOST = (
     "    ggml_cuda_mm_fusion_args_device fusion_local{};\n"
     "\n"
+    "    // BigCherry 1281: range variant. In a plain launch dst is the MUL_MAT_ID node; in a fused launch dst is the\n"
+    "    // fused output (GLU) and the caller passes the range. The kernel skips the lanes this device does not hold,\n"
+    "    // so clear dst first (stream ordered, no synchronisation): those lanes are then an exact +0.\n"
     "    if (ids != nullptr && fusion == nullptr && ggml_mul_mat_id_is_range(dst)) {\n"
-    "        // BigCherry 1281: range variant. The kernel skips the lanes this device does not hold, so clear dst first\n"
-    "        // (stream ordered, no synchronisation): those lanes are then an exact +0.\n"
     "        fusion_local.id_base  = ggml_mul_mat_id_range_base(dst);\n"
     "        fusion_local.id_count = src0->ne[2];\n"
+    "    } else if (ids != nullptr && fusion != nullptr && fusion->id_count != 0) {\n"
+    "        fusion_local.id_base  = fusion->id_base;\n"
+    "        fusion_local.id_count = fusion->id_count;\n"
+    "    }\n"
+    "    if (fusion_local.id_count != 0) {\n"
     "        CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), ctx.stream()));\n"
     "    }\n"
     "\n"
@@ -361,11 +367,83 @@ _A_CUDA_FUSE = (
 )
 _N_CUDA_FUSE = _A_CUDA_FUSE + (
     "\n"
-    "    // BigCherry 1281: the fused kernels are launched without the range arguments, so a range node is never fused\n"
+    "    // BigCherry 1281: range nodes fuse only in the plain gate + up + GLU form, where an inactive lane is exactly\n"
+    "    // GLU(0, 0) = +0 and can be skipped. A fused bias would make an inactive lane non-zero and a fused scale can\n"
+    "    // give -0, so those forms are not fused; gate and up must hold the same experts.\n"
     "    if (is_mul_mat_id && (ggml_mul_mat_id_is_range(ffn_up) || ggml_mul_mat_id_is_range(ffn_gate))) {\n"
-    "        return false;\n"
+    "        if (has_bias || has_scale) {\n"
+    "            return false;\n"
+    "        }\n"
+    "        if (!ggml_mul_mat_id_is_range(ffn_up) || !ggml_mul_mat_id_is_range(ffn_gate) ||\n"
+    "                ggml_mul_mat_id_range_base(ffn_up) != ggml_mul_mat_id_range_base(ffn_gate) ||\n"
+    "                ffn_up->src[0]->ne[2] != ffn_gate->src[0]->ne[2]) {\n"
+    "            return false;\n"
+    "        }\n"
     "    }\n"
 )
+
+# The fused launches hand the kernels the GLU node as dst, so the range is carried in the host-side fusion arguments.
+_A_FUSION_HOST = (
+    "    const ggml_tensor * shared_gate = nullptr;\n"
+    "    ggml_tensor * shared_dst = nullptr;\n"
+    "};\n"
+    "struct ggml_cuda_mm_fusion_args_device {\n"
+)
+_N_FUSION_HOST = (
+    "    const ggml_tensor * shared_gate = nullptr;\n"
+    "    ggml_tensor * shared_dst = nullptr;\n"
+    "    // BigCherry 1281: range MUL_MAT_ID in a fused launch (0 = ordinary), taken from the up projection\n"
+    "    int32_t id_base = 0;\n"
+    "    int64_t id_count = 0;\n"
+    "};\n"
+    "struct ggml_cuda_mm_fusion_args_device {\n"
+)
+
+_A_FUSE_PLAIN = (
+    "                fusion_data.gate      = gate->src[0];\n"
+    "                fusion_data.glu_op    = ggml_get_glu_op(glu);\n"
+    "                fusion_data.glu_limit = ggml_get_op_params_f32(glu, 3);\n"
+)
+_N_FUSE_PLAIN = _A_FUSE_PLAIN + (
+    "                if (ggml_mul_mat_id_is_range(up)) { // BigCherry 1281: range-aware fusion\n"
+    "                    fusion_data.id_base  = ggml_mul_mat_id_range_base(up);\n"
+    "                    fusion_data.id_count = up->src[0]->ne[2];\n"
+    "                }\n"
+)
+
+_A_FUSE_SHARED = (
+    "            fusion.shared_gate = shared->src[0]->src[0];\n"
+    "            fusion.shared_dst = shared;\n"
+)
+_N_FUSE_SHARED = _A_FUSE_SHARED + (
+    "            if (ggml_mul_mat_id_is_range(up)) { // BigCherry 1281: the routed part is a range op, the shared expert is not\n"
+    "                fusion.id_base  = ggml_mul_mat_id_range_base(up);\n"
+    "                fusion.id_count = up->src[0]->ne[2];\n"
+    "            }\n"
+)
+
+_A_FUSE_SCALE = (
+    "            ggml_cuda_mm_fusion_args_host fusion_data{};\n"
+    "            fusion_data.x_bias  = bias;\n"
+    "            fusion_data.x_scale = scale;\n"
+)
+_N_FUSE_SCALE = (
+    "            if (ggml_mul_mat_id_is_range(mm_node)) {\n"
+    "                continue; // BigCherry 1281: no scale / bias fusion for a range node (see ggml_cuda_should_fuse_mul_mat)\n"
+    "            }\n"
+    "\n"
+) + _A_FUSE_SCALE
+
+_A_FUSE_BIAS = (
+    "        ggml_cuda_mm_fusion_args_host fusion_data{};\n"
+    "        fusion_data.x_bias = bias_tensor;\n"
+)
+_N_FUSE_BIAS = (
+    "        if (ggml_mul_mat_id_is_range(mm_node)) {\n"
+    "            continue; // BigCherry 1281: a fused bias would make an inactive lane non-zero\n"
+    "        }\n"
+    "\n"
+) + _A_FUSE_BIAS
 
 _A_CUDA = (
     "                if (op->op == GGML_OP_MUL_MAT_ID && ggml_get_op_params_i32(op, 3) == GGML_PREC_F32) {\n"
@@ -776,6 +854,9 @@ PATCHES = [
         description="1281 phase B: range base / count carried to the MMVQ / MMVF kernels",
         language="none",
         edits=(
+            Edit(id="mmid-range-fusion-host-args", anchor=_re.escape(_A_FUSION_HOST), mode="replace", text=_N_FUSION_HOST,
+                 guard=r"range MUL_MAT_ID in a fused launch \(0 = ordinary\)", rationale="End of ggml_cuda_mm_fusion_args_host.",
+                 expect_matches=1, max_span_lines=5),
             Edit(id="mmid-range-fusion-args", anchor=_re.escape(_A_FUSION_ARGS), mode="replace", text=_N_FUSION_ARGS,
                  guard=r"int64_t id_count = 0;", rationale="Last field of ggml_cuda_mm_fusion_args_device.",
                  expect_matches=1, max_span_lines=2),
@@ -857,9 +938,21 @@ PATCHES = [
                  guard=r"static bool bc_cuda_mul_mat_id_range_supported\(",
                  rationale="Before ggml_cuda_mul_mat_id_needs_sync, next to the dispatch it mirrors.", expect_matches=1,
                  max_span_lines=3),
-            Edit(id="mmid-range-cuda-no-fusion", anchor=_re.escape(_A_CUDA_FUSE), mode="replace", text=_N_CUDA_FUSE,
-                 guard=r"a range node is never fused", rationale="ggml_cuda_should_fuse_mul_mat, after the op-kind check.",
+            Edit(id="mmid-range-cuda-fusion-rule", anchor=_re.escape(_A_CUDA_FUSE), mode="replace", text=_N_CUDA_FUSE,
+                 guard=r"range nodes fuse only in the plain gate \+ up \+ GLU form",
+                 rationale="ggml_cuda_should_fuse_mul_mat, after the op-kind check.", expect_matches=1, max_span_lines=4),
+            Edit(id="mmid-range-cuda-fuse-plain", anchor=_re.escape(_A_FUSE_PLAIN), mode="replace_all", text=_N_FUSE_PLAIN,
+                 guard=r"if \(ggml_mul_mat_id_is_range\(up\)\) \{ // BigCherry 1281: range-aware fusion",
+                 rationale="The two plain gate + up + GLU launches (MMVF and MMVQ).", expect_matches=2, max_span_lines=4),
+            Edit(id="mmid-range-cuda-fuse-shared", anchor=_re.escape(_A_FUSE_SHARED), mode="replace", text=_N_FUSE_SHARED,
+                 guard=r"the routed part is a range op, the shared expert is not",
+                 rationale="The routed + shared expert fused launch.", expect_matches=1, max_span_lines=3),
+            Edit(id="mmid-range-cuda-no-scale-fusion", anchor=_re.escape(_A_FUSE_SCALE), mode="replace", text=_N_FUSE_SCALE,
+                 guard=r"no scale / bias fusion for a range node", rationale="The scale (+ bias) fused launch.",
                  expect_matches=1, max_span_lines=4),
+            Edit(id="mmid-range-cuda-no-bias-fusion", anchor=_re.escape(_A_FUSE_BIAS), mode="replace", text=_N_FUSE_BIAS,
+                 guard=r"a fused bias would make an inactive lane non-zero", rationale="The bias fused launch.",
+                 expect_matches=1, max_span_lines=3),
             Edit(id="mmid-range-cuda-refuse", anchor=_re.escape(_A_CUDA), mode="replace", text=_N_CUDA,
                  guard=r"if \(ggml_mul_mat_id_is_range\(op\)\) \{",
                  rationale="supports_op, MUL_MAT / MUL_MAT_ID case, after the F32-precision refusal.", expect_matches=1,
