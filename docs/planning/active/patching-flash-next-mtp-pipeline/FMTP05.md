@@ -134,3 +134,12 @@ Hardware:
 - Policy can both disable on negative EV and recover from off when workload changes.
 - Probe rate/work is bounded.
 - No unbounded queue/state.
+
+
+## 2026-10-06 ownership note: WHIRL adaptive speculation
+
+WHIRL v0.1.3 independently validates the value of measured cost/acceptance economics, but its front-draft controller belongs to PRBE52/1255/1268, not FMTP05. FMTP05 must continue to consume `common_speculative_effective_n_max()` as an input and adapt only **future/ahead overlap work**. It must not add another front-depth controller or n-gram proposer selector.
+
+The useful transferable pattern is the policy shape already present here: measured wall-clock value, hysteresis and bounded probes rather than acceptance-only heuristics. Keep the two decisions separate because front-depth changes target verification batch size while FMTP05 changes work scheduled under an already-submitted target verification window.
+
+Source: https://github.com/tsaipifong/whirl-llm/blob/main/src/model/spec.cpp

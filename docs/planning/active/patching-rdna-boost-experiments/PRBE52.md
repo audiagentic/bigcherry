@@ -115,3 +115,29 @@ Upstream reference verified 2026-10-04: https://github.com/ggml-org/llama.cpp/pu
 - 2026-09-27T13:25:45.046397+00:00 (updated-by): Updated: section:notes
 - 2026-09-27T13:28:13.703319+00:00 (updated-by): Updated: section:notes
 - 2026-10-04 (agent): Added upstream #29924 as a prerequisite correctness/performance baseline for temperature>0 n-gram + MTP lanes; preserved draft-mtp-only semantics.
+
+
+## 2026-10-06 WHIRL cost-model audit
+
+External mechanism provenance: `tsaipifong/whirl-llm` v0.1.3, `src/model/spec.cpp` and `docs/guide/en/speculative-decoding.md`.
+
+Repository fact: 1255/1268 currently adapt depth from accepted-vs-drafted counts using fixed climb/drop thresholds. They do not measure verification-cycle time or maximize expected accepted tokens per wall-clock time. WHIRL's implemented `pickDrafts()` instead tracks conditional per-position acceptance, measures cycle time by draft count, chooses the depth maximizing `E(tokens)/T(cycle)`, retains the previous depth when within 3% of the best, and probes a neighbouring depth every 32 cycles. WHIRL reports that its best fixed depth varies materially by workload/context (code 6-8, prose 3-4, long context 2-3), while its automatic policy stays near the best fixed point. Treat those numbers as external gfx1201 evidence, not BigCherry measurements.
+
+This does **not** justify a second adaptive controller. PRBE52/1255/1268 remain the sole front-draft-depth owner. The unresolved question is whether replacing the heuristic controller with a measured E/T policy improves BigCherry after the existing 1210 correctness prerequisite and #29924 mixed-drafter semantic fix are satisfied.
+
+Cheapest discriminator, before implementation:
+1. Extend the existing 1317/1318 timing evidence parser or an offline script to replay recorded rounds as tuples `{n_draft,n_accepted,cycle_us,context,workload}`.
+2. Compare three policies offline on the same trace: fixed depth; current 1255 climb/drop; WHIRL-style `argmax_k E(k)/T(k)` with 3% hysteresis and 32-cycle neighbour probes.
+3. Score predicted accepted tokens per measured cycle time and policy regret versus the best fixed depth for each workload segment. Do not infer target throughput from acceptance alone.
+4. If E/T policy reduces aggregate regret by <5% versus 1255, or changes selected depth rarely enough to be operationally immaterial, stop: retain 1255 and record WHIRL as rejected-for-now evidence.
+5. If >=5%, replace the internals of the existing 1255 controller; do not add a parallel mode, state machine, CLI flag or dispatch table. Keep 1268's existing opt-in/configuration surface.
+6. Hardware gate on gfx1201 then gfx1100: fixed-best vs current adaptive vs E/T adaptive, ABBA >=5 repetitions across coding, prose, repetitive/tool-call and 8K/64K/128K context lanes. Require exact greedy IDs, multi-request same-process correctness, and >=5% median effective-TG improvement over current adaptive with <=2% regression in any held-out lane.
+
+WHIRL's n-gram co-drafting is a separate proposer-selection mechanism. Upstream llama.cpp already supports simultaneous `draft-mtp,ngram-*` proposers, and current upstream evidence shows combining them can be neutral or slower when both independently draft. Therefore do not fold a WHIRL n-gram implementation into 1255/1268. First use upstream mixed-proposer support as the control after #29924; any later arbitration work needs evidence that proposer-selection overhead remains material.
+
+Traceability:
+- https://github.com/tsaipifong/whirl-llm
+- https://github.com/tsaipifong/whirl-llm/blob/main/src/model/spec.cpp
+- https://github.com/tsaipifong/whirl-llm/blob/main/docs/guide/en/speculative-decoding.md
+- https://github.com/ggml-org/llama.cpp/issues/24507
+- https://github.com/ggml-org/llama.cpp/issues/23184
