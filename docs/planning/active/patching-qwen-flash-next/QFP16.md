@@ -87,3 +87,37 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 - 2026-10-04T06:32:01.947191+00:00 (updated-by): Updated: section:detailed_solution
 - 2026-10-04T06:45:39.484407+00:00 (updated-by): Updated: section:notes
 - 2026-10-04T07:05:05.821690+00:00 (updated-by): Updated: section:notes
+
+
+## 2026-10-06 post-1326 ownership and residual gate
+
+1326 has already resolved the dominant decode-side QFP16 finding and is in validated-enhancements. Its safe staged result measured +9.4% decode at ~8K and +7.8% at ~64K with greedy identity. 1325 had attributed ~2.63 ms/target verify round and ~0.40-0.45 ms/draft call to split-input handling. Therefore the earlier outer-HIP-graph design above is no longer the first action. Reopen it only if fresh post-1326 profiling still places >=1 ms/round of critical-path host time in Meta launch/AllReduce.
+
+The remaining QFP16 question is large/prefill host inputs. The unsafe direct-source version had shown +3.7%/+7.2% prefill, but caller-owned pinned inputs can be rewritten before DMA completion. Scheduler-owned pageable staging fixed that lifetime issue but measured -2.3%/-2% prefill, so 1326 correctly caps its fast path at 4 MiB.
+
+ROCm HIP documentation makes the mechanism explicit: hipMemcpyAsync with non-pinned host memory is performed synchronously; pinned/page-locked host memory is required for genuinely asynchronous/overlapped H2D. Thus current pageable staging should be described as a lifetime-safe synchronization-elision path, not true overlapped H2D.
+
+Current llama.cpp master still falls back to synchronizing/copying when cpy_tensor_async cannot handle a host source, so upstream has not superseded 1326 as of 2026-10-06.
+
+### Cheapest discriminator before more code
+
+Instrument the current safe 1326 path on representative prefill ubatches and report: bytes staged; host memcpy time; set_tensor_async call time; destination synchronization/fallback time; total split input-handling time; source/staging pinned status; Meta destination count. Run ubatch 512/2048/4096 on the current production composition.
+
+**Stop** if large-input handling is <1 ms or <3% of prefill wall time. Do not implement another scheduler mechanism.
+
+### Only candidate if the discriminator passes: bounded pinned staging ring
+
+Extend 1326 rather than creating a new scheduler-copy owner. Allocate scheduler-owned pinned host slots through an existing backend host-buffer primitive. Reuse a slot only after every destination stream that consumed its prior contents has completed. For Meta mirrored fan-out, completion on one device is insufficient; slot reuse must join all consuming devices. Bound pinned storage (initial qualification cap 64 MiB) and fall back to current 1326/upstream behavior if the pool/event contract is unavailable or full.
+
+Do not add a new runtime option unless qualification proves an independently selectable production policy is required. Preserve the current <=4 MiB safe path as the control.
+
+Implementation seams if promoted:
+- ggml/src/ggml-backend.cpp: ggml_backend_sched_compute_splits and scheduler-owned slot lifetime.
+- ggml/src/ggml-backend-meta.cpp only if a generic completion/join hook is required; do not duplicate existing fan-out.
+- patches/1326_sched_async_host_inputs/patch.py and its existing mechanics test.
+
+Correctness must include >=3 requests in one process, multi-ubatch prefill, forced slot wrap/reuse, ubatch-size changes between requests, greedy identity, bounded pinned bytes and physically plausible transfer accounting.
+
+Hardware promotion requires >=5% median prefill improvement at ubatch 2048 or 4096, no >2% decode regression and no correctness failure. Otherwise close the residual and retain 1326 unchanged.
+
+External mechanism references: ROCm HIP host-memory/asynchronous-copy documentation; current llama.cpp ggml_backend_sched_compute_splits; vLLM's use of pinned host inputs for non-blocking H2D and event-scoped reusable offload buffers.
