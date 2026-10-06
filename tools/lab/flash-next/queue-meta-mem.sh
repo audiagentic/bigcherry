@@ -5,7 +5,8 @@
 # experts, expert-parallel; OWNER_ENV). One short request per load (depth 2048) so the compute arenas exist.
 # FLAG_ARMS=1 with EXPERIMENT=meta-memory adds the MSM02 / MSM03 arms (per-device arena, subset-mirrored indexer cache)
 # on both layouts; their greedy text must equal their base arm.
-# Usage: queue-meta-mem.sh <tag>      env: CTX_LIST ("49152 245760"), BC_MODEL, OWNER_ENV, RUN_OVERRIDE, EXPERIMENT, FLAG_ARMS
+# DEPTH (2048) is how far the context is filled before the report: a per-device arena is sized by the graphs that ran.
+# Usage: queue-meta-mem.sh <tag>      env: CTX_LIST ("49152 245760"), DEPTH, BC_MODEL, OWNER_ENV, RUN_OVERRIDE, EXPERIMENT, FLAG_ARMS
 set -u
 TAG=${1:?tag}
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -24,14 +25,14 @@ cat > "$R/$N.arms.sh" <<ARMS
 # written by queue-meta-mem.sh: <llama-server> <out-root>
 bash tools/lab/flash-next/wait-gpus-free.sh   # a production model may have loaded while the build ran
 for ctx in ${CTX_LIST:-49152 245760}; do
-  env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/P-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-  env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/O-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+  env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/P-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+  env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 $OWNER_ENV bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/O-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
   if [ "${FLAG_ARMS:-0}" = 1 ]; then   # MSM02 / MSM03: a = per-device arena (1340), m = subset-mirrored indexer cache (1341)
-    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pm-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Om-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
-    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oam-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pm-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Om-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=${DEPTH:-2048} BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oam-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
   fi
 done
 ARMS
