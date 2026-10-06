@@ -77,7 +77,7 @@ class Patch1338Mechanics(unittest.TestCase):
             self.assertLess(plan.index("bc_unpinned > (size_t) (n_slots - n_pinned)"), plan.index("// hits go to the tail first"))
             # large batches only with a pinned set; upstream's slot-count gate is kept
             self.assertIn("if ((n_tokens > max_batch && !bc_large_batches) ||\n                std::min(n_tokens*node->src[2]->ne[0], b.src->ne[2]) > groups[b.ig].n_slots - groups[b.ig].lru.n_pinned) {", src)
-            self.assertIn("bc_large_batches = bc_pinned > 0 && (large == nullptr || atoi(large) != 0);", src)
+            self.assertIn("bc_large_batches = large != nullptr ? atoi(large) != 0 : bc_pinned > 0;", src)
             # prewarm runs once the banks exist; counts are taken once per layer and graph, after the replay shortcut
             ctor = src[src.index("    impl(const llama_model & model"):src.index("    bool resolve(")]
             self.assertLess(ctor.index("buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft));"), ctor.index("bc_prewarm(n_expert); // BigCherry 1338"))

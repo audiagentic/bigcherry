@@ -94,6 +94,8 @@ if [ "${ARMS:-copy}" = hop ]; then
   run T2 BIGCHERRY_FEATURES=flashnext BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0 -- -dev ROCm0,ROCm1,ROCm2 -sm tensor -ts 0.31,0.27,0.42
 elif [ "${ARMS:-copy}" = ub ]; then   # host-expert prefill against the micro-batch size: one expert upload per ubatch
   for ub in ${UB_LIST:-512 1024 2048 4096}; do run U$ub -- -ub $ub -b $ub; done
+elif [ "${ARMS:-copy}" = record ]; then  # 1338: one run that writes $out/profile.bin from decode and prefill routing
+  run W BIGCHERRY_MOE_CACHE_PROFILE_OUT=$out/profile.bin BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib ${CACHE_MIB:-22000}
 elif [ "${ARMS:-copy}" = profile ]; then # 1338: W = LRU cache and write a profile, P = profile pinned + large batches
   mib=${CACHE_MIB:-22000}       # through the cache, PS = pinned, large batches off, W2 = LRU again. PROFILE = a profile
   prof=${PROFILE:-$out/profile.bin}   # from elsewhere (held out) instead of the one W writes

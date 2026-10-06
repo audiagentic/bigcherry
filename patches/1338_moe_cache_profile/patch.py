@@ -199,6 +199,9 @@ _N_DTOR = r"""    // BigCherry 1338: Strata profile, `STRP`, u32 version, n_laye
             bc_profile_out = out;
             bc_freq.assign(layers.size()*n_expert, 0);
         }
+        // set to 1 without a profile, large batches go through the plain LRU: for a run that records prefill routing
+        const char * large = getenv("BIGCHERRY_MOE_CACHE_LARGE");
+        bc_large_batches = large != nullptr && atoi(large) != 0;
         const char * path = getenv("BIGCHERRY_MOE_CACHE_PROFILE");
         if (path == nullptr || *path == '\0' || no_alloc) {
             return;
@@ -239,8 +242,7 @@ _N_DTOR = r"""    // BigCherry 1338: Strata profile, `STRP`, u32 version, n_laye
             }
             bc_pinned++;
         }
-        const char * large = getenv("BIGCHERRY_MOE_CACHE_LARGE");
-        bc_large_batches = bc_pinned > 0 && (large == nullptr || atoi(large) != 0);
+        bc_large_batches = large != nullptr ? atoi(large) != 0 : bc_pinned > 0;
         LLAMA_LOG_INFO("llama_moe_cache: profile %s: %zu experts pinned (%.2f MiB, %d%% of the slots), large batches %s\n",
             path, bc_pinned, bc_pinned_bytes/1024.0/1024.0, pct, bc_large_batches ? "use the cache" : "bypass the cache");
     }
@@ -314,8 +316,9 @@ ENV_DOCS = (
            "start-up into pinned cache slots and large batches then use the cache"),
     EnvDoc("BIGCHERRY_MOE_CACHE_PIN_PCT", "0..100", "85",
            "share of the cache slots given to the pinned profile set; the rest stays an LRU"),
-    EnvDoc("BIGCHERRY_MOE_CACHE_LARGE", "0|1", "1",
-           "with a pinned set: 0 keeps ubatches above 32 tokens off the cache (1337's behaviour)"),
+    EnvDoc("BIGCHERRY_MOE_CACHE_LARGE", "0|1", "(1 with a pinned set, else 0)",
+           "0 keeps ubatches above 32 tokens off the cache (1337's behaviour); 1 without a profile sends them "
+           "through the plain LRU, for a run that records prefill routing into a profile"),
     EnvDoc("BIGCHERRY_MOE_CACHE_PROFILE_OUT", "<file>", "(unset)",
            "with --moe-cache-mib: count the routed experts the cache sees and write a profile at exit"),
 )
