@@ -109,13 +109,14 @@ GPT review (req_28ab0790a31443df) separately reviewed the 1265 demotion (d2c2365
 
 Upstream reference verified 2026-10-04: https://github.com/ggml-org/llama.cpp/pull/29924 . Do not implement it as a BigCherry-specific speculative algorithm; rebase or carry the minimal semantic fix until upstream merge reaches the pin.
 
+2026-10-06 RECONCILED TO b11402 AND QUEUED (steps 1-2 of the corrected execution gate done, 3-4 queued, 5 not started). (1) Reconciliation: against pin d89651a7b205, 1210 and 1255 apply cleanly; 1268 failed on exactly the three anchors the disposition named (prbe52-begin-reset, prbe52-draft-reset, prbe52-depth-limit) because upstream #27694 made begin() reset the per-sequence sampler first, moved the greedy/probabilistic decision ahead of any sampler reset at the draft start, and put the candidate capture between result.push_back and the depth cap. The three edits are re-anchored on that shape and changed from whole-block replacement to inserting only their own lines (begin: after the sampler reset, identified by the !is_mem_shared position check that only the MTP class has; draft start: after 'drafting[seq_id] = true', identified by the !params.probabilistic block and the pending_h embedding; depth limit: the cap block followed by the chain_heads branch). No behavioural change: floor 0 keeps fixed-depth MTP. (2) Tests: the patch's offline fixture updated to the pin's shape, 3/3 pass (apply + idempotence, noise-stripped anchors, missing depth anchor fails closed); 1210 + 1255 + 1268 apply in order on the pristine pin AND on the production-patched tree; patch-lint clean; the three inserted sites inspected in the output. The known_broken disposition (bound to pin 0504396 and the old digest) is cleared. (3) Queued on Brutus behind the MET01 lanes: tools/lab/flash-next/queue-adaptive-mtp.sh b11402i b-fadef-b11402e 8192 32768 - build b-adaptmtp-b11402i (experiment adaptive-mtp: production + 1210 + 1255 + 1268), then per depth on Flash-Next production (2x XTX + R9700 tensor split, MTP draft on the 6900 XT, --spec-draft-n-max 4): (a) adaptive OFF vs the production build b-fadef-b11402e, ABBA - greedy identity plus the cost of carrying 1210 + 1255; (b) adaptive floor 1 vs fixed depth 4 on the one binary, ABBA - greedy identity is the correctness gate, effective decode t/s and acceptance are the result, activation by the BIGCHERRY_PATCH_HIT patch=1268 marker and depth_change events. Deviation from the item's validation text, stated: the first lane is the Flash-Next deployment, not tierM-qwen35b-a3b-moe-mtp / four sessions; that is the lightweight tier - the full contract lanes and the WHIRL calibration (step 5) are not started and nothing here is promotion evidence for them. #29924 is not needed for these lanes (draft-mtp only, greedy).
+
 ## Change Log
 
 - 2026-09-27T11:18:43.972819+00:00 (updated-by): Updated: section:notes
 - 2026-09-27T13:25:45.046397+00:00 (updated-by): Updated: section:notes
 - 2026-09-27T13:28:13.703319+00:00 (updated-by): Updated: section:notes
 - 2026-10-04 (agent): Added upstream #29924 as a prerequisite correctness/performance baseline for temperature>0 n-gram + MTP lanes; preserved draft-mtp-only semantics.
-
 
 ## 2026-10-06 WHIRL cost-model audit - corrected execution gate
 
@@ -172,4 +173,4 @@ Traceability:
 - https://github.com/tsaipifong/whirl-llm/blob/main/docs/guide/en/speculative-decoding.md
 - https://github.com/ggml-org/llama.cpp/issues/24507
 - https://github.com/ggml-org/llama.cpp/issues/23184
-
+- 2026-10-06T00:23:02.188814+00:00 (updated-by): Updated: section:notes
