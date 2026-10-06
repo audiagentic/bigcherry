@@ -2,7 +2,8 @@
 # Generic Flash-Next production ABBA on an existing build: A = production environment, B = the same plus AB_ENV
 # (flash-prefill-env-ab.sh per depth: prefill t/s, decode t/s, acceptance, greedy md5 per arm). For flags that must
 # not change the result (memory layout, diagnostics) the two md5 lines must be equal.
-# FIDELITY=1 adds the probe comparison (flash-fidelity.sh) at the first depth.
+# FIDELITY=1 adds the probe comparison (flash-fidelity.sh) at the first depth. FIDELITY_REF=ref also compares both arms
+# with the CPU f32 reference.
 # Usage: AB_ENV="VAR=value ..." queue-env-ab.sh <name> <build run id> <depth>...     env: CTX (245760), BC_MODEL, FIDELITY
 set -u
 NAME=${1:?name}; RUN=${2:?build run id}; shift 2
@@ -18,7 +19,7 @@ jobs=$(mktemp)
 for d in "$@"; do
   echo "VIS=0,1,2,3 SCRIPT $NAME-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/$NAME-d$d ${AB_ENV:?AB_ENV}" >> "$jobs"
 done
-[ "${FIDELITY:-0}" = 1 ] && echo "VIS=0,1,2,3 SCRIPT $NAME-fid tools/lab/flash-next/flash-fidelity.sh $1 @$RUN $R/$NAME-fid noref $AB_ENV" >> "$jobs"
+[ "${FIDELITY:-0}" = 1 ] && echo "VIS=0,1,2,3 SCRIPT $NAME-fid tools/lab/flash-next/flash-fidelity.sh $1 @$RUN $R/$NAME-fid ${FIDELITY_REF:-noref} $AB_ENV" >> "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
