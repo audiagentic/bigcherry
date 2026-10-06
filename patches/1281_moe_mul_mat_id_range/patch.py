@@ -259,6 +259,114 @@ _N_MMV_HOST = (
     "    if (fusion) {\n"
 )
 
+# ---- phase B, part 2: the large-batch quantized path (MMQ) ---------------------------------------------------------
+# MMQ groups rows by expert with ggml_cuda_launch_mm_ids_helper. Instead of changing the helper, the global ids are
+# translated on the device into a scratch buffer: local index, or INT_MAX for an expert that is not held - a value the
+# helper already uses for padding and never groups. The compact row lists then only cover the active rows; ids_src1 is
+# cleared first so the quantizer's unused tail rows read row 0 (harmless), dst is cleared so inactive lanes are +0,
+# and the token-dedup quantizer is not used for range ops (its inverse map has no entry for inactive lanes).
+_A_MMID_DECL = (
+    "void ggml_cuda_launch_mm_ids_helper(\n"
+    "        const int32_t * ids, int32_t * ids_src1, int32_t * ids_dst, int32_t * expert_bounds,\n"
+    "        int n_experts, int n_tokens, int n_expert_used, int nchannels_y, int si1, int sis1, bool write_inverse, cudaStream_t stream);\n"
+)
+_N_MMID_DECL = _A_MMID_DECL + (
+    "\n"
+    "// BigCherry 1281: global expert ids -> local index in [0, n_local), INT_MAX for an expert outside\n"
+    "// [id_base, id_base + n_local). The result can be given to ggml_cuda_launch_mm_ids_helper in place of the ids.\n"
+    "void ggml_cuda_mm_ids_range_translate(\n"
+    "        const int32_t * ids, int32_t * ids_local, int64_t n, int32_t id_base, int32_t n_local, cudaStream_t stream);\n"
+)
+
+_A_MMID_DEF = (
+    "void ggml_cuda_launch_mm_ids_helper(\n"
+    "        const int32_t * __restrict__ ids, int32_t * __restrict__ ids_src1, int32_t * __restrict__ ids_dst, int32_t * __restrict__ expert_bounds,\n"
+)
+_N_MMID_DEF = (
+    "// BigCherry 1281: see mmid.cuh\n"
+    "static __global__ void mm_ids_range_translate(\n"
+    "        const int32_t * __restrict__ ids, int32_t * __restrict__ ids_local, const int64_t n, const int32_t id_base, const int32_t n_local) {\n"
+    "    const int64_t i = (int64_t) blockIdx.x*blockDim.x + threadIdx.x;\n"
+    "    if (i >= n) {\n"
+    "        return;\n"
+    "    }\n"
+    "    const int64_t local = (int64_t) ids[i] - (int64_t) id_base; // widened: no overflow for any id / base pair\n"
+    "    ids_local[i] = local >= 0 && local < n_local ? (int32_t) local : INT_MAX;\n"
+    "}\n"
+    "\n"
+    "void ggml_cuda_mm_ids_range_translate(\n"
+    "        const int32_t * ids, int32_t * ids_local, const int64_t n, const int32_t id_base, const int32_t n_local, cudaStream_t stream) {\n"
+    "    const int block_size = 256;\n"
+    "    const dim3 num_blocks((unsigned int) ((n + block_size - 1) / block_size), 1, 1);\n"
+    "    mm_ids_range_translate<<<num_blocks, block_size, 0, stream>>>(ids, ids_local, n, id_base, n_local);\n"
+    "}\n"
+    "\n"
+) + _A_MMID_DEF
+
+_A_MMQ_DEDUP = "    const bool dedup_bcast = ne11 == 1 && n_expert_used > 1;\n"
+_N_MMQ_DEDUP = (
+    "    // BigCherry 1281: range variant - group rows by LOCAL expert; lanes of experts that are not held are never\n"
+    "    // grouped, their dst rows keep the +0 written here\n"
+    "    const bool bc_range = ggml_mul_mat_id_is_range(dst);\n"
+    "    ggml_cuda_pool_alloc<int32_t> bc_ids_local(ctx.pool());\n"
+    "    const int32_t * bc_ids = (const int32_t *) ids->data;\n"
+    "    if (bc_range) {\n"
+    "        const int64_t bc_n_ids = (int64_t) (ids->nb[1] / ggml_element_size(ids)) * ne12;\n"
+    "        bc_ids_local.alloc(bc_n_ids);\n"
+    "        ggml_cuda_mm_ids_range_translate(bc_ids, bc_ids_local.get(), bc_n_ids, ggml_mul_mat_id_range_base(dst), (int32_t) ne02, stream);\n"
+    "        bc_ids = bc_ids_local.get();\n"
+    "        CUDA_CHECK(cudaMemsetAsync(ids_src1.get(), 0, ne_get_rows*sizeof(int32_t), stream));\n"
+    "        CUDA_CHECK(cudaMemsetAsync(dst_d, 0, ggml_nbytes(dst), stream));\n"
+    "    }\n"
+    "\n"
+    "    const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && !bc_range;\n"
+)
+
+_A_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper((const int32_t *) ids->data, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
+_N_MMQ_HELPER = "        ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),\n"
+
+# ---- phase B: which range ops the GPU takes, and no fusion for them ---------------------------------------------
+_A_CUDA_POLICY = (
+    "// returns true when ggml_cuda_mul_mat_id takes the fallback path that requires stream synchronization\n"
+    "// [TAG_MUL_MAT_ID_CUDA_GRAPHS]\n"
+)
+_N_CUDA_POLICY = (
+    "// BigCherry 1281: a range MUL_MAT_ID is only taken when ggml_cuda_mul_mat_id will run it through a path that\n"
+    "// translates the global ids - MMVQ, MMVF (small batches) or MMQ. Same order as the dispatch below. The float\n"
+    "// large-batch path (MMF) and the host-sorted fallback are not converted, the scheduler keeps those on the CPU.\n"
+    "static bool bc_cuda_mul_mat_id_range_supported(const ggml_tensor * op, const int cc) {\n"
+    "    const ggml_tensor * src0 = op->src[0];\n"
+    "    const ggml_tensor * src1 = op->src[1];\n"
+    "    if (src1->type != GGML_TYPE_F32 || op->type != GGML_TYPE_F32) {\n"
+    "        return false;\n"
+    "    }\n"
+    "    if (op->ne[2] <= MMVQ_MAX_BATCH_SIZE) {\n"
+    "        if (ggml_is_quantized(src0->type)) {\n"
+    "            if (op->ne[2] <= get_mmvq_mmid_max_batch(src0->type, cc)) {\n"
+    "                return true;\n"
+    "            }\n"
+    "        } else if (GGML_CUDA_CC_IS_AMD(cc)) {\n"
+    "            return true;\n"
+    "        }\n"
+    "    }\n"
+    "    return ggml_cuda_should_use_mmq(src0->type, cc, src1->ne[2], /*n_experts=*/src0->ne[2]);\n"
+    "}\n"
+    "\n"
+) + _A_CUDA_POLICY
+
+_A_CUDA_FUSE = (
+    "    if (!is_mul_mat && !is_mul_mat_id) {\n"
+    "        return false;\n"
+    "    }\n"
+)
+_N_CUDA_FUSE = _A_CUDA_FUSE + (
+    "\n"
+    "    // BigCherry 1281: the fused kernels are launched without the range arguments, so a range node is never fused\n"
+    "    if (is_mul_mat_id && (ggml_mul_mat_id_is_range(ffn_up) || ggml_mul_mat_id_is_range(ffn_gate))) {\n"
+    "        return false;\n"
+    "    }\n"
+)
+
 _A_CUDA = (
     "                if (op->op == GGML_OP_MUL_MAT_ID && ggml_get_op_params_i32(op, 3) == GGML_PREC_F32) {\n"
     "                    return false;\n"
@@ -266,9 +374,11 @@ _A_CUDA = (
 )
 _N_CUDA = _A_CUDA + (
     "                if (ggml_mul_mat_id_is_range(op)) {\n"
-    "                    // BigCherry 1281 phase A: the range variant carries global ids, which only the CPU\n"
-    "                    // implementation translates; refuse it so no global id reaches a GPU kernel\n"
-    "                    return false;\n"
+    "                    // BigCherry 1281: the range variant carries global ids; take it only where the dispatch runs a\n"
+    "                    // path that translates them (MMVQ, MMVF, MMQ) - otherwise the scheduler keeps it on the CPU\n"
+    "                    if (!bc_cuda_mul_mat_id_range_supported(op, ggml_cuda_info().devices[dev_ctx->device].cc)) {\n"
+    "                        return false;\n"
+    "                    }\n"
     "                }\n"
 )
 
@@ -435,6 +545,13 @@ static std::vector<float> compute_on(ggml_backend_t backend, const gpu_case & c,
     ggml_build_forward_expand(gf, y);
     ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, backend);
 
+    if (range && !ggml_backend_supports_op(backend, y)) {
+        // the device declines this range op (a path that is not converted): the scheduler would run it on the CPU
+        ggml_backend_buffer_free(buf);
+        ggml_free(ctx);
+        return {};
+    }
+
     std::vector<uint8_t> w_data(ggml_nbytes(w));
     if (c.type == GGML_TYPE_F32) {
         std::memcpy(w_data.data(), w_f32.data(), w_data.size());
@@ -476,6 +593,11 @@ static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case 
     }
 
     const std::vector<float> got  = compute_on(gpu, c, /*range =*/ true,  w, x, global, n_in, n_out);
+    if (got.empty()) {
+        printf("skip %s type=%s tokens=%d used=%d: range op not supported on this device path\n",
+               ggml_backend_name(gpu), ggml_type_name(c.type), c.n_tokens, c.n_used);
+        return true;
+    }
     const std::vector<float> want = compute_on(cpu, c, /*range =*/ false, w, x, local,  n_in, n_out);
 
     double err = 0.0, ref = 0.0;
@@ -664,10 +786,51 @@ PATCHES = [
         ),
     ),
     FilePatch(
-        path="ggml/src/ggml-cuda/ggml-cuda.cu",
-        description="1281 phase A: the HIP/CUDA backend refuses the range variant (CPU reference only)",
+        path="ggml/src/ggml-cuda/mmid.cuh",
+        description="1281 phase B: device-side translation of global expert ids (declaration)",
         language="none",
         edits=(
+            Edit(id="mmid-range-translate-decl", anchor=_re.escape(_A_MMID_DECL), mode="replace", text=_N_MMID_DECL,
+                 guard=r"void ggml_cuda_mm_ids_range_translate\(", rationale="After the ids helper declaration.",
+                 expect_matches=1, max_span_lines=4),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/mmid.cu",
+        description="1281 phase B: device-side translation of global expert ids",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-translate", anchor=_re.escape(_A_MMID_DEF), mode="replace", text=_N_MMID_DEF,
+                 guard=r"static __global__ void mm_ids_range_translate\(",
+                 rationale="Before the public ids helper entry point.", expect_matches=1, max_span_lines=3),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/mmq.cu",
+        description="1281 phase B: MMQ groups rows by local expert for the range variant",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-mmq-setup", anchor=_re.escape(_A_MMQ_DEDUP), mode="replace", text=_N_MMQ_DEDUP,
+                 guard=r"const bool bc_range = ggml_mul_mat_id_is_range\(dst\);",
+                 rationale="ggml_cuda_mul_mat_q, MUL_MAT_ID branch, before the ids helper runs.", expect_matches=1,
+                 max_span_lines=2),
+            Edit(id="mmid-range-mmq-helper", anchor=_re.escape(_A_MMQ_HELPER), mode="replace", text=_N_MMQ_HELPER,
+                 guard=r"ggml_cuda_launch_mm_ids_helper\(bc_ids, ids_src1\.get\(\)",
+                 rationale="The ids helper call of the MMQ MUL_MAT_ID branch.", expect_matches=1, max_span_lines=2),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-cuda/ggml-cuda.cu",
+        description="1281 phase B: the GPU takes the range variant only on the converted paths; range nodes are never fused",
+        language="none",
+        edits=(
+            Edit(id="mmid-range-cuda-policy", anchor=_re.escape(_A_CUDA_POLICY), mode="replace", text=_N_CUDA_POLICY,
+                 guard=r"static bool bc_cuda_mul_mat_id_range_supported\(",
+                 rationale="Before ggml_cuda_mul_mat_id_needs_sync, next to the dispatch it mirrors.", expect_matches=1,
+                 max_span_lines=3),
+            Edit(id="mmid-range-cuda-no-fusion", anchor=_re.escape(_A_CUDA_FUSE), mode="replace", text=_N_CUDA_FUSE,
+                 guard=r"a range node is never fused", rationale="ggml_cuda_should_fuse_mul_mat, after the op-kind check.",
+                 expect_matches=1, max_span_lines=4),
             Edit(id="mmid-range-cuda-refuse", anchor=_re.escape(_A_CUDA), mode="replace", text=_N_CUDA,
                  guard=r"if \(ggml_mul_mat_id_is_range\(op\)\) \{",
                  rationale="supports_op, MUL_MAT / MUL_MAT_ID case, after the F32-precision refusal.", expect_matches=1,

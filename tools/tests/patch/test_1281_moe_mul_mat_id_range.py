@@ -80,7 +80,21 @@ class Patch1281Mechanics(unittest.TestCase):
             self.assertLess(repack.index("memset(dst->data, 0, ggml_nbytes(dst));"), repack.index("const int64_t bc_local"))
             # phase A: the GPU backend refuses the variant
             refuse = cuda.index("if (ggml_mul_mat_id_is_range(op)) {")
-            self.assertIn("return false;", cuda[refuse:refuse + 330])
+            self.assertIn("if (!bc_cuda_mul_mat_id_range_supported(op, ggml_cuda_info().devices[dev_ctx->device].cc)) {", cuda[refuse:refuse + 420])
+            # the policy mirrors the dispatch order (MMVQ, MMVF, MMQ) and is defined before both users
+            policy = cuda.index("static bool bc_cuda_mul_mat_id_range_supported(")
+            self.assertLess(policy, cuda.index("static bool ggml_cuda_mul_mat_id_needs_sync("))
+            self.assertLess(policy, refuse)
+            # range nodes are never fused; the kernels translate and skip, the hosts clear dst first
+            self.assertIn("ggml_mul_mat_id_is_range(ffn_up) || ggml_mul_mat_id_is_range(ffn_gate)", cuda)
+            mmvq, mmvf, mmq, mmid = (read("ggml/src/ggml-cuda/" + f) for f in ("mmvq.cu", "mmvf.cu", "mmq.cu", "mmid.cu"))
+            self.assertEqual(mmvq.count("const int64_t bc_local = (int64_t) ids["), 2)
+            self.assertEqual(mmvf.count("const int64_t bc_local = (int64_t) channel_x - (int64_t) fusion.id_base;"), 1)
+            for host in (mmvq, mmvf):
+                self.assertEqual(host.count("CUDA_CHECK(cudaMemsetAsync(dst->data, 0, ggml_nbytes(dst), ctx.stream()));"), 1)
+            self.assertIn("ids_local[i] = local >= 0 && local < n_local ? (int32_t) local : INT_MAX;", mmid)
+            self.assertIn("ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),", mmq)
+            self.assertIn("const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && !bc_range;", mmq)
             self.assertIn("llama_build_and_test(test-mul-mat-id-range.cpp)", read("tests/CMakeLists.txt"))
             self.assertIn("ggml_mul_mat_id_range(ctx, w, x, ids_global, c.id_base)", read(_NEW))
             before = {p: read(p) for p in _FILES + [_NEW]}
