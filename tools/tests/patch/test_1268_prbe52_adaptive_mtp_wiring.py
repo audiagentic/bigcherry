@@ -110,6 +110,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+        // reset here rather than per round, or two identical requests differ
+        common_sampler_reset(smpls[seq_id].get());
+
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
             return;
@@ -126,12 +129,29 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     void draft(common_speculative_draft_params_vec & dparams) override {
             n_drafting++;
             drafting[seq_id] = true;
-            common_sampler_reset(smpls[seq_id].get());
+            // greedy drafting leaves no candidates behind, so the verifier falls back to sample-and-match
+            if (!params.probabilistic) {
+                dp.result_q = nullptr;
+            }
 
-            common_batch_add(batch, dp.id_last, dp.pos0, { seq_id }, true);
-            std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
+            // result_q is only set when the caller wants rejection, so it also gates the retune
+            if (dp.result_q) {
+                spec_retune(smpls, smpls_cfg, llama_get_model(ctx_dft), seq_id, dp.temp, dp.seed);
+            }
+
+            // a reset reseeds the chain, which breaks probabilistic drafting
+            if (!dp.result_q) {
+                common_sampler_reset(smpls[seq_id].get());
+            }
+
+            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
+            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
 
                 result.push_back(id);
+
+                if (dp.result_q) {
+                    dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+                }
 
                 if (params.n_max <= (int) result.size()) {
                     drafting[seq_id] = false;
