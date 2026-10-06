@@ -19,7 +19,7 @@ export BIGCHERRY_FEATURES=flashnext
 docker stop radiance-vllm >/dev/null 2>&1
 RUN=b-ixtile-$TAG
 jobs=$(mktemp)
-echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi indexer-tile gfx1100,gfx1201,gfx1030" > "$jobs"
+echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi stock-none gfx1100,gfx1201,gfx1030" > "$jobs"
 echo "VIS=0,1,2,3 SCRIPT ixtile-$TAG-backend tools/lab/flash-next/indexer-backend-test.sh @$RUN $R/ixtile-$TAG-backend" >> "$jobs"
 for d in "${depths[@]}"; do
   echo "VIS=0,1,2,3 SCRIPT ixtile-$TAG-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/ixtile-$TAG-d$d BIGCHERRY_INDEXER_TILE=0" >> "$jobs"
