@@ -73,8 +73,9 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
             self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
 
-            arena = meta[meta.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer("):
-                         meta.index("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(")]
+            # the definitions, not the forward declarations near the top of the file
+            arena = meta[meta.rindex("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer("):
+                         meta.rindex("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(")]
             self.assertLess(arena.index("if (ggml_backend_meta_per_device_arena_enabled())"),
                             arena.index("bufs.push_back(ggml_backend_buft_alloc_buffer("))
             self.assertIn("BIGCHERRY_META_MEM compute dev=", arena)

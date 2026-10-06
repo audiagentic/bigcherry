@@ -3,7 +3,9 @@
 # meta-mem) and, for every context in CTX_LIST, loads Flash-Next with BIGCHERRY_META_MEM=1 in two layouts and sums the
 # report per device: P = production row split, O = owner's layout (dense + attention + KV on the XTXs, usage-placed
 # experts, expert-parallel; OWNER_ENV). One short request per load (depth 2048) so the compute arenas exist.
-# Usage: queue-meta-mem.sh <tag>      env: CTX_LIST ("49152 245760"), BC_MODEL, OWNER_ENV, RUN_OVERRIDE
+# FLAG_ARMS=1 with EXPERIMENT=meta-memory adds the MSM02 / MSM03 arms (per-device arena, subset-mirrored indexer cache)
+# on both layouts; their greedy text must equal their base arm.
+# Usage: queue-meta-mem.sh <tag>      env: CTX_LIST ("49152 245760"), BC_MODEL, OWNER_ENV, RUN_OVERRIDE, EXPERIMENT, FLAG_ARMS
 set -u
 TAG=${1:?tag}
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -23,15 +25,26 @@ cat > "$R/$N.arms.sh" <<ARMS
 for ctx in ${CTX_LIST:-49152 245760}; do
   env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/P-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
   env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/O-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+  if [ "${FLAG_ARMS:-0}" = 1 ]; then   # MSM02 / MSM03: a = per-device arena (1340), m = subset-mirrored indexer cache (1341)
+    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Pm-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oa-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Om-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+    env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV BIGCHERRY_META_PER_DEVICE_ARENA=1 BIGCHERRY_META_SUBSET_MIRROR=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/Oam-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
+  fi
 done
 ARMS
 jobs=$(mktemp)
 : > "$jobs"
-[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi meta-mem gfx1100,gfx1201,gfx1030" > "$jobs"
+[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi ${EXPERIMENT:-meta-mem} gfx1100,gfx1201,gfx1030" > "$jobs"
 echo "VIS=0,1,2,3 SCRIPT $N $R/$N.arms.sh @$RUN $R/$N" >> "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
+grep -E "^timing:|SERVER_FAILED" "$R/$N.log" | cut -c1-200
+echo "greedy text per arm (flag arms must match their base: Pa, Pm = P; Oa, Om, Oam = O):"
+for d in "$R/$N"/*/; do echo "  $(basename "$d") $(md5sum "$d"*.greedy.txt 2>/dev/null | awk '{print substr($1,1,12)}' | sort -u | tr "
+" " ") $(grep -hcE " E .*(out of memory|illegal|abort|assert)" "$d"*.server.log | head -1) error lines"; done
 for d in "$R/$N"/*/; do
   echo "== $(basename "$d")  (MiB per device: compute arenas | static buffers by first tensor)"
   grep -h "BIGCHERRY_META_MEM" "$d"*.server.log | grep -vE "ROCm3|buft=CPU" | awk '
