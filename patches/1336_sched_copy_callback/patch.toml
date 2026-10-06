@@ -1,7 +1,7 @@
 schema = 1
 id = "1336_sched_copy_callback"
 order = 1336
-state = "untested"
+state = "validated"
 kind = "upstream-backport"
 origin = "upstream-pr"
 backend = "hip"

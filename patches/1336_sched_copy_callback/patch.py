@@ -24,7 +24,7 @@ import re as _re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "validated"
 
 _A_H_TYPE = (
     '    typedef bool (*ggml_backend_sched_eval_callback)(struct ggml_tensor * t, bool ask, void * user_data);\n'
