@@ -12,9 +12,7 @@ GROUP = "core"
 STATE = "untested"
 
 _A_FLAG_SITE = "static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {\n"
-_N_FLAG_SITE = r"""#include <thread> // BigCherry 1340 (MSM02): per-device layout passes run side by side
-
-// BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
+_N_FLAG_SITE = r"""// BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
 bool ggml_backend_meta_per_device_arena_enabled() {
     static const bool enabled = getenv("BIGCHERRY_META_PER_DEVICE_ARENA") != nullptr &&
                                 atoi(getenv("BIGCHERRY_META_PER_DEVICE_ARENA")) != 0;
@@ -171,7 +169,7 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
         ~bc_arena_timer_t() { acc.calls++; acc.us += ggml_time_us() - t0; }
     } bc_arena_timer = { bc_t0, bc_arena_time };
 
-    auto bc_alloc_device = [&](const size_t j) -> bool {
+    for (size_t j = 0; j < n_backends; j++) {
         auto & bcj = backend_ctx->backend_configs[j];
 
         std::vector<ggml_tensor *> nodes(cgraph->n_nodes);
@@ -238,25 +236,6 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
             GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end\n", j);
             GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f\n", j, ggml_backend_buft_name(buft),
                 ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0);
-        }
-        return true;
-    };
-
-    // The devices are independent here (their own allocator, their own simple tensors, read-only use of the
-    // logical graph), and one layout pass costs over a millisecond per device on this graph: run them side by side.
-    std::vector<char> bc_ok(n_backends, 1);
-    std::vector<std::thread> bc_workers;
-    bc_workers.reserve(n_backends);
-    for (size_t j = 1; j < n_backends; j++) {
-        bc_workers.emplace_back([&, j] { bc_ok[j] = bc_alloc_device(j) ? 1 : 0; });
-    }
-    bc_ok[0] = bc_alloc_device(0) ? 1 : 0;
-    for (std::thread & w : bc_workers) {
-        w.join();
-    }
-    for (size_t j = 0; j < n_backends; j++) {
-        if (!bc_ok[j]) {
-            return false;
         }
     }
     return true;
