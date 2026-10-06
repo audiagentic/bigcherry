@@ -121,6 +121,17 @@ _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         ggml_gallocr_ptr                     arena_galloc; // BigCherry 1340 (MSM02): transformed compute graph
 """
 
+_A_DTOR = r"""        for (auto & bc : backend_configs) {
+            ggml_backend_free(bc.backend);
+        }
+"""
+_N_DTOR = r"""        for (auto & bc : backend_configs) {
+            // BigCherry 1340 (MSM02): arena buffers belong to this simple backend, so release them first.
+            bc.arena_galloc.reset();
+            ggml_backend_free(bc.backend);
+        }
+"""
+
 _A_HELPER_SITE = r"""ggml_backend_t ggml_backend_meta_simple_backend(ggml_backend_t meta_backend, size_t index) {
     GGML_ASSERT(ggml_backend_is_meta(meta_backend));
     const ggml_backend_meta_context * backend_ctx = (const ggml_backend_meta_context *) meta_backend->context;
@@ -274,6 +285,10 @@ PATCHES = [
             Edit(id="meta-arena-backend-galloc", anchor=_re.escape(_A_BACKEND_CONFIG), mode="replace", text=_N_BACKEND_CONFIG,
                  guard=r"arena_galloc; // BigCherry 1340 \(MSM02\)",
                  rationale="One persistent allocator per simple backend.", expect_matches=1, max_span_lines=4),
+            Edit(id="meta-arena-backend-dtor", anchor=_re.escape(_A_DTOR), mode="replace", text=_N_DTOR,
+                 guard=r"arena buffers belong to this simple backend",
+                 rationale="Destroy the per-device gallocr and its buffers before freeing the backend they belong to.",
+                 expect_matches=1, max_span_lines=4),
             Edit(id="meta-arena-helper", anchor=_re.escape(_A_HELPER_SITE), mode="replace", text=_N_HELPER_SITE,
                  guard=r"bool ggml_backend_meta_alloc_graph\(",
                  rationale="Public scheduler seam after the existing simple-backend accessor.", expect_matches=1, max_span_lines=6),
