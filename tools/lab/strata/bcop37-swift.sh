@@ -30,5 +30,5 @@ Write a Python function that merges two sorted lists into one sorted list.<|im_e
 ids=$(HIP_VISIBLE_DEVICES= "$bin/llama-tokenize" -m "$M" -p "$prompt" --ids --no-bos --log-disable 2>/dev/null | tr -d '[] ' | tail -1)
 echo "ids: $ids"
 [ -n "$ids" ] || { echo "TOKENIZE_FAILED"; exit 1; }
-IDS=$ids MAX_NEW=64 bash "$here/bcop37-smoke.sh" "$E/Strata-rocm" gfx1201 "$P" "$M" "$B/swift" --spec 2 --prefill
+IDS=$ids MAX_NEW=64 bash "$here/bcop37-smoke.sh" "$E/Strata-rocm" gfx1201 "$P" "$M" "$B/swift" --spec 2
 echo SWIFT_DONE
