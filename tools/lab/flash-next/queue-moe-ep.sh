@@ -10,6 +10,8 @@
 # CTX from the environment (default 245760). The expert split distributes expert bytes exactly by -ts, while the row
 # split rounds rows to 128 (640 rows at 0.31 / 0.27 / 0.42 become 192 / 64 / 384), so a -ts tuned for the row split
 # does not fit the expert split at the full context: use a smaller CTX or a re-tuned TS for the comparison.
+# EP_EXTRA: more env for arm B, e.g. "BIGCHERRY_MOE_EP_TS=1,1,3 TS=0.45,0.45,0.10" (expert shares apart from -ts: dense
+# weights mostly on the XTXs, experts mostly on the R9700). SUFFIX names such a variant; RUN_OVERRIDE reuses a build.
 # Usage: queue-moe-ep.sh <tag> <depth>...
 set -u
 TAG=${1:?tag}; shift
@@ -24,19 +26,21 @@ export BIGCHERRY_DRAFT_VOCAB_N=65536 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16 CTX=${CTX
 export EXTRA_OT='^token_embd\.weight$=CPU' BIGCHERRY_ATTN_TS=1,1,0 BIGCHERRY_ATTN_ROTATE=0
 export BIGCHERRY_FEATURES=flashnext
 docker stop radiance-vllm >/dev/null 2>&1
-RUN=b-moeep-$TAG
+RUN=${RUN_OVERRIDE:-b-moeep-$TAG}
+N=moeep-$TAG${SUFFIX:-}
 jobs=$(mktemp)
-echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi moe-expert-parallel gfx1100,gfx1201,gfx1030" > "$jobs"
+: > "$jobs"
+[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi moe-expert-parallel gfx1100,gfx1201,gfx1030" > "$jobs"
 for d in "${depths[@]}"; do
-  echo "VIS=0,1,2,3 SCRIPT moeep-$TAG-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/moeep-$TAG-d$d BIGCHERRY_MOE_EP=1" >> "$jobs"
+  echo "VIS=0,1,2,3 SCRIPT $N-d$d tools/lab/flash-next/flash-prefill-env-ab.sh $d @$RUN $R/$N-d$d BIGCHERRY_MOE_EP=1 ${EP_EXTRA:-}" >> "$jobs"
 done
-echo "VIS=0,1,2,3 SCRIPT moeep-$TAG-fid tools/lab/flash-next/flash-fidelity.sh ${depths[0]} @$RUN $R/moeep-$TAG-fid noref BIGCHERRY_MOE_EP=1" >> "$jobs"
+echo "VIS=0,1,2,3 SCRIPT $N-fid tools/lab/flash-next/flash-fidelity.sh ${depths[0]} @$RUN $R/$N-fid noref BIGCHERRY_MOE_EP=1 ${EP_EXTRA:-}" >> "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"
 rm -f "$jobs"
 for d in "${depths[@]}"; do
-  echo "== depth $d: A = row split, B = BIGCHERRY_MOE_EP=1"; grep -E "^d[0-9]|^md5|SERVER_FAILED" $R/moeep-$TAG-d$d.log
-  grep -hE " E |abort|assert|unsupported mul_mat split|illegal memory" $R/moeep-$TAG-d$d/*-B/*.server.log 2>/dev/null | head -5 | cut -c1-220
+  echo "== depth $d: A = row split, B = BIGCHERRY_MOE_EP=1 ${EP_EXTRA:-}"; grep -E "^d[0-9]|^md5|SERVER_FAILED" $R/$N-d$d.log
+  grep -hE " E |abort|assert|unsupported mul_mat split|illegal memory" $R/$N-d$d/*-B/*.server.log 2>/dev/null | head -5 | cut -c1-220
 done
-echo "== fidelity: D = row split, S = expert split"; grep -E "^D:|^S:|^D2:| vs |SERVER_FAILED" $R/moeep-$TAG-fid.log
+echo "== fidelity: D = row split, S = expert split"; grep -E "^D:|^S:|^D2:| vs |SERVER_FAILED" $R/$N-fid.log
 echo ALL_RUNS_DONE
