@@ -62,3 +62,8 @@ Base framework / diagnostic: no promotion evidence needed beyond 'prints and cha
 - 2026-10-06T11:47:52.344928+00:00 (created-by): Created by agent
 - 2026-10-06T12:06:15.621273+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T12:18:19.352114+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261006_144832_diagnostics-and-experimental-p_1077
+- 2026-10-06T14:48:36.063535+00:00 (updated-by): Updated: section:ledger-events
