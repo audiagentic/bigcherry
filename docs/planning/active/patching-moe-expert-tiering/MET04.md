@@ -113,3 +113,10 @@ Every benchmark or implementation note derived from these sources must record so
 - 2026-10-05: Transplanted equal-VRAM cache qualification, telemetry, ownership and EP decision gates from `automation-qfp-indexer-20261004`.
 - 2026-10-06: Added Stew/Shali source traceability and converted the R9700 4 GiB cache/MTP/multi-request observations into explicit qualification gates without creating a second cache owner.
 - 2026-10-06T01:04:53.986663+00:00 (updated-by): Updated: section:notes
+
+
+## 2026-10-06 topology/cache follow-up
+
+The completed R9700 hop probe closes the layer-split workaround: do not place expert-bearing layers on the PCIe-x4 R9700 as a separate stage to avoid host-cache traffic. It loses about 30-40% decode and 23-30% prefill versus production tensor split in the measured lanes. This is a terminal rejection for that layout, not evidence against 1283 whole-expert parallelism inside tensor split.
+
+MET01 now owns the remaining cache/residency question. Its next discriminator is static-hot versus equal-VRAM resident layers versus 1337 LRU under the measured ~6.7 GB/s R9700 H2D ceiling. MET04 must not create another cache policy, placement solver or hop layout. Reopen EP only after MET01 reports a residual that cannot be solved by residency/cache policy and transfer accounting shows expert parallelism can reduce critical-path bytes rather than add host-bounce traffic.
