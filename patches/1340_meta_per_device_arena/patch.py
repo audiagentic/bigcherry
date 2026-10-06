@@ -12,7 +12,11 @@ GROUP = "core"
 STATE = "untested"
 
 _A_FLAG_SITE = "static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {\n"
-_N_FLAG_SITE = r"""// BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
+_N_FLAG_SITE = r"""// BigCherry 1340 (MSM02): re-plan reasons counted in ggml-alloc.c (C linkage)
+extern "C" uint64_t bc_gallocr_replan_reasons[4];
+extern "C" char     bc_gallocr_replan_last[160];
+
+// BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
 bool ggml_backend_meta_per_device_arena_enabled() {
     static const bool enabled = getenv("BIGCHERRY_META_PER_DEVICE_ARENA") != nullptr &&
                                 atoi(getenv("BIGCHERRY_META_PER_DEVICE_ARENA")) != 0;
@@ -239,6 +243,9 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
                     top_nodes[0], (unsigned long long) top_counts[0],
                     top_nodes[1], (unsigned long long) top_counts[1],
                     top_nodes[2], (unsigned long long) top_counts[2]);
+                fprintf(stderr, "BIGCHERRY_META_MEM arena_replan node_count=%llu leaf_count=%llu external_now_needed=%llu larger=%llu last_larger=[%s]\n",
+                        (unsigned long long) bc_gallocr_replan_reasons[0], (unsigned long long) bc_gallocr_replan_reasons[1],
+                        (unsigned long long) bc_gallocr_replan_reasons[2], (unsigned long long) bc_gallocr_replan_reasons[3], bc_gallocr_replan_last);
         }
     };
     static bc_arena_time_t bc_arena_time;
@@ -418,6 +425,71 @@ _N_GALLOCR_NEEDS = r"""// BigCherry 1340 (MSM02): no longer static - the Meta ba
 bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
 """
 
+
+_A_GALLOCR_NODE = r"""    if (!node->data && !node->view_src) {
+        // If we previously had data but don't now then reallocate
+        if (talloc->buffer_id < 0) {
+            return false;
+        }
+        node_size = ggml_backend_buft_get_alloc_size(galloc->bufts[talloc->buffer_id], node);
+    }
+    return talloc->size_max >= node_size;
+}
+"""
+_N_GALLOCR_NODE = r"""    if (!node->data && !node->view_src) {
+        // If we previously had data but don't now then reallocate
+        if (talloc->buffer_id < 0) {
+            bc_gallocr_replan_reasons[2]++; // BigCherry 1340 (MSM02): planned as external, now needs memory
+            return false;
+        }
+        node_size = ggml_backend_buft_get_alloc_size(galloc->bufts[talloc->buffer_id], node);
+    }
+    if (talloc->size_max < node_size) {
+        bc_gallocr_replan_reasons[3]++; // BigCherry 1340 (MSM02): larger than planned
+        snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last), "%s %s %zu>%zu", ggml_op_name(node->op), node->name, node_size, talloc->size_max);
+    }
+    return talloc->size_max >= node_size;
+}
+"""
+
+_A_GALLOCR_REASON_SITE = "static bool ggml_gallocr_node_needs_realloc(ggml_gallocr_t galloc, struct ggml_tensor * node, struct tensor_alloc * talloc) {\n"
+_N_GALLOCR_REASON_SITE = r"""// BigCherry 1340 (MSM02): why a plan was refused - [0] node count, [1] leaf count, [2] external now needs memory,
+// [3] larger than planned - and the last tensor that was larger. Read by the Meta backend's arena report.
+uint64_t bc_gallocr_replan_reasons[4] = { 0, 0, 0, 0 };
+char     bc_gallocr_replan_last[160]  = "";
+
+""" + _A_GALLOCR_REASON_SITE
+
+_A_GALLOCR_NNODES = r"""    if (galloc->n_nodes != graph->n_nodes) {
+#ifndef NDEBUG
+        GGML_LOG_DEBUG("%s: graph has different number of nodes\n", __func__);
+#endif
+        return true;
+    }
+
+    if (galloc->n_leafs != graph->n_leafs) {
+#ifndef NDEBUG
+        GGML_LOG_DEBUG("%s: graph has different number of leafs\n", __func__);
+#endif
+        return true;
+    }
+"""
+_N_GALLOCR_NNODES = r"""    if (galloc->n_nodes != graph->n_nodes) {
+#ifndef NDEBUG
+        GGML_LOG_DEBUG("%s: graph has different number of nodes\n", __func__);
+#endif
+        bc_gallocr_replan_reasons[0]++; // BigCherry 1340 (MSM02)
+        return true;
+    }
+
+    if (galloc->n_leafs != graph->n_leafs) {
+#ifndef NDEBUG
+        GGML_LOG_DEBUG("%s: graph has different number of leafs\n", __func__);
+#endif
+        bc_gallocr_replan_reasons[1]++; // BigCherry 1340 (MSM02)
+        return true;
+    }
+"""
 
 _A_GALLOCR_ALLOC = r"""bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
     if (ggml_gallocr_needs_realloc(galloc, graph)) {
@@ -628,6 +700,15 @@ PATCHES = [
         description="1340: expose gallocr plan validation for arena phase timing",
         language="none",
         edits=(
+            Edit(id="meta-arena-gallocr-reason-vars", anchor=_re.escape(_A_GALLOCR_REASON_SITE), mode="replace", text=_N_GALLOCR_REASON_SITE,
+                 guard=r"uint64_t bc_gallocr_replan_reasons\[4\]", rationale="Counters before the first function that uses them.",
+                 expect_matches=1, max_span_lines=2),
+            Edit(id="meta-arena-gallocr-reason-node", anchor=_re.escape(_A_GALLOCR_NODE), mode="replace", text=_N_GALLOCR_NODE,
+                 guard=r"bc_gallocr_replan_reasons\[3\]\+\+;", rationale="The per-tensor validity test: record which rule refused the plan.",
+                 expect_matches=1, max_span_lines=10),
+            Edit(id="meta-arena-gallocr-reason-counts", anchor=_re.escape(_A_GALLOCR_NNODES), mode="replace", text=_N_GALLOCR_NNODES,
+                 guard=r"bc_gallocr_replan_reasons\[0\]\+\+;", rationale="The two count checks of the plan validity test.",
+                 expect_matches=1, max_span_lines=14),
             Edit(id="meta-arena-gallocr-needs-realloc", anchor=_re.escape(_A_GALLOCR_NEEDS), mode="replace", text=_N_GALLOCR_NEEDS,
                  guard=r"BigCherry 1340 \(MSM02\): no longer static",
                  rationale="Existing read-only predicate; Meta needs to time validation/reserve separately from bind.",
