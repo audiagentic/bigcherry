@@ -9,7 +9,7 @@
 set -u
 bin=$1 out=$2
 mkdir -p "$out"
-model=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
+model=${BC_MODEL:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf}
 AR_ARG=(--allreduce "${AR:-cpu-root}"); [ "${AR:-}" = none ] && AR_ARG=()  # AR=none: binaries without --allreduce (native llama.cpp)
 draft=${DRAFT:-/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q8_0-qsa4.gguf}
 args=(-m "$model" -ngl 99 --fit off -c ${CTX:-196608} -ub ${UB:-512} -b ${B:-2048} --flash-attn ${FA:-on} --parallel 1 --threads 16 -lv 4
