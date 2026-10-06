@@ -17,6 +17,7 @@ _V = _REPO / "vendor/llama.cpp"
 _PIN = "d89651a7b205"
 _META = "ggml/src/ggml-backend-meta.cpp"
 _BACKEND = "ggml/src/ggml-backend.cpp"
+_MODEL = "src/llama-model.cpp"
 
 
 def _load(name, path):
@@ -36,9 +37,13 @@ def _pinned(path):
     return res.stdout
 
 
+_P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
+_P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
+_P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
+_P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py")
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
 _P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
-_SRC = {path: _pinned(path) for path in (_META, _BACKEND)}
+_SRC = {path: _pinned(path) for path in (_META, _BACKEND, _MODEL)}
 
 
 @unittest.skipUnless(all(text is not None for text in _SRC.values()), "pinned vendor repository not present")
@@ -84,6 +89,31 @@ class Patch1340Mechanics(unittest.TestCase):
             again = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in again), [e.detail for r in again for e in r.failed])
             self.assertEqual(before, {p: (root / p).read_text(encoding="utf-8") for p in _SRC})
+
+    def test_production_meta_backend_edits_compose(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for src_path, text in _SRC.items():
+                (root / src_path).parent.mkdir(parents=True, exist_ok=True)
+                (root / src_path).write_text(text, encoding="utf-8", newline="\n")
+
+            # These are the validated patches in the owner's current Meta/Qwen4Exp layout that edit the same files.
+            # Restrict each package to these three source files; unrelated package edits have their own mechanics tests.
+            for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P):
+                relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
+                res = apply_all(relevant, root)
+                self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+
+            meta = (root / _META).read_text(encoding="utf-8")
+            backend = (root / _BACKEND).read_text(encoding="utf-8")
+            model = (root / _MODEL).read_text(encoding="utf-8")
+            self.assertIn("BigCherry 1283: whole-expert MoE block.", meta)
+            self.assertIn("BIGCHERRY_ATTN_TS", model)
+            self.assertIn("BigCherry 1326", backend)
+            self.assertIn("BigCherry 1336", backend)
+            self.assertIn("BIGCHERRY_META_MEM compute dev=", meta)
+            self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("failed to allocate per-device Meta arena", backend)
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
