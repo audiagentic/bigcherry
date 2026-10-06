@@ -541,3 +541,15 @@ current whole-expert prefill gap is activation preparation rather than MMQ/colle
 ## Change Log
 
 - 2026-10-06T15:41:00+00:00: created from current-head review of 1281/1283, b11402 MMQ/mmid/quantize paths and QFP26 ownership.
+
+
+## Self-review correction — 2026-10-07
+
+Two corrections override the earlier implementation sketch before 1342 is coded.
+
+1. Do not add the missing-slot check to the existing generic Q8_1 scatter instantiation. That would change ordinary non-range MoE codegen even with BIGCHERRY_MOE_RANGE_DEDUP=0. Add a range-only compile-time specialization/wrapper (for example a third template boolean with an if-constexpr missing-slot check), and call it only from the enabled range arm. The existing ordinary scatter wrapper/instantiation must stay source/codegen-equivalent.
+2. Range scatter fills only active compact rows. MMQ reads full J-wide Y tiles and masks the tail at writeback. Add a partial-J final-local-expert test after deliberately dirtying/reusing the GPU pool, and require bit-identical active outputs. If stale padded rows affect active results, add the smallest required guard/zero initialization and benchmark that cost separately; do not assume the sparse write is safe.
+
+Also strengthen activation evidence: the range-only wrapper/kernel symbol must be visible in profiling, while the ordinary non-range scatter symbol/path remains unchanged.
+
+Verdict after these corrections: implementable and worth benchmarking; end-to-end value remains gated by the existing >=3% qualified prefill threshold.
