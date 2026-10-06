@@ -61,3 +61,4 @@ Related but not duplicate: PRBE66/PRBE67 cover graph keying/recapture correctnes
 - 2026-10-03T15:20:45.005526+00:00 (created-by): Created by agent
 - 2026-10-03T16:19:51.201879+00:00 (updated-by): Updated: section:notes
 - 2026-10-04 (agent): Superseded the active LRU-cap follow-up after 1304 proved cap-below-working-set recapture churn; retained 1302 OOM recovery and graph-memory measurements as evidence; assigned remaining split/skew work to QFP11/RNX11 and QFP09/QFP07.
+- 2026-10-06T14:55:26.695084+00:00 (state-transition): State: superseded → superseded
