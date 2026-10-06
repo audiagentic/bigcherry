@@ -283,10 +283,13 @@ _TEST = r'''// BigCherry 1281: reference test of ggml_mul_mat_id_range on the CP
 // just past the range, all-active, all-inactive, duplicate and unsorted ids, several batch sizes, F32 and Q8_0 weights.
 
 #include "ggml.h"
+#include "ggml-alloc.h"
+#include "ggml-backend.h"
 #include "ggml-cpu.h"
 
 #include <cinttypes>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -401,7 +404,144 @@ static bool run_case(const range_case & c, int n_threads, std::mt19937 & rng) {
     return ok;
 }
 
-int main() {
+// ---- GPU mode (--gpu): the range op on every non-CPU device against a CPU reference -------------------------------
+// The op is computed directly on the device backend (no scheduler), so it reaches the device kernels whatever
+// supports_op says. Reference: the ORDINARY op on the CPU backend over the same local experts with hand-translated
+// ids. Active lanes are compared by normalised mean squared error (device kernels are not bit-identical to the CPU);
+// inactive lanes must be exactly +0. Token counts cover the single-token, small-batch and large-batch kernels.
+
+struct gpu_case {
+    ggml_type type;
+    int32_t   id_base;
+    int       n_local;
+    int       n_used;
+    int       n_tokens;
+    int       pattern;
+};
+
+static std::vector<float> compute_on(ggml_backend_t backend, const gpu_case & c, bool range,
+                                     const std::vector<float> & w_f32, const std::vector<float> & x_f32,
+                                     const std::vector<int32_t> & ids, int n_in, int n_out) {
+    ggml_init_params ip = { ggml_tensor_overhead() * 16 + ggml_graph_overhead(), nullptr, true };
+    ggml_context * ctx = ggml_init(ip);
+
+    ggml_tensor * w = ggml_new_tensor_3d(ctx, c.type, n_in, n_out, c.n_local);
+    ggml_tensor * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, n_in, c.n_used, c.n_tokens);
+    ggml_tensor * t_ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, c.n_used, c.n_tokens);
+    ggml_tensor * y = range ? ggml_mul_mat_id_range(ctx, w, x, t_ids, c.id_base) : ggml_mul_mat_id(ctx, w, x, t_ids);
+
+    ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, y);
+    ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, backend);
+
+    std::vector<uint8_t> w_data(ggml_nbytes(w));
+    if (c.type == GGML_TYPE_F32) {
+        std::memcpy(w_data.data(), w_f32.data(), w_data.size());
+    } else {
+        ggml_quantize_chunk(c.type, w_f32.data(), w_data.data(), 0, (int64_t) n_out * c.n_local, n_in, nullptr);
+    }
+    ggml_backend_tensor_set(w, w_data.data(), 0, w_data.size());
+    ggml_backend_tensor_set(x, x_f32.data(), 0, ggml_nbytes(x));
+    ggml_backend_tensor_set(t_ids, ids.data(), 0, ggml_nbytes(t_ids));
+
+    std::vector<float> out((size_t) n_out * c.n_used * c.n_tokens);
+    if (ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS) {
+        ggml_backend_tensor_get(y, out.data(), 0, ggml_nbytes(y));
+    } else {
+        out.assign(out.size(), NAN);
+    }
+    ggml_backend_buffer_free(buf);
+    ggml_free(ctx);
+    return out;
+}
+
+static bool run_gpu_case(ggml_backend_t gpu, ggml_backend_t cpu, const gpu_case & c, std::mt19937 & rng) {
+    const int n_in = 256, n_out = 64;
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    std::vector<float> w((size_t) n_in * n_out * c.n_local), x((size_t) n_in * c.n_used * c.n_tokens);
+    for (float & v : w) v = dist(rng);
+    for (float & v : x) v = dist(rng);
+
+    const range_case rc = { c.id_base, c.n_local, c.n_used, c.n_tokens, c.pattern, c.type };
+    const std::vector<int32_t> global = make_ids(rc, rng);
+    std::vector<int32_t> local(global.size());
+    std::vector<bool> active(global.size());
+    int n_active = 0;
+    for (size_t i = 0; i < global.size(); i++) {
+        const int64_t l = (int64_t) global[i] - (int64_t) c.id_base;
+        active[i] = l >= 0 && l < c.n_local;
+        n_active += active[i] ? 1 : 0;
+        local[i] = active[i] ? (int32_t) l : 0;
+    }
+
+    const std::vector<float> got  = compute_on(gpu, c, /*range =*/ true,  w, x, global, n_in, n_out);
+    const std::vector<float> want = compute_on(cpu, c, /*range =*/ false, w, x, local,  n_in, n_out);
+
+    double err = 0.0, ref = 0.0;
+    int64_t nonzero_inactive = 0, nan = 0;
+    for (size_t lane = 0; lane < global.size(); lane++) {
+        for (int i = 0; i < n_out; i++) {
+            const float g = got[lane * n_out + i];
+            if (std::isnan(g)) { nan++; continue; }
+            if (active[lane]) {
+                const float e = want[lane * n_out + i];
+                err += (double) (g - e) * (g - e);
+                ref += (double) e * e;
+            } else {
+                const float zero = 0.0f;
+                if (std::memcmp(&g, &zero, sizeof(float)) != 0) nonzero_inactive++;
+            }
+        }
+    }
+    const double nmse = ref > 0.0 ? err / ref : 0.0;
+    const bool ok = nan == 0 && nonzero_inactive == 0 && nmse < 5e-4;
+    printf("%s %s type=%s base=%" PRId32 " n_local=%d used=%d tokens=%d pattern=%d active=%d/%zu nmse=%.2e nonzero_inactive=%" PRId64 " nan=%" PRId64 "\n",
+           ok ? "ok  " : "FAIL", ggml_backend_name(gpu), ggml_type_name(c.type), c.id_base, c.n_local, c.n_used, c.n_tokens,
+           c.pattern, n_active, global.size(), nmse, nonzero_inactive, nan);
+    return ok;
+}
+
+static int run_gpu() {
+    std::mt19937 rng(1281);
+    ggml_backend_load_all();
+    ggml_backend_t cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
+    int n_fail = 0, n_run = 0, n_dev = 0;
+    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+            continue;
+        }
+        ggml_backend_t gpu = ggml_backend_dev_init(dev, nullptr);
+        if (gpu == nullptr) {
+            continue;
+        }
+        n_dev++;
+        for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_IQ4_XS }) {
+            for (int32_t id_base : { 0, 5 }) {
+                for (int n_local : { 1, 4 }) {
+                    for (int pattern : { 0, 1, 2 }) {
+                        for (int n_used : { 4, 10 }) {
+                            for (int n_tokens : { 1, 2, 4, 8, 9, 33, 300 }) {
+                                const gpu_case c = { type, id_base, n_local, n_used, n_tokens, pattern };
+                                n_run++;
+                                n_fail += run_gpu_case(gpu, cpu, c, rng) ? 0 : 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ggml_backend_free(gpu);
+    }
+    ggml_backend_free(cpu);
+    printf("test-mul-mat-id-range --gpu: %d device(s), %d case(s), %d failed\n", n_dev, n_run, n_fail);
+    return n_fail == 0 && n_dev > 0 ? 0 : 1;
+}
+
+int main(int argc, char ** argv) {
+    if (argc > 1 && std::strcmp(argv[1], "--gpu") == 0) {
+        return run_gpu();
+    }
     std::mt19937 rng(1281);
     int n_fail = 0, n_run = 0;
     for (ggml_type type : { GGML_TYPE_F32, GGML_TYPE_Q8_0 }) {
