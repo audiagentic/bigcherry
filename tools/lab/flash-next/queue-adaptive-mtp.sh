@@ -5,14 +5,15 @@
 #      adaptive floor unset (greedy text identity, decode ms/step, acceptance) - also the cost of 1210 + 1255 alone;
 #   2. adaptive ON vs OFF on the one binary: ABBA with LLAMA_ARG_SPEC_DRAFT_N_MIN_ADAPTIVE=<floor>, both arms at
 #      --spec-draft-n-max <max> (greedy identity is the correctness gate; effective decode t/s is the result).
-# Usage: queue-adaptive-mtp.sh <tag> <production build run> <depth>... [wait=<log with ALL_JOBS_DONE>]
+# wait= waits for ALL_RUNS_DONE (the end of a whole chain): a chain log also carries one ALL_JOBS_DONE per sub-run.
+# Usage: queue-adaptive-mtp.sh <tag> <production build run> <depth>... [wait=<chain log with ALL_RUNS_DONE>]
 #        env: SPEC_MAX (4), FLOOR (1)
 set -u
 TAG=${1:?tag}; PROD=${2:?production build run}; shift 2
 cd "$(cd "$(dirname "$0")/../../.." && pwd)"
 R=/mnt/data/bigcherry-work/runs
 depths=()
-for a in "$@"; do case "$a" in wait=*) until grep -qE "^ALL_(JOBS|RUNS)_DONE" "${a#wait=}" 2>/dev/null; do sleep 20; done ;; *) depths+=("$a") ;; esac; done
+for a in "$@"; do case "$a" in wait=*) until grep -q "^ALL_RUNS_DONE" "${a#wait=}" 2>/dev/null; do sleep 20; done ;; *) depths+=("$a") ;; esac; done
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
 export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 export DRAFT=/mnt/data/llm-models/qwen3.8-flash-next/gguf/unsloth/MTP/mtp-Qwen3.8-Flash-Next-Q5_K_M-qsa4.gguf
