@@ -121,8 +121,9 @@ class Patch1281Mechanics(unittest.TestCase):
             self.assertIn("quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true><<<", _P._A_Q8_SCATTER_WRAPPER)
             self.assertIn("ggml_cuda_launch_mm_ids_helper(bc_ids, ids_src1.get(), ids_dst.get(), expert_bounds.get(),", mmq)
             self.assertIn("const bool dedup_bcast = ne11 == 1 && n_expert_used > 1 && (!bc_range || bc_range_dedup);", mmq)
-            # QFP30 chunk 3: flag-gated range dedup - sentinel fill, range-only scatter call, ordinary call kept
-            self.assertIn("const bool bc_range_dedup = bc_range && bc_range_dedup_on && !use_native_fp4 && ne11 == 1 && n_expert_used > 1;", mmq)
+            # QFP30: range dedup (no flag) - sentinel fill, range-only scatter call, ordinary call kept
+            self.assertIn("const bool bc_range_dedup = bc_range && !use_native_fp4 && ne11 == 1 && n_expert_used > 1;", mmq)
+            self.assertNotIn("BIGCHERRY_MOE_RANGE_DEDUP", mmq)
             self.assertIn("cudaMemsetAsync(ids_src1.get(), bc_range_dedup ? 0xff : 0, ne_get_rows*sizeof(int32_t), stream)", mmq)
             self.assertEqual(mmq.count("quantize_scatter_range_mmq_q8_1_cuda(src1_d, ids_src1.get(), src1_q8_1.get(), src0->type, ne10,"), 1)
             self.assertEqual(mmq.count("quantize_scatter_mmq_q8_1_cuda(src1_d, ids_src1.get(), src1_q8_1.get(), src0->type, ne10,"), 1)
