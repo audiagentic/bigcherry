@@ -9,7 +9,7 @@ import re as _re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
-STATE = "untested"
+STATE = "validated"
 
 _A_STATE = r"""        int64_t  ne[16*GGML_BACKEND_META_MAX_DEVICES];
         uint32_t nr[16];

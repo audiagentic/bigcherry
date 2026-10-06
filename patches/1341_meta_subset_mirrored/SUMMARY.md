@@ -1,6 +1,6 @@
 # 1341_meta_subset_mirrored
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MSM03
 
 Kind: enhancement, flag `BIGCHERRY_META_SUBSET_MIRROR` (default 0).
@@ -10,4 +10,4 @@ Adds `active_mask` to Meta split state (0 = legacy/all devices), propagates it a
 ## Evidence
 
 - Offline mechanics test: `tools/tests/patch/test_1341_meta_subset_mirrored.py`.
-- Compile, runtime fidelity and hardware memory measurements: pending.
+- Hardware: see README.md (identical output, no speed change, 1,440 MiB less on the R9700 at ctx 245760).
