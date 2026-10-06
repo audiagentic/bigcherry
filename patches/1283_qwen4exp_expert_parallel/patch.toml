@@ -1,0 +1,17 @@
+schema = 1
+id = "1283_qwen4exp_expert_parallel"
+order = 1283
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["MET04"]
+requires = ["0910_feature_sets", "1281_moe_mul_mat_id_range"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["optimization"]
