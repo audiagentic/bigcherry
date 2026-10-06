@@ -62,6 +62,8 @@ class Patch1340Mechanics(unittest.TestCase):
 
             self.assertIn('getenv("BIGCHERRY_META_PER_DEVICE_ARENA")', meta)
             self.assertIn("ggml_gallocr_ptr                     arena_galloc;", meta)
+            self.assertIn("bc.arena_galloc.reset();", meta)
+            self.assertLess(meta.index("bc.arena_galloc.reset();"), meta.index("ggml_backend_free(bc.backend);"))
             self.assertIn("bool ggml_backend_meta_alloc_graph(", meta)
             self.assertIn("ggml_gallocr_reserve(bcj.arena_galloc.get(), &simple_graph)", meta)
             self.assertIn("ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph)", meta)
