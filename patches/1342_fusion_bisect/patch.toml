@@ -1,0 +1,17 @@
+schema = 1
+id = "1342_fusion_bisect"
+order = 1342
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "hip"
+plan-ids = ["FKE01"]
+requires = ["0910_feature_sets"]
+conflicts = []
+requires-options = []
+forbids-options = []
+subsystems = []
+hardware = []
+validation-architectures = ["gfx1100", "gfx1201"]
+backends = ["hip"]
+tags = ["graph-fusion"]
