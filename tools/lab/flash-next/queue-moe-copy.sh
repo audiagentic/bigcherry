@@ -12,10 +12,11 @@ for a in "$@"; do case "$a" in wait=*) until grep -q "^ALL_JOBS_DONE" "${a#wait=
 export BC_HIP_PATH=/mnt/vault/tmp/bc-rocm
 export BC_MODEL=/mnt/data/llm-models/qwen3.8-flash-next/gguf/mtp/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf
 docker stop radiance-vllm >/dev/null 2>&1
-RUN=b-${EXPERIMENT:-moecopy}-$TAG
+RUN=${RUN_OVERRIDE:-b-${EXPERIMENT:-moecopy}-$TAG}
 jobs=$(mktemp)
-cat > "$jobs" <<JOBS
-VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi ${EXPERIMENT:-moe-copy-callback} gfx1100,gfx1201,gfx1030
+# RUN_OVERRIDE names an existing build run to test instead of building the experiment
+[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi ${EXPERIMENT:-moe-copy-callback} gfx1100,gfx1201,gfx1030" > "$jobs"
+cat >> "$jobs" <<JOBS
 VIS=0,1,2,3 SCRIPT moecopy-$TAG-r9700${SUFFIX:-} tools/lab/flash-next/moe-copy-ab.sh @$RUN $R/moecopy-$TAG-r9700${SUFFIX:-}
 JOBS
 bash tools/lab/plan-qualification/queue.sh "$jobs"
