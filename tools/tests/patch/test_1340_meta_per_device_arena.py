@@ -86,6 +86,9 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("if (t_ij->view_src->data != nullptr)", meta)
             self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
             self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
+            # a reserve is not followed by a compute, so it rotates the simple-tensor containers itself
+            self.assertIn("void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph) {", meta)
+            self.assertLess(backend.index("reserve must instantiate the logical Meta tensors once"), backend.index("ggml_backend_meta_rotate_graph_containers(&sched->graph);"))
 
             # the definitions, not the forward declarations near the top of the file
             arena = meta[meta.rindex("static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer("):

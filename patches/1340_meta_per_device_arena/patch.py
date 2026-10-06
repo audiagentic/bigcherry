@@ -220,6 +220,33 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
     }
     return true;
 }
+
+// BigCherry 1340 (MSM02): what graph_compute does when it rebuilds - move the Meta buffers a graph uses on to their
+// other simple-tensor container and empty it. The scheduler's reserve instantiates a graph without computing it, and
+// several reserves in a row would otherwise fill one container (a static buffer's container holds only a few views
+// per tensor: ggml.c GGML_ASSERT(obj_new) on the second reserve).
+void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph) {
+    std::set<ggml_backend_buffer_t> used_buffers;
+    for (int i = 0; i < cgraph->n_leafs; i++) {
+        if (cgraph->leafs[i]->buffer != nullptr && ggml_backend_buffer_is_meta(cgraph->leafs[i]->buffer)) {
+            used_buffers.emplace(cgraph->leafs[i]->buffer);
+        }
+    }
+    for (int i = 0; i < cgraph->n_nodes; i++) {
+        if (cgraph->nodes[i]->buffer != nullptr && ggml_backend_buffer_is_meta(cgraph->nodes[i]->buffer)) {
+            used_buffers.emplace(cgraph->nodes[i]->buffer);
+        }
+    }
+    for (ggml_backend_buffer_t buf : used_buffers) {
+        ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buf->context;
+        buf_ctx->stc_compute_index_next = buf_ctx->stc_compute_index ^ 1;
+        ggml_backend_meta_simple_tensor_container & stc = buf_ctx->stc_compute[buf_ctx->stc_compute_index_next];
+        for (ggml_context_ptr & ctx : stc.ctxs) {
+            ggml_reset(ctx.get());
+        }
+        stc.simple_tensors.clear();
+    }
+}
 """
 
 _A_BACKEND_DECL_SITE = '#include "ggml-impl.h"\n'
@@ -227,6 +254,7 @@ _N_BACKEND_DECL_SITE = _A_BACKEND_DECL_SITE + r"""
 // BigCherry 1340 (MSM02): implemented by ggml-backend-meta.cpp.
 bool ggml_backend_meta_per_device_arena_enabled();
 bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph);
+void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph);
 """
 
 _A_ALLOC_TAIL = r"""        if (!ggml_gallocr_alloc_graph(sched->galloc, &sched->graph)) {
@@ -282,6 +310,8 @@ _N_RESERVE = r"""    if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, s
                 return false;
             }
         }
+        // no compute follows a reserve, so rotate the simple-tensor containers here as a compute would
+        ggml_backend_meta_rotate_graph_containers(&sched->graph);
     }
 
     ggml_backend_sched_reset(sched);
