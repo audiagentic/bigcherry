@@ -22,6 +22,7 @@ N=metamem-$TAG
 cat > "$R/$N.arms.sh" <<ARMS
 #!/bin/bash
 # written by queue-meta-mem.sh: <llama-server> <out-root>
+bash tools/lab/flash-next/wait-gpus-free.sh   # a production model may have loaded while the build ran
 for ctx in ${CTX_LIST:-49152 245760}; do
   env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/P-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"
   env CTX=\$ctx DEPTH=2048 BIGCHERRY_META_MEM=1 $OWNER_ENV bash tools/lab/flash-next/long-ctx-profile.sh "\$1" "\$2/O-\$ctx" timing 2>&1 | grep -E "^timing:|SERVER_FAILED"

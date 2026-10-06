@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _REL = "src/models/qwen4exp.cpp"
@@ -35,10 +35,10 @@ class Patch1332Mechanics(unittest.TestCase):
     def _tree(self, td):
         root = Path(td)
         (root / _REL).parent.mkdir(parents=True)
-        shutil.copy2(_VENDOR, root / _REL)
-        shutil.copy2(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
+        copy_pinned(_VENDOR, root / _REL)
+        copy_pinned(_REPO / "vendor/llama.cpp" / _HDR, root / _HDR)
         (root / _GGML).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(_REPO / "vendor/llama.cpp" / _GGML, root / _GGML)
+        copy_pinned(_REPO / "vendor/llama.cpp" / _GGML, root / _GGML)
         return root
 
     def test_apply_and_idempotent(self):

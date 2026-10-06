@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
@@ -34,7 +34,7 @@ class Patch1321Mechanics(unittest.TestCase):
         root = Path(td)
         for f in _FILES:
             (root / f).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_V / f, root / f)
+            copy_pinned(_V / f, root / f)
         return root
 
     def test_apply_and_idempotent(self):

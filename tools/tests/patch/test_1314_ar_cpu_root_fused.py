@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import sys
 import tempfile
 import unittest
@@ -11,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _VENDOR = _REPO / "vendor/llama.cpp"
@@ -25,7 +25,7 @@ def _load(pid: str):
     return module
 
 
-_BASE = [_load(p) for p in ("0840_hybrid_allreduce_dispatch", "0860_allreduce_provider_cli", "1291_ar_cpu_root")]
+_BASE = [_load(p) for p in ("0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1291_ar_cpu_root")]
 _P1314 = _load("1314_ar_cpu_root_fused")
 
 
@@ -40,7 +40,7 @@ class Patch1314Mechanics(unittest.TestCase):
             root = Path(td)
             path = root / _REL
             path.parent.mkdir(parents=True)
-            shutil.copy2(_VENDOR / _REL, path)
+            copy_pinned(_VENDOR / _REL, path)
             for mod in _BASE:
                 res = apply_all(_only_cuda(mod.PATCHES), root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])

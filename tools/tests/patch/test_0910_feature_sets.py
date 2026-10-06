@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import ENV_DOC_TABLE_END, EnvDoc, apply_all, env_docs  # noqa: E402
+from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
@@ -46,7 +47,7 @@ class Patch0910Mechanics(unittest.TestCase):
             root = Path(td)
             for rel in _FILES:
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(_V / rel, root / rel)
+                copy_pinned(_V / rel, root / rel)
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             snap = {f: (root / f).read_text(encoding="utf-8") for f in _FILES}
