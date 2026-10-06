@@ -25,10 +25,32 @@ _N_STATE = r"""        int64_t  ne[16*GGML_BACKEND_META_MAX_DEVICES];
 
 _A_HELPER_SITE = "static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(const struct ggml_tensor * tensor, bool assume_sync);\n"
 _N_HELPER_SITE = _A_HELPER_SITE + r"""
+// BigCherry 1341 (MSM03 step 2): devices that hold attention-side graph inputs; 0 = all (legacy). Set by the model.
+static uint32_t bc_meta_attn_input_mask = 0;
+extern "C" void ggml_backend_meta_set_attn_input_mask(uint32_t active_mask) {
+    bc_meta_attn_input_mask = active_mask;
+}
+
 // BigCherry 1341 (MSM03): subset-mirrored tensors keep their full logical shape but are absent from inactive devices.
 static bool ggml_backend_meta_split_device_active(const ggml_backend_meta_split_state & split_state, size_t j) {
     return split_state.active_mask == 0 || (split_state.active_mask & (uint32_t(1) << j)) != 0;
 }
+"""
+
+# ---- MSM03 step 2: attention-side graph INPUTS (compute tensors) only on the attention devices ---------------------
+_A_INPUT_RULE = r"""            case GGML_OP_NONE: {
+                split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+            } break;
+"""
+_N_INPUT_RULE = r"""            case GGML_OP_NONE: {
+                split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+                // BigCherry 1341 (MSM03 step 2): the attention mask input is context-sized and only read by attention;
+                // with a mask set it exists on the attention devices only, and so does everything MIRRORED that is
+                // derived from it (no upload to, and no mask arithmetic on, a device with no attention share).
+                if (bc_meta_attn_input_mask != 0 && strncmp(tensor->name, "attn_inp_kq_mask", 16) == 0) {
+                    split_state.active_mask = bc_meta_attn_input_mask;
+                }
+            } break;
 """
 
 _A_MERGE_SITE = r"""    auto handle_generic = [&](const std::vector<ggml_backend_meta_split_state> & src_ss, bool scalar_only) -> ggml_backend_meta_split_state {
@@ -226,6 +248,12 @@ _N_ASYNC_GET = r"""        case GGML_BACKEND_SPLIT_AXIS_MIRRORED: {
         } break;
 """
 
+_A_MODEL_DECL = "struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const struct ggml_tensor * tensor, void * userdata) {\n"
+_N_MODEL_DECL = r"""// BigCherry 1341 (MSM03 step 2): implemented by ggml-backend-meta.cpp
+extern "C" void ggml_backend_meta_set_attn_input_mask(uint32_t active_mask);
+
+""" + _A_MODEL_DECL
+
 _A_MODEL_SEED = r"""    split_state.axis = tc.axis;
     if (split_state.axis >= 0 && split_state.axis < GGML_MAX_DIMS) {
 """
@@ -250,6 +278,12 @@ _N_MODEL_SEED = r"""    split_state.axis = tc.axis;
         }
         const uint32_t all_mask = (uint32_t(1) << ud->n_devices) - 1;
         split_state.active_mask = active_mask == all_mask ? 0 : active_mask;
+        // step 2: the same devices for the attention-side graph inputs (BIGCHERRY_META_SUBSET_MIRROR_INPUTS=1)
+        static const bool bigcherry_subset_inputs = getenv("BIGCHERRY_META_SUBSET_MIRROR_INPUTS") != nullptr &&
+                                                    atoi(getenv("BIGCHERRY_META_SUBSET_MIRROR_INPUTS")) != 0;
+        if (bigcherry_subset_inputs) {
+            ggml_backend_meta_set_attn_input_mask(split_state.active_mask);
+        }
     }
 
     if (split_state.axis >= 0 && split_state.axis < GGML_MAX_DIMS) {
@@ -276,6 +310,10 @@ PATCHES = [
                  guard=r"ggml_backend_meta_split_device_active",
                  rationale="Next to the split-state forward declaration used by init and transfer paths.",
                  expect_matches=1, max_span_lines=2),
+            Edit(id="subset-mirror-input-rule", anchor=_re.escape(_A_INPUT_RULE), mode="replace", text=_N_INPUT_RULE,
+                 guard=r"BigCherry 1341 \(MSM03 step 2\): the attention mask input is context-sized",
+                 rationale="The split-state rule for graph inputs (GGML_OP_NONE compute tensors).",
+                 expect_matches=1, max_span_lines=4),
             Edit(id="subset-mirror-merge-helper", anchor=_re.escape(_A_MERGE_SITE), mode="replace", text=_N_MERGE_SITE,
                  guard=r"auto merge_active_masks =",
                  rationale="Shared propagation rule before generic split-state handling.", expect_matches=1, max_span_lines=2),
@@ -317,6 +355,10 @@ PATCHES = [
         description="1341: seed Qwen4Exp cache_idx subset from BIGCHERRY_ATTN_TS",
         language="none",
         edits=(
+            Edit(id="subset-mirror-input-decl", anchor=_re.escape(_A_MODEL_DECL), mode="replace", text=_N_MODEL_DECL,
+                 guard=r"extern \"C\" void ggml_backend_meta_set_attn_input_mask\(uint32_t active_mask\);",
+                 rationale="Declaration of the meta backend setter, before the split-state callback that calls it.",
+                 expect_matches=1, max_span_lines=2),
             Edit(id="subset-mirror-indexer-seed", anchor=_re.escape(_A_MODEL_SEED), mode="replace", text=_N_MODEL_SEED,
                  guard=r"BIGCHERRY_META_SUBSET_MIRROR requires BIGCHERRY_ATTN_TS",
                  rationale="After 1303 selects tensor config/rotation and before dimensional split construction.",
@@ -326,6 +368,9 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
+    EnvDoc("BIGCHERRY_META_SUBSET_MIRROR_INPUTS", "0|1", "0",
+           "with BIGCHERRY_META_SUBSET_MIRROR: the attention mask graph input (and what is derived from it) also exists "
+           "only on devices with a nonzero BIGCHERRY_ATTN_TS share (MSM03 step 2, in qualification)"),
     EnvDoc("BIGCHERRY_META_SUBSET_MIRROR", "0|1", "0",
            "qwen4exp tensor split: keep cache_idx replicas only on devices with nonzero BIGCHERRY_ATTN_TS share"),
 )

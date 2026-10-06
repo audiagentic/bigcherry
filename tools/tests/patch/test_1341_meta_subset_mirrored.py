@@ -80,6 +80,12 @@ class Patch1341Mechanics(unittest.TestCase):
             self.assertIn("std::regex_match(tensor_name, pattern_idx_cache)", model)
             self.assertIn("bigcherry_attn_split.split[j] != 0.0f", model)
             self.assertIn("const size_t split_rotation =", model)
+            # MSM03 step 2: the attention mask graph input follows the attention devices (behind its own flag)
+            self.assertIn("static uint32_t bc_meta_attn_input_mask = 0;", meta)
+            self.assertIn('strncmp(tensor->name, "attn_inp_kq_mask", 16) == 0', meta)
+            self.assertLess(meta.index("static uint32_t bc_meta_attn_input_mask = 0;"), meta.index("split_state.active_mask = bc_meta_attn_input_mask;"))
+            self.assertIn("BIGCHERRY_META_SUBSET_MIRROR_INPUTS", model)
+            self.assertLess(model.index('extern "C" void ggml_backend_meta_set_attn_input_mask(uint32_t active_mask);'), model.index("ggml_backend_meta_set_attn_input_mask(split_state.active_mask);"))
             self.assertNotIn("BIGCHERRY_META_SUBSET_MIRROR", meta)
 
             # This phase seeds no compute-side name/pattern; only the persistent indexer-cache classifier.
