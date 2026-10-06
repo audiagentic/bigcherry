@@ -291,6 +291,7 @@ _TEST = r'''// BigCherry 1281: reference test of ggml_mul_mat_id_range on the CP
 #include <climits>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 #include <vector>
@@ -506,6 +507,9 @@ static int run_gpu() {
     ggml_backend_load_all();
     ggml_backend_t cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
     int n_fail = 0, n_run = 0, n_dev = 0;
+    // MMID_RANGE_MIN_TOKENS / MMID_RANGE_MAX_TOKENS restrict the batch sizes, to test one kernel family at a time
+    const int min_tokens = getenv("MMID_RANGE_MIN_TOKENS") ? atoi(getenv("MMID_RANGE_MIN_TOKENS")) : 0;
+    const int max_tokens = getenv("MMID_RANGE_MAX_TOKENS") ? atoi(getenv("MMID_RANGE_MAX_TOKENS")) : INT_MAX;
     for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
         if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
@@ -522,6 +526,9 @@ static int run_gpu() {
                     for (int pattern : { 0, 1, 2 }) {
                         for (int n_used : { 4, 10 }) {
                             for (int n_tokens : { 1, 2, 4, 8, 9, 33, 300 }) {
+                                if (n_tokens < min_tokens || n_tokens > max_tokens) {
+                                    continue;
+                                }
                                 const gpu_case c = { type, id_base, n_local, n_used, n_tokens, pattern };
                                 n_run++;
                                 n_fail += run_gpu_case(gpu, cpu, c, rng) ? 0 : 1;

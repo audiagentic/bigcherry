@@ -12,11 +12,14 @@ HIP_VISIBLE_DEVICES= "$tree/bin/test-mul-mat-id-range" > "$out/test.log" 2>&1
 echo "rc=$? $(grep -c '^ok  ' "$out/test.log") ok, $(grep -c '^FAIL' "$out/test.log") fail"
 grep -E "^FAIL" "$out/test.log" | head -10
 tail -1 "$out/test.log"
-# GPU mode: the range op computed directly on every device against the CPU reference (phase B)
-"$tree/bin/test-mul-mat-id-range" --gpu > "$out/test.gpu.log" 2>&1
-echo "gpu rc=$? $(grep -c '^ok  ' "$out/test.gpu.log") ok, $(grep -c '^FAIL' "$out/test.gpu.log") fail"
-grep '^FAIL' "$out/test.gpu.log" | awk '{print $2, $3, "tokens=" $7}' | sed 's/tokens=tokens=/tokens=/' | sort | uniq -c | sort -rn | head -40
-grep -E "^FAIL" "$out/test.gpu.log" | head -6 | cut -c1-200
-grep -E "error|abort|assert|ROCm error" "$out/test.gpu.log" | head -5 | cut -c1-200
-tail -1 "$out/test.gpu.log"
+# GPU mode: the range op computed directly on every device against the CPU reference (phase B), one band of batch
+# sizes per run so a crash in a path that is not converted yet does not hide the bands that work
+for band in ${BANDS:-"1 1" "2 4" "8 9" "33 33" "300 300"}; do
+  set -- $band
+  log="$out/test.gpu.$1-$2.log"
+  MMID_RANGE_MIN_TOKENS=$1 MMID_RANGE_MAX_TOKENS=$2 "$tree/bin/test-mul-mat-id-range" --gpu > "$log" 2>&1
+  echo "gpu tokens $1..$2: rc=$? $(grep -c '^ok  ' "$log") ok, $(grep -c '^FAIL' "$log") fail$(grep -m1 -oE "illegal memory access|Segmentation|abort" "$log" | sed 's/^/, /')"
+  grep '^FAIL' "$log" | awk '{print $2, $3, $7}' | sort | uniq -c | sort -rn | head -12
+  grep '^FAIL' "$log" | head -2 | cut -c1-200
+done
 echo MMID_RANGE_TEST_DONE
