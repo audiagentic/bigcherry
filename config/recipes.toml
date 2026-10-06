@@ -264,6 +264,7 @@ patches = [
     "1336_sched_copy_callback",
     "1281_moe_mul_mat_id_range",
     "1283_qwen4exp_expert_parallel",
+    "1341_meta_subset_mirrored",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -559,7 +560,7 @@ patches = ["1339_meta_memory_report"]
 
 [experiment.meta-memory]
 # MSM02/MSM03 qualification: measurement + per-device compute arena + cache_idx subset mirror.
-patches = ["1339_meta_memory_report", "1340_meta_per_device_arena", "1341_meta_subset_mirrored"]
+patches = ["1339_meta_memory_report", "1340_meta_per_device_arena"]
 
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
