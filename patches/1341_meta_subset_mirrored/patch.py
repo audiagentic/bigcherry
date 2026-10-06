@@ -98,9 +98,9 @@ _N_INIT_ASSERT = _A_INIT_ASSERT + r"""    GGML_ASSERT(split_state.active_mask ==
 """
 
 _A_INIT_SLICE = "        if (split_dim >= 0 && split_dim < GGML_MAX_DIMS) {\n"
-_N_INIT_SLICE = r"""        if (!ggml_backend_meta_split_device_active(split_state, j)) {
-            // BigCherry 1341 (MSM03): inactive subset-mirror replicas are real zero-sized simple tensors.
-            ne[0] = 0;
+_N_INIT_SLICE = r"""        if (split_state.active_mask != 0) {
+            // BigCherry 1341 (MSM03): reset ne[0] on every device; the shape array is reused by this loop.
+            ne[0] = ggml_backend_meta_split_device_active(split_state, j) ? tensor->ne[0] : 0;
         } else if (split_dim >= 0 && split_dim < GGML_MAX_DIMS) {
 """
 
@@ -289,8 +289,9 @@ PATCHES = [
                  guard=r"split_state.active_mask == 0 \|\| split_state.axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED",
                  rationale="This first step only supports subset semantics for MIRRORED states.", expect_matches=1, max_span_lines=4),
             Edit(id="subset-mirror-init-zero", anchor=_re.escape(_A_INIT_SLICE), mode="replace", text=_N_INIT_SLICE,
-                 guard=r"inactive subset-mirror replicas are real zero-sized simple tensors",
-                 rationale="Zero the first dimension on inactive devices before creating the simple tensor.", expect_matches=1, max_span_lines=2),
+                 guard=r"reset ne\[0\] on every device; the shape array is reused by this loop",
+                 rationale="Choose the full or zero first dimension afresh for every subset-mirrored device; ne[] persists across loop iterations.",
+                 expect_matches=1, max_span_lines=2),
             Edit(id="subset-mirror-disable-compute", anchor=_re.escape(_A_DISABLE), mode="replace", text=_N_DISABLE,
                  guard=r"if \(split_state_src.active_mask != 0\)",
                  rationale="Any node consuming an absent subset replica must not compute on that device.", expect_matches=1, max_span_lines=7),
