@@ -35,7 +35,7 @@ rm -f "$jobs"
 for d in "$R/$N"/*/; do
   echo "== $(basename "$d")  (MiB per device: compute arenas | static buffers by first tensor)"
   grep -h "BIGCHERRY_META_MEM" "$d"*.server.log | grep -vE "ROCm3|buft=CPU" | awk '
-    { dev = ""; size = 0; first = ""; kind = $2
+    { dev = ""; size = 0; first = ""; kind = ($0 ~ /BIGCHERRY_META_MEM (compute|arena) /) ? "compute" : "static"
       for (i = 1; i <= NF; i++) { if ($i ~ /^dev=/) dev = substr($i, 5); if ($i ~ /^size_mib=/) size = substr($i, 10); if ($i ~ /^first=/) first = substr($i, 7) }
       if (kind == "compute") cls = "compute arena"
       else if (first ~ /^cache_idx/) cls = "indexer cache"
