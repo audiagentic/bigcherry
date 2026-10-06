@@ -60,27 +60,17 @@ _CTOR_NEW = """        }
         i_last.assign(n_seq, -1);
 """
 
-_BEGIN_NEW = """    void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+_BEGIN_NEW = """
         if (params.n_min_adaptive > 0) {
             adaptive_state.at(seq_id).reset(params.n_max, params.n_min_adaptive);
             last_n_draft.at(seq_id) = 0;
         }
-
-        const int32_t N = (int32_t) prompt.size();
-        if (N <= 0) {
-            return;
-        }
 """
 
-_DRAFT_START_NEW = """            n_drafting++;
-            drafting[seq_id] = true;
-            last_n_draft[seq_id] = 0;
-            common_sampler_reset(smpls[seq_id].get());
+_DRAFT_START_NEW = """            last_n_draft[seq_id] = 0;
 """
 
-_LIMIT_NEW = """                result.push_back(id);
-
-                const int effective_n_max = params.n_min_adaptive > 0 ? adaptive_state[seq_id].n_cur : params.n_max;
+_LIMIT_NEW = """                const int effective_n_max = params.n_min_adaptive > 0 ? adaptive_state[seq_id].n_cur : params.n_max;
                 if (params.n_min_adaptive > 0 && getenv(\"BIGCHERRY_PATCH_TRACE\") != nullptr) {
                     static std::atomic_flag bigcherry_prbe52_logged = ATOMIC_FLAG_INIT;
                     if (!bigcherry_prbe52_logged.test_and_set(std::memory_order_relaxed)) {
@@ -141,29 +131,36 @@ _CTOR_ANCHOR = (
     r"        pending_h.assign\(n_seq, std::vector<float>\(n_embd, 0\.0f\)\);\n\n"
     r"        i_last.assign\(n_seq, -1\);\n"
 )
+# b11402 (upstream #27694, probabilistic MTP): begin() now resets the per-sequence sampler first, the draft start
+# decides between greedy and rejection-sampling drafts before any sampler reset, and the depth cap follows the
+# optional candidate capture. The three anchors below attach to that shape; each edit inserts its own lines only.
 _BEGIN_ANCHOR = (
     r"    void begin\(llama_seq_id seq_id, const llama_tokens & prompt\) override \{\n"
-    r"        const int32_t N = \(int32_t\) prompt.size\(\);\n"
+    r"[^\n]*\n"
+    r"        common_sampler_reset\(smpls\[seq_id\]\.get\(\)\);\n"
+    # Other draft classes open begin() the same way; only the MTP class follows the empty-prompt return with the
+    # shared-memory position check.
+    r"(?=\n        const int32_t N = \(int32_t\) prompt.size\(\);\n"
     r"        if \(N <= 0\) \{\n"
     r"            return;\n"
     r"        \}\n"
-    # The eagle3 draft class opens begin() identically; only the MTP class
-    # follows it with the shared-memory position check.
-    r"(?=\n        auto \* ctx_dft = this->params\.ctx_dft;\n"
+    r"\n        auto \* ctx_dft = this->params\.ctx_dft;\n"
     r"        const llama_pos pos_max = [^\n]*\n\n"
     r"        if \(pos_max < N - 1 && !is_mem_shared\))"
 )
 _DRAFT_START_ANCHOR = (
     r"            n_drafting\+\+;\n"
     r"            drafting\[seq_id\] = true;\n"
-    r"            common_sampler_reset\(smpls\[seq_id\]\.get\(\)\);\n"
-    # This triple exists in multiple draft implementations. MTP uniquely
-    # follows it by adding id_last plus pending_h to the embedding batch.
-    r"(?=\n            common_batch_add\(batch, dp\.id_last, dp\.pos0, \{ seq_id \}, true\);\n"
-    r"            std::memcpy\(batch\.embd \+ \(size_t\) \(batch\.n_tokens - 1\) \* n_embd, pending_h\[seq_id\]\.data\(\), row_bytes\);)"
+    # The pair exists in several draft implementations. MTP alone follows it with the greedy / probabilistic
+    # decision and later feeds pending_h into the embedding batch.
+    r"(?=[^\n]*\n"
+    r"            if \(!params\.probabilistic\) \{\n"
+    r"                dp\.result_q = nullptr;\n"
+    r"            \}\n"
+    r"(?:[^\n]*\n){1,16}?"
+    r"            batch\.set_embd\(idx, \{ pending_h\[seq_id\]\.data\(\), 1, \(size_t\) n_embd \}\);)"
 )
 _LIMIT_ANCHOR = (
-    r"                result.push_back\(id\);\n\n"
     r"                if \(params.n_max <= \(int\) result.size\(\)\) \{\n"
     r"                    drafting\[seq_id\] = false;\n"
     r"                    n_drafting--;\n"
@@ -218,12 +215,12 @@ PATCHES = [
                  guard=r"adaptive_state", rationale="Identify member declarations by code only; trailing comments are noise-stripped.", expect_matches=1, max_span_lines=4),
             Edit(id="prbe52-ctor", anchor=_CTOR_ANCHOR, mode="replace", text=_CTOR_NEW,
                  guard=r"n_min_adaptive > this->params.n_max", rationale="Validate the post-chain-head cap and size per-sequence state.", expect_matches=1, max_span_lines=7),
-            Edit(id="prbe52-begin-reset", anchor=_BEGIN_ANCHOR, mode="replace", text=_BEGIN_NEW,
-                 guard=r"adaptive_state\.at\(seq_id\)\.reset", rationale="Reset adaptation at the request/sequence begin boundary.", expect_matches=1, max_span_lines=6),
-            Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="replace", text=_DRAFT_START_NEW,
-                 guard=r"last_n_draft\[seq_id\] = 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a triple shared with other draft implementations.", expect_matches=1, max_span_lines=4),
+            Edit(id="prbe52-begin-reset", anchor=_BEGIN_ANCHOR, mode="insert_after", text=_BEGIN_NEW,
+                 guard=r"adaptive_state\.at\(seq_id\)\.reset", rationale="Reset adaptation at the request/sequence begin boundary.", expect_matches=1, max_span_lines=4),
+            Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="insert_after", text=_DRAFT_START_NEW,
+                 guard=r"last_n_draft\[seq_id\] = 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a pair shared with other draft implementations.", expect_matches=1, max_span_lines=3),
             Edit(id="prbe52-depth-limit", anchor=_LIMIT_ANCHOR, mode="replace", text=_LIMIT_NEW,
-                 guard=r"effective_n_max", rationale="Use adaptive depth only in the MTP chain-head-cap block when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=8),
+                 guard=r"effective_n_max", rationale="Use adaptive depth only in the MTP chain-head-cap block when explicitly enabled; fixed-depth code remains the default.", expect_matches=1, max_span_lines=6),
             Edit(id="prbe52-draft-accounting", anchor=_FINALIZE_ANCHOR, mode="replace", text=_FINALIZE_NEW,
                  guard=r"last_n_draft\[seq_id\] = \(int32_t\) dp\.result->size\(\)", rationale="Identify the MTP finalize/accept boundary via verify_h_rows without depending on the parameter comment.", expect_matches=1, max_span_lines=8),
             Edit(id="prbe52-accept-update", anchor=_ACCEPT_ANCHOR, mode="replace", text=_ACCEPT_NEW,
