@@ -223,3 +223,8 @@ External references:
 - https://github.com/ggml-org/llama.cpp/pull/29943
 - https://github.com/ggml-org/llama.cpp/pull/29963
 - 2026-10-06T01:15:14.315144+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261006_025038_groundwork-for-running-moe-mod_5459
+- 2026-10-06T02:50:41.953811+00:00 (updated-by): Updated: section:ledger-events

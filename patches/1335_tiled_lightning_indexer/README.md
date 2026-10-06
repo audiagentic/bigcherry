@@ -30,7 +30,7 @@ B = `BIGCHERRY_INDEXER_TILE=0`; ABBA.
   sparse-path profile).
 - Decode: single-token batches keep the vector kernel. Tokens per second differ with the generated text
   (~99K: 62.2 / 63.4 against 57.3 / 57.4 with acceptance 346/493, 348/487 against 333/532, 332/535); time per
-  decode step is 16.7 - 16.8 ms in both arms at ~99K and 21.7 - 22.0 ms at ~202K.
+  decode step is 16.7 - 16.8 ms in both arms at ~99K and 21.9 - 22.1 ms at ~202K.
 - Fidelity (`flash-fidelity.sh`, 24 next-token probes over one cached 99.3K-token fill, no MTP): tile off against
   tile on top-1 agree 22/24, TV mean 0.086, max 0.421; tile on twice is identical. Inside the distance of the dense
   GPU path from a CPU f32 run on this model (TV mean 0.146, 1334 README). Not bit-identical for the reason upstream
