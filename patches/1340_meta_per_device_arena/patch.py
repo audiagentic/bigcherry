@@ -158,11 +158,18 @@ _A_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
 _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         std::vector<ggml_tensor *>           nodes;
         std::vector<ggml_backend_buffer_ptr> bufs;
-        ggml_gallocr_ptr                     arena_galloc; // BigCherry 1340 (MSM02): transformed compute graph
+        // BigCherry 1340 (MSM02): transformed compute graph. One allocator per graph SHAPE (node / leaf count):
+        // graphs of different shapes alternate (MTP verify batches against the rest), and a single allocator
+        // re-planned on every switch and then again for every larger batch (27 of 34 calls on hardware).
+        // A plan is only replaced when a graph of its own shape outgrows it, so each shape settles at its largest.
+        struct arena_plan_t {
+            int              n_nodes = -1;
+            int              n_leafs = -1;
+            ggml_gallocr_ptr galloc;
+        };
+        std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)
         std::vector<ggml_tensor *>           arena_nodes; // persistent: resized/reused for each transformed graph
         std::vector<ggml_tensor *>           arena_leafs;
-        int                                  arena_plan_n_nodes = -1;
-        int                                  arena_plan_n_leafs = -1;
 """
 
 _A_DTOR = r"""        for (auto & bc : backend_configs) {
@@ -171,7 +178,7 @@ _A_DTOR = r"""        for (auto & bc : backend_configs) {
 """
 _N_DTOR = r"""        for (auto & bc : backend_configs) {
             // BigCherry 1340 (MSM02): arena buffers belong to this simple backend, so release them first.
-            bc.arena_galloc.reset();
+            bc.arena_plans.clear();
             ggml_backend_free(bc.backend);
         }
 """
@@ -304,27 +311,42 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
         simple_graph.nodes = bcj.arena_nodes.data();
         simple_graph.leafs = bcj.arena_leafs.data();
 
-        const bool fresh = bcj.arena_galloc == nullptr;
+        size_t i_plan = 0;
+        while (i_plan < bcj.arena_plans.size() && (bcj.arena_plans[i_plan].n_nodes != simple_graph.n_nodes ||
+                                                    bcj.arena_plans[i_plan].n_leafs != simple_graph.n_leafs)) {
+            i_plan++;
+        }
+        const bool fresh = i_plan == bcj.arena_plans.size();
         if (mem_report) {
             GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=begin fresh=%d nodes=%d leafs=%d\n",
                 j, fresh ? 1 : 0, simple_graph.n_nodes, simple_graph.n_leafs);
         }
         if (fresh) {
-            bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
+            if (bcj.arena_plans.size() >= 4) {
+                // more shapes than expected: drop the oldest plan (its buffer goes with it)
+                bcj.arena_plans.erase(bcj.arena_plans.begin());
+            }
+            bcj.arena_plans.emplace_back();
+            i_plan = bcj.arena_plans.size() - 1;
+            bcj.arena_plans[i_plan].n_nodes = simple_graph.n_nodes;
+            bcj.arena_plans[i_plan].n_leafs = simple_graph.n_leafs;
+            bcj.arena_plans[i_plan].galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
         }
+        ggml_gallocr_t arena_galloc = bcj.arena_plans[i_plan].galloc.get();
 
-        const bool fast_bind = ggml_backend_meta_arena_fastbind_enabled() && !logical_replanned &&
-                bcj.arena_plan_n_nodes == simple_graph.n_nodes && bcj.arena_plan_n_leafs == simple_graph.n_leafs;
+        // A graph the scheduler accepted without re-planning is no larger than the last graph of this shape that
+        // went through the checked path below, so this shape's plan already covers it.
+        const bool fast_bind = ggml_backend_meta_arena_fastbind_enabled() && !logical_replanned && !fresh;
 
         if (!fast_bind) {
             const int64_t reserve_t0 = mem_report ? ggml_time_us() : 0;
-            const bool needs_realloc = ggml_gallocr_needs_realloc(bcj.arena_galloc.get(), &simple_graph);
+            const bool needs_realloc = ggml_gallocr_needs_realloc(arena_galloc, &simple_graph);
             if (needs_realloc) {
                 bc_arena_timer.reserve_fired = true;
                 if (mem_report) {
                     GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin\n", j);
                 }
-                if (!ggml_gallocr_reserve(bcj.arena_galloc.get(), &simple_graph)) {
+                if (!ggml_gallocr_reserve(arena_galloc, &simple_graph)) {
                     return false;
                 }
                 if (mem_report) {
@@ -341,21 +363,21 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
 
         const int64_t bind_t0 = mem_report ? ggml_time_us() : 0;
         const bool allocated = fast_bind
-                ? ggml_gallocr_alloc_graph_reuse(bcj.arena_galloc.get(), &simple_graph)
-                : ggml_gallocr_alloc_graph(bcj.arena_galloc.get(), &simple_graph);
+                ? ggml_gallocr_alloc_graph_reuse(arena_galloc, &simple_graph)
+                : ggml_gallocr_alloc_graph(arena_galloc, &simple_graph);
         if (!allocated) {
             return false;
-        }
-        if (!fast_bind) {
-            bcj.arena_plan_n_nodes = simple_graph.n_nodes;
-            bcj.arena_plan_n_leafs = simple_graph.n_leafs;
         }
         if (mem_report) {
             bc_arena_time.bind_us += ggml_time_us() - bind_t0;
             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(bcj.backend);
             GGML_LOG_INFO("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end fast_bind=%d\n", j, fast_bind ? 1 : 0);
-            GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f\n", j, ggml_backend_buft_name(buft),
-                ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0);
+            size_t arena_bytes = 0; // every shape's plan holds its own buffer
+            for (const auto & plan : bcj.arena_plans) {
+                arena_bytes += ggml_gallocr_get_buffer_size(plan.galloc.get(), 0);
+            }
+            GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f plans=%zu\n", j, ggml_backend_buft_name(buft),
+                arena_bytes / 1024.0 / 1024.0, bcj.arena_plans.size());
         }
     }
     return true;
@@ -651,7 +673,7 @@ PATCHES = [
                  guard=r"ggml_backend_meta_buffer_simple_tensors",
                  rationale="Expose the map value so one logical tensor lookup can fill every device.", expect_matches=1, max_span_lines=14),
             Edit(id="meta-arena-backend-galloc", anchor=_re.escape(_A_BACKEND_CONFIG), mode="replace", text=_N_BACKEND_CONFIG,
-                 guard=r"arena_galloc; // BigCherry 1340 \(MSM02\)",
+                 guard=r"arena_plans; // BigCherry 1340 \(MSM02\)",
                  rationale="One persistent allocator per simple backend.", expect_matches=1, max_span_lines=4),
             Edit(id="meta-arena-backend-dtor", anchor=_re.escape(_A_DTOR), mode="replace", text=_N_DTOR,
                  guard=r"arena buffers belong to this simple backend",
