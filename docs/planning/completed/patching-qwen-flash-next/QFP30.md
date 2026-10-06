@@ -2,7 +2,7 @@
 id: QFP30
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-06T15:41:00+00:00'
 breadth: ''
 skill: advanced
@@ -443,3 +443,9 @@ Verdict after these corrections: implementable and worth benchmarking; promotion
 ## Reviews
 
 - RV4221
+
+## Ledger-events
+
+- chg_20261006_215025_expert-parallel-moe-no-longer_7189
+- 2026-10-06T21:50:29.194311+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-06T21:50:46.194712+00:00 (state-transition): State: pending → completed
