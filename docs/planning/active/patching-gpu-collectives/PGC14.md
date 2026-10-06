@@ -301,8 +301,11 @@ Pinned RCCL provenance; existing FIFO/step state is authoritative; diagnose befo
 
 2026-10-05 source audit correction: `57e58688/src/transport/shm.cc` already has an event-tracked `NCCL_STEPS` CE pipeline. Earlier plan language proposing a fresh fixed-depth ring was superseded. First priority is mode/limiter attribution and tuning of that implementation.
 
+2026-10-06 RCCL ALGORITHM / PROTOCOL SCREEN - REJECTED (run chain3, queue-rccl-screen.sh b11402, production build b-fadef-b11402e, Flash-Next production with MTP, ~99K-token prefill (99,342 tokens), ABBA per setting, A = default RCCL, B = the setting). NCCL_PROTO=Simple: A 970.5 / 984.9, B 981.8 / 981.1 t/s - no change. NCCL_PROTO=LL: A 982.6 / 983.0, B 272.8 / 271.9 t/s - 3.6x slower. NCCL_PROTO=LL128: A 980.0 / 982.7, B 985.6 / 983.4 - no change. NCCL_ALGO=Tree: A 981.9 / 982.0, B 981.2 / 982.7 - no change (decode t/s 59.6 / 60.3 vs 57.5 is a different generated text and acceptance, 338/518 and 339/515 vs 332/535; time per decode step is the same 16.6 ms). NCCL_ALGO=Ring: A 981.6, B 984.3 / 982.4 with the last A arm still running when recorded - no change. No RCCL algorithm or protocol setting improves the tensor-split all-reduce on this host and one makes it much worse; the default is already the best of the set. This closes the env-only lever. What remains for the all-reduce cost is structural (PGC15: fewer or larger collectives, tiling), not configuration.
+
 ## Change Log
 
 - 2026-10-01T11:50:01.913289+00:00 (created-by): Created by agent.
 - 2026-10-05: Expanded prefill transport scope.
 - 2026-10-05: Re-grounded transport design against RCCL 57e58688; replaced duplicate-ring proposal with concrete existing SHM proxy diagnostics/tuning/coalescing code.
+- 2026-10-06T03:37:19.080217+00:00 (updated-by): Updated: section:notes
