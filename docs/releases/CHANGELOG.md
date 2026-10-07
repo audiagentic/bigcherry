@@ -1,5 +1,13 @@
 # Changelog
 
+## [11474.0.0](https://github.com/audiagentic/bigcherry/compare/bc-11474.0.0...bc-11474.0.0) (2026-10-07)
+
+
+### Maintenance
+
+* release notes bc-11474.0.0 ([45ab24c](https://github.com/audiagentic/bigcherry/commit/45ab24c808fd79f7119d9c437009621dae88629d))
+* release notes bc-b11402 ([1e0b1da](https://github.com/audiagentic/bigcherry/commit/1e0b1da3f996a89456fdf61c14c4f9b43e9f15ef))
+
 ## [11474.0.0](https://github.com/audiagentic/bigcherry/compare/bc-11402.0.0...bc-11474.0.0) (2026-10-07)
 
 
