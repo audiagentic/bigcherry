@@ -1,6 +1,6 @@
 # 1348_mtp_deferred_catchup
 
-**Status:** untested  
+**Status:** validated  
 **Plan item:** QFP31
 
 ## What it does
@@ -20,4 +20,6 @@ Prompt-only MTP catch-up is deferred by one target chunk. After target chunk k f
 
 ## Qualification
 
-Expected primary A/B: production Flash-Next prompt throughput with MTP, default-on versus `BIGCHERRY_MTP_DEFERRED_CATCHUP=0`. Generated text must be unchanged. Hardware/compile qualification is pending.
+Qualified on Brutus at b11474 via the QFP18 lightweight promotion tier: mechanics/lint, activation marker, one-binary
+ABBA with complete separation at 8K/24K/98K, and greedy target identity. Full hardware record is in README.md and
+`releases/evidence/qfp31-mtp-deferred-catchup.md`.
