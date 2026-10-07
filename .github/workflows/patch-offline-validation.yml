@@ -1,0 +1,72 @@
+name: Patch offline validation
+
+on:
+  push:
+    branches: [patch-refactor]
+    paths:
+      - 'patches/**'
+      - 'tools/tests/patch/**'
+      - 'tools/bigcherry/patch/**'
+      - 'dispositions/**'
+      - 'config/recipes.toml'
+      - '.github/workflows/patch-offline-validation.yml'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base git ref for changed-patch detection (default: HEAD^)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patch-offline-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile validation harness
+        run: python -m py_compile tools/bigcherry/patch/offline_check.py
+
+      - name: Prepare pinned llama.cpp source
+        env:
+          PYTHONPATH: tools
+        run: python -m bigcherry pull --source bigcherry
+
+      - name: Run changed-patch offline checks
+        shell: bash
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          INPUT_BASE: ${{ inputs.base }}
+          PYTHONPATH: tools
+        run: |
+          set -euo pipefail
+          base="${INPUT_BASE:-${EVENT_BEFORE:-}}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base="HEAD^"
+          fi
+          python -m bigcherry.patch.offline_check \
+            --base "$base" \
+            --head "$GITHUB_SHA" \
+            --source bigcherry \
+            --json artifacts/patch-offline-check.json
+
+      - name: Preserve validation summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patch-offline-check-${{ github.run_id }}
+          if-no-files-found: warn
+          path: artifacts/patch-offline-check.json
