@@ -40,3 +40,11 @@ RX 6900 XT), f16 KV, ub512, build `b-metamem-mw3` (production set + 1345).
 Arm B is native llama.cpp b11402's `mm_ids_helper`, unmodified, so the ABBAs are the native helper against the
 multi-warp helper inside one BigCherry binary: +1.6% to +2.1% prefill with identical output. No separate run against
 a fully native binary was made for this patch.
+
+## Second MoE model
+
+Gemma 4 26B A4B (UD-Q5_K_S, top-8 of 128 experts) on two RX 7900 XTX in tensor split, no draft, 1725-token prompt at
+ub2048, build `b-metamem-mpw` (runs `gem-1..6`, order A B C C B A; A = build defaults, B = 1343 / 1344 / 1345 / 1347
+switched off, C = defaults + the per-device arena flags): activation `used=8 experts=128 tokens=1721 warps=8
+inverse=1` in A and C only; prefill A 3417.3, 3427.5 / B 3342.3, 3368.7 t/s (+2.0%, complete separation, n = 2);
+decode 93.1, 93.4 / 93.7, 93.6; greedy text identical on all six runs.
