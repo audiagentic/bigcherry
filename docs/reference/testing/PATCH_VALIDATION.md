@@ -60,6 +60,34 @@ Raw logs and generated measurement dumps belong under
 package. Patch-specific fixtures, validators, and evidence stay under the
 package so its validation identity remains self-contained.
 
+### QFP18 lightweight promotion tier
+
+The full campaign path above is the default when a patch makes a scientific performance claim, changes correctness
+semantics, needs contract-specific qualification, or otherwise requires structured validation artifacts. QFP18 also
+defines an accepted **lightweight promotion tier** for small already-benchmarked patches and neutral diagnostics where
+the owner explicitly chooses evidence reuse instead of a validation campaign.
+
+For this tier, promotion to `state = "validated"` and
+`[patch-set.validated-enhancements]` is supported by all of the following on the **current llama.cpp pin**:
+
+- the patch's mechanics test passes and repository `patch-lint` passes;
+- an activation marker proves the intended path ran (for a diagnostic, the diagnostic's own emitted marker/count is
+  sufficient);
+- an adoption ABBA uses one binary and shows complete arm separation at the required depths/workloads;
+- target greedy output is identical between subject and control;
+- the PR description, patch README `Promotion record`, and `releases/evidence/` record the hardware/build identity,
+  measurements, activation evidence, and any stated limits.
+
+`validation.toml`, patch-local `evidence/validation.json`, and a full contract campaign are **not required** for a
+QFP18 lightweight promotion. This is an alternative accepted promotion path, not a claim that diagnostic/partial
+campaign evidence satisfies the full G3-G5 contract path. Until the gate tooling models this tier directly, a
+lightweight promotion is reviewed from its mechanics/lint results plus the recorded current-pin hardware evidence; a
+failing or stale full-campaign gate must not be misrepresented as having passed.
+
+Use the lightweight tier only when the PR states it explicitly and the evidence is sufficient to establish activation,
+separation, target identity, and the claimed adoption decision. If any of those are missing, or the patch carries a
+broader unqualified mechanism, use the full campaign path or split/remove the unqualified mechanism before promotion.
+
 Do not write one lifecycle axis' values into another. Validation produces
 evidence; metadata promotion or demotion remains a separate deliberate
 change.
