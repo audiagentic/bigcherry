@@ -67,6 +67,7 @@ releases shows exactly which solutions came or went.
 | `src/` | New files, mirroring the llama.cpp tree at their final paths |
 | `patches/` | Anchored edits to upstream-owned files |
 | `tools/bigcherry/` | The `bigcherry` Python CLI |
+| `tools/lab/` | Temporary plan-owned investigation; no copied upstream source or raw run output |
 | `tools/bigcherry/source_audit.py` | Strict-mode upstream invariant audit (HI01) |
 | `tools/bigcherry/autotune_catalog.py` | Candidate catalog generator — single source of truth (HI03) |
 | `tools/bigcherry/autotune_schema.py` | Candidate manifest JSON schema (HI03) |

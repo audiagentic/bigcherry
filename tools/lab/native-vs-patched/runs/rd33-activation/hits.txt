@@ -1,4 +1,0 @@
-0.07.554.174 W BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=2
-0.07.581.684 W BIGCHERRY_PATCH_HIT patch=1253_nro04 path=gdn_chunked_bf16
-0.07.639.259 W BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=1
-0.08.131.692 W BIGCHERRY_PATCH_HIT patch=1241_rd33 path=q8_0_f32_decode ncols=4

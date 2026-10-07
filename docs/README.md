@@ -31,3 +31,5 @@ duplicate redirect files.
 Scratch, raw traces, generated corpora, and machine-local outputs are not
 documentation: keep them in ignored `artifacts/`, `work/`, or host-local storage.
 Deterministic inputs required by tests belong under `tools/tests/fixtures/`.
+
+Completed lab work must be distilled before its lab directory is retired: keep only compact decision-grade evidence under `docs/evidence/` and the owning plan/patch record. Raw run trees, copied upstream source, and migration working packs belong in ignored artifacts/host storage or Git history, not the live tree.

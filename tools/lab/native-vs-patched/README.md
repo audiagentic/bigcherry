@@ -9,3 +9,6 @@ Run on Brutus: `run-ladder.sh <stock bin dir> <patched bin dir> <out dir>`.
 Results are per (model, device set); each ladder is order-rotated. The activation
 probe is a separate short llama-bench run, not the timed runs, so it shows a
 patch path executes for that model/device, not that it executed in each timed run.
+
+
+Generated run directories are not tracked here. Write raw runs under ignored `artifacts/` or host-local storage; preserve only compact decision-grade evidence under `docs/evidence/`. Historical compact summaries formerly under `runs/` were moved to `docs/evidence/native-vs-patched-historical/` during the 2026-10-08 repository cleanup.

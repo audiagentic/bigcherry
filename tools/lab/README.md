@@ -8,4 +8,6 @@ Lab scripts must be self-contained: they may import third-party/runtime librarie
 
 Do not commit copies of upstream llama.cpp source under a lab directory. Reviewers and CI should materialize the repository's pinned `vendor/llama.cpp` checkout and inspect the exact pinned revision; committed `vendor-b*` snapshots become stale at the next pin bump and duplicate upstream source.
 
+Generated run trees must not be committed beneath the lab directory. Keep raw outputs in ignored `artifacts/`/host-local storage and promote only compact decision-grade evidence to `docs/evidence/`.
+
 When the question is closed, delete the experiment or graduate only the durable capability to maintained analysis/product code. Graduation requires a separate implementation and validation slice; copying a lab script into production is not graduation.
