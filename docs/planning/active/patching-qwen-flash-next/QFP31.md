@@ -515,3 +515,30 @@ At generation start after a qualified replay:
 
 This version intentionally does not add the worker overlap. Re-measure after WINDOW; overlap is
 worth adding only if the remaining in-window draft catch-up is still material.
+
+
+## Chunk 3 lifecycle invariants (2026-10-07)
+
+WINDOW v1 is deliberately conservative outside the fresh-prompt path:
+
+- **Prompt cache reuse:** a completed WINDOW request leaves only a draft KV tail and its
+  `pending_h` carry is host-only. If a later request reuses `n_cached > 0`, MTP is suppressed
+  for that request rather than inventing the missing boundary carry. A fresh `n_cached == 0`
+  request resets row-0 carry and may arm WINDOW again.
+- **RAM prompt-cache load:** the cache stores target and draft KV bytes but not MTP
+  `pending_h`/WINDOW host state. Successful cache load therefore poisons MTP state; a cached
+  request is target-only.
+- **Prompt checkpoints:** WINDOW does not arm when `params_base.n_ctx_checkpoints > 0`;
+  a checkpoint restore cannot reconstruct the hidden-row collector without serializing it.
+- **Short prompts:** `P <= N` never arm and use the native full MTP prompt path.
+- **Cancel mid-prompt:** release from STARTED/PROCESSING_PROMPT/DONE_PROMPT poisons and frees the
+  incomplete collector before slot reuse.
+- **Slot reuse / explicit clear:** `prompt_clear()` clears target and draft memories through
+  `common_memory` and resets WINDOW host carry to clean row-0 state.
+- **Context shift:** existing `common_memory::seq_rm/seq_add` mutates target and draft memories
+  identically; the replayed tail stays position-aligned.
+- **Slot state save/load:** slot save/restore does not restore the WINDOW host carry; restore
+  poisons MTP state, leaving target state usable while suppressing MTP proposals.
+- **Marker:** each successful replay emits one
+  `BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window window=... replay=... skipped=... end_pos=... host_mib=...`
+  line after draft replay synchronization and before collector storage is freed.

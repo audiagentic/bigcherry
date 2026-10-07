@@ -1,4 +1,4 @@
-"""1346 (QFP31 chunk 2b): bounded MTP prompt-window replay plus timing.
+"""1346 (QFP31 chunk 3): bounded MTP prompt-window replay with lifecycle fail-closed invariants.
 
 BIGCHERRY_MTP_PROMPT_TIMING=1 adds prompt/target lifecycle hooks and times the existing
 MTP prompt catch-up without changing model work or ordering. At prompt end it prints one line:
@@ -23,7 +23,10 @@ _API_TEXT = """\
 // bigcherry 1346 (QFP31): called after prompt cache/checkpoint resolution and before the first prompt batch.
 void common_speculative_prefill_begin(
         common_speculative * spec, llama_seq_id seq_id,
-        int32_t n_prompt, int32_t n_cached, bool fresh_text);
+        int32_t n_prompt, int32_t n_cached, bool window_safe);
+
+// bigcherry 1346 lifecycle: clean=true means both target/draft prompt memory was cleared.
+void common_speculative_prompt_reset(common_speculative * spec, llama_seq_id seq_id, bool clean);
 
 // bigcherry 1346 diagnostic seams: called immediately before/after target llama_process().
 void common_speculative_target_process_begin(common_speculative * spec, const common_batch & batch);
@@ -42,7 +45,8 @@ _VIRTUAL_TEXT = """\
 
     // bigcherry 1346 (QFP31): optional prompt lifecycle boundaries; no-op unless an implementation uses them.
     virtual void prefill_begin(
-            llama_seq_id /*seq_id*/, int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*fresh_text*/) {}
+            llama_seq_id /*seq_id*/, int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*window_safe*/) {}
+    virtual void prompt_reset(llama_seq_id /*seq_id*/, bool /*clean*/) {}
     virtual void target_process_begin(const common_batch & /*batch*/) {}
     virtual void target_process_end(const common_batch & /*batch*/) {}
 """
@@ -71,6 +75,8 @@ _STATE_TEXT = """\
     struct bc_mtp_prompt_window_state {
         bool armed = false;
         bool active = false;
+        bool poisoned = false;
+        bool suppress = false;
         int32_t prompt_tokens = 0;
         int32_t replay_first = 0;
         int32_t count = 0;
@@ -143,8 +149,31 @@ _MTP_PREFILL_TEXT = """\
         }
     }
 
+    void prompt_reset(llama_seq_id seq_id, bool clean) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq || bc_mtp_prompt_window <= 0) {
+            return;
+        }
+
+        if (bc_mtp_prompt_timing_on) {
+            bc_mtp_prompt_timing[seq_id] = {};
+        }
+
+        auto & window = bc_mtp_prompt_windows[seq_id];
+        window = {};
+        if (!clean) {
+            // Invariant WINDOW-INVALIDATE: model/cache state survived but host MTP carry did not.
+            // Never draft from such a sequence; a later fresh n_cached=0 prompt can re-arm safely.
+            window.poisoned = true;
+            return;
+        }
+
+        std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
+        verify_h[seq_id].clear();
+        verify_h_rows[seq_id] = 0;
+    }
+
     void prefill_begin(
-            llama_seq_id seq_id, int32_t n_prompt, int32_t n_cached, bool fresh_text) override {
+            llama_seq_id seq_id, int32_t n_prompt, int32_t n_cached, bool window_safe) override {
         if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
             return;
         }
@@ -155,14 +184,30 @@ _MTP_PREFILL_TEXT = """\
         }
 
         auto & window = bc_mtp_prompt_windows[seq_id];
+        const bool inherited_truncated = window.active || window.poisoned;
         window = {};
 
+        if (bc_mtp_prompt_window > 0 && n_cached == 0) {
+            // Invariant WINDOW-FRESH: row 0 has no predecessor after a full fresh-prompt reset.
+            std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
+            verify_h[seq_id].clear();
+            verify_h_rows[seq_id] = 0;
+        }
+
+        if (bc_mtp_prompt_window > 0 && inherited_truncated && n_cached > 0) {
+            // Invariant WINDOW-CACHE: cached target/draft bytes do not serialize pending_h.
+            // Suppress MTP for this request instead of inventing the missing boundary carry.
+            window.poisoned = true;
+            window.suppress = true;
+            return;
+        }
+
         // Invariant WINDOW-ARM: do not truncate an existing/restored draft context.
-        // V1 only arms before a completely fresh text prompt whose absolute positions start at zero.
+        // V1 arms only before fresh text at position zero and with prompt checkpoints disabled.
         if (bc_mtp_prompt_window <= 0 ||
                 n_prompt <= bc_mtp_prompt_window ||
                 n_cached != 0 ||
-                !fresh_text ||
+                !window_safe ||
                 is_mem_shared ||
                 chain_heads ||
                 n_mtp_layers != 1 ||
@@ -200,6 +245,10 @@ _MTP_BEGIN_TIMING_TEXT = """\
         }
 
         auto & bc_window = bc_mtp_prompt_windows[seq_id];
+        if (bc_window.suppress) {
+            // Invariant WINDOW-SUPPRESS: target state remains authoritative; this request emits no MTP draft.
+            return;
+        }
         if (bc_window.armed) {
             // Invariant WINDOW-REPLAY: collector rows are exactly the final N absolute prompt positions,
             // and row p carries token[p] with the exact native MTP input hidden h[p-1].
@@ -243,6 +292,15 @@ _MTP_BEGIN_TIMING_TEXT = """\
             if (replay_pos_max != N - 1) {
                 throw std::runtime_error("BIGCHERRY_MTP_PROMPT_WINDOW replay position invariant failed");
             }
+
+            const size_t bc_host_bytes =
+                bc_window.h_prev.size() * sizeof(float) +
+                bc_window.ids.size() * sizeof(llama_token) +
+                bc_window.pos.size() * sizeof(llama_pos);
+            std::fprintf(stderr,
+                    "BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window window=%d replay=%d skipped=%d end_pos=%d host_mib=%.3f\n",
+                    bc_mtp_prompt_window, n_replay, N - n_replay, N - 1,
+                    bc_host_bytes / (1024.0 * 1024.0));
 
             bc_window.armed = false;
             bc_window.active = true;
@@ -363,6 +421,9 @@ _PROCESS_NATIVE_NEW = """\
             }
 
             auto & window = bc_mtp_prompt_windows[seq_id];
+            if (window.suppress) {
+                continue;
+            }
             if (!window.armed) {
                 bc_need_target_nextn = true;
                 continue;
@@ -412,6 +473,9 @@ _PROCESS_NATIVE_NEW = """\
                 const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
                 auto & window = bc_mtp_prompt_windows[seq_id];
 
+                if (window.suppress) {
+                    continue;
+                }
                 if (window.armed) {
                     if (!bc_window_fetch[seq_id]) {
                         continue;
@@ -492,7 +556,7 @@ _PROCESS_NATIVE_NEW = """\
             }
 
             auto & window = bc_mtp_prompt_windows[seq_id];
-            if (window.armed && !bc_window_fetch[seq_id]) {
+            if (window.suppress || (window.armed && !bc_window_fetch[seq_id])) {
                 continue;
             }
 
@@ -525,17 +589,48 @@ _PROCESS_NATIVE_NEW = """\
         return true;
 """
 
+_DRAFT_SEED_ANCHOR = """\
+            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
+            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
+"""
+_DRAFT_SUPPRESS_TEXT = """\
+            if (bc_mtp_prompt_windows[seq_id].suppress) {
+                // Invariant WINDOW-SUPPRESS: no draft context is trusted for this request.
+                dp.drafting = false;
+                if (dp.result) {
+                    dp.result->clear();
+                }
+                if (dp.result_q) {
+                    dp.result_q->clear();
+                }
+                n_drafting--;
+                drafting[seq_id] = false;
+                continue;
+            }
+
+"""
+
 _WRAPPER_ANCHOR = "void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt) {\n"
 _WRAPPER_TEXT = """\
 void common_speculative_prefill_begin(
         common_speculative * spec, llama_seq_id seq_id,
-        int32_t n_prompt, int32_t n_cached, bool fresh_text) {
+        int32_t n_prompt, int32_t n_cached, bool window_safe) {
     if (spec == nullptr) {
         return;
     }
 
     for (auto & impl : spec->impls) {
-        impl->prefill_begin(seq_id, n_prompt, n_cached, fresh_text);
+        impl->prefill_begin(seq_id, n_prompt, n_cached, window_safe);
+    }
+}
+
+void common_speculative_prompt_reset(common_speculative * spec, llama_seq_id seq_id, bool clean) {
+    if (spec == nullptr) {
+        return;
+    }
+
+    for (auto & impl : spec->impls) {
+        impl->prompt_reset(seq_id, clean);
     }
 }
 
@@ -561,6 +656,85 @@ void common_speculative_target_process_end(common_speculative * spec, const comm
 
 """
 
+_PROMPT_LOAD_OLD = """\
+    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
+        if (!res) {
+            SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
+        }
+
+        return res;
+    }
+"""
+_PROMPT_LOAD_NEW = """\
+    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
+        bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
+        if (!res) {
+            SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
+        } else if (spec) {
+            // Invariant WINDOW-CACHE-LOAD: cache bytes restore draft KV but not MTP pending_h/window host state.
+            common_speculative_prompt_reset(spec, id, false);
+        }
+
+        return res;
+    }
+"""
+_PROMPT_CLEAR_OLD = """\
+    void prompt_clear() {
+        SLT_TRC(*this, "clearing prompt with %zu tokens\n", prompt.tokens.size());
+
+        mem.seq_rm(id, -1, -1);
+
+        prompt.clear();
+    }
+"""
+_PROMPT_CLEAR_NEW = """\
+    void prompt_clear() {
+        SLT_TRC(*this, "clearing prompt with %zu tokens\n", prompt.tokens.size());
+
+        mem.seq_rm(id, -1, -1);
+        if (spec) {
+            // Invariant WINDOW-CLEAR: both model memories are empty, so host carry resets to clean row-0 state.
+            common_speculative_prompt_reset(spec, id, true);
+        }
+
+        prompt.clear();
+    }
+"""
+_RELEASE_OLD = """\
+            t_last_used = ggml_time_us();
+
+            state = SLOT_STATE_IDLE;
+"""
+_RELEASE_NEW = """\
+            t_last_used = ggml_time_us();
+
+            if (spec && (state == SLOT_STATE_STARTED ||
+                         state == SLOT_STATE_PROCESSING_PROMPT ||
+                         state == SLOT_STATE_DONE_PROMPT)) {
+                // Invariant WINDOW-CANCEL: a partial target prompt has no complete replay collector.
+                common_speculative_prompt_reset(spec, id, false);
+            }
+
+            state = SLOT_STATE_IDLE;
+"""
+_SLOT_RESTORE_ANCHOR = "                        slot->prompt.tokens = std::move(restored);\n"
+_SLOT_RESTORE_TEXT = """\
+
+                        if (slot->spec) {
+                            // Invariant WINDOW-SLOT-RESTORE: /slots state restores target only, never the MTP host carry.
+                            common_speculative_prompt_reset(slot->spec, slot->id, false);
+                        }
+"""
+_CTX_SHIFT_ANCHOR = """\
+                slot.mem.seq_rm (slot.id, n_keep            , n_keep + n_discard);
+                slot.mem.seq_add(slot.id, n_keep + n_discard, slot.prompt.tokens.pos_next(), -n_discard);
+"""
+_CTX_SHIFT_TEXT = """\
+
+                // Invariant WINDOW-SHIFT: common_memory applies the identical rm/add to target and draft;
+                // the truncated draft tail therefore stays position-aligned with the target after a shift.
+"""
 _SERVER_ANCHOR = "                        slot.prompt.tokens.keep_first(n_past);\n"
 _TARGET_PROCESS_OLD = """\
         queue_tasks.yield_to_queue([&]() {
@@ -581,10 +755,11 @@ _TARGET_PROCESS_NEW = """\
 _SERVER_TEXT = """\
 
                         // bigcherry 1346 (QFP31): resolved prompt-start contract. WINDOW only arms for a
-                        // fresh text prompt: no cached prefix, no MTMD and no shared-prefix child.
+                        // fresh text prompt: no cached prefix, no MTMD/shared-prefix child, and no
+                        // prompt checkpoint restore that would require serializing the hidden collector.
                         common_speculative_prefill_begin(
                                 spec.get(), slot.id, (int32_t) slot.task->n_tokens(), n_past,
-                                mctx == nullptr && slot.task->n_tokens_shared == 0);
+                                mctx == nullptr && slot.task->n_tokens_shared == 0 && params_base.n_ctx_checkpoints == 0);
 """
 
 PATCHES = [
@@ -598,7 +773,7 @@ PATCHES = [
                 anchor=re.escape(_API_ANCHOR),
                 mode="insert_after",
                 text=_API_TEXT,
-                guard=r"int32_t n_prompt, int32_t n_cached, bool fresh_text\);",
+                guard=r"void common_speculative_prompt_reset\(common_speculative \* spec, llama_seq_id seq_id, bool clean\);",
                 rationale="Stable public speculative-driver seam immediately before the existing generation-begin hook.",
                 expect_matches=1,
                 max_span_lines=2,
@@ -625,7 +800,7 @@ PATCHES = [
                 anchor=re.escape(_VIRTUAL_ANCHOR),
                 mode="insert_after",
                 text=_VIRTUAL_TEXT,
-                guard=r"int32_t /\*n_prompt\*/, int32_t /\*n_cached\*/, bool /\*fresh_text\*/\) \{\}",
+                guard=r"virtual void prompt_reset\(llama_seq_id /\*seq_id\*/, bool /\*clean\*/\) \{\}",
                 rationale="Optional lifecycle method on the speculative implementation base; existing implementations stay no-op.",
                 expect_matches=1,
                 max_span_lines=2,
@@ -691,11 +866,21 @@ PATCHES = [
                 max_span_lines=100,
             ),
             Edit(
+                id="mtp-prompt-window-draft-suppress",
+                anchor=re.escape(_DRAFT_SEED_ANCHOR),
+                mode="insert_before",
+                text=_DRAFT_SUPPRESS_TEXT,
+                guard=r"Invariant WINDOW-SUPPRESS: no draft context is trusted",
+                rationale="Cached/restored WINDOW state lacks pending_h; suppress proposals rather than using an inconsistent draft context.",
+                expect_matches=1,
+                max_span_lines=3,
+            ),
+            Edit(
                 id="mtp-prompt-prefill-wrapper",
                 anchor=re.escape(_WRAPPER_ANCHOR),
                 mode="insert_before",
                 text=_WRAPPER_TEXT,
-                guard=r"int32_t n_prompt, int32_t n_cached, bool fresh_text\) \{",
+                guard=r"void common_speculative_prompt_reset\(common_speculative \* spec, llama_seq_id seq_id, bool clean\) \{",
                 rationale="Public wrapper next to the existing common_speculative_begin wrapper.",
                 expect_matches=1,
                 max_span_lines=2,
@@ -712,7 +897,7 @@ PATCHES = [
                 anchor=re.escape(_SERVER_ANCHOR),
                 mode="insert_after",
                 text=_SERVER_TEXT,
-                guard=r"mctx == nullptr && slot\.task->n_tokens_shared == 0\);",
+                guard=r"params_base\.n_ctx_checkpoints == 0\);",
                 rationale="SLOT_STATE_STARTED has finalized n_past and restored any cache/checkpoint state at this line.",
                 expect_matches=1,
                 max_span_lines=2,
@@ -726,6 +911,56 @@ PATCHES = [
                 rationale="Target decode lambda gives exact process-call entry/return timestamps around llama_process().",
                 expect_matches=1,
                 max_span_lines=5,
+            ),
+            Edit(
+                id="mtp-prompt-cache-load-invalidate",
+                anchor=re.escape(_PROMPT_LOAD_OLD),
+                mode="replace",
+                text=_PROMPT_LOAD_NEW,
+                guard=r"Invariant WINDOW-CACHE-LOAD",
+                rationale="Prompt-cache bytes cannot restore MTP pending_h/window host state; mark that draft state unusable.",
+                expect_matches=1,
+                max_span_lines=10,
+            ),
+            Edit(
+                id="mtp-prompt-clear-reset",
+                anchor=re.escape(_PROMPT_CLEAR_OLD),
+                mode="replace",
+                text=_PROMPT_CLEAR_NEW,
+                guard=r"Invariant WINDOW-CLEAR",
+                rationale="A real memory clear is the lifecycle reset that returns WINDOW host state to a clean row-0 baseline.",
+                expect_matches=1,
+                max_span_lines=9,
+            ),
+            Edit(
+                id="mtp-prompt-cancel-invalidate",
+                anchor=re.escape(_RELEASE_OLD),
+                mode="replace",
+                text=_RELEASE_NEW,
+                guard=r"Invariant WINDOW-CANCEL",
+                rationale="Cancellation before generation leaves an incomplete collector; poison draft state before slot reuse.",
+                expect_matches=1,
+                max_span_lines=4,
+            ),
+            Edit(
+                id="mtp-prompt-slot-restore-invalidate",
+                anchor=re.escape(_SLOT_RESTORE_ANCHOR),
+                mode="insert_after",
+                text=_SLOT_RESTORE_TEXT,
+                guard=r"Invariant WINDOW-SLOT-RESTORE",
+                rationale="/slots restore contains target state only, so MTP drafting must fail closed until a fresh prompt.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+            Edit(
+                id="mtp-prompt-context-shift-invariant",
+                anchor=re.escape(_CTX_SHIFT_ANCHOR),
+                mode="insert_after",
+                text=_CTX_SHIFT_TEXT,
+                guard=r"Invariant WINDOW-SHIFT",
+                rationale="Existing common_memory context shift mutates target and draft together, preserving tail alignment.",
+                expect_matches=1,
+                max_span_lines=3,
             ),
         ),
     ),

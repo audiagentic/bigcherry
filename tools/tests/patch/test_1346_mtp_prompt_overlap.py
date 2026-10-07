@@ -1,4 +1,4 @@
-"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 2b."""
+"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 3."""
 
 from __future__ import annotations
 
@@ -52,12 +52,14 @@ class Patch1346Mechanics(unittest.TestCase):
         src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
         server = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("int32_t n_prompt, int32_t n_cached, bool fresh_text);", h)
+        self.assertIn("int32_t n_prompt, int32_t n_cached, bool window_safe);", h)
+        self.assertIn("void common_speculative_prompt_reset(common_speculative * spec, llama_seq_id seq_id, bool clean);", h)
         self.assertIn("void common_speculative_target_process_begin(common_speculative * spec, const common_batch & batch);", h)
         self.assertIn("void common_speculative_target_process_end(common_speculative * spec, const common_batch & batch);", h)
-        self.assertIn("int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*fresh_text*/) {}", src)
+        self.assertIn("int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*window_safe*/) {}", src)
+        self.assertIn("virtual void prompt_reset(llama_seq_id /*seq_id*/, bool /*clean*/) {}", src)
         self.assertIn("virtual void target_process_begin(const common_batch & /*batch*/) {}", src)
-        self.assertIn("void prefill_begin(llama_seq_id seq_id) override", src)
+        self.assertIn("llama_seq_id seq_id, int32_t n_prompt, int32_t n_cached, bool window_safe) override", src)
         self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
         self.assertIn("BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f target_sync_ms=%.3f target_fetch_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f host_gap_ms=%.3f chunks=%llu tokens=%llu", src)
         self.assertIn("llama_synchronize(ctx_tgt);", src)
@@ -73,6 +75,11 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertIn("BIGCHERRY_MTP_PROMPT_WINDOW collector invariant failed", src)
         self.assertIn("llama_memory_seq_rm(mem_dft, seq_id, -1, -1);", src)
         self.assertIn("llama_synchronize(ctx_dft);", src)
+        self.assertIn("bool poisoned = false;", src)
+        self.assertIn("bool suppress = false;", src)
+        self.assertIn("Invariant WINDOW-CACHE", src)
+        self.assertIn("Invariant WINDOW-SUPPRESS", src)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window", src)
 
         keep = "slot.prompt.tokens.keep_first(n_past);"
         hook = "common_speculative_prefill_begin(\n                                spec.get(), slot.id, (int32_t) slot.task->n_tokens(), n_past,"
@@ -85,6 +92,12 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertEqual(server.count(process_end), 1)
         self.assertLess(server.index(process_beg), server.index(process_call))
         self.assertLess(server.index(process_call), server.index(process_end))
+        self.assertIn("Invariant WINDOW-CACHE-LOAD", server)
+        self.assertIn("Invariant WINDOW-CLEAR", server)
+        self.assertIn("Invariant WINDOW-CANCEL", server)
+        self.assertIn("Invariant WINDOW-SLOT-RESTORE", server)
+        self.assertIn("Invariant WINDOW-SHIFT", server)
+        self.assertIn("params_base.n_ctx_checkpoints == 0", server)
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
