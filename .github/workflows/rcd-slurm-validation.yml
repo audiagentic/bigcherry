@@ -6,16 +6,20 @@ on:
     paths:
       - '.github/workflows/rcd-slurm-validation.yml'
       - 'tools/lab/run-campaign-durability/**'
+      - 'tools/bigcherry/jobs/**'
+      - 'tools/bigcherry/hardware/**'
+      - 'tools/bigcherry/cli/jobs.py'
+      - 'tools/bigcherry/cli/hardware.py'
+      - 'tools/bigcherry/__main__.py'
+      - 'tools/bigcherry/core/host_lock.py'
       - 'tools/bigcherry/core/tree_activity.py'
       - 'tools/bigcherry/experiment/bundle.py'
       - 'tools/bigcherry/tuning/journal.py'
       - 'tools/bigcherry/telemetry.py'
       - 'tools/bigcherry/patch/validation_campaign.py'
       - 'tools/bigcherry/patch/campaign/producer.py'
+      - 'config/jobs/**'
       - 'config/slurm/**'
-      - 'docs/design/JOBS_ORCHESTRATOR.md'
-      - 'docs/reference/jobs/SLURM_BRUTUS.md'
-      - 'docs/planning/active/run-campaign-durability/**'
   workflow_dispatch:
 
 permissions:
