@@ -297,3 +297,133 @@ Execution order: eighth. The existing 1237/1265 result lowers the expected resid
 
 - 2026-10-07T00:39:44.284926+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and validated 1237/1265; identified existing-but-disabled RDNA Stream-K, separated it from compact MoE tiling, and defined an IQ4_XS I=32 physical-shape qualification.
+
+
+## Code-level review (2026-10-07)
+
+### 1. Verified facts and corrections
+
+Checked against llama.cpp d89651a7b205 and the current validated-enhancements composition.
+
+- ggml/src/ggml-cuda/mmq.cuh defines ggml_cuda_mmq_config as { type, nthreads, occupancy, I, J, sram_layout, K_vram, stream_k, fallback }; I is the output-row tile and stream_k is compile-time configuration.
+- ggml/src/ggml-cuda/mmq.cu::ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t n_experts) admits GGML_TYPE_Q8_0 and GGML_TYPE_IQ4_XS. On RDNA3, n_experts >= 64 is accepted before ordinary-shape heuristics.
+- The kernel signature is template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8> static __global__ void mul_mat_q(...). Its ordinary/Stream-K decision is compile time: if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback, prec_src1)).
+- Correction: a forced Stream-K experiment must alter both the host launch decision and that device compile-time branch. Host-only forcing is incorrect.
+- launch_mul_mat_q(...) computes nty=(nrows_x+I-1)/I, ntx=(ncols_max+J-1)/J and ordinary dim3(nty,ntx,ntzw). Its Stream-K path computes ntiles_dst=ntx*nty*ntzw; on AMD block_nums_stream_k.x is nsm, allocates block_nums_stream_k.x*J*I floats from ctx.pool(id) when fixup is needed, then launches mul_mat_q_stream_k_fixup.
+- mul_mat_q_switch_J(...) chooses J by minimizing ceil(args.ncols_opt/J) among valid configs that fit shared memory. It does not optimize total I-by-J tile occupancy.
+- RDNA2/RDNA3/RDNA4 config tables all set stream_k=false for Q8_0 and IQ4_XS at this pin. gfx1100 RDNA3 IQ4_XS uses I=64 for its normal J set; gfx1201 RDNA4 uses I=64 for J<=64 and I=128 for wider J; RDNA2 IQ4_XS uses I=128.
+- Correction to the I=32 half: I is not local to launch_mul_mat_q. ggml_cuda_mmq_get_I(...) is consumed by mul_mat_q_process_tile, mul_mat_q, mul_mat_q_stream_k_fixup, writeback, and repeatedly in mmq-load-tiles.cuh and mmq-vec-dot.cuh. A runtime-selectable I=32 experiment therefore needs compile-time I plumbing through the IQ4_XS load/dot/writeback chain, or a distinct IQ4_XS kernel family. The existing plan understates this.
+- CASE(...) statically requires I % 32 == 0, so I=32 is structurally admissible, but that does not establish register/shared-memory correctness or speed.
+- mul_mat_q_stream_k_fixup recomputes the same tile/K partition boundaries and accumulates prior partials without floating atomics.
+- 1237's non-Stream-K compaction is orthogonal by design: its Stream-K launch explicitly receives null compact-map parameters.
+
+### 2. Composition and post-patch anchors
+
+- 1237_rd30_moe_mmq_compact_grid edits the exact QFP37 area in mmq.cuh:
+  - rd30-helpers inserts before the launch_mul_mat_q template/signature;
+  - rd30-kernel-signature extends mul_mat_q with compact-map parameters;
+  - rd30-kernel-body-derive changes non-Stream-K block-to-(expert,J) decoding;
+  - rd30-launch-nonstreamk replaces the native non-Stream-K launch;
+  - rd30-launch-streamk-params changes the Stream-K launch to pass null compact-map arguments;
+  - rd30-workspace-moe updates hip-autotune-dispatch.cu workspace accounting.
+  Any QFP37 patch authored against pristine b11402 will collide. Anchor against this composed text.
+- 1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2 edit rd30b-gate replaces 1237's gfx1100-only gate with exact gfx1100/gfx1201/gfx1030 admission. Do not anchor on the original return cc == GGML_CUDA_CC_RDNA3.
+- 1281_moe_mul_mat_id_range edits mmq.cu with mmid-range-mmq-setup, mmid-range-mmq-helper and mmid-range-mmq-dedup-call. It owns id translation and Q8_1 range scatter before MMQ execution; QFP37 must preserve ids_dst/expert_bounds/src1_q8_1 exactly.
+- 1283_qwen4exp_expert_parallel changes model/Meta placement via moe-ep-axis, moe-ep-granularity, moe-ep-shares, moe-ep-split-state, moe-ep-range-node and moe-ep-delay; it changes physical expert ownership, not MMQ kernel code.
+- 1006_rdna4_mmq_q6k_codegen_fix edits mmq-vec-dot.cuh only for Q6_K (q6k-mma-float-promotion) and mmq.cu activation evidence (mmq-includes-atomic, mmq-q6k-dispatch-marker). No IQ4_XS arithmetic collision, but mmq.cu include anchors must be post-1006.
+- The Stream-K package must preserve 1237's composed kernel signature and non-Stream-K body. The I=32 package cannot add duplicate config CASE rows because the current lookup has one type/J/fallback result.
+
+### 3. Gaps and risks
+
+- Stream-K V1 must require ids_dst == nullptr. That excludes MoE/range and prevents bypassing 1237/1265. Also gate exact measured type, cc, J, K-work count and tile-count window; tiles<nsm alone is not sufficient because fixup launch/allocation can dominate.
+- Use physical args.nrows_x/ncols_x/ncols_dst/nchannels_y/nsamples_y after Meta transformation. Row-split and expert-parallel modes present different local shapes; never key on logical model dimensions or device ordinals.
+- 1281/1283: I=32 must consume the same local expert_bounds and post-translation ids. Stream-K V1 must refuse all ids_dst != nullptr calls, including range ops.
+- Q8_1 activation cache: neither mechanism may requantize, resize or reinterpret the Q8_1 slab produced by 1235/1307/1309-1312 and 1281 QFP30.
+- 1237 compact-map workspace depends on expert/J enumeration, not I, but I=32 increases grid.x. Verify rd30-workspace-moe remains a valid upper bound before coding; do not modify 1237 unless measurement proves otherwise.
+- FKE01: Stream-K's ctx.pool allocation can shift addresses and therefore alter unrelated fusion selection. Identity requires GGML_CUDA_DISABLE_FUSION=1 on both A and B; fusion-on runs are probes only. I=32 should introduce no new pool allocation.
+- CUDA graphs: Stream-K changes pool usage/capture layout. Record recaptures and require no reserve/grow during replay. I=32 must add no host sync.
+- gfx1100 and gfx1201 need independent thresholds because native IQ4_XS configs differ. gfx1030 is drafter-only in the main topology; leave it disabled unless a census proves material execution.
+- I-only geometry is expected to retain K order, but byte identity is mandatory because the current util functions derive I internally. Stream-K is equivalence-only because K partial grouping changes.
+- No host thread is useful here.
+
+### 4. Concrete implementation outline
+
+#### 1350 ordinary few-tile Stream-K
+
+Flag: BIGCHERRY_MMQ_FEW_TILE_STREAMK=1; default 0.
+
+Extend the 1237-composed templates with a compile-time force_stream_k=false parameter:
+
+    template <ggml_type type, int J, bool fallback,
+              ggml_prec prec_src1 = GGML_PREC_Q8, bool force_stream_k = false>
+    static __global__ void mul_mat_q(... composed 1237 args ...);
+
+    template <ggml_type type, int J, bool fallback,
+              ggml_prec prec_src1 = GGML_PREC_Q8, bool force_stream_k = false>
+    static void launch_mul_mat_q(...);
+
+Inside the device kernel use constexpr bool use_stream_k = force_stream_k || ggml_cuda_mmq_get_stream_k(...). Inside the host launcher use the same effective value. Native calls instantiate false; the qualified arm instantiates true. Preserve 1237 compact-map parameters and pass null compact-map pointers on forced Stream-K.
+
+Add static bool bc_mmq_few_tile_streamk_enabled() and static bool bc_should_force_stream_k(const mmq_args &, ggml_type, const ggml_cuda_mmq_config &, int cc, int nsm). Require ordinary MMQ, exact qualified cc/type, config.stream_k==false, bounded fixup bytes and Gate-0-derived tile/K thresholds.
+
+Selection belongs in mul_mat_q_switch_J after J_best is chosen. Route each J case through a small bc_launch_mul_mat_q_selected<...>() wrapper so the predicate is not duplicated.
+
+Activation marker:
+BIGCHERRY_PATCH_HIT patch=1350_mmq_few_tile_streamk cc=<cc> type=<type> I=<I> J=<J> tiles=<n> nsm=<nsm> k=<ncols_x>.
+
+Edits:
+- streamk-flag-predicate: mmq.cuh, insert_before the post-1237 launch_mul_mat_q template.
+- streamk-kernel-template: mmq.cuh, replace the composed mul_mat_q template/signature plus compile-time branch.
+- streamk-launch-template: mmq.cuh, replace the composed launcher template/signature and branch condition while preserving 1237 bodies.
+- streamk-j-dispatch: mmq.cuh, replace launch calls inside mul_mat_q_switch_J with the wrapper, exact matches only.
+- streamk-trace: in the wrapper/launcher, one-shot per representative shape.
+No config-table edit.
+
+#### 1351 IQ4_XS I=32
+
+Flag: BIGCHERRY_IQ4XS_EXPERT_I32=1; default 0.
+
+Do not implement this as a duplicate config-table CASE. Add an IQ4_XS-only compile-time I_override parameter, with I = I_override ? I_override : native_I, and thread it only through:
+- ggml_cuda_mmq_load_tiles_iq4_xs in mmq-load-tiles.cuh;
+- the IQ4_XS-selected MMA vec-dot/writeback path;
+- mul_mat_q_process_tile;
+- mul_mat_q;
+- host shared-memory sizing and nty calculation in launch_mul_mat_q.
+
+Expose bc_launch_mul_mat_q_iq4xs<I_override>(...). I_override=0 is native, 32 is experiment. V1 must be non-Stream-K and require args.ids_dst != nullptr, IQ4_XS, exact qualified cc and measured physical row/occupancy window. Preserve 1237 compact-grid enumeration.
+
+Activation marker:
+BIGCHERRY_PATCH_HIT patch=1351_iq4xs_expert_i32 cc=<cc> rows=<nrows_x> J=<J> experts=<nchannels_y>.
+
+Edits:
+- iq4xs-i-override-core: mmq.cuh, replace exact composed IQ4_XS util/process/kernel/launcher signatures and constexpr-I uses.
+- iq4xs-i-override-load: mmq-load-tiles.cuh, replace only ggml_cuda_mmq_load_tiles_iq4_xs to accept/use I_override.
+- iq4xs-i-override-dot: mmq-vec-dot.cuh only if the selected IQ4_XS MMA helper directly derives I; parameterize that exact helper, not generic unrelated quant helpers.
+- iq4xs-i32-select: mmq.cuh, post-J selection wrapper.
+- iq4xs-i32-trace: wrapper one-shot marker.
+
+This is materially larger than the original plan estimated; if Gate 0 is not strong, do not code it.
+
+### 5. Gate 0 and lightweight validation
+
+1350 Gate 0: on Qwen3.8-27B Q8_0 / two XTX, run ub512 pp4096 and 24K with rocprof plus an MMQ census recording device cc, op kind, type, nrows_x/ncols_x/ncols_max/ncols_dst, selected I/J, nty/ntx/ntzw/ntiles_dst, nsm, calls and aggregate duration. Positive only if ordinary Q8_0 calls with ntiles_dst < 0.5*nsm consume >=0.75% of critical-rank prefill wall time or >=1.5 ms per 512-token ubatch. For Flash-Next, code relevance only if ordinary Q8_0/IQ4_XS separately meets the same threshold.
+
+1351 Gate 0: on Flash-Next UD-IQ4_XS, run the same census in row-split and 1283 EP modes. Compute native nty=ceil(nrows_x/I) and row-tail waste after 1237 compaction. Positive only if candidate IQ4_XS MUL_MAT_ID consumes >=2.0% of critical-rank prefill wall time and >=25% of that class's launched row capacity is tail/underfill attributable to I=64/128 on gfx1100 or gfx1201.
+
+Validation:
+- offline exact/idempotent mechanics plus patch-lint; flag off must preserve native template/launch text;
+- activation marker proves only the qualified class switches;
+- backend-op sweep around measured dimensions/thresholds; 1351 requires byte identity, 1350 explicit F32 tolerance plus greedy identity;
+- preserve 1281 range-zero/sentinel tests and 1237 compact-grid activation for 1351;
+- fully separated ABBA through tools/lab/flash-next/queue-env-ab.sh for Flash-Next, and an equivalent fully separated model launcher for 27B if that script's model arguments are target-specific;
+- identity with GGML_CUDA_DISABLE_FUSION=1 on both A and B, then separate fusion-on probes;
+- record CUDA graph recaptures and peak fixup/pool workspace;
+- f16 KV only; never q4 KV.
+
+### 6. Verdict
+
+1350 Stream-K: **GO AFTER GATE 0.** Upstream machinery is real, but the likely high-value lane is the 27B Q8_0 model rather than Flash-Next. Expected gain: Flash-Next **+0.0% to +0.4%**; 27B Q8_0 **+0.2% to +1.0%** if Gate 0 passes.
+
+1351 IQ4_XS I=32: **DO NOT DO unless the stricter Gate 0 passes.** The original plan understated compile-time-I plumbing and 1237 already removed the dominant MoE grid waste. If its gate passes, expected Flash-Next gain is **+0.2% to +0.7%**; otherwise effectively zero.
+
+Overall QFP37 on the production three-card Flash-Next topology: **go only after positive Gate 0**, expected **+0.0% to +0.8%**.
