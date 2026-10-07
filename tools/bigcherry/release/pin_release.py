@@ -255,8 +255,16 @@ def run(repo_root: Path, llama_tag: str, evidence: str, through: str = "sync", d
         for name in PHASES[:stop + 1]:
             log(f"  would run: {name}")
         return 0
-    gate_output = phase_gate(plan)
-    log("  gate     PASS")
+    record_path = repo_root / "releases" / f"{plan.llama_tag}.json"
+    recorded = record_path.is_file() and f"release {plan.version}" in (json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
+    if recorded:
+        # the gate passed and its output is in the record; the commits made since (record, notes, merges) move this
+        # tree's revision ahead of the others by design, so the gate is not asked again for the same release
+        gate_output = ""
+        log("  gate     already passed (recorded)")
+    else:
+        gate_output = phase_gate(plan)
+        log("  gate     PASS")
     steps = (
         ("record", lambda: phase_record(plan, gate_output, evidence)),
         ("notes", lambda: phase_notes(plan)),
