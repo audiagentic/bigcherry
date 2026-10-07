@@ -21,3 +21,6 @@ Superseded when the pin reaches a llama.cpp release that contains #29887.
 ## Evidence
 
 - Build on HIP; equal-VRAM lanes on gfx1201 (0 vs 4096 MiB with `--n-cpu-moe 41`); multi-request integrity: pending.
+
+- build moe-cache-profile compiled clean and is byte-identical in output with the flag off (smoke md5 equals production).
+- Real host-expert 0 vs 4096 MiB vs profiled-cache qualification at b11474 is still pending; use `tools/lab/flash-next/queue-moe-cache.sh`.
