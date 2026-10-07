@@ -929,7 +929,7 @@ lanes = [
 lanes = [
   { source = "llama-native", build = "stock", platform = "linux-multi", binary = "bin/llama-server" },
   { source = "bigcherry-tuning", build = "control", platform = "linux-multi", binary = "bin/llama-server" },
-  { source = "bigcherry-tuning", build = "control", platform = "linux-multi", experiment = "rd73-only", binary = "bin/llama-server" },
+  # RD73-only lane retired: RD73 was demoted and its experiment removed.
   # TUNE and REPLAY. control is an INSTRUMENTED build (GGML_HIP_AUTOTUNE=ON),
   # so comparing it against llama-native measures our instrumentation, not our
   # optimisations. replay is "applies stored winners without measuring -- what
