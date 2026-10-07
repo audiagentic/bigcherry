@@ -74,9 +74,60 @@ jobs:
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
 
       - name: Run patch lint
+        shell: bash
         env:
           PYTHONPATH: tools
-        run: python -m bigcherry patch-lint --json
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          head_json="$RUNNER_TEMP/patch-lint-head.json"
+          set +e
+          python -m bigcherry patch-lint --json > "$head_json"
+          head_rc=$?
+          set -e
+          cat "$head_json"
+
+          base="${PR_BASE_SHA:-${EVENT_BEFORE:-}}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            exit "$head_rc"
+          fi
+
+          base_dir="$RUNNER_TEMP/patch-lint-base"
+          base_json="$RUNNER_TEMP/patch-lint-base.json"
+          git worktree add --detach "$base_dir" "$base" >/dev/null
+          set +e
+          (
+            cd "$base_dir"
+            PYTHONPATH=tools python -m bigcherry patch-lint --json
+          ) > "$base_json"
+          set -e
+
+          python - "$base_json" "$head_json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              base = json.load(fh)
+          with open(sys.argv[2], encoding="utf-8") as fh:
+              head = json.load(fh)
+
+          base_problems = set(base.get("problems", ()))
+          head_problems = set(head.get("problems", ()))
+          new = sorted(head_problems - base_problems)
+          retained = sorted(head_problems & base_problems)
+
+          if retained:
+              print("patch-lint: pre-existing base problems retained:")
+              for item in retained:
+                  print(f"  - {item}")
+          if new:
+              print("patch-lint: new problems introduced by this change:")
+              for item in new:
+                  print(f"  - {item}")
+              raise SystemExit(1)
+          print("patch-lint: no new problems relative to base")
+          PY
 
       - name: Prepare pinned llama.cpp source
         env:
