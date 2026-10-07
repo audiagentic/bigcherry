@@ -20,7 +20,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _HELPER_ANCHOR = "// note: this is not a member of server_slot because we want to run it inside yield_to_queue\n"
 _HELPER = r"""// bigcherry 1317: per-round speculative timing (BIGCHERRY_SPEC_TIMING=1)

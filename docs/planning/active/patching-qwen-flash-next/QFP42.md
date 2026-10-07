@@ -1,0 +1,133 @@
+---
+id: QFP42
+order: 42
+plan: patching-qwen-flash-next
+state: pending
+created-at: '2026-10-08T06:11:00+11:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P0
+work: M
+---
+
+# MTP asynchronous NextN staging: remove the per-chunk target synchronization barrier
+
+## Problem
+
+QFP31 / patch 1348 defers MTP draft catch-up by one target chunk. Brutus b11474 adoption ABBA improved prefill
++5.4% / +6.3% / +9.7% at 8K / 24K / 98K with complete separation and identical greedy target output, but this is
+well below the ~19% whole-gap upper bound measured before implementation.
+
+The remaining serialization is visible in 1348's ordering. After target chunk k+1 is submitted,
+`common_speculative_process_deferred()` first runs draft catch-up k, then calls
+`llama_get_embeddings_nextn(ctx_tgt)` for k+1. That getter synchronizes the current target before copying the NextN
+rows. Only after it returns can the server prepare target chunk k+2 (graph build, set_inputs, CPU split, Meta subgraph
+rebuild and launches). Therefore QFP31 hides draft compute but still prevents host preparation of the following target
+chunk from overlapping target GPU compute.
+
+The 83 ms / 437 ms estimate was the whole MTP-induced gap, not 83 ms of draft compute. Prior timing measured actual
+draft decode at roughly 29-47 ms/chunk (6.6-9.9% of prompt wall), which matches QFP31's observed gain. The residual
+lever is the blocking NextN acquisition plus the host preparation it keeps behind the synchronization barrier.
+
+## Goal
+
+Make the target's MTP NextN rows for chunk k available through an MTP-owned asynchronous staging slot without a
+host-wide target synchronization. The server must be able to prepare and submit target chunk k+1 before waiting for
+k's staged rows. After k+1 is submitted, wait only for k's staging completion and run draft catch-up k while k+1
+computes.
+
+Target semantics, target KV, target logits, sampling, MTP row order, and draft catch-up order must remain unchanged.
+
+## Proposed ordering
+
+Native/QFP31 current interior loop:
+
+1. submit target k;
+2. run catch-up k-1 under target k;
+3. blocking `llama_get_embeddings_nextn()` waits for target k;
+4. copy NextN k to host;
+5. return to server;
+6. build/set inputs/rebuild/launch target k+1.
+
+QFP42 target ordering:
+
+1. submit target k;
+2. enqueue NextN-k device-to-pinned-host staging behind target-k compute on the owning target stream(s), recording a
+   completion event; do not synchronize the host;
+3. return to server immediately;
+4. build/set inputs/rebuild/launch target k+1;
+5. wait for staging event k only;
+6. run draft catch-up k while target k+1 computes;
+7. repeat.
+
+The final staged chunk and final catch-up are flushed before `common_speculative_begin()` / sampling.
+
+## Implementation constraints
+
+- Build on promoted 1348 after PR #13 merges; do not duplicate its snapshot/cancellation state machine.
+- Add two MTP-owned staging slots matching 1348's two deferred chunks. A slot owns token metadata, pinned host storage,
+  backend/event handles, row count and generation/validity state.
+- Do not expose a raw pointer whose backing target output can be reused by the next target submit.
+- For a non-Meta single backend, enqueue the copy on the backend stream after the graph's NextN producer.
+- For Meta/tensor split, staging must follow the actual output ownership. If NextN is mirrored, copy one authoritative
+  mirrored output. If split/partial, gather/copy the required row parts using Meta's per-device ownership rather than
+  calling `ggml_backend_meta_buffer_get_tensor` as if it were a simple buffer.
+- Prefer an explicit narrow API such as `llama_embeddings_nextn_stage_async(ctx, dst, event)` / wait, owned by the
+  llama context/output path. Do not make generic scheduler output lifetime globally longer.
+- Pinned host storage is allocated/reused outside the per-chunk hot path; no per-chunk malloc/free.
+- Staging failure, cancellation, context shift, cache load/restore, or target decode failure invalidates the slot and
+  falls back to the existing target-only poison behavior from 1348.
+- No worker thread in v1. Add one only if asynchronous staging still leaves measurable host serialization.
+
+## Instrumentation
+
+Extend the existing QFP31 timing path or add a narrow env-gated diagnostic with per-prompt totals:
+
+- `nextn_stage_enqueue_ms` host enqueue time;
+- `nextn_stage_wait_ms` host wait after next target submit;
+- `nextn_stage_copy_ms` if backend events can measure device copy time;
+- `draft_catchup_ms`;
+- `final_flush_ms`;
+- target submit-to-submit interval.
+
+Activation marker: `BIGCHERRY_PATCH_HIT patch=<new-id> mechanism=async-nextn-stage`.
+
+## Gates
+
+### Offline
+
+- mechanics test: every Edit exact once, idempotent, bounded span;
+- patch-lint;
+- compose current production + new patch at b11474 or current pin;
+- tests exercise two-slot reuse, final flush, failure invalidation, cancel/context-shift poison, and Meta ownership path;
+- control flag returns exactly to promoted 1348 behavior.
+
+### Hardware
+
+Brutus, Flash-Next IQ4_XS, production layout, ctx 245760, f16 KV. One binary ABBA:
+A = async staging on, B = async staging off / promoted 1348 behavior.
+
+At 8K / 24K / 98K record:
+- prefill t/s and TTFT;
+- target submit-to-submit interval;
+- stage enqueue/wait/copy and draft catch-up totals;
+- activation marker;
+- decode t/s and MTP acceptance;
+- greedy target md5.
+
+Required:
+- complete separation at 24K and 98K;
+- no prefill regression at 8K;
+- greedy target identity at all depths;
+- no acceptance/decode material regression;
+- no error lines;
+- cancel/context-shift smoke clean.
+
+Success target: recover a material part of the residual gap above QFP31. The theoretical ceiling is not treated as an
+acceptance threshold; the timing counters must show that host preparation moved ahead of the NextN wait.
+
+## Dependencies
+
+- QFP31 / 1348_mtp_deferred_catchup promoted and merged.
+- 1346 timing diagnostic retained without its unqualified prompt-window mechanism.

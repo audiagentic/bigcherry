@@ -6,9 +6,9 @@ computed node's output to host and logs `BIGCHERRY_NODE_HASH ctx=<context> g=<gr
 h=<FNV-1a of the bytes>`. Run the same build twice on the same prompt, diff the streams per context: the first
 differing line is the earliest node whose output is not bit-reproducible. Graph indices align across runs up to the
 first divergence (same prompt chunks, same decode steps). Installed only when the caller set no cb_eval of its own.
-The eval callback forces per-node synchronization and disables CUDA/HIP graph replay, so a race that needs overlap may
-not reproduce under it; then narrow the window with from:count and compare against 1315's unperturbed trace.
-Diagnostic only; never in a production recipe.
+On ordinary backends the eval callback forces per-node synchronization and disables CUDA/HIP graph replay. Meta scheduler
+splits are kept intact and synchronized once because Meta's internal subgraph/reduction walk cannot accept arbitrary node
+sub-ranges; Meta-owned nodes are then reported as `skip=meta` and are not read. Diagnostic only; never in a production recipe.
 """
 
 from __future__ import annotations
@@ -51,6 +51,22 @@ static bc_node_hash_state & bc_node_hash() {
     return s;
 }
 
+static bool bc_node_hash_is_meta_tensor(const struct ggml_tensor * t) {
+    if (t == nullptr) {
+        return false;
+    }
+    ggml_backend_buffer_t buffer = t->view_src != nullptr ? t->view_src->buffer : t->buffer;
+    if (buffer == nullptr) {
+        return false;
+    }
+    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(buffer);
+    if (buft == nullptr) {
+        return false;
+    }
+    ggml_backend_dev_t device = ggml_backend_buft_get_device(buft);
+    return device != nullptr && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_META;
+}
+
 static bool bc_node_hash_cb(struct ggml_tensor * t, bool ask, void * user_data) {
     bc_node_hash_state & s = bc_node_hash();
     bool on = false;
@@ -63,6 +79,21 @@ static bool bc_node_hash_cb(struct ggml_tensor * t, bool ask, void * user_data) 
     if (ask || !on) {
         return on;  // only request node data inside the window
     }
+    // A Meta buffer may represent a split/partial logical tensor. Its generic get path can abort for
+    // shapes/offsets that are not representable as one flat host read. This diagnostic must never
+    // turn observation into a process abort, so skip Meta-owned nodes and keep hashing simple buffers.
+    if (bc_node_hash_is_meta_tensor(t)) {
+        long seq = 0;
+        {
+            std::lock_guard<std::mutex> lock(s.mu);
+            seq = s.node_seq++;
+        }
+        LLAMA_LOG_WARN("BIGCHERRY_NODE_HASH ctx=%p g=%ld i=%ld name=%s op=%s ne=%lld,%lld,%lld,%lld skip=meta\n",
+            user_data, g, seq, t->name, ggml_op_desc(t), (long long) t->ne[0], (long long) t->ne[1],
+            (long long) t->ne[2], (long long) t->ne[3]);
+        return true;
+    }
+
     const size_t n = ggml_nbytes(t);
     std::vector<unsigned char> buf(n);
     ggml_backend_tensor_get(t, buf.data(), 0, n);
@@ -100,6 +131,70 @@ _COMPUTE = r"""    if (cparams.cb_eval == bc_node_hash_cb) {  // bigcherry 1316:
     }
 """
 
+_HEADER_EVAL_ANCHOR = """    GGML_API void                 ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data);
+"""
+_HEADER_EVAL_NEW = """    GGML_API void                 ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data);
+    // BigCherry 1316 diagnostic: keep Meta scheduler splits atomic while the node-hash callback observes them.
+    GGML_API void                 ggml_backend_sched_set_eval_callback_meta_atomic(ggml_backend_sched_t sched, bool enabled);
+"""
+
+_SCHED_STATE_ANCHOR = """    ggml_backend_sched_eval_callback callback_eval;
+    void * callback_eval_user_data;
+"""
+_SCHED_STATE_NEW = """    ggml_backend_sched_eval_callback callback_eval;
+    void * callback_eval_user_data;
+    bool callback_eval_meta_atomic; // BigCherry 1316: only the node-hash diagnostic enables this.
+"""
+
+_SCHED_SETTER_ANCHOR = """void ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data) {
+    GGML_ASSERT(sched);
+    sched->callback_eval = callback;
+    sched->callback_eval_user_data = user_data;
+}
+"""
+_SCHED_SETTER_NEW = """void ggml_backend_sched_set_eval_callback(ggml_backend_sched_t sched, ggml_backend_sched_eval_callback callback, void * user_data) {
+    GGML_ASSERT(sched);
+    sched->callback_eval = callback;
+    sched->callback_eval_user_data = user_data;
+}
+
+void ggml_backend_sched_set_eval_callback_meta_atomic(ggml_backend_sched_t sched, bool enabled) {
+    GGML_ASSERT(sched);
+    sched->callback_eval_meta_atomic = enabled;
+}
+"""
+
+_CTX_EVAL_ANCHOR = """        ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
+"""
+_CTX_EVAL_NEW = """        ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
+        ggml_backend_sched_set_eval_callback_meta_atomic(sched.get(), cparams.cb_eval == bc_node_hash_cb);
+"""
+
+_SCHED_EVAL_ANCHOR = """        } else {
+            // similar to ggml_backend_compare_graph_backend
+"""
+_SCHED_EVAL_NEW = """        } else if (sched->callback_eval_meta_atomic &&
+                ggml_backend_dev_type(ggml_backend_get_device(split_backend)) == GGML_BACKEND_DEVICE_TYPE_META) {
+            // BigCherry 1316: Meta owns its own subgraph partition/reduction walk. Never feed it the node-range
+            // graph views used by the generic eval-callback path: those views are not valid Meta graph boundaries.
+            // Compute the scheduler split exactly as without a callback, then report its nodes. 1316's callback
+            // deliberately reports Meta-buffer nodes as skip=meta, so no unsafe logical-tensor read is introduced.
+            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
+            if (ec != GGML_STATUS_SUCCESS) {
+                return ec;
+            }
+            ggml_backend_synchronize(split_backend);
+            for (int j = 0; j < split->graph.n_nodes; ++j) {
+                struct ggml_tensor * t = split->graph.nodes[j];
+                if (sched->callback_eval(t, true, sched->callback_eval_user_data) &&
+                        !sched->callback_eval(t, false, sched->callback_eval_user_data)) {
+                    break;
+                }
+            }
+        } else {
+            // similar to ggml_backend_compare_graph_backend
+"""
+
 PATCHES = [
     FilePatch(
         path="src/llama-context.cpp",
@@ -135,6 +230,70 @@ PATCHES = [
                 rationale="llama_context::graph_compute, immediately before the scheduler runs the graph.",
                 expect_matches=1,
                 max_span_lines=2,
+            ),
+            Edit(
+                id="node-hash-meta-atomic-enable",
+                anchor=re.escape(_CTX_EVAL_ANCHOR),
+                mode="replace",
+                text=_CTX_EVAL_NEW,
+                guard=r"set_eval_callback_meta_atomic\(sched\.get\(\), cparams\.cb_eval == bc_node_hash_cb\)",
+                rationale="Enable Meta split atomicity only when 1316's own node-hash callback is installed.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+        ),
+    ),
+    FilePatch(
+        path="ggml/include/ggml-backend.h",
+        description="1316: opt-in scheduler flag for Meta-atomic eval callbacks",
+        language="none",
+        edits=(
+            Edit(
+                id="node-hash-meta-atomic-api",
+                anchor=re.escape(_HEADER_EVAL_ANCHOR),
+                mode="replace",
+                text=_HEADER_EVAL_NEW,
+                guard=r"ggml_backend_sched_set_eval_callback_meta_atomic",
+                rationale="Expose a diagnostic-only scheduler switch so 1316 does not alter unrelated eval callbacks.",
+                expect_matches=1,
+                max_span_lines=2,
+            ),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-backend.cpp",
+        description="1316: keep Meta scheduler splits intact only for the node-hash eval callback",
+        language="none",
+        edits=(
+            Edit(
+                id="node-hash-meta-atomic-state",
+                anchor=re.escape(_SCHED_STATE_ANCHOR),
+                mode="replace",
+                text=_SCHED_STATE_NEW,
+                guard=r"callback_eval_meta_atomic",
+                rationale="Store the explicit 1316-only Meta stepping mode beside the eval callback state.",
+                expect_matches=1,
+                max_span_lines=3,
+            ),
+            Edit(
+                id="node-hash-meta-atomic-setter",
+                anchor=re.escape(_SCHED_SETTER_ANCHOR),
+                mode="replace",
+                text=_SCHED_SETTER_NEW,
+                guard=r"void ggml_backend_sched_set_eval_callback_meta_atomic",
+                rationale="Set the 1316-only Meta stepping mode without changing normal callback registration semantics.",
+                expect_matches=1,
+                max_span_lines=6,
+            ),
+            Edit(
+                id="node-hash-meta-split-atomic",
+                anchor=re.escape(_SCHED_EVAL_ANCHOR),
+                mode="replace",
+                text=_SCHED_EVAL_NEW,
+                guard=r"BigCherry 1316: Meta owns its own subgraph partition/reduction walk",
+                rationale="Meta graph_compute requires the complete scheduler split; generic per-node graph views violate its subgraph walk.",
+                expect_matches=1,
+                max_span_lines=3,
             ),
         ),
     ),

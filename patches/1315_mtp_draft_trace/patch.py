@@ -17,7 +17,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _HELPER_ANCHOR = '#define SPC_CNT(fmt, ...) LOG_CNT(""              fmt,               __VA_ARGS__)\n'
 _HELPER = r"""
