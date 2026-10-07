@@ -2,7 +2,7 @@
 id: QFP39
 order: 39
 plan: patching-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-07T00:39:52.781091+00:00'
 breadth: ''
 skill: advanced
@@ -20,57 +20,6 @@ External report: direct peer traffic for small AllReduce tensors reduced a repor
 BigCherry already has the correct first experiment: 1252 is an opt-in direct-P2P provider for a two-device internal HIP AllReduce, with a content-checked peer probe because API success was previously insufficient evidence on gfx1100. It is untested. 1275 separately experiments with fixed latency in the mapped-host provider and is only evaluated. 1277 can expose the production AllReduce size/provider population.
 
 Do not write another provider until 1252 is actually tested. For the three-card Flash-Next topology, 1252's current two-participant path cannot by itself accelerate a collective spanning all three target devices; any N-device extension must be capability-driven and remain in 1252 because it is the same direct-P2P provider.
-
-## What we already have
-
-### b11402 / internal CUDA-HIP AllReduce
-
-- `ggml/src/ggml-cuda/allreduce.cu` owns the internal multi-device AllReduce pipeline used by the CUDA/HIP backend.
-- The pipeline already has:
-  - per-device application streams/events;
-  - mapped-host/small reduction machinery;
-  - copy-engine/device scratch path;
-  - slot/event lifecycle and typed reduction kernels.
-- Meta remains responsible for deciding where an AllReduce is required; the provider only implements the collective and must not change Meta split/delayed-branch semantics.
-
-### 1252 direct P2P provider
-
-`patches/1252_nro03_allreduce_p2p_provider`:
-
-- status: **untested**;
-- flag: `GGML_CUDA_AR_P2P=1`, default off;
-- currently gated to a two-device pipeline;
-- probes `cudaDeviceCanAccessPeer` both directions and enables peer access;
-- then performs an actual byte-checked bidirectional copy probe at 4 KiB, ~64 KiB, 1 MiB and 4 MiB using asymmetric nonzero patterns;
-- uses source-current `cudaMemcpyPeerAsync` because earlier gfx1100 destination-current copies could report success while producing bad data;
-- has per-direction source-device streams/events;
-- source-pushes one device's tensor into peer scratch, then locally adds peer data into each destination;
-- emits `BIGCHERRY_PATCH_HIT patch=1252_nro03 path=allreduce_p2p_source_push`.
-
-This is the first thing to qualify on the two XTXs. Do not replace its content check with an API capability check.
-
-### 1275 small-latency provider tuning
-
-`patches/1275_ar_small_latency`:
-
-- status: **evaluated**, not validated/promoted;
-- keeps the mapped-host provider;
-- can skip pool-wrap host event waits for a single-chunk small reduction;
-- independently tunes active blocks (1/2/4/8) and threads (128/256);
-- leaves the fixed arrival-ring allocation contract unchanged;
-- defaults preserve existing behavior.
-
-It addresses host-provider fixed overhead, not direct peer traffic. It is a useful baseline against 1252, not a prerequisite.
-
-### 1277 size/provider trace
-
-`patches/1277_ar_size_trace` is a lab-only diagnostic:
-
-`BIGCHERRY_AR_SIZE_TRACE=<n>`
-
-logs bytes, `ne0/ne1`, type, current provider and switch threshold for the first N AllReduces. Use it to establish the actual decode/prefill tensor-size populations before choosing a small-P2P threshold.
-
-Finding: QFP39 is **not covered in production** because 1252 is untested. No new mechanism should be created before qualifying it.
 
 ## Steps
 
@@ -323,7 +272,62 @@ This ranks below exact compute-kernel work for the main three-card target until 
 
 Execution order: tenth. First priority is a cheap 1252/1277 hardware qualification on the dual-XTX model. Do not spend on the N-device extension unless the two-device result and three-card peer matrix are both favorable.
 
+2026-10-07 REJECTED for this machine after a re-test (owner: "i dont think p2p works on this pc but you can test again before proceeding"). The GP11 diagnostics of 2026-09-04 (tools/lab/gp10-collective-harness/p2p-diagnostics) were rebuilt with the current ROCm (/mnt/vault/tmp/bc-rocm hipcc) and run on the two RX 7900 XTX (HIP_VISIBLE_DEVICES=0,1), outputs in /mnt/data/bigcherry-work/runs/p2p-retest-20261007: p2p_diag - every kernel access to peer memory ends in 'an illegal memory access was encountered'; p2p_spin - the same, a peer write is never seen; p2p_d2d - hipDeviceEnablePeerAccess returns 'invalid device ordinal' in both directions (the hipMemcpyPeer / hipMemcpy D2D copies that follow are correct, i.e. the runtime stages them itself). A one-shot AllReduce needs a kernel writing into a peer's memory, which this board/runtime does not provide. Nothing to build; 1252 stays untested and unselected. Reopen only on a different board or a ROCm release that changes peer access.
+
+## What we already have
+
+### b11402 / internal CUDA-HIP AllReduce
+
+- `ggml/src/ggml-cuda/allreduce.cu` owns the internal multi-device AllReduce pipeline used by the CUDA/HIP backend.
+- The pipeline already has:
+  - per-device application streams/events;
+  - mapped-host/small reduction machinery;
+  - copy-engine/device scratch path;
+  - slot/event lifecycle and typed reduction kernels.
+- Meta remains responsible for deciding where an AllReduce is required; the provider only implements the collective and must not change Meta split/delayed-branch semantics.
+
+### 1252 direct P2P provider
+
+`patches/1252_nro03_allreduce_p2p_provider`:
+
+- status: **untested**;
+- flag: `GGML_CUDA_AR_P2P=1`, default off;
+- currently gated to a two-device pipeline;
+- probes `cudaDeviceCanAccessPeer` both directions and enables peer access;
+- then performs an actual byte-checked bidirectional copy probe at 4 KiB, ~64 KiB, 1 MiB and 4 MiB using asymmetric nonzero patterns;
+- uses source-current `cudaMemcpyPeerAsync` because earlier gfx1100 destination-current copies could report success while producing bad data;
+- has per-direction source-device streams/events;
+- source-pushes one device's tensor into peer scratch, then locally adds peer data into each destination;
+- emits `BIGCHERRY_PATCH_HIT patch=1252_nro03 path=allreduce_p2p_source_push`.
+
+This is the first thing to qualify on the two XTXs. Do not replace its content check with an API capability check.
+
+### 1275 small-latency provider tuning
+
+`patches/1275_ar_small_latency`:
+
+- status: **evaluated**, not validated/promoted;
+- keeps the mapped-host provider;
+- can skip pool-wrap host event waits for a single-chunk small reduction;
+- independently tunes active blocks (1/2/4/8) and threads (128/256);
+- leaves the fixed arrival-ring allocation contract unchanged;
+- defaults preserve existing behavior.
+
+It addresses host-provider fixed overhead, not direct peer traffic. It is a useful baseline against 1252, not a prerequisite.
+
+### 1277 size/provider trace
+
+`patches/1277_ar_size_trace` is a lab-only diagnostic:
+
+`BIGCHERRY_AR_SIZE_TRACE=<n>`
+
+logs bytes, `ne0/ne1`, type, current provider and switch threshold for the first N AllReduces. Use it to establish the actual decode/prefill tensor-size populations before choosing a small-P2P threshold.
+
+Finding: QFP39 is **not covered in production** because 1252 is untested. No new mechanism should be created before qualifying it.
+
 ## Change Log
 
 - 2026-10-07T00:39:52.781091+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and 1252/1275/1277; made current 1252 the first experiment, added size-crossover guidance and a topology-agnostic deterministic N-device extension gate.
+- 2026-10-07T06:40:43.078327+00:00 (updated-by): Updated: section:notes
+- 2026-10-07T06:40:46.637192+00:00 (state-transition): State: pending → deprecated
