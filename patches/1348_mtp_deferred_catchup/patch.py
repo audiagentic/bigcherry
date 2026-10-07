@@ -111,9 +111,27 @@ _N_MTP_CTOR_END = r"""        verify_h.assign(n_seq, {});
 """
 
 _A_MTP_PROCESS = """\
+        if (pos_max < N - 1 && !is_mem_shared) {
+            SPC_WRN("ctx_dft pos_max=%d < N-1=%d - "
+                    "process() hook may not have run on every prefill ubatch "
+                    "(need_embd / output flag on every prompt position?). "
+                    "Drafts may degrade.\\n",
+                    (int) pos_max, N - 1);
+        }
+    }
+
     bool process(const common_batch & batch_in) override {
 """
-_N_MTP_PROCESS = r"""    bool bc_process_snapshot(const bc_deferred_chunk & chunk) {
+_N_MTP_PROCESS = r"""        if (pos_max < N - 1 && !is_mem_shared) {
+            SPC_WRN("ctx_dft pos_max=%d < N-1=%d - "
+                    "process() hook may not have run on every prefill ubatch "
+                    "(need_embd / output flag on every prompt position?). "
+                    "Drafts may degrade.\n",
+                    (int) pos_max, N - 1);
+        }
+    }
+
+    bool bc_process_snapshot(const bc_deferred_chunk & chunk) {
         if (!chunk.valid || chunk.tokens.empty()) {
             return true;
         }
@@ -307,6 +325,13 @@ _N_MTP_PROCESS = r"""    bool bc_process_snapshot(const bc_deferred_chunk & chun
 """
 
 _A_MTP_DRAFT_PREFIX = """\
+    void draft(common_speculative_draft_params_vec & dparams) override {
+        auto & ctx_dft = params.ctx_dft;
+
+        batch.clear();
+
+        // keep track of which sequences are still drafting
+        int n_drafting = 0;
         std::vector<bool> drafting(n_seq);
 
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
@@ -314,7 +339,14 @@ _A_MTP_DRAFT_PREFIX = """\
 
             if (!dp.drafting) {
 """
-_N_MTP_DRAFT_PREFIX = r"""        std::vector<bool> drafting(n_seq);
+_N_MTP_DRAFT_PREFIX = r"""    void draft(common_speculative_draft_params_vec & dparams) override {
+        auto & ctx_dft = params.ctx_dft;
+
+        batch.clear();
+
+        // keep track of which sequences are still drafting
+        int n_drafting = 0;
+        std::vector<bool> drafting(n_seq);
 
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             auto & dp = dparams[seq_id];
@@ -664,9 +696,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_MTP_PROCESS,
                 guard=r"BIGCHERRY_PATCH_HIT patch=1348_mtp_deferred_catchup",
-                rationale="Immediately before native MTP process(); native process remains intact for the off switch.",
+                rationale="Tail of MTP begin(), immediately before native process(); native process remains intact for the off switch.",
                 expect_matches=1,
-                max_span_lines=2,
+                max_span_lines=12,
             ),
             Edit(
                 id="mtp-deferred-poison-draft",
@@ -674,9 +706,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_MTP_DRAFT_PREFIX,
                 guard=r"after a dropped deferred catch-up, never generate from stale draft state",
-                rationale="MTP draft loop, before it admits a sequence into drafting.",
+                rationale="MTP draft() prefix, before it admits a sequence into drafting.",
                 expect_matches=1,
-                max_span_lines=8,
+                max_span_lines=14,
             ),
             Edit(
                 id="mtp-deferred-public-api",
