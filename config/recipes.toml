@@ -566,6 +566,10 @@ patches = ["1342_fusion_bisect"]
 # MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
 patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
+[experiment.moe-ids-multiwarp]
+# QFP36: production set + 1345 (MoE routing helper with 8 warps per expert; BIGCHERRY_MOE_IDS_MULTIWARP=0 = native).
+patches = ["1345_moe_ids_multiwarp"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
