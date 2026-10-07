@@ -233,3 +233,215 @@ Ordering: second, after QFP32. It has higher potential gain than most kernel ite
 
 - 2026-10-07T00:39:23.061778+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and BigCherry head after QFP32; added server-lifecycle constraint, bounded hidden-input tail design, fresh-prefill eligibility, default-off qualification and lightweight ABBA.
+
+
+## Code-level review (2026-10-07)
+
+### 1. Verified facts and corrections
+
+Checked against llama.cpp \`d89651a7b205\` and the current validated-enhancements composition.
+
+- The production driver is \`common/speculative.cpp::common_speculative_impl_draft_mtp\`. Its state includes:
+  \`std::vector<std::vector<float>> pending_h;\`,
+  \`std::vector<int32_t> i_batch_beg/i_batch_end;\`,
+  and \`verify_h/verify_h_rows\`.
+- The constructor calls
+  \`llama_set_embeddings_nextn(ctx_tgt, true, false)\` and
+  \`llama_set_embeddings_nextn(ctx_dft, true, true)\`, then sets
+  \`is_mem_shared = llama_get_ctx_other(ctx_dft) == ctx_tgt\` and
+  \`chain_heads = n_mtp_layers > 1 && !is_mem_shared\`.
+- The exact prompt catch-up is \`bool process(const common_batch & batch_in) override\`. For non-shared MTP it creates each draft row with
+  \`batch.add(batch_in.tokens[k].id, batch_in.tokens[k].pos[0], seq_id, false)\`
+  and pairs the hidden input as
+  \`k == i_batch_beg[seq_id] ? pending_h[seq_id].data() : h_tgt + (k - 1)*n_embd\`.
+  It then calls
+  \`llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get())\`
+  for each MTP head.
+- After catch-up, \`process()\` copies the target \`h_nextn\` rows into \`verify_h\` and copies the final row into \`pending_h\`. A window implementation must perform this bookkeeping unchanged even when it suppresses draft decode.
+- \`void begin(llama_seq_id seq_id, const llama_tokens & prompt) override\` is currently only sampler reset plus the \`ctx_dft pos_max < N-1\` diagnostic. It runs after prompt completion.
+- Server lifecycle is as described in the old plan: \`tools/server/server-context.cpp\` calls
+  \`common_speculative_process(spec.get(), batch.view)\` immediately after every successful target sub-batch, before \`post_decode()\`; only when a slot is \`SLOT_STATE_DONE_PROMPT\` does \`post_decode()\` change it to generating and call
+  \`common_speculative_begin(spec.get(), slot.id, slot.prompt.tokens.get_text_tokens())\`.
+- The server already knows the missing qualification information **before the first prompt sub-batch**. In the \`SLOT_STATE_STARTED\` path it computes final \`n_past\` after prompt-cache/chunk-reuse/checkpoint decisions, sets
+  \`slot.stats.n_prompt_cached = n_past;\`
+  and then
+  \`slot.prompt.tokens.keep_first(n_past);\`.
+  It also knows total \`slot.task->n_tokens()\`, whether the server has \`mctx\`, and whether \`slot.task->n_tokens_shared > 0\`.
+- **Major correction/blocker in the old design:** a bounded ring cannot promise “late failure falls back to full catch-up.” Once more than N skipped rows have been evicted, a later multimodal/non-contiguous/cache invalidation cannot reconstruct those skipped draft rows. The collector-only design is therefore unsafe without an explicit prompt-start contract.
+- That contract can be added cleanly at the server point above: only arm windowing when the server has already resolved \`n_past == 0\`, text-only/no-\`mctx\`, no shared-prefix child flow, and total prompt length > window. Then \`process()\` validates the promised contiguous positions as an invariant rather than trying to infer future prompt shape.
+- Qwen4Exp's MTP graph is single-head: \`src/models/qwen4exp.cpp::graph_mtp::graph_mtp\` asserts \`hparams.n_layer_nextn == 1\`. V1 should therefore require \`n_mtp_layers == 1 && !chain_heads && !is_mem_shared\`; generic chained-head support is unnecessary for these two Qwen3.8 targets and materially complicates restore semantics.
+- \`graph_mtp\` creates \`build_inp_pos()\`, consumes target-hidden input, runs its attention/FFN block, and writes \`h_nextn\`. The source comment at its memory setup says “the draft memory has no recurrent layer, but its input still has to be allocated.” This removes the main recurrent-state objection for production Qwen4Exp.
+- \`llama_memory_seq_rm(mem, seq_id, -1, -1)\` is the correct whole-sequence clear: the public API explicitly states that removing a whole sequence never fails. For a window replay, use this full clear; partial removal is unnecessary.
+- Absolute positions must remain the original \`batch_in.tokens[k].pos[0]\`; do not renumber the retained tail to zero.
+- The old package number is out of date: \`1344\` is now \`1344_dsv4_hc_grid_index\`. The next package for this item is \`1345_mtp_prompt_window\`.
+
+### 2. Composition and post-patch anchors
+
+In \`[patch-set.validated-enhancements]\`, no current production patch edits \`common/speculative.cpp::common_speculative_impl_draft_mtp::{process,begin}\` or the server's \`SLOT_STATE_STARTED\` prompt-cache block. The primary anchors are therefore still upstream text at this composition.
+
+Production interactions:
+
+- \`1343_mtp_nextn_rereserve\`
+  - \`mtp-rereserve-include\`
+  - \`mtp-rereserve-setter\`
+  edits \`src/llama-context.cpp::llama_context::set_embeddings_nextn\`, not the MTP driver. It is nevertheless essential composition: Gate 0 must be measured **with 1343 enabled**, because it already removed per-prefill-chunk scheduler replans and reduced the opportunity that QFP31 can claim.
+- \`1297_draft_vocab_trim::mtp-trimmed-head\` edits \`src/models/qwen4exp.cpp::graph_mtp\`. Its own comment distinguishes “batches with no output rows - MTP prompt replay”; QFP31 replay rows must keep \`output=false\` exactly as current \`process()\` does so 1297's prompt path is unchanged.
+- \`1308_qwen4exp_rollback_copy_no_cont::rollback-no-cont\`, \`1311_hc_pre_q81\`, \`1313_scale_act_fuse\`, and \`1344_dsv4_hc_grid_index\` affect kernels/graph execution inside Qwen4Exp but not MTP lifecycle anchors.
+- \`1281_moe_mul_mat_id_range\` / \`1283_qwen4exp_expert_parallel\` do not edit the driver. They matter only if a draft context itself uses the corresponding Meta/EP composition.
+
+Non-production diagnostics/optional patches that do touch these areas:
+- \`1255_nro06_adaptive_mtp_depth::adaptive-controller\` inserts immediately before the MTP struct.
+- \`1268_prbe52_adaptive_mtp_wiring\` edits MTP members/constructor/begin/draft/accept, including \`prbe52-state\`, \`prbe52-ctor\`, and \`prbe52-begin-reset\`.
+- \`1315_mtp_draft_trace\` edits draft/accept only.
+- \`1318_mtp_draft_timing\` edits the draft loop only.
+- \`1317_spec_round_timing\` edits the server's \`common_speculative_process\` call site as \`spec-timing-process\`.
+These are not in the requested production validated set, but Gate-0 diagnostic builds may include them. QFP31 anchors must therefore avoid their modified ranges where possible.
+
+Post-composition anchors for 1345:
+- public API declaration: \`common/speculative.h\`, immediately after exact
+  \`void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt);\`.
+- generic virtual: \`common/speculative.cpp::common_speculative_impl\`, after
+  \`virtual void begin(llama_seq_id seq_id, const llama_tokens & prompt) = 0;\`.
+- MTP state: anchor after the composed \`pending_h\` declaration, not on the optional 1268-expanded block.
+- prompt-start server contract: anchor after exact
+  \`slot.prompt.tokens.keep_first(n_past);\`
+  in the \`SLOT_STATE_STARTED\` block; 1317 does not touch this region.
+- process collector: anchor on the exact comment
+  \`// pair each token with the tgt embedding shifted right by one position\`
+  and the current \`batch.add(..., false)\` / h-row pair, not the outer \`if (!is_mem_shared)\`.
+- replay: anchor in the MTP-specific \`begin()\` after \`common_sampler_reset(smpls[seq_id].get());\`; if 1268 is intentionally composed in another recipe, anchor **after** its \`prbe52-begin-reset\` insertion.
+
+### 3. Gaps and risks
+
+- **Prompt-start contract is mandatory.** Do not code the old “infer freshness in process() forever” design. The server has final \`n_past\` and total prompt length before processing; use it. Without this, late invalidation after ring eviction is unrecoverable.
+- V1 eligibility should be exactly: window > 0, non-shared single-head MTP, server contract says \`n_past == 0\`, no MTMD server context, no shared-prefix child prompt, total prompt length > window. Everything else stays on native catch-up from the first row.
+- After arming, every observed row for that sequence must have the expected next absolute position and token input. A mismatch is a violated server/driver invariant: disable/error before using a partially reconstructed draft context; never silently continue with missing rows.
+- Multi-slot continuous batching is per-sequence. One qualified sequence may be deferred while another sequence in the same \`common_batch\` still needs native catch-up. Build the immediate draft batch only from non-window rows; do not skip the whole batch globally.
+- Store **the hidden input actually used by current process()**, not current target hidden output: first row of each source batch uses pre-update \`pending_h\`; later rows use \`h_tgt[k-1]\`.
+- Use a contiguous bounded ring per sequence (\`token[N]\`, \`pos[N]\`, \`h_prev[N*n_embd]\`) rather than N heap-allocated row vectors. Check \`N*n_embd*sizeof(float)\` for overflow and record actual MiB at activation.
+- Short prompts must never arm because the server already knows final prompt length. This is better than the old defer-then-replay-short design and keeps short-prompt semantics/source schedule unchanged.
+- Qwen4Exp production is single-head; fail closed on \`chain_heads\` rather than designing a generic multi-head rebuild now.
+- Meta: the target three-card Meta graph is untouched. The sidecar draft context is on gfx1030; the 27B built-in-MTP lane may place its draft context differently. Use context/device discovery only, never ordinals in code.
+- 1281/1283: no op-param or range semantics change. If a future draft context uses EP, the replay's changed token dimension will reach range MMQ normally; preserve exact ids and zero semantics.
+- Q8_1 cache (1235/1307/1309-1312): replay changes draft graph batch timing/shape and therefore cache generation/capture behavior, but it must not add a separate Q8_1 path. Record cache activation/hit evidence in fusion-on probes.
+- CUDA graphs: replay at \`begin()\` should use normal \`llama_process\` and chunk by \`llama_n_batch(ctx_dft)\`; the context handles ubatching. Do not assume production 512 in code. Reusing normal batch sizes gives existing captured graph shapes the best chance to hit.
+- 1343 should prevent scheduler re-reservation churn from NextN mode, but QFP31 can still alter draft graph-capture warmup/order. Count captures/recaptures in ABBA.
+- FKE01 applies despite target graph source being unchanged: changing when/how the draft context allocates and changing accepted proposals can alter subsequent generated graph allocation/fusion admission. Target identity must therefore be established with \`GGML_CUDA_DISABLE_FUSION=1\` on **both** A and B. Fusion-on runs are performance/behavior probes.
+- Draft proposals are intentionally allowed to differ; 1315 already documents baseline run-to-run draft near-tie nondeterminism. Do not require bit-identical proposal traces as an acceptance criterion.
+- No host worker thread is useful. The host ring copies are required state capture and should remain synchronous with \`process()\`.
+
+### 4. Concrete implementation outline
+
+Create \`patches/1345_mtp_prompt_window\`.
+
+Flag:
+\`BIGCHERRY_MTP_PROMPT_WINDOW=<tokens>\`; default \`0\` (off). First experimental value 2048. Reject/disable values <=0 or larger than the draft context; no alias/shim.
+
+Add a minimal lifecycle contract, not a server behavior rewrite.
+
+In \`common/speculative.h\`:
+
+\`void common_speculative_prefill_begin(common_speculative * spec, llama_seq_id seq_id, int32_t n_prompt, int32_t n_cached, bool fresh_text);\`
+
+In \`common_speculative_impl\` add optional virtual:
+
+\`virtual void prefill_begin(llama_seq_id, int32_t, int32_t, bool) {}\`
+
+The public wrapper iterates active implementations, as \`common_speculative_begin/process\` already do.
+
+Server call, once in \`SLOT_STATE_STARTED\` immediately after final \`n_past\` is committed with \`slot.prompt.tokens.keep_first(n_past)\`:
+
+\`common_speculative_prefill_begin(spec.get(), slot.id, slot.task->n_tokens(), n_past, mctx == nullptr && slot.task->n_tokens_shared == 0);\`
+
+The MTP override arms collection only when:
+- flag/window positive and \`n_prompt > window\`;
+- \`n_cached == 0 && fresh_text\`;
+- \`!is_mem_shared && !chain_heads && n_mtp_layers == 1\`.
+
+State per sequence:
+
+\`struct bc_mtp_prompt_tail { bool armed; int32_t expected_prompt; llama_pos expected_pos; size_t head,count; std::vector<llama_token> ids; std::vector<llama_pos> pos; std::vector<float> h_prev; };\`
+
+Allocate lazily on a qualified prompt. Ring capacity is exactly window.
+
+In \`process()\`:
+1. build \`i_batch_beg/end\` exactly as native;
+2. obtain \`h_tgt\`;
+3. for each token:
+   - compute the same native \`h_row\` before \`pending_h\` is updated;
+   - if that sequence is armed, assert/validate expected absolute position, append \`{id,pos,h_row}\` to the ring and do **not** add it to the draft catch-up batch;
+   - otherwise add the row to the ordinary draft batch unchanged;
+4. call native draft catch-up only when the immediate batch is non-empty;
+5. run native \`verify_h/pending_h\` update unchanged for all sequences.
+
+In MTP \`begin()\`, before the existing pos-max diagnostic:
+1. if sequence not armed, execute native behavior unchanged;
+2. require collected count == min(prompt_size, window), final expected position == prompt end, and server-advertised prompt size == \`prompt.size()\`;
+3. \`GGML_ASSERT(llama_memory_seq_rm(llama_get_memory(ctx_dft), seq_id, -1, -1));\`;
+4. replay ring rows in chronological order with **original absolute positions**, \`output=false\`, and stored \`h_prev\`;
+5. split submissions at \`llama_n_batch(ctx_dft)\`; let \`llama_process\` do physical ubatching;
+6. verify \`llama_memory_seq_pos_max(...) == prompt.size()-1\`, restore no head offset because V1 forbids chain heads;
+7. emit marker and clear the collector.
+
+Marker:
+\`BIGCHERRY_PATCH_HIT patch=1345_mtp_prompt_window path=prompt_replay seq=<id> prompt=<P> replay=<R> skipped=<P-R> host_mib=<...>\`.
+
+Required patch edits:
+- \`mtp-window-api\`: \`common/speculative.h\`, exact \`common_speculative_begin\` declaration; \`insert_after\`.
+- \`mtp-window-virtual\`: \`common/speculative.cpp\`, exact base-class \`virtual void begin(...)=0;\`; \`insert_after\`.
+- \`mtp-window-wrapper\`: \`common/speculative.cpp\`, insert the public wrapper adjacent to \`common_speculative_begin\`; \`insert_before/after\` exact function signature.
+- \`mtp-window-state\`: MTP struct, insert after exact \`pending_h\` declaration; \`insert_after\`.
+- \`mtp-window-ctor\`: MTP constructor, insert after exact \`pending_h.assign(...)\`; \`insert_after\`.
+- \`mtp-window-prefill-begin\`: insert MTP override immediately before its exact \`void begin(...)\` signature; \`insert_before\`.
+- \`mtp-window-process\`: replace only the native row-build + catch-up submission region inside \`if (!is_mem_shared)\`; retain the verify/pending block byte-for-byte after it.
+- \`mtp-window-replay\`: extend MTP \`begin()\` immediately after sampler reset (or after composed 1268 reset when that optional recipe is used); \`insert_after\`.
+- \`mtp-window-server-contract\`: \`tools/server/server-context.cpp\`, insert after exact \`slot.prompt.tokens.keep_first(n_past);\`; \`insert_after\`.
+- Add EnvDoc with default 0.
+
+Offline mechanics must parse/compare the exact composed MTP process/begin text, verify server contract placement after final cache resolution, and exercise ring/chunking logic independently.
+
+### 5. Gate 0 and lightweight validation
+
+Gate 0 must be rerun **after 1343**; earlier prefill numbers that included 246 scheduler replans at 98K are stale.
+
+Use current validated production + diagnostic \`1317_spec_round_timing\` in a single-slot run, with f16 target/draft KV, ub/batch 512, depth 3, normal Meta flags. Run fresh prompts at 2048, 8192, 24576 and ~98304.
+
+For each prompt P:
+- record wall time from prompt start to first target sample/TTFT;
+- from the first \`BIGCHERRY_SPEC_TIMING\` line, isolate accumulated prompt \`process_us\` by subtracting one steady-state generated-round \`process_us\` (use median rounds 2-6);
+- use rocprof Agent_Id to sum gfx1030 kernels during that prompt catch-up interval;
+- record target-side wall separately so draft catch-up is not confused with target prefill;
+- confirm 1343 reports zero steady prompt replans after its initial reserve.
+
+Define:
+\`S(P) = T_mtp_prompt_process(P) - T_mtp_prompt_process(2048)\`.
+
+Gate 0 is positive only if:
+- \`S(24576) >= 1.0% * TTFT(24576)\` **or** \`S(98304) >= 1.5% * TTFT(98304)\`; and
+- gfx1030 prompt-catch-up GPU busy time explains >=70% of the measured removable \`process_us\` (otherwise investigate host/lifecycle overhead before coding); and
+- the baseline MTP path is non-shared, single-head Qwen4Exp as expected.
+
+If the threshold is not met after 1343, close QFP31; do not use the external 2048 result as justification.
+
+Validation after implementation:
+
+- offline exact/idempotent mechanics + patch-lint;
+- pure state-machine test: server contract arms only fresh text, n_cached=0, P>N; cached, MTMD, shared-prefix, short, shared-memory, and chained-head cases remain native from row 0;
+- chunk-boundary test: identical retained \`{id,pos,h_prev}\` for the same prompt split into 1/7/512/mixed sub-batches;
+- marker must report replay=min(P,N), skipped=P-N, correct absolute end position, bounded host MiB;
+- draft prompt token census must fall from P to N only on qualified requests;
+- fully separated ABBA via \`tools/lab/flash-next/queue-env-ab.sh\`, explicitly \`CTK=f16 CTV=f16 CTKD=f16 CTVD=f16\`, at 8K/24K/~98K:
+  A=\`BIGCHERRY_MTP_PROMPT_WINDOW=0\`,
+  B=\`BIGCHERRY_MTP_PROMPT_WINDOW=2048\`;
+- performance ABBA runs with fusion on; record prompt t/s, TTFT, gfx1030 catch-up time, total draft/accept counts, accepted tokens per round, generation t/s, CUDA graph capture/recapture and Q8_1 cache activation;
+- separate identity/control ABBA with \`GGML_CUDA_DISABLE_FUSION=1\` on **both** A and B. Require identical greedy target text/hash; draft proposals may differ by design;
+- fusion-on probes required by FKE01; investigate any target-text change rather than attributing it to allowed draft-context truncation;
+- require no material net regression in generation: accepted tokens/round should not fall >10% unless total request wall still improves and the owner explicitly re-qualifies the tradeoff;
+- run the 27B built-in-MTP lane only if its runtime reports the same non-shared single-head driver; otherwise mark not applicable, not a second implementation;
+- never q4 KV.
+
+### 6. Verdict
+
+**GO AFTER GATE 0**, but only with the prompt-start server contract above. The old bounded collector without that contract is not safe to implement.
+
+Expected gain on the production three-card target + gfx1030 sidecar, if Gate 0 passes: **8K +0.0% to +0.4%, 24K +0.4% to +1.3%, ~98K +0.8% to +2.5% prefill/TTFT**. The upper end requires the gfx1030 catch-up to remain materially serialized after 1343.
