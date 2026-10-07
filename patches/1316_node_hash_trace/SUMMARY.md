@@ -1,6 +1,6 @@
 # 1316_node_hash_trace
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP15
 
 ## What it does
