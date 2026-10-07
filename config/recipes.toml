@@ -575,14 +575,7 @@ patches = ["1346_mtp_prompt_overlap"]
 # process_ubatch phases, meta graph_compute, scheduler splits) + 1346 (BIGCHERRY_MTP_PROMPT_TIMING=1: MTP per prompt).
 patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing", "1346_mtp_prompt_overlap"]
 
-[experiment.moe-cache-profile]
-# MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
-# through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
-patches = ["1337_moe_expert_caching", "1338_moe_cache_profile"]
 
-[experiment.moe-expert-cache]
-# MET01: production set + 1336 + 1337 (upstream #29887 GPU cache for host-resident MoE experts, --moe-cache-mib N).
-patches = ["1337_moe_expert_caching"]
 
 [experiment.native-plus-1333]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
