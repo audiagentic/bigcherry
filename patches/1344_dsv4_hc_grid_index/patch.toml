@@ -1,7 +1,7 @@
 schema = 1
 id = "1344_dsv4_hc_grid_index"
 order = 1344
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"

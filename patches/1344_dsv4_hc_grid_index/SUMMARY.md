@@ -1,6 +1,6 @@
 # 1344_dsv4_hc_grid_index
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP35
 
 ## What it does
