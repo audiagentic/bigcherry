@@ -1,7 +1,7 @@
 schema = 1
 id = "1339_meta_memory_report"
 order = 1339
-state = "untested"
+state = "validated"
 kind = "diagnostic"
 origin = "local"
 backend = "hip"

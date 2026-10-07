@@ -1,6 +1,6 @@
 # 1339_meta_memory_report
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MSM01
 
 Kind: diagnostic, flag `BIGCHERRY_META_MEM` (default 0).

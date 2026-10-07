@@ -254,13 +254,13 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("reserved_mib=%.2f plans=%zu replans=%llu", meta)
             self.assertNotIn("BIGCHERRY_META_ARENA_FASTBIND", meta)
 
-    def test_meta_memory_experiment_and_flag_contract(self):
+    def test_production_set_and_flag_contract(self):
         with (_REPO / "config/recipes.toml").open("rb") as handle:
             recipes = tomllib.load(handle)
-        self.assertEqual(
-            recipes["experiment"]["meta-memory"]["patches"],
-            ["1339_meta_memory_report", "1340_meta_per_device_arena"],
-        )
+        production = recipes["patch-set"]["validated-enhancements"]["patches"]
+        self.assertIn("1339_meta_memory_report", production)
+        self.assertIn("1340_meta_per_device_arena", production)
+        self.assertNotIn("meta-memory", recipes["experiment"])
         self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_META_PER_DEVICE_ARENA"])
 
     def test_changed_compute_allocator_fails_closed(self):
