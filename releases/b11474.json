@@ -11,15 +11,259 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "564ee8b0f15e6b6e17ce2a24b1fc243c2b928f55",
+  "bigcherry_revision": "3f57d83fec9d5a47fb90cbd315db1cb663dad078",
   "first_seen": "2026-10-07T13:35:38.654044+00:00",
   "manifest_hash": "",
   "notes": "",
-  "patches": {},
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "CMakeLists.txt": {
+        "feature-sets-cmake": "applied"
+      },
+      "common/arg.cpp": {
+        "cpu-root-arg-help": "applied"
+      },
+      "ggml/CMakeLists.txt": {
+        "hip-autotune-options": "applied",
+        "hip-autotune-validation": "applied"
+      },
+      "ggml/include/ggml-alloc.h": {
+        "meta-arena-gallocr-needs-realloc-decl": "applied"
+      },
+      "ggml/include/ggml-backend.h": {
+        "subset-mirror-state": "applied"
+      },
+      "ggml/include/ggml.h": {
+        "mmid-range-decl": "applied"
+      },
+      "ggml/src/ggml-alloc.c": {
+        "meta-arena-gallocr-fast-bind": "applied",
+        "meta-arena-gallocr-needs-realloc": "applied",
+        "meta-arena-gallocr-reason-counts": "applied",
+        "meta-arena-gallocr-reason-node": "applied",
+        "meta-arena-gallocr-reason-vars": "applied",
+        "meta-arena-gallocr-reserve-grow": "applied",
+        "meta-arena-gallocr-vbuffer-grow": "applied"
+      },
+      "ggml/src/ggml-backend-meta.cpp": {
+        "subset-mirror-active-helper": "applied",
+        "subset-mirror-async-get": "applied",
+        "subset-mirror-async-set": "applied",
+        "subset-mirror-disable-compute": "applied",
+        "subset-mirror-get": "applied",
+        "subset-mirror-init-assert": "applied",
+        "subset-mirror-init-zero": "applied",
+        "subset-mirror-input-rule": "applied",
+        "subset-mirror-lightning": "applied",
+        "subset-mirror-memset": "applied",
+        "subset-mirror-merge-helper": "applied",
+        "subset-mirror-propagate": "applied",
+        "subset-mirror-set": "applied"
+      },
+      "ggml/src/ggml-backend-reg.cpp": {
+        "feature-sets-get-reg": "applied",
+        "feature-sets-load-all": "applied",
+        "feature-sets-reg-decl": "applied"
+      },
+      "ggml/src/ggml-backend.cpp": {
+        "meta-arena-backend-decls": "applied",
+        "meta-arena-sched-alloc": "applied",
+        "meta-arena-sched-reserve": "applied"
+      },
+      "ggml/src/ggml-cpu/ggml-cpu.c": {
+        "mmid-range-cpu-group": "applied",
+        "mmid-range-cpu-locals": "applied"
+      },
+      "ggml/src/ggml-cpu/repack.cpp": {
+        "mmid-range-cpu-repack": "applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cu": {
+        "ar-bf16-threshold-setter-def": "applied",
+        "ar-bf16-threshold-setter-musa-stub": "applied"
+      },
+      "ggml/src/ggml-cuda/allreduce.cuh": {
+        "ar-bf16-threshold-setter-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/common.cuh": {
+        "mmid-range-fusion-args": "applied",
+        "mmid-range-fusion-host-args": "applied"
+      },
+      "ggml/src/ggml-cuda/dsv4-hc.cu": {
+        "hc-grid-include": "applied",
+        "hc-grid-kernels": "applied",
+        "hc-grid-post-launch": "applied",
+        "hc-grid-pre-launch": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn-mma-f16.cuh": {
+        "fa-sparse-case-hip": "applied"
+      },
+      "ggml/src/ggml-cuda/fattn.cu": {
+        "fa-sparse-arch": "applied",
+        "fa-sparse-compact-hip": "applied",
+        "fa-sparse-hip-kernel": "applied",
+        "fa-sparse-rdna-ncols2": "applied",
+        "fa-sparse-shall-hip": "applied",
+        "fa-sparse-switch-ncols1": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net.cu": {
+        "nro04-gdn_dispatch-01": "applied",
+        "nro04-gdn_dispatch-02": "applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked.cuh": {
+        "nro04-header-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16.cu": {
+        "nro04-bf16_gfx12-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/gated_delta_net_chunked_bf16_gfx11.cu": {
+        "nro04-bf16_gfx11-01": "already-applied"
+      },
+      "ggml/src/ggml-cuda/ggml-cuda.cu": {
+        "f32-thin-dispatch": "applied",
+        "f32-thin-helpers": "applied"
+      },
+      "ggml/src/ggml-cuda/hip-autotune-dispatch.cu": {
+        "rd30-workspace-moe": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cu": {
+        "ggml_hip_family_mmf-diagnostics-only-count": "applied",
+        "mmf-coverage-count": "applied",
+        "mmf-coverage-include": "applied"
+      },
+      "ggml/src/ggml-cuda/mmf.cuh": {
+        "mmf-capability-declaration": "applied",
+        "mmf-dispatcher-forward": "applied",
+        "mmf-dispatcher-params": "applied",
+        "mmf-instantiation-macro": "applied",
+        "mmf-nwarps-apply": "applied",
+        "mmf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmid.cu": {
+        "ids-mw-dispatch": "applied",
+        "ids-mw-include": "applied",
+        "ids-mw-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/mmid.cuh": {
+        "mmid-range-translate-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq-vec-dot.cuh": {
+        "q6k-mma-float-promotion": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cu": {
+        "mmid-range-mmq-dedup-call": "applied",
+        "mmid-range-mmq-helper": "applied",
+        "mmid-range-mmq-setup": "applied"
+      },
+      "ggml/src/ggml-cuda/mmq.cuh": {
+        "rd30b-gate": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cu": {
+        "mmid-range-mmvf-host": "applied",
+        "mmid-range-mmvf-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvf.cuh": {
+        "mmvf-public-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cu": {
+        "q81-mmvq-consumer": "applied",
+        "q81-mmvq-include": "applied",
+        "q81-mmvq-quantize": "applied"
+      },
+      "ggml/src/ggml-cuda/mmvq.cuh": {
+        "mmvq-cuh-include": "applied",
+        "mmvq-cuh-signature": "applied"
+      },
+      "ggml/src/ggml-cuda/norm.cu": {
+        "rms-q81-dispatch": "applied",
+        "rms-q81-include": "applied",
+        "rms-q81-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/quantize.cu": {
+        "mmid-range-q8-sentinel": "applied",
+        "mmid-range-q8-template": "applied",
+        "mmid-range-q8-wrapper": "applied"
+      },
+      "ggml/src/ggml-cuda/quantize.cuh": {
+        "mmid-range-q8-wrapper-decl": "applied"
+      },
+      "ggml/src/ggml-cuda/top-k.cu": {
+        "topk-det-flag": "applied",
+        "topk-launch-ties": "applied",
+        "topk-tie-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/unary.cu": {
+        "scale-act-kernel": "applied"
+      },
+      "ggml/src/ggml-cuda/unary.cuh": {
+        "scale-act-decl": "applied"
+      },
+      "ggml/src/ggml-hip/CMakeLists.txt": {
+        "rd09-q81-cache-source": "applied"
+      },
+      "ggml/src/ggml.c": {
+        "env-docs-1347_f32_thin_transposed_mmvf": "applied"
+      },
+      "src/llama-context.cpp": {
+        "context-draft-vocab-trim": "applied"
+      },
+      "src/llama-context.h": {
+        "context-draft-vocab-trim-buffers": "applied"
+      },
+      "src/llama-cparams.h": {
+        "cparams-draft-vocab-trim": "applied"
+      },
+      "src/llama-graph.cpp": {
+        "mixed-batch-on-demand": "applied"
+      },
+      "src/llama-memory-hybrid-idx.cpp": {
+        "kpool-tail-append": "applied",
+        "kpool-tail-cut": "applied",
+        "kpool-tail-no-rebuild": "applied"
+      },
+      "src/llama-model.cpp": {
+        "subset-mirror-indexer-seed": "applied",
+        "subset-mirror-input-decl": "applied"
+      },
+      "src/llama.cpp": {
+        "rd19-single-device-default-selection": "applied",
+        "rd19-single-device-explicit-list": "applied"
+      },
+      "src/models/models.h": {
+        "qsa-chunk-member": "applied"
+      },
+      "src/models/qwen4exp.cpp": {
+        "qsa-chunk-attn": "applied",
+        "qsa-chunk-causal": "applied",
+        "qsa-chunk-helper": "applied",
+        "qsa-chunk-sel": "applied"
+      },
+      "tests/CMakeLists.txt": {
+        "mmid-range-test-cmake": "applied"
+      },
+      "tests/test-backend-ops.cpp": {
+        "nro04-tests-01": "applied",
+        "nro04-tests-02": "applied",
+        "nro04-tests-03": "applied",
+        "nro04-tests-04": "applied",
+        "nro04-tests-05": "applied"
+      },
+      "tests/test-mul-mat-id-range.cpp": {
+        "mmid-range-test-create": "applied"
+      },
+      "tools/llama-bench/llama-bench.cpp": {
+        "cpu-root-bench-help": "applied"
+      },
+      "tools/server/main.cpp": {
+        "feature-sets-server-main": "applied"
+      }
+    }
+  },
   "promotion": null,
   "release_tag": "b11474",
   "revision": "b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea",
-  "stage": "audited",
+  "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-10-07T13:54:01.835458+00:00"
+  "updated_at": "2026-10-07T14:42:37.840931+00:00"
 }
