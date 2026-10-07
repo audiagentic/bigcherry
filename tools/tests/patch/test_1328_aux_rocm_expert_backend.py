@@ -89,6 +89,9 @@ class Patch1328Mechanics(unittest.TestCase):
             self.assertIn("MIRRORED + PARTIAL or MIRRORED + MIRRORED", meta)
             self.assertIn("partial auxiliary routed-expert placement is unsupported", qwen)
             self.assertIn("ggml_backend_meta_mark_mirrored_partial_add(cur)", qwen)
+            self.assertIn("BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge", qwen)
+            self.assertIn("cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT", qwen)
+            self.assertIn("cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT", ctx)
 
             before = {rel: (root / rel).read_bytes() for rel in _RELS}
             second = apply_all(_P1328.PATCHES, root)
