@@ -6,9 +6,9 @@ computed node's output to host and logs `BIGCHERRY_NODE_HASH ctx=<context> g=<gr
 h=<FNV-1a of the bytes>`. Run the same build twice on the same prompt, diff the streams per context: the first
 differing line is the earliest node whose output is not bit-reproducible. Graph indices align across runs up to the
 first divergence (same prompt chunks, same decode steps). Installed only when the caller set no cb_eval of its own.
-The eval callback forces per-node synchronization and disables CUDA/HIP graph replay, so a race that needs overlap may
-not reproduce under it; then narrow the window with from:count and compare against 1315's unperturbed trace.
-Diagnostic only; never in a production recipe. Meta-owned split/partial tensors are reported as `skip=meta` and are not read.
+On ordinary backends the eval callback forces per-node synchronization and disables CUDA/HIP graph replay. Meta scheduler
+splits are kept intact and synchronized once because Meta's internal subgraph/reduction walk cannot accept arbitrary node
+sub-ranges; Meta-owned nodes are then reported as `skip=meta` and are not read. Diagnostic only; never in a production recipe.
 """
 
 from __future__ import annotations
@@ -55,7 +55,11 @@ static bool bc_node_hash_is_meta_tensor(const struct ggml_tensor * t) {
     if (t == nullptr || t->buffer == nullptr) {
         return false;
     }
-    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(t->buffer);
+    ggml_backend_buffer_t buffer = t->view_src != nullptr ? t->view_src->buffer : t->buffer;
+    if (buffer == nullptr) {
+        return false;
+    }
+    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(buffer);
     if (buft == nullptr) {
         return false;
     }
@@ -127,6 +131,30 @@ _COMPUTE = r"""    if (cparams.cb_eval == bc_node_hash_cb) {  // bigcherry 1316:
     }
 """
 
+_SCHED_EVAL_ANCHOR = """        } else {
+            // similar to ggml_backend_compare_graph_backend
+"""
+_SCHED_EVAL_NEW = """        } else if (ggml_backend_dev_type(ggml_backend_get_device(split_backend)) == GGML_BACKEND_DEVICE_TYPE_META) {
+            // BigCherry 1316: Meta owns its own subgraph partition/reduction walk. Never feed it the node-range
+            // graph views used by the generic eval-callback path: those views are not valid Meta graph boundaries.
+            // Compute the scheduler split exactly as without a callback, then report its nodes. 1316's callback
+            // deliberately reports Meta-buffer nodes as skip=meta, so no unsafe logical-tensor read is introduced.
+            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
+            if (ec != GGML_STATUS_SUCCESS) {
+                return ec;
+            }
+            ggml_backend_synchronize(split_backend);
+            for (int j = 0; j < split->graph.n_nodes; ++j) {
+                struct ggml_tensor * t = split->graph.nodes[j];
+                if (sched->callback_eval(t, true, sched->callback_eval_user_data) &&
+                        !sched->callback_eval(t, false, sched->callback_eval_user_data)) {
+                    break;
+                }
+            }
+        } else {
+            // similar to ggml_backend_compare_graph_backend
+"""
+
 PATCHES = [
     FilePatch(
         path="src/llama-context.cpp",
@@ -162,6 +190,23 @@ PATCHES = [
                 rationale="llama_context::graph_compute, immediately before the scheduler runs the graph.",
                 expect_matches=1,
                 max_span_lines=2,
+            ),
+        ),
+    ),
+    FilePatch(
+        path="ggml/src/ggml-backend.cpp",
+        description="1316: keep Meta scheduler splits intact while an eval callback is installed",
+        language="none",
+        edits=(
+            Edit(
+                id="node-hash-meta-split-atomic",
+                anchor=re.escape(_SCHED_EVAL_ANCHOR),
+                mode="replace",
+                text=_SCHED_EVAL_NEW,
+                guard=r"BigCherry 1316: Meta owns its own subgraph partition/reduction walk",
+                rationale="Meta graph_compute requires the complete scheduler split; generic per-node graph views violate its subgraph walk.",
+                expect_matches=1,
+                max_span_lines=3,
             ),
         ),
     ),
