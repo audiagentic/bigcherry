@@ -1,4 +1,4 @@
-"""Offline mechanics tests for 1346_mtp_prompt_overlap chunk 1."""
+"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 2a."""
 
 from __future__ import annotations
 
@@ -53,11 +53,17 @@ class Patch1346Mechanics(unittest.TestCase):
         server = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
 
         self.assertIn("void common_speculative_prefill_begin(common_speculative * spec, llama_seq_id seq_id);", h)
+        self.assertIn("void common_speculative_target_process_begin(common_speculative * spec, const common_batch & batch);", h)
+        self.assertIn("void common_speculative_target_process_end(common_speculative * spec, const common_batch & batch);", h)
         self.assertIn("virtual void prefill_begin(llama_seq_id /*seq_id*/) {}", src)
+        self.assertIn("virtual void target_process_begin(const common_batch & /*batch*/) {}", src)
         self.assertIn("void prefill_begin(llama_seq_id seq_id) override", src)
         self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
-        self.assertIn("BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f chunks=%llu tokens=%llu", src)
-        self.assertIn("bc_pt_target_nextn_us += ggml_time_us() - bc_pt_nextn_t0;", src)
+        self.assertIn("BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f target_sync_ms=%.3f target_fetch_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f host_gap_ms=%.3f chunks=%llu tokens=%llu", src)
+        self.assertIn("llama_synchronize(ctx_tgt);", src)
+        self.assertIn("bc_pt_state->target_sync_us += bc_pt_target_sync_us;", src)
+        self.assertIn("bc_pt_state->target_fetch_us += bc_pt_target_fetch_us;", src)
+        self.assertIn("timing->host_gap_us += ggml_time_us() - timing->last_target_return_us;", src)
         self.assertIn("bc_pt_draft_decode_us += ggml_time_us() - bc_pt_draft_t0;", src)
         self.assertIn("bc_pt_state->process_us += ggml_time_us() - bc_pt_process_t0;", src)
         self.assertNotIn("std::thread", src)
@@ -66,8 +72,15 @@ class Patch1346Mechanics(unittest.TestCase):
 
         keep = "slot.prompt.tokens.keep_first(n_past);"
         hook = "common_speculative_prefill_begin(spec.get(), slot.id);"
+        process_beg = "common_speculative_target_process_begin(spec.get(), batch.view);"
+        process_call = "ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());"
+        process_end = "common_speculative_target_process_end(spec.get(), batch.view);"
         self.assertEqual(server.count(hook), 1)
         self.assertLess(server.index(keep), server.index(hook))
+        self.assertEqual(server.count(process_beg), 1)
+        self.assertEqual(server.count(process_end), 1)
+        self.assertLess(server.index(process_beg), server.index(process_call))
+        self.assertLess(server.index(process_call), server.index(process_end))
 
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
