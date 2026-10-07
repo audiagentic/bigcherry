@@ -1,14 +1,12 @@
-# native-vs-patched
+# PGC12 adaptive-switch fixtures
 
-Reference-ladder comparison of a stock build against a BigCherry-patched build,
-both `linux-multi` (gfx1100;gfx1201;gfx1030, RCCL on), with per-model
-activation probes (`BIGCHERRY_PATCH_HIT`/`BIGCHERRY_PATCH_TRACE`, patched arm
-only) recorded under `<out>/activation/`.
+This lab directory is retained only for active plan item PGC12. The three
+`server-ab-adaptive-switch*.json` files are its current A/B inputs.
 
-Run on Brutus: `run-ladder.sh <stock bin dir> <patched bin dir> <out dir>`.
-Results are per (model, device set); each ladder is order-rotated. The activation
-probe is a separate short llama-bench run, not the timed runs, so it shows a
-patch path executes for that model/device, not that it executed in each timed run.
+Run them through maintained BigCherry benchmark/orchestration commands rather
+than the retired historical queue wrappers. Generated output belongs under
+ignored `artifacts/` or host-local storage; compact decision-grade results
+belong under `docs/evidence/`.
 
-
-Generated run directories are not tracked here. Write raw runs under ignored `artifacts/` or host-local storage; preserve only compact decision-grade evidence under `docs/evidence/`. Historical compact summaries formerly under `runs/` were moved to `docs/evidence/native-vs-patched-historical/` during the 2026-10-08 repository cleanup.
+Delete this directory when PGC12 closes or graduates these fixtures to a
+maintained owner.
