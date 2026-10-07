@@ -8,7 +8,7 @@ by the filled context no longer fits that plan when it grows - one allocator re-
 chunk for the whole prompt. Measured on Flash-Next at ctx 245760 with 1340's counters: the first graph that runs has
 "no reserve plan nodes=7204", then 11 re-plans per device for a 2K fill and 246 for a 98K fill.
 
-With BIGCHERRY_MTP_RERESERVE=1 the setter marks the scheduler for a reserve when the mode really changes, as
+By default (BIGCHERRY_MTP_RERESERVE=0 disables) the setter marks the scheduler for a reserve when the mode really changes, as
 set_embeddings_layer_inp already does for its graph-visible change. The next process() then reserves the worst-case
 graph of the shape that will run, once, and later graphs bind into that plan. Allocation only: the output must be
 identical.
@@ -37,10 +37,10 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
 
     // bigcherry 1343 (QFP32): the NextN outputs change the graph's shape, so the worst-case graph that was reserved
     // before the switch is not the one that runs. Ask for a reserve when the mode really changes (the next process()
-    // does it, once), as set_embeddings_layer_inp does. BIGCHERRY_MTP_RERESERVE=1, default off in qualification.
+    // does it, once), as set_embeddings_layer_inp does. On by default, BIGCHERRY_MTP_RERESERVE=0 disables.
     static const bool bigcherry_mtp_rereserve = [] {
         const char * s = std::getenv("BIGCHERRY_MTP_RERESERVE");
-        return s != nullptr && std::atoi(s) != 0;
+        return s == nullptr || std::atoi(s) != 0;
     }();
     if (bigcherry_mtp_rereserve && (cparams.embeddings_nextn != value || cparams.embeddings_nextn_masked != masked)) {
         sched_need_reserve = true;
@@ -57,7 +57,7 @@ void llama_context::set_embeddings_nextn(bool value, bool masked) {
 PATCHES = [
     FilePatch(
         path="src/llama-context.cpp",
-        description="1343: a NextN output mode change asks for a scheduler reserve (env-gated)",
+        description="1343: a NextN output mode change asks for a scheduler reserve (on by default)",
         language="none",
         edits=(
             Edit(
@@ -85,7 +85,7 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc("BIGCHERRY_MTP_RERESERVE", "0|1", "0",
+    EnvDoc("BIGCHERRY_MTP_RERESERVE", "0|1", "1 (on)",
            "reserve the scheduler's worst-case graph again when the NextN (MTP) outputs are switched on or off, so "
-           "later graphs bind into that plan instead of re-planning per prefill chunk (QFP32, in qualification)"),
+           "later graphs bind into that plan instead of re-planning per prefill chunk; 0 disables"),
 )

@@ -1,9 +1,10 @@
 # 1343_mtp_nextn_rereserve
 
 Promotion record (QFP18 lightweight evidence-reuse tier, pin b11402 / d89651a7, 2026-10-07). Mechanism is in
-SUMMARY.md: with `BIGCHERRY_MTP_RERESERVE=1` a change of the NextN (MTP) output mode asks for one scheduler reserve,
+SUMMARY.md: a change of the NextN (MTP) output mode asks for one scheduler reserve,
 so the graphs that run bind into a worst-case plan of their own shape instead of being re-planned as the context
-fills. Opt-in (default off).
+fills. On by default since 2026-10-07 (owner: no reason for it not to be); `BIGCHERRY_MTP_RERESERVE=0`
+disables. The evidence below was taken with the flag as an opt-in (B = on, A = off).
 
 ## Evidence
 
@@ -41,5 +42,4 @@ RX 6900 XT), ctx 245760, f16 KV, ub512, build `b-metamem-rr98` (production set +
 Arm A's setter is native llama.cpp b11402's, unmodified, so the ABBA is the native reserve behaviour against one
 extra reserve inside one BigCherry binary. No separate run against a fully native binary was made for this patch.
 
-Not in a runtime profile yet: switching it on changes production's generated text (fusion set), which is the owner's
-call, together with 1340's flags.
+The default changes production's generated text at near-tie points (fusion set), as described above.
