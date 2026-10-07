@@ -1,4 +1,4 @@
-"""Offline mechanics tests for 1316_node_hash_trace (pinned src/llama-context.cpp)."""
+"""Offline mechanics tests for 1316_node_hash_trace on b11474 scheduler/context sources."""
 
 from __future__ import annotations
 
@@ -44,6 +44,32 @@ class Patch1316StaticContracts(unittest.TestCase):
 
 @unittest.skipUnless(_VENDOR_CTX.exists() and _VENDOR_BACKEND.exists(), "pinned vendor checkout not present")
 class Patch1316Mechanics(unittest.TestCase):
+    def test_composes_after_production_scheduler_input_patch(self):
+        prod = _REPO / "patches/1326_sched_async_host_inputs/patch.py"
+        spec = importlib.util.spec_from_file_location("patch_1326_for_1316", prod)
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "src/llama-context.cpp"
+            backend_path = root / "ggml/src/ggml-backend.cpp"
+            path.parent.mkdir(parents=True)
+            backend_path.parent.mkdir(parents=True)
+            copy_pinned(_VENDOR_CTX, path)
+            copy_pinned(_VENDOR_BACKEND, backend_path)
+
+            sched_only = tuple(p for p in mod.PATCHES if p.path == "ggml/src/ggml-backend.cpp")
+            prod_res = apply_all(sched_only, root)
+            self.assertTrue(all(r.ok for r in prod_res), [e.detail for r in prod_res for e in r.failed])
+
+            res = apply_all(_module.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+            backend = backend_path.read_text(encoding="utf-8")
+            self.assertIn("bigcherry 1326: async host->device input copy", backend)
+            self.assertIn("Meta owns its own subgraph partition/reduction walk", backend)
+
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
