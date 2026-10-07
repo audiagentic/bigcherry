@@ -3,7 +3,7 @@
 **Status:** validated  
 **Plan item:** MSM02
 
-Kind: enhancement, flag `BIGCHERRY_META_PER_DEVICE_ARENA=1` (default 0).
+Kind: enhancement, on by default; `BIGCHERRY_META_PER_DEVICE_ARENA=0` restores the common-size arena.
 
 With the flag enabled, the Meta tensor-split compute buffer no longer gives every simple device the scheduler's common physical arena size. `ggml_backend_sched_reserve()` materialises the scheduler's worst-case measure graph once, then 1340 translates that graph to each simple backend. Each device owns one grow-only physical gallocr arena; graph-shape gallocr plans keep allocation metadata only and bind into that shared arena during compute.
 

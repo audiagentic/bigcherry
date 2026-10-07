@@ -280,8 +280,9 @@ _N_MODEL_SEED = r"""    split_state.axis = tc.axis;
         }
         const uint32_t all_mask = (uint32_t(1) << ud->n_devices) - 1;
         split_state.active_mask = active_mask == all_mask ? 0 : active_mask;
-        // step 2: the same devices for the attention-side graph inputs (BIGCHERRY_META_SUBSET_MIRROR_INPUTS=1)
-        static const bool bigcherry_subset_inputs = getenv("BIGCHERRY_META_SUBSET_MIRROR_INPUTS") != nullptr &&
+        // step 2: the same devices for the attention-side graph inputs (on with the subset mirror;
+        // BIGCHERRY_META_SUBSET_MIRROR_INPUTS=0 keeps the inputs on every device)
+        static const bool bigcherry_subset_inputs = getenv("BIGCHERRY_META_SUBSET_MIRROR_INPUTS") == nullptr ||
                                                     atoi(getenv("BIGCHERRY_META_SUBSET_MIRROR_INPUTS")) != 0;
         if (bigcherry_subset_inputs) {
             ggml_backend_meta_set_attn_input_mask(split_state.active_mask);
@@ -370,9 +371,9 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc("BIGCHERRY_META_SUBSET_MIRROR_INPUTS", "0|1", "0",
-           "with BIGCHERRY_META_SUBSET_MIRROR: the attention mask graph input (and what is derived from it) also exists "
-           "only on devices with a nonzero BIGCHERRY_ATTN_TS share (MSM03 step 2, in qualification)"),
+    EnvDoc("BIGCHERRY_META_SUBSET_MIRROR_INPUTS", "0|1", "1 (on)",
+           "with BIGCHERRY_META_SUBSET_MIRROR: the attention mask graph inputs (and what is derived from them) also "
+           "exist only on devices with a nonzero BIGCHERRY_ATTN_TS share; 0 keeps them on every device"),
     EnvDoc("BIGCHERRY_META_SUBSET_MIRROR", "0|1", "0",
            "qwen4exp tensor split: keep cache_idx replicas only on devices with nonzero BIGCHERRY_ATTN_TS share"),
 )
