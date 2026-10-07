@@ -21,47 +21,6 @@ b11402 already contains a full MMQ Stream-K kernel/fixup path, but **all Q8_0 an
 
 Keep the two mechanisms independently switchable and independently packaged.
 
-## What we already have
-
-### b11402 MMQ
-
-- `ggml/src/ggml-cuda/mmq.cuh::ggml_cuda_mmq_config` contains:
-  - `I`: output-row tile in `src0->ne[1]/dst->ne[0]`;
-  - `J`: activation/output-column tile;
-  - `K_vram`;
-  - `stream_k`;
-  - occupancy/thread/layout data.
-- `launch_mul_mat_q<type,J,fallback>()`
-  - ordinary mode launches the rectangular `nty * ntx * ntzw` tiling;
-  - Stream-K mode already computes total destination tiles, normally launches `nsm` blocks on AMD, allocates fixup workspace when tile/K partitions do not line up, and launches `mul_mat_q_stream_k_fixup`.
-- `mul_mat_q` has a compile-time Stream-K branch through `ggml_cuda_mmq_get_stream_k(...)`.
-- `mul_mat_q_switch_J` selects J by minimizing the number of J tiles among supported configs.
-- `mmq-config-rdna2.cuh`:
-  - Q8_0 and IQ4_XS use I=128;
-  - every such entry has `stream_k=false`.
-- `mmq-config-rdna3.cuh`:
-  - Q8_0 uses I=64 for common J and I=128 for wide J;
-  - IQ4_XS likewise uses I=64/128;
-  - every entry has `stream_k=false`.
-- `mmq-config-rdna4.cuh`:
-  - Q8_0 and IQ4_XS use I=64 for J<=64 and I=128 for wider J;
-  - every entry has `stream_k=false`.
-- `ggml/src/ggml-cuda/mmq.cu::ggml_cuda_should_use_mmq` already admits Q8_0 and IQ4_XS on our AMD architectures.
-
-Thus the Stream-K arithmetic/temporary/fixup mechanism is upstream code that is currently unreachable for these RDNA configs. The output-row geometry is compile-time configuration, so a runtime experiment needs separately compiled I variants rather than mutating a constexpr table from an environment variable.
-
-### BigCherry overlap
-
-- `patches/1237_rd30_moe_mmq_compact_grid` is validated on gfx1100.
-  - It compacts **non-Stream-K** MoE MMQ from a worst-case rectangular expert grid to the actual expert/J-tile list.
-  - Its implementation explicitly leaves Stream-K untouched.
-  - Hardware evidence measured about +7.3-7.4% MoE prefill with byte-identical output.
-- `patches/1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2` extends that compact path to gfx1201 and gfx1030.
-- `patches/1281_moe_mul_mat_id_range` and `1283_qwen4exp_expert_parallel` alter local expert ownership/grouping but still feed ordinary MMQ tensor descriptors/maps.
-- QFP30 inside 1281 changes Q8_1 activation dedup/scatter for range MMQ; QFP37 must not alter its ids/inverse-map contracts.
-
-Finding: MoE launch compaction is already covered and should remain the production baseline. Stream-K for ordinary few-tile Q8_0/IQ4_XS and the IQ4_XS I-tile sweep are **not** covered.
-
 ## Steps
 
 1. Gate 0: census all MMQ calls on Flash-Next and the 27B Q8_0 model by physical device, type, `nrows_x/ncols_x/ncols_max`, chosen I/J, destination tile count, CU count, MoE/non-MoE, call count and aggregate GPU time.
@@ -293,11 +252,53 @@ Expected gain on our topology:
 
 Execution order: eighth. The existing 1237/1265 result lowers the expected residual gain for expert tiling. Prioritize the Stream-K half only if the Q8_0 27B census shows severe CU underfill; otherwise QFP35/QFP36 are stronger Flash-Next candidates.
 
+2026-10-07 Gate 0 data from the prefill kernel profile of the production build (run gate0-d24576, one XTX, 28.0 s of kernel time in a 38.7K-token fill, 76 chunks). Quantised matmul kernels: mul_mat_q<Q8_0, 128, false> 29,850 calls at 75.9 us = 2.26 s (8.1% of kernel time, ~393 calls per chunk); mul_mat_q<Q8_0, 128, true> 7,200 calls at 278.1 us = 2.00 s (7.2%, ~95 per chunk); mul_mat_q<type 21, 16, false> 7,144 calls at 239.2 us = 1.71 s (6.1%); mul_mat_q<type 20, 16, false> 3,268 calls at 283.4 us = 0.93 s (3.3%); quantize_mmq_q8_1 41,192 calls at 7.2 us = 0.30 s. The Q8_0 calls are the hyper-connection projections (hc_*_down [10240 -> 320] and hc_*_up [320 -> 10240], Q8_0, four per layer): the few-tile class the external stream-k report targets (their 284 -> 115 us). So on Flash-Next the stream-k half is NOT a 27B-only item as the code-level review assumed: its class is ~15% of an XTX's prefill kernel time. Still needed before coding: which of the two Q8_0 variants is the 10240 -> 320 direction and its tile counts (the per-shape MMQ census of the review). The expert tile-shape half (types 20/21 = the IQ4 experts, 9.4% together) stays behind the review's stricter gate.
+
+## What we already have
+
+### b11402 MMQ
+
+- `ggml/src/ggml-cuda/mmq.cuh::ggml_cuda_mmq_config` contains:
+  - `I`: output-row tile in `src0->ne[1]/dst->ne[0]`;
+  - `J`: activation/output-column tile;
+  - `K_vram`;
+  - `stream_k`;
+  - occupancy/thread/layout data.
+- `launch_mul_mat_q<type,J,fallback>()`
+  - ordinary mode launches the rectangular `nty * ntx * ntzw` tiling;
+  - Stream-K mode already computes total destination tiles, normally launches `nsm` blocks on AMD, allocates fixup workspace when tile/K partitions do not line up, and launches `mul_mat_q_stream_k_fixup`.
+- `mul_mat_q` has a compile-time Stream-K branch through `ggml_cuda_mmq_get_stream_k(...)`.
+- `mul_mat_q_switch_J` selects J by minimizing the number of J tiles among supported configs.
+- `mmq-config-rdna2.cuh`:
+  - Q8_0 and IQ4_XS use I=128;
+  - every such entry has `stream_k=false`.
+- `mmq-config-rdna3.cuh`:
+  - Q8_0 uses I=64 for common J and I=128 for wide J;
+  - IQ4_XS likewise uses I=64/128;
+  - every entry has `stream_k=false`.
+- `mmq-config-rdna4.cuh`:
+  - Q8_0 and IQ4_XS use I=64 for J<=64 and I=128 for wider J;
+  - every entry has `stream_k=false`.
+- `ggml/src/ggml-cuda/mmq.cu::ggml_cuda_should_use_mmq` already admits Q8_0 and IQ4_XS on our AMD architectures.
+
+Thus the Stream-K arithmetic/temporary/fixup mechanism is upstream code that is currently unreachable for these RDNA configs. The output-row geometry is compile-time configuration, so a runtime experiment needs separately compiled I variants rather than mutating a constexpr table from an environment variable.
+
+### BigCherry overlap
+
+- `patches/1237_rd30_moe_mmq_compact_grid` is validated on gfx1100.
+  - It compacts **non-Stream-K** MoE MMQ from a worst-case rectangular expert grid to the actual expert/J-tile list.
+  - Its implementation explicitly leaves Stream-K untouched.
+  - Hardware evidence measured about +7.3-7.4% MoE prefill with byte-identical output.
+- `patches/1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2` extends that compact path to gfx1201 and gfx1030.
+- `patches/1281_moe_mul_mat_id_range` and `1283_qwen4exp_expert_parallel` alter local expert ownership/grouping but still feed ordinary MMQ tensor descriptors/maps.
+- QFP30 inside 1281 changes Q8_1 activation dedup/scatter for range MMQ; QFP37 must not alter its ids/inverse-map contracts.
+
+Finding: MoE launch compaction is already covered and should remain the production baseline. Stream-K for ordinary few-tile Q8_0/IQ4_XS and the IQ4_XS I-tile sweep are **not** covered.
+
 ## Change Log
 
 - 2026-10-07T00:39:44.284926+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and validated 1237/1265; identified existing-but-disabled RDNA Stream-K, separated it from compact MoE tiling, and defined an IQ4_XS I=32 physical-shape qualification.
-
 
 ## Code-level review (2026-10-07)
 
@@ -427,3 +428,4 @@ Validation:
 1351 IQ4_XS I=32: **DO NOT DO unless the stricter Gate 0 passes.** The original plan understated compile-time-I plumbing and 1237 already removed the dominant MoE grid waste. If its gate passes, expected Flash-Next gain is **+0.2% to +0.7%**; otherwise effectively zero.
 
 Overall QFP37 on the production three-card Flash-Next topology: **go only after positive Gate 0**, expected **+0.0% to +0.8%**.
+- 2026-10-07T09:30:09.491565+00:00 (updated-by): Updated: section:notes

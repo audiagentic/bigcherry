@@ -2,7 +2,7 @@
 id: QFP33
 order: 33
 plan: patching-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-07T00:39:30.097678+00:00'
 breadth: ''
 skill: intermediate
@@ -20,38 +20,6 @@ External report: capping the draft physical ubatch reduced its compute buffer fr
 At b11402 the draft/MTP context inherits the target's global `n_batch` and `n_ubatch` through `common_base_params_to_speculative()`. Our production target wants `-ub 512` for target prefill, but the MTP draft usually executes tiny generation batches (depth 3) and, without QFP31, prompt catch-up batches that can be internally split. There is no draft-specific ubatch knob at this pin.
 
 This is primarily a VRAM-footprint experiment, not a presumed throughput optimization. On the RX 6900 XT sidecar it may recover useful headroom; on built-in MTP using target devices it may reduce each draft-context compute arena. A lower ubatch can also make prompt catch-up slower, so qualification must measure both memory and end-to-end latency.
-
-## What we already have
-
-### b11402
-
-- `common/speculative.cpp::common_base_params_to_speculative(const common_params &)`
-  - copies the complete base `common_params`, therefore inheriting `n_batch` and `n_ubatch`;
-  - then overrides draft devices/model/KV/output limits, but not batch sizes.
-- `common/speculative.cpp::common_speculative_init_result::common_speculative_init_result`
-  - converts those draft params with `common_context_params_to_llama()`;
-  - creates the MTP context with `LLAMA_CONTEXT_TYPE_MTP`;
-  - sets draft `n_ctx` equal to target `n_ctx`.
-- `common/common.cpp::common_context_params_to_llama`
-  - maps `common_params.n_batch/n_ubatch` directly to `llama_context_params`.
-- `src/llama-context.cpp::llama_context::sched_reserve`
-  - reserves its worst-case graph with `n_tokens = min(n_ctx, n_ubatch)`; therefore draft `n_ubatch` directly affects the reserved compute graph/arena.
-- `src/llama-context.cpp::llama_context::process`
-  - uses the context's own physical ubatch when splitting a logical batch, so lowering only draft `n_ubatch` does not require lowering target `-ub`.
-- `common/speculative.cpp::common_speculative_impl_draft_mtp::draft`
-  - generation batches are normally only active sequences / draft depth, far below 512.
-- `common/speculative.cpp::common_speculative_impl_draft_mtp::process`
-  - prompt catch-up may submit a much larger logical batch; the draft context must safely split it when its physical ubatch is capped.
-
-The existing global `-ub/--ubatch-size` is **not** an adequate solution because it also caps target prefill and would confound the production benchmark.
-
-### BigCherry overlap
-
-- `patches/1339_meta_memory_report` can show per-device Meta compute arena sizes when the draft context itself uses Meta.
-- `patches/1340_meta_per_device_arena` changes how Meta compute storage is physically reserved but does not change the draft graph's `n_ubatch`.
-- QFP31, if implemented, reduces how many prompt tokens the draft replays; it is complementary. QFP33 still changes reserve size and should be measured independently first.
-
-This idea is **not currently covered**.
 
 ## Steps
 
@@ -201,7 +169,43 @@ Expected gain on our topology: low direct speed gain, potentially useful VRAM re
 
 Ordering: third overall, after QFP32 and QFP31. It is cheap and low-risk, but primarily a memory optimization; QFP32/QFP31 have larger plausible long-prompt latency upside.
 
+2026-10-07 REJECTED for the production topology. Production load (metamem-mp24, ctx 245760): the draft context's compute buffer is 616.31 MiB and it lives on the RX 6900 XT (ROCm3), which holds 4.37 GB of 16 GB in total with the draft model, its KV (120 + 480 MiB) and that buffer - about 12 GB free. A smaller draft ubatch would return ~300 MiB on a card that has no use for it, and the draft's prompt catch-up would run in more, smaller chunks, which is the opposite of what QFP31 needs. It could matter only where the draft shares a target card (the 27B's built-in MTP on the two XTXs); reopen there if that layout runs short of memory.
+
+## What we already have
+
+### b11402
+
+- `common/speculative.cpp::common_base_params_to_speculative(const common_params &)`
+  - copies the complete base `common_params`, therefore inheriting `n_batch` and `n_ubatch`;
+  - then overrides draft devices/model/KV/output limits, but not batch sizes.
+- `common/speculative.cpp::common_speculative_init_result::common_speculative_init_result`
+  - converts those draft params with `common_context_params_to_llama()`;
+  - creates the MTP context with `LLAMA_CONTEXT_TYPE_MTP`;
+  - sets draft `n_ctx` equal to target `n_ctx`.
+- `common/common.cpp::common_context_params_to_llama`
+  - maps `common_params.n_batch/n_ubatch` directly to `llama_context_params`.
+- `src/llama-context.cpp::llama_context::sched_reserve`
+  - reserves its worst-case graph with `n_tokens = min(n_ctx, n_ubatch)`; therefore draft `n_ubatch` directly affects the reserved compute graph/arena.
+- `src/llama-context.cpp::llama_context::process`
+  - uses the context's own physical ubatch when splitting a logical batch, so lowering only draft `n_ubatch` does not require lowering target `-ub`.
+- `common/speculative.cpp::common_speculative_impl_draft_mtp::draft`
+  - generation batches are normally only active sequences / draft depth, far below 512.
+- `common/speculative.cpp::common_speculative_impl_draft_mtp::process`
+  - prompt catch-up may submit a much larger logical batch; the draft context must safely split it when its physical ubatch is capped.
+
+The existing global `-ub/--ubatch-size` is **not** an adequate solution because it also caps target prefill and would confound the production benchmark.
+
+### BigCherry overlap
+
+- `patches/1339_meta_memory_report` can show per-device Meta compute arena sizes when the draft context itself uses Meta.
+- `patches/1340_meta_per_device_arena` changes how Meta compute storage is physically reserved but does not change the draft graph's `n_ubatch`.
+- QFP31, if implemented, reduces how many prompt tokens the draft replays; it is complementary. QFP33 still changes reserve size and should be measured independently first.
+
+This idea is **not currently covered**.
+
 ## Change Log
 
 - 2026-10-07T00:39:30.097678+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402; identified inherited target ubatch as the mechanism, added draft-only cap design, Meta/single-device memory evidence and separated ABBA.
+- 2026-10-07T09:29:48.796311+00:00 (updated-by): Updated: section:notes
+- 2026-10-07T09:29:52.353140+00:00 (state-transition): State: pending → deprecated
