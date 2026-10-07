@@ -1,15 +1,26 @@
 # 1340_meta_per_device_arena
 
-**Status:** untested
+**Status:** untested  
 **Plan item:** MSM02
 
-Kind: enhancement, flag `BIGCHERRY_META_PER_DEVICE_ARENA` (default 0).
+Kind: enhancement, flag `BIGCHERRY_META_PER_DEVICE_ARENA=1` (default 0).
 
-When enabled, Meta compute buffers defer their per-simple-device storage and one ggml_gallocr per simple backend allocates the transformed device graph. Static weight/KV buffers and the flag-off common-arena path are unchanged. With `BIGCHERRY_META_MEM=1`, each physical arena reports as `BIGCHERRY_META_MEM arena dev=...`.
+With the flag enabled, the Meta tensor-split compute buffer no longer gives every simple device the scheduler's common physical arena size. `ggml_backend_sched_reserve()` materialises the scheduler's worst-case measure graph once, then 1340 translates that graph to each simple backend. Each device owns one grow-only physical gallocr arena; graph-shape gallocr plans keep allocation metadata only and bind into that shared arena during compute.
 
-## Evidence
+Compute-time growth is not a normal path. A graph that does not fit its reserve-time device plan emits `GGML_LOG_ERROR` with the device, graph shape and last tensor/size refusal, increments the device `replans` counter, performs one fallback re-plan/grow, then binds. Normal hardware runs are expected to report `replans=0`.
 
-- Offline mechanics test: `tools/tests/patch/test_1340_meta_per_device_arena.py` (includes the b11402 zero-head `FLASH_ATTN_EXT` allocator-size regression).
-- Pre-fix hardware proved dev0/dev1 arenas shrink (285.3 -> 267.3 MiB at ctx 49152; 1020.9 -> 880.8 MiB at ctx 245760) but exposed a dev2 zero-slice load crash.
-- Root cause fixed: zero-sized disabled transformed tensors are kept external to the simple gallocr, so backend alloc-size hooks are not called on zero-head attention ops.
-- Final-fix compile, runtime fidelity and hardware memory rerun: pending.
+With `BIGCHERRY_META_MEM=1`, load/reserve reports:
+
+`BIGCHERRY_META_MEM arena dev=<n> buft=<name> reserved_mib=<MiB> plans=<count> replans=<count>`
+
+Static weight/KV allocations are unchanged. With the flag off, the upstream common-size Meta compute-buffer path is unchanged. Patch 1341 can additionally make subset-inactive mirrored inputs zero-sized before this reserve translation, so devices reserve only for tensors they actually own.
+
+## Offline evidence
+
+- `tools/tests/patch/test_1340_meta_per_device_arena.py` applies against pinned b11402 source via `git show`, composes the active Meta/Qwen patch stack, checks idempotence/fail-closed anchors, verifies guards only match post-edit output, verifies reserve-only growth/shared-owner binding, and locks the `[experiment.meta-memory]` selection.
+- `tools/tests/patch/test_1341_meta_subset_mirrored.py` is run in the same gate.
+- Required pre-push gate: `PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --experiment meta-memory` must report zero failures.
+
+## Hardware status
+
+Pending owner build/runtime validation at ctx 245760 / ub512. Acceptance signal: final per-device `reserved_mib` is established during load and stays fixed through fill, `replans=0`, and output/fusion behaviour matches production.

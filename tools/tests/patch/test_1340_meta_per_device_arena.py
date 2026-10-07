@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
+import tomllib
 import sys
 import tempfile
 import unittest
@@ -187,6 +189,77 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
             self.assertIn("ret->data = t->data;", helper)
             self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve_n_size("))
+
+    def test_edit_contracts_and_guards_are_post_edit_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            before = {path: (root / path).read_text(encoding="utf-8") for path in _SRC}
+
+            for file_patch in _P.PATCHES:
+                self.assertIn(file_patch.path, before)
+                for edit in file_patch.edits:
+                    self.assertEqual(edit.expect_matches, 1, edit.id)
+                    self.assertIsNotNone(edit.guard, edit.id)
+                    self.assertGreater(edit.max_span_lines, 0, edit.id)
+                    self.assertIsNone(
+                        re.search(edit.guard_pattern(), before[file_patch.path], re.MULTILINE),
+                        f"{edit.id}: guard already matches the pre-1340 source",
+                    )
+
+            res = apply_all(_P.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+            after = {path: (root / path).read_text(encoding="utf-8") for path in _SRC}
+            for file_patch in _P.PATCHES:
+                for edit in file_patch.edits:
+                    self.assertIsNotNone(
+                        re.search(edit.guard_pattern(), after[file_patch.path], re.MULTILINE),
+                        f"{edit.id}: guard does not identify its post-edit output",
+                    )
+
+    def test_reserve_only_growth_and_nonfit_fallback_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._root(td)
+            res = apply_all(_P.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+
+            meta = (root / _META).read_text(encoding="utf-8")
+            backend = (root / _BACKEND).read_text(encoding="utf-8")
+            alloc = (root / _ALLOC).read_text(encoding="utf-8")
+
+            reserve = meta[
+                meta.index("bool ggml_backend_meta_reserve_graph("):
+                meta.index("// Compute-time only:", meta.index("bool ggml_backend_meta_reserve_graph("))
+            ]
+            compute = meta[
+                meta.index("bool ggml_backend_meta_alloc_graph("):
+                meta.index("// BigCherry 1340 (MSM02): what graph_compute does", meta.index("bool ggml_backend_meta_alloc_graph("))
+            ]
+
+            self.assertIn("ggml_gallocr_reserve_n_size(", reserve)
+            self.assertIn("ggml_gallocr_reserve_grow(", reserve)
+            self.assertIn("ggml_gallocr_needs_realloc(", compute)
+            self.assertIn("if (nonfit) {", compute)
+            self.assertIn("GGML_LOG_ERROR(", compute)
+            self.assertIn("falling back to one re-plan", compute)
+            self.assertEqual(compute.count("ggml_gallocr_reserve_grow("), 1)
+            self.assertLess(compute.index("if (nonfit) {"), compute.index("ggml_gallocr_reserve_grow("))
+            self.assertLess(compute.index("ggml_gallocr_reserve_grow("), compute.index("ggml_gallocr_alloc_graph_reuse_from("))
+            self.assertNotIn("ggml_gallocr_alloc_graph(plan", compute)
+            self.assertIn("bool ggml_gallocr_reserve_grow(", alloc)
+            self.assertIn("bool ggml_gallocr_alloc_graph_reuse_from(", alloc)
+            self.assertIn("ggml_backend_meta_reserve_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("reserved_mib=%.2f plans=%zu replans=%llu", meta)
+            self.assertNotIn("BIGCHERRY_META_ARENA_FASTBIND", meta)
+
+    def test_meta_memory_experiment_and_flag_contract(self):
+        with (_REPO / "config/recipes.toml").open("rb") as handle:
+            recipes = tomllib.load(handle)
+        self.assertEqual(
+            recipes["experiment"]["meta-memory"]["patches"],
+            ["1339_meta_memory_report", "1340_meta_per_device_arena"],
+        )
+        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_META_PER_DEVICE_ARENA"])
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
