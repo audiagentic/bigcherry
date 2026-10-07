@@ -76,6 +76,7 @@ class Patch1328Mechanics(unittest.TestCase):
             ctx = (root / "src/llama-context.cpp").read_text(encoding="utf-8")
             qwen = (root / "src/models/qwen4exp.cpp").read_text(encoding="utf-8")
             self.assertIn("BIGCHERRY_EXPERT_AUX_DEVICE", ctx)
+            self.assertIn("const enum ggml_backend_dev_type bc_aux_type", ctx)
             self.assertIn("named ordinary GPU through its pinned host buffer", backend)
             self.assertIn("BIGCHERRY_AUX_EXPERT_MERGE_MAGIC", meta)
             self.assertIn("partial auxiliary routed-expert placement is unsupported", qwen)
