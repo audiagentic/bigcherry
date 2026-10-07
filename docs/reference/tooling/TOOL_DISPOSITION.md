@@ -173,7 +173,7 @@ ownership.
 | `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
-| `tools/lab/bump-b11126-regression/run_arms.py` | **TRANSITIONAL** | Bump b11126 follow-up: balanced 4-arm llama-bench harness separating upstream vs BigCherry throughput change; one-shot, archive once attributed. |
+| `tools/lab/bump-b11126-regression/run_arms.py` | **DELETE** | Retired 2026-10-08 during repository cleanup: b11126 throughput regression was attributed and recorded under docs/evidence/2026-09-24-bump-b11126-throughput/. |
 | `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
 | `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
 | `tools/lab/plan-qualification/profile_run.sh` | **TRANSITIONAL** | PVPS10 kernel-coverage profile wrapper (queue `PROFILE` job type) over `bigcherry.patch.campaign.profile`. |
