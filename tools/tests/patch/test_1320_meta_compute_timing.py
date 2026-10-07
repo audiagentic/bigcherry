@@ -20,6 +20,23 @@ _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
 
 
+def _load_patch(patch_id: str):
+    path = _REPO / f"patches/{patch_id}/patch.py"
+    spec = importlib.util.spec_from_file_location(f"patch_{patch_id}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _only(module, path: str):
+    return [patch for patch in module.PATCHES if patch.path == path]
+
+
+_P1339 = _load_patch("1339_meta_memory_report")
+_P1340 = _load_patch("1340_meta_per_device_arena")
+
+
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
 class Patch1320Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
@@ -43,6 +60,24 @@ class Patch1320Mechanics(unittest.TestCase):
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
+
+    def test_composes_after_production_meta_arena(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "ggml/src/ggml-backend-meta.cpp"
+            path.parent.mkdir(parents=True)
+            copy_pinned(_VENDOR, path)
+            for patches in (
+                _only(_P1339, "ggml/src/ggml-backend-meta.cpp"),
+                _only(_P1340, "ggml/src/ggml-backend-meta.cpp"),
+                _module.PATCHES,
+            ):
+                results = apply_all(patches, root)
+                self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
+            out = path.read_text(encoding="utf-8")
+            self.assertIn("BIGCHERRY_META_MEM compute dev=", out)
+            self.assertIn("ggml_backend_meta_per_device_arena_enabled()", out)
+            self.assertIn("BIGCHERRY_META_TIMING n_nodes=", out)
 
 
 if __name__ == "__main__":
