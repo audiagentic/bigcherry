@@ -1,9 +1,9 @@
 #!/bin/bash
-# MET04 / 1339: what each card of the tensor split really holds. Builds the production set + 1339 (experiment
-# meta-mem) and, for every context in CTX_LIST, loads Flash-Next with BIGCHERRY_META_MEM=1 in two layouts and sums the
+# MET04 / 1339: what each card of the tensor split really holds. Builds the production set (1339 and 1340 are in it;
+# EXPERIMENT names another [experiment.*]) and, for every context in CTX_LIST, loads Flash-Next with BIGCHERRY_META_MEM=1 in two layouts and sums the
 # report per device: P = production row split, O = owner's layout (dense + attention + KV on the XTXs, usage-placed
 # experts, expert-parallel; OWNER_ENV). One short request per load (depth 2048) so the compute arenas exist.
-# FLAG_ARMS=1 with EXPERIMENT=meta-memory adds the MSM02 / MSM03 arms (per-device arena, subset-mirrored indexer cache)
+# FLAG_ARMS=1 adds the MSM02 / MSM03 arms (per-device arena, subset-mirrored indexer cache)
 # on both layouts; their greedy text must equal their base arm.
 # DEPTH (2048) is how far the context is filled before the report: a per-device arena is sized by the graphs that ran.
 # Usage: queue-meta-mem.sh <tag>      env: CTX_LIST ("49152 245760"), DEPTH, BC_MODEL, OWNER_ENV, RUN_OVERRIDE, EXPERIMENT, FLAG_ARMS
@@ -38,7 +38,7 @@ done
 ARMS
 jobs=$(mktemp)
 : > "$jobs"
-[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi ${EXPERIMENT:-meta-mem} gfx1100,gfx1201,gfx1030" > "$jobs"
+[ -n "${RUN_OVERRIDE:-}" ] || echo "VIS=0,1,2,3 BUILD $RUN bigcherry:stock:linux-multi ${EXPERIMENT:-stock-none} gfx1100,gfx1201,gfx1030" > "$jobs"
 echo "VIS=0,1,2,3 SCRIPT $N $R/$N.arms.sh @$RUN $R/$N" >> "$jobs"
 bash tools/lab/plan-qualification/queue.sh "$jobs"
 echo "QUEUE_EXIT=$? $(date -Is)"

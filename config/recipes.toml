@@ -265,6 +265,8 @@ patches = [
     "1281_moe_mul_mat_id_range",
     "1283_qwen4exp_expert_parallel",
     "1341_meta_subset_mirrored",
+    "1339_meta_memory_report",
+    "1340_meta_per_device_arena",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -554,21 +556,13 @@ patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
 patches = ["1331_alloc_peak_live"]
 
-[experiment.meta-mem]
-# MET04: production set + 1339 (BIGCHERRY_META_MEM=1: per-device size of every tensor-split buffer).
-patches = ["1339_meta_memory_report"]
-
 [experiment.fusion-bisect]
-# FKE01: production set + 1339 (overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
-patches = ["1339_meta_memory_report", "1342_fusion_bisect"]
-
-[experiment.meta-memory]
-# MSM02/MSM03 qualification: measurement + per-device compute arena + cache_idx subset mirror.
-patches = ["1339_meta_memory_report", "1340_meta_per_device_arena"]
+# FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
+patches = ["1342_fusion_bisect"]
 
 [experiment.meta-memory-content]
-# MSM03: meta-memory + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
-patches = ["1339_meta_memory_report", "1340_meta_per_device_arena", "1329_alloc_top_trace", "1331_alloc_peak_live"]
+# MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
+patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches

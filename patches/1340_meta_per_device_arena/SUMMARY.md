@@ -1,6 +1,6 @@
 # 1340_meta_per_device_arena
 
-**Status:** untested  
+**Status:** validated  
 **Plan item:** MSM02
 
 Kind: enhancement, flag `BIGCHERRY_META_PER_DEVICE_ARENA=1` (default 0).
