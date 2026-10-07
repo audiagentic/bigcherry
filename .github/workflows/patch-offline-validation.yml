@@ -2,7 +2,7 @@ name: Patch offline validation
 
 on:
   push:
-    branches: [patch-refactor]
+    branches: [main]
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
@@ -14,6 +14,27 @@ on:
       - 'tools/bigcherry/cli/main.py'
       - 'tools/bigcherry/cli/patch.py'
       - 'tools/bigcherry/cli/source.py'
+      - 'tools/bigcherry/cli/slice.py'
+      - 'tools/bigcherry/release/records.py'
+      - 'tools/bigcherry/source/upstream.py'
+      - 'tools/bigcherry/source/workspace.py'
+      - 'dispositions/**'
+      - 'config/recipes.toml'
+      - '.github/workflows/patch-offline-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'tools/tests/patch/**'
+      - 'tools/bigcherry/patch/**'
+      - 'tools/bigcherry/pin_transition.py'
+      - 'tools/bigcherry/campaign/resolution.py'
+      - 'tools/bigcherry/core/config.py'
+      - 'tools/bigcherry/core/paths.py'
+      - 'tools/bigcherry/cli/main.py'
+      - 'tools/bigcherry/cli/patch.py'
+      - 'tools/bigcherry/cli/source.py'
+      - 'tools/bigcherry/cli/slice.py'
       - 'tools/bigcherry/release/records.py'
       - 'tools/bigcherry/source/upstream.py'
       - 'tools/bigcherry/source/workspace.py'
@@ -23,7 +44,7 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: 'Base git ref for changed-patch detection (default: HEAD^)'
+        description: 'Base git ref for changed-patch detection (default: merge base with HEAD^)'
         required: false
         type: string
 
@@ -59,14 +80,16 @@ jobs:
         shell: bash
         env:
           EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           INPUT_BASE: ${{ inputs.base }}
           PYTHONPATH: tools
         run: |
           set -euo pipefail
-          base="${INPUT_BASE:-${EVENT_BEFORE:-}}"
+          base="${INPUT_BASE:-${PR_BASE_SHA:-${EVENT_BEFORE:-}}}"
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
             base="HEAD^"
           fi
+          base="$(git merge-base "$base" "$GITHUB_SHA")"
           python -m bigcherry.patch.offline_check \
             --base "$base" \
             --head "$GITHUB_SHA" \
