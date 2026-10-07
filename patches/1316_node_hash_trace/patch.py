@@ -52,7 +52,7 @@ static bc_node_hash_state & bc_node_hash() {
 }
 
 static bool bc_node_hash_is_meta_tensor(const struct ggml_tensor * t) {
-    if (t == nullptr || t->buffer == nullptr) {
+    if (t == nullptr) {
         return false;
     }
     ggml_backend_buffer_t buffer = t->view_src != nullptr ? t->view_src->buffer : t->buffer;
