@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 from argparse import Namespace
 import tempfile
@@ -45,24 +46,49 @@ class Patch1348Mechanics(unittest.TestCase):
             copy_pinned(_V / rel, root / rel)
         return root
 
-    def _apply_production_without_1348(self, root):
-        # Exercise 1348 against the exact production composition it follows, not pristine b11474.
+    def _apply_production_without_1348(self, root, *, full=False):
         selected = selection.resolve_cli_selection(Namespace(source="bigcherry"))
         self.assertIn("1348_mtp_deferred_catchup", selected.patch_ids)
+        production = []
         for pid in selected.patch_ids:
             if pid == "1348_mtp_deferred_catchup":
                 continue
             module = _load(pid)
-            relevant = tuple(p for p in getattr(module, "PATCHES", ()) if p.path in _FILES)
-            if not relevant:
+            patches = tuple(getattr(module, "PATCHES", ()))
+            if full:
+                production.extend(patches)
+            else:
+                relevant = tuple(p for p in patches if p.path in _FILES)
+                if not relevant:
+                    continue
+                res = apply_all(relevant, root)
+                self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+        if not full:
+            return
+
+        # Apply the entire selected production set. Stage only target files, not the whole upstream checkout.
+        # Overlay-owned sources win over pristine vendor files, just as in the actual BigCherry materialization.
+        for patch in production:
+            target = root / patch.path
+            if target.exists():
                 continue
-            res = apply_all(relevant, root)
-            self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+            overlay = _REPO / "src" / patch.path
+            pinned = _V / patch.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if overlay.is_file():
+                shutil.copy2(overlay, target)
+            elif pinned.is_file():
+                copy_pinned(pinned, target)
+            elif not patch.create:
+                self.fail(f"production patch target is missing: {patch.path}")
+
+        res = apply_all(production, root)
+        self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
 
     def test_full_production_then_1348_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
-            self._apply_production_without_1348(root)
+            self._apply_production_without_1348(root, full=True)
             before_1348 = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
             self.assertIn("bc_spec_t().sync_us", before_1348)  # 1317
             self.assertIn("bigcherry 1322: draft ahead on the draft GPU", before_1348)  # 1322
