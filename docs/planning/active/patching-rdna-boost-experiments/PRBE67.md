@@ -117,3 +117,16 @@ Successor key: patching-rdna-boost-experiments-rd84
 - 2026-09-24T02:33:42.641725+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:47:06.065592+00:00 (updated-by): Updated: section:description, section:steps
 - 2026-09-24T04:47:10.532978+00:00 (updated-by): Updated: section:notes
+
+
+## 2026-10-07 optimisation audit disposition
+
+Current upstream master still has the UID fast-path gap: `ggml_cuda_graph_update_required()` returns false when non-zero `cgraph->uid == graph->uid` before its full node/source property comparison. Newer graph warmup/reset handling does not close that early return.
+
+PRBE67 is the sole owner for this hypothesis; PRBE66 is a duplicate/fallback control, not a second implementation. Before patching, instrument the UID early return with node count and a compact Flash Attention K signature (`src[1]->ne[1]`, data pointer, strides) and reproduce the gfx1201 long-context failure against graphs-off.
+
+If the failing transition does not combine the same UID with a changed FA signature, close this hypothesis. If confirmed, prototype only a changed-signature guard that falls through to the existing full `node_props` comparison. Do not add another fingerprint cache, graph map, scheduler or allocator. Use selective graphs-off only as a control/rollback.
+
+Promotion requires repeated same-process multi-request, multi-ubatch, shallow/~80K/>=160K context, MTP depth controls where applicable, output parity versus graphs-off, zero stale replays, no extra recapture for stable shapes, and <=1% stable gfx1100/gfx1201 regression. Performance promotion requires CI95-low-positive >=3% where execution differs; correctness fixes may promote without a speed gain.
+
+Upstream issue #23579 independently shows gfx1201 multi-GPU Flash Attention can fail under HIP graph capture and that graphs-off restores execution; it does not prove this UID mechanism. No hardware test or prototype was run by this audit.
