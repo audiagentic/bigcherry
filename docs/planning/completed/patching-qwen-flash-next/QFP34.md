@@ -2,7 +2,7 @@
 id: QFP34
 order: 34
 plan: patching-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-07T00:39:33.618549+00:00'
 breadth: ''
 skill: advanced
@@ -327,3 +327,9 @@ After implementation:
 **GO AFTER GATE 0.** The code gap is real and the implementation is contained, but the unmeasured 9..16 F32 class may be too small after 1311/1313/1344.
 
 Expected gain on the production three-card topology if Gate 0 passes: **+0.2% to +0.8% prefill**. If Gate 0 is below the threshold, expected gain is effectively zero and the item should close.
+
+## Ledger-events
+
+- chg_20261007_090800_flash-next-prefill-is-about-4_3539
+- 2026-10-07T09:08:03.963939+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-07T09:08:07.487241+00:00 (state-transition): State: pending → completed
