@@ -281,3 +281,170 @@ Execution order: sixth. Relative final priority is high among kernel items becau
 
 - chg_20261007_051800_flash-next-prefill-is-about-1_8190
 - 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
+
+
+## Code-level review (2026-10-07)
+
+### 1. Verified facts and corrections
+
+Checked against llama.cpp \`d89651a7b205\` and the current validated-enhancements composition. This review covers **only the remaining fusion half**. The dimensional-index half is obsolete as a plan item: it landed as validated/default-on \`1344_dsv4_hc_grid_index\` and measured +1.3% to +1.6% prefill.
+
+- \`src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_mix(...)\` constructs the low-rank HC activation exactly as:
+  \`ggml_tensor * lo = build_lora_mm(w_down, xn);\`
+  \`lo = ggml_silu(ctx0, ggml_scale(ctx0, lo, 1.0f / (float) hc));\`.
+  The residual \`SCALE -> SILU\` mentioned in the old QFP35 text is therefore **already implemented by 1313**; there is no second scale/silu kernel to build.
+- \`src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_combine(...)\` constructs:
+  \`ggml_tensor * w = ggml_sigmoid(ctx0, ggml_scale(ctx0, inject, 1.0f / (float) hc));\`
+  \`w = ggml_scale(ctx0, w, 2.0f);\`
+  followed, when fused HC post is enabled, by
+  \`cur = ggml_dsv4_hc_post(ctx0, block_out, residual, w, nullptr);\`.
+  This is the exact remaining four-node chain \`SCALE -> UNARY(SIGMOID) -> SCALE -> DSV4_HC_POST\`.
+- The target graph calls \`build_hc_combine\` twice per transformer layer: once after attention and once after FFN. \`graph_mtp::graph_mtp(...)\` also calls the same pair of \`build_hc_mix/build_hc_combine\` sequences in its single MTP block, so gfx1030 is a real execution target for the sidecar, not a hypothetical architecture.
+- Native HC POST is
+  \`template <bool has_comb> static __global__ void dsv4_hc_post_f32(...)\`
+  in \`ggml/src/ggml-cuda/dsv4-hc.cu\`. Its arithmetic is
+  \`float sum = x[...] * post[idst*sp0 + it*sp1];\`
+  then either the comb reduction or \`sum += residual[...]\`, then dst write.
+- The host entry is
+  \`void ggml_cuda_op_dsv4_hc_post(ggml_backend_cuda_context & ctx, ggml_tensor * dst)\`.
+  It binds \`dst->src[0]\`=block output, \`src[1]\`=residual, \`src[2]\`=post weight, \`src[3]\`=optional comb; all are asserted F32.
+- \`ggml/src/ggml-cuda/dsv4-hc.cuh\` declares only \`ggml_cuda_op_dsv4_hc_comb/pre/post\` at the pin. A fused HC-post-gate entry therefore needs one explicit declaration there.
+- \`ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i)\` first honors \`GGML_CUDA_DISABLE_FUSION\`; any new graph fusion must live below that check.
+- Fusion memory safety is performed by
+  \`static bool ggml_cuda_check_fusion_memory_ranges(const ggml_cgraph * cgraph, const int node_idx, const int node_count, const int * out_nodes, const int out_count, const bool is_topk_moe = false)\`.
+  It compares actual allocation address ranges. FKE01 therefore applies directly.
+- \`1313_scale_act_fuse\` currently inserts matcher edit \`scale-act-match\` after upstream's softcap matcher. Its three-node arm requires contiguous F32 SCALE/UNARY/SCALE and \`ggml_can_fuse(cgraph, i, ops3, 3)\`, calls \`bc_scale_act_fused(..., post)\`, and returns 2. Thus in today's production composition it materializes \`w\` in one fused scale/sigmoid/scale launch, then HC_POST launches separately.
+- \`1313::bc_scale_act_kernel\` computes \`scaled = s0*x + b0\`, \`v = op(scaled)\`, and, when the second SCALE exists, \`v = s1*v + b1\`. For the HC chain this exactly produces the current materialized \`post\` value. Its Q8_1 publication path is only taken when \`scale1 == nullptr\`; the HC three-node path does **not** publish Q8_1.
+- Correction to the old design: using only \`ggml_can_fuse\` for the new four-node match is insufficient for this project. The final-output index must also pass \`ggml_cuda_check_fusion_memory_ranges\` explicitly, because HC_POST introduces external src0/src1/src3 reads and FKE01 makes address-overlap admission observable.
+
+### 2. Composition and post-patch anchors
+
+Relevant validated patches:
+
+- \`1313_scale_act_fuse\`
+  - \`scale-act-kernel\`: inserts \`bc_scale_act_kernel/bc_scale_act_fused\` in \`unary.cu\`;
+  - \`scale-act-decl\`: declares it in \`unary.cuh\`;
+  - \`scale-act-match\`: inserts the SCALE/UNARY[/SCALE] matcher in \`ggml_cuda_try_fuse\`.
+  The new four-node matcher must run **before** the existing three-node HC gate arm, otherwise 1313 consumes the first three nodes and makes HC_POST unreachable to the extension.
+- \`1311_hc_pre_q81\`
+  - \`hc-pre-q81-kernel\` and \`hc-pre-q81-dispatch\` add the Q8_1-producing PRE path in \`dsv4-hc.cu\`.
+  It is a different HC site and has no matcher collision, but it already inserts code before the native HC_POST kernel.
+- \`1344_dsv4_hc_grid_index\`
+  - \`hc-grid-include\`, \`hc-grid-kernels\`, \`hc-grid-pre-launch\`, \`hc-grid-post-launch\`.
+  It inserts the 2-D/3-D kernels immediately before \`void ggml_cuda_op_dsv4_hc_comb(...)\` and replaces the PRE/POST launch blocks. A new fused HC_POST kernel should use the same 3-D coordinate convention directly; it should **not** alter \`hc-grid-post-launch\`.
+- \`1310_act_q81\`, \`1312_mul_q81\`, \`1309_rms_norm_mul_q81\`, and \`1307_q81_activation_cache_mmvq\` own other activation/Q8_1 publication paths. The HC gate's existing three-node 1313 arm has \`scale1 != nullptr\`, so none of those cache publications is part of this chain.
+- \`1281_moe_mul_mat_id_range\` and \`1283_qwen4exp_expert_parallel\` do not edit these HC files/functions; they affect later MoE ID/range matmuls and Meta placement. No direct anchor collision exists.
+
+Recommended ownership remains **inside \`1313_scale_act_fuse\`**, with a separate default-off subflag. This is not a duplicate scale-act implementation: 1313 already owns the exact producer chain, and the change extends its consumer boundary by one node.
+
+Post-composition anchors:
+
+- Matcher: keep edit id \`scale-act-match\` anchored on the same upstream softcap block, but extend its inserted payload so the four-node HC_POST check occurs before the current three-node SCALE/SIGMOID/SCALE call.
+- Fused kernel: in \`dsv4-hc.cu\`, anchor \`insert_before\` on the exact
+  \`void ggml_cuda_op_dsv4_hc_comb(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {\`
+  signature. 1311 inserts before the native POST kernel; 1344 later inserts its grid kernels before the same COMB function, so this anchor composes without replacing either patch's text.
+- Declaration: in \`dsv4-hc.cuh\`, anchor after
+  \`void ggml_cuda_op_dsv4_hc_post(ggml_backend_cuda_context & ctx, ggml_tensor * dst);\`.
+- Do not anchor on 1344's generated \`bc_grid\` launch block; that would couple this feature to 1344's switch implementation unnecessarily.
+
+### 3. Gaps and risks
+
+- **Exact chain only.** The matcher must require ops \`SCALE, UNARY, SCALE, DSV4_HC_POST\`, unary exactly SIGMOID, \`hc_post->src[2] == scale1\`, and the normal edge chain \`act->src[0] == scale0\`, \`scale1->src[0] == act\`. Do not identify HC from shapes alone.
+- Require F32 contiguous \`scale0->src[0]\`, \`scale0\`, \`act\`, and \`scale1\`; require HC_POST's existing F32 contracts and supported strides. The original injection tensor is \`scale0->src[0]\`; the fused kernel must read that, not the unmaterialized intermediate nodes.
+- Use \`ggml_can_fuse(cgraph, i, ops4, 4)\` for graph-use/single-use eligibility **and** \`ggml_cuda_check_fusion_memory_ranges(cgraph, i, 4, &out_idx, 1)\` for allocation-overlap safety. This is the FKE01-critical missing condition.
+- The current model calls HC_POST with \`comb == nullptr\`, but the CUDA op supports non-null comb. V1 should support both at kernel level because the arithmetic is trivial to preserve, while the graph matcher should not assume a model name. Tests must cover both.
+- Meta: DSV4 HC ops are scalar/generic Meta operations; matching occurs only after a backend-local subgraph exists. Derive \`n_embd/hc/n_tokens\` and strides from the physical local tensors. Never assume all three devices see the same token extent.
+- gfx1100/gfx1201: use the 1344-style 3-D grid with the existing block size; no architecture-specific arithmetic is justified. gfx1030 executes the same HC combine in \`graph_mtp\`, but its enablement must be based on measured benefit rather than a family-wide predicate.
+- 1281/1283: the fusion is upstream of expert routing and must not inspect or alter range op params, expert ids, or delayed all-reduce state. The only interaction is global performance/allocator layout through the containing graph.
+- Q8_1 cache: do not publish any Q8_1 entry from the four-node fused HC_POST. The existing 1313 three-node HC gate path does not publish one, and HC_POST's output has different semantics/shape. Preserve 1311 PRE publication unchanged.
+- CUDA graphs: the fused kernel requires no new pool allocation or host copy and is therefore capture-friendly. Flag values must be process-stable/cached. Marker logging must be one-shot and outside stream synchronization.
+- FKE01/numerics: replacing a materialized F32 gate tensor with a register value can produce last-bit differences through compiler contraction even if source operation order is written identically. Do not claim bit identity for the fusion. The only valid bit/greedy identity isolation is patch A/B with \`GGML_CUDA_DISABLE_FUSION=1\` on both arms, where the new code is inert. Fusion-on equivalence is a separate tolerance/greedy probe.
+- The feature removes one small producer launch for every matched HC_POST; it does not remove the HC_POST launch itself, and it does not improve the already-landed 1344 coordinate indexing. External “hundreds of launches” numbers therefore substantially overstate remaining opportunity.
+- No host thread is useful; this is a single-stream graph-fusion boundary.
+
+### 4. Concrete implementation outline
+
+Keep package ownership in \`patches/1313_scale_act_fuse\`.
+
+New subflag:
+\`BIGCHERRY_HC_POST_GATE_FUSE=1\` enables; **default 0**. Existing \`BIGCHERRY_SCALE_ACT_FUSE\` remains independently default-on. Require both for the extension so disabling 1313 restores the original graph behavior.
+
+Add in \`dsv4-hc.cu\`:
+
+\`template <bool has_comb> static __global__ void bc_dsv4_hc_post_gate_f32(...)\`
+
+with inputs:
+- \`x\`, \`residual\`, **original \`inject\`**, optional \`comb\`, dst;
+- \`n_embd, hc, n_tokens\`;
+- x/residual/inject/comb/dst strides in float elements;
+- \`s0, b0, s1, b1\`.
+
+Launch geometry must match 1344 POST:
+- x: \`ceil(n_embd/256)\`;
+- y: \`hc\`;
+- z: \`n_tokens\`;
+- \`i0 = blockIdx.x*blockDim.x + threadIdx.x\`, \`idst=blockIdx.y\`, \`it=blockIdx.z\`.
+
+For each output:
+\`const float post = s1 * op_sigmoid(s0 * inject[idst*si0 + it*si1] + b0) + b1;\`
+then execute the native HC_POST arithmetic unchanged.
+
+Add host entry:
+\`void bc_cuda_op_dsv4_hc_post_gate(ggml_backend_cuda_context & ctx, const ggml_tensor * scale0, const ggml_tensor * scale1, ggml_tensor * hc_post);\`
+
+It reads scale/bias via \`ggml_get_op_params_f32\`, validates grid-dimension conversion, derives all physical strides, selects \`has_comb\`, and launches the fused kernel. It must allocate nothing.
+
+Matcher, before 1313's current three-node arm:
+
+1. require \`BIGCHERRY_HC_POST_GATE_FUSE=1\`;
+2. require \`i+3 < n_nodes\`;
+3. exact ops/edges: SCALE -> SIGMOID -> SCALE -> DSV4_HC_POST, with \`hc_post->src[2] == scale1\`;
+4. existing 1313 contiguous/F32 checks for producer tensors plus HC_POST type/shape/grid checks;
+5. \`ggml_can_fuse(cgraph, i, ops4, 4)\`;
+6. \`const int out_idx=i+3; ggml_cuda_check_fusion_memory_ranges(cgraph, i, 4, &out_idx, 1)\`;
+7. call \`bc_cuda_op_dsv4_hc_post_gate(*cuda_ctx, scale0, scale1, hc_post)\`; return 3.
+8. Otherwise fall through unchanged to 1313's current three-node/two-node logic.
+
+Activation marker, one-shot per process/device:
+\`BIGCHERRY_PATCH_HIT patch=1313_scale_act_fuse path=hc_post_gate cc=<cc> n_embd=<...> hc=<...> tokens=<...> comb=<0|1>\`.
+
+Edit list inside 1313:
+- \`hc-post-gate-kernel\`: \`ggml/src/ggml-cuda/dsv4-hc.cu\`; anchor exact COMB host-function signature above; mode \`insert_before\`, \`expect_matches=1\`.
+- \`hc-post-gate-decl\`: \`ggml/src/ggml-cuda/dsv4-hc.cuh\`; anchor exact existing POST declaration; mode \`insert_after\`, \`expect_matches=1\`.
+- \`scale-act-match\`: modify the existing edit payload, preserving its upstream softcap anchor and \`insert_after\` mode; put the four-node check before the current three-node branch.
+- Add \`EnvDoc('BIGCHERRY_HC_POST_GATE_FUSE', '0|1', '0 (off)', ...)\`.
+- Do **not** edit 1344, 1311, Q8_1 cache code, model graph construction, or Meta.
+
+Offline test should extend 1313's existing mechanics test and compare exact generated kernel/matcher text, including near-miss graph predicates. 1344's independent test remains the owner of PRE/POST indexing text.
+
+### 5. Gate 0 and lightweight validation
+
+Gate 0 must be positive **with 1313 and 1344 already enabled**.
+
+Run production Flash-Next, f16 KV, ub512, current three-card tensor split at 8K and 24K prefill with rocprof kernel trace plus \`BIGCHERRY_PATCH_TRACE\`/a fusion census. Count matched HC-combine sequences and correlate:
+- current 1313 \`bc_scale_act_kernel<sigmoid,...>\` with \`post=1\`;
+- immediately following 1344 \`dsv4_hc_post_grid_f32\`;
+- per Agent_Id call count and aggregate GPU duration;
+- expected structural opportunity: two HC combines per target layer, using the actual built graph count rather than a hardcoded layer number.
+
+Gate is positive only if:
+- >=95% of fused HC_POST graph sites present as the exact 1313 three-node producer + 1344 POST pair (otherwise there is a composition/matcher issue to solve first); and
+- the removable **1313 producer launch alone** accounts for **>=0.35% of critical-rank prefill wall time or >=0.70 ms per 512-token ubatch** at either 8K or 24K.
+
+Also census the gfx1030 MTP sidecar during depth-3 drafting. It may be enabled there only if the same exact chain is present and the removable producer launch is >=0.5% of drafter step GPU time; do not enable gfx1030 merely because the source graph contains the chain.
+
+Validation:
+- extend 1313 offline mechanics test + patch-lint;
+- synthetic exact four-node graph plus near misses: wrong unary, shared intermediate, wrong \`src[2]\`, noncontiguous producer, overlapping output/external source, unsupported type, out-of-range grid;
+- activation marker must fire only on the four-node path; existing 1313 marker/path remains for two/three-node fusions;
+- backend-op comparison of fused vs materialized HC POST over token counts 1,2,8,16,512, both comb variants and physical strides; use explicit F32 tolerance and compare greedy model output;
+- fully separated performance ABBA via \`tools/lab/flash-next/queue-env-ab.sh\`, A=flag 0, B=flag 1, with 1313/1344 otherwise fixed and fusion **on** so the feature can execute;
+- separate identity/control ABBA with \`GGML_CUDA_DISABLE_FUSION=1\` on **both** A and B: outputs/generated text must be identical and the new marker must not fire;
+- fusion-on probes required by FKE01: record accepted/rejected fusion counts, memory-range rejection count if instrumented, greedy md5, per-rank kernel totals, prefill t/s, CUDA-graph capture/recapture count, and MTP acceptance/depth;
+- no q4 KV.
+
+### 6. Verdict
+
+**GO AFTER GATE 0.** The exact residual chain exists twice per target layer and in the MTP block, and implementation is small when owned by 1313; however 1313 already removed the two scale/activation launches and 1344 already accelerated HC_POST, so only one small gate-materialization launch remains.
+
+Expected gain on the production three-card Flash-Next topology if Gate 0 passes: **+0.1% to +0.5% prefill**. Treat any larger result as requiring a fusion-census explanation rather than assuming the external report transfers.
