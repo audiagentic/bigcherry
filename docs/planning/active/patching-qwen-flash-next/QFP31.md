@@ -478,3 +478,40 @@ Chunk-1 diagnostic (`patches/1346_mtp_prompt_overlap`, `BIGCHERRY_MTP_PROMPT_TIM
 
 Definitions: `draft_process_ms` is inclusive wall time in MTP `process()`; `draft_decode_ms` is wall time inside its existing prompt catch-up `llama_process(ctx_dft, ...)` calls; `target_nextn_ms` is host-visible wall in target NextN buffer acquisition plus per-row NextN getters/copies, including any synchronization those getters force. The residual `draft_process_ms - target_nextn_ms - draft_decode_ms` is other synchronous MTP host work. This does **not** measure the target graph's internal NextN compute separately; compare with the existing no-MTP Gate 0 for that ceiling. Mixed-sequence batches are intentionally not attributed by this diagnostic.
 - 2026-10-07T09:29:23.211096+00:00 (updated-by): Updated: section:notes
+
+
+## Chunk 2b implementation decision (2026-10-07)
+
+Chunk-1 hardware changes the mechanism order: **WINDOW first; OVERLAP deferred.** The measured
+`target_nextn_ms` was 72-76% of whole prompt wall, while draft catch-up decode was 6.6% at
+38K and 9.9% at 124K. Code inspection confirms the first target NextN getter is a synchronization
+point after asynchronous target `llama_process()`; therefore the original counter mostly observed
+the target join, not independent NextN compute. Chunk 2a now reports explicit `target_sync_ms`,
+post-sync `target_fetch_ms`, and return-to-next-submit `host_gap_ms`.
+
+`BIGCHERRY_MTP_PROMPT_WINDOW=N` (default 0) qualifies only fresh text prompts with
+`n_cached == 0`, `P > N`, non-shared MTP and exactly one trained head. The server passes
+`P`, final `n_past`, and the fresh-text eligibility bit at the existing resolved prompt-start
+boundary. Qualified early chunks do not call a target NextN getter and do not run draft-context
+catch-up. One boundary exception is required for correctness: replay row `p=P-N` consumes the
+native input hidden `h[p-1]`, so the chunk containing `P-N-1` is fetched once when `P-N`
+starts on a later chunk. It is not draft-decoded.
+
+The collector is simpler than the earlier ring outline because prompt length is now known before
+row 0: it preallocates exactly N `{id,pos,h_prev}` rows and fills only absolute positions
+`[P-N,P)`. At `common_speculative_begin()`, it clears only that sequence in the draft memory,
+replays exactly those N rows at their original absolute positions, synchronizes the draft context
+before freeing host input storage, then generation proceeds normally.
+
+At generation start after a qualified replay:
+- draft KV contains exactly prompt positions `[P-N,P-1]` for that sequence, at original positions;
+- replay row `p` is token `x[p]` paired with the same hidden input native MTP uses,
+  `h[p-1]`; the boundary predecessor is captured explicitly;
+- `pending_h` is the target hidden row at `P-1`, and `verify_h/verify_h_rows` describe the
+  final target verification batch exactly as native `process()` would;
+- the bounded host collector has been joined and freed; no pending replay work remains;
+- `draft()` seeds `id_last` at `pos0=P` with `pending_h` and attends only to the retained
+  absolute-position tail. Target KV, target logits and target sampling are unchanged.
+
+This version intentionally does not add the worker overlap. Re-measure after WINDOW; overlap is
+worth adding only if the remaining in-window draft catch-up is still material.
