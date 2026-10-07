@@ -44,3 +44,10 @@ Native llama.cpp b11402 does not contain #29901 (it merged after the tag) and ca
 so there is no native arm at these depths. The base this patch is measured on (production set with 1334) is compared
 with native at 64K context in the 1334 README: 63.1K-token prefill 1029.4 / 1030.1 t/s against 907.6 native. This
 patch adds its gain on top of that base, and becomes redundant when the pin reaches a release that contains #29901.
+
+## Superseded at b11474
+
+Upstream llama.cpp merged the tiled lightning indexer as `1b43d3116` (#29901), the commit this patch backported. At
+pin b11474 (b9acf138) the kernel and its dispatch are native; the patch's dispatch anchor no longer exists. Out of the
+production set as of the b11402 -> b11474 bump (2026-10-08). What does not carry over: the `BIGCHERRY_INDEXER_TILE=0`
+off switch and the activation marker.

@@ -1,6 +1,6 @@
 # 1336_sched_copy_callback
 
-**Status:** validated
+**Status:** superseded
 **Plan item:** MET01
 
 Kind: upstream backport (llama.cpp PR #29943, not merged at the b11402 pin).

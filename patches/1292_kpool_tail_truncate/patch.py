@@ -26,7 +26,7 @@ _TRUNCATE = """        // BigCherry 1292: a stale position after the first cell 
         // removed with seq_rm [p, inf)); everything before it is unchanged, so cut the layout there and let
         // the append path below re-read the tail, instead of rebuilding the whole sequence every step.
         bool bc_tail_cut = false;
-        if (mem_idx_stale[s] != POS_CLEAN && mem_idx_stale[s] > sq.pos_min && !sq.shared &&
+        if (mem_idx_stale[s] != POS_CLEAN && mem_idx_stale[s] > sq.pos_min &&
                 !sq.cells.empty() && !sp.empty() && sq.pos_min == sp.begin()->first) {
             const auto cut = std::lower_bound(sq.cells.begin(), sq.cells.end(),
                     std::make_pair(mem_idx_stale[s], (uint32_t) 0));
@@ -50,12 +50,14 @@ HYBRID_IDX = FilePatch(
     edits=(
         Edit(
             id="kpool-tail-cut",
-            anchor=r"(?m)^        size_t n_kept = 0;\n        if \(mem_idx_stale\[s\] == POS_CLEAN && !sq\.cells\.empty\(\) && !sp\.empty\(\) &&\n",
-            text=_TRUNCATE,
-            mode="insert_before",
+            anchor=_re.escape("        sq.strm = unified ? 0 : mem_idx->get_stream(s);\n\n        if (mem_idx_stale[s] == POS_CLEAN && !sq.cells.empty() && !sp.empty() &&\n"),
+            text="        sq.strm = unified ? 0 : mem_idx->get_stream(s);\n\n" + _TRUNCATE
+                 + "        if (mem_idx_stale[s] == POS_CLEAN && !sq.cells.empty() && !sp.empty() &&\n",
+            mode="replace",
             guard=r"bool bc_tail_cut = false;",
             expect_matches=1,
-            rationale="Only kpool_layout_update() starts its per-sequence append check with this exact pair.",
+            rationale="Only kpool_layout_update() follows the stream assignment with the per-sequence append check.",
+            max_span_lines=4,
         ),
         Edit(
             id="kpool-tail-append",

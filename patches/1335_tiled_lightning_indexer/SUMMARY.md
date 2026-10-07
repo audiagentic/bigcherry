@@ -1,6 +1,6 @@
 # 1335_tiled_lightning_indexer
 
-**Status:** validated
+**Status:** superseded
 **Plan item:** QFP17
 
 Kind: enhancement (upstream backport), on by default; `BIGCHERRY_INDEXER_TILE=0` is the off switch.

@@ -16,7 +16,7 @@ import re as _re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
-STATE = "validated"
+STATE = "superseded"
 
 _A_INC = (
     '#include "convert.cuh"\n'
