@@ -51,6 +51,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1338_moe_cache_profile — applies after rebased 1337 at b11474; no cache-source anchors changed. Test now builds from the current pin and no longer carries retired 1336.
+
 - 1337_moe_expert_caching — re-based for b11474: dropped retired 1336 dependency, retained upstream #29943 selective copy callback, and prepares cache-owned host expert weights in the host-weight pass before delegating ordinary weights to ggml_backend_sched_copy_input.
 
 - 1328_aux_rocm_expert_backend — re-based for b11474: moved the pinned Meta/aux staging hook into upstream's extracted ggml_backend_sched_copy_input fallback; all other anchors still match b11474.
