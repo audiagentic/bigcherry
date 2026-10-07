@@ -255,6 +255,8 @@ patches = [
     "1311_hc_pre_q81",
     "1312_mul_q81",
     "1313_scale_act_fuse",
+    "1321_mtp_ahead_primitives",
+    "1322_mtp_ahead_overlap",
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
     "1333_mixed_batch_on_demand",
@@ -537,9 +539,6 @@ patches = []
 # MET05: v5 + 1327 + 1328 auxiliary ROCm expert backend; off unless BIGCHERRY_EXPERT_AUX_DEVICE is set.
 patches = ["1328_aux_rocm_expert_backend"]
 
-[experiment.deploy-v6-plus-ahead]
-# FMTP03: v6 + 1321 (MTP forced front / live tail) + 1322 (ahead draft during target verify + promotion; BIGCHERRY_MTP_AHEAD=1).
-patches = ["1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap"]
 
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
