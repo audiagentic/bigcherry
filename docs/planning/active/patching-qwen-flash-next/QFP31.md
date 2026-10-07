@@ -7,7 +7,7 @@ created-at: '2026-10-07T00:39:23.061778+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P1
+priority: P0
 work: M
 ---
 
@@ -22,40 +22,6 @@ At b11402, Qwen4Exp MTP currently catches the draft context up on **every** targ
 The lifecycle matters: server `post_decode()` calls `common_speculative_process()` after every target sub-batch, but calls `common_speculative_begin()` only once `SLOT_STATE_DONE_PROMPT` transitions to generation. Therefore `process()` does not know the final prompt length when early chunks arrive. A correct implementation must not use a guessed threshold such as `pos >= prompt_len-window` inside `process()`.
 
 V1 should qualify a **fresh contiguous prompt only**: collect the last N MTP input rows on the host while target prefill proceeds, skip draft catch-up compute for those eligible fresh-prefill chunks, then rebuild only that bounded tail into the draft KV once in `begin()`. Requests whose observed prompt stream does not start at the sequence start or becomes non-contiguous must stay on the existing full catch-up path. Do not silently window prompt-cache/context-shift cases until an explicit prefill-span contract exists.
-
-## What we already have
-
-### b11402
-
-- `common/speculative.cpp::common_speculative_impl_draft_mtp`
-  - owns MTP target-to-draft catch-up and draft generation.
-- `common_speculative_impl_draft_mtp::process(const common_batch &)`
-  - is called after each target batch;
-  - reads target `h_nextn` with `llama_get_embeddings_nextn(ctx_tgt)`;
-  - pairs token `x_p` with the previous target hidden row using `pending_h` at a chunk boundary and `h_tgt[k-1]` within the chunk;
-  - submits that full batch to `ctx_dft` for every MTP head;
-  - updates `verify_h` and `pending_h` from the current target batch.
-- `common_speculative_impl_draft_mtp::begin(seq_id, prompt)`
-  - is invoked after prompt completion by the server;
-  - currently only resets the sampler and verifies draft KV reached `N-1`.
-- `common_speculative_impl_draft_mtp::draft()`
-  - starts from `pending_h` at the final accepted position, so the prompt-window change must leave that value exact.
-- `tools/server/server-context.cpp::post_decode`
-  - calls `common_speculative_process(spec.get(), batch.view)` before converting `SLOT_STATE_DONE_PROMPT` to generation;
-  - then calls `common_speculative_begin(..., slot.prompt.tokens.get_text_tokens())` after the final prompt batch.
-- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph_mtp::graph_mtp`
-  - consumes token embeddings plus target hidden input and writes the MTP KV at the supplied absolute positions.
-- `llama_memory_seq_rm()`
-  - is already used by the MTP driver for chained-head rollback and is the appropriate existing primitive to clear a sequence before rebuilding a bounded tail.
-
-### BigCherry overlap
-
-- `patches/1317_spec_round_timing` (`BIGCHERRY_SPEC_TIMING`) measures serial speculative round phases.
-- `patches/1318_mtp_draft_timing` measures MTP draft submit/sync/rest time.
-- `patches/1308_qwen4exp_rollback_copy_no_cont` reduces a separate Qwen4Exp rollback/copy cost; it does not limit prompt catch-up.
-- `patches/1255_nro06_adaptive_mtp_depth` + `1268_prbe52_adaptive_mtp_wiring` control draft depth, not prompt KV span.
-
-The idea is **not covered**. Existing timing patches can prove whether the long-prompt catch-up is material, but no patch bounds the initial MTP prompt replay.
 
 ## Steps
 
@@ -229,11 +195,46 @@ Expected gain on our topology: medium-to-high for 24K/~98K **if** ROCm3 prompt c
 
 Ordering: second, after QFP32. It has higher potential gain than most kernel items on very long prompts but greater semantic risk, so first establish whether draft catch-up is actually critical on the RX 6900 XT.
 
+2026-10-07 Gate 0 POSITIVE and much larger than estimated. ABBA qfp31-gate0 on build b-metamem-mw3 (production with 1343/1344/1345), ctx 245760, A = production with the MTP sidecar drafter, B = NO_MTP=1 (no draft context at all): prefill 24K 1123.2, 1114.1 vs 1341.7, 1340.7 t/s (+20%); 98K 1016.0, 1031.0 vs 1276.7, 1277.9 t/s (+25%). So everything MTP adds during the prompt - the target's NextN outputs for every prompt token plus the draft context's catch-up on the 6900 XT - costs 17-20% of prefill wall time. The same run shows why the draft is kept for decode: 75 vs 40 t/s at 24K, 60 vs 36 at 98K. The prefill kernel profile (gate0-d24576) has the 6900 XT busy only 2.9 s in a 99 s fill, so most of the cost is not GPU kernel time on the drafter: it is serialised host/transfer work per chunk and/or the target-side NextN extraction. Not yet split between target side and draft side. This is the largest prefill lever found so far. Two ways to recover it: (a) the window of this item (draft and NextN work only for the last N prompt tokens), (b) keep the full catch-up but overlap it with the target's next chunk on a worker thread (threads are allowed now; the draft runs on its own GPU) - (b) leaves the draft's context and acceptance unchanged.
+
+## What we already have
+
+### b11402
+
+- `common/speculative.cpp::common_speculative_impl_draft_mtp`
+  - owns MTP target-to-draft catch-up and draft generation.
+- `common_speculative_impl_draft_mtp::process(const common_batch &)`
+  - is called after each target batch;
+  - reads target `h_nextn` with `llama_get_embeddings_nextn(ctx_tgt)`;
+  - pairs token `x_p` with the previous target hidden row using `pending_h` at a chunk boundary and `h_tgt[k-1]` within the chunk;
+  - submits that full batch to `ctx_dft` for every MTP head;
+  - updates `verify_h` and `pending_h` from the current target batch.
+- `common_speculative_impl_draft_mtp::begin(seq_id, prompt)`
+  - is invoked after prompt completion by the server;
+  - currently only resets the sampler and verifies draft KV reached `N-1`.
+- `common_speculative_impl_draft_mtp::draft()`
+  - starts from `pending_h` at the final accepted position, so the prompt-window change must leave that value exact.
+- `tools/server/server-context.cpp::post_decode`
+  - calls `common_speculative_process(spec.get(), batch.view)` before converting `SLOT_STATE_DONE_PROMPT` to generation;
+  - then calls `common_speculative_begin(..., slot.prompt.tokens.get_text_tokens())` after the final prompt batch.
+- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph_mtp::graph_mtp`
+  - consumes token embeddings plus target hidden input and writes the MTP KV at the supplied absolute positions.
+- `llama_memory_seq_rm()`
+  - is already used by the MTP driver for chained-head rollback and is the appropriate existing primitive to clear a sequence before rebuilding a bounded tail.
+
+### BigCherry overlap
+
+- `patches/1317_spec_round_timing` (`BIGCHERRY_SPEC_TIMING`) measures serial speculative round phases.
+- `patches/1318_mtp_draft_timing` measures MTP draft submit/sync/rest time.
+- `patches/1308_qwen4exp_rollback_copy_no_cont` reduces a separate Qwen4Exp rollback/copy cost; it does not limit prompt catch-up.
+- `patches/1255_nro06_adaptive_mtp_depth` + `1268_prbe52_adaptive_mtp_wiring` control draft depth, not prompt KV span.
+
+The idea is **not covered**. Existing timing patches can prove whether the long-prompt catch-up is material, but no patch bounds the initial MTP prompt replay.
+
 ## Change Log
 
 - 2026-10-07T00:39:23.061778+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and BigCherry head after QFP32; added server-lifecycle constraint, bounded hidden-input tail design, fresh-prefill eligibility, default-off qualification and lightweight ABBA.
-
 
 ## Code-level review (2026-10-07)
 
@@ -445,3 +446,4 @@ Validation after implementation:
 **GO AFTER GATE 0**, but only with the prompt-start server contract above. The old bounded collector without that contract is not safe to implement.
 
 Expected gain on the production three-card target + gfx1030 sidecar, if Gate 0 passes: **8K +0.0% to +0.4%, 24K +0.4% to +1.3%, ~98K +0.8% to +2.5% prefill/TTFT**. The upper end requires the gfx1030 catch-up to remain materially serialized after 1343.
+- 2026-10-07T07:51:46.301374+00:00 (updated-by): Updated: priority='P0', section:notes
