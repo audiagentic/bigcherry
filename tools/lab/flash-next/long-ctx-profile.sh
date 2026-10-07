@@ -62,7 +62,8 @@ run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
       server_sig=$(kill -l $((server_rc - 128)) 2>/dev/null || echo $((server_rc - 128)))
     fi
     echo "$name: SERVER_EXIT status=$server_rc signal=$server_sig phase=startup shutdown_requested=$startup_shutdown"
-    return
+    [ "$server_rc" -ne 0 ] && return "$server_rc"
+    return 1
   fi
   rocm-smi --showmeminfo vram 2>/dev/null | grep "Total Used" > "$out/$name.vram.txt"
   SERVER_PID=$pid PERF_OUT=${PERF_OUT:-} CACHE=${CACHE:-} DECODE_N=${DECODE_N:-128} python3 - "$port" "$name" "$out" "$@" <<'PY'
@@ -139,6 +140,10 @@ PY
   fi
   echo "$name: SERVER_EXIT status=$server_rc signal=$server_sig phase=run shutdown_requested=$shutdown_requested client_status=$client_rc"
   grep -h "memory breakdown\|ROCm\|Host " "$log" | grep common_memory_breakdown_print | tail -6
+  if [ "$shutdown_requested" = 0 ] && [ "$server_rc" -ne 0 ]; then
+    return "$server_rc"
+  fi
+  return "$client_rc"
 }
 mode=${3:-full}
 if [ "$mode" = full ]; then
@@ -183,7 +188,7 @@ elif [ "$mode" = probes ]; then  # fidelity: PROBES next-token distributions aft
   exit 0
 elif [ "$mode" = timing ]; then  # unprofiled decode at ~80K cached context (A/B arm)
   DECODE_N=${DECODE_N:-512} CACHE=1 run_pass timing ${DEPTH:-65536}
-  exit 0
+  exit $?
 elif [ "$mode" = perf ]; then  # host-side: where does the CPU spend decode at depth (GPUs ~75% idle)?
   DECODE_N=1024 CACHE=1 PERF_OUT=$out/decode.perf.data run_pass perfdecode ${DEPTH:-65536}
   p=/usr/lib/linux-tools/6.8.0-142-generic/perf
