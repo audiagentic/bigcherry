@@ -82,8 +82,6 @@ artifacts/
 .mcp.json
 .pi/
 .roo/
-AGENTS.md
-CLAUDE.md
 COPILOT.md
 GEMINI.md
 QWEN.md
@@ -107,8 +105,6 @@ Icon?
 vendor/
 tools/lab/**/vendor-*/
 prodtest_loop.sh
-vendor/llama.cpp-stock-b10257-linux
-vendor/llama.cpp-stock-b10327-linux
 
 # -- Shared project procedure (re-included from the .claude/* rule above) --
 # Skills are not user-specific harness config: they encode how to run this
