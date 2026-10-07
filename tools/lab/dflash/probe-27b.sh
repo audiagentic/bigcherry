@@ -13,7 +13,7 @@
 set -u
 bin=$1 out=$2 only=${3:-} reps=${4:-3}
 mkdir -p "$out"
-model=/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf
+model=${PROBE_MODEL:-/mnt/data/llm-models/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf}  # PROBE_MODEL: another model on the same layouts (e.g. a Gemma)
 common=(-m "$model" -ngl 99 --fit off -c 8192 --flash-attn on --parallel 1 --threads 8 -ub 2048 -b 2048 -lv 4)
 probe() {
   local name=$1 vis=$2; shift 2
