@@ -64,6 +64,21 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 - Rebase a slice branch onto `main` before it merges if `main` has moved; do not merge `main` into the slice. History
   on `main` stays linear.
 
+## Branch clean-up
+
+A merged branch is deleted, always, so that the list of branches is the list of work in flight.
+
+- The repository setting "Automatically delete head branches" is on: merging a pull request deletes its branch.
+- The agent that merges also removes its local branch and prunes: `git switch main && git pull --ff-only && git
+  branch -d <branch> && git fetch --prune`. `-d` (not `-D`) refuses a branch that is not merged.
+- The lab tree is returned to `main` and its copy of the slice branch is deleted in the same step.
+- A branch that will not be merged is closed on purpose: close its pull request with the reason, then delete the
+  branch. Work worth keeping is a plan item, not a parked branch.
+- `bigcherry slice prune` (PA46) lists remote branches that are fully merged into `main` and deletes them, and lists
+  unmerged branches older than 14 days with their last author for a decision. It never deletes an unmerged branch.
+- Exceptions that are not slice branches and are left alone: `main` and release-please's own release branch
+  (`release-please--branches--main--components--bc`), which it reuses.
+
 ## Protection on `main`
 
 Enforced in the repository settings, so the rules do not depend on memory:
