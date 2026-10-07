@@ -85,33 +85,26 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("bc.arena_plans.clear();", meta)
             self.assertLess(meta.index("bc.arena_plans.clear();"), meta.index("ggml_backend_free(bc.backend);"))
             self.assertIn("bool ggml_backend_meta_alloc_graph(", meta)
-            self.assertIn('getenv("BIGCHERRY_META_ARENA_FASTBIND")', meta)
-            # one plan per graph shape; fast bind only on a plan that already exists
+            self.assertNotIn('getenv("BIGCHERRY_META_ARENA_FASTBIND")', meta)
+            # reserve-time shape plans own metadata only; one per-device gallocr owns physical storage
             self.assertIn("struct arena_plan_t {", meta)
-            self.assertIn("const bool fast_bind = ggml_backend_meta_arena_fastbind_enabled() && !logical_replanned && !fresh;", meta)
-            self.assertIn("ggml_gallocr_alloc_graph_reuse(arena_galloc, &simple_graph)", meta)
-            self.assertIn("!logical_replanned &&", meta)
-            self.assertIn("ggml_gallocr_reserve(arena_galloc, &simple_graph)", meta)
-            self.assertIn("ggml_gallocr_alloc_graph(arena_galloc, &simple_graph)", meta)
+            self.assertIn("ggml_gallocr_ptr                    arena_galloc;", meta)
+            self.assertIn("ggml_gallocr_reserve_n_size(bcj.arena_plans[i_plan].galloc.get()", meta)
+            self.assertIn("ggml_gallocr_reserve_grow(bcj.arena_galloc.get(), &simple_graph)", meta)
+            self.assertIn("ggml_gallocr_alloc_graph_reuse_from(plan, bcj.arena_galloc.get(), &simple_graph)", meta)
+            self.assertNotIn("logical_replanned", meta)
             # zero-sized slices are external whether deferred (no buffer) or static (dummy buffer, no data)
-            self.assertIn("if (ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {", meta)
+            self.assertIn("if (is_meta && ret->data == nullptr && ret->view_src == nullptr && ggml_nelements(ret) == 0) {", meta)
             self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", meta)
             self.assertIn("ret->data = t->data; // Meta's fake logical address: allocator sentinel only", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_time calls=%llu reserve_calls=%llu", meta)
-            self.assertIn("traversal_map_us=%lld needs_realloc_reserve_us=%lld bind_us=%lld", meta)
-            self.assertIn("top_n_nodes=%d:%llu,%d:%llu,%d:%llu", meta)
-            self.assertIn("ggml_gallocr_needs_realloc(arena_galloc, &simple_graph)", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_begin", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=reserve_end", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_begin fast_bind=%d", meta)
-            self.assertIn("BIGCHERRY_META_MEM arena_phase dev=%zu phase=alloc_end fast_bind=%d", meta)
+            self.assertIn("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f plans=%zu phase=reserve", meta)
+            self.assertIn("ggml_gallocr_needs_realloc(plan, &simple_graph)", meta)
+            self.assertNotIn("arena_phase dev=", meta)
             self.assertIn("bufs.resize(n_simple_bufts, nullptr);", meta)
             self.assertIn("if (t_ij->view_src->data != nullptr)", meta)
-            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph, logical_replanned)", backend)
-            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph, true)", backend)
-            self.assertIn("bool logical_replanned = false;", backend)
-            self.assertIn("logical_replanned = true;", backend)
+            self.assertIn("ggml_backend_meta_alloc_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertIn("ggml_backend_meta_reserve_graph(sched->backends[i], &sched->graph)", backend)
+            self.assertNotIn("logical_replanned", backend)
             self.assertIn("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph)",
                           (root / _ALLOC).read_text(encoding="utf-8"))
             alloc_src = (root / _ALLOC).read_text(encoding="utf-8")
@@ -121,8 +114,11 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertEqual(alloc_src.count("bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {"), 1)
             alloc_hdr = (root / _ALLOC_H).read_text(encoding="utf-8")
             self.assertIn("GGML_API bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
-            self.assertIn("GGML_API bool ggml_gallocr_alloc_graph_reuse(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
+            self.assertIn("GGML_API bool ggml_gallocr_reserve_grow(ggml_gallocr_t galloc, struct ggml_cgraph * graph);", alloc_hdr)
+            self.assertIn("GGML_API bool ggml_gallocr_alloc_graph_reuse_from(", alloc_hdr)
             self.assertIn("bool ggml_gallocr_alloc_graph_reuse(ggml_gallocr_t galloc, struct ggml_cgraph * graph)", alloc_src)
+            self.assertIn("bool ggml_gallocr_reserve_grow(ggml_gallocr_t galloc, struct ggml_cgraph * graph)", alloc_src)
+            self.assertIn("bool ggml_gallocr_alloc_graph_reuse_from(", alloc_src)
             self.assertIn("return ggml_gallocr_alloc_graph_reuse(galloc, graph);", alloc_src)
             self.assertIn("reserve must instantiate the logical Meta tensors once", backend)
             # a reserve is not followed by a compute, so it rotates the simple-tensor containers itself
@@ -167,7 +163,7 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)", meta)
             self.assertIn("std::vector<ggml_tensor *>           arena_nodes;", meta)
             self.assertIn("failed to allocate per-device Meta arena", backend)
-            self.assertIn("logical_replanned", backend)
+            self.assertNotIn("logical_replanned", backend)
 
     def test_zero_slice_bypasses_flash_attn_backend_sizing(self):
         with tempfile.TemporaryDirectory() as td:
@@ -178,12 +174,12 @@ class Patch1340Mechanics(unittest.TestCase):
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             meta = (root / _META).read_text(encoding="utf-8")
-            helper = meta[meta.index("bool ggml_backend_meta_alloc_graph("):
+            helper = meta[meta.index("static void ggml_backend_meta_arena_map_graph("):
                           len(meta)]
             self.assertIn("ggml_nelements(ret) == 0", helper)
             self.assertNotIn("GGML_TENSOR_FLAG_COMPUTE) == 0);", helper)
             self.assertIn("ret->data = t->data;", helper)
-            self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve("))
+            self.assertLess(helper.index("ret->data = t->data;"), helper.index("ggml_gallocr_reserve_n_size("))
 
     def test_changed_compute_allocator_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
