@@ -13,9 +13,8 @@ GROUP = "core"
 STATE = "untested"
 
 _A_FLAG_SITE = "static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {\n"
-_N_FLAG_SITE = r"""// BigCherry 1340 (MSM02): re-plan reasons counted in ggml-alloc.c (C linkage)
-extern "C" uint64_t bc_gallocr_replan_reasons[4];
-extern "C" char     bc_gallocr_replan_last[160];
+_N_FLAG_SITE = r"""// BigCherry 1340 (MSM02): last reserve-plan refusal diagnostic from ggml-alloc.c (C linkage).
+extern "C" char bc_gallocr_replan_last[160];
 
 // BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
 bool ggml_backend_meta_per_device_arena_enabled() {
@@ -277,6 +276,7 @@ bool ggml_backend_meta_reserve_graph(ggml_backend_t meta_backend, struct ggml_cg
         // Shape plans keep offsets/lifetimes only. reserve_n_size deliberately leaves their vbuffer null.
         size_t planned_size = 0;
         ggml_gallocr_reserve_n_size(bcj.arena_plans[i_plan].galloc.get(), &simple_graph, nullptr, nullptr, &planned_size);
+        (void) planned_size;
 
         if (!bcj.arena_galloc) {
             bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
@@ -348,6 +348,7 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
             size_t planned_size = 0;
             ggml_gallocr_reserve_n_size(
                     bcj.arena_plans[i_plan].galloc.get(), &simple_graph, nullptr, nullptr, &planned_size);
+            (void) planned_size;
             if (!bcj.arena_galloc) {
                 bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
             }
@@ -497,7 +498,7 @@ bool ggml_gallocr_reserve_grow(ggml_gallocr_t galloc, struct ggml_cgraph * graph
 
 _A_GALLOCR_NEEDS = r"""static bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
 """
-_N_GALLOCR_NEEDS = r"""// BigCherry 1340 (MSM02): no longer static - the Meta backend times validation apart from binding
+_N_GALLOCR_NEEDS = r"""// BigCherry 1340 (MSM02): no longer static - Meta validates reserve-time plans before binding
 bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
 """
 
@@ -728,22 +729,6 @@ void ggml_backend_meta_rotate_graph_containers(struct ggml_cgraph * cgraph);
 """
 
 
-_A_ALLOC_HEAD = r"""static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
-    bool backend_ids_changed = false;
-"""
-_N_ALLOC_HEAD = r"""static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
-    bool logical_replanned = false; // BigCherry 1340: scheduler allocation plan changed for this graph
-    bool backend_ids_changed = false;
-"""
-
-_A_LOGICAL_RESERVE = r"""        if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids)) {
-            GGML_LOG_ERROR("%s: failed to reserve graph buffers\n", __func__);
-            return false;
-        }
-"""
-_N_LOGICAL_RESERVE = _A_LOGICAL_RESERVE + r"""        logical_replanned = true;
-"""
-
 _A_ALLOC_TAIL = r"""        if (!ggml_gallocr_alloc_graph(sched->galloc, &sched->graph)) {
             GGML_LOG_ERROR("%s: failed to allocate graph\n", __func__);
             return false;
@@ -808,7 +793,7 @@ _N_RESERVE = r"""    if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, s
 PATCHES = [
     FilePatch(
         path="ggml/src/ggml-alloc.c",
-        description="1340: expose gallocr plan validation for arena phase timing",
+        description="1340: shared physical arena helpers and reserve-plan validation",
         language="none",
         edits=(
             Edit(id="meta-arena-gallocr-vbuffer-grow", anchor=_re.escape(_A_VBUFFER_ALLOC), mode="replace", text=_N_VBUFFER_ALLOC,
@@ -830,7 +815,7 @@ PATCHES = [
                  expect_matches=1, max_span_lines=14),
             Edit(id="meta-arena-gallocr-needs-realloc", anchor=_re.escape(_A_GALLOCR_NEEDS), mode="replace", text=_N_GALLOCR_NEEDS,
                  guard=r"BigCherry 1340 \(MSM02\): no longer static",
-                 rationale="Existing read-only predicate; Meta needs to time validation/reserve separately from bind.",
+                 rationale="Existing read-only predicate; Meta uses it to detect any post-reserve plan non-fit.",
                  expect_matches=1, max_span_lines=2),
             Edit(id="meta-arena-gallocr-fast-bind", anchor=_re.escape(_A_GALLOCR_ALLOC), mode="replace", text=_N_GALLOCR_ALLOC,
                  guard=r"bool ggml_gallocr_alloc_graph_reuse_from\(",
@@ -840,7 +825,7 @@ PATCHES = [
     ),
     FilePatch(
         path="ggml/include/ggml-alloc.h",
-        description="1340: declare gallocr plan validation used by the Meta allocator",
+        description="1340: declare shared-arena gallocr helpers used by Meta",
         language="none",
         edits=(
             Edit(id="meta-arena-gallocr-needs-realloc-decl", anchor=_re.escape(_A_GALLOCR_DECL), mode="replace", text=_N_GALLOCR_DECL,
