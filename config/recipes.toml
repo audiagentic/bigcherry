@@ -278,6 +278,10 @@ patches = [
     "1315_mtp_draft_trace",
     "1317_spec_round_timing",
     "1318_mtp_draft_timing",
+    # PROMOTED 2026-10-08 (QFP31, lightweight tier): deferred MTP prompt catch-up, default on
+    # (BIGCHERRY_MTP_DEFERRED_CATCHUP=0 off). Prefill +5.4% / +6.3% / +9.7% at 8K / 24K / 98K, complete
+    # separation, greedy text identical, PATCH_HIT present.
+    "1348_mtp_deferred_catchup",
 ]
 required-state = "validated"
 

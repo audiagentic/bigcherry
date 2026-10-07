@@ -58,3 +58,9 @@ stream(s), return immediately so the host can prepare/submit k+1, then after k+1
 event and run draft catch-up k. This needs explicit output-lifetime/event ownership for Meta/split outputs and must
 preserve the same row order/identity. Final flush remains serial. Do not add a worker thread unless the event/staging
 path proves insufficient.
+
+## Native llama.cpp baseline
+
+Not measured as a separate build: the off arm (`BIGCHERRY_MTP_DEFERRED_CATCHUP=0`) runs the unmodified upstream
+`common_speculative_process()` path on the same binary, so the A/B above is the comparison against native llama.cpp
+behaviour for this mechanism.
