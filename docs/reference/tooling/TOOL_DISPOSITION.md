@@ -173,8 +173,6 @@ ownership.
 | `tmp/verify_slice_a.py` | **DELETE** | Plan-specific or scratch probe; deletion requires caller/reference proof in TR05. |
 | `tools/lab/hi24-slice-a/verify_slice_a.py` | **TRANSITIONAL** | RA13 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
-| `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
-| `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
 | `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
 | `tools/lab/plan-qualification/profile_run.sh` | **TRANSITIONAL** | PVPS10 kernel-coverage profile wrapper (queue `PROFILE` job type) over `bigcherry.patch.campaign.profile`. |
@@ -182,16 +180,6 @@ ownership.
 | `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/analyze_decode_trace.py` | **TRANSITIONAL** | GP10 plan-owned analysis helper for P2P diagnostics; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/asyncprobe.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/dispatch_overhead.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/dmabench.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_bwval.cpp` | **TRANSITIONAL** | GP10 plan-owned correctness-validated P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_coh.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P coherence diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_d2d.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_diag.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_spin.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
-| `tools/lab/gp10-collective-harness/p2p-diagnostics/p2p_write.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
 | `tools/bigcherry/__init__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/__main__.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
 | `tools/bigcherry/ab_benchmark.py` | **MOVE** | Maintained product or shared foundation; move mechanically during TR03/TR04/TR09/TR10. |
