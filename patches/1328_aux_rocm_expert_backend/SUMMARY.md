@@ -40,7 +40,7 @@ Focused review found one concrete 1328 correctness defect: the generic scheduler
 
 The reviewed decode-specific neighbors do not expose another concrete fault: 1340 handles current-graph replan/binding for the smaller graph; 1341 makes synchronous/asynchronous Meta MIRRORED transfers honor subset active masks; 1295/1327 and 1326 do not directly dereference the auxiliary routed tensor; NextN/embedding extraction resolves the scheduler backend and copies into host output. No source-level defect in those paths can be tied confidently to the silent death from the available log.
 
-All active 1328 seams now emit unconditional WARN-level `BIGCHERRY_PATCH_HIT ... hook=<name>` diagnostics, including target registration/scheduler scope, Qwen4Exp layer entry and merge marking, Meta split-state access, scheduler assignment/copy, and marked split execution. The lab runner records `SERVER_EXIT status=<n> signal=<name>` so a SIGSEGV/SIGKILL is preserved in sweep output.
+With `BIGCHERRY_PATCH_TRACE=1`, 1328 emits WARN-level `BIGCHERRY_PATCH_HIT ... hook=<name>` diagnostics at target registration/scheduler scope, Qwen4Exp layer entry and merge marking, scheduler assignment/copy, and marked split execution. Trace is otherwise silent so qualification throughput is not perturbed. The lab runner records `SERVER_EXIT status=<n> signal=<name>` so a SIGSEGV/SIGKILL is preserved in sweep output.
 
 The exact process-death root cause remains unresolved at b11474. Do not treat the scheduler-scope change as a validated decode fix; promotion remains blocked.
 
