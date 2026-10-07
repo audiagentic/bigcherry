@@ -271,6 +271,7 @@ patches = [
     "1343_mtp_nextn_rereserve",
     "1345_moe_ids_multiwarp",
     "1347_f32_thin_transposed_mmvf",
+    "1295_qsa_gather_decode",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -421,11 +422,11 @@ patches = []
 
 [experiment.ar-cpu-root-kpool-topk-gather]
 # RNX02: 1291 + 1292 + 1294 + QSA gathered-cell decode attention (1295); A/B vs ar-cpu-root-kpool-topk.
-patches = ["1295_qsa_gather_decode"]
+patches = []
 
 [experiment.ar-cpu-root-kpool-topk-gather-trim]
 # QFN01: + opt-in trimmed MTP draft head (1297, BIGCHERRY_DRAFT_VOCAB_N); one binary serves all A/B arms.
-patches = ["1295_qsa_gather_decode"]
+patches = []
 
 [experiment.ar-cpu-root-kpool-topk-vecq]
 # RNX02: 1291 + 1292 + 1294 + quantized-KV vector kernel for MTP verify (1298); A/B vs ar-cpu-root-kpool-topk.
@@ -437,7 +438,7 @@ patches = []
 
 [experiment.ar-cpu-root-kpool-topk-trim-gather]
 # RNX02: deployment candidate + QSA gathered-cell decode attention v2 (1295, threshold 32K cells).
-patches = ["1295_qsa_gather_decode"]
+patches = []
 
 [experiment.deploy-plus-1205]
 # Quick screen: deployment candidate + RD12 paired K/V projection MMVQ (1205).
@@ -457,7 +458,7 @@ patches = []
 
 [experiment.deploy-v2-plus-1295]
 # 1295 QSA gather decode screened on production profile v2 (deploy + 1302 + 1303, f16/f16 240K).
-patches = ["1295_qsa_gather_decode"]
+patches = []
 
 [experiment.deploy-v2-plus-1304]
 # QFP06: production profile v2 + 1304 graph-cache LRU cap / per-instance memory log (both env-gated).
@@ -545,7 +546,7 @@ patches = ["1321_mtp_ahead_primitives", "1322_mtp_ahead_overlap"]
 
 [experiment.retest-1295]
 # QFP21: promoted base (v6 stack) + 1295 QSA gathered-cell decode attention (on unless BIGCHERRY_QSA_GATHER=0).
-patches = ["1295_qsa_gather_decode"]
+patches = []
 
 [experiment.retest-1286]
 # QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
@@ -554,7 +555,7 @@ patches = ["1286_draft_local_shared_tensors"]
 [experiment.candidate-v7]
 # QFP22/QFP21: promoted base (v6) + 1295 (QSA gather decode, BIGCHERRY_QSA_GATHER=1) + 1332 (QSA token chunks,
 # BIGCHERRY_QSA_CHUNK with -ub 1024) + 1331 (peak trace). The stacked long-context candidate.
-patches = ["1295_qsa_gather_decode", "1331_alloc_peak_live"]
+patches = ["1331_alloc_peak_live"]
 
 [experiment.deploy-v6-plus-chunk]
 # QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
