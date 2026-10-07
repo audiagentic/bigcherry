@@ -1,6 +1,6 @@
 # 1347_f32_thin_transposed_mmvf
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP34
 
 ## What it does

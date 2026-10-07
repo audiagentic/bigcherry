@@ -23,7 +23,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_FN = "static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {\n"
 _N_HELPERS = r"""// bigcherry 1347 (QFP34): dst[m, n] = src[n, m] for the thin transposed matmul below (n_rows = 2..8)
