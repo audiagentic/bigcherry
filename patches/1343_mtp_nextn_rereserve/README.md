@@ -43,3 +43,10 @@ Arm A's setter is native llama.cpp b11402's, unmodified, so the ABBA is the nati
 extra reserve inside one BigCherry binary. No separate run against a fully native binary was made for this patch.
 
 The default changes production's generated text at near-tie points (fusion set), as described above.
+
+## Superseded at b11474
+
+Upstream llama.cpp made the same change in `1a3011cc0` ("llama : re-reserve the sched when the nextn extraction flags
+change", #30020): `set_embeddings_nextn` sets `sched_need_reserve` when either flag changes. At pin b11474 (b9acf138)
+the patch's anchor no longer exists and the behaviour is native, without a switch. The patch is out of the production
+set as of the b11402 -> b11474 bump (2026-10-08); the evidence above stands for the mechanism.

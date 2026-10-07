@@ -268,7 +268,6 @@ patches = [
     "1339_meta_memory_report",
     "1340_meta_per_device_arena",
     "1344_dsv4_hc_grid_index",
-    "1343_mtp_nextn_rereserve",
     "1345_moe_ids_multiwarp",
     "1347_f32_thin_transposed_mmvf",
     "1295_qsa_gather_decode",
