@@ -19,8 +19,8 @@ is about 3.8% of all kernel time on the three target cards (run `gate0-d24576`).
 ## Scope
 
 The rows of an expert stay in ascending token order, so `ids_src1` (forward and inverse form), `ids_dst` and
-`expert_bounds` are byte-identical to the native helper's; nothing downstream changes. Smaller batches, the generic
-top-k path, and devices whose warp size is not the compiled one use the native helper. Works on the global ids and on
+`expert_bounds` are byte-identical to the native helper's; nothing downstream changes. Smaller batches and the generic
+top-k path use the native helper. Works on the global ids and on
 1281's translated local ids (an id of INT_MAX is in no expert's list, as in the native helper).
 
 ## Activation
