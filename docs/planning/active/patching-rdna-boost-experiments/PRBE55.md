@@ -62,3 +62,40 @@ M / medium. The route is hot but blast radius is bounded by explicit opt-in, ven
 ## Notes
 
 b11126 source audit corrected the earlier placeholder: the real selector is `quantize_y = ... && ggml_vk_should_use_mmvq(...)` in `ggml_vk_mul_mat_vec_q_f16()`, and its vector path supports batched N. N=6/7 are included. No verify-intent parameter is invented. Keep state `pending` until hardware evidence exists.
+
+
+## 2026-10-08 optimisation audit
+
+### Repository and upstream evidence
+
+Patch 1269 already implements the bounded opt-in route described above and remains `untested`; do not create a second routing patch. The remaining work is qualification and disposition.
+
+Current upstream evidence materially strengthens the discriminator but broadens the suspected problem beyond speculative semantics: llama.cpp issue #21151 reports Q4_K/Q5_K/Q2_K Vulkan MMVQ on gfx1101/RADV running 6.8x-15.3x slower than the existing F32-dequant path for measured hot shapes. Treat those numbers as external evidence only, not expected BigCherry gain. Upstream also disabled MMVQ for an Intel Windows driver class (#20672), establishing precedent for route eligibility being device/driver sensitive rather than universally optimal.
+
+The current BigCherry fleet therefore needs to answer a narrower question: does 1269 remove a material Q8_1-activation/MMVQ penalty for production N=2..8 MTP verification on gfx1100/gfx1201, without harming shapes where MMVQ wins?
+
+### Ownership and implementation boundary
+
+- `1269_prbe55_vk_smalln_dmmv` is the sole implementation owner for this experiment.
+- Do not add a second MMVQ selector, shape table, runtime autotuner, or speculative semantic flag.
+- Preserve upstream `ggml_vk_should_use_mmvq()` as the baseline owner. 1269 may only override an already-MMVQ-eligible call while its explicit experiment flag is enabled.
+- PRBE61 owns Vulkan row-count/rm_kq tuning; do not fold that mechanism into 1269. PRBE68 owns submission batching; it is orthogonal.
+- Any future default routing change must be expressed at the existing Vulkan MMVQ eligibility seam and justified by first-party device+driver+type+shape evidence.
+
+### Cheapest discriminator and telemetry
+
+Before a full server campaign, capture the actual production MTP operator mix with the existing Vulkan performance logger plus the 1269 activation marker. Record, per relevant `MUL_MAT`: weight type, N, K/M shape, baseline route, invocation count, and summed wall time. Reject further work if baseline-MMVQ N=2..8 calls are absent or contribute <5% of MTP verify wall time.
+
+For the top two hot qualifying signatures per architecture, run same-binary flag-off/flag-on micro or backend-op controls. The flag-on arm must prove the DMMV route and must not change operation count or tensor shape. A speedup caused by missing work is a correctness failure.
+
+### Hardware matrix and gates
+
+Primary: gfx1100 RADV and gfx1201 RADV using the production MTP model/draft depth. Secondary compatibility only: gfx1030. Keep driver version and shader-cache state recorded.
+
+1. Route proof: N={1,2,8,9} boundary controls plus observed production N values; marker only for 2..8 that baseline would send to MMVQ.
+2. Correctness: backend-op reference, fixed-seed greedy output, repeated same-process requests, multi-ubatch prompt, and at least one long-context request. Require identical expected work counts and no NaN/Inf.
+3. Performance: paired same-binary flag-off/on, >=10 pairs after warmup. Report kernel/operator wall share and E2E MTP TPS separately.
+4. Promotion: CI95 low >=3% E2E MTP TPS, <=1% ordinary-decode regression, and no correctness/work-accounting failure on both gfx1100 and gfx1201.
+5. Rejection: <5% eligible wall share, CI crossing zero after the bounded campaign, architecture disagreement requiring a new policy surface, or upstream current master already routes the qualified signatures equivalently.
+
+Do not generalize the external gfx1101 6.8x-15.3x result into a BigCherry default. If BigCherry reproduces a broader K-quant MMVQ defect, open/reassign that broader routing issue to the existing Vulkan eligibility owner rather than expanding PRBE55 beyond small-N qualification.
