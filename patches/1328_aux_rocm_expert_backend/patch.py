@@ -261,7 +261,7 @@ _CTX_GPU_LOOP_NEW = r'''        // GPU backends
 
         // BigCherry 1328: target-only plain auxiliary expert backend. It is deliberately not appended
         // to model.devices, so it can never become a Meta constituent or enter that device's communicator.
-        if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
+        if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
             const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
             if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
                 if (model.arch != LLM_ARCH_QWEN4EXP) {
@@ -322,7 +322,7 @@ _QWEN_HEAD_NEW = r'''ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(
     // BigCherry 1328: a selected layer is all-or-nothing on the ordinary aux device. Mixed routed
     // tensors would combine full and tensor-partial semantics and are rejected before graph reserve.
     bool bc_aux_layer = false;
-    if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
+    if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
         const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
         if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
             auto bc_on_aux = [&](const ggml_tensor * t) {
@@ -390,6 +390,11 @@ _QWEN_MERGE = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
 """
 _QWEN_MERGE_NEW = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
         if (bc_aux_layer) {
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                LLAMA_LOG_WARN(
+                    "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge layer=%d tokens=%lld ctx_type=%d\\n",
+                    il, (long long) n_tokens, (int) cparams.ctx_type);
+            }
             ggml_backend_meta_mark_mirrored_partial_add(cur); // BigCherry 1328: reduce shared branch only
         }
         cb(cur, "ffn_out", il);
