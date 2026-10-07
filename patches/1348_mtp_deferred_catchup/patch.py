@@ -19,7 +19,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_SPEC_H = """\
 bool common_speculative_process(common_speculative * spec, const common_batch & batch);
