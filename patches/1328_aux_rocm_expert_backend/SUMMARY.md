@@ -21,7 +21,22 @@ Off by default. The path fails closed if the auxiliary device is absent, ambiguo
 
 The first hardware sweep after the enum-tag compile fix aborted at load for every aux-offload layout because the marked merge observed `MIRRORED + MIRRORED`, while 1328 only accepted `MIRRORED + PARTIAL`. At b11474, Meta's split-state contract uses `MIRRORED` for a complete replica; its synchronized matmul state can therefore make the shared branch MIRRORED before buffer initialization. In that state an AllReduce would incorrectly sum duplicate complete values. 1328 now accepts both `MIRRORED + PARTIAL` and `MIRRORED + MIRRORED`, returning MIRRORED in either case, and still aborts on every other marked combination.
 
-Hardware rerun pending.
+## Hardware result and decode fix (Brutus 2026-10-08)
+
+Flash-Next, 245760 ctx, 79722-token fill, auxiliary routed-expert layers on ROCm3 (6900 XT):
+
+```text
+ub512:  L0 1117.7 t/s (decode 65.3 t/s, accepted 336/525; VRAM GiB 22.7 23.1 31.1 4.1)
+        L2 1058.5 (22.3 22.6 29.7 6.4) | L4 1001.8 (21.8 22.1 28.4 8.7) | L6 964.1 (21.3 21.6 26.8 11.3)
+ub1024: L0 OOM (cudaMalloc 100 MiB on device 1) | L2 1158.8 (23.4 23.7 30.5 7.1) | L4 1136.7 | L6 1086.6
+ub2048: all arms OOM (3958.87 MiB on device 0), including L0
+```
+
+At equal ubatch the offload costs about 5% prefill per two layers, but L2 frees enough VRAM for ub1024 and reaches 1158.8 t/s (+3.7% versus the ub512 L0 baseline). Every L2/L4/L6 arm then stopped at the first generation step while L0 decoded normally.
+
+The source-level defect was context scope: 1328 registered the ordinary auxiliary backend and enabled its Qwen4Exp layer semantics for every context sharing the target model, including `LLAMA_CONTEXT_TYPE_MTP`. Qwen4Exp's MTP context owns the MTP block alone, so trunk-layer auxiliary placement must not alter that scheduler topology. 1328 now registers/uses the auxiliary backend only for `LLAMA_CONTEXT_TYPE_DEFAULT`. `BIGCHERRY_PATCH_TRACE` also emits `phase=aux_merge layer=<n> tokens=<n> ctx_type=<n>` immediately before each marked target merge.
+
+Hardware decode rerun pending; state remains untested until the L2+ arm completes generation.
 
 ## Upstream
 
