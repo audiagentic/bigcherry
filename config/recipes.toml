@@ -552,21 +552,20 @@ patches = []
 patches = ["1286_draft_local_shared_tensors"]
 
 [experiment.candidate-v7]
-# QFP22/QFP21: promoted base (v6) + 1295 (QSA gather decode, BIGCHERRY_QSA_GATHER=1) + 1332 (QSA token chunks,
-# BIGCHERRY_QSA_CHUNK with -ub 1024) + 1331 (peak trace). The stacked long-context candidate.
-patches = ["1331_alloc_peak_live"]
+# QFP22/QFP21: the stacked long-context candidate is now fully in the promoted base.
+patches = []
 
 [experiment.deploy-v6-plus-chunk]
-# QFP17: v6 + 1331 (live-at-peak trace) + 1332 (QSA masks + attention per token chunk; BIGCHERRY_QSA_CHUNK=<tokens>).
-patches = ["1331_alloc_peak_live"]
+# QFP17: 1331 and 1332 are now in the promoted base.
+patches = []
 
 [experiment.fusion-bisect]
 # FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
 patches = ["1342_fusion_bisect"]
 
 [experiment.meta-memory-content]
-# MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
-patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
+# MSM03: 1329 / 1331 diagnostics are now in the production set; flags still control output.
+patches = []
 
 [experiment.mtp-prompt]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
