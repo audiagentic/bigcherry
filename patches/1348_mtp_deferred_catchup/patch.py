@@ -702,7 +702,7 @@ PATCHES = [
                 guard=r"BIGCHERRY_MTP_DEFERRED_CATCHUP",
                 rationale="MTP constructor after per-sequence storage is initialized.",
                 expect_matches=1,
-                max_span_lines=5,
+                max_span_lines=6,
             ),
             Edit(
                 id="mtp-deferred-process",
