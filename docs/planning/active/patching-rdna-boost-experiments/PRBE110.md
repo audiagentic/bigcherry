@@ -11,13 +11,46 @@ priority: P2
 work: M
 ---
 
-# Extract RD05 and RD07 from rejected 1203 as fresh untested packages
+# RD07 Q6_K MMQ scale-fold — gfx1201-only qualification; RD05 retired
 
 ## Description
 
-Split rejected `1203_rd050607_rdna4_wmma_fa_q6k_mmq` into two independently identifiable packages. `1266_rd05_wmma_fa_tileq_sync` contains only RD05's WMMA flash-attention `tile_Q` reuse synchronization. `1267_rd07_q6k_mmq_scale_fold` contains only RD07's Q6_K MMQ scale hoist/fold plus its bounded tuning/test support. RD06 configuration expansion remains excluded. Neither package inherits 1203's receipt; each has a fresh contract and must collect fresh hardware evidence.
+Fresh package evidence resolves the two extracted slices differently.
 
-Source prior art is fork commit `1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff`. The extraction uses current b11126-compatible anchors, including the corrected Q6_K dispatch call with no `forced_J` argument.
+- **1266 / RD05 WMMA tile_Q synchronization: reject/retire.** Four gfx1201 sessions prove activation and full-vocabulary correctness but do not establish a gain. The completed contract fails: aggregate target point estimate -0.0499%, CI95 low -0.1609%. No stock correctness failure was reproduced, so more performance sessions are not justified without new race evidence.
+- **1267 / RD07 Q6_K MMQ scale fold: continue only on gfx1201.** Four gfx1201 sessions pass with pp512 +2.4675%, CI95 [2.2776%, 2.6508%], while tg128 control is -0.0331%, CI95 [-0.0592%, -0.0071%]. Completed gfx1100 and gfx1030 evidence fails to establish a gain.
+
+This item now owns one bounded decision: prove that 1267 still applies and retains its gfx1201 benefit on b11474, then promote through existing architecture dispatch or retire it. It owns no new MMQ selector, tuning table, or generic Q6_K implementation.
+
+## Steps
+
+1. Run current-pin patch lint/rebase, 1267 mechanics tests, and standalone composition with 0300/1006.
+2. Compare materialized control/subject source. If upstream already performs equivalent scale folding, mark 1267 upstream-absorbed and stop.
+3. Otherwise run exactly one current-pin gfx1201 campaign with the existing 1267 producer. Do not rerun gfx1100/gfx1030.
+4. Require subject-only activation, full-vocabulary correctness, >=4 independent sessions and >=10 paired rounds/session.
+5. Promote only if pp512 CI95-low >=2.0% and tg128 regression <=1.0%; otherwise retire unchanged.
+
+## Repository / code path
+
+- `ggml/src/ggml-cuda/mmq-vec-dot.cuh`: Q6_K row-scale hoist/fold.
+- `ggml/src/ggml-cuda/mmq.cu`: existing Q6_K dispatch activation marker.
+- `ggml/src/ggml-cuda/mmq.cuh`: existing bounded forced-J support; not owned by this decision.
+- `patches/1267_rd07_q6k_mmq_scale_fold/validation/producer.py`: authoritative qualification producer.
+
+The b11474 bump does not list 1267 as broken. Do not reimplement it unless current rebase/apply evidence fails.
+
+## Ownership / consolidation
+
+1267 is the sole owner for this scale-fold mechanism. Existing MMQ architecture/geometry dispatch remains authoritative; any promotion gate must reuse it rather than create another table. 1006 retains Q6_K codegen/cast ownership and 0300 retains forced-J tuning. 1203 remains rejected. 1266 is terminal here unless a reproducible stock correctness race appears.
+
+## Current evidence
+
+First-party archived evidence is promotion-relevant but pin-bound:
+- 1266 gfx1201: four-session FAIL, target -0.0499% with CI95 low -0.1609%; correctness/activation pass.
+- 1267 gfx1201: four-session PASS, pp512 +2.4675%, CI95 [2.2776%, 2.6508%]; tg128 -0.0331%, CI95 [-0.0592%, -0.0071%].
+- 1267 gfx1100 and gfx1030: completed evidence fails the gain gate and converges near zero.
+
+Current upstream and the rdna-boosts fork both continue architecture-sensitive AMD kernel selection; the fork still carries Q6_K MMQ prefill tuning. This supports architecture-specific qualification, not cross-RDNA extrapolation.
 
 ## Steps
 
