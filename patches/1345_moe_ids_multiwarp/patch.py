@@ -13,7 +13,7 @@ rows of an expert stay in ascending token order, so ids_src1 (forward and invers
 byte-identical to the native helper's - everything downstream sees the same input.
 
 On by default for batches of at least 128 tokens (BIGCHERRY_MOE_IDS_MULTIWARP=0 restores the native helper); smaller
-batches, the generic top-k path and devices whose warp size is not the compiled one use the native helper.
+batches and the generic top-k path use the native helper.
 """
 
 from __future__ import annotations
@@ -141,15 +141,17 @@ template <int n_expert_used_template>
 static bool bc_launch_mm_ids_helper_mw(
         const int32_t * __restrict__ ids, int32_t * __restrict__ ids_src1, int32_t * __restrict__ ids_dst, int32_t * __restrict__ expert_bounds,
         const int n_experts, const int n_tokens, const int nchannels_y, const int si1, const int sis1, const bool write_inverse, cudaStream_t stream) {
-    constexpr int n_warps         = 8;
-    constexpr int warp_size       = ggml_cuda_get_physical_warp_size();
-    constexpr int tokens_per_iter = warp_size/mm_ids_pow2<n_expert_used_template>::value;
+    constexpr int n_warps    = 8;
+    constexpr int neu_padded = mm_ids_pow2<n_expert_used_template>::value;
 
+    // the device's warp size, as the native launcher uses it for its block (the kernel's own constant is device-only)
     const int id = ggml_cuda_get_device();
+    const int warp_size = ggml_cuda_info().devices[id].warp_size;
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
-    if (ggml_cuda_info().devices[id].warp_size != warp_size || n_tokens >= (1 << 22)) {
+    if (warp_size < neu_padded || warp_size % neu_padded != 0 || n_tokens >= (1 << 22)) {
         return false;
     }
+    const int tokens_per_iter = warp_size/neu_padded;
 
     int chunk = (n_tokens + n_warps - 1)/n_warps;
     chunk = (chunk + tokens_per_iter - 1)/tokens_per_iter*tokens_per_iter;
