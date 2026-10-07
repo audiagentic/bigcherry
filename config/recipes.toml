@@ -271,6 +271,11 @@ patches = [
     "1295_qsa_gather_decode",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
+    # PROMOTED 2026-10-08 (QFP18 lightweight tier): deploy-v4-diag compiled clean; activation counts
+    # 92 DRAFT_TRACE / 23 SPEC_TIMING / 23 DRAFT_TIMING, 0 error lines, greedy md5 a34a34c1f48d == production.
+    "1315_mtp_draft_trace",
+    "1317_spec_round_timing",
+    "1318_mtp_draft_timing",
 ]
 required-state = "validated"
 
@@ -503,7 +508,7 @@ patches = ["1314_ar_cpu_root_fused"]
 
 [experiment.deploy-v3-determinism]
 # QFP15: profile v3 + 1312 + 1313 + 1315 (BIGCHERRY_DRAFT_TRACE) + 1316 (BIGCHERRY_NODE_HASH) + 1317 (BIGCHERRY_SPEC_TIMING); all off unless set. Same-build repeat runs and FMTP01 Gate 0.
-patches = ["1315_mtp_draft_trace", "1316_node_hash_trace", "1317_spec_round_timing"]
+patches = ["1316_node_hash_trace"]
 
 [experiment.deploy-v4]
 # QFN01 candidate production profile v4: v3 (v2 + 1235, 1307-1311) + 1312 (gate-multiply Q8_1 incl. GDN flatten) + 1313 (fused SCALE->SILU/SIGMOID[->SCALE]; BIGCHERRY_SCALE_ACT_FUSE=1).
@@ -511,7 +516,7 @@ patches = []
 
 [experiment.deploy-v4-diag]
 # FMTP01/QFP15/QFP16 diagnostics on profile v4: + 1315 (DRAFT_TRACE), 1316 (NODE_HASH), 1317 + 1318 (SPEC_TIMING server rounds + MTP draft loop), 1319 + 1320 + 1325 (SUBMIT_TIMING incl. meta backend and scheduler splits); all off unless set.
-patches = ["1315_mtp_draft_trace", "1316_node_hash_trace", "1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
+patches = ["1316_node_hash_trace", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
 
 [experiment.stock-none]
 # QFP15 bisection: source base patch-sets only (serving-core, upstream-fixes, validated-enhancements) - no experiment patches.
@@ -519,7 +524,7 @@ patches = []
 
 [experiment.deploy-v4-plus-1326-diag]
 # QFP16: v4 + 1326 (BIGCHERRY_SCHED_ASYNC_INPUTS=1 async host->device split inputs) + timing diagnostics 1317/1318/1319/1320/1325 (env-gated).
-patches = ["1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
+patches = ["1319_process_ubatch_timing", "1320_meta_compute_timing", "1325_sched_split_timing"]
 
 [experiment.deploy-v5]
 # QFN01 candidate production profile v5: v4 + 1326 (async host->device scheduler split inputs; BIGCHERRY_SCHED_ASYNC_INPUTS=1).
@@ -527,7 +532,7 @@ patches = []
 
 [experiment.deploy-v5-diag]
 # v5 + env-gated timing diagnostics 1317/1318/1319/1325 (1320 is known_broken on 0504396); per-phase comparison across pins.
-patches = ["1317_spec_round_timing", "1318_mtp_draft_timing", "1319_process_ubatch_timing", "1325_sched_split_timing"]
+patches = ["1319_process_ubatch_timing", "1325_sched_split_timing"]
 
 [experiment.deploy-v5-plus-1327]
 # Post-bump: v5 + 1327 (host-computed QSA dead-slot remap terms; BIGCHERRY_QSA_HOST_REMAP=1).

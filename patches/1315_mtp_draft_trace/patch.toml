@@ -1,7 +1,7 @@
 schema = 1
 id = "1315_mtp_draft_trace"
 order = 1315
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
