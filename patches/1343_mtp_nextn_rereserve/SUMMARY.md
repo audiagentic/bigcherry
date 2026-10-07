@@ -1,6 +1,6 @@
 # 1343_mtp_nextn_rereserve
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP32
 
 ## What it does
