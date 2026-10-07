@@ -168,6 +168,7 @@ _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)
         std::vector<ggml_tensor *>           arena_nodes; // persistent: resized/reused for each transformed graph
         std::vector<ggml_tensor *>           arena_leafs;
+        uint64_t                             arena_replans = 0; // post-reserve invariant violations only
 """
 
 _A_DTOR = r"""        for (auto & bc : backend_configs) {
@@ -286,17 +287,18 @@ bool ggml_backend_meta_reserve_graph(ggml_backend_t meta_backend, struct ggml_cg
 
         if (mem_report) {
             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(bcj.backend);
-            GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s size_mib=%.2f plans=%zu phase=reserve\n",
+            GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s reserved_mib=%.2f plans=%zu replans=%llu\n",
                 j, ggml_backend_buft_name(buft),
                 ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0,
-                bcj.arena_plans.size());
+                bcj.arena_plans.size(), (unsigned long long) bcj.arena_replans);
         }
     }
     return true;
 }
 
 // Compute-time only: translate the current graph, validate the reserve-time shape plan, and bind it into the
-// already-reserved physical arena. There is no ordinary compute-time reserve/growth path.
+// already-reserved physical arena. A non-fit is an invariant violation: report it loudly, perform one fallback
+// re-plan/grow, count it, then continue. Normal runs must keep arena_replans at zero.
 bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph) {
     GGML_ASSERT(ggml_backend_is_meta(meta_backend));
     if (!ggml_backend_meta_per_device_arena_enabled()) {
@@ -305,6 +307,7 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
 
     ggml_backend_meta_arena_map_graph(meta_backend, cgraph);
     ggml_backend_meta_context * backend_ctx = (ggml_backend_meta_context *) meta_backend->context;
+    const bool mem_report = getenv("BIGCHERRY_META_MEM") != nullptr && atoi(getenv("BIGCHERRY_META_MEM")) != 0;
 
     for (size_t j = 0; j < backend_ctx->backend_configs.size(); j++) {
         auto & bcj = backend_ctx->backend_configs[j];
@@ -312,14 +315,56 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
         simple_graph.nodes = bcj.arena_nodes.data();
         simple_graph.leafs = bcj.arena_leafs.data();
 
-        const size_t i_plan = ggml_backend_meta_arena_find_plan(bcj, simple_graph);
-        if (i_plan == bcj.arena_plans.size() || !bcj.arena_galloc) {
-            return false;
+        size_t i_plan = ggml_backend_meta_arena_find_plan(bcj, simple_graph);
+        bool nonfit = i_plan == bcj.arena_plans.size() || !bcj.arena_galloc;
+        bc_gallocr_replan_last[0] = '\0';
+        if (i_plan == bcj.arena_plans.size()) {
+            snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last),
+                    "no reserve plan nodes=%d leafs=%d", simple_graph.n_nodes, simple_graph.n_leafs);
+        } else if (!bcj.arena_galloc) {
+            snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last), "physical arena missing");
+        } else if (ggml_gallocr_needs_realloc(bcj.arena_plans[i_plan].galloc.get(), &simple_graph)) {
+            nonfit = true;
         }
+
+        if (nonfit) {
+            const size_t before_bytes = bcj.arena_galloc ? ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) : 0;
+            bcj.arena_replans++;
+            GGML_LOG_ERROR(
+                "BIGCHERRY_META_MEM arena_nonfit dev=%zu nodes=%d leafs=%d reserved_mib=%.2f replans=%llu detail=[%s]; "
+                "falling back to one re-plan\n",
+                j, simple_graph.n_nodes, simple_graph.n_leafs, before_bytes / 1024.0 / 1024.0,
+                (unsigned long long) bcj.arena_replans, bc_gallocr_replan_last);
+
+            if (i_plan == bcj.arena_plans.size()) {
+                bcj.arena_plans.emplace_back();
+                i_plan = bcj.arena_plans.size() - 1;
+                bcj.arena_plans[i_plan].n_nodes = simple_graph.n_nodes;
+                bcj.arena_plans[i_plan].n_leafs = simple_graph.n_leafs;
+                bcj.arena_plans[i_plan].galloc.reset(
+                        ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
+            }
+
+            size_t planned_size = 0;
+            ggml_gallocr_reserve_n_size(
+                    bcj.arena_plans[i_plan].galloc.get(), &simple_graph, nullptr, nullptr, &planned_size);
+            if (!bcj.arena_galloc) {
+                bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
+            }
+            if (!ggml_gallocr_reserve_grow(bcj.arena_galloc.get(), &simple_graph)) {
+                return false;
+            }
+
+            if (mem_report) {
+                ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(bcj.backend);
+                GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s reserved_mib=%.2f plans=%zu replans=%llu\n",
+                    j, ggml_backend_buft_name(buft),
+                    ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0,
+                    bcj.arena_plans.size(), (unsigned long long) bcj.arena_replans);
+            }
+        }
+
         ggml_gallocr_t plan = bcj.arena_plans[i_plan].galloc.get();
-        if (ggml_gallocr_needs_realloc(plan, &simple_graph)) {
-            return false;
-        }
         if (!ggml_gallocr_alloc_graph_reuse_from(plan, bcj.arena_galloc.get(), &simple_graph)) {
             return false;
         }
@@ -471,13 +516,17 @@ _N_GALLOCR_NODE = r"""    if (!node->data && !node->view_src) {
         // If we previously had data but don't now then reallocate
         if (talloc->buffer_id < 0) {
             bc_gallocr_replan_reasons[2]++; // BigCherry 1340 (MSM02): planned as external, now needs memory
+            const size_t needed = galloc->n_buffers == 1 ? ggml_backend_buft_get_alloc_size(galloc->bufts[0], node) : 0;
+            snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last),
+                    "tensor=%s op=%s need=%zu planned=external", node->name, ggml_op_name(node->op), needed);
             return false;
         }
         node_size = ggml_backend_buft_get_alloc_size(galloc->bufts[talloc->buffer_id], node);
     }
     if (talloc->size_max < node_size) {
         bc_gallocr_replan_reasons[3]++; // BigCherry 1340 (MSM02): larger than planned
-        snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last), "%s %s %zu>%zu", ggml_op_name(node->op), node->name, node_size, talloc->size_max);
+        snprintf(bc_gallocr_replan_last, sizeof(bc_gallocr_replan_last),
+                "tensor=%s op=%s need=%zu planned=%zu", node->name, ggml_op_name(node->op), node_size, talloc->size_max);
     }
     return talloc->size_max >= node_size;
 }
