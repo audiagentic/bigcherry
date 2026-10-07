@@ -225,3 +225,105 @@ Execution order: fifth, after QFP32/QFP31/QFP33/QFP40. Final priority depends on
 
 - 2026-10-07T00:39:33.618549+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402; narrowed the RDNA gap to F32 widths 9-16, preserved shared MMVF/MMVQ limits, and added post-fusion/post-Meta census and qualification design.
+
+
+## Code-level review (2026-10-07)
+
+### 1. Verified facts and corrections
+
+Checked against llama.cpp `d89651a7b205` and the current validated-enhancements composition.
+
+- Native dispatch is `static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst)` in `ggml/src/ggml-cuda/ggml-cuda.cu`. The relevant sequence is exactly `if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) { ... ggml_cuda_mul_mat_vec_f(...); return; }`, then `ggml_cuda_should_use_mmf(..., /*mul_mat_id =*/ false)`, then MMVQ/MMQ, then `ggml_cuda_mul_mat_cublas(...)`.
+- `bool ggml_cuda_should_use_mmvf(enum ggml_type type, int cc, const int64_t * src0_ne, const size_t * src0_nb, int64_t ne11)` in `ggml/src/ggml-cuda/mmvf.cu` returns `ne11 <= 8` for AMD F32 when `fp32_mma_hardware_available(cc)` is false. It also requires even `src0_ne[0]`, `src0_nb[0] == ggml_type_size(type)`, and all higher strides divisible by `2*ts`.
+- `#define MMVF_MAX_BATCH_SIZE 8` is in `ggml/src/ggml-cuda/mmvf.cuh`. Do not widen it: `ggml_cuda_mul_mat_id` and ID-path assertions use the shared limit.
+- `static void mul_mat_vec_f_cuda_switch_ncols_dst(...)` in `mmvf.cu` has explicit non-ID cases 1 through 8 and `default: GGML_ABORT("fatal error")`. Therefore merely changing the predicate to 16 would crash; cases 9..16 must be added before broadening dispatch.
+- `void ggml_cuda_mul_mat_vec_f(...)` asserts `!ids || ne12 <= MMVF_MAX_BATCH_SIZE`; this is an ID-only cap. A non-ID 9..16 call is legal once the switch has matching specializations.
+- `bool ggml_cuda_should_use_mmf(...)` in `ggml/src/ggml-cuda/mmf.cu` returns F32 true only for `ampere_mma_available(cc) || amd_mfma_available(cc)`. `amd_mfma_available` is CDNA-only at this pin; `amd_wmma_available` is used for F16/BF16, not F32. The design's RDNA3/RDNA4 F32 gap is therefore correct.
+- `static bool fp32_mma_hardware_available(const int cc) { return GGML_CUDA_CC_IS_CDNA(cc); }` and `amd_wmma_available(...) { return GGML_CUDA_CC_IS_RDNA4(cc) || GGML_CUDA_CC_IS_RDNA3(cc); }` are in `ggml/src/ggml-cuda/common.cuh`.
+- `ggml_cuda_mul_mat_cublas_impl<GGML_TYPE_F32>` in `ggml-cuda.cu` uses `cublasSgemm(... ne01, ne11, ne10 ...)` for the ordinary 2-D F32 case `ne12 == 1 && ne13 == 1`.
+- Correction to the existing plan: the qualification must not say only "ordinary GGML_OP_MUL_MAT" at the CUDA entry point; `ggml_cuda_mul_mat` is already the ordinary-op handler, so the robust exclusion is simply to add the branch there and never touch `ggml_cuda_mul_mat_id`. No op-code re-test is needed inside the helper.
+- gfx1030 is not a production target for this target-model prefill because the 6900 XT is the drafter device. Keep gfx1030 inert in V1 rather than adding a speculative third architecture gate.
+
+### 2. Composition and anchors
+
+Validated production patches relevant to these files:
+
+- `1281_moe_mul_mat_id_range` edits `ggml/src/ggml-cuda/mmvf.cu` with edit ids `mmid-range-mmvf-kernel` and `mmid-range-mmvf-host`, and `ggml-cuda.cu` with `mmid-range-cuda-policy`, `mmid-range-cuda-fusion-rule`, and `mmid-range-cuda-fuse-plain`. These edits are for `MUL_MAT_ID` range translation/fusion, not the non-ID 1..8 switch.
+- `1307_q81_activation_cache_mmvq` edits `ggml-cuda.cu` for graph-generation/capture state (`q81-generation` and related cache plumbing) and MMVQ consumer code, not the ordinary MMVF dispatch.
+- `1313_scale_act_fuse` edits `ggml-cuda.cu::ggml_cuda_try_fuse` via `scale-act-match`; it does not edit `ggml_cuda_mul_mat`.
+- `1241_rd33_mmvq_q8_0_f32_decode`, `1274_mmvq_kquant_f32_decode`, `1237_rd30_moe_mmq_compact_grid`, and `1265_rd30b_moe_mmq_compact_grid_rdna4_rdna2` alter MMVQ/MMQ paths, not this F32 MMVF switch.
+- `1344_dsv4_hc_grid_index` edits only `dsv4-hc.cu`; use its packaging/marker/off-switch pattern, not its anchors.
+
+No validated enhancement checked above replaces the exact native ordinary-dispatch anchor
+`if (ggml_cuda_should_use_mmvf(src0->type, cc, src0->ne, src0->nb, ne11)) {`.
+The new dispatch edit should therefore anchor on that composed text and insert a preceding opt-in branch; do not replace the native branch.
+
+In `mmvf.cu`, anchor after the composed 1281 tree on the complete native `case 8: ... break;\n        default:\n            GGML_ABORT("fatal error");` block. 1281's MMVF edits are elsewhere in the same file, so there is no anchor collision if this narrow switch anchor is used.
+
+### 3. Gaps and risks
+
+- Dispatch breadth: `src0->type == src1->type == dst->type == F32`, AMD RDNA, and `9 <= ne11 <= 16` are still too broad without the native MMVF stride predicate. The new predicate must call/reuse the same even-K and stride/alignment checks; otherwise it can catch transposed/views that currently fall safely to rocBLAS.
+- Do not use `GGML_CUDA_CC_IS_RDNA3/4` alone if it admits unmeasured sub-architectures. V1 should gate exact production families/capabilities proved by Gate 0: gfx1100 and gfx1201, expressed by cc predicates, never device ordinals.
+- Meta split: eligibility sees physical per-rank tensors after Meta splitting. Census and marker must report `ne00/ne01/ne11/ne02/ne03` from those local descriptors. A logical graph node may qualify on one rank and not another; that is acceptable only if Meta semantics do not require identical kernel choice, but end-to-end gain is bounded by the slowest rank.
+- 1281/1283 expert-parallel range ops are `MUL_MAT_ID`; this item must never route them through the new branch. Do not change `MMVF_MAX_BATCH_SIZE`, `ggml_cuda_mul_mat_id_needs_sync`, or any range helper.
+- 1235/1307/1309-1312 Q8_1 activation-cache paths concern quantized MMVQ consumers. This F32/F32 branch must allocate no Q8_1 slab, publish no cache entry, and not change generation/capture state.
+- CUDA graph capture: reuse `ggml_cuda_mul_mat_vec_f` and the existing stream only. The flag should be read through a process-stable cached helper; the marker must be one-shot host logging and must not synchronize the stream. No pool allocation or host/device copy should be introduced.
+- FKE01 is mandatory: fused and unfused kernels are not numerically equivalent and fusion admission depends on allocation-address overlap. Even though V1 adds no allocation, identity claims must compare A/B with `GGML_CUDA_DISABLE_FUSION=1` on both arms. Fusion-on runs are probes, not the identity proof.
+- Template cases 9..16 increase per-thread accumulator/register use. Gate separately on gfx1100 and gfx1201; a win on one does not justify enabling the other.
+- No host thread is useful here; this is a synchronous dispatch/kernel specialization problem.
+
+### 4. Concrete implementation outline
+
+Package: `patches/1346_rdna_f32_thin_mmvf`.
+
+Flag: `BIGCHERRY_F32_THIN_MMVF=1` enables; default `0` during qualification. No compatibility shim.
+
+Add in `mmvf.cu`:
+
+`static bool bc_f32_thin_mmvf_enabled();`
+
+`bool bc_cuda_should_use_f32_thin_mmvf(int cc, const int64_t * src0_ne, const size_t * src0_nb, int64_t ne11);`
+
+The helper must return true only for exact qualified RDNA cc, `9 <= ne11 <= 16`, and the same F32 MMVF layout checks as `ggml_cuda_should_use_mmvf`. Prefer factoring a small internal layout predicate shared by native and BigCherry eligibility without changing native results; if that makes the anchor larger, duplicate the three checks locally rather than rewriting native dispatch.
+
+Extend `mul_mat_vec_f_cuda_switch_ncols_dst<T, type_acc>(...)` with cases 9..16, each calling
+`launch_mul_mat_vec_f_cuda<T, type_acc, N>(...)`. Do not alter the ID branches at the top of the switch.
+
+In `ggml_cuda_mul_mat`, immediately before the native MMVF `if`, add:
+`if (BIGCHERRY flag && src0->type == GGML_TYPE_F32 && bc_cuda_should_use_f32_thin_mmvf(cc, src0->ne, src0->nb, ne11)) { ggml_cuda_mul_mat_vec_f(ctx, src0, src1, nullptr, dst); return; }`.
+The enclosing native function has already rejected non-F32 `src1/dst` and `bad_padding_clear`.
+
+Activation marker, once per device/shape class when `BIGCHERRY_PATCH_TRACE` is set:
+`BIGCHERRY_PATCH_HIT patch=1346_rdna_f32_thin_mmvf path=f32_thin_mmvf cc=<cc> ne00=<...> ne01=<...> ne11=<...>`.
+
+Required patch edits:
+- `f32-thin-include-flag`: `mmvf.cu`, insert-after the local includes; add only `<cstdlib>` if not already available. Mode `insert_after`.
+- `f32-thin-eligibility`: `mmvf.cu`, insert-before exact signature `bool ggml_cuda_should_use_mmvf(...)`. Mode `insert_before`.
+- `f32-thin-switch-9-16`: `mmvf.cu`, replace the exact composed `case 8 ... default GGML_ABORT` tail with case 8 unchanged plus cases 9..16. Mode `replace`, `expect_matches=1`.
+- `f32-thin-dispatch`: `ggml-cuda.cu`, insert-before exact composed ordinary MMVF `if (ggml_cuda_should_use_mmvf(...))`. Mode `insert_before`, `expect_matches=1`.
+- Avoid `mmvf.cuh` entirely unless a declaration is genuinely needed across translation units; do not add a second maximum constant there.
+
+Offline test should follow 1344's mechanics: assert exact new kernel/template text, dispatch switch, flag/off path, marker text, and that native `MMVF_MAX_BATCH_SIZE 8` plus the native 1..8 route remain present.
+
+### 5. Gate 0 and lightweight validation
+
+Gate 0 before package coding:
+
+1. Run the production target model with the current validated composition and f16 KV using `tools/lab/flash-next/long-ctx-profile.sh ... prefillprof` at `DEPTH=8192` and `DEPTH=24576`, `UB=512 B=512 CTK=f16 CTV=f16 CTKD=f16 CTVD=f16`, current `BIGCHERRY_ATTN_TS=1,1,0`, and the normal three target GPUs.
+2. Pair the rocprof kernel trace with a host-side dispatch census at `ggml_cuda_mul_mat` (graph name if available, device cc, local `ne00/ne01/ne11/ne02/ne03`, src types, chosen path). Count only F32/F32/F32 ordinary matmuls with `9 <= ne11 <= 16` that choose rocBLAS.
+3. Gate is positive only if, on at least one of 8K or 24K, those calls consume **>=0.75% of prefill wall time on the critical participating rank** and at least **1.5 ms per 512-token ubatch** in aggregate, with the class present on gfx1100 or gfx1201. If the trace cannot attribute >=0.75%, close QFP34; do not code from the external report.
+
+After implementation:
+- patch mechanics/offline test + patch-lint;
+- marker must fire only on 9..16 F32 ordinary calls and never on `MUL_MAT_ID`;
+- per-shape backend-op sweep at widths 8,9,12,16,17 and observed physical dimensions on gfx1100/gfx1201;
+- ABBA through `tools/lab/flash-next/queue-env-ab.sh`, complete process separation, same production flags, first pp4096 then 24K;
+- identity ABBA with `GGML_CUDA_DISABLE_FUSION=1` on **both** A and B; compare greedy output and backend-op tolerances;
+- separate fusion-on probes to confirm no changed fusion selection/regression under FKE01;
+- require each enabled architecture's observed candidate shapes to beat rocBLAS and end-to-end B to be non-negative at both depths.
+
+### 6. Verdict
+
+**GO AFTER GATE 0.** The code gap is real and the implementation is contained, but the unmeasured 9..16 F32 class may be too small after 1311/1313/1344.
+
+Expected gain on the production three-card topology if Gate 0 passes: **+0.2% to +0.8% prefill**. If Gate 0 is below the threshold, expected gain is effectively zero and the item should close.
