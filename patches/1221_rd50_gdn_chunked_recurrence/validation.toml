@@ -1,0 +1,45 @@
+# Static producer plan for the existing RD contract. This file DOES NOT
+# constitute hardware evidence; positive-lane activation/performance must
+# be measured and registered before any new validation verdict can PASS.
+schema = 1
+
+[[check]]
+id = "apply"
+capability = "apply"
+validator = "apply"
+required = true
+
+[[check]]
+id = "build"
+capability = "build"
+validator = "build"
+required = true
+
+[[check]]
+id = "correctness"
+capability = "correctness"
+validator = "correctness-summary"
+required = true
+
+[[check]]
+id = "activation"
+capability = "activation"
+validator = "trace-marker"
+required = true
+# The current patch does not emit this marker. Qualification MUST stay
+# blocked until an on-path marker and a real subject-hit/control-miss
+# trace exist; do not infer activation from a compile or branch condition.
+marker-regex = "BIGCHERRY_PATCH_HIT patch=1221_rd50_gdn_chunked_recurrence"
+
+[[check]]
+id = "performance"
+capability = "performance"
+validator = "benchmark"
+required = true
+benchmark-executor = "paired-llama-bench-v1"
+
+[[check]]
+id = "controls"
+capability = "controls"
+validator = "benchmark"
+required = true
