@@ -31,7 +31,7 @@ class Patch1316StaticContracts(unittest.TestCase):
         src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
         self.assertIn('std::sscanf(env, "%ld:%ld"', src)
         self.assertIn("must be from:count with from >= 0 and count > 0", src)
-        self.assertEqual([doc.value for doc in _module.ENV_DOCS], ["<from>:<count>"])
+        self.assertEqual([doc.values for doc in _module.ENV_DOCS], ["<from>:<count>"])
 
 
 @unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
