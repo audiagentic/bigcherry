@@ -34,7 +34,7 @@ at the top level.
 | Document | What it is | When to read it |
 | --- | --- | --- |
 | [tooling/TOOLING.md](tooling/TOOLING.md) | Normative tooling ownership, boundaries, commands, evidence rules, and compatibility policy | Finding where a capability lives before adding, moving, or retiring one |
-| [tooling/TOOL_DISPOSITION.md](tooling/TOOL_DISPOSITION.md) | Current 397-row tooling disposition registry; frozen TR00 baseline is separate evidence | Checking an existing tool's recorded owner/disposition before changing it |
+| [tooling/TOOL_DISPOSITION.md](tooling/TOOL_DISPOSITION.md) | Current tooling disposition registry; frozen TR00 baseline is separate evidence | Checking an existing tool's recorded owner/disposition before changing it |
 | [tooling/TUNE_CAMPAIGN.md](tooling/TUNE_CAMPAIGN.md) | `bigcherry tune-campaign` — record→tune→correctness→tuning-promotion→replay orchestrator | Running the full tuning pipeline in one command |
 | [tooling/PROFILING.md](tooling/PROFILING.md) | `bigcherry profile-campaign` — real rocprofv3 kernel/timing/resource profiling | Deep-diving why a workload spends time where it does; not accepting a patch |
 

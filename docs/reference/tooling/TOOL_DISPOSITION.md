@@ -6,7 +6,7 @@
 
 ## Description
 
-This is the current 666-row control-plane registry for in-scope tooling. The
+This is the current control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now records maintained tooling,
 current transitional labs, and explicit ownership decisions for supported
 compatibility or machine-local paths. Retired lab implementations and moved

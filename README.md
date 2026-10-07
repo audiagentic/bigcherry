@@ -74,8 +74,10 @@ releases shows exactly which solutions came or went.
 | `sql/` | Current SQLite schema plus tested migration history for record/tune modes; runtime databases are not tracked |
 | `vendor/llama.cpp/` | The checkout we patch and build (not tracked) |
 | `artifacts/` | Audit JSON, manifests, exported caches (not tracked) |
+| `docs/reference/` | Maintained cross-cutting guidance and runbooks |
 | `docs/standards/` | Project standards — normative |
-| `docs/planning/` | Work-item plan (HI01–HI16) |
+| `docs/planning/` | Active/completed plan items, design decisions, and work history |
+| `docs/evidence/` | Compact tracked evidence retained for reproducible decisions |
 
 `vendor/llama.cpp` is a real working tree, not a scratch copy: builds run from
 it in place. See `sql/README.md` for dispatch-database schema ownership.
