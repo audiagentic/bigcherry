@@ -453,3 +453,8 @@ Validation:
 
 Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%**, not the external reported gain.
 - 2026-10-07T06:35:55.547181+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261007_073613_flash-next-prefill-is-about-2_3220
+- 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
