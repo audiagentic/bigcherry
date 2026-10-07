@@ -32,6 +32,7 @@ package-lock.json
 *.tlog/
 .tmp/
 tmp/
+/_scratch*/
 
 # -- ROCm / HIP compilation artifacts --
 hipBC/
