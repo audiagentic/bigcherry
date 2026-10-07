@@ -267,6 +267,7 @@ patches = [
     "1341_meta_subset_mirrored",
     "1339_meta_memory_report",
     "1340_meta_per_device_arena",
+    "1344_dsv4_hc_grid_index",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -567,14 +568,6 @@ patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 [experiment.mtp-rereserve]
 # QFP32: production set + 1343 (BIGCHERRY_MTP_RERESERVE=1: one scheduler reserve when the NextN outputs switch on).
 patches = ["1343_mtp_nextn_rereserve"]
-
-[experiment.hc-grid-index]
-# QFP35: production set + 1344 (hyper-connection PRE / POST kernels on 2-D / 3-D grids; BIGCHERRY_HC_GRID_INDEX=0 = flat).
-patches = ["1344_dsv4_hc_grid_index"]
-
-[experiment.prefill-next]
-# QFP32 + QFP35 together on one binary, each with its own switch: 1343 (BIGCHERRY_MTP_RERESERVE) and 1344.
-patches = ["1343_mtp_nextn_rereserve", "1344_dsv4_hc_grid_index"]
 
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches

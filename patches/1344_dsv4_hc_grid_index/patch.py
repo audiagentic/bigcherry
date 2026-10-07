@@ -20,7 +20,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_COMB_OP = "void ggml_cuda_op_dsv4_hc_comb(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {\n"
 _N_KERNELS = r"""// bigcherry 1344 (QFP35): the same PRE arithmetic per element as dsv4_hc_pre_f32, with the coordinates taken from a
