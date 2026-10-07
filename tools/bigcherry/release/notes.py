@@ -73,9 +73,8 @@ def previous_release_tag(repo_root: Path, config: ReleaseConfig, release_tag: st
     prefix if one exists, otherwise one from the fallback tag families."""
     for prefix in (config.tag_prefix, *config.fallback_prefixes):
         tags = _git(repo_root, "tag", "--list", f"{prefix}*", "--merged", ref, "--sort=-creatordate").split()
-        llama = release_tag[len(config.tag_prefix):]
         for tag in tags:
-            if tag != release_tag and tag[len(prefix):] != llama:
+            if tag != release_tag:
                 return tag
     return None
 
@@ -163,8 +162,22 @@ def _patch_title(repo_root: Path, ref: str, patch_id: str) -> str:
     return first
 
 
-def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD") -> str:
-    release_tag = config.tag_prefix + llama_tag
+def release_version(llama_tag: str, version: str | None = None) -> str:
+    """The release-please version of a release: <llama build>.<minor>.<patch>. The first release of a pin is
+    <build>.0.0; later releases on the same pin raise minor or patch."""
+    build = llama_tag[1:] if llama_tag[:1] == "b" and llama_tag[1:].isdigit() else None
+    if build is None:
+        raise ReleaseNotesError(f"{llama_tag!r} is not a llama.cpp release tag (b<number>)")
+    if version is None:
+        return f"{build}.0.0"
+    parts = version.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts) or parts[0] != build:
+        raise ReleaseNotesError(f"version {version!r} must be {build}.<minor>.<patch> for llama.cpp {llama_tag}")
+    return version
+
+
+def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> str:
+    release_tag = config.tag_prefix + release_version(llama_tag, version)
     record_text = _show(repo_root, ref, f"{config.release_records}/{llama_tag}.json")
     if record_text is None:
         raise ReleaseNotesError(f"no release record {config.release_records}/{llama_tag}.json at {ref}")
@@ -216,9 +229,9 @@ def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "H
     return "\n".join(lines).rstrip() + "\n"
 
 
-def write_notes(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD") -> Path:
-    out = repo_root / config.notes_dir / f"{config.tag_prefix}{llama_tag}.md"
+def write_notes(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> Path:
+    out = repo_root / config.notes_dir / f"{config.tag_prefix}{release_version(llama_tag, version)}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(repo_root, config, llama_tag, ref), encoding="utf-8", newline="\n")
+    out.write_text(render(repo_root, config, llama_tag, ref, version), encoding="utf-8", newline="\n")
     return out
 

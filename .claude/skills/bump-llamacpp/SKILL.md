@@ -295,10 +295,32 @@ python -m bigcherry pin-status --complete --all-remotes
 ```
 
 Must report PASS: every required tree reachable, converged, consistent, and
-(for campaign-role trees) at the expected tooling revision. Append the
-verbatim output to the release record's notes -- the evidence of completion
-is itself evidence. Clear the transition marker in the same commit that
-records completion. Only then tag `supports/<release>`.
+(for campaign-role trees) at the expected tooling revision.
+
+Do not do the rest by hand. Once step 4b's hardware evidence is in, write it
+to a file (build id, smoke result, the A/B numbers, identity) and run:
+
+```
+python -m bigcherry pin-release <tag> --evidence @<file>
+```
+
+It runs the gate above, appends the gate output and the evidence to the
+release record, removes the transition marker, generates and commits the
+release notes with the `Release-As: <build>.0.0` footer, takes `origin/main`
+into the work branch if main moved, fast-forwards main, merges the
+release-please PR, waits for the tag `bc-<build>.0.0` (the workflow also adds
+`bc-b<build>`) and brings the release commit back to the work branch. Every
+phase is skipped when already done: after any stop, fix the cause and run the
+same command again. `--through <phase>` stops early; `--dry-run` lists the
+phases.
+
+Merging to main publishes a GitHub release: the owner's go-ahead is needed
+once per bump. A further release on the same pin (features or fixes landed
+since) is `pin-release <tag> --bump minor|patch --evidence @<file>`.
+
+If the gate fails with a tooling-revision mismatch, the other trees are behind
+the commits made since their bump: pull them (no work may be running there),
+then run the command again.
 
 ## 6. Ledger + housekeeping
 
