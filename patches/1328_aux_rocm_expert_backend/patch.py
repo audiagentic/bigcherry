@@ -24,6 +24,7 @@ _H_DECL_NEW = _H_DECL + """
     GGML_API enum ggml_backend_meta_split_axis ggml_backend_meta_tensor_split_axis(const struct ggml_tensor * tensor);
     GGML_API void ggml_backend_meta_mark_mirrored_partial_add(struct ggml_tensor * tensor);
     GGML_API bool ggml_backend_meta_is_mirrored_partial_add(const struct ggml_tensor * tensor);
+    GGML_API void ggml_backend_sched_set_aux_expert_backend(ggml_backend_sched_t sched, ggml_backend_t backend);
 """
 
 _META_DEVICE_ANCHOR = """ggml_backend_dev_t ggml_backend_meta_device(
@@ -34,6 +35,8 @@ bool ggml_backend_meta_device_contains(ggml_backend_dev_t meta_dev, ggml_backend
     if (!ggml_backend_dev_is_meta(meta_dev) || simple_dev == nullptr) {
         return false;
     }
+    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_device_contains meta=%s simple=%s\n",
+        ggml_backend_dev_name(meta_dev), ggml_backend_dev_name(simple_dev));
     const ggml_backend_meta_device_context * meta_dev_ctx =
         (const ggml_backend_meta_device_context *) meta_dev->context;
     return std::find(meta_dev_ctx->simple_devs.begin(), meta_dev_ctx->simple_devs.end(), simple_dev)
@@ -51,6 +54,8 @@ _META_BIN_NEW = """    auto handle_bin_bcast = [&](const std::vector<ggml_backen
         // If it is already MIRRORED, both inputs are complete replicas and this is a plain per-device add: no
         // AllReduce is required or correct.
         if (ggml_backend_meta_is_mirrored_partial_add(tensor)) {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_merge_state src0=%s src1=%s\n",
+                ggml_backend_meta_split_axis_name(src_ss[0].axis), ggml_backend_meta_split_axis_name(src_ss[1].axis));
             const bool mirrored_partial =
                 (src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) ||
                 (src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL);
@@ -78,12 +83,15 @@ enum ggml_backend_meta_split_axis ggml_backend_meta_tensor_split_axis(const ggml
     if (tensor == nullptr || tensor->buffer == nullptr || !ggml_backend_buffer_is_meta(tensor->buffer)) {
         GGML_ABORT("BigCherry 1328: split-axis query requires a Meta-buffer tensor");
     }
+    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_split_axis tensor=%s\n", tensor->name);
     return ggml_backend_meta_get_split_state(tensor, /*assume_sync =*/ false).axis;
 }
 
 static constexpr int32_t BIGCHERRY_AUX_EXPERT_MERGE_MAGIC = 0x42434158; // "BCAX"
 
 void ggml_backend_meta_mark_mirrored_partial_add(ggml_tensor * tensor) {
+    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_mark_merge tensor=%s\n",
+        tensor != nullptr ? tensor->name : "(null)");
     if (tensor == nullptr || tensor->op != GGML_OP_ADD) {
         GGML_ABORT("BigCherry 1328: auxiliary expert merge marker requires GGML_OP_ADD");
     }
@@ -102,7 +110,9 @@ _SCHED_STRUCT = """    bool op_offload;
 """
 _SCHED_STRUCT_NEW = """    bool op_offload;
 
-    // BigCherry 1328: scheduler-owned pinned host bounce buffer for Meta <-> aux GPU transfers.
+    // BigCherry 1328: scheduler-owned aux identity and pinned host bounce buffer.
+    // The pointer is set only by the target DEFAULT context; device-name matching is intentionally insufficient.
+    ggml_backend_t             bc_aux_backend;
     ggml_backend_buffer_t      bc_aux_stage;
     ggml_backend_buffer_type_t bc_aux_stage_buft;
     size_t                     bc_aux_stage_size;
@@ -127,6 +137,12 @@ _SCHED_PREALLOC_NEW = """    if (tensor->buffer || (tensor->view_src && tensor->
     // BigCherry 1328: keep the exact routed+shared merge on Meta. The PARTIAL shared branch is
     // reduced there; the scheduler-copied auxiliary branch is MIRRORED and must not be reduced.
     if (ggml_backend_meta_is_mirrored_partial_add(tensor)) {
+        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_assign_merge tensor=%s scoped_aux=%s\n",
+            tensor->name,
+            sched->bc_aux_backend != nullptr ? ggml_backend_dev_name(ggml_backend_get_device(sched->bc_aux_backend)) : "(none)");
+        if (sched->bc_aux_backend == nullptr) {
+            GGML_ABORT("BigCherry 1328: marked auxiliary expert merge reached an unscoped scheduler");
+        }
         int meta_backend_id = -1;
         for (int b = 0; b < sched->n_backends; ++b) {
             if (ggml_backend_dev_type(ggml_backend_get_device(sched->backends[b])) == GGML_BACKEND_DEVICE_TYPE_META) {
@@ -158,20 +174,25 @@ _COPY_FALLBACK = r'''    // try async copy, but if not possible, we can still us
         ggml_backend_tensor_copy(input, input_cpy);
     }
 '''
-_COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert device. Cross only Meta <-> the
-    // named ordinary GPU through its pinned host buffer, and only for MIRRORED Meta data.
-    const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
+_COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the scoped auxiliary expert backend. Cross only Meta <-> the
+    // exact backend registered by the target DEFAULT context; a same-named GPU in another scheduler (notably
+    // an MTP draft scheduler) is not an aux-expert endpoint.
     auto bc_backend_is_meta = [](ggml_backend_t b) {
         return ggml_backend_dev_type(ggml_backend_get_device(b)) == GGML_BACKEND_DEVICE_TYPE_META;
     };
     auto bc_backend_is_aux = [&](ggml_backend_t b) {
-        return bc_aux_name != nullptr && bc_aux_name[0] != '\0' &&
-            !bc_backend_is_meta(b) &&
-            strcmp(ggml_backend_dev_name(ggml_backend_get_device(b)), bc_aux_name) == 0;
+        return sched->bc_aux_backend != nullptr && b == sched->bc_aux_backend;
     };
     const bool bc_meta_to_aux = bc_backend_is_meta(input_backend) && bc_backend_is_aux(split_backend);
     const bool bc_aux_to_meta = bc_backend_is_aux(input_backend) && bc_backend_is_meta(split_backend);
     if (bc_meta_to_aux || bc_aux_to_meta) {
+        const char * bc_aux_name = ggml_backend_dev_name(ggml_backend_get_device(sched->bc_aux_backend));
+        const size_t nbytes = ggml_nbytes(input);
+        GGML_LOG_WARN(
+            "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_copy direction=%s tensor=%s bytes=%zu src=%s dst=%s\n",
+            bc_meta_to_aux ? "meta_to_aux" : "aux_to_meta", input->name, nbytes,
+            ggml_backend_dev_name(ggml_backend_get_device(input_backend)),
+            ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
         ggml_tensor * meta_tensor = bc_meta_to_aux ? input : input_cpy;
         const ggml_backend_meta_split_axis axis = ggml_backend_meta_tensor_split_axis(meta_tensor);
         if (axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
@@ -186,7 +207,6 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert 
             GGML_ABORT("BigCherry 1328: auxiliary device %s has no pinned host buffer type", bc_aux_name);
         }
 
-        const size_t nbytes = ggml_nbytes(input);
         if (ggml_nbytes(input_cpy) != nbytes) {
             GGML_ABORT("BigCherry 1328: staging layout mismatch for tensor %s", input->name);
         }
@@ -210,12 +230,6 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert 
         ggml_backend_tensor_set(input_cpy, stage, 0, nbytes);
         ggml_backend_synchronize(split_backend);
 
-        static bool bc_traced = false;
-        if (!bc_traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend aux=%s bytes=%zu\n",
-                bc_aux_name, nbytes);
-            bc_traced = true;
-        }
     } else {
         // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
         // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
@@ -234,12 +248,13 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert 
 _SCHED_COMPUTE = """        if (!sched->callback_eval) {
             enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
 """
-_SCHED_COMPUTE_NEW = """        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-            for (int j = 0; j < split->graph.n_nodes; ++j) {
-                if (ggml_backend_meta_is_mirrored_partial_add(split->graph.nodes[j])) {
-                    GGML_LOG_WARN(
-                        "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge_execute split=%d node=%d backend=%s\\n",
-                        split_id, j, ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+_SCHED_COMPUTE_NEW = """        for (int j = 0; j < split->graph.n_nodes; ++j) {
+            if (ggml_backend_meta_is_mirrored_partial_add(split->graph.nodes[j])) {
+                GGML_LOG_WARN(
+                    "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_execute_merge split=%d node=%d backend=%s\\n",
+                    split_id, j, ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+                if (sched->bc_aux_backend == nullptr) {
+                    GGML_ABORT("BigCherry 1328: marked auxiliary expert merge executed by an unscoped scheduler");
                 }
             }
         }
@@ -256,6 +271,33 @@ _SCHED_FREE_NEW = """    ggml_backend_buffer_free(sched->bc_aux_stage); // BigCh
     ggml_free(sched->ctx);
 """
 
+_SCHED_COPY_CALLBACK = """void ggml_backend_sched_set_copy_callback(ggml_backend_sched_t sched, ggml_backend_sched_copy_callback callback, void * user_data) {
+    GGML_ASSERT(sched);
+    sched->callback_copy = callback;
+    sched->callback_copy_user_data = user_data;
+}
+"""
+_SCHED_COPY_CALLBACK_NEW = _SCHED_COPY_CALLBACK + r'''
+// BigCherry 1328: identify the exact auxiliary expert backend for this scheduler.
+// Never infer this from BIGCHERRY_EXPERT_AUX_DEVICE inside the generic scheduler: the same GPU may
+// independently be a draft backend in another context.
+void ggml_backend_sched_set_aux_expert_backend(ggml_backend_sched_t sched, ggml_backend_t backend) {
+    GGML_ASSERT(sched != nullptr);
+    GGML_ASSERT(backend != nullptr);
+    const int backend_id = ggml_backend_sched_backend_id(sched, backend);
+    if (backend_id < 0 || backend_id >= sched->n_backends) {
+        GGML_ABORT("BigCherry 1328: auxiliary expert backend is not registered in this scheduler");
+    }
+    if (ggml_backend_dev_type(ggml_backend_get_device(backend)) == GGML_BACKEND_DEVICE_TYPE_META) {
+        GGML_ABORT("BigCherry 1328: auxiliary expert backend cannot be Meta");
+    }
+    sched->bc_aux_backend = backend;
+    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_scope aux=%s backend_id=%d\n",
+        ggml_backend_dev_name(ggml_backend_get_device(backend)), backend_id);
+}
+'''
+
+
 _CTX_GPU_LOOP = """        // GPU backends
         for (const auto & dev : model.devices) {
             ggml_backend_t backend = ggml_backend_dev_init(dev.dev, nullptr);
@@ -267,6 +309,37 @@ _CTX_GPU_LOOP = """        // GPU backends
 
         // add ACCEL backends (such as BLAS)
 """
+_CTX_SCHED = """    sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
+    ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);
+"""
+_CTX_SCHED_NEW = r'''    sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
+
+    // BigCherry 1328: scope the generic scheduler hook to the exact auxiliary backend of the target context.
+    // sched_reserve() can rebuild the scheduler, so this binding must be re-applied on every reserve.
+    if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
+        const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
+        if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
+            ggml_backend_t bc_aux_backend = nullptr;
+            for (auto & backend : backends) {
+                ggml_backend_dev_t dev = ggml_backend_get_device(backend.get());
+                if (ggml_backend_dev_type(dev) != GGML_BACKEND_DEVICE_TYPE_META &&
+                        strcmp(ggml_backend_dev_name(dev), bc_aux_name) == 0) {
+                    if (bc_aux_backend != nullptr) {
+                        throw std::runtime_error(format("BIGCHERRY_EXPERT_AUX_DEVICE=%s appears multiple times in target scheduler", bc_aux_name));
+                    }
+                    bc_aux_backend = backend.get();
+                }
+            }
+            if (bc_aux_backend == nullptr) {
+                throw std::runtime_error(format("BIGCHERRY_EXPERT_AUX_DEVICE=%s was not registered in target scheduler", bc_aux_name));
+            }
+            ggml_backend_sched_set_aux_expert_backend(sched.get(), bc_aux_backend);
+        }
+    }
+
+    ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);
+'''
+
 _CTX_GPU_LOOP_NEW = r'''        // GPU backends
         for (const auto & dev : model.devices) {
             ggml_backend_t backend = ggml_backend_dev_init(dev.dev, nullptr);
@@ -281,6 +354,8 @@ _CTX_GPU_LOOP_NEW = r'''        // GPU backends
         if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
             const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
             if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
+                LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=ctx_register ctx_type=%d aux=%s\n",
+                    (int) cparams.ctx_type, bc_aux_name);
                 if (model.arch != LLM_ARCH_QWEN4EXP) {
                     throw std::runtime_error("BIGCHERRY_EXPERT_AUX_DEVICE is only supported for Qwen4Exp tensor-split target models");
                 }
@@ -342,6 +417,8 @@ _QWEN_HEAD_NEW = r'''ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(
     if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
         const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
         if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
+            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=qwen_ffn_entry layer=%d tokens=%lld ctx_type=%d\n",
+                il, (long long) n_tokens, (int) cparams.ctx_type);
             auto bc_on_aux = [&](const ggml_tensor * t) {
                 if (t == nullptr) {
                     return false;
@@ -407,11 +484,9 @@ _QWEN_MERGE = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
 """
 _QWEN_MERGE_NEW = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
         if (bc_aux_layer) {
-            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-                LLAMA_LOG_WARN(
-                    "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge_build layer=%d tokens=%lld ctx_type=%d\\n",
-                    il, (long long) n_tokens, (int) cparams.ctx_type);
-            }
+            LLAMA_LOG_WARN(
+                "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=aux_merge_build layer=%d tokens=%lld ctx_type=%d\\n",
+                il, (long long) n_tokens, (int) cparams.ctx_type);
             ggml_backend_meta_mark_mirrored_partial_add(cur); // BigCherry 1328: reduce shared branch only
         }
         cb(cur, "ffn_out", il);
@@ -454,9 +529,13 @@ PATCHES = [
         language="none",
         edits=(
             Edit(id="sched-aux-stage-state", anchor=re.escape(_SCHED_STRUCT), mode="replace", text=_SCHED_STRUCT_NEW,
-                 guard=r"BigCherry 1328: scheduler-owned pinned host bounce buffer",
-                 rationale="Scheduler lifetime owns cross-split copies and therefore the reusable staging allocation.",
+                 guard=r"BigCherry 1328: scheduler-owned aux identity and pinned host bounce buffer",
+                 rationale="Scheduler lifetime owns the exact aux identity and reusable cross-split staging allocation.",
                  expect_matches=1, max_span_lines=4),
+            Edit(id="sched-aux-scope-api", anchor=re.escape(_SCHED_COPY_CALLBACK), mode="replace", text=_SCHED_COPY_CALLBACK_NEW,
+                 guard=r"BigCherry 1328: identify the exact auxiliary expert backend for this scheduler",
+                 rationale="The generic scheduler must use context-scoped backend identity, never process-global device-name matching.",
+                 expect_matches=1, max_span_lines=6),
             Edit(id="sched-meta-merge-backend", anchor=re.escape(_SCHED_PREALLOC), mode="replace", text=_SCHED_PREALLOC_NEW,
                  guard=r"BigCherry 1328: keep the exact routed\+shared merge on Meta",
                  rationale="Pass-1 backend assignment must pin the marked merge before adjacency expansion can select aux.",
@@ -484,6 +563,10 @@ PATCHES = [
                  guard=r"BigCherry 1328: target-only plain auxiliary expert backend",
                  rationale="Backends are initialized here before the scheduler list is frozen; model.devices remains the Meta-only communicator membership.",
                  expect_matches=1, max_span_lines=11),
+            Edit(id="target-aux-scheduler-scope", anchor=re.escape(_CTX_SCHED), mode="replace", text=_CTX_SCHED_NEW,
+                 guard=r"BigCherry 1328: scope the generic scheduler hook to the exact auxiliary backend",
+                 rationale="Every scheduler re-reserve rebinds the aux identity only for the target DEFAULT context, preventing draft-context collisions.",
+                 expect_matches=1, max_span_lines=3),
         ),
     ),
     FilePatch(
