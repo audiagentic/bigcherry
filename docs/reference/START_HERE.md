@@ -101,7 +101,7 @@ The complete maintained-reference index is
 | `src/` | New files overlaid into llama.cpp at matching paths |
 | `patches/` | Packaged anchored edits to upstream-owned files |
 | `config/recipes.toml` | Source, build, platform, and campaign recipes |
-| `sql/dispatch-db.sql` | Record/tune persistence schema |
+| `sql/` | Record/tune persistence schema plus tested migration history; runtime DB files are untracked |
 | `vendor/llama.cpp/` | Mutable upstream working checkout; not a scratch directory |
 | `docs/planning/` | Current and completed plan items, decisions, and reviews |
 | `docs/reference/` | Maintained cross-cutting guidance |
@@ -116,6 +116,7 @@ The complete maintained-reference index is
   changes may share this checkout.
 - Inspect the exact files you intend to change and preserve unrelated work.
 - Do not casually clean or replace `vendor/llama.cpp/`; builds use it in place.
+- Do not commit scratch directories, generated corpora, raw traces, or runtime databases; use ignored `artifacts/`, `work/`, or host-local storage.
 - Use the planning MCP tools for multi-step work and state transitions. Close
   incorporated reviews, but complete a plan item only after implementation and
   validation are genuinely done.
