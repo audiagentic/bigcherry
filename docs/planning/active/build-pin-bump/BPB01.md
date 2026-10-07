@@ -51,6 +51,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1322_mtp_ahead_overlap — applies at b11474 in experiment.deploy-v6-plus-ahead once required 1321 is present; no 1322 anchor changes needed.
+
 - 1321_mtp_ahead_primitives — re-based for b11474: forced-front/live-tail logic is unchanged; only the MTP n_min post-pass anchor moved with upstream nextn restructuring.
 
 - 1338_moe_cache_profile — applies after rebased 1337 at b11474; no cache-source anchors changed. Test now builds from the current pin and no longer carries retired 1336.
