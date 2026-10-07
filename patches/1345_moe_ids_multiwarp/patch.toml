@@ -1,7 +1,7 @@
 schema = 1
 id = "1345_moe_ids_multiwarp"
 order = 1345
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "hip"
