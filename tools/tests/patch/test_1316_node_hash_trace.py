@@ -13,7 +13,8 @@ from bigcherry.patcher import apply_all  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
-_VENDOR = _REPO / "vendor/llama.cpp/src/llama-context.cpp"
+_VENDOR_CTX = _REPO / "vendor/llama.cpp/src/llama-context.cpp"
+_VENDOR_BACKEND = _REPO / "vendor/llama.cpp/ggml/src/ggml-backend.cpp"
 _spec = importlib.util.spec_from_file_location("patch_1316", _REPO / "patches/1316_node_hash_trace/patch.py")
 assert _spec is not None and _spec.loader is not None
 _module = importlib.util.module_from_spec(_spec)
@@ -26,6 +27,13 @@ class Patch1316StaticContracts(unittest.TestCase):
         self.assertIn("ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_META", src)
         self.assertIn("skip=meta", src)
         self.assertLess(src.index("if (bc_node_hash_is_meta_tensor(t))"), src.index("ggml_backend_tensor_get(t, buf.data(), 0, n);"))
+        self.assertIn("t->view_src != nullptr ? t->view_src->buffer : t->buffer", src)
+
+    def test_meta_scheduler_split_is_atomic(self):
+        src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
+        self.assertIn("GGML_BACKEND_DEVICE_TYPE_META", src)
+        self.assertIn("ggml_backend_graph_compute_async(split_backend, &split->graph)", src)
+        self.assertIn("Meta owns its own subgraph partition/reduction walk", src)
 
     def test_value_format_is_from_count(self):
         src = (_REPO / "patches/1316_node_hash_trace/patch.py").read_text(encoding="utf-8")
@@ -34,14 +42,17 @@ class Patch1316StaticContracts(unittest.TestCase):
         self.assertEqual([doc.values for doc in _module.ENV_DOCS], ["<from>:<count>"])
 
 
-@unittest.skipUnless(_VENDOR.exists(), "pinned vendor checkout not present")
+@unittest.skipUnless(_VENDOR_CTX.exists() and _VENDOR_BACKEND.exists(), "pinned vendor checkout not present")
 class Patch1316Mechanics(unittest.TestCase):
     def test_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "src/llama-context.cpp"
+            backend_path = root / "ggml/src/ggml-backend.cpp"
             path.parent.mkdir(parents=True)
-            copy_pinned(_VENDOR, path)
+            backend_path.parent.mkdir(parents=True)
+            copy_pinned(_VENDOR_CTX, path)
+            copy_pinned(_VENDOR_BACKEND, backend_path)
             results = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in results), [e.detail for r in results for e in r.failed])
             out = path.read_text(encoding="utf-8")
@@ -54,9 +65,16 @@ class Patch1316Mechanics(unittest.TestCase):
             self.assertLess(out.index("ggml_status llama_context::graph_compute("), adv)
             self.assertIn("skip=meta", out)
             self.assertLess(out.index("if (bc_node_hash_is_meta_tensor(t))"), out.index("ggml_backend_tensor_get(t, buf.data(), 0, n);"))
+            backend = backend_path.read_text(encoding="utf-8")
+            self.assertIn("Meta owns its own subgraph partition/reduction walk", backend)
+            self.assertIn("GGML_BACKEND_DEVICE_TYPE_META", backend)
+            meta_compute = backend.index("ggml_backend_graph_compute_async(split_backend, &split->graph)")
+            generic_view = backend.index("struct ggml_cgraph gv = ggml_graph_view(&split->graph, j0, j1 + 1);")
+            self.assertLess(meta_compute, generic_view)
             second = apply_all(_module.PATCHES, root)
             self.assertTrue(all(r.ok for r in second), [e.detail for r in second for e in r.failed])
             self.assertEqual(out, path.read_text(encoding="utf-8"))
+            self.assertEqual(backend, backend_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
