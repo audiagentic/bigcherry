@@ -199,6 +199,8 @@ Ordering: second, after QFP32. It has higher potential gain than most kernel ite
 
 2026-10-07 chunk 1 (patches/1346_mtp_prompt_overlap, BIGCHERRY_MTP_PROMPT_TIMING=1, build b-metamem-mp24, runs metamem-mp24 / metamem-mp98). 38,673-token prompt at 1169.5 t/s (33.07 s, 77 chunks): target_nextn_ms=25134.9 draft_process_ms=27328.9 draft_decode_ms=2193.2. 123,782-token prompt at 1071.1 t/s (115.56 s, 243 chunks): target_nextn_ms=83321.1 draft_process_ms=94757.4 draft_decode_ms=11433.8. Reading: target_nextn is 72-76% of the whole prompt wall, i.e. it is where the host first blocks on the target GPUs (llama_process returns with the compute still running; the first NextN getter synchronises) - mostly the target's own compute, not a cost. The draft context's catch-up decode is the directly attributable draft cost: 6.6% of the wall at 38K, 9.9% at 124K (28 -> 47 ms per chunk). The rest of the 17-20% MTP prompt cost (about 10 points) is in none of the counters; hypothesis: the forced synchronise per chunk removes the overlap of host preparation for chunk k+1 with GPU compute of chunk k, plus the NextN extraction. So the overlap worker as first designed recovers at most 6.6-9.9%; the window (no getter, no catch-up, no per-chunk synchronise outside the last N tokens) is the mechanism that can recover the rest. Sent to GPT as chunk 2a (split sync from fetch, host gap counter) and 2b (window first, then overlap inside the window).
 
+2026-10-08 ROOT CAUSE measured (experiment prefill-diag, BIGCHERRY_SUBMIT_TIMING=1, 38,673-token prompt, 76 chunks, runs metamem-pd-mtp / metamem-pd-plain, table by tools/lab/flash-next/submit-timing-table.py). Without a draft context: 1444.6 t/s, 354 ms per chunk; target host time per chunk graph build 16.8 ms, set_inputs 4.6 ms, CPU split 4.5 ms, Meta split input stage 285.5 ms (the wait for the previous chunk's device work) and submit 31.2 ms (subgraph rebuild 9.2, launch 20.2 for 96 subgraphs, AllReduce enqueue 1.8): the host prepares chunk k+1 while the GPUs compute chunk k. With the MTP draft: 1170.8 t/s, 437 ms per chunk (+83 ms); the wait moves into the NextN getter (target_sync 328 ms per chunk), and after it the target GPUs are idle while the host runs in series the fetch (1.8 ms), the draft catch-up (28.9 ms) and the next chunk's graph build (17.4), set_inputs (4.4), CPU split (4.4), subgraph rebuild (9.8) and launches. So the whole MTP prompt cost is target-GPU idle time caused by common_speculative_process() synchronising the target right after every chunk. The window as pushed (1346 chunks 2b-4) never armed in production (needs an empty prompt cache and disabled checkpoints): inert, not measured. New mechanism handed to GPT: deferred catch-up - process(tgt,k+1) first, then the catch-up of chunk k from a NextN buffer that survives the next submit, while the target computes k+1; same data and order for the draft, no thread, no window; expected up to +19% prefill with identical text and acceptance.
+
 ## What we already have
 
 ### b11402
@@ -479,7 +481,6 @@ Chunk-1 diagnostic (`patches/1346_mtp_prompt_overlap`, `BIGCHERRY_MTP_PROMPT_TIM
 Definitions: `draft_process_ms` is inclusive wall time in MTP `process()`; `draft_decode_ms` is wall time inside its existing prompt catch-up `llama_process(ctx_dft, ...)` calls; `target_nextn_ms` is host-visible wall in target NextN buffer acquisition plus per-row NextN getters/copies, including any synchronization those getters force. The residual `draft_process_ms - target_nextn_ms - draft_decode_ms` is other synchronous MTP host work. This does **not** measure the target graph's internal NextN compute separately; compare with the existing no-MTP Gate 0 for that ceiling. Mixed-sequence batches are intentionally not attributed by this diagnostic.
 - 2026-10-07T09:29:23.211096+00:00 (updated-by): Updated: section:notes
 
-
 ## Chunk 2b implementation decision (2026-10-07)
 
 Chunk-1 hardware changes the mechanism order: **WINDOW first; OVERLAP deferred.** The measured
@@ -516,7 +517,6 @@ At generation start after a qualified replay:
 This version intentionally does not add the worker overlap. Re-measure after WINDOW; overlap is
 worth adding only if the remaining in-window draft catch-up is still material.
 
-
 ## Chunk 3 lifecycle invariants (2026-10-07)
 
 WINDOW v1 is deliberately conservative outside the fresh-prompt path:
@@ -542,3 +542,9 @@ WINDOW v1 is deliberately conservative outside the fresh-prompt path:
 - **Marker:** each successful replay emits one
   `BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window window=... replay=... skipped=... end_pos=... host_mib=...`
   line after draft replay synchronization and before collector storage is freed.
+
+## Ledger-events
+
+- chg_20261007_133409_the-low-vram-tensor-split-layo_8043
+- 2026-10-07T13:34:19.875157+00:00 (updated-by): Updated: section:ledger-events
+- 2026-10-07T13:34:30.973714+00:00 (updated-by): Updated: section:notes

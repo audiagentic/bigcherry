@@ -71,6 +71,7 @@ Base framework change (memory layout), not an RD enhancement: the gate is 'no re
 ## Ledger-events
 
 
+
 - chg_20261006_144832_diagnostics-and-experimental-p_1077
 - 2026-10-06T14:48:39.466747+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T14:48:49.761024+00:00 (updated-by): Updated: section:notes
@@ -89,3 +90,5 @@ Base framework change (memory layout), not an RD enhancement: the gate is 'no re
 Implementation invariant: after load, normal `ggml_backend_sched_alloc_splits()` may only select a retained shape plan and bind it to the already-reserved per-device arena. A later non-fitting graph is an invariant violation handled by the explicit loud fallback/counter path, not by ordinary growth.
 - chg_20261007_041129_opt-in-the-tensor-split-can-s_3694
 - 2026-10-07T04:11:41.935051+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261007_133409_the-low-vram-tensor-split-layo_8043
+- 2026-10-07T13:34:12.948484+00:00 (updated-by): Updated: section:ledger-events
