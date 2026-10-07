@@ -18,8 +18,7 @@ GROUP = "rdna-boosts"
 STATE = "untested"
 
 _API_ANCHOR = "common_speculative_draft_params & common_speculative_get_draft_params(common_speculative * spec, llama_seq_id seq_id);\n"
-_API_TEXT = """\
-
+_API_TEXT = r"""
 // bigcherry 1346 (QFP31): called after prompt cache/checkpoint resolution and before the first prompt batch.
 void common_speculative_prefill_begin(
         common_speculative * spec, llama_seq_id seq_id,
@@ -34,15 +33,13 @@ void common_speculative_target_process_end(common_speculative * spec, const comm
 """
 
 _INCLUDE_ANCHOR = "#include <cinttypes>\n"
-_INCLUDE_TEXT = """\
-#include <cstdio>   // bigcherry 1346: stderr prompt timing
+_INCLUDE_TEXT = r"""#include <cstdio>   // bigcherry 1346: stderr prompt timing
 #include <cstdlib>  // bigcherry 1346: std::getenv / std::strtol
 #include <limits>   // bigcherry 1346: bounded prompt-window allocation
 """
 
 _VIRTUAL_ANCHOR = "    virtual ~common_speculative_impl() = default;\n"
-_VIRTUAL_TEXT = """\
-
+_VIRTUAL_TEXT = r"""
     // bigcherry 1346 (QFP31): optional prompt lifecycle boundaries; no-op unless an implementation uses them.
     virtual void prefill_begin(
             llama_seq_id /*seq_id*/, int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*window_safe*/) {}
@@ -52,8 +49,7 @@ _VIRTUAL_TEXT = """\
 """
 
 _STATE_ANCHOR = "    std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]\n"
-_STATE_TEXT = """\
-
+_STATE_TEXT = r"""
     // bigcherry 1346 (QFP31): diagnostic state.
     struct bc_mtp_prompt_timing_state {
         bool collecting = false;
@@ -90,8 +86,7 @@ _STATE_TEXT = """\
 """
 
 _CTOR_ANCHOR = "        pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));\n"
-_CTOR_TEXT = """\
-        if (const char * value = std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")) {
+_CTOR_TEXT = r"""        if (const char * value = std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")) {
             bc_mtp_prompt_timing_on = std::atoi(value) != 0;
         }
         bc_mtp_prompt_timing.resize(n_seq);
@@ -106,13 +101,11 @@ _CTOR_TEXT = """\
         bc_mtp_prompt_windows.resize(n_seq);
 """
 
-_MTP_BEGIN_ANCHOR = """\
-    void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+_MTP_BEGIN_ANCHOR = r"""    void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
 """
-_MTP_PREFILL_TEXT = """\
-    bc_mtp_prompt_timing_state * bc_prompt_timing_for_batch(const common_batch & batch_in) {
+_MTP_PREFILL_TEXT = r"""    bc_mtp_prompt_timing_state * bc_prompt_timing_for_batch(const common_batch & batch_in) {
         if (!bc_mtp_prompt_timing_on || batch_in.size() <= 0) {
             return nullptr;
         }
@@ -230,13 +223,12 @@ _MTP_PREFILL_TEXT = """\
     }
 
 """
-_MTP_BEGIN_TIMING_TEXT = """\
-
+_MTP_BEGIN_TIMING_TEXT = r"""
         if (bc_mtp_prompt_timing_on && seq_id >= 0 && seq_id < (llama_seq_id) bc_mtp_prompt_timing.size()) {
             auto & timing = bc_mtp_prompt_timing[seq_id];
             if (timing.collecting) {
                 std::fprintf(stderr,
-                        "BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f target_sync_ms=%.3f target_fetch_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f host_gap_ms=%.3f chunks=%llu tokens=%llu\\n",
+                        "BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=%.3f target_sync_ms=%.3f target_fetch_ms=%.3f draft_process_ms=%.3f draft_decode_ms=%.3f host_gap_ms=%.3f chunks=%llu tokens=%llu\n",
                         timing.target_nextn_us / 1000.0, timing.target_sync_us / 1000.0, timing.target_fetch_us / 1000.0,
                         timing.process_us / 1000.0, timing.draft_decode_us / 1000.0, timing.host_gap_us / 1000.0,
                         (unsigned long long) timing.chunks, (unsigned long long) timing.tokens);
@@ -310,13 +302,11 @@ _MTP_BEGIN_TIMING_TEXT = """\
         }
 """
 
-_PROCESS_START_OLD = """\
-        const int32_t n_tokens = batch_in.size();
+_PROCESS_START_OLD = r"""        const int32_t n_tokens = batch_in.size();
 
         // remember the first and last batch index for each sequence
 """
-_PROCESS_START_NEW = """\
-        const int32_t n_tokens = batch_in.size();
+_PROCESS_START_NEW = r"""        const int32_t n_tokens = batch_in.size();
 
         // bigcherry 1346: attribute the diagnostic only when this process() call belongs to one sequence.
         bc_mtp_prompt_timing_state * bc_pt_state = bc_prompt_timing_for_batch(batch_in);
@@ -328,8 +318,7 @@ _PROCESS_START_NEW = """\
         // remember the first and last batch index for each sequence
 """
 
-_PROCESS_NATIVE_OLD = """\
-        const size_t row_bytes = (size_t) n_embd * sizeof(float);
+_PROCESS_NATIVE_OLD = r"""        const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
         if (!is_mem_shared) {
@@ -407,8 +396,7 @@ _PROCESS_NATIVE_OLD = """\
 
         return true;
 """
-_PROCESS_NATIVE_NEW = """\
-        const size_t row_bytes = (size_t) n_embd * sizeof(float);
+_PROCESS_NATIVE_NEW = r"""        const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
         std::vector<uint8_t> bc_window_fetch(n_seq, 0);
         bool bc_need_target_nextn = false;
@@ -589,12 +577,10 @@ _PROCESS_NATIVE_NEW = """\
         return true;
 """
 
-_DRAFT_SEED_ANCHOR = """\
-            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
+_DRAFT_SEED_ANCHOR = r"""            const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
             batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
 """
-_DRAFT_SUPPRESS_TEXT = """\
-            if (bc_mtp_prompt_windows[seq_id].suppress) {
+_DRAFT_SUPPRESS_TEXT = r"""            if (bc_mtp_prompt_windows[seq_id].suppress) {
                 // Invariant WINDOW-SUPPRESS: no draft context is trusted for this request.
                 dp.drafting = false;
                 if (dp.result) {
@@ -611,8 +597,7 @@ _DRAFT_SUPPRESS_TEXT = """\
 """
 
 _WRAPPER_ANCHOR = "void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt) {\n"
-_WRAPPER_TEXT = """\
-void common_speculative_prefill_begin(
+_WRAPPER_TEXT = r"""void common_speculative_prefill_begin(
         common_speculative * spec, llama_seq_id seq_id,
         int32_t n_prompt, int32_t n_cached, bool window_safe) {
     if (spec == nullptr) {
@@ -656,8 +641,7 @@ void common_speculative_target_process_end(common_speculative * spec, const comm
 
 """
 
-_PROMPT_LOAD_OLD = """\
-    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
+_PROMPT_LOAD_OLD = r"""    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
         bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
@@ -666,8 +650,7 @@ _PROMPT_LOAD_OLD = """\
         return res;
     }
 """
-_PROMPT_LOAD_NEW = """\
-    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
+_PROMPT_LOAD_NEW = r"""    bool prompt_load(server_prompt_cache & prompt_cache, const server_tokens & tokens) {
         bool res = prompt_cache.load(prompt, tokens, ctx_tgt, ctx_dft, id);
         if (!res) {
             SLT_WRN(*this, "%s", "failed to load prompt from cache\n");
@@ -679,8 +662,7 @@ _PROMPT_LOAD_NEW = """\
         return res;
     }
 """
-_PROMPT_CLEAR_OLD = """\
-    void prompt_clear() {
+_PROMPT_CLEAR_OLD = r"""    void prompt_clear() {
         SLT_TRC(*this, "clearing prompt with %zu tokens\n", prompt.tokens.size());
 
         mem.seq_rm(id, -1, -1);
@@ -688,8 +670,7 @@ _PROMPT_CLEAR_OLD = """\
         prompt.clear();
     }
 """
-_PROMPT_CLEAR_NEW = """\
-    void prompt_clear() {
+_PROMPT_CLEAR_NEW = r"""    void prompt_clear() {
         SLT_TRC(*this, "clearing prompt with %zu tokens\n", prompt.tokens.size());
 
         mem.seq_rm(id, -1, -1);
@@ -701,13 +682,11 @@ _PROMPT_CLEAR_NEW = """\
         prompt.clear();
     }
 """
-_RELEASE_OLD = """\
-            t_last_used = ggml_time_us();
+_RELEASE_OLD = r"""            t_last_used = ggml_time_us();
 
             state = SLOT_STATE_IDLE;
 """
-_RELEASE_NEW = """\
-            t_last_used = ggml_time_us();
+_RELEASE_NEW = r"""            t_last_used = ggml_time_us();
 
             if (spec && (state == SLOT_STATE_STARTED ||
                          state == SLOT_STATE_PROCESSING_PROMPT ||
@@ -719,30 +698,25 @@ _RELEASE_NEW = """\
             state = SLOT_STATE_IDLE;
 """
 _SLOT_RESTORE_ANCHOR = "                        slot->prompt.tokens = std::move(restored);\n"
-_SLOT_RESTORE_TEXT = """\
-
+_SLOT_RESTORE_TEXT = r"""
                         if (slot->spec) {
                             // Invariant WINDOW-SLOT-RESTORE: /slots state restores target only, never the MTP host carry.
                             common_speculative_prompt_reset(slot->spec, slot->id, false);
                         }
 """
-_CTX_SHIFT_ANCHOR = """\
-                slot.mem.seq_rm (slot.id, n_keep            , n_keep + n_discard);
+_CTX_SHIFT_ANCHOR = r"""                slot.mem.seq_rm (slot.id, n_keep            , n_keep + n_discard);
                 slot.mem.seq_add(slot.id, n_keep + n_discard, slot.prompt.tokens.pos_next(), -n_discard);
 """
-_CTX_SHIFT_TEXT = """\
-
+_CTX_SHIFT_TEXT = r"""
                 // Invariant WINDOW-SHIFT: common_memory applies the identical rm/add to target and draft;
                 // the truncated draft tail therefore stays position-aligned with the target after a shift.
 """
 _SERVER_ANCHOR = "                        slot.prompt.tokens.keep_first(n_past);\n"
-_TARGET_PROCESS_OLD = """\
-        queue_tasks.yield_to_queue([&]() {
+_TARGET_PROCESS_OLD = r"""        queue_tasks.yield_to_queue([&]() {
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             if (ret == 0 && has_output) {
 """
-_TARGET_PROCESS_NEW = """\
-        queue_tasks.yield_to_queue([&]() {
+_TARGET_PROCESS_NEW = r"""        queue_tasks.yield_to_queue([&]() {
             if (spec) {
                 common_speculative_target_process_begin(spec.get(), batch.view);
             }
@@ -752,8 +726,7 @@ _TARGET_PROCESS_NEW = """\
             }
             if (ret == 0 && has_output) {
 """
-_SERVER_TEXT = """\
-
+_SERVER_TEXT = r"""
                         // bigcherry 1346 (QFP31): resolved prompt-start contract. WINDOW only arms for a
                         // fresh text prompt: no cached prefix, no MTMD/shared-prefix child, and no
                         // prompt checkpoint restore that would require serializing the hidden collector.
