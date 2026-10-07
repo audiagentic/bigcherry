@@ -8,7 +8,7 @@ differing line is the earliest node whose output is not bit-reproducible. Graph 
 first divergence (same prompt chunks, same decode steps). Installed only when the caller set no cb_eval of its own.
 The eval callback forces per-node synchronization and disables CUDA/HIP graph replay, so a race that needs overlap may
 not reproduce under it; then narrow the window with from:count and compare against 1315's unperturbed trace.
-Diagnostic only; never in a production recipe.
+Diagnostic only; never in a production recipe. Meta-owned split/partial tensors are reported as `skip=meta` and are not read.
 """
 
 from __future__ import annotations
@@ -51,6 +51,18 @@ static bc_node_hash_state & bc_node_hash() {
     return s;
 }
 
+static bool bc_node_hash_is_meta_tensor(const struct ggml_tensor * t) {
+    if (t == nullptr || t->buffer == nullptr) {
+        return false;
+    }
+    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(t->buffer);
+    if (buft == nullptr) {
+        return false;
+    }
+    ggml_backend_dev_t device = ggml_backend_buft_get_device(buft);
+    return device != nullptr && ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_META;
+}
+
 static bool bc_node_hash_cb(struct ggml_tensor * t, bool ask, void * user_data) {
     bc_node_hash_state & s = bc_node_hash();
     bool on = false;
@@ -63,6 +75,21 @@ static bool bc_node_hash_cb(struct ggml_tensor * t, bool ask, void * user_data) 
     if (ask || !on) {
         return on;  // only request node data inside the window
     }
+    // A Meta buffer may represent a split/partial logical tensor. Its generic get path can abort for
+    // shapes/offsets that are not representable as one flat host read. This diagnostic must never
+    // turn observation into a process abort, so skip Meta-owned nodes and keep hashing simple buffers.
+    if (bc_node_hash_is_meta_tensor(t)) {
+        long seq = 0;
+        {
+            std::lock_guard<std::mutex> lock(s.mu);
+            seq = s.node_seq++;
+        }
+        LLAMA_LOG_WARN("BIGCHERRY_NODE_HASH ctx=%p g=%ld i=%ld name=%s op=%s ne=%lld,%lld,%lld,%lld skip=meta\n",
+            user_data, g, seq, t->name, ggml_op_desc(t), (long long) t->ne[0], (long long) t->ne[1],
+            (long long) t->ne[2], (long long) t->ne[3]);
+        return true;
+    }
+
     const size_t n = ggml_nbytes(t);
     std::vector<unsigned char> buf(n);
     ggml_backend_tensor_get(t, buf.data(), 0, n);
