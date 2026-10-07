@@ -181,12 +181,12 @@ ownership.
 | `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
-| `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **ARCHIVE** | PA36 RD04/1202 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **ARCHIVE** | PA36 RD13/1206 hardware-acceptance receipt script (gfx1030); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **ARCHIVE** | PA36 RD26/1210 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_launch.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/analyze_decode_trace.py` | **TRANSITIONAL** | GP10 plan-owned analysis helper for P2P diagnostics; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/asyncprobe.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/dispatch_overhead.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
