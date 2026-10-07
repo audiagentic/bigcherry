@@ -140,93 +140,89 @@ _SCHED_PREALLOC_NEW = """    if (tensor->buffer || (tensor->view_src && tensor->
     // graph input
 """
 
-_COPY_FALLBACK = """                } else {
-                    // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
-                    // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
-                    if (!split_backend->iface.cpy_tensor_async || !split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy)) {
-                        ggml_backend_synchronize(input_backend);
-                        if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
-                            ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
-                        } else {
-                            ggml_backend_synchronize(split_backend);
-                        }
-                        ggml_backend_tensor_copy(input, input_cpy);
-                    }
-                }
-"""
-_COPY_FALLBACK_NEW = r'''                } else {
-                    // BigCherry 1328: no P2P for the auxiliary expert device. Cross only Meta <-> the
-                    // named ordinary GPU through its pinned host buffer, and only for MIRRORED Meta data.
-                    const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
-                    auto bc_backend_is_meta = [](ggml_backend_t b) {
-                        return ggml_backend_dev_type(ggml_backend_get_device(b)) == GGML_BACKEND_DEVICE_TYPE_META;
-                    };
-                    auto bc_backend_is_aux = [&](ggml_backend_t b) {
-                        return bc_aux_name != nullptr && bc_aux_name[0] != '\0' &&
-                            !bc_backend_is_meta(b) &&
-                            strcmp(ggml_backend_dev_name(ggml_backend_get_device(b)), bc_aux_name) == 0;
-                    };
-                    const bool bc_meta_to_aux = bc_backend_is_meta(input_backend) && bc_backend_is_aux(split_backend);
-                    const bool bc_aux_to_meta = bc_backend_is_aux(input_backend) && bc_backend_is_meta(split_backend);
-                    if (bc_meta_to_aux || bc_aux_to_meta) {
-                        ggml_tensor * meta_tensor = bc_meta_to_aux ? input : input_cpy;
-                        const ggml_backend_meta_split_axis axis = ggml_backend_meta_tensor_split_axis(meta_tensor);
-                        if (axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
-                            GGML_ABORT("BigCherry 1328: Meta <-> %s staging requires MIRRORED tensor %s, got split axis %s",
-                                bc_aux_name, input->name, ggml_backend_meta_split_axis_name(axis));
-                        }
+_COPY_FALLBACK = r'''    // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
+    // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
+    if (!split_backend->iface.cpy_tensor_async || !split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy)) {
+        ggml_backend_synchronize(input_backend);
+        if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+            ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+        } else {
+            ggml_backend_synchronize(split_backend);
+        }
+        ggml_backend_tensor_copy(input, input_cpy);
+    }
+'''
+_COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert device. Cross only Meta <-> the
+    // named ordinary GPU through its pinned host buffer, and only for MIRRORED Meta data.
+    const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
+    auto bc_backend_is_meta = [](ggml_backend_t b) {
+        return ggml_backend_dev_type(ggml_backend_get_device(b)) == GGML_BACKEND_DEVICE_TYPE_META;
+    };
+    auto bc_backend_is_aux = [&](ggml_backend_t b) {
+        return bc_aux_name != nullptr && bc_aux_name[0] != '\0' &&
+            !bc_backend_is_meta(b) &&
+            strcmp(ggml_backend_dev_name(ggml_backend_get_device(b)), bc_aux_name) == 0;
+    };
+    const bool bc_meta_to_aux = bc_backend_is_meta(input_backend) && bc_backend_is_aux(split_backend);
+    const bool bc_aux_to_meta = bc_backend_is_aux(input_backend) && bc_backend_is_meta(split_backend);
+    if (bc_meta_to_aux || bc_aux_to_meta) {
+        ggml_tensor * meta_tensor = bc_meta_to_aux ? input : input_cpy;
+        const ggml_backend_meta_split_axis axis = ggml_backend_meta_tensor_split_axis(meta_tensor);
+        if (axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+            GGML_ABORT("BigCherry 1328: Meta <-> %s staging requires MIRRORED tensor %s, got split axis %s",
+                bc_aux_name, input->name, ggml_backend_meta_split_axis_name(axis));
+        }
 
-                        ggml_backend_t aux_backend = bc_meta_to_aux ? split_backend : input_backend;
-                        ggml_backend_dev_t aux_dev = ggml_backend_get_device(aux_backend);
-                        ggml_backend_buffer_type_t host_buft = ggml_backend_dev_host_buffer_type(aux_dev);
-                        if (host_buft == nullptr || !ggml_backend_buft_is_host(host_buft)) {
-                            GGML_ABORT("BigCherry 1328: auxiliary device %s has no pinned host buffer type", bc_aux_name);
-                        }
+        ggml_backend_t aux_backend = bc_meta_to_aux ? split_backend : input_backend;
+        ggml_backend_dev_t aux_dev = ggml_backend_get_device(aux_backend);
+        ggml_backend_buffer_type_t host_buft = ggml_backend_dev_host_buffer_type(aux_dev);
+        if (host_buft == nullptr || !ggml_backend_buft_is_host(host_buft)) {
+            GGML_ABORT("BigCherry 1328: auxiliary device %s has no pinned host buffer type", bc_aux_name);
+        }
 
-                        const size_t nbytes = ggml_nbytes(input);
-                        if (ggml_nbytes(input_cpy) != nbytes) {
-                            GGML_ABORT("BigCherry 1328: staging layout mismatch for tensor %s", input->name);
-                        }
-                        if (sched->bc_aux_stage == nullptr || sched->bc_aux_stage_buft != host_buft ||
-                                sched->bc_aux_stage_size < nbytes) {
-                            ggml_backend_synchronize(input_backend);
-                            ggml_backend_synchronize(split_backend);
-                            ggml_backend_buffer_free(sched->bc_aux_stage);
-                            sched->bc_aux_stage = ggml_backend_buft_alloc_buffer(host_buft, nbytes);
-                            if (sched->bc_aux_stage == nullptr) {
-                                GGML_ABORT("BigCherry 1328: failed to allocate %zu-byte pinned staging buffer for %s",
-                                    nbytes, bc_aux_name);
-                            }
-                            sched->bc_aux_stage_buft = host_buft;
-                            sched->bc_aux_stage_size = ggml_backend_buffer_get_size(sched->bc_aux_stage);
-                        }
+        const size_t nbytes = ggml_nbytes(input);
+        if (ggml_nbytes(input_cpy) != nbytes) {
+            GGML_ABORT("BigCherry 1328: staging layout mismatch for tensor %s", input->name);
+        }
+        if (sched->bc_aux_stage == nullptr || sched->bc_aux_stage_buft != host_buft ||
+                sched->bc_aux_stage_size < nbytes) {
+            ggml_backend_synchronize(input_backend);
+            ggml_backend_synchronize(split_backend);
+            ggml_backend_buffer_free(sched->bc_aux_stage);
+            sched->bc_aux_stage = ggml_backend_buft_alloc_buffer(host_buft, nbytes);
+            if (sched->bc_aux_stage == nullptr) {
+                GGML_ABORT("BigCherry 1328: failed to allocate %zu-byte pinned staging buffer for %s",
+                    nbytes, bc_aux_name);
+            }
+            sched->bc_aux_stage_buft = host_buft;
+            sched->bc_aux_stage_size = ggml_backend_buffer_get_size(sched->bc_aux_stage);
+        }
 
-                        void * stage = ggml_backend_buffer_get_base(sched->bc_aux_stage);
-                        ggml_backend_synchronize(input_backend);
-                        ggml_backend_tensor_get(input, stage, 0, nbytes);
-                        ggml_backend_tensor_set(input_cpy, stage, 0, nbytes);
-                        ggml_backend_synchronize(split_backend);
+        void * stage = ggml_backend_buffer_get_base(sched->bc_aux_stage);
+        ggml_backend_synchronize(input_backend);
+        ggml_backend_tensor_get(input, stage, 0, nbytes);
+        ggml_backend_tensor_set(input_cpy, stage, 0, nbytes);
+        ggml_backend_synchronize(split_backend);
 
-                        static bool bc_traced = false;
-                        if (!bc_traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
-                            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend aux=%s bytes=%zu\n",
-                                bc_aux_name, nbytes);
-                            bc_traced = true;
-                        }
-                    } else {
-                        // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
-                        // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
-                        if (!split_backend->iface.cpy_tensor_async || !split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy)) {
-                            ggml_backend_synchronize(input_backend);
-                            if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
-                                ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
-                            } else {
-                                ggml_backend_synchronize(split_backend);
-                            }
-                            ggml_backend_tensor_copy(input, input_cpy);
-                        }
-                    }
-                }
+        static bool bc_traced = false;
+        if (!bc_traced && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend aux=%s bytes=%zu\n",
+                bc_aux_name, nbytes);
+            bc_traced = true;
+        }
+    } else {
+        // try async copy, but if not possible, we can still use a sync copy without synchronizing the dst backend, since we handle the synchronization here with multiple copies and events
+        // TODO: add public function to facilitate this, since applications do not have direct access to the backend interface
+        if (!split_backend->iface.cpy_tensor_async || !split_backend->iface.cpy_tensor_async(input_backend, split_backend, input, input_cpy)) {
+            ggml_backend_synchronize(input_backend);
+            if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+            } else {
+                ggml_backend_synchronize(split_backend);
+            }
+            ggml_backend_tensor_copy(input, input_cpy);
+        }
+    }
 '''
 
 _SCHED_FREE = """    ggml_gallocr_free(sched->galloc);
