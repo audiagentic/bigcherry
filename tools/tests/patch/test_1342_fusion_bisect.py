@@ -14,7 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
-_PIN = "d89651a7b205"
+_PIN = "HEAD"
 _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 
 
@@ -40,7 +40,6 @@ _SRC = _pinned(_CUDA)
 
 
 @unittest.skipUnless(_SRC is not None, "pinned vendor repository not present")
-@unittest.skip("known_broken at pin b11474: the patch does not apply (dispositions/, BPB01); re-enable when it is reconciled")
 class Patch1342Mechanics(unittest.TestCase):
     def _root(self, td, text):
         root = Path(td)
