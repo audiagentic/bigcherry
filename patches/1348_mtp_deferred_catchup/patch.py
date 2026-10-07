@@ -24,7 +24,7 @@ STATE = "untested"
 _A_SPEC_H = """\
 bool common_speculative_process(common_speculative * spec, const common_batch & batch);
 
-// generate drafts for the sequences specified with common_speculative_get_draft_params
+// generate drafts for the sequences specified with `common_speculative_get_draft_params`
 """
 _N_SPEC_H = r"""bool common_speculative_process(common_speculative * spec, const common_batch & batch);
 
@@ -325,6 +325,13 @@ _N_MTP_PROCESS = r"""        if (pos_max < N - 1 && !is_mem_shared) {
 """
 
 _A_MTP_DRAFT_PREFIX = """\
+            std::memcpy(pending_h[seq_id].data(),
+                    verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
+        }
+
+        return true;
+    }
+
     void draft(common_speculative_draft_params_vec & dparams) override {
         auto & ctx_dft = params.ctx_dft;
 
@@ -339,7 +346,14 @@ _A_MTP_DRAFT_PREFIX = """\
 
             if (!dp.drafting) {
 """
-_N_MTP_DRAFT_PREFIX = r"""    void draft(common_speculative_draft_params_vec & dparams) override {
+_N_MTP_DRAFT_PREFIX = r"""            std::memcpy(pending_h[seq_id].data(),
+                    verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
+        }
+
+        return true;
+    }
+
+    void draft(common_speculative_draft_params_vec & dparams) override {
         auto & ctx_dft = params.ctx_dft;
 
         batch.clear();
@@ -706,9 +720,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_MTP_DRAFT_PREFIX,
                 guard=r"after a dropped deferred catch-up, never generate from stale draft state",
-                rationale="MTP draft() prefix, before it admits a sequence into drafting.",
+                rationale="Tail of native MTP process() through the draft() admission point.",
                 expect_matches=1,
-                max_span_lines=14,
+                max_span_lines=23,
             ),
             Edit(
                 id="mtp-deferred-public-api",
