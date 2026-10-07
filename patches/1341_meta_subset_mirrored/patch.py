@@ -38,12 +38,15 @@ static bool ggml_backend_meta_split_device_active(const ggml_backend_meta_split_
 """
 
 # ---- MSM03 step 2: attention-side graph INPUTS (compute tensors) only on the attention devices ---------------------
-_A_INPUT_RULE = r"""            case GGML_OP_NONE: {
-                split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+_A_INPUT_RULE = r"""                } else {
+                    split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+                }
             } break;
+            case GGML_OP_DUP: {
 """
-_N_INPUT_RULE = r"""            case GGML_OP_NONE: {
-                split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+_N_INPUT_RULE = r"""                } else {
+                    split_state = {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+                }
                 // BigCherry 1341 (MSM03 step 2): the attention mask input is context-sized and only read by attention;
                 // every KQ mask input is covered (attn_inp_kq_mask, qwen4exp's dsv4_<part>_kq_mask, self_kq_mask);
                 // with a mask set it exists on the attention devices only, and so does everything MIRRORED that is
@@ -53,6 +56,7 @@ _N_INPUT_RULE = r"""            case GGML_OP_NONE: {
                     split_state.active_mask = bc_meta_attn_input_mask;
                 }
             } break;
+            case GGML_OP_DUP: {
 """
 
 _A_MERGE_SITE = r"""    auto handle_generic = [&](const std::vector<ggml_backend_meta_split_state> & src_ss, bool scalar_only) -> ggml_backend_meta_split_state {
@@ -315,8 +319,9 @@ PATCHES = [
                  expect_matches=1, max_span_lines=2),
             Edit(id="subset-mirror-input-rule", anchor=_re.escape(_A_INPUT_RULE), mode="replace", text=_N_INPUT_RULE,
                  guard=r"BigCherry 1341 \(MSM03 step 2\): the attention mask input is context-sized",
-                 rationale="The split-state rule for graph inputs (GGML_OP_NONE compute tensors).",
-                 expect_matches=1, max_span_lines=4),
+                 rationale="The end of the split-state rule for graph inputs (GGML_OP_NONE: a full-tensor view follows its "
+                           "source, anything else is mirrored), up to the next case.",
+                 expect_matches=1, max_span_lines=6),
             Edit(id="subset-mirror-merge-helper", anchor=_re.escape(_A_MERGE_SITE), mode="replace", text=_N_MERGE_SITE,
                  guard=r"auto merge_active_masks =",
                  rationale="Shared propagation rule before generic split-state handling.", expect_matches=1, max_span_lines=2),

@@ -21,7 +21,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "validated"
+STATE = "superseded"
 
 _OLD = """\
 void llama_context::set_embeddings_nextn(bool value, bool masked) {
