@@ -70,3 +70,8 @@ The evidence above was taken with the flag as an opt-in. `BIGCHERRY_META_PER_DEV
 common-size arena; on Flash-Next the default changes the generated text at near-tie points (fusion set), as
 described above.
 
+
+Third model, Gemma 4 26B A4B (UD-Q5_K_S) on two RX 7900 XTX in tensor split (runs `gem-1..6`): compute arena 370.1 MiB
+reserved against the common 428.1 MiB, no re-plans, greedy text identical to the common-arena runs, prefill 3391.5,
+3349.0 t/s against 3417.3, 3427.5 (defaults) and 3342.3, 3368.7 (today's kernel patches off) - inside the spread of
+the other two arms; decode 93.1, 93.3 against 93.1, 93.4.
