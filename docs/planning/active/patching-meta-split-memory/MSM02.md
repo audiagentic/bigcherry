@@ -70,6 +70,7 @@ Base framework change (memory layout), not an RD enhancement: the gate is 'no re
 
 ## Ledger-events
 
+
 - chg_20261006_144832_diagnostics-and-experimental-p_1077
 - 2026-10-06T14:48:39.466747+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T14:48:49.761024+00:00 (updated-by): Updated: section:notes
@@ -86,3 +87,5 @@ Base framework change (memory layout), not an RD enhancement: the gate is 'no re
 3. **Sizing source (answer 3): the translated reserve graph is authoritative.** Stock b11402 sizes the scheduler arena from `ggml_backend_sched_reserve()` / `ggml_gallocr_reserve_n()`; that buffer then remains fixed across 2K -> 98K/245K fill, proving llama's measure graph carries the worst-case context-dependent dimensions rather than current `n_kv`. 1340 must translate that same reserve graph, including subset-inactive/axis-split shapes, so KQ masks and gathered rows keep the reserve-time worst-case sizes on devices that own them while inactive devices omit them. `ggml_backend_meta_graph_compute()` is no longer allowed to size/grow an arena in the normal path.
 
 Implementation invariant: after load, normal `ggml_backend_sched_alloc_splits()` may only select a retained shape plan and bind it to the already-reserved per-device arena. A later non-fitting graph is an invariant violation handled by the explicit loud fallback/counter path, not by ordinary growth.
+- chg_20261007_041129_opt-in-the-tensor-split-can-s_3694
+- 2026-10-07T04:11:41.935051+00:00 (updated-by): Updated: section:ledger-events
