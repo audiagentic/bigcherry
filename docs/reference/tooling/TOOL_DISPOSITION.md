@@ -539,10 +539,10 @@ ownership.
 
 | Path | Disposition | Owner and rationale |
 | --- | --- | --- |
-| `tools/lab/gp11-replay-bench/ab-balanced.sh` | **TRANSITIONAL** | HI168: preserve the executing historical server comparison; future runs belong in the maintained campaign path. |
-| `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
-| `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
-| `tools/lab/gp11-replay-bench/tune-per-card.sh` | **TRANSITIONAL** | HI168: retained investigation provenance; use tune-campaign for new tuning. |
+| `tools/lab/gp11-replay-bench/ab-balanced.sh` | **DELETE** | Retired 2026-10-08 after HI168 was superseded and successor RHA04 completed; new runs use maintained campaign/profiling paths and historical source remains in Git history. |
+| `tools/lab/gp11-replay-bench/analyse.py` | **DELETE** | Retired 2026-10-08 after HI168 was superseded and successor RHA04 completed; new runs use maintained campaign/profiling paths and historical source remains in Git history. |
+| `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **DELETE** | Retired 2026-10-08 after HI168 was superseded and successor RHA04 completed; new runs use maintained campaign/profiling paths and historical source remains in Git history. |
+| `tools/lab/gp11-replay-bench/tune-per-card.sh` | **DELETE** | Retired 2026-10-08 after HI168 was superseded and successor RHA04 completed; new runs use maintained campaign/profiling paths and historical source remains in Git history. |
 | `tools/lab/va26-rd08-parity/run.py` | **DELETE** | Retired 2026-10-08 after VA26 closure; parity result is recorded in the completed VA26 plan and source remains in Git history. |
 | `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **DELETE** | Retired 2026-10-08 after RD87 closure; one-shot analysis/benchmark source remains in Git history. |
 | `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **DELETE** | Retired 2026-10-08 after RD87 closure; one-shot analysis/benchmark source remains in Git history. |
