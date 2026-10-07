@@ -171,9 +171,34 @@ window; bump one, record, then bump the other.
    neighbours — the 2026-08-21 incident had three upstream revisions live at
    once).
 
-   Tag `supports/<release>` only after step 7. Before that the release
-   record stage tells the truth (`tuned`, `production`), and the tag must
-   not run ahead of it.
+   **Release.** Once the hardware evidence is in (step 4b of the bump skill:
+   build, smoke, A/B at the new pin), one command does the gate above and
+   everything after it:
+
+   ```sh
+   python -m bigcherry pin-release <tag> --evidence @<file with the hardware result>
+   ```
+
+   Phases, each skipped when already done, so the command is re-run after
+   any stop: `gate` (`pin-status --complete --all-remotes`), `record` (gate
+   output and evidence into `releases/<tag>.json`, transition marker removed,
+   one commit), `notes` (`release-notes`, committed as `chore: release notes
+   bc-<version>` with the `Release-As: <version>` footer), `main` (the
+   work branch takes `origin/main` in if main moved, then main is
+   fast-forwarded to it), `release` (release-please's PR is merged and the
+   command waits for the tag), `sync` (the work branch takes the release
+   commit back). `--through <phase>` stops early, `--dry-run` lists the phases.
+
+   Versions and tags. release-please owns the tags: `bc-<llama build>.<minor>.<patch>`.
+   A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also
+   points the short tag `bc-b11474` at it). While the pin stays, further
+   BigCherry releases use the same command with `--bump minor` (features) or
+   `--bump patch` (fixes), giving `bc-11474.1.0`, `bc-11474.1.1`, ...;
+   `--version` states the version. Each release has its own notes file
+   (`docs/releases/notes/bc-<version>.md`) and checking its tag out reproduces
+   that patch set. There is no separate `supports/<release>` tag any more (the
+   last one is `supports/b11402`). A tag push does not start a release: the
+   workflow runs on pushes to `main` only.
 
 8. **Record a ledger event for the bump as a whole** (`ag-ledger`
    `record_change_event`, `change-class: release`), even though `pin-bump`

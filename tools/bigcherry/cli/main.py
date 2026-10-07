@@ -576,7 +576,33 @@ def build_parser() -> argparse.ArgumentParser:
     release_notes_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11402)")
     release_notes_cmd.add_argument("--ref", default="HEAD", help="release commit (default: HEAD)")
     release_notes_cmd.add_argument("--stdout", action="store_true", help="print the notes instead of writing the file")
+    release_notes_cmd.add_argument("--version", default=None, help="release version <llama build>.<minor>.<patch> (default: <build>.0.0)")
     release_notes_cmd.set_defaults(func=cmd_release_notes)
+
+    pin_release_cmd = sub.add_parser(
+        "pin-release",
+        help="release a completed pin bump in one resumable command: completion gate "
+        "(pin-status --complete --all-remotes) -> release record + transition marker -> "
+        "release notes with the Release-As footer -> fast-forward main -> merge "
+        "release-please's PR -> wait for the bc-<llama tag> tag -> sync the work branch.",
+    )
+    pin_release_cmd.add_argument("llama_tag", help="llama.cpp tag of the completed bump (e.g. b11474)")
+    pin_release_cmd.add_argument(
+        "--evidence", default="",
+        help="hardware evidence that makes the bump releasable (build, smoke, A/B result); text, or @file. "
+        "Recorded verbatim in the release record; required until the record carries it",
+    )
+    pin_release_cmd.add_argument(
+        "--through", default="sync", choices=("gate", "record", "notes", "main", "release", "sync"),
+        help="stop after this phase (default: sync, the whole release)",
+    )
+    pin_release_cmd.add_argument(
+        "--bump", choices=("minor", "patch"), default=None,
+        help="a further release on a pin that is already released: raise minor (features) or patch (fixes)",
+    )
+    pin_release_cmd.add_argument("--version", default=None, help="state the version (<llama build>.<minor>.<patch>) instead of deriving it")
+    pin_release_cmd.add_argument("--dry-run", action="store_true", help="print the phases that would run")
+    pin_release_cmd.set_defaults(func=cmd_pin_release)
 
     replay_inspect_cmd = sub.add_parser(
         "replay-inspect",
@@ -1803,15 +1829,37 @@ def cmd_release_notes(args: argparse.Namespace) -> int:
     try:
         config = _notes.load_config(repo_root)
         if args.stdout:
-            _sys.stdout.write(_notes.render(repo_root, config, args.llama_tag, args.ref))
+            _sys.stdout.write(_notes.render(repo_root, config, args.llama_tag, args.ref, args.version))
         else:
-            out = _notes.write_notes(repo_root, config, args.llama_tag, args.ref)
+            out = _notes.write_notes(repo_root, config, args.llama_tag, args.ref, args.version)
             print(f"release-notes: wrote {out}")
-            print("  commit it with a `Release-As: <llama build number>.0.0` footer; release-please opens the release PR on main")
+            print("  `bigcherry pin-release` commits it with the Release-As footer and takes the release through main")
     except _notes.ReleaseNotesError as exc:
         print(f"release-notes: {exc}", file=_sys.stderr)
         return 1
     return 0
+
+
+def cmd_pin_release(args: argparse.Namespace) -> int:
+    import sys as _sys
+
+    from ..core import paths as _paths
+    from ..release import pin_release as _pin_release
+
+    evidence = args.evidence
+    if evidence.startswith("@"):
+        try:
+            evidence = open(evidence[1:], encoding="utf-8").read()
+        except OSError as exc:
+            print(f"pin-release: cannot read the evidence file: {exc}", file=_sys.stderr)
+            return 2
+    try:
+        return _pin_release.run(_paths.REPO_ROOT, args.llama_tag, evidence, through=args.through, dry_run=args.dry_run,
+                                version=args.version, bump=args.bump)
+    except _pin_release.PinReleaseError as exc:
+        print(f"pin-release: STOPPED at phase {exc.phase!r}: {exc}", file=_sys.stderr)
+        print("  fix the cause and run the same command again; finished phases are skipped", file=_sys.stderr)
+        return 1
 
 
 def cmd_pin_bump(args: argparse.Namespace) -> int:

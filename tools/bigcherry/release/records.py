@@ -18,9 +18,9 @@ What *is* recorded per release is the evidence:
 
 Records are tracked in git under ``releases/``. The bulky outputs they refer to
 -- manifests, databases, replay caches, build logs -- stay in ``artifacts/``
-and are not tracked. When a release passes validation, tag the bigcherry repo
-``supports/<release>``; checking out that tag reproduces the exact patch set
-that worked.
+and are not tracked. When a bump passes validation, ``bigcherry pin-release``
+releases it; the release tag ``bc-<llama build>.<minor>.<patch>`` on main
+reproduces the exact patch set that worked.
 """
 
 from __future__ import annotations

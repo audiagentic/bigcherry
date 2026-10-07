@@ -54,3 +54,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 ## Change Log
 
 - 2026-10-07T14:22:02.591382+00:00 (created-by): Created by agent
+
+## Ledger-events
+
+- chg_20261007_155512_bigcherry-now-builds-on-llama_6400
+- 2026-10-07T15:55:15.944121+00:00 (updated-by): Updated: section:ledger-events

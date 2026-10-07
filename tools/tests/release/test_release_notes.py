@@ -56,7 +56,11 @@ class ReleasePleaseWiringTests(unittest.TestCase):
         prefix = notes.load_config(_REPO).tag_prefix
         self.assertIn(f'bc_tag="{prefix}b${{LLAMA_BUILD}}"', self.workflow)
         self.assertIn("steps.release.outputs.major", self.workflow)
-        self.assertIn('notes="docs/releases/notes/${bc_tag}.md"', self.workflow)
+        # every release publishes the notes file named after its own tag; only a pin's first release gets bc-b<build>
+        self.assertIn('notes="docs/releases/notes/${RP_TAG}.md"', self.workflow)
+        self.assertIn(f'if [ "${{RP_TAG}}" = "{prefix}${{LLAMA_BUILD}}.0.0" ]; then', self.workflow)
+        self.assertLess(self.workflow.index(f'if [ "${{RP_TAG}}" = "{prefix}${{LLAMA_BUILD}}.0.0" ]; then'),
+                        self.workflow.index(f'bc_tag="{prefix}b${{LLAMA_BUILD}}"'))
         self.assertIn('--notes-file "${notes}"', self.workflow)
         self.assertTrue(re.search(r"branches:\s*\[main\]", self.workflow))
         self.assertEqual(notes.load_config(_REPO).notes_dir, "docs/releases/notes")
