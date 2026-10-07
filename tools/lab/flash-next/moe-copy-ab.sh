@@ -68,7 +68,8 @@ for name, prompt, n in (("short1", short, n_predict), ("short2", short, n_predic
     t = r["timings"]
     open(f"{out}/{arm}.{name}.txt", "w").write(r["content"])
     print(f"{arm} {name}: md5 {hashlib.md5(r['content'].encode()).hexdigest()[:12]} prompt {t['prompt_n']} tok "
-          f"{t['prompt_per_second']:.1f} t/s, decode {t['predicted_n']} tok {t['predicted_per_second']:.2f} t/s", flush=True)
+          f"{t['prompt_per_second']:.1f} t/s, decode {t['predicted_n']} tok {t['predicted_per_second']:.2f} t/s, "
+          f"accepted {t.get('draft_n_accepted')}/{t.get('draft_n')}", flush=True)
 PY
   kill -INT "$pid"
   for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
@@ -104,6 +105,16 @@ elif [ "${ARMS:-copy}" = profile ]; then # 1338: W = LRU cache and write a profi
   for pct in ${PIN_LIST:-}; do run P$pct BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_PIN_PCT=$pct -- --moe-cache-mib $mib; done   # pinned share sweep
   run PS BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=0 -- --moe-cache-mib $mib
   run W2 -- --moe-cache-mib $mib
+elif [ "${ARMS:-copy}" = qualify ]; then # MET01 b11474: real host-expert cache qualification, MTP acceptance included
+  mib=${CACHE_MIB:-4096}
+  run C0 -- --moe-cache-mib 0
+  run C$mib -- --moe-cache-mib $mib
+  prof=${PROFILE:-$out/profile.bin}
+  if [ -z "${PROFILE:-}" ]; then
+    run R BIGCHERRY_MOE_CACHE_PROFILE_OUT=$prof BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib $mib
+  fi
+  run P$mib BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib $mib
+  run C0b -- --moe-cache-mib 0
 elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
