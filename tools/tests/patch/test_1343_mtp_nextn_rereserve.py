@@ -50,8 +50,8 @@ class Patch1343Mechanics(unittest.TestCase):
             self.assertLess(fn.index(cond), fn.index("sched_need_reserve = true;"))
             self.assertLess(fn.index("sched_need_reserve = true;"), fn.index("cparams.embeddings_nextn        = value;"))
             self.assertEqual(fn.count("sched_need_reserve = true;"), 1)
-            # default off, and the setter itself reserves or synchronizes nothing
-            self.assertIn("return s != nullptr && std::atoi(s) != 0;", fn)
+            # on by default (0 disables), and the setter itself reserves or synchronizes nothing
+            self.assertIn("return s == nullptr || std::atoi(s) != 0;", fn)
             self.assertNotIn("sched_reserve()", fn)
             self.assertNotIn("synchronize()", fn)
             self.assertIn("BIGCHERRY_PATCH_HIT patch=1343_mtp_nextn_rereserve", fn)

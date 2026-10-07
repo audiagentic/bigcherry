@@ -5,9 +5,9 @@
 
 ## What it does
 
-With `BIGCHERRY_MTP_RERESERVE=1`, `llama_context::set_embeddings_nextn` marks the scheduler for a reserve when the
+`llama_context::set_embeddings_nextn` marks the scheduler for a reserve when the
 NextN (MTP) output mode really changes. The next `process()` then reserves the worst-case graph of the shape that will
-run, once.
+run, once. On by default; `BIGCHERRY_MTP_RERESERVE=0` disables.
 
 ## Why
 
