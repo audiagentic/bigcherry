@@ -19,54 +19,6 @@ Three cheap checks from the external optimisation list. Two already map directly
 
 External gains were measured on a different 4-GPU system and are hypotheses only.
 
-## What we already have
-
-### A. Per-layer embedding table residency
-
-This is already an upstream b11402 feature/configuration, not missing code.
-
-- `src/models/qwen4exp.cpp::llama_model_qwen4exp::load_arch_tensors` creates `LLM_TENSOR_PER_LAYER_TOKEN_EMBD` with `TENSOR_READ_LAZY`.
-- `src/llama-model-loader.cpp::llama_model_loader::lazy_read::add`
-  - `LLAMA_LAZY_MODE_OFF`: keep the tensor non-lazy;
-  - `AUTO`: lazily maps marked tensors larger than 4 GiB;
-  - `ON`: lazily maps all marked tensors.
-- The production PLE table is ~26.8 GiB, so with the default `AUTO` it qualifies for lazy mapping whenever mmap is supported.
-- `src/llama-model-loader.h::lazy_read::buft` forces lazy tensors to the CPU backend; comments explicitly state lazy tensors are gathered on host.
-- `src/llama-model-loader.cpp::init_mappings` maps lazy ranges even if ordinary mmap load mode is not selected.
-- `common/arg.cpp` already exposes `-lzm/--lazy-mode {on,auto,off}` and `LLAMA_ARG_LAZY_MODE`.
-
-Finding: **fully covered by upstream configuration**. Do not patch. The production question is whether we are running `AUTO` (therefore file-backed/on-demand) or `OFF` (fully loaded host tensor). Measure `--lazy-mode off` directly and close this sub-item.
-
-### B. MTP/recurrent decode copies
-
-Substantially covered by validated patch 1308.
-
-- `patches/1308_qwen4exp_rollback_copy_no_cont` changes the Qwen4Exp recurrent rollback snapshot from `ggml_cpy(ggml_cont(tail), dst)` to direct `ggml_cpy(tail, dst)`.
-- Owner: `src/models/qwen4exp.cpp`, tag `[TAG_RECURRENT_ROLLBACK_SPLITS]`.
-- It removes one copy kernel per rollback slot; its census attributed ~89/108 runtime copy launches per generated token to this sequence.
-- Hardware validation already measured ~3-3.6% decode improvement and greedy identity.
-- Flag: `BIGCHERRY_ROLLBACK_NO_CONT`, currently on by default.
-
-Finding: the external “leaner conv-state rollback” is **already covered**. Only the broader “fused same-shape copies” wording needs a census check. If remaining dominant same-shape copies belong to the same rollback sequence, improve **inside patch 1308**; do not create a new patch package. If remaining copies come from a different owner, create a separate plan item rather than broadening QFP40.
-
-### C. Gathered QSA decode
-
-We already have two implementations of the underlying sparse-attention idea.
-
-- `patches/1295_qsa_gather_decode` (`BIGCHERRY_QSA_GATHER=1`, threshold `BIGCHERRY_QSA_GATHER_MIN`)
-  - for batches <=8, explicitly gathers selected QSA K/V cells and attends over the gathered compact cache;
-  - evaluated at +7% decode around 80K and larger gain at 160K;
-  - not bit-identical to dense masked FA, though it measured closer to CPU-f32 than the dense HIP path;
-  - carries extra gathered tensors/padding and showed headroom pressure at the largest tier.
-- `patches/1334_hip_sparse_flash_attn` (`BIGCHERRY_FA_SPARSE`)
-  - validated and promoted;
-  - enables upstream sparse FA on HIP RDNA WMMA;
-  - compacts the QSA mask to sparse cell indices and gathers only referenced K/V cells inside the attention kernel;
-  - validated on gfx1100/gfx1201 and gave large long-prefill wins with accepted fidelity.
-- b11402 Qwen4Exp supplies the sparse QSA mask/cell bound; 1334 is therefore the lower-overhead production mechanism for the same “do not scan masked KV” objective.
-
-Finding: **do not promote 1295 as-is**. First measure whether 1334 already removes long-context QSA decode scaling at ~98K. If yes, close the gathered-decode sub-item as superseded. If no, compare 1295+1334 vs 1334 alone at the affected tier; only reopen 1295 if it adds a repeatable decode gain without unacceptable memory/fidelity cost.
-
 ## Steps
 
 1. Residency audit: compare production `AUTO` with `--lazy-mode off`; capture loader log, host RSS/page residency, major faults/read I/O and decode timing.
@@ -220,7 +172,58 @@ Expected gain on our topology:
 
 Ordering: fourth overall after QFP32, QFP31, QFP33. These are cheap audits and may close work immediately. Within QFP40: lazy-mode first (zero code), copy census second, QSA comparison third.
 
+2026-10-07 finding A (per-layer embedding table resident, --lazy-mode off): REJECTED on Brutus. ABBA lazyoff-ab on build b-metamem-rr98, A = default lazy mapping, B = LLAMA_ARG_LAZY_MODE=off: prefill 8K 904/1077 vs 434/629 t/s, 24K 1065/1072 vs one failed load/823; decode 82.5/84.6 vs 77.8/79.9 and 74.9/75.3 vs 70.2; greedy text identical where it ran. Host has 91 GB RAM for an 87 GB model file, so a resident 26.8 GB copy competes with the page cache (not confirmed from memory counters). The default stays. Parts B (MTP decode copies) and C (gathered QSA decode, 1295) are still open.
+
+## What we already have
+
+### A. Per-layer embedding table residency
+
+This is already an upstream b11402 feature/configuration, not missing code.
+
+- `src/models/qwen4exp.cpp::llama_model_qwen4exp::load_arch_tensors` creates `LLM_TENSOR_PER_LAYER_TOKEN_EMBD` with `TENSOR_READ_LAZY`.
+- `src/llama-model-loader.cpp::llama_model_loader::lazy_read::add`
+  - `LLAMA_LAZY_MODE_OFF`: keep the tensor non-lazy;
+  - `AUTO`: lazily maps marked tensors larger than 4 GiB;
+  - `ON`: lazily maps all marked tensors.
+- The production PLE table is ~26.8 GiB, so with the default `AUTO` it qualifies for lazy mapping whenever mmap is supported.
+- `src/llama-model-loader.h::lazy_read::buft` forces lazy tensors to the CPU backend; comments explicitly state lazy tensors are gathered on host.
+- `src/llama-model-loader.cpp::init_mappings` maps lazy ranges even if ordinary mmap load mode is not selected.
+- `common/arg.cpp` already exposes `-lzm/--lazy-mode {on,auto,off}` and `LLAMA_ARG_LAZY_MODE`.
+
+Finding: **fully covered by upstream configuration**. Do not patch. The production question is whether we are running `AUTO` (therefore file-backed/on-demand) or `OFF` (fully loaded host tensor). Measure `--lazy-mode off` directly and close this sub-item.
+
+### B. MTP/recurrent decode copies
+
+Substantially covered by validated patch 1308.
+
+- `patches/1308_qwen4exp_rollback_copy_no_cont` changes the Qwen4Exp recurrent rollback snapshot from `ggml_cpy(ggml_cont(tail), dst)` to direct `ggml_cpy(tail, dst)`.
+- Owner: `src/models/qwen4exp.cpp`, tag `[TAG_RECURRENT_ROLLBACK_SPLITS]`.
+- It removes one copy kernel per rollback slot; its census attributed ~89/108 runtime copy launches per generated token to this sequence.
+- Hardware validation already measured ~3-3.6% decode improvement and greedy identity.
+- Flag: `BIGCHERRY_ROLLBACK_NO_CONT`, currently on by default.
+
+Finding: the external “leaner conv-state rollback” is **already covered**. Only the broader “fused same-shape copies” wording needs a census check. If remaining dominant same-shape copies belong to the same rollback sequence, improve **inside patch 1308**; do not create a new patch package. If remaining copies come from a different owner, create a separate plan item rather than broadening QFP40.
+
+### C. Gathered QSA decode
+
+We already have two implementations of the underlying sparse-attention idea.
+
+- `patches/1295_qsa_gather_decode` (`BIGCHERRY_QSA_GATHER=1`, threshold `BIGCHERRY_QSA_GATHER_MIN`)
+  - for batches <=8, explicitly gathers selected QSA K/V cells and attends over the gathered compact cache;
+  - evaluated at +7% decode around 80K and larger gain at 160K;
+  - not bit-identical to dense masked FA, though it measured closer to CPU-f32 than the dense HIP path;
+  - carries extra gathered tensors/padding and showed headroom pressure at the largest tier.
+- `patches/1334_hip_sparse_flash_attn` (`BIGCHERRY_FA_SPARSE`)
+  - validated and promoted;
+  - enables upstream sparse FA on HIP RDNA WMMA;
+  - compacts the QSA mask to sparse cell indices and gathers only referenced K/V cells inside the attention kernel;
+  - validated on gfx1100/gfx1201 and gave large long-prefill wins with accepted fidelity.
+- b11402 Qwen4Exp supplies the sparse QSA mask/cell bound; 1334 is therefore the lower-overhead production mechanism for the same “do not scan masked KV” objective.
+
+Finding: **do not promote 1295 as-is**. First measure whether 1334 already removes long-context QSA decode scaling at ~98K. If yes, close the gathered-decode sub-item as superseded. If no, compare 1295+1334 vs 1334 alone at the affected tier; only reopen 1295 if it adds a repeatable decode gain without unacceptable memory/fidelity cost.
+
 ## Change Log
 
 - 2026-10-07T00:39:56.573121+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and existing 1295/1308/1334; identified lazy-mode as upstream configuration, rollback copy as already validated, and 1334 as the production QSA baseline.
+- 2026-10-07T06:35:50.784320+00:00 (updated-by): Updated: section:notes

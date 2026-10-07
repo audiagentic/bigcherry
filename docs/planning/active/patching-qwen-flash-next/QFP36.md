@@ -25,52 +25,6 @@ Both target mechanisms are identifiable at b11402:
 
 Gate each optimization separately. The router GEMM changes F32 accumulation order and is higher numerical risk; the helper can and should be output-identical.
 
-## What we already have
-
-### Router at b11402
-
-- `src/models/qwen4exp.cpp::llama_model_qwen4exp::load_arch_tensors`
-  - creates `layer.ffn_gate_inp` as `{n_embd, n_expert}`.
-- `src/models/qwen4exp.cpp::graph::build_layer_ffn`
-  - passes that tensor to generic `build_moe_ffn(..., n_expert, n_expert_used, ...)`.
-- `src/llama-graph.cpp::llm_graph_context::build_moe_ffn`
-  - owns the generic router-logit MUL_MAT, top-k ids/weights and routed expert graph.
-- `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_mul_mat`
-  - routes an ordinary F32 router matmul through MMVF/MMF/rocBLAS according to width/shape; there is no router-specific split-K path.
-- The logical router output is `n_expert x n_tokens`; with Meta tensor split, the CUDA backend must use the **physical local tensor dimensions** and leave Meta's existing split/reduction semantics unchanged.
-
-The external “512x512” label must not be hard-coded: 512 experts is true for our production model, but `n_embd`, local split dimensions and token width must come from tensors.
-
-### Routing helper at b11402
-
-- `ggml/src/ggml-cuda/mmid.cu::mm_ids_helper<n_expert_used_template>`
-  - one block per expert;
-  - `__launch_bounds__(physical_warp_size, 1)`;
-  - one physical warp per block;
-  - specialized cases for top-k 2/4/6/8/10/16/32;
-  - top-10 pads route slots to 16 and packs multiple token slots into a warp;
-  - scans all `n_tokens` for every expert;
-  - tracks `nex_prev` = number of route assignments to lower-numbered experts;
-  - stores matched `(token, route_slot)` in shared memory in token order;
-  - writes `ids_dst`, forward/inverse `ids_src1`, and `expert_bounds`.
-- `launch_mm_ids_helper`
-  - allocates `n_tokens*sizeof(mm_ids_helper_store)` dynamic shared memory per expert block;
-  - asserts that this fits the device shared-memory-per-block limit.
-- `ggml_cuda_launch_mm_ids_helper`
-  - is the public entry point used by MMQ.
-
-### BigCherry overlap
-
-- `patches/1281_moe_mul_mat_id_range`
-  - adds `ggml_cuda_mm_ids_range_translate()`;
-  - range ids become local expert indices or `INT_MAX`;
-  - then the unchanged public helper groups only valid local experts;
-  - QFP30 additionally uses the helper's inverse map for broadcast activation dedup with `-1` preinitialization for nonlocal routes.
-- `patches/1283_qwen4exp_expert_parallel` can reduce the local expert count per device, so helper qualification must include both upstream row-split and whole-expert range modes.
-- QFP34 targets thin ordinary F32 MUL_MAT generally. Router split-K must be separately tagged/qualified so these two experiments do not accidentally intercept one another.
-
-Neither split-K routing nor a multi-warp ids helper is currently implemented.
-
 ## Steps
 
 1. Gate 0: profile ub512 prefill and record router MUL_MAT + `mm_ids_helper` call count/time per layer and per physical device in row-split and, if enabled, expert-parallel mode.
@@ -326,11 +280,58 @@ Expected gain on our topology: helper medium-confidence for ub512 because the cu
 
 Execution order: seventh. Within QFP36, qualify the exact multi-warp helper before the numerically riskier router split-K. In final gain/effort ranking, the helper can move ahead of QFP34 if Gate 0 confirms ~layer-per-layer serialization at ub512.
 
+2026-10-07 Gate 0 (prefill kernel profile, production build b-prod-1343 with 1343 + 1344, 38.7K-token fill at 977 t/s under rocprofv3, run gate0-d24576). Kernel time per target card 28.0 s over a 99 s span (28% busy). mm_ids_helper<10>: 3.23 s summed over devices = about 3.8% of all kernel time on the three target cards - the multi-warp helper is worth doing. Float matmul family (rocBLAS SGEMM, largest kernel Cijk_..._MT64x64x8 7.24 s): 12.4-16.0% of kernel time per card; the profile does not split the router GEMM from other F32 matmuls, a dispatch census by shape is still needed for split-K (and for QFP34). Family shares per XTX: collectives 30-31% (ncclDevKernel_Generic_4 27.6 s over devices; R9700 41.6%), MMQ 27%, float matmul 16%, flash attention 8.7%, norm/activation 4%, rows/concat/mask 3.3%, GDN 2.5%. Collectives and the 72% idle span are the largest prefill levers (QFP39, QFP41).
+
+## What we already have
+
+### Router at b11402
+
+- `src/models/qwen4exp.cpp::llama_model_qwen4exp::load_arch_tensors`
+  - creates `layer.ffn_gate_inp` as `{n_embd, n_expert}`.
+- `src/models/qwen4exp.cpp::graph::build_layer_ffn`
+  - passes that tensor to generic `build_moe_ffn(..., n_expert, n_expert_used, ...)`.
+- `src/llama-graph.cpp::llm_graph_context::build_moe_ffn`
+  - owns the generic router-logit MUL_MAT, top-k ids/weights and routed expert graph.
+- `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_mul_mat`
+  - routes an ordinary F32 router matmul through MMVF/MMF/rocBLAS according to width/shape; there is no router-specific split-K path.
+- The logical router output is `n_expert x n_tokens`; with Meta tensor split, the CUDA backend must use the **physical local tensor dimensions** and leave Meta's existing split/reduction semantics unchanged.
+
+The external “512x512” label must not be hard-coded: 512 experts is true for our production model, but `n_embd`, local split dimensions and token width must come from tensors.
+
+### Routing helper at b11402
+
+- `ggml/src/ggml-cuda/mmid.cu::mm_ids_helper<n_expert_used_template>`
+  - one block per expert;
+  - `__launch_bounds__(physical_warp_size, 1)`;
+  - one physical warp per block;
+  - specialized cases for top-k 2/4/6/8/10/16/32;
+  - top-10 pads route slots to 16 and packs multiple token slots into a warp;
+  - scans all `n_tokens` for every expert;
+  - tracks `nex_prev` = number of route assignments to lower-numbered experts;
+  - stores matched `(token, route_slot)` in shared memory in token order;
+  - writes `ids_dst`, forward/inverse `ids_src1`, and `expert_bounds`.
+- `launch_mm_ids_helper`
+  - allocates `n_tokens*sizeof(mm_ids_helper_store)` dynamic shared memory per expert block;
+  - asserts that this fits the device shared-memory-per-block limit.
+- `ggml_cuda_launch_mm_ids_helper`
+  - is the public entry point used by MMQ.
+
+### BigCherry overlap
+
+- `patches/1281_moe_mul_mat_id_range`
+  - adds `ggml_cuda_mm_ids_range_translate()`;
+  - range ids become local expert indices or `INT_MAX`;
+  - then the unchanged public helper groups only valid local experts;
+  - QFP30 additionally uses the helper's inverse map for broadcast activation dedup with `-1` preinitialization for nonlocal routes.
+- `patches/1283_qwen4exp_expert_parallel` can reduce the local expert count per device, so helper qualification must include both upstream row-split and whole-expert range modes.
+- QFP34 targets thin ordinary F32 MUL_MAT generally. Router split-K must be separately tagged/qualified so these two experiments do not accidentally intercept one another.
+
+Neither split-K routing nor a multi-warp ids helper is currently implemented.
+
 ## Change Log
 
 - 2026-10-07T00:39:40.654749+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 plus 1281/QFP30; documented stable two-pass multi-warp grouping and explicit-marker deterministic split-K router design.
-
 
 ## Code-level review (2026-10-07)
 
@@ -451,3 +452,4 @@ Validation:
 **1349: GO AFTER GATE 0, lower priority.** The router is explicitly identifiable but its type/time are not yet proven and split-K risks top-k changes plus workspace/fusion-layout effects. Expected gain if positive: **+0.1% to +0.6%**.
 
 Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%**, not the external reported gain.
+- 2026-10-07T06:35:55.547181+00:00 (updated-by): Updated: section:notes
