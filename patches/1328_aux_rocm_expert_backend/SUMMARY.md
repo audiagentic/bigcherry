@@ -21,7 +21,7 @@ Off by default. The path fails closed if the auxiliary device is absent, ambiguo
 
 The first hardware sweep after the enum-tag compile fix aborted at load for every aux-offload layout because the marked merge observed `MIRRORED + MIRRORED`, while 1328 only accepted `MIRRORED + PARTIAL`. At b11474, Meta's split-state contract uses `MIRRORED` for a complete replica; its synchronized matmul state can therefore make the shared branch MIRRORED before buffer initialization. In that state an AllReduce would incorrectly sum duplicate complete values. 1328 now accepts both `MIRRORED + PARTIAL` and `MIRRORED + MIRRORED`, returning MIRRORED in either case, and still aborts on every other marked combination.
 
-## Hardware result and decode fix (Brutus 2026-10-08)
+## Hardware result and decode review (Brutus 2026-10-08)
 
 Flash-Next, 245760 ctx, 79722-token fill, auxiliary routed-expert layers on ROCm3 (6900 XT):
 
@@ -32,11 +32,17 @@ ub1024: L0 OOM (cudaMalloc 100 MiB on device 1) | L2 1158.8 (23.4 23.7 30.5 7.1)
 ub2048: all arms OOM (3958.87 MiB on device 0), including L0
 ```
 
-At equal ubatch the offload costs about 5% prefill per two layers, but L2 frees enough VRAM for ub1024 and reaches 1158.8 t/s (+3.7% versus the ub512 L0 baseline). Every L2/L4/L6 arm then stopped at the first generation step while L0 decoded normally.
+At equal ubatch the offload costs about 5% prefill per two layers, but L2 frees enough VRAM for ub1024. Every L2/L4/L6 arm then stopped at the first generation step while L0 decoded normally.
 
-The source-level defect was context scope: 1328 registered the ordinary auxiliary backend and enabled its Qwen4Exp layer semantics for every context sharing the target model, including `LLAMA_CONTEXT_TYPE_MTP`. Qwen4Exp's MTP context owns the MTP block alone, so trunk-layer auxiliary placement must not alter that scheduler topology. 1328 now registers/uses the auxiliary backend only for `LLAMA_CONTEXT_TYPE_DEFAULT`. `BIGCHERRY_PATCH_TRACE` emits `phase=aux_merge_build layer=<n> tokens=<n> ctx_type=<n>` when the merge is built and `phase=aux_merge_execute split=<n> node=<n> backend=<name>` immediately before the scheduler executes the Meta split containing that marked merge.
+Follow-up after d2c8fd0c and bf25b05a showed the same failure. A 10102-token L2/ub512 diagnostic ended after `created context checkpoint 2 of 32 (pos_min = 10097 ...)`; the server process then disappeared without an error, assert, abort trace, or ggml_abort. The only 1328 runtime line was a 20480-byte Meta/ROCm3 scheduler staging copy; neither marked merge trace fired. The longer 79722-token rerun measured L2/ub1024 at 1178 t/s and L2/ub512 at 1059 t/s; no-offload ub512 was 1087-1118 t/s and generated normally.
 
-Hardware decode rerun pending; state remains untested until the L2+ arm completes generation.
+Focused review found one concrete 1328 correctness defect: the generic scheduler copy hook identified the auxiliary endpoint only by the process-global `BIGCHERRY_EXPERT_AUX_DEVICE` device name. That is not context/scheduler ownership and can make an unrelated scheduler using the same ordinary GPU enter 1328's Meta/aux staging path. 1328 now stores the exact auxiliary backend pointer in the target DEFAULT scheduler and rebinds it after every scheduler reserve; the copy hook requires pointer identity. This is a required scoping fix, but static review does not prove that it caused the observed first-generation process death.
+
+The reviewed decode-specific neighbors do not expose another concrete fault: 1340 handles current-graph replan/binding for the smaller graph; 1341 makes synchronous/asynchronous Meta MIRRORED transfers honor subset active masks; 1295/1327 and 1326 do not directly dereference the auxiliary routed tensor; NextN/embedding extraction resolves the scheduler backend and copies into host output. No source-level defect in those paths can be tied confidently to the silent death from the available log.
+
+All active 1328 seams now emit unconditional WARN-level `BIGCHERRY_PATCH_HIT ... hook=<name>` diagnostics, including target registration/scheduler scope, Qwen4Exp layer entry and merge marking, Meta split-state access, scheduler assignment/copy, and marked split execution. The lab runner records `SERVER_EXIT status=<n> signal=<name>` so a SIGSEGV/SIGKILL is preserved in sweep output.
+
+The exact process-death root cause remains unresolved at b11474. Do not treat the scheduler-scope change as a validated decode fix; promotion remains blocked.
 
 ## Upstream
 
