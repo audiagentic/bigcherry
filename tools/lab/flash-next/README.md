@@ -1,6 +1,24 @@
-# Qwen3.8-Flash-Next layout lab (plan QFN01)
+# Qwen3.8 Flash-Next lab
 
-`layout-probe.sh` — first load test: per-layout llama-server start, per-device VRAM, and
-prompt/decode tokens/s (+ draft acceptance) on a fixed ~1000-token prompt. Tensor split (expected best for single-request decode) and layer split compared;
-`per_layer_token_embd` pinned to CPU. Device order: 0,1 = 7900 XTX, 2 = R9700 (CPU PCIe),
-3 = 6900 XT (chipset PCIe, always last). Run inside the 3-GPU window (vLLM stopped).
+Temporary hardware/diagnostic drivers for active Flash-Next plan items under
+`docs/planning/active/patching-qwen-flash-next/`.
+
+This directory is not a permanent script archive. A plan-specific driver stays
+only while an active plan names or needs it. When the owning plan completes,
+retain compact decision-grade evidence under `docs/evidence/` or the owning
+patch package and delete the one-off driver.
+
+Shared helpers currently referenced by active plans include:
+
+- `ar-segment.py`, `ar-boundary.py` — AllReduce boundary/segment analysis.
+- `long-ctx-profile.sh` — long-context profiling used by active QFP work.
+- `q81-trace-run.sh` — Q8_1 trace support.
+- `queue-prefill-profile.sh`, `prefill-provider-sweep.sh` — prefill profiling/provider comparison.
+- `queue-env-ab.sh` — common active A/B launcher.
+- `submit-timing-table.py` — timing-table submission used by QFP31.
+- `rank-census.py` — rank census used by QFP09.
+
+Generated run output belongs under ignored `artifacts/lab/` or host-local
+storage. Commit only compact evidence selected for `docs/evidence/`. Do not
+commit copied upstream source; materialize the pinned `vendor/llama.cpp`
+checkout instead.
