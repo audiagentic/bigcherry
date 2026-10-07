@@ -1,6 +1,6 @@
 # 1329_alloc_top_trace
 
-**Status:** untested
+**Status:** validated
 **Plan item:** QFP17
 
 ## What it does
