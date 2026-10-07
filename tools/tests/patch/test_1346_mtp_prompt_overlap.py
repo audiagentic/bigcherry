@@ -1,4 +1,4 @@
-"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 2a."""
+"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 2b."""
 
 from __future__ import annotations
 
@@ -52,10 +52,10 @@ class Patch1346Mechanics(unittest.TestCase):
         src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
         server = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
 
-        self.assertIn("void common_speculative_prefill_begin(common_speculative * spec, llama_seq_id seq_id);", h)
+        self.assertIn("int32_t n_prompt, int32_t n_cached, bool fresh_text);", h)
         self.assertIn("void common_speculative_target_process_begin(common_speculative * spec, const common_batch & batch);", h)
         self.assertIn("void common_speculative_target_process_end(common_speculative * spec, const common_batch & batch);", h)
-        self.assertIn("virtual void prefill_begin(llama_seq_id /*seq_id*/) {}", src)
+        self.assertIn("int32_t /*n_prompt*/, int32_t /*n_cached*/, bool /*fresh_text*/) {}", src)
         self.assertIn("virtual void target_process_begin(const common_batch & /*batch*/) {}", src)
         self.assertIn("void prefill_begin(llama_seq_id seq_id) override", src)
         self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_TIMING")', src)
@@ -68,10 +68,14 @@ class Patch1346Mechanics(unittest.TestCase):
         self.assertIn("bc_pt_state->process_us += ggml_time_us() - bc_pt_process_t0;", src)
         self.assertNotIn("std::thread", src)
         self.assertNotIn("BIGCHERRY_MTP_PROMPT_OVERLAP", src)
-        self.assertNotIn("BIGCHERRY_MTP_PROMPT_WINDOW", src)
+        self.assertIn('std::getenv("BIGCHERRY_MTP_PROMPT_WINDOW")', src)
+        self.assertIn("std::vector<uint8_t> bc_window_fetch(n_seq, 0);", src)
+        self.assertIn("BIGCHERRY_MTP_PROMPT_WINDOW collector invariant failed", src)
+        self.assertIn("llama_memory_seq_rm(mem_dft, seq_id, -1, -1);", src)
+        self.assertIn("llama_synchronize(ctx_dft);", src)
 
         keep = "slot.prompt.tokens.keep_first(n_past);"
-        hook = "common_speculative_prefill_begin(spec.get(), slot.id);"
+        hook = "common_speculative_prefill_begin(\n                                spec.get(), slot.id, (int32_t) slot.task->n_tokens(), n_past,"
         process_beg = "common_speculative_target_process_begin(spec.get(), batch.view);"
         process_call = "ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());"
         process_end = "common_speculative_target_process_end(spec.get(), batch.view);"
@@ -108,8 +112,12 @@ class Patch1346Mechanics(unittest.TestCase):
             self.assertIn("adaptive_state.at(seq_id).reset", src)
 
     def test_env_doc(self):
-        self.assertEqual([doc.name for doc in _P.ENV_DOCS], ["BIGCHERRY_MTP_PROMPT_TIMING"])
+        self.assertEqual(
+            [doc.name for doc in _P.ENV_DOCS],
+            ["BIGCHERRY_MTP_PROMPT_TIMING", "BIGCHERRY_MTP_PROMPT_WINDOW"],
+        )
         self.assertEqual(_P.ENV_DOCS[0].default, "0")
+        self.assertEqual(_P.ENV_DOCS[1].default, "0")
 
 
 if __name__ == "__main__":
