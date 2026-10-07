@@ -46,13 +46,19 @@ _META_BIN = """    auto handle_bin_bcast = [&](const std::vector<ggml_backend_me
         if (src_ss[0].axis >= 0 && src_ss[0].axis < GGML_MAX_DIMS &&
 """
 _META_BIN_NEW = """    auto handle_bin_bcast = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {
-        // BigCherry 1328: full auxiliary routed-MoE + reduced shared expert.
+        // BigCherry 1328: full auxiliary routed-MoE plus the shared-expert branch.
+        // If the shared branch is still PARTIAL, making the result MIRRORED causes Meta to reduce that branch once.
+        // If it is already MIRRORED, both inputs are complete replicas and this is a plain per-device add: no
+        // AllReduce is required or correct.
         if (ggml_backend_meta_is_mirrored_partial_add(tensor)) {
-            const bool exact =
+            const bool mirrored_partial =
                 (src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) ||
                 (src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL);
-            if (!exact) {
-                GGML_ABORT("BigCherry 1328: marked expert merge requires exactly MIRRORED + PARTIAL sources, got %s + %s",
+            const bool mirrored_mirrored =
+                src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&
+                src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED;
+            if (!mirrored_partial && !mirrored_mirrored) {
+                GGML_ABORT("BigCherry 1328: marked expert merge requires MIRRORED + PARTIAL or MIRRORED + MIRRORED sources, got %s + %s",
                     ggml_backend_meta_split_axis_name(src_ss[0].axis), ggml_backend_meta_split_axis_name(src_ss[1].axis));
             }
             return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
