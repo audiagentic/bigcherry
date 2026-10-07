@@ -6,6 +6,7 @@ kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
 plan-item = "RD21"
+experiment-contract = "RD21-GFX1151-MMVQ-NWARPS"
 external-source = "stew675-rdna-boosts"
 plan-ids = []
 requires = []
