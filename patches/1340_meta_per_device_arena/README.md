@@ -4,7 +4,7 @@ Purpose: remove the tensor-split Meta backend's common compute-arena reservation
 
 ## Runtime contract
 
-Enable with `BIGCHERRY_META_PER_DEVICE_ARENA=1`. Default is off.
+On by default; `BIGCHERRY_META_PER_DEVICE_ARENA=0` restores the common-size arena.
 
 At llama.cpp b11402 (`d89651a7b205`):
 
@@ -62,5 +62,11 @@ f16 KV, build `b-metamem-msm2t2`, both flags on against production on one binary
   24K (64.7, 64.7 / 65.3, 64.4) and 98K (53.0, 55.4 / 53.3, 53.3), so planning has no measurable cost.
 - Offline: package tests, patch-lint, production composition check.
 
-Not in a runtime profile yet: switching it on changes production's output text (fusion set), which is the owner's call.
+On by default since 2026-10-07, after a second model (Qwen3.8-27B Q8_0, two RX 7900 XTX in tensor split, plain and
+built-in MTP5, ABBA `pda27-1..4`, A = off / B = on): compute arena per card 316.1 MiB reserved against the common
+520.1 / 560.3 MiB, greedy text identical on all four runs, prefill 1317.6, 1314.7 / 1310.5, 1314.0 t/s (MTP5) and
+1481.9, 1483.0 / 1482.2, 1480.7 (plain), decode 80.1, 80.3 / 80.1, 80.2 and 37.9, 38.0 / 37.9, 37.9, no re-plans.
+The evidence above was taken with the flag as an opt-in. `BIGCHERRY_META_PER_DEVICE_ARENA=0` restores the
+common-size arena; on Flash-Next the default changes the generated text at near-tie points (fusion set), as
+described above.
 

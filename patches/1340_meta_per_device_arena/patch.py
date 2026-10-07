@@ -18,7 +18,8 @@ extern "C" char bc_gallocr_replan_last[160];
 
 // BigCherry 1340 (MSM02): opt-in per-simple-device compute arenas.
 bool ggml_backend_meta_per_device_arena_enabled() {
-    static const bool enabled = getenv("BIGCHERRY_META_PER_DEVICE_ARENA") != nullptr &&
+    // on by default; BIGCHERRY_META_PER_DEVICE_ARENA=0 restores the common-size arena
+    static const bool enabled = getenv("BIGCHERRY_META_PER_DEVICE_ARENA") == nullptr ||
                                 atoi(getenv("BIGCHERRY_META_PER_DEVICE_ARENA")) != 0;
     return enabled;
 }
@@ -905,6 +906,7 @@ PATCHES = [
 ]
 
 ENV_DOCS = (
-    EnvDoc("BIGCHERRY_META_PER_DEVICE_ARENA", "0|1", "0",
-           "tensor split: reserve one compute arena per simple device from the translated worst-case graph"),
+    EnvDoc("BIGCHERRY_META_PER_DEVICE_ARENA", "0|1", "1 (on)",
+           "tensor split: reserve one compute arena per simple device from the translated worst-case graph; "
+           "0 restores the common-size arena"),
 )
