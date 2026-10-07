@@ -14,7 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
-_PIN = "d89651a7b205"
+_PIN = "HEAD"  # the vendor checkout is at the pinned revision
 _META = "ggml/src/ggml-backend-meta.cpp"
 _CUDA = "ggml/src/ggml-cuda/ggml-cuda.cu"
 

@@ -47,7 +47,7 @@ class Patch1327Mechanics(unittest.TestCase):
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
             out = (root / _REL).read_text(encoding="utf-8")
             build = out.index("bigcherry 1327: host-side QSA remap inputs")
-            self.assertLess(out.index("inp->n_sel      = kpool*std::min<uint32_t>"), build)
+            self.assertLess(out.index("inp->n_sel = kpool*std::min<uint32_t>"), build)
             use = out.index("bigcherry 1327: host-computed when enabled")
             self.assertLess(use, out.index("idx_f   = ggml_add(ctx0, ggml_mul(ctx0, ggml_sub(ctx0, idx_f, dump), live), dump);"))
             self.assertIn("lt[i] = t[i] < (int32_t) n_kv ? 1.0f : 0.0f;", out)
