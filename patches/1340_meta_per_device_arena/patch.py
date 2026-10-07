@@ -274,9 +274,14 @@ bool ggml_backend_meta_reserve_graph(ggml_backend_t meta_backend, struct ggml_cg
         }
 
         // Shape plans keep offsets/lifetimes only. reserve_n_size deliberately leaves their vbuffer null.
-        size_t planned_size = 0;
-        ggml_gallocr_reserve_n_size(bcj.arena_plans[i_plan].galloc.get(), &simple_graph, nullptr, nullptr, &planned_size);
-        (void) planned_size;
+        // The scheduler reserves one shape several times (the worst case and smaller graphs, in either order): a
+        // plan is only replaced by a graph that does not fit it, so it stays the worst case and every later graph of
+        // that shape binds without a re-plan. (A new plan has no nodes yet, so the test is true for it.)
+        if (ggml_gallocr_needs_realloc(bcj.arena_plans[i_plan].galloc.get(), &simple_graph)) {
+            size_t planned_size = 0;
+            ggml_gallocr_reserve_n_size(bcj.arena_plans[i_plan].galloc.get(), &simple_graph, nullptr, nullptr, &planned_size);
+            (void) planned_size;
+        }
 
         if (!bcj.arena_galloc) {
             bcj.arena_galloc.reset(ggml_gallocr_new(ggml_backend_get_default_buffer_type(bcj.backend)));
