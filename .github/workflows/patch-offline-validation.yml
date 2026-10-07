@@ -6,6 +6,8 @@ on:
     paths:
       - 'patches/**'
       - 'tools/tests/patch/**'
+      - 'tools/tests/cli/test_slice_prune.py'
+      - 'tools/tests/cli/test_slice_prune.py'
       - 'tools/bigcherry/patch/**'
       - 'tools/bigcherry/pin_transition.py'
       - 'tools/bigcherry/campaign/resolution.py'
@@ -75,6 +77,11 @@ jobs:
         env:
           PYTHONPATH: tools
         run: python -m bigcherry pull --source bigcherry
+
+      - name: Run slice branch safety tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.cli.test_slice_prune -v
 
       - name: Run changed-patch offline checks
         shell: bash
