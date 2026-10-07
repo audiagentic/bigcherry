@@ -65,5 +65,8 @@ Base framework / diagnostic: no promotion evidence needed beyond 'prints and cha
 
 ## Ledger-events
 
+
 - chg_20261006_144832_diagnostics-and-experimental-p_1077
 - 2026-10-06T14:48:36.063535+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261007_041129_opt-in-the-tensor-split-can-s_3694
+- 2026-10-07T04:11:38.476250+00:00 (updated-by): Updated: section:ledger-events
