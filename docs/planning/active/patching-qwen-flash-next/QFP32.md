@@ -216,3 +216,8 @@ Ordering: first among QFP31-QFP41. It is a cheap, architecture-neutral check wit
 
 - 2026-10-07T00:39:26.596251+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and BigCherry head 83b692ee; added setter-level one-time reserve design, 1340 replan Gate 0, qualification flag and lightweight ABBA.
+
+## Ledger-events
+
+- chg_20261007_051806_opt-in-one-scheduler-reserve_2026
+- 2026-10-07T05:18:11.738793+00:00 (updated-by): Updated: section:ledger-events

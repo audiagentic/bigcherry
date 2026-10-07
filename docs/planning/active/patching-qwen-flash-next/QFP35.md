@@ -276,3 +276,8 @@ Execution order: sixth. Relative final priority is high among kernel items becau
 
 - 2026-10-07T00:39:37.142989+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and validated 1311/1313; identified flat 64-bit HC indexing plus the remaining scale/sigmoid/scale/HC_POST fusion boundary and assigned changes to existing owners.
+
+## Ledger-events
+
+- chg_20261007_051800_flash-next-prefill-is-about-1_8190
+- 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
