@@ -231,6 +231,23 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the auxiliary expert 
     }
 '''
 
+_SCHED_COMPUTE = """        if (!sched->callback_eval) {
+            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
+"""
+_SCHED_COMPUTE_NEW = """        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            for (int j = 0; j < split->graph.n_nodes; ++j) {
+                if (ggml_backend_meta_is_mirrored_partial_add(split->graph.nodes[j])) {
+                    GGML_LOG_WARN(
+                        "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge_execute split=%d node=%d backend=%s\\n",
+                        split_id, j, ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+                }
+            }
+        }
+
+        if (!sched->callback_eval) {
+            enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
+"""
+
 _SCHED_FREE = """    ggml_gallocr_free(sched->galloc);
     ggml_free(sched->ctx);
 """
@@ -392,7 +409,7 @@ _QWEN_MERGE_NEW = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
         if (bc_aux_layer) {
             if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
                 LLAMA_LOG_WARN(
-                    "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge layer=%d tokens=%lld ctx_type=%d\\n",
+                    "BIGCHERRY_PATCH_TRACE patch=1328_aux_rocm_expert_backend phase=aux_merge_build layer=%d tokens=%lld ctx_type=%d\\n",
                     il, (long long) n_tokens, (int) cparams.ctx_type);
             }
             ggml_backend_meta_mark_mirrored_partial_add(cur); // BigCherry 1328: reduce shared branch only
@@ -448,6 +465,10 @@ PATCHES = [
                  guard=r"BigCherry 1328: no P2P for the auxiliary expert device",
                  rationale="The generic inter-split copy fallback is the unique Meta/ordinary-backend transfer seam and composes after 1326's input fast path.",
                  expect_matches=1, max_span_lines=17),
+            Edit(id="sched-aux-merge-trace", anchor=re.escape(_SCHED_COMPUTE), mode="replace", text=_SCHED_COMPUTE_NEW,
+                 guard=r"phase=aux_merge_execute",
+                 rationale="Runtime trace immediately before the scheduler executes the Meta split containing the marked aux/shared merge.",
+                 expect_matches=1, max_span_lines=3),
             Edit(id="sched-free-aux-stage", anchor=re.escape(_SCHED_FREE), mode="replace", text=_SCHED_FREE_NEW,
                  guard=r"BigCherry 1328: pinned aux bounce buffer",
                  rationale="Free scheduler-owned pinned staging before allocator/context teardown.",
