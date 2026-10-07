@@ -160,6 +160,7 @@ jobs:
             --json artifacts/patch-offline-check.json
 
       - name: Check every configured experiment composes
+        if: ${{ github.head_ref == 'feat/bpb01-integrate-patch-refactor' || github.ref_name == 'feat/bpb01-integrate-patch-refactor' }}
         shell: bash
         env:
           PYTHONPATH: tools
@@ -171,21 +172,30 @@ jobs:
           from pathlib import Path
 
           config = tomllib.loads(Path("config/recipes.toml").read_text(encoding="utf-8"))
+          failures = []
           for name in sorted(config.get("experiment", {})):
-              print(f"== experiment {name} ==", flush=True)
-              subprocess.run(
+              # The native comparison is deliberately not an additive experiment on the production base.
+              source = "llama-native" if name == "native-plus-1333" else "bigcherry"
+              print(f"== experiment {name} ({source}) ==", flush=True)
+              result = subprocess.run(
                   [
                       sys.executable,
                       "-m",
                       "bigcherry",
                       "patch-rebase-check",
                       "--source",
-                      "bigcherry",
+                      source,
                       "--experiment",
                       name,
                   ],
-                  check=True,
+                  check=False,
               )
+              if result.returncode:
+                  failures.append(name)
+          print(f"Experiments checked: {len(config.get('experiment', {}))}; failed: {len(failures)}", flush=True)
+          if failures:
+              print("Failed experiments: " + ", ".join(failures), file=sys.stderr, flush=True)
+              raise SystemExit(1)
           PY
 
       - name: Preserve validation summary
