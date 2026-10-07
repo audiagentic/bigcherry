@@ -16,7 +16,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
-_PIN = "d89651a7b205"
+_PIN = "HEAD"  # the vendor checkout is at the pinned revision
 _META = "ggml/src/ggml-backend-meta.cpp"
 _BACKEND = "ggml/src/ggml-backend.cpp"
 _ALLOC = "ggml/src/ggml-alloc.c"
@@ -46,7 +46,6 @@ def _pinned(path):
 _P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
 _P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
 _P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py")
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
 _P1341 = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
 _P = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
@@ -63,7 +62,7 @@ class Patch1340Mechanics(unittest.TestCase):
             (root / path).parent.mkdir(parents=True, exist_ok=True)
             (root / path).write_text(text, encoding="utf-8", newline="\n")
         # 1340 is validated against the experiment stack in its real application order.
-        for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P1341):
+        for patch in (_P1283, _P1303, _P1326, _P1339, _P1341):
             relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
             base = apply_all(relevant, root)
             self.assertTrue(all(r.ok for r in base), [e.detail for r in base for e in r.failed])
@@ -154,7 +153,7 @@ class Patch1340Mechanics(unittest.TestCase):
 
             # These are the validated patches in the owner's current Meta/Qwen4Exp layout that edit the fixture files.
             # Unrelated package edits have their own mechanics tests.
-            for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P1341, _P):
+            for patch in (_P1283, _P1303, _P1326, _P1339, _P1341, _P):
                 relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
                 res = apply_all(relevant, root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
@@ -165,7 +164,6 @@ class Patch1340Mechanics(unittest.TestCase):
             self.assertIn("BigCherry 1283: whole-expert MoE block.", meta)
             self.assertIn("BIGCHERRY_ATTN_TS", model)
             self.assertIn("bigcherry 1326", backend)
-            self.assertIn("BigCherry 1336", backend)
             self.assertIn("BIGCHERRY_META_MEM compute dev=", meta)
             self.assertIn("ggml_backend_meta_split_device_active", meta)
             self.assertIn("std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)", meta)

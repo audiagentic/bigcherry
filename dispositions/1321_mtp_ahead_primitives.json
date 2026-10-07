@@ -2,8 +2,8 @@
   "disposition": "known_broken",
   "failure_status": "FAILED_NEEDS_RECONCILIATION",
   "owner": "flash-next",
-  "patch_digest": "c6cf94acb4c35e4e53cbaf2b577ccc156fe9379932a0f1a7dd5efd095d1c4ee9",
-  "patch_id": "1275_ar_small_latency",
+  "patch_digest": "ecc018c09e18825f14fb16db11ce83a3cabdbb49fefb35baa580b1ac5cec4779",
+  "patch_id": "1321_mtp_ahead_primitives",
   "reason": "b11474 bump: failed needs reconciliation; not in the production set",
   "target_revision": "b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea",
   "tracking_item": "BPB01"

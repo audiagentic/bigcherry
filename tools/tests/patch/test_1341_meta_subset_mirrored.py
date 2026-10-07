@@ -14,7 +14,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
 _V = _REPO / "vendor/llama.cpp"
-_PIN = "d89651a7b205"
+_PIN = "HEAD"  # the vendor checkout is at the pinned revision
 _H = "ggml/include/ggml-backend.h"
 _META = "ggml/src/ggml-backend-meta.cpp"
 _MODEL = "src/llama-model.cpp"
@@ -41,7 +41,6 @@ def _pinned(path):
 _P1283 = _load("patch_1283", _REPO / "patches/1283_qwen4exp_expert_parallel/patch.py")
 _P1303 = _load("patch_1303", _REPO / "patches/1303_attn_kv_tensor_split/patch.py")
 _P1326 = _load("patch_1326", _REPO / "patches/1326_sched_async_host_inputs/patch.py")
-_P1336 = _load("patch_1336", _REPO / "patches/1336_sched_copy_callback/patch.py")
 _P1339 = _load("patch_1339", _REPO / "patches/1339_meta_memory_report/patch.py")
 _P1340 = _load("patch_1340", _REPO / "patches/1340_meta_per_device_arena/patch.py")
 _P = _load("patch_1341", _REPO / "patches/1341_meta_subset_mirrored/patch.py")
@@ -107,7 +106,7 @@ class Patch1341Mechanics(unittest.TestCase):
                 (root / src_path).parent.mkdir(parents=True, exist_ok=True)
                 (root / src_path).write_text(text, encoding="utf-8", newline="\n")
 
-            for patch in (_P1283, _P1303, _P1326, _P1336, _P1339, _P1340, _P):
+            for patch in (_P1283, _P1303, _P1326, _P1339, _P1340, _P):
                 relevant = [fp for fp in patch.PATCHES if fp.path in _SRC]
                 res = apply_all(relevant, root)
                 self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
@@ -122,7 +121,6 @@ class Patch1341Mechanics(unittest.TestCase):
             self.assertIn("failed to allocate per-device Meta arena", backend)
             self.assertIn("BigCherry 1283: whole-expert MoE block.", meta)
             self.assertIn("bigcherry 1326", meta)
-            self.assertIn("BigCherry 1336", backend)
 
     def test_changed_seed_site_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:

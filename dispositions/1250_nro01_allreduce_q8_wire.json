@@ -4,7 +4,7 @@
   "owner": "flash-next",
   "patch_digest": "cdc71498fcfb21e3274c37e77b472dc604b35c67dc86d5c5761508409f7aa933",
   "patch_id": "1250_nro01_allreduce_q8_wire",
-  "reason": "allreduce.cu restructured upstream: nro01-p2p-q8-outer / nro01-q8-provider-route anchor-no-match; not in the build recipe",
-  "target_revision": "0504396140d1c882f5f6ee34466a42db7ae90114",
-  "tracking_item": "QFP19"
+  "reason": "b11474 bump: failed needs reconciliation; not in the production set",
+  "target_revision": "b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea",
+  "tracking_item": "BPB01"
 }

@@ -1,0 +1,56 @@
+---
+id: BPB01
+order: 0
+plan: build-pin-bump
+state: pending
+created-at: '2026-10-07T14:22:02.591382+00:00'
+breadth: ''
+skill: intermediate
+created-by: agent
+priority: P2
+work: M
+---
+
+# b11474: reconcile the non-production patches that no longer apply
+
+## Description
+
+The b11402 -> b11474 bump (2026-10-08) reconciled the production set (48 patches compose; 1343, 1335 and 1336 retired as superseded by upstream 1a3011cc0, #29901 and #29943; 0200, 1292, 1326, 1327 and 1341 re-anchored). Thirteen patches outside the production set do not apply at b9acf138 and carry a known_broken disposition bound to that revision until each is either reconciled or retired: 1210_rd26_bitidentical_decode_verify_standalone (two mmvf decode-verify anchors), 1268_prbe52_adaptive_mtp_wiring (blocked by 1210), 1250_nro01_allreduce_q8_wire, 1275_ar_small_latency, 1293_sched_single_input_sync (scheduler loop extracted upstream), 1320_meta_compute_timing, 1321_mtp_ahead_primitives, 1322_mtp_ahead_overlap (blocked by 1321), 1328_aux_rocm_expert_backend (scheduler copy), 1337_moe_expert_caching and 1338_moe_cache_profile (built on 1336's callback, now upstream's: MET07), 1342_fusion_bisect (FKE01; upstream e117148a4 changed the alloc_deps check), 1346_mtp_prompt_overlap (QFP31; upstream f0c41e016 consolidated the nextn row cropping).
+
+## Steps
+
+1. 1346 with the QFP31 work (re-brief GPT against the new pin). 2. 1342 with FKE01, after reading upstream e117148a4. 3. 1320 (needed by the prefill-diag experiment). 4. 1337/1338 on upstream's copy callback (MET07). 5. Decide retire-or-fix for the rest; clear each disposition as it is reconciled.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+patch-rebase-check --all reports every non-rejected patch clean or retired; patch-disposition list is empty for b9acf138.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+## Change Log
+
+- 2026-10-07T14:22:02.591382+00:00 (created-by): Created by agent
