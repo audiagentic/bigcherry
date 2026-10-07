@@ -203,6 +203,23 @@ def _release_pr(plan: Plan) -> dict | None:
     return prs[0] if prs else None
 
 
+_RP_HEADER = ":robot: I have created a release *beep* *boop*"
+_RP_FOOTER = ("This PR was generated with [Release Please](https://github.com/googleapis/release-please). "
+              "See [documentation](https://github.com/googleapis/release-please#release-please).")
+
+
+def release_pr_body(changelog: str, version: str) -> str:
+    """The body release-please writes for its release PR, rebuilt from the changelog section it committed on the
+    release branch. After the merge release-please parses this body to find the release; any other text gives
+    'Pull request body did not match' and no release or tag is made."""
+    start = changelog.find(f"## [{version}]")
+    if start < 0:
+        raise PinReleaseError("release", f"the release branch's changelog has no section for {version}")
+    end = changelog.find("\n## [", start + 1)
+    section = changelog[start:end if end >= 0 else len(changelog)].rstrip()
+    return f"{_RP_HEADER}\n---\n\n\n{section}\n\n---\n{_RP_FOOTER}"
+
+
 def _open_release_pr(plan: Plan) -> bool:
     """release-please pushes its release branch even when the repository does not let Actions open pull requests
     (the workflow run then fails). Open the PR from that branch, labelled as release-please expects. Returns whether a
@@ -217,8 +234,8 @@ def _open_release_pr(plan: Plan) -> bool:
     if plan.version not in subject:
         return False   # the branch is still the previous release's
     title = f"release: {component} {plan.version}"
-    body = (f"Release {plan.release_tag} (BigCherry on llama.cpp {plan.llama_tag}). Opened by `bigcherry pin-release` from the "
-            "branch release-please pushed: this repository does not let GitHub Actions open pull requests.")
+    body = release_pr_body(_git(root, "show", f"FETCH_HEAD:{json.loads((root / 'release-please-config.json').read_text(encoding='utf-8'))['packages']['.']['changelog-path']}"),
+                           plan.version)
     made = _run(root, "gh", "pr", "create", "--base", plan.main, "--head", branch, "--title", title, "--body", body,
                 "--label", "autorelease: pending", check=False)
     if made.returncode != 0:
