@@ -568,6 +568,10 @@ patches = ["1342_fusion_bisect"]
 # MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
 patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
+[experiment.mtp-prompt]
+# QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
+patches = ["1346_mtp_prompt_overlap"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
