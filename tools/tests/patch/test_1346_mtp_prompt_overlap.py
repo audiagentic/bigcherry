@@ -1,10 +1,11 @@
-"""Offline mechanics tests for 1346_mtp_prompt_overlap through chunk 3."""
+"""Offline mechanics and lifecycle tests for 1346_mtp_prompt_overlap."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -36,6 +37,96 @@ _P1268 = _load(_REPO / "patches/1268_prbe52_adaptive_mtp_wiring/patch.py", "patc
 
 def _only(module, path):
     return [p for p in module.PATCHES if p.path == path]
+
+
+class Patch1346StaticContracts(unittest.TestCase):
+    def test_metadata_and_explicit_edit_contracts(self):
+        meta = tomllib.loads((_REPO / "patches/1346_mtp_prompt_overlap/patch.toml").read_text(encoding="utf-8"))
+        self.assertEqual(meta["id"], "1346_mtp_prompt_overlap")
+        self.assertEqual(meta["tags"], ["optimization", "mtp"])
+
+        src = (_REPO / "patches/1346_mtp_prompt_overlap/patch.py").read_text(encoding="utf-8")
+        edits = [edit for patch in _P.PATCHES for edit in patch.edits]
+        self.assertGreater(len(edits), 0)
+        self.assertEqual(src.count("expect_matches=1,"), len(edits))
+        self.assertEqual(src.count("max_span_lines="), len(edits))
+        self.assertEqual(src.count("guard=r"), len(edits))
+        for edit in edits:
+            self.assertEqual(edit.expect_matches, 1)
+            self.assertIsNotNone(edit.guard)
+            self.assertGreater(edit.max_span_lines, 0)
+
+    def test_window_qualification_is_conservative(self):
+        text = _P._MTP_PREFILL_TEXT
+        for clause in (
+            "n_prompt <= bc_mtp_prompt_window",
+            "n_cached != 0",
+            "!window_safe",
+            "is_mem_shared",
+            "chain_heads",
+            "n_mtp_layers != 1",
+        ):
+            self.assertIn(clause, text)
+        self.assertIn("inherited_truncated && n_cached > 0", text)
+        self.assertIn("window.suppress = true;", text)
+
+    def test_window_boundary_census_is_chunking_invariant(self):
+        def collect(prompt_len, window, chunk_sizes):
+            replay_first = prompt_len - window
+            predecessor = replay_first - 1
+            retained = []
+            fetched = []
+            pos = 0
+            i = 0
+            while pos < prompt_len:
+                size = chunk_sizes[i % len(chunk_sizes)]
+                beg = pos
+                end = min(prompt_len, pos + size) - 1
+                if end >= predecessor:
+                    fetched.append((beg, end))
+                    for p in range(max(beg, replay_first), end + 1):
+                        retained.append((p, p - 1))
+                pos = end + 1
+                i += 1
+            return predecessor, fetched, retained
+
+        prompt_len = 38673
+        window = 2048
+        expected = [(p, p - 1) for p in range(prompt_len - window, prompt_len)]
+        for chunks in ([1], [7], [512], [37, 511, 3, 256, 19]):
+            predecessor, fetched, retained = collect(prompt_len, window, chunks)
+            self.assertEqual(retained, expected)
+            self.assertTrue(fetched)
+            self.assertLessEqual(fetched[0][0], predecessor)
+            self.assertGreaterEqual(fetched[0][1], predecessor)
+            self.assertEqual(fetched[-1][1], prompt_len - 1)
+
+    def test_replay_and_lifecycle_guards_are_present(self):
+        replay = _P._MTP_BEGIN_TIMING_TEXT
+        process = _P._PROCESS_NATIVE_NEW
+        server = _P._PROMPT_LOAD_NEW + _P._PROMPT_CLEAR_NEW + _P._RELEASE_NEW + _P._SLOT_RESTORE_TEXT
+        self.assertIn("bc_window.count == n_replay", replay)
+        self.assertIn("bc_window.pos.front() == bc_window.replay_first", replay)
+        self.assertIn("bc_window.pos.back() == N - 1", replay)
+        self.assertIn("llama_synchronize(ctx_dft);", replay)
+        self.assertIn("BIGCHERRY_PATCH_HIT patch=1346_mtp_prompt_overlap mechanism=window", replay)
+        self.assertIn("const llama_pos predecessor = (llama_pos) window.replay_first - 1;", process)
+        self.assertIn("const int32_t row = (int32_t) (pos - window.replay_first);", process)
+        self.assertIn("Invariant WINDOW-CACHE-LOAD", server)
+        self.assertIn("Invariant WINDOW-CLEAR", server)
+        self.assertIn("Invariant WINDOW-CANCEL", server)
+        self.assertIn("Invariant WINDOW-SLOT-RESTORE", server)
+        self.assertIn("params_base.n_ctx_checkpoints == 0", _P._SERVER_TEXT)
+
+    def test_default_off_and_no_overlap_worker(self):
+        self.assertEqual(
+            [doc.name for doc in _P.ENV_DOCS],
+            ["BIGCHERRY_MTP_PROMPT_TIMING", "BIGCHERRY_MTP_PROMPT_WINDOW"],
+        )
+        self.assertEqual([doc.default for doc in _P.ENV_DOCS], ["0", "0"])
+        implementation = _P._STATE_TEXT + _P._MTP_PREFILL_TEXT + _P._PROCESS_NATIVE_NEW
+        self.assertNotIn("std::thread", implementation)
+        self.assertNotIn("BIGCHERRY_MTP_PROMPT_OVERLAP", implementation)
 
 
 @unittest.skipUnless(all((_V / f).exists() for f in _FILES), "pinned vendor checkout not present")
@@ -123,15 +214,6 @@ class Patch1346Mechanics(unittest.TestCase):
             self._check(root)
             src = (root / "common/speculative.cpp").read_text(encoding="utf-8")
             self.assertIn("adaptive_state.at(seq_id).reset", src)
-
-    def test_env_doc(self):
-        self.assertEqual(
-            [doc.name for doc in _P.ENV_DOCS],
-            ["BIGCHERRY_MTP_PROMPT_TIMING", "BIGCHERRY_MTP_PROMPT_WINDOW"],
-        )
-        self.assertEqual(_P.ENV_DOCS[0].default, "0")
-        self.assertEqual(_P.ENV_DOCS[1].default, "0")
-
 
 if __name__ == "__main__":
     unittest.main()
