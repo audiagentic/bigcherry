@@ -260,8 +260,6 @@ patches = [
     "1333_mixed_batch_on_demand",
     "1332_qsa_token_chunk",
     "1334_hip_sparse_flash_attn",
-    "1335_tiled_lightning_indexer",
-    "1336_sched_copy_callback",
     "1281_moe_mul_mat_id_range",
     "1283_qwen4exp_expert_parallel",
     "1341_meta_subset_mirrored",

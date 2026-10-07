@@ -48,3 +48,13 @@ table above shows the relocated form equal to the production build that still ha
 text, same speed). There is therefore no gain or loss against native from this patch by itself. Its purpose is the
 callback seam for later residency work, and it becomes redundant when the pin reaches a release that contains
 upstream #29943.
+
+## Superseded at b11474
+
+Upstream llama.cpp merged the scheduler copy callback as `6753a033f` (#29943, "ggml: refactor selective expert copying
+to user code"), the PR this patch backported: `ggml_backend_sched_set_copy_callback` and the selective expert copy in
+`llama_context` are native at pin b11474 (b9acf138). Out of the production set as of the b11402 -> b11474 bump
+(2026-10-08). What does not carry over: the BigCherry additions inside the callback (`BIGCHERRY_MOE_COPY=0`
+observation mode, `BIGCHERRY_MOE_COPY_DENSE_PCT` whole-copy shortcut, the exit counters). They only act with experts
+in host memory, which the production tensor split does not have; the expert-cache experiments that build on them
+(1337, 1338, MET07) have to be re-based on upstream's callback before they run again.

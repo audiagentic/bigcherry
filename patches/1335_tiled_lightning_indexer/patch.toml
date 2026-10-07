@@ -1,7 +1,7 @@
 schema = 1
 id = "1335_tiled_lightning_indexer"
 order = 1335
-state = "validated"
+state = "superseded"
 kind = "upstream-backport"
 origin = "upstream-pr"
 backend = "hip"

@@ -197,7 +197,7 @@ PATCH = FilePatch(
         ),
         Edit(
             id="blas-api-sgemm-telemetry",
-            anchor=r"^                    \(const float \*\) beta,  \(float       \*\)  dst_ptr, ne0\)\);$",
+            anchor=r"^                    \(const float \*\) beta,  \(float       \*\)  dst_ptr, ldc\)\);$",
             rationale="the completed native single-matrix F32 BLAS call",
             text=_record_api("cublasSgemm"),
             guard=r"ggml_hip_record_effective_call_api\(\"cublasSgemm\"\)",
@@ -394,7 +394,7 @@ PATCH = FilePatch(
         ),
         Edit(
             id="blas-metadata-state",
-            anchor=r"^    GGML_ASSERT\(ggml_is_contiguous\(dst\)\);$",
+            anchor=r"^        \(compute_type == GGML_TYPE_F32 && ggml_is_contiguous_1\(dst\)\)\);$",
             rationale="the native BLAS implementation entry point",
             mode="insert_after",
             text=_BLAS_METADATA_STATE,
