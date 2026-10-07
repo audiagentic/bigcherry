@@ -78,6 +78,8 @@ releases shows exactly which solutions came or went.
 | `docs/standards/` | Project standards — normative |
 | `docs/planning/` | Active/completed plan items, design decisions, and work history |
 | `docs/evidence/` | Compact tracked evidence retained for reproducible decisions |
+| `releases/` | Machine-readable per-pin compatibility/rebase state consumed by tooling |
+| `docs/releases/` | Human-facing release notes, audit/check-in guidance, and release ledger |
 
 `vendor/llama.cpp` is a real working tree, not a scratch copy: builds run from
 it in place. See `sql/README.md` for dispatch-database schema ownership.
