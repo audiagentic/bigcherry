@@ -103,9 +103,11 @@ Icon?
 # -- Logs --
 *.log
 
-# -- Cloned sub-repos (vendored dependencies) --
-# These are cloned repos that live under vendor/. Ignore their contents.
+# -- Cloned sub-repos / upstream snapshots --
+# The canonical upstream checkout lives under vendor/ and is materialized from
+# the configured pin. Do not commit copied upstream source into lab directories.
 vendor/
+tools/lab/**/vendor-*/
 prodtest_loop.sh
 vendor/llama.cpp-stock-b10257-linux
 vendor/llama.cpp-stock-b10327-linux
