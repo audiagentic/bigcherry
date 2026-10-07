@@ -20,6 +20,12 @@ _RELS = (
     "src/llama-context.cpp",
     "src/models/qwen4exp.cpp",
 )
+_POST_META = (
+    "1339_meta_memory_report",
+    "1340_meta_per_device_arena",
+    "1341_meta_subset_mirrored",
+)
+
 _DEPLOY = (
     "1291_ar_cpu_root",
     "1292_kpool_tail_truncate",
@@ -79,6 +85,8 @@ class Patch1328Mechanics(unittest.TestCase):
             self.assertIn("const enum ggml_backend_dev_type bc_aux_type", ctx)
             self.assertIn("named ordinary GPU through its pinned host buffer", backend)
             self.assertIn("BIGCHERRY_AUX_EXPERT_MERGE_MAGIC", meta)
+            self.assertIn("mirrored_mirrored", meta)
+            self.assertIn("MIRRORED + PARTIAL or MIRRORED + MIRRORED", meta)
             self.assertIn("partial auxiliary routed-expert placement is unsupported", qwen)
             self.assertIn("ggml_backend_meta_mark_mirrored_partial_add(cur)", qwen)
 
@@ -102,6 +110,28 @@ class Patch1328Mechanics(unittest.TestCase):
             self.assertIn("1327_qsa_host_remap", touched)
             res = apply_all(_P1328.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+
+    def test_composes_with_current_production_meta_patches(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._tree(td)
+            for pid in sorted(_DEPLOY, key=lambda x: int(x.split("_", 1)[0])):
+                patches = _only(_load(pid))
+                if patches:
+                    res = apply_all(patches, root)
+                    self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+
+            res = apply_all(_P1328.PATCHES, root)
+            self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
+
+            for pid in _POST_META:
+                patches = _only(_load(pid))
+                if patches:
+                    res = apply_all(patches, root)
+                    self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+
+            meta = (root / "ggml/src/ggml-backend-meta.cpp").read_text(encoding="utf-8")
+            self.assertIn("mirrored_mirrored", meta)
+            self.assertIn("active_mask", meta)
 
     def test_missing_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
