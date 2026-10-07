@@ -2,7 +2,26 @@ name: RCD Slurm validation
 
 on:
   push:
-    branches: [patch-refactor]
+    branches: [main]
+    paths:
+      - '.github/workflows/rcd-slurm-validation.yml'
+      - 'tools/lab/run-campaign-durability/**'
+      - 'tools/bigcherry/jobs/**'
+      - 'tools/bigcherry/hardware/**'
+      - 'tools/bigcherry/cli/jobs.py'
+      - 'tools/bigcherry/cli/hardware.py'
+      - 'tools/bigcherry/__main__.py'
+      - 'tools/bigcherry/core/host_lock.py'
+      - 'tools/bigcherry/core/tree_activity.py'
+      - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/tuning/journal.py'
+      - 'tools/bigcherry/telemetry.py'
+      - 'tools/bigcherry/patch/validation_campaign.py'
+      - 'tools/bigcherry/patch/campaign/producer.py'
+      - 'config/jobs/**'
+      - 'config/slurm/**'
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/rcd-slurm-validation.yml'
       - 'tools/lab/run-campaign-durability/**'

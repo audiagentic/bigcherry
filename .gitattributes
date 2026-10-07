@@ -1,4 +1,2 @@
-# Scripts run on Linux hosts (Brutus): always commit with LF, even when written from Windows.
-*.sh text eol=lf
-*.py text eol=lf
-releases/*.json text eol=lf
+# Keep text byte-stable across Linux and Windows worktrees.
+* text=auto eol=lf

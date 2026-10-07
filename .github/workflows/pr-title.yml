@@ -1,0 +1,37 @@
+name: PR title
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate conventional commit title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          title = os.environ["PR_TITLE"]
+          pattern = re.compile(
+              r"^(feat|fix|perf|chore|docs|test|refactor|ci|build|bump)"
+              r"(\([a-z0-9][a-z0-9._/-]*\))?!?: .+"
+          )
+          if not pattern.fullmatch(title):
+              print(
+                  "PR title must be a conventional commit: "
+                  "<type>(<scope>): <description>; allowed types: "
+                  "feat, fix, perf, chore, docs, test, refactor, ci, build, bump",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1)
+          PY
