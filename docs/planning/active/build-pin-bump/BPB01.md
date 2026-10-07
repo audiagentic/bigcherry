@@ -51,6 +51,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1293_sched_single_input_sync — re-based for b11474: carry the once-per-split user-input sync state through upstream's extracted ggml_backend_sched_copy_input helper; production 1326 still composes after it.
+
 ## Change Log
 
 - 2026-10-07T14:22:02.591382+00:00 (created-by): Created by agent
