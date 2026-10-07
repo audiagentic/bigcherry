@@ -279,7 +279,7 @@ _CTX_GPU_LOOP_NEW = r'''        // GPU backends
                 if (bc_aux_dev == nullptr) {
                     throw std::runtime_error(format("BIGCHERRY_EXPERT_AUX_DEVICE=%s was not found", bc_aux_name));
                 }
-                const ggml_backend_dev_type bc_aux_type = ggml_backend_dev_type(bc_aux_dev);
+                const enum ggml_backend_dev_type bc_aux_type = ggml_backend_dev_type(bc_aux_dev);
                 if (bc_aux_type != GGML_BACKEND_DEVICE_TYPE_GPU && bc_aux_type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
                     throw std::runtime_error(format("BIGCHERRY_EXPERT_AUX_DEVICE=%s is not a GPU", bc_aux_name));
                 }
