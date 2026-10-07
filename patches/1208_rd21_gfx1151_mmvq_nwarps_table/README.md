@@ -12,3 +12,8 @@ rules reserve those for a failed/replaced candidate, never for
 temporarily-unavailable hardware). No further validation work on this
 patch is expected until gfx1151 hardware becomes available; do not
 infer coverage from gfx1100/gfx1201/gfx1030 results.
+
+
+## Static validation-package repair (2026-10-08)
+
+The existing Experiment Contract is explicitly bound and `validation.toml` declares apply, build, correctness, activation, performance, and controls. This repairs the former `patch-lint` missing-binding/missing-adapter errors; it does **not** certify a validation campaign or introduce measurements. The declared activation marker does not yet exist in `patch.py`, so a new validation attempt must remain BLOCKED until real subject-hit/control-miss instrumentation and evidence are added. This patch remains untested/deferred on the unavailable gfx1151 hardware.
