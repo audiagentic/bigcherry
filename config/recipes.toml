@@ -566,6 +566,10 @@ patches = ["1339_meta_memory_report", "1342_fusion_bisect"]
 # MSM02/MSM03 qualification: measurement + per-device compute arena + cache_idx subset mirror.
 patches = ["1339_meta_memory_report", "1340_meta_per_device_arena"]
 
+[experiment.meta-memory-content]
+# MSM03: meta-memory + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
+patches = ["1339_meta_memory_report", "1340_meta_per_device_arena", "1329_alloc_top_trace", "1331_alloc_peak_live"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
