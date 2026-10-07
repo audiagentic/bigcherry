@@ -149,8 +149,6 @@ ownership.
 | `tools/lab/ar-accuracy/queue-p2p-accuracy.sh` | **TRANSITIONAL** | `ar-accuracy` lab topic file (see `tools/lab/ar-accuracy/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/bump-validation/run_bump_validation.py` | **KEEP** | RHA12: standing bump-validation matrix (PIN_BUMP.md step 5/6) -- builds fresh at the current pin and launches the real production runtime-profiles across every real GPU individually plus the real dual-XTX multi-GPU topology; run on every future bump, not a one-shot experiment. |
 | `tools/lab/bump-validation/smoke_worker.py` | **KEEP** | RHA12: the real per-cell delegate_argv worker run_bump_validation.py's runtime-matrix cells launch -- reuses ServerRunner to actually start each server, wait for /health, send one real completion, and shut down cleanly; part of the same standing bump-validation tool, not a one-shot experiment. |
-| `tools/lab/deepseek/probe-v4-flash.sh` | **TRANSITIONAL** | `deepseek` lab topic file (see `tools/lab/deepseek/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/deepseek/queue-v4-flash.sh` | **TRANSITIONAL** | `deepseek` lab topic file (see `tools/lab/deepseek/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/smoke-0910.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/default-on/xmodel-ab.sh` | **TRANSITIONAL** | `default-on` lab topic file (see `tools/lab/default-on/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/dflash/dflash-depth.sh` | **TRANSITIONAL** | `dflash` lab topic file (see `tools/lab/dflash/README.md`); experiment-only, disposed per that README. |
@@ -439,30 +437,6 @@ ownership.
 | `tools/lab/plan-qualification/withdraw_discarded.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/profiling/profile-27b-q8.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/profiling/queue-27b-profile.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/r9700-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx1-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g1.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g2.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g3.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/configs/xtx2-g4.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/iq-mmvq-xtx1-iq3_xxs.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/iq-mmvq-xtx1-iq4_xs.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx1-q4_k_m.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx1-q6_k.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx2-q4_k_m.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/kquant-f32-xtx2-q6_k.json` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/make-configs.py` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-iq-mmvq.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-kquant-f32.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/quant-sweep/queue-quant-sweep.sh` | **TRANSITIONAL** | `quant-sweep` lab topic file (see `tools/lab/quant-sweep/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/bidir-check.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
