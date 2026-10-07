@@ -46,7 +46,7 @@ class Patch1295Mechanics(unittest.TestCase):
             cpp = snap["src/models/qwen4exp.cpp"]
             self.assertEqual(cpp.count("BigCherry 1295: small batches over a large cache attend"), 1)
             # off by default: enabled only when the variable is set and not "0"
-            self.assertIn('const bool enabled = e != nullptr && strcmp(e, "0") != 0;', cpp)
+            self.assertIn('const bool enabled = e == nullptr || strcmp(e, "0") != 0;', cpp)
             # the gather branch sits before the dense mask path of build_attn_qsa
             attn = cpp[cpp.index("ggml_tensor * llama_model_qwen4exp::graph::build_attn_qsa("):]
             self.assertLess(attn.index("kqv_out_qsa_gather"), attn.index("// the selection mask already carries the causal mask"))

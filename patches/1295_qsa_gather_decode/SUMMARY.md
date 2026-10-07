@@ -1,13 +1,13 @@
 # 1295_qsa_gather_decode
 
-**Status:** evaluated
+**Status:** validated
 **Plan item:** RNX02
 
 ## What it does
 
 For batches of at most 8 tokens, Qwen4Exp QSA attention gathers each token's selected KV cells (padded to a
 multiple of 256 with a masked sentinel) and runs flash attention over them, instead of masking the full
-cache. Prefill keeps the masked path. Off by default; `BIGCHERRY_QSA_GATHER=1` enables it (set from the `flashnext` runtime profile).
+cache. Prefill keeps the masked path. On by default; `BIGCHERRY_QSA_GATHER=0` restores the masked path.
 
 ## Why
 
