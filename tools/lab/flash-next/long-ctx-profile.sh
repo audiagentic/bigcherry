@@ -48,7 +48,22 @@ run_pass() {  # <name> <depths...>; server optionally wrapped by $WRAP
     kill -0 "$pid" 2>/dev/null || break
     sleep 2
   done
-  if [ "$ok" != 1 ]; then echo "$name: SERVER_FAILED"; tail -5 "$log"; kill "$pid" 2>/dev/null; wait "$pid"; return; fi
+  if [ "$ok" != 1 ]; then
+    echo "$name: SERVER_FAILED"
+    tail -5 "$log"
+    local startup_shutdown=0
+    if kill -0 "$pid" 2>/dev/null; then
+      startup_shutdown=1
+      kill -INT "$pid" 2>/dev/null
+    fi
+    wait "$pid"
+    local server_rc=$? server_sig=none
+    if [ "$server_rc" -gt 128 ]; then
+      server_sig=$(kill -l $((server_rc - 128)) 2>/dev/null || echo $((server_rc - 128)))
+    fi
+    echo "$name: SERVER_EXIT status=$server_rc signal=$server_sig phase=startup shutdown_requested=$startup_shutdown"
+    return
+  fi
   rocm-smi --showmeminfo vram 2>/dev/null | grep "Total Used" > "$out/$name.vram.txt"
   SERVER_PID=$pid PERF_OUT=${PERF_OUT:-} CACHE=${CACHE:-} DECODE_N=${DECODE_N:-128} python3 - "$port" "$name" "$out" "$@" <<'PY'
 import json, sys, urllib.request
@@ -108,11 +123,21 @@ for d in depths:
     print(f"{name}: prompt {r['prompt_n']} tok at {r['prompt_per_second']:.1f} t/s, decode {r['predicted_per_second']:.1f} t/s, accepted {r['draft_n_accepted']}/{r['draft_n']}", flush=True)
 json.dump(rows, open(f"{out}/{name}.timings.json", "w"), indent=1)
 PY
+  local client_rc=$?
   cat "$out/$name.vram.txt"
-  kill -INT "$pid"  # bounded: a rocprofv3-wrapped server hung 6.5 h after SIGINT on 2026-10-03
-  for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-  kill -0 "$pid" 2>/dev/null && { echo "$name: shutdown hung, SIGKILL"; kill -9 "$pid"; }
+  local shutdown_requested=0
+  if kill -0 "$pid" 2>/dev/null; then
+    shutdown_requested=1
+    kill -INT "$pid"  # bounded: a rocprofv3-wrapped server hung 6.5 h after SIGINT on 2026-10-03
+    for _ in $(seq 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -0 "$pid" 2>/dev/null && { echo "$name: shutdown hung, SIGKILL"; kill -9 "$pid"; }
+  fi
   wait "$pid"
+  local server_rc=$? server_sig=none
+  if [ "$server_rc" -gt 128 ]; then
+    server_sig=$(kill -l $((server_rc - 128)) 2>/dev/null || echo $((server_rc - 128)))
+  fi
+  echo "$name: SERVER_EXIT status=$server_rc signal=$server_sig phase=run shutdown_requested=$shutdown_requested client_status=$client_rc"
   grep -h "memory breakdown\|ROCm\|Host " "$log" | grep common_memory_breakdown_print | tail -6
 }
 mode=${3:-full}
