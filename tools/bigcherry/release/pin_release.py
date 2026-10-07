@@ -203,6 +203,29 @@ def _release_pr(plan: Plan) -> dict | None:
     return prs[0] if prs else None
 
 
+def _open_release_pr(plan: Plan) -> bool:
+    """release-please pushes its release branch even when the repository does not let Actions open pull requests
+    (the workflow run then fails). Open the PR from that branch, labelled as release-please expects. Returns whether a
+    PR was opened."""
+    root = plan.repo_root
+    component = json.loads((root / "release-please-config.json").read_text(encoding="utf-8"))["packages"]["."]["component"]
+    branch = f"release-please--branches--{plan.main}--components--{component}"
+    if not _git(root, "ls-remote", "--heads", plan.remote, f"refs/heads/{branch}", check=False):
+        return False
+    _git(root, "fetch", "-q", plan.remote, branch)
+    subject = _git(root, "log", "-1", "--format=%s", "FETCH_HEAD")
+    if plan.version not in subject:
+        return False   # the branch is still the previous release's
+    title = f"release: {component} {plan.version}"
+    body = (f"Release {plan.release_tag} (BigCherry on llama.cpp {plan.llama_tag}). Opened by `bigcherry pin-release` from the "
+            "branch release-please pushed: this repository does not let GitHub Actions open pull requests.")
+    made = _run(root, "gh", "pr", "create", "--base", plan.main, "--head", branch, "--title", title, "--body", body,
+                "--label", "autorelease: pending", check=False)
+    if made.returncode != 0:
+        raise PinReleaseError("release", f"could not open the release PR from {branch}: {(made.stderr or made.stdout).strip()[-400:]}")
+    return True
+
+
 def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
     """release-please's PR merged and the release tag present. Returns False when the tag already exists."""
     if _tag_exists(plan):
@@ -211,12 +234,13 @@ def phase_release(plan: Plan, wait_s: int = 900, poll_s: int = 20) -> bool:
     pr = None
     while pr is None:
         pr = _release_pr(plan)
+        if pr is None and _open_release_pr(plan):
+            continue
         if pr is None:
             if time.time() > deadline:
                 raise PinReleaseError("release", f"no release-please PR for {plan.version} on {plan.main} after {wait_s} s. Check the "
-                                                 "release-please workflow run; if it could not open the PR (repository setting 'Allow "
-                                                 "GitHub Actions to create and approve pull requests'), open it from the release branch "
-                                                 "with the label 'autorelease: pending' and run again")
+                                                 "release-please workflow run on main: neither a release PR nor a release branch for "
+                                                 "this version exists")
             time.sleep(poll_s)
     merged = _run(plan.repo_root, "gh", "pr", "merge", str(pr["number"]), "--merge", check=False)
     if merged.returncode != 0:
