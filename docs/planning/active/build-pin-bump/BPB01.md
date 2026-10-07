@@ -51,6 +51,10 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1328_aux_rocm_expert_backend — re-based for b11474: moved the pinned Meta/aux staging hook into upstream's extracted ggml_backend_sched_copy_input fallback; all other anchors still match b11474.
+
+- 1293_sched_single_input_sync — re-based for b11474: carry the once-per-split user-input sync state through upstream's extracted ggml_backend_sched_copy_input helper; production 1326 still composes after it.
+
 ## Change Log
 
 - 2026-10-07T14:22:02.591382+00:00 (created-by): Created by agent
