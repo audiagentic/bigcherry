@@ -46,6 +46,7 @@ from .patch import (
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
 from .source import cmd_audit, cmd_pull
+from .slice import cmd_slice_prune
 from .tuning import (
     cmd_execution_audit,
     cmd_tuning_rollup,
@@ -146,6 +147,24 @@ def build_parser() -> argparse.ArgumentParser:
     check_cmd.add_argument("--fail-fast", action="store_true")
     check_cmd.add_argument("--json", metavar="PATH", default=None)
     check_cmd.set_defaults(func=cmd_check, tier="default")
+
+    slice_cmd = sub.add_parser(
+        "slice", help="manage short-lived branches used by the trunk workflow"
+    )
+    slice_sub = slice_cmd.add_subparsers(dest="slice_command", required=True)
+    slice_prune = slice_sub.add_parser(
+        "prune",
+        help="delete remote branches merged into main and report stale unmerged branches",
+    )
+    slice_prune.add_argument("--remote", default="origin")
+    slice_prune.add_argument("--base", default="main")
+    slice_prune.add_argument("--stale-days", type=int, default=14)
+    slice_prune.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list merged branches without deleting them",
+    )
+    slice_prune.set_defaults(func=cmd_slice_prune)
 
     apply_cmd = sub.add_parser("apply", help="apply the overlay and patches")
     apply_cmd.add_argument(

@@ -2,7 +2,24 @@ name: Jobs service validation
 
 on:
   push:
-    branches: [patch-refactor]
+    branches: [main]
+    paths:
+      - 'tools/bigcherry/jobs/**'
+      - 'tools/bigcherry/hardware/**'
+      - 'tools/bigcherry/core/host_lock.py'
+      - 'tools/bigcherry/experiment/bundle.py'
+      - 'tools/bigcherry/patch/campaign/profile.py'
+      - 'tools/bigcherry/cli/jobs.py'
+      - 'tools/bigcherry/cli/hardware.py'
+      - 'tools/bigcherry/__main__.py'
+      - 'tools/lab/plan-qualification/**'
+      - 'tools/admin/**'
+      - 'tools/tests/jobs/**'
+      - 'config/jobs/**'
+      - 'config/slurm/**'
+      - '.github/workflows/jobs-service-validation.yml'
+  pull_request:
+    branches: [main]
     paths:
       - 'tools/bigcherry/jobs/**'
       - 'tools/bigcherry/hardware/**'
