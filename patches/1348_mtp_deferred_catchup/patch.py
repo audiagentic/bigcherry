@@ -585,53 +585,9 @@ _N_TARGET_FAIL = r"""        if (ret != 0) {
 """
 
 _A_SPEC_PROCESS = """\
-        if (spec) {
-            bool ok = true;
-            queue_tasks.yield_to_queue([&]() {
-                const int64_t bc_t0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
                 ok = common_speculative_process(spec.get(), batch.view);
-                if (bc_spec_timing_on()) {
-                    bc_spec_t().process_us += ggml_time_us() - bc_t0;
-                }
-            });
-
-            if (!ok) {
-                SRV_ERR("%s", "failed to process speculative batch\\n");
-
-                // TODO: handle error
-                throw std::runtime_error("failed to process speculative batch");
-            }
-        }
-
-        // handle `n_cmpl > 1` tasks - when the main prompt is processed, activate all child tasks too
 """
-_N_SPEC_PROCESS = r"""        if (spec) {
-            bool ok = true;
-            queue_tasks.yield_to_queue([&]() {
-                const int64_t bc_t0 = bc_spec_timing_on() ? ggml_time_us() : 0;  // bigcherry 1317
-                ok = common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only);
-                if (bc_spec_timing_on()) {
-                    bc_spec_t().process_us += ggml_time_us() - bc_t0;
-                }
-            });
-
-            if (!ok) {
-                SRV_ERR("%s", "failed to process speculative batch\n");
-
-                // TODO: handle error
-                throw std::runtime_error("failed to process speculative batch");
-            }
-        }
-
-        // The standard has_output contract is preserved. Eligible deferred MTP has already synchronized while
-        // snapshotting NextN, so this is normally a no-op; it also protects non-MTP speculative combinations.
-        if (has_output && bc_prompt_only) {
-            queue_tasks.yield_to_queue([&]() {
-                llama_synchronize(ctx_tgt);
-            });
-        }
-
-        // handle n_cmpl > 1 tasks - when the main prompt is processed, activate all child tasks too
+_N_SPEC_PROCESS = r"""                ok = common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only);
 """
 
 _A_FINAL_FLUSH = """\
@@ -829,9 +785,9 @@ PATCHES = [
                 mode="replace",
                 text=_N_SPEC_PROCESS,
                 guard=r"common_speculative_process_deferred\(spec.get\(\), batch.view, bc_prompt_only\)",
-                rationale="Preserve 1317 timing around the post-target hook while routing prompt-only batches through deferred catch-up.",
+                rationale="Replace only the speculative process call so 1317 timing wrappers, when present, remain untouched.",
                 expect_matches=1,
-                max_span_lines=22,
+                max_span_lines=2,
             ),
             Edit(
                 id="mtp-deferred-final-flush",
