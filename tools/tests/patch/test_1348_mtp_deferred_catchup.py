@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from argparse import Namespace
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.patcher import apply_all  # noqa: E402
+from bigcherry.patch import selection  # noqa: E402
 from bigcherry.patch.pinned_source import copy_pinned  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[3]
@@ -21,9 +23,9 @@ _FILES = (
 )
 
 
-def _load():
+def _load(pid: str):
     spec = importlib.util.spec_from_file_location(
-        "patch_1348", _REPO / "patches/1348_mtp_deferred_catchup/patch.py"
+        "patch_" + pid, _REPO / "patches" / pid / "patch.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -31,7 +33,7 @@ def _load():
     return module
 
 
-_P = _load()
+_P = _load("1348_mtp_deferred_catchup")
 
 
 @unittest.skipUnless(all((_V / p).exists() for p in _FILES), "pinned vendor checkout not present")
@@ -43,9 +45,28 @@ class Patch1348Mechanics(unittest.TestCase):
             copy_pinned(_V / rel, root / rel)
         return root
 
-    def test_apply_and_idempotent(self):
+    def _apply_production_without_1348(self, root):
+        # Exercise 1348 against the exact production composition it follows, not pristine b11474.
+        selected = selection.resolve_cli_selection(Namespace(source="bigcherry"))
+        self.assertIn("1348_mtp_deferred_catchup", selected.patch_ids)
+        for pid in selected.patch_ids:
+            if pid == "1348_mtp_deferred_catchup":
+                continue
+            module = _load(pid)
+            relevant = tuple(p for p in getattr(module, "PATCHES", ()) if p.path in _FILES)
+            if not relevant:
+                continue
+            res = apply_all(relevant, root)
+            self.assertTrue(all(r.ok for r in res), (pid, [e.detail for r in res for e in r.failed]))
+
+    def test_full_production_then_1348_apply_and_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
+            self._apply_production_without_1348(root)
+            before_1348 = (root / "tools/server/server-context.cpp").read_text(encoding="utf-8")
+            self.assertIn("bc_spec_t().sync_us", before_1348)  # 1317
+            self.assertIn("bigcherry 1322: draft ahead on the draft GPU", before_1348)  # 1322
+
             res = apply_all(_P.PATCHES, root)
             self.assertTrue(all(r.ok for r in res), [e.detail for r in res for e in r.failed])
 
@@ -69,6 +90,18 @@ class Patch1348Mechanics(unittest.TestCase):
             self.assertIn("common_speculative_flush_deferred(spec.get())", srv)
             self.assertIn("common_speculative_reset_deferred(spec.get(), slot.id, true)", srv)
             self.assertIn("common_speculative_reset_deferred(spec.get(), tok.seq_id, true)", srv)
+            self.assertIn(
+                "if (ret == 0 && !bc_prompt_only && spec && ctx_dft && bc_mtp_ahead_on()",
+                srv,
+            )
+            boundary = srv.index("failed to flush deferred MTP prompt catch-up before ahead draft")
+            ahead = srv.index("common_speculative_draft(spec.get());", boundary)
+            sync = srv.index("llama_synchronize(ctx_tgt);", ahead)
+            self.assertLess(boundary, ahead)
+            self.assertLess(ahead, sync)
+            final_flush = srv.index("failed to flush deferred MTP prompt catch-up")
+            begin = srv.index("common_speculative_begin(spec.get()", final_flush)
+            self.assertLess(final_flush, begin)
             self.assertLess(
                 srv.index("ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());"),
                 srv.index("ok = common_speculative_process_deferred(spec.get(), batch.view, bc_prompt_only);"),
@@ -82,6 +115,7 @@ class Patch1348Mechanics(unittest.TestCase):
     def test_changed_header_anchor_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._root(td)
+            self._apply_production_without_1348(root)
             p = root / "common/speculative.h"
             before = p.read_text(encoding="utf-8").replace(
                 "bool common_speculative_process(common_speculative * spec, const common_batch & batch);",
