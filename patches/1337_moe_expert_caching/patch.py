@@ -11,9 +11,9 @@ scheduler hooks (ggml_backend_sched_set_moe_cache: resolve / begin / prepare), t
 cached MUL_MAT_ID on the cache backend and substitute the remapped ids, context and common parameter plumbing, and the
 CLI flag. Every edit is one hunk of the upstream commit, anchored on its unchanged context.
 
-Requires 1336 (#29943 copy callback): seven hunks sit where 1336 changes upstream's context and are anchored on the
-1336 form (the callback typedef and setter, the scheduler fields, the compute-loop locals, the input copy, and the two
-scheduler creations in llama_context::sched_reserve, where the copy callback moves into upstream's create_sched).
+b11474 already contains #29943's native scheduler copy callback. This rebase prepares cache-owned host weights in
+the scheduler's host-weight pass, while ordinary host weights continue through ggml_backend_sched_copy_input and the
+native selective expert-copy callback. Scheduler creation installs both callbacks on every scheduler instance.
 Superseded when the pin reaches a release containing #29887.
 """
 import re as _re
@@ -439,59 +439,60 @@ _N_GGML_BACKEND_CPP_12 = (
     '    }\n'
 )
 
-_A_GGML_BACKEND_CPP_13 = (
-    '            struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);\n'
-)
+_A_GGML_BACKEND_CPP_13 = r'''        for (int input_id = 0; input_id < split->n_inputs; input_id++) {
+            if (ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+                ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
+            }
+        }
+'''
 
-_N_GGML_BACKEND_CPP_13 = (
-    '            struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);\n'
-    '            struct ggml_backend_sched_moe_cache_entry * cache_entry = ggml_backend_sched_moe_cache_entry_find(sched, split_id, input, NULL);\n'
-)
+_N_GGML_BACKEND_CPP_13 = r'''        for (int input_id = 0; input_id < split->n_inputs; input_id++) {
+            if (!ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+                continue;
+            }
 
-_A_GGML_BACKEND_CPP_14 = (
-    '                }\n'
-    '                ggml_backend_tensor_copy(input, input_cpy);\n'
-    '            } else {\n'
-    '                // wait for the split backend to finish using the input before overwriting it\n'
-)
+            struct ggml_tensor * input = split->inputs[input_id];
+            struct ggml_backend_sched_moe_cache_entry * cache_entry =
+                ggml_backend_sched_moe_cache_entry_find(sched, split_id, input, NULL);
+            if (cache_entry == NULL) {
+                ggml_backend_sched_copy_input(sched, split, input);
+                continue;
+            }
 
-_N_GGML_BACKEND_CPP_14 = (
-    '                }\n'
-    '                ggml_backend_tensor_copy(input, input_cpy);\n'
-    '            } else if (cache_entry != NULL) {\n'
-    '                // the experts are uploaded on the first projection of a layer, the others share ids_copy\n'
-    '                // the uploads are ordered after the previous work of the split backend, so there is no need to wait for it\n'
-    '                if (cache_entry->shared) {\n'
-    '                    continue;\n'
-    '                }\n'
-    '                ggml_tensor * ids_tensor = cache_entry->ids;\n'
-    '                ggml_backend_t ids_backend = ggml_backend_sched_get_tensor_backend(sched, ids_tensor);\n'
-    '                const int64_t n_ids = ggml_nelements(ids_tensor);\n'
-    '                if (n_ids == 0) {\n'
-    '                    continue;\n'
-    '                }\n'
-    '\n'
-    '                cache_ids.resize(ggml_nbytes(ids_tensor) / sizeof(int32_t));\n'
-    '                ggml_backend_tensor_get_async(ids_backend, ids_tensor, cache_ids.data(), 0, ggml_nbytes(ids_tensor));\n'
-    '                ggml_backend_synchronize(ids_backend);\n'
-    '\n'
-    '                selected_ids.resize(n_ids);\n'
-    '                for (int64_t i1 = 0; i1 < ids_tensor->ne[1]; i1++) {\n'
-    '                    for (int64_t i0 = 0; i0 < ids_tensor->ne[0]; i0++) {\n'
-    '                        selected_ids[i1*ids_tensor->ne[0] + i0] = cache_ids[i1 * ids_tensor->nb[1]/sizeof(int32_t) + i0 * ids_tensor->nb[0]/sizeof(int32_t)];\n'
-    '                    }\n'
-    '                }\n'
-    '\n'
-    '                // upload the missing experts and map the expert ids to cache slots\n'
-    '                const int32_t * remapped_ids = NULL;\n'
-    '                if (!sched->callback_moe_cache_prepare(sched->callback_moe_cache_user_data, cache_entry->handle, selected_ids.data(), n_ids, &remapped_ids)) {\n'
-    '                    GGML_LOG_ERROR("%s: failed to prepare the MoE cache\\n", __func__);\n'
-    '                    return GGML_STATUS_FAILED;\n'
-    '                }\n'
-    '                ggml_backend_tensor_set_async(split_backend, cache_entry->ids_copy, remapped_ids, 0, ggml_nbytes(cache_entry->ids_copy));\n'
-    '            } else {\n'
-    '                // wait for the split backend to finish using the input before overwriting it\n'
-)
+            // The cache owns this host expert input. Prepare it instead of invoking the ordinary
+            // selective-copy callback; other host weights still use ggml_backend_sched_copy_input.
+            if (cache_entry->shared) {
+                continue;
+            }
+            ggml_tensor * ids_tensor = cache_entry->ids;
+            ggml_backend_t ids_backend = ggml_backend_sched_get_tensor_backend(sched, ids_tensor);
+            const int64_t n_ids = ggml_nelements(ids_tensor);
+            if (n_ids == 0) {
+                continue;
+            }
+
+            cache_ids.resize(ggml_nbytes(ids_tensor) / sizeof(int32_t));
+            ggml_backend_tensor_get_async(ids_backend, ids_tensor, cache_ids.data(), 0, ggml_nbytes(ids_tensor));
+            ggml_backend_synchronize(ids_backend);
+
+            selected_ids.resize(n_ids);
+            for (int64_t i1 = 0; i1 < ids_tensor->ne[1]; i1++) {
+                for (int64_t i0 = 0; i0 < ids_tensor->ne[0]; i0++) {
+                    selected_ids[i1*ids_tensor->ne[0] + i0] =
+                        cache_ids[i1 * ids_tensor->nb[1]/sizeof(int32_t) + i0 * ids_tensor->nb[0]/sizeof(int32_t)];
+                }
+            }
+
+            const int32_t * remapped_ids = NULL;
+            if (!sched->callback_moe_cache_prepare(
+                    sched->callback_moe_cache_user_data, cache_entry->handle, selected_ids.data(), n_ids, &remapped_ids)) {
+                GGML_LOG_ERROR("%s: failed to prepare the MoE cache\n", __func__);
+                return GGML_STATUS_FAILED;
+            }
+            ggml_backend_tensor_set_async(
+                split_backend, cache_entry->ids_copy, remapped_ids, 0, ggml_nbytes(cache_entry->ids_copy));
+        }
+'''
 
 _A_GGML_BACKEND_CPP_15 = (
     '    }\n'
@@ -508,38 +509,44 @@ _N_GGML_BACKEND_CPP_15 = (
     '    free(sched->hv_tensor_backend_ids);\n'
 )
 
-_A_GGML_BACKEND_CPP_16 = (
-    '}\n'
-    '\n'
-    'int ggml_backend_sched_get_n_splits(ggml_backend_sched_t sched) {\n'
-    '    GGML_ASSERT(sched);\n'
-)
+_A_GGML_BACKEND_CPP_16 = r'''void ggml_backend_sched_set_copy_callback(ggml_backend_sched_t sched, ggml_backend_sched_copy_callback callback, void * user_data) {
+    GGML_ASSERT(sched);
+    sched->callback_copy = callback;
+    sched->callback_copy_user_data = user_data;
+}
 
-_N_GGML_BACKEND_CPP_16 = (
-    '}\n'
-    '\n'
-    'void ggml_backend_sched_set_moe_cache(\n'
-    '        ggml_backend_sched_t                          sched,\n'
-    '        ggml_backend_t                                backend,\n'
-    '        ggml_backend_sched_moe_cache_resolve_callback resolve,\n'
-    '        ggml_backend_sched_moe_cache_begin_callback   begin,\n'
-    '        ggml_backend_sched_moe_cache_prepare_callback prepare,\n'
-    '        void *                                        user_data) {\n'
-    '    GGML_ASSERT(sched);\n'
-    '    GGML_ASSERT((backend == NULL && resolve == NULL && begin == NULL && prepare == NULL) ||\n'
-    '                (backend != NULL && resolve != NULL && begin != NULL && prepare != NULL));\n'
-    '    const int backend_id = backend == NULL ? -1 : ggml_backend_sched_backend_id(sched, backend);\n'
-    '    GGML_ASSERT(backend == NULL || (backend_id >= 0 && backend_id < sched->n_backends - 1));\n'
-    '    sched->moe_cache_backend            = backend;\n'
-    '    sched->callback_moe_cache_resolve   = resolve;\n'
-    '    sched->callback_moe_cache_begin     = begin;\n'
-    '    sched->callback_moe_cache_prepare   = prepare;\n'
-    '    sched->callback_moe_cache_user_data = user_data;\n'
-    '}\n'
-    '\n'
-    'int ggml_backend_sched_get_n_splits(ggml_backend_sched_t sched) {\n'
-    '    GGML_ASSERT(sched);\n'
-)
+int ggml_backend_sched_get_n_splits(ggml_backend_sched_t sched) {
+    GGML_ASSERT(sched);
+'''
+
+_N_GGML_BACKEND_CPP_16 = r'''void ggml_backend_sched_set_copy_callback(ggml_backend_sched_t sched, ggml_backend_sched_copy_callback callback, void * user_data) {
+    GGML_ASSERT(sched);
+    sched->callback_copy = callback;
+    sched->callback_copy_user_data = user_data;
+}
+
+void ggml_backend_sched_set_moe_cache(
+        ggml_backend_sched_t                          sched,
+        ggml_backend_t                                backend,
+        ggml_backend_sched_moe_cache_resolve_callback resolve,
+        ggml_backend_sched_moe_cache_begin_callback   begin,
+        ggml_backend_sched_moe_cache_prepare_callback prepare,
+        void *                                        user_data) {
+    GGML_ASSERT(sched);
+    GGML_ASSERT((backend == NULL && resolve == NULL && begin == NULL && prepare == NULL) ||
+                (backend != NULL && resolve != NULL && begin != NULL && prepare != NULL));
+    const int backend_id = backend == NULL ? -1 : ggml_backend_sched_backend_id(sched, backend);
+    GGML_ASSERT(backend == NULL || (backend_id >= 0 && backend_id < sched->n_backends - 1));
+    sched->moe_cache_backend            = backend;
+    sched->callback_moe_cache_resolve   = resolve;
+    sched->callback_moe_cache_begin     = begin;
+    sched->callback_moe_cache_prepare   = prepare;
+    sched->callback_moe_cache_user_data = user_data;
+}
+
+int ggml_backend_sched_get_n_splits(ggml_backend_sched_t sched) {
+    GGML_ASSERT(sched);
+'''
 
 _A_LLAMA_H_0 = (
     '\n'
@@ -619,31 +626,27 @@ _N_LLAMA_CONTEXT_CPP_2 = (
     '        sched_reserve();\n'
 )
 
-_A_LLAMA_CONTEXT_CPP_3 = (
-    '    sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));\n'
-    '    ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);  // BigCherry 1336 (upstream #29943)\n'
-)
+_A_LLAMA_CONTEXT_CPP_3 = r'''    sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
+    ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);
+'''
 
-_N_LLAMA_CONTEXT_CPP_3 = (
-    '    auto create_sched = [&](bool parallel) {\n'
-    '        sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, parallel, cparams.op_offload));\n'
-    '        ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);  // BigCherry 1336 (upstream #29943)\n'
-    '        if (moe_cache) {\n'
-    '            ggml_backend_sched_set_moe_cache(sched.get(), moe_cache->backend(),\n'
-    '                llama_moe_cache::sched_resolve, llama_moe_cache::sched_begin, llama_moe_cache::sched_prepare, moe_cache.get());\n'
-    '        }\n'
-    '    };\n'
-    '    create_sched(cparams.pipeline_parallel);\n'
-)
+_N_LLAMA_CONTEXT_CPP_3 = r'''    auto create_sched = [&](bool parallel) {
+        sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, parallel, cparams.op_offload));
+        ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);
+        if (moe_cache) {
+            ggml_backend_sched_set_moe_cache(sched.get(), moe_cache->backend(),
+                llama_moe_cache::sched_resolve, llama_moe_cache::sched_begin, llama_moe_cache::sched_prepare, moe_cache.get());
+        }
+    };
+    create_sched(cparams.pipeline_parallel);
+'''
 
-_A_LLAMA_CONTEXT_CPP_4 = (
-    '                sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, false, cparams.op_offload));\n'
-    '                ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);  // BigCherry 1336 (upstream #29943)\n'
-)
+_A_LLAMA_CONTEXT_CPP_4 = r'''                sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, false, cparams.op_offload));
+                ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);
+'''
 
-_N_LLAMA_CONTEXT_CPP_4 = (
-    '                create_sched(false);\n'
-)
+_N_LLAMA_CONTEXT_CPP_4 = r'''                create_sched(false);
+'''
 
 _A_LLAMA_CONTEXT_CPP_5 = (
     '    }\n'
@@ -1298,17 +1301,15 @@ PATCHES = [
                  guard=_re.escape('std::vector<int32_t> selected_ids;'),
                  rationale="upstream #29887 hunk 13 of ggml/src/ggml-backend.cpp.", expect_matches=1, max_span_lines=2),
             Edit(id="moe-cache-ggml-backend-cpp-13", anchor=_re.escape(_A_GGML_BACKEND_CPP_13), mode="replace", text=_N_GGML_BACKEND_CPP_13,
-                 guard=_re.escape('struct ggml_backend_sched_moe_cache_entry * cache_entry = ggml_backend_sched_moe_cache_entry_find(sched, split_id, input, NULL);'),
-                 rationale="upstream #29887 hunk 14 of ggml/src/ggml-backend.cpp.", expect_matches=1, max_span_lines=2),
-            Edit(id="moe-cache-ggml-backend-cpp-14", anchor=_re.escape(_A_GGML_BACKEND_CPP_14), mode="replace", text=_N_GGML_BACKEND_CPP_14,
-                 guard=_re.escape('} else if (cache_entry != NULL) {'),
-                 rationale="upstream #29887 hunk 15 of ggml/src/ggml-backend.cpp.", expect_matches=1, max_span_lines=5),
+                 guard=_re.escape('The cache owns this host expert input. Prepare it instead of invoking the ordinary'),
+                 rationale="b11474 #29943 extracted ordinary host-weight copying; prepare cache-owned weights in the host-weight pass and delegate all others to the native helper.",
+                 expect_matches=1, max_span_lines=5),
             Edit(id="moe-cache-ggml-backend-cpp-15", anchor=_re.escape(_A_GGML_BACKEND_CPP_15), mode="replace", text=_N_GGML_BACKEND_CPP_15,
                  guard=_re.escape('free(sched->moe_cache_entries);'),
                  rationale="upstream #29887 hunk 16 of ggml/src/ggml-backend.cpp.", expect_matches=1, max_span_lines=5),
             Edit(id="moe-cache-ggml-backend-cpp-16", anchor=_re.escape(_A_GGML_BACKEND_CPP_16), mode="replace", text=_N_GGML_BACKEND_CPP_16,
                  guard=_re.escape('void ggml_backend_sched_set_moe_cache('),
-                 rationale="upstream #29887 hunk 17 of ggml/src/ggml-backend.cpp.", expect_matches=1, max_span_lines=5),
+                 rationale="Install the MoE-cache setter immediately after b11474\'s native #29943 copy-callback setter.", expect_matches=1, max_span_lines=7),
         ),
     ),
     FilePatch(
@@ -1347,10 +1348,10 @@ PATCHES = [
                  rationale="upstream #29887 hunk 3 of src/llama-context.cpp.", expect_matches=1, max_span_lines=3),
             Edit(id="moe-cache-llama-context-cpp-3", anchor=_re.escape(_A_LLAMA_CONTEXT_CPP_3), mode="replace", text=_N_LLAMA_CONTEXT_CPP_3,
                  guard=_re.escape('auto create_sched = [&](bool parallel) {'),
-                 rationale="upstream #29887 hunk 4 of src/llama-context.cpp.", expect_matches=1, max_span_lines=3),
+                 rationale="Wrap b11474\'s scheduler creation so every instance retains the native selective-copy callback and installs the MoE-cache callback.", expect_matches=1, max_span_lines=2),
             Edit(id="moe-cache-llama-context-cpp-4", anchor=_re.escape(_A_LLAMA_CONTEXT_CPP_4), mode="replace", text=_N_LLAMA_CONTEXT_CPP_4,
                  guard=_re.escape('create_sched(false);'),
-                 rationale="upstream #29887 hunk 5 of src/llama-context.cpp.", expect_matches=1, max_span_lines=3),
+                 rationale="The pipeline-parallel fallback must use the same callback-installing scheduler factory.", expect_matches=1, max_span_lines=2),
             Edit(id="moe-cache-llama-context-cpp-5", anchor=_re.escape(_A_LLAMA_CONTEXT_CPP_5), mode="replace", text=_N_LLAMA_CONTEXT_CPP_5,
                  guard=_re.escape('for (const auto & [buft, size] : moe_cache->memory_breakdown()) {'),
                  rationale="upstream #29887 hunk 6 of src/llama-context.cpp.", expect_matches=1, max_span_lines=3),
