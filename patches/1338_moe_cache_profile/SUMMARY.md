@@ -22,3 +22,6 @@ Nothing changes without the variables.
 ## Evidence
 
 - Offline mechanics test: `tools/tests/patch/test_1338_moe_cache_profile.py`. Hardware: pending.
+
+- build moe-cache-profile compiled clean and is byte-identical in output with the flag off (smoke md5 equals production).
+- Real host-expert 0 vs 4096 MiB vs profiled-cache qualification at b11474 is still pending; use `tools/lab/flash-next/queue-moe-cache.sh`.
