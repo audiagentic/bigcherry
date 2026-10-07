@@ -167,7 +167,8 @@ _N_BACKEND_CONFIG = r"""        std::vector<cgraph_config>           cgraphs;
         std::vector<arena_plan_t>            arena_plans; // BigCherry 1340 (MSM02)
         std::vector<ggml_tensor *>           arena_nodes; // persistent: resized/reused for each transformed graph
         std::vector<ggml_tensor *>           arena_leafs;
-        uint64_t                             arena_replans = 0; // post-reserve invariant violations only
+        uint64_t                             arena_replans = 0; // new layouts inside the reserved arena (normal)
+        uint64_t                             arena_grows   = 0; // the arena had to grow after reserve (must stay 0)
 """
 
 _A_DTOR = r"""        for (auto & bc : backend_configs) {
@@ -302,8 +303,10 @@ bool ggml_backend_meta_reserve_graph(ggml_backend_t meta_backend, struct ggml_cg
 }
 
 // Compute-time only: translate the current graph, validate the reserve-time shape plan, and bind it into the
-// already-reserved physical arena. A non-fit is an invariant violation: report it loudly, perform one fallback
-// re-plan/grow, count it, then continue. Normal runs must keep arena_replans at zero.
+// already-reserved physical arena. A graph that does not fit its plan gets a new layout inside the same arena:
+// that is normal (the graphs that run have other shapes than the reserved measure graph, and inputs sized by the
+// filled context grow with it - the scheduler's own allocator re-plans at the same moments). What must not happen
+// is the physical arena growing after reserve: memory is final at load. That is reported as an error and counted.
 bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgraph * cgraph) {
     GGML_ASSERT(ggml_backend_is_meta(meta_backend));
     if (!ggml_backend_meta_per_device_arena_enabled()) {
@@ -335,11 +338,12 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
         if (nonfit) {
             const size_t before_bytes = bcj.arena_galloc ? ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) : 0;
             bcj.arena_replans++;
-            GGML_LOG_ERROR(
-                "BIGCHERRY_META_MEM arena_nonfit dev=%zu nodes=%d leafs=%d reserved_mib=%.2f replans=%llu detail=[%s]; "
-                "falling back to one re-plan\n",
-                j, simple_graph.n_nodes, simple_graph.n_leafs, before_bytes / 1024.0 / 1024.0,
-                (unsigned long long) bcj.arena_replans, bc_gallocr_replan_last);
+            if (mem_report) {
+                GGML_LOG_INFO(
+                    "BIGCHERRY_META_MEM arena_replan dev=%zu nodes=%d leafs=%d reserved_mib=%.2f replans=%llu detail=[%s]\n",
+                    j, simple_graph.n_nodes, simple_graph.n_leafs, before_bytes / 1024.0 / 1024.0,
+                    (unsigned long long) bcj.arena_replans, bc_gallocr_replan_last);
+            }
 
             if (i_plan == bcj.arena_plans.size()) {
                 bcj.arena_plans.emplace_back();
@@ -360,13 +364,21 @@ bool ggml_backend_meta_alloc_graph(ggml_backend_t meta_backend, struct ggml_cgra
             if (!ggml_gallocr_reserve_grow(bcj.arena_galloc.get(), &simple_graph)) {
                 return false;
             }
+            const size_t after_bytes = ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0);
+            if (after_bytes > before_bytes) {
+                bcj.arena_grows++;
+                GGML_LOG_ERROR(
+                    "BIGCHERRY_META_MEM arena_grew dev=%zu nodes=%d leafs=%d reserved_mib=%.2f -> %.2f grows=%llu "
+                    "detail=[%s]: the reserve-time arena was not the worst case\n",
+                    j, simple_graph.n_nodes, simple_graph.n_leafs, before_bytes / 1024.0 / 1024.0,
+                    after_bytes / 1024.0 / 1024.0, (unsigned long long) bcj.arena_grows, bc_gallocr_replan_last);
+            }
 
             if (mem_report) {
                 ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(bcj.backend);
-                GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s reserved_mib=%.2f plans=%zu replans=%llu\n",
-                    j, ggml_backend_buft_name(buft),
-                    ggml_gallocr_get_buffer_size(bcj.arena_galloc.get(), 0) / 1024.0 / 1024.0,
-                    bcj.arena_plans.size(), (unsigned long long) bcj.arena_replans);
+                GGML_LOG_INFO("BIGCHERRY_META_MEM arena dev=%zu buft=%s reserved_mib=%.2f plans=%zu replans=%llu grows=%llu\n",
+                    j, ggml_backend_buft_name(buft), after_bytes / 1024.0 / 1024.0,
+                    bcj.arena_plans.size(), (unsigned long long) bcj.arena_replans, (unsigned long long) bcj.arena_grows);
             }
         }
 

@@ -7,7 +7,7 @@ Kind: enhancement, flag `BIGCHERRY_META_PER_DEVICE_ARENA=1` (default 0).
 
 With the flag enabled, the Meta tensor-split compute buffer no longer gives every simple device the scheduler's common physical arena size. `ggml_backend_sched_reserve()` materialises the scheduler's worst-case measure graph once, then 1340 translates that graph to each simple backend. Each device owns one grow-only physical gallocr arena; graph-shape gallocr plans keep allocation metadata only and bind into that shared arena during compute.
 
-Compute-time growth is not a normal path. A graph that does not fit its reserve-time device plan emits `GGML_LOG_ERROR` with the device, graph shape and last tensor/size refusal, increments the device `replans` counter, performs one fallback re-plan/grow, then binds. Normal hardware runs are expected to report `replans=0`.
+Compute-time growth of the physical arena is not a normal path: it emits `GGML_LOG_ERROR` (`arena_grew`) and is counted. A new layout inside the reserved arena is normal and quiet (`arena_replan` under `BIGCHERRY_META_MEM=1`).
 
 With `BIGCHERRY_META_MEM=1`, load/reserve reports:
 
