@@ -447,3 +447,32 @@ Validation after implementation:
 
 Expected gain on the production three-card target + gfx1030 sidecar, if Gate 0 passes: **8K +0.0% to +0.4%, 24K +0.4% to +1.3%, ~98K +0.8% to +2.5% prefill/TTFT**. The upper end requires the gfx1030 catch-up to remain materially serialized after 1343.
 - 2026-10-07T07:51:46.301374+00:00 (updated-by): Updated: priority='P0', section:notes
+
+
+## Chunk 1 implementation decision (2026-10-07)
+
+**Decision: OVERLAP first, after the cost split below.** Keep the full prompt catch-up and proposal context, but in chunk 2 move only the draft-context catch-up for prompt chunk `k` onto one persistent worker while the target computes chunk `k+1`. This is lower risk than WINDOW because it preserves every draft KV row, proposal distribution and acceptance opportunity. It can recover only the draft-side/host portion of the measured penalty; target NextN extraction remains serial. Therefore chunk 1 is a stop gate: if `target_nextn_ms` dominates and the overlap-able remainder is small, do not build the worker first; switch QFP31 to WINDOW using the existing prompt-start contract.
+
+Exact b11402 call order to preserve:
+
+1. `tools/server/server-context.cpp`, `SLOT_STATE_STARTED`: prompt-cache/checkpoint decisions finish, final `n_past` is committed, then `slot.prompt.tokens.keep_first(n_past)`. Chunk 1 calls new `common_speculative_prefill_begin(spec, slot.id)` here. No prompt work has started yet.
+2. For each rendered target sub-batch, the server calls `llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get())`, synchronizes target output when required, then calls `common_speculative_process(spec.get(), batch.view)`.
+3. `common/speculative.cpp::common_speculative_impl_draft_mtp::process()` reads target NextN state, builds the existing shifted-hidden draft catch-up batch, calls `llama_process(ctx_dft, ... DECODE ...)`, then updates `verify_h`, `verify_h_rows` and final `pending_h`.
+4. After the final prompt sub-batch, server `post_decode()` transitions the slot to generation and calls `common_speculative_begin(...)`. This is the mandatory future worker flush boundary before generation can read draft state.
+
+Threaded shared-state inventory for chunk 2/3:
+
+- **Main-thread only during prompt:** `ctx_tgt`; target NextN getters/copies; `pending_h`; `verify_h`; `verify_h_rows`; `i_batch_beg/end`. These remain synchronous so target output/verification bookkeeping is unchanged.
+- **Worker-only while prompt overlap is armed:** prompt catch-up calls on `ctx_dft`. The worker must own a separate catch-up `common_batch`; it must not concurrently reuse the MTP member `batch`, which `draft()` uses after the prompt.
+- **Job payload is immutable/deep-copied:** token ids, absolute positions, sequence ids and the exact hidden-input rows that native `process()` would pass to the draft. Pointers into target NextN buffers may not escape the submitting call because later target processing can reuse those buffers.
+- **Generation/sampler state:** `smpls`, `backend_chains`, `i_last`, `chain_h` and draft generation use are main-thread only after a flush. V1 overlap should qualify only non-shared, single-head MTP (`!is_mem_shared && !chain_heads && n_mtp_layers == 1`); this matches production Qwen4Exp and avoids concurrent shared/chained-head KV semantics.
+- **Queue bound/order:** FIFO, at most one running plus one queued catch-up job. This preserves prompt order and prevents hidden-row copies growing with prompt length.
+- **Required future flushes:** before `begin()`, `draft()`, speculative/draft state save or load, prompt-cache draft save/load, context shift/removal that touches draft memory, cancellation, slot reuse with another prompt, and MTP destruction. Chunk 3 must name and wire every concrete server/driver path.
+
+Server-to-driver contract for OVERLAP is deliberately smaller than WINDOW: one `prefill_begin(seq_id)` after cache/checkpoint resolution and before the first target prompt batch, plus existing `begin()` at prompt end. No prompt length/window or cache count is needed because full catch-up is retained. Prompt-cache/checkpoint restores that happen before `prefill_begin` remain synchronous.
+
+Chunk-1 diagnostic (`patches/1346_mtp_prompt_overlap`, `BIGCHERRY_MTP_PROMPT_TIMING=1`) is behavior-neutral and intended for the single-slot Gate-0 run. It prints once at prompt end:
+
+`BIGCHERRY_MTP_PROMPT_TIMING target_nextn_ms=... draft_process_ms=... draft_decode_ms=... chunks=... tokens=...`
+
+Definitions: `draft_process_ms` is inclusive wall time in MTP `process()`; `draft_decode_ms` is wall time inside its existing prompt catch-up `llama_process(ctx_dft, ...)` calls; `target_nextn_ms` is host-visible wall in target NextN buffer acquisition plus per-row NextN getters/copies, including any synchronization those getters force. The residual `draft_process_ms - target_nextn_ms - draft_decode_ms` is other synchronous MTP host work. This does **not** measure the target graph's internal NextN compute separately; compare with the existing no-MTP Gate 0 for that ceiling. Mixed-sequence batches are intentionally not attributed by this diagnostic.
