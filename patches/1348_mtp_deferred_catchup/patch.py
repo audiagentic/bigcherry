@@ -669,7 +669,7 @@ PATCHES = [
                 anchor=re.escape(_A_INCLUDES),
                 mode="replace",
                 text=_N_INCLUDES,
-                guard=r"#include <cstdlib>",
+                guard=r"#include <cstdio>\n#include <cstdlib>",
                 rationale="Standard includes used by the env switch and first-use marker.",
                 expect_matches=1,
                 max_span_lines=3,
@@ -722,7 +722,7 @@ PATCHES = [
                 guard=r"after a dropped deferred catch-up, never generate from stale draft state",
                 rationale="Tail of native MTP process() through the draft() admission point.",
                 expect_matches=1,
-                max_span_lines=23,
+                max_span_lines=30,
             ),
             Edit(
                 id="mtp-deferred-public-api",
