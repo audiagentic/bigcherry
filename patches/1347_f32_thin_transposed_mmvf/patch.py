@@ -56,7 +56,7 @@ _N_THIN = r"""    // bigcherry 1347 (QFP34): a thin F32 weight (2..8 rows) again
     if (bc_f32_thin_mmvf() && ne01 >= 2 && ne01 <= MMVF_MAX_BATCH_SIZE && ne11 > MMVF_MAX_BATCH_SIZE && ne2 == 1 && ne3 == 1
             && src0->type == GGML_TYPE_F32
             && ggml_is_contiguous(src0) && ggml_is_contiguous(src1) && ggml_is_contiguous(dst)
-            && ggml_cuda_should_use_mmvf(src1->type, cc, src1->ne, src1->nb, /*ne11 =*/ 1)) {
+            && ggml_cuda_should_use_mmvf(src1->type, cc, warp_size, src1->ne, src1->nb, /*ne11 =*/ 1)) {
         static bool bc_logged = false;
         if (!bc_logged && getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
             bc_logged = true;
