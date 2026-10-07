@@ -60,7 +60,7 @@ concurrency:
 jobs:
   offline-patch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,6 +102,35 @@ jobs:
             --head "$GITHUB_SHA" \
             --source bigcherry \
             --json artifacts/patch-offline-check.json
+
+      - name: Check every configured experiment composes
+        shell: bash
+        env:
+          PYTHONPATH: tools
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          config = tomllib.loads(Path("config/recipes.toml").read_text(encoding="utf-8"))
+          for name in sorted(config.get("experiment", {})):
+              print(f"== experiment {name} ==", flush=True)
+              subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "bigcherry",
+                      "patch-rebase-check",
+                      "--source",
+                      "bigcherry",
+                      "--experiment",
+                      name,
+                  ],
+                  check=True,
+              )
+          PY
 
       - name: Preserve validation summary
         if: always()
