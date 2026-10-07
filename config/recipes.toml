@@ -306,20 +306,8 @@ required-state = "validated"
 [experiment.hi166-ordered-trace-only]
 patches = ["0850_ordered_speculative_trace"]
 
-[experiment.rd19-only]
-patches = ["1200_rd19_single_gpu_meta_bypass"]
-
-[experiment.rd20-only]
-patches = ["1201_rd20_attn_gate_tp_split"]
-
 [experiment.rd04-only]
 patches = ["1202_rd04_bf16_flash_attn_tile"]
-
-[experiment.rd05-07-only]
-patches = ["1203_rd050607_rdna4_wmma_fa_q6k_mmq"]
-
-[experiment.rd08-only]
-patches = ["1204_rd08_q6k_mmvq_vdr2"]
 
 [experiment.rd12-only]
 patches = ["1205_rd12_paired_mmvq_dual_output"]
@@ -327,24 +315,12 @@ patches = ["1205_rd12_paired_mmvq_dual_output"]
 [experiment.rd13-only]
 patches = ["1206_rd13_mul_mat_add_view_fusion"]
 
-[experiment.rd17-only]
-patches = ["1207_rd17_moe_topk_down_fold"]
-
 [experiment.rd21-only]
 patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
-
-[experiment.rd22-only]
-patches = ["1209_rd22_integrated_gpu_host_buffer_backout"]
 
 [experiment.rd26a-only]
 patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
 
-[experiment.rd39-42-only]
-patches = ["1215_rd394041_amd_stream_moe_overlap"]
-
-# 2026-09-26: 1216/1217 separated from 1215 (rejected). 1216 guards upstream's
-# own GGML_CUDA_GRAPH_OPT concurrent regions (stream_ctx.concurrent_events);
-# 1215 only added more of them.
 [experiment.rd43-only]
 patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
@@ -357,32 +333,17 @@ patches = [
 [experiment.rd50-only]
 patches = ["1221_rd50_gdn_chunked_recurrence"]
 
-[experiment.rd73-only]
-patches = ["1233_rd73_stable_graph_cache_key"]
-
 [experiment.rd58-only]
 patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 
 [experiment.rd09-only]
 patches = []
 
-[experiment.rd30-only]
-patches = ["1237_rd30_moe_mmq_compact_grid"]
-
-[experiment.gp11-fusion-ncols]
-patches = ["1245_gp11_mmvq_fusion_ncols_gate"]
-
-[experiment.rd33-only]
-patches = ["1241_rd33_mmvq_q8_0_f32_decode"]
-
 [experiment.nro05-only]
 patches = ["1254_nro05_gdn_mtp_prefix_tail"]
 
 [experiment.dense-decode-combo]
-patches = ["1241_rd33_mmvq_q8_0_f32_decode", "1206_rd13_mul_mat_add_view_fusion", "1245_gp11_mmvq_fusion_ncols_gate"]
-
-[experiment.allreduce-cli]
-patches = ["0860_allreduce_provider_cli"]
+patches = ["1206_rd13_mul_mat_add_view_fusion"]
 
 [experiment.nro10-only]
 patches = ["1261_nro10_spec_ctx_other_devices"]
@@ -390,10 +351,6 @@ patches = ["1261_nro10_spec_ctx_other_devices"]
 [experiment.ar-wire]
 # 1272 alone: explicit GGML_CUDA_AR_WIRE=f32|bf16|f16|q8_0 on the internal AllReduce; unset = pristine.
 patches = ["1272_ar_host_compressed_wire"]
-
-[experiment.kquant-f32]
-# 1274 alone (1241, which it requires, is in validated-enhancements): Q6_K/Q4_K F32-activation ncols=1 decode.
-patches = ["1274_mmvq_kquant_f32_decode"]
 
 [experiment.ar-p2p]
 # 1252 P2P internal AllReduce (opt-in GGML_CUDA_AR_P2P=1, content-probed; falls back to host staging)
@@ -403,7 +360,7 @@ patches = ["1272_ar_host_compressed_wire", "1252_nro03_allreduce_p2p_provider", 
 [experiment.adaptive-wire-latency]
 # Promotion candidates combined: adaptive closure (0860 + 1225 + 0840) + 1272 wire formats + 1275
 # small-AllReduce latency switches, so f32/bf16/f16 x latency-fix arms run on one binary.
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1272_ar_host_compressed_wire", "1275_ar_small_latency"]
+patches = ["1272_ar_host_compressed_wire", "1275_ar_small_latency"]
 
 [experiment.adaptive-size-trace]
 # Diagnostic: 1277's env-gated per-call AllReduce size/provider trace (BIGCHERRY_AR_SIZE_TRACE=<n>) on top
@@ -443,10 +400,6 @@ patches = []
 # QFN01: + opt-in trimmed MTP draft head (1297, BIGCHERRY_DRAFT_VOCAB_N); one binary serves all A/B arms.
 patches = []
 
-[experiment.ar-cpu-root-kpool-topk-vecq]
-# RNX02: 1291 + 1292 + 1294 + quantized-KV vector kernel for MTP verify (1298); A/B vs ar-cpu-root-kpool-topk.
-patches = ["1298_fattn_vec_quant_verify"]
-
 [experiment.ar-cpu-root-kpool-topk-trim]
 # QFN01 deployment candidate: 1291 + 1292 + 1294 + 1297 (no 1295 until its parity is resolved).
 patches = []
@@ -474,10 +427,6 @@ patches = []
 [experiment.deploy-v2-plus-1295]
 # 1295 QSA gather decode screened on production profile v2 (deploy + 1302 + 1303, f16/f16 240K).
 patches = []
-
-[experiment.deploy-v2-plus-1304]
-# QFP06: production profile v2 + 1304 graph-cache LRU cap / per-instance memory log (both env-gated).
-patches = ["1304_cuda_graph_lru_cap"]
 
 [experiment.deploy-v2-plus-1305]
 # QFP09: production profile v2 + 1305 FFN/MoE split vector (BIGCHERRY_FFN_TS, env-gated; same binary both arms).
@@ -610,27 +559,16 @@ patches = ["1244_gp11_internal_allreduce_nway_root"]
 [experiment.allreduce-adaptive]
 # 0840 with its REQUIRES (0830 telemetry, 0860 --allreduce CLI, 1225 NCCL arch guard), no 1224
 # probe. 0840 is selected with --allreduce adaptive, so one binary serves every provider arm.
-patches = [
-    "0830_split_reduce_telemetry",
-    "0860_allreduce_provider_cli",
-    "1225_hi85_nccl_heterogeneous_arch_guard",
-    "0840_hybrid_allreduce_dispatch",
-]
+patches = ["0830_split_reduce_telemetry"]
 
 [experiment.ar-adaptive-nway]
 # 1276 composes adaptive N=3: root3 below the CLI switch, RCCL at/above it.
 # Experiments are exact compositions (REQUIRES are never auto-added), so the closure is listed.
-patches = ["0860_allreduce_provider_cli", "1225_hi85_nccl_heterogeneous_arch_guard", "0840_hybrid_allreduce_dispatch", "1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"]
+patches = ["1244_gp11_internal_allreduce_nway_root", "1276_ar_adaptive_nway"]
 
 [experiment.allreduce-adaptive-wire]
 # Adaptive dispatcher plus 1272's host-wire codec; exact dependency-complete composition.
-patches = [
-    "0830_split_reduce_telemetry",
-    "0860_allreduce_provider_cli",
-    "1225_hi85_nccl_heterogeneous_arch_guard",
-    "0840_hybrid_allreduce_dispatch",
-    "1272_ar_host_compressed_wire",
-]
+patches = ["0830_split_reduce_telemetry", "1272_ar_host_compressed_wire"]
 
 [experiment.hi18-reduce-probe]
 patches = ["1224_hi18_reduce_correctness_probe"]
@@ -641,10 +579,7 @@ patches = ["1224_hi18_reduce_correctness_probe"]
 # now-superseded patch 1001); 1224 (the SPLIT_REDUCE correctness probe) is included
 # so test-hip-reduce can exercise both sides of the dispatch threshold.
 # One-off validation build, not a permanent recipe.
-patches = [
-    "0840_hybrid_allreduce_dispatch",
-    "1224_hi18_reduce_correctness_probe",
-]
+patches = ["1224_hi18_reduce_correctness_probe"]
 
 [experiment.hi134-meta-stage-trace]
 # 0830 (validated, always in the default control build) satisfies 1242's
