@@ -14,7 +14,11 @@ for cfg in "$@"; do
   ot=$base_ot; [ "$layers" != none ] && ot="$base_ot,blk\.($layers)\.ffn_.*_exps\.weight=${DEST:-CPU}"
   nl=$([ "$layers" = none ] && echo 0 || echo "$layers" | tr '|' '\n' | wc -l)
   d="$root/r$n-L$nl-ub$ub"
-  out=$(EXTRA_OT="$ot" UB=$ub B=$ub DEPTH=${DEPTH:-65536} bash "$s" "$bin" "$d" timing 2>&1 | grep -E "^timing:|SERVER_FAILED")
-  vram=$(grep -h "VRAM Total Used" $d/*vram* 2>/dev/null | awk '{printf "%.1f ", $NF/1073741824}')
-  echo "run$n layers=$nl ub$ub: $(echo $out | tr '\n' ' ') | VRAM GiB: $vram"
+  runlog="$d/sweep-run.log"
+  mkdir -p "$d"
+  EXTRA_OT="$ot" UB=$ub B=$ub DEPTH=${DEPTH:-65536} bash "$s" "$bin" "$d" timing >"$runlog" 2>&1
+  runner_rc=$?
+  out=$(grep -E "^timing:|SERVER_FAILED|SERVER_EXIT" "$runlog" || true)
+  vram=$(grep -h "VRAM Total Used" "$d"/*vram* 2>/dev/null | awk '{printf "%.1f ", $NF/1073741824}')
+  echo "run$n layers=$nl ub$ub: $(echo "$out" | tr '\n' ' ') | runner_status=$runner_rc | VRAM GiB: $vram"
 done
