@@ -268,6 +268,7 @@ patches = [
     "1339_meta_memory_report",
     "1340_meta_per_device_arena",
     "1344_dsv4_hc_grid_index",
+    "1343_mtp_nextn_rereserve",
     "1006_rdna4_mmq_q6k_codegen_fix",
     "1200_rd19_single_gpu_meta_bypass",
 ]
@@ -564,10 +565,6 @@ patches = ["1342_fusion_bisect"]
 [experiment.meta-memory-content]
 # MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
 patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
-
-[experiment.mtp-rereserve]
-# QFP32: production set + 1343 (BIGCHERRY_MTP_RERESERVE=1: one scheduler reserve when the NextN outputs switch on).
-patches = ["1343_mtp_nextn_rereserve"]
 
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
