@@ -73,6 +73,11 @@ jobs:
       - name: Compile validation harness
         run: python -m py_compile tools/bigcherry/patch/offline_check.py
 
+      - name: Run patch lint
+        env:
+          PYTHONPATH: tools
+        run: python -m bigcherry patch-lint --json
+
       - name: Prepare pinned llama.cpp source
         env:
           PYTHONPATH: tools
