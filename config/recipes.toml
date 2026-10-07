@@ -570,9 +570,6 @@ patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 # QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
 patches = ["1346_mtp_prompt_overlap"]
 
-[experiment.mtp-deferred-catchup]
-# QFP31: production set + 1348; default-on deferred same-thread MTP prompt catch-up.
-patches = ["1348_mtp_deferred_catchup"]
 
 [experiment.prefill-diag]
 # Where a prefill chunk's wall time goes on the host: production set + 1319 / 1320 / 1325 (BIGCHERRY_SUBMIT_TIMING=1:
