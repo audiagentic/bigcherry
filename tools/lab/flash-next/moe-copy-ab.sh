@@ -107,14 +107,14 @@ elif [ "${ARMS:-copy}" = profile ]; then # 1338: W = LRU cache and write a profi
   run W2 -- --moe-cache-mib $mib
 elif [ "${ARMS:-copy}" = qualify ]; then # MET01 b11474: real host-expert cache qualification, MTP acceptance included
   mib=${CACHE_MIB:-4096}
-  run C0
+  run C0 -- --moe-cache-mib 0
   run C$mib -- --moe-cache-mib $mib
   prof=${PROFILE:-$out/profile.bin}
   if [ -z "${PROFILE:-}" ]; then
     run R BIGCHERRY_MOE_CACHE_PROFILE_OUT=$prof BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib $mib
   fi
   run P$mib BIGCHERRY_MOE_CACHE_PROFILE=$prof BIGCHERRY_MOE_CACHE_LARGE=1 -- --moe-cache-mib $mib
-  run C0b
+  run C0b -- --moe-cache-mib 0
 elif [ "${ARMS:-copy}" = cache ]; then # 1337: expert cache sizes at the same --n-cpu-moe (C0 = no cache, twice)
   run C0
   for mib in ${CACHE_MIB:-4096 2048 8192}; do run C$mib -- --moe-cache-mib $mib; done
