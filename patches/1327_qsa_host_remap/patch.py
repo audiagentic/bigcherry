@@ -25,10 +25,10 @@ _A_MEMBERS = "    ggml_tensor * new_pool_pos  = nullptr; // I32 [4*n_new]       
 _N_MEMBERS = _A_MEMBERS + ("    ggml_tensor * bc_live_tail  = nullptr; // bigcherry 1327: F32 [kpool - 1, n_tokens] tail cell live (1) / sentinel (0)\n"
                            "    ggml_tensor * bc_dump       = nullptr; // bigcherry 1327: F32 [n_sel, n_tokens]     dump row n_kv + slot\n")
 
-_A_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_idxs, nullptr, false, new_pool_idxs, new_pool_rep,\n"
+_A_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_idxs, nullptr, new_pool_idxs, new_pool_rep,\n"
           "                              ubatch, new_pool_pos);\n"
           "    }\n")
-_N_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_idxs, nullptr, false, new_pool_idxs, new_pool_rep,\n"
+_N_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_idxs, nullptr, new_pool_idxs, new_pool_rep,\n"
           "                              ubatch, new_pool_pos);\n"
           "        if (bc_live_tail != nullptr) {  // bigcherry 1327: host-computed remap terms (same values as the device ops)\n"
           "            GGML_ASSERT(ggml_backend_buffer_is_host(bc_live_tail->buffer) && ggml_backend_buffer_is_host(bc_dump->buffer));\n"
@@ -46,7 +46,7 @@ _N_SET = ("        mctx->set_input_kpool(pool_cells, pool_idxs, pool_mask, tail_
           "        }\n"
           "    }\n")
 
-_A_BUILD = ("    inp->n_sel      = kpool*std::min<uint32_t>(n_pool, hparams.indexer_top_k / kpool) + kpool - 1;\n")
+_A_BUILD = ("    inp->n_sel = kpool*std::min<uint32_t>(n_pool, hparams.indexer_top_k / kpool) + kpool - 1;\n")
 _N_BUILD = _A_BUILD + (
     "    {   // bigcherry 1327: host-side QSA remap inputs (bit-identical, on by default; BIGCHERRY_QSA_HOST_REMAP=0 disables)\n"
     "        static const bool bc_host_remap = getenv(\"BIGCHERRY_QSA_HOST_REMAP\") == nullptr || atoi(getenv(\"BIGCHERRY_QSA_HOST_REMAP\")) != 0;\n"
