@@ -596,9 +596,6 @@ patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 # QFP17 chunked-scratch attribution: v6 (v5 + 1327) + 1329 (BIGCHERRY_ALLOC_TOP compute-buffer top tensors).
 patches = ["1329_alloc_top_trace"]
 
-[experiment.deploy-v6-plus-1330]
-# QFP17: v6 (v5 + 1327) + 1330 (in-place QSA causal-mask add, BIGCHERRY_QSA_MASK_INPLACE=1) + 1329 (BIGCHERRY_ALLOC_TOP).
-patches = ["1329_alloc_top_trace", "1330_qsa_mask_inplace"]
 
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
