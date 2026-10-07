@@ -84,6 +84,85 @@ static __global__ void top_k_radix_gather_ties(
     }
 }
 
+// BigCherry 1294: ordered output - the upstream gather writes the selected columns in atomic arrival order, so the
+// same selection comes out in another order from run to run. A consumer that sums over the selected cells in that
+// order (gathered sparse attention, 1295) then differs in the last bits between runs. One block per row rewrites the
+// row: columns above the cut ascending in the first k - rank slots, the lowest-index columns equal to the cut
+// ascending in the last rank slots (this includes the tie rule above).
+template<int BLOCK_SIZE>
+static __global__ void top_k_radix_gather_ordered(
+        const float * __restrict__ src,
+        int * __restrict__ dst,
+        const top_k_radix_state * __restrict__ states,
+        int ncols,
+        int k) {
+    const int row = blockIdx.x;
+    const top_k_radix_state st = states[row];
+    const float * row_src = src + (size_t) row * ncols;
+    int * row_dst = dst + (size_t) row * k;
+    const int n_greater = k - st.rank;
+
+    __shared__ int warp_g[BLOCK_SIZE / 32];
+    __shared__ int warp_t[BLOCK_SIZE / 32];
+    __shared__ int base_g;
+    __shared__ int base_t;
+    const int lane   = threadIdx.x % warpSize;
+    const int wid    = threadIdx.x / warpSize;
+    const int nwarps = BLOCK_SIZE / warpSize;
+    if (threadIdx.x == 0) {
+        base_g = 0;
+        base_t = 0;
+    }
+    __syncthreads();
+
+    for (int c0 = 0; c0 < ncols; c0 += BLOCK_SIZE) {
+        const int col = c0 + threadIdx.x;
+        const uint32_t key = col < ncols ? top_k_float_to_ordered(row_src[col]) : 0;
+        const bool greater = col < ncols && key > st.prefix;
+        const bool tie     = col < ncols && key == st.prefix;
+        const unsigned long long mg = __ballot(greater);
+        const unsigned long long mt = __ballot(tie);
+        const int below_g = __popcll(mg & ((1ull << lane) - 1ull));
+        const int below_t = __popcll(mt & ((1ull << lane) - 1ull));
+        if (lane == 0) {
+            warp_g[wid] = __popcll(mg);
+            warp_t[wid] = __popcll(mt);
+        }
+        __syncthreads();
+        int off_g = base_g, off_t = base_t;
+        int total_g = 0, total_t = 0;
+        for (int w = 0; w < nwarps; ++w) {
+            off_g   += w < wid ? warp_g[w] : 0;
+            off_t   += w < wid ? warp_t[w] : 0;
+            total_g += warp_g[w];
+            total_t += warp_t[w];
+        }
+        const int rg = off_g + below_g;
+        const int rt = off_t + below_t;
+        if (greater && rg < n_greater) {
+            row_dst[rg] = col;
+        }
+        if (tie && rt < st.rank) {
+            row_dst[n_greater + rt] = col;
+        }
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            base_g += total_g;
+            base_t += total_t;
+        }
+        __syncthreads();
+    }
+}
+
+// BigCherry 1294: ordered output on by default, BIGCHERRY_TOPK_ORDERED=0 keeps the tie rule only
+static bool top_k_bc_ordered() {
+    static const bool on = [] {
+        const char * e = getenv("BIGCHERRY_TOPK_ORDERED");
+        return e == nullptr || strcmp(e, "0") != 0;
+    }();
+    return on;
+}
+
 static bool top_k_bc_deterministic_ties() {
     static const bool det = [] {
         const char * e = getenv("BIGCHERRY_TOPK_DETERMINISTIC");
@@ -117,7 +196,9 @@ TOPK = FilePatch(
             anchor=_re.escape("            src, dst, states, ncols, k, blocks_per_row);\n}"),
             text=(
                 "            src, dst, states, ncols, k, blocks_per_row);\n"
-                "    if (det_ties) {  // BigCherry 1294: rewrite only ambiguous cutoffs, after the gather (stream order)\n"
+                "    if (det_ties && top_k_bc_ordered()) {  // BigCherry 1294: one order for the whole row (and the tie rule)\n"
+                "        top_k_radix_gather_ordered<BLOCK_SIZE><<<nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
+                "    } else if (det_ties) {  // BigCherry 1294: rewrite only ambiguous cutoffs, after the gather (stream order)\n"
                 "        top_k_radix_gather_ties<BLOCK_SIZE><<<nrows, BLOCK_SIZE, 0, stream>>>(src, dst, states, ncols, k);\n"
                 "    }\n"
                 "}"
@@ -144,4 +225,7 @@ PATCHES = [TOPK]
 ENV_DOCS = (
     EnvDoc('BIGCHERRY_TOPK_DETERMINISTIC', '0|1', '1 (on)',
            'split-tensor top-k breaks score ties by index (deterministic); 0 disables'),
+    EnvDoc('BIGCHERRY_TOPK_ORDERED', '0|1', '1 (on)',
+           'top-k writes its selection in ascending column order (same order every run, for consumers that sum over '
+           'the selected cells); 0 keeps the tie rule only'),
 )
