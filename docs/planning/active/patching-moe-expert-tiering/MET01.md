@@ -19,6 +19,16 @@ MET01 is the single policy/accounting owner for routed-expert residency. It prof
 
 The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 moves selective host-expert copying out of generic `ggml_backend_sched_compute_splits()` into a public scheduler copy callback. #29887 is explicitly intended to become user-code-only after that refactor. BigCherry should therefore qualify the callback boundary before carrying any private scheduler cache fork.
 
+## Adaptive-cache qualification gate (RV4222)
+
+The 31f8be22 adaptive-cache gate remains applicable after the b11474 rebase, but it is a qualification gate over the current 1337/1338 cache bank rather than a request to restore 1336 scheduler ownership:
+
+1. Preserve token/ubatch order in routing traces and report adjacent-token overlap, reuse distance, working-set windows, and workload-shift convergence for prefill and decode separately.
+2. Replay the same trace offline through static-hot, LRU, decayed-frequency and bounded-promotion policies at equal slot/GiB budgets. Reject adaptive runtime work unless it reduces miss bytes (or measured-cost equivalent) by at least 5 percentage points on at least two decode workloads versus the best simpler policy.
+3. Adaptive counting must be graph-replay safe: device-side/captured counters may observe routes; host control may refresh only between safe replay/request boundaries. No host callback is assumed to run once per replayed token.
+4. Enumerate every cache consumer path (MMVQ, MMQ/grouped MMQ, prompt batches and MTP verify shapes). A remapped/cache representation is enabled only where the consuming kernel explicitly supports it; unsupported shapes fail closed to selective-copy/CPU fallback.
+5. Static/LRU/adaptive/profiled policies share the existing 1337/1338 cache bank and accounting. Compare them at equal expert-VRAM budget and include promotion traffic. Adaptive promotion additionally requires at least 3% end-to-end decode gain on two workloads over the best simpler policy.
+
 ## Steps
 
 
@@ -49,7 +59,9 @@ The immediate implementation gate is upstream llama.cpp #29943 + #29887. #29943 
 
 ## Acceptance Criteria
 
-- One canonical placement JSON/accounting table covers static, LRU, aux and host tiers.
+- One canonical placement JSON/accounting table covers static, LRU, adaptive, aux and host tiers.
+- Routing evidence includes temporal locality and workload shifts; offline replay eliminates noncompetitive adaptive policies before runtime implementation.
+- Adaptive refresh is graph-safe and reuses the same 1337/1338 cache bank; no host hook is assumed to execute per graph replay.
 - #29943 callback seam is either present upstream or qualified as a minimal temporary backport; MET logic does not live in generic scheduler code.
 - Observation-only callback proves semantic transparency before selective-copy/cache testing.
 - #29887-style cache proves nonzero activity on gfx1100/gfx1201 and passes correctness/integrity gates.
