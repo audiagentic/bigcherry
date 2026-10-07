@@ -35,8 +35,6 @@ bool ggml_backend_meta_device_contains(ggml_backend_dev_t meta_dev, ggml_backend
     if (!ggml_backend_dev_is_meta(meta_dev) || simple_dev == nullptr) {
         return false;
     }
-    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_device_contains meta=%s simple=%s\n",
-        ggml_backend_dev_name(meta_dev), ggml_backend_dev_name(simple_dev));
     const ggml_backend_meta_device_context * meta_dev_ctx =
         (const ggml_backend_meta_device_context *) meta_dev->context;
     return std::find(meta_dev_ctx->simple_devs.begin(), meta_dev_ctx->simple_devs.end(), simple_dev)
@@ -54,8 +52,6 @@ _META_BIN_NEW = """    auto handle_bin_bcast = [&](const std::vector<ggml_backen
         // If it is already MIRRORED, both inputs are complete replicas and this is a plain per-device add: no
         // AllReduce is required or correct.
         if (ggml_backend_meta_is_mirrored_partial_add(tensor)) {
-            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_merge_state src0=%s src1=%s\n",
-                ggml_backend_meta_split_axis_name(src_ss[0].axis), ggml_backend_meta_split_axis_name(src_ss[1].axis));
             const bool mirrored_partial =
                 (src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) ||
                 (src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL);
@@ -83,15 +79,12 @@ enum ggml_backend_meta_split_axis ggml_backend_meta_tensor_split_axis(const ggml
     if (tensor == nullptr || tensor->buffer == nullptr || !ggml_backend_buffer_is_meta(tensor->buffer)) {
         GGML_ABORT("BigCherry 1328: split-axis query requires a Meta-buffer tensor");
     }
-    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_split_axis tensor=%s\n", tensor->name);
     return ggml_backend_meta_get_split_state(tensor, /*assume_sync =*/ false).axis;
 }
 
 static constexpr int32_t BIGCHERRY_AUX_EXPERT_MERGE_MAGIC = 0x42434158; // "BCAX"
 
 void ggml_backend_meta_mark_mirrored_partial_add(ggml_tensor * tensor) {
-    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=meta_mark_merge tensor=%s\n",
-        tensor != nullptr ? tensor->name : "(null)");
     if (tensor == nullptr || tensor->op != GGML_OP_ADD) {
         GGML_ABORT("BigCherry 1328: auxiliary expert merge marker requires GGML_OP_ADD");
     }
@@ -137,9 +130,11 @@ _SCHED_PREALLOC_NEW = """    if (tensor->buffer || (tensor->view_src && tensor->
     // BigCherry 1328: keep the exact routed+shared merge on Meta. The PARTIAL shared branch is
     // reduced there; the scheduler-copied auxiliary branch is MIRRORED and must not be reduced.
     if (ggml_backend_meta_is_mirrored_partial_add(tensor)) {
-        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_assign_merge tensor=%s scoped_aux=%s\n",
-            tensor->name,
-            sched->bc_aux_backend != nullptr ? ggml_backend_dev_name(ggml_backend_get_device(sched->bc_aux_backend)) : "(none)");
+        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_assign_merge tensor=%s scoped_aux=%s\n",
+                tensor->name,
+                sched->bc_aux_backend != nullptr ? ggml_backend_dev_name(ggml_backend_get_device(sched->bc_aux_backend)) : "(none)");
+        }
         if (sched->bc_aux_backend == nullptr) {
             GGML_ABORT("BigCherry 1328: marked auxiliary expert merge reached an unscoped scheduler");
         }
@@ -188,11 +183,13 @@ _COPY_FALLBACK_NEW = r'''    // BigCherry 1328: no P2P for the scoped auxiliary 
     if (bc_meta_to_aux || bc_aux_to_meta) {
         const char * bc_aux_name = ggml_backend_dev_name(ggml_backend_get_device(sched->bc_aux_backend));
         const size_t nbytes = ggml_nbytes(input);
-        GGML_LOG_WARN(
-            "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_copy direction=%s tensor=%s bytes=%zu src=%s dst=%s\n",
-            bc_meta_to_aux ? "meta_to_aux" : "aux_to_meta", input->name, nbytes,
-            ggml_backend_dev_name(ggml_backend_get_device(input_backend)),
-            ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+        if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+            GGML_LOG_WARN(
+                "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_copy direction=%s tensor=%s bytes=%zu src=%s dst=%s\n",
+                bc_meta_to_aux ? "meta_to_aux" : "aux_to_meta", input->name, nbytes,
+                ggml_backend_dev_name(ggml_backend_get_device(input_backend)),
+                ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+        }
         ggml_tensor * meta_tensor = bc_meta_to_aux ? input : input_cpy;
         const ggml_backend_meta_split_axis axis = ggml_backend_meta_tensor_split_axis(meta_tensor);
         if (axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
@@ -250,9 +247,11 @@ _SCHED_COMPUTE = """        if (!sched->callback_eval) {
 """
 _SCHED_COMPUTE_NEW = """        for (int j = 0; j < split->graph.n_nodes; ++j) {
             if (ggml_backend_meta_is_mirrored_partial_add(split->graph.nodes[j])) {
-                GGML_LOG_WARN(
-                    "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_execute_merge split=%d node=%d backend=%s\\n",
-                    split_id, j, ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+                if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                    GGML_LOG_WARN(
+                        "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_execute_merge split=%d node=%d backend=%s\\n",
+                        split_id, j, ggml_backend_dev_name(ggml_backend_get_device(split_backend)));
+                }
                 if (sched->bc_aux_backend == nullptr) {
                     GGML_ABORT("BigCherry 1328: marked auxiliary expert merge executed by an unscoped scheduler");
                 }
@@ -292,8 +291,10 @@ void ggml_backend_sched_set_aux_expert_backend(ggml_backend_sched_t sched, ggml_
         GGML_ABORT("BigCherry 1328: auxiliary expert backend cannot be Meta");
     }
     sched->bc_aux_backend = backend;
-    GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_scope aux=%s backend_id=%d\n",
-        ggml_backend_dev_name(ggml_backend_get_device(backend)), backend_id);
+    if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+        GGML_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=sched_scope aux=%s backend_id=%d\n",
+            ggml_backend_dev_name(ggml_backend_get_device(backend)), backend_id);
+    }
 }
 '''
 
@@ -354,8 +355,10 @@ _CTX_GPU_LOOP_NEW = r'''        // GPU backends
         if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
             const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
             if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
-                LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=ctx_register ctx_type=%d aux=%s\n",
-                    (int) cparams.ctx_type, bc_aux_name);
+                if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                    LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=ctx_register ctx_type=%d aux=%s\n",
+                        (int) cparams.ctx_type, bc_aux_name);
+                }
                 if (model.arch != LLM_ARCH_QWEN4EXP) {
                     throw std::runtime_error("BIGCHERRY_EXPERT_AUX_DEVICE is only supported for Qwen4Exp tensor-split target models");
                 }
@@ -417,8 +420,10 @@ _QWEN_HEAD_NEW = r'''ggml_tensor * llama_model_qwen4exp::graph::build_layer_ffn(
     if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && cparams.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT) {
         const char * bc_aux_name = getenv("BIGCHERRY_EXPERT_AUX_DEVICE");
         if (bc_aux_name != nullptr && bc_aux_name[0] != '\0') {
-            LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=qwen_ffn_entry layer=%d tokens=%lld ctx_type=%d\n",
-                il, (long long) n_tokens, (int) cparams.ctx_type);
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                LLAMA_LOG_WARN("BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=qwen_ffn_entry layer=%d tokens=%lld ctx_type=%d\n",
+                    il, (long long) n_tokens, (int) cparams.ctx_type);
+            }
             auto bc_on_aux = [&](const ggml_tensor * t) {
                 if (t == nullptr) {
                     return false;
@@ -484,9 +489,11 @@ _QWEN_MERGE = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
 """
 _QWEN_MERGE_NEW = """        cur = ggml_add(ctx0, moe_out, ffn_shexp);
         if (bc_aux_layer) {
-            LLAMA_LOG_WARN(
-                "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=aux_merge_build layer=%d tokens=%lld ctx_type=%d\\n",
-                il, (long long) n_tokens, (int) cparams.ctx_type);
+            if (getenv("BIGCHERRY_PATCH_TRACE") != nullptr) {
+                LLAMA_LOG_WARN(
+                    "BIGCHERRY_PATCH_HIT patch=1328_aux_rocm_expert_backend hook=aux_merge_build layer=%d tokens=%lld ctx_type=%d\\n",
+                    il, (long long) n_tokens, (int) cparams.ctx_type);
+            }
             ggml_backend_meta_mark_mirrored_partial_add(cur); // BigCherry 1328: reduce shared branch only
         }
         cb(cur, "ffn_out", il);
