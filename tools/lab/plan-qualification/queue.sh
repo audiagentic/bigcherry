@@ -244,7 +244,7 @@ preflight_line() {
         echo "PREFLIGHT_EXIT=1" >> "$log"
         return 1
     fi
-    bash "$here/../native-vs-patched/preflight-fire.sh" "$bin" "$@" > "$log" 2>&1 < /dev/null
+    bash "$here/preflight-fire.sh" "$bin" "$@" > "$log" 2>&1 < /dev/null
     rc=$?
     echo "PREFLIGHT_EXIT=$rc" >> "$log"
     echo "done  preflight $run $(date -Is) rc=$rc"

@@ -36,7 +36,7 @@ Source of truth
 - docs/reference/build/BUILD.md "Queued qualification campaigns and the firing pre-flight"
   (queue.sh row syntax: campaign, PROFILE, PREFLIGHT, BUILD, AB, VIS=, REQUIRES=)
 - tools/lab/plan-qualification/queue.sh, locked-run.sh
-- tools/lab/native-vs-patched/queue-*.sh (worked job scripts), server-ab-*.json
+- tools/lab/plan-qualification/ queue/preflight helpers; topic-specific active job scripts live under their owning `tools/lab/<topic>/` directory
 - config/recipes.toml ([experiment.*] for single-patch builds, [patch-set.validated-enhancements]
   for production)
 
@@ -67,7 +67,7 @@ Source of truth
 - Each check: running -> leave; finished -> apply, test, commit+push, queue rows, submit the
   next backlog item; failed/interrupted -> resubmit.
 - Before every request: commit and push (the reviewer only sees pushed files). For vendor
-  anchors, commit pristine excerpts under tools/lab/<topic>/vendor-<pin>/ first.
+  anchors, materialize the configured pinned `vendor/llama.cpp` checkout and name the exact revision/path/function in the request; do not commit copied upstream source snapshots.
 - Request complete applyable files with anchor match counts plus queue rows; never apply
   reviewer output without local lint/tests.
 
