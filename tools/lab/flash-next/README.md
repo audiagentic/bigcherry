@@ -15,6 +15,7 @@ Shared helpers currently referenced by active plans include:
 - `q81-trace-run.sh` — Q8_1 trace support.
 - `queue-prefill-profile.sh`, `prefill-provider-sweep.sh` — prefill profiling/provider comparison.
 - `queue-env-ab.sh` — common active A/B launcher.
+- `queue-moe-cache.sh`, `moe-cache/README.md` — MET01 host-expert 0/4096 MiB cache + profile qualification.
 - `submit-timing-table.py` — timing-table submission used by QFP31.
 - `rank-census.py` — rank census used by QFP09.
 
