@@ -581,7 +581,7 @@ _A_SPEC_PROCESS = """\
             }
         }
 
-        // handle n_cmpl > 1 tasks - when the main prompt is processed, activate all child tasks too
+        // handle `n_cmpl > 1` tasks - when the main prompt is processed, activate all child tasks too
 """
 _N_SPEC_PROCESS = r"""        if (spec) {
             bool ok = true;
