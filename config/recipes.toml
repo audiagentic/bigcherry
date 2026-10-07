@@ -257,6 +257,8 @@ patches = [
     "1313_scale_act_fuse",
     "1326_sched_async_host_inputs",
     "1327_qsa_host_remap",
+    "1329_alloc_top_trace",
+    "1331_alloc_peak_live",
     "1333_mixed_batch_on_demand",
     "1332_qsa_token_chunk",
     "1334_hip_sparse_flash_attn",
@@ -588,17 +590,11 @@ patches = ["1337_moe_expert_caching"]
 # QFP22: 1333 alone, for the native llama.cpp comparison (build over source llama-native).
 patches = ["1333_mixed_batch_on_demand"]
 
-[experiment.deploy-v6-alloc-peak]
-# QFP17 chunked scratch: v6 + 1329 (largest tensors) + 1331 (live set at each compute buffer's allocation peak).
-patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
-[experiment.deploy-v6-alloc-trace]
-# QFP17 chunked-scratch attribution: v6 (v5 + 1327) + 1329 (BIGCHERRY_ALLOC_TOP compute-buffer top tensors).
-patches = ["1329_alloc_top_trace"]
 
 [experiment.deploy-v6-plus-1330]
 # QFP17: v6 (v5 + 1327) + 1330 (in-place QSA causal-mask add, BIGCHERRY_QSA_MASK_INPLACE=1) + 1329 (BIGCHERRY_ALLOC_TOP).
-patches = ["1329_alloc_top_trace", "1330_qsa_mask_inplace"]
+patches = ["1330_qsa_mask_inplace"]
 
 [experiment.ar-cpu-root-topk]
 # 1292 parity baseline: 1291 + 1294 only (deterministic TOP_K makes 80K greedy comparable).
