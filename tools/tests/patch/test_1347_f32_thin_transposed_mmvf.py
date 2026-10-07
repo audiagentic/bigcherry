@@ -55,7 +55,7 @@ class Patch1347Mechanics(unittest.TestCase):
             self.assertIn("dst_t.ne[1] = ne01;", fn)
             self.assertIn("ggml_cuda_pool_alloc<float> bc_dst_t(ctx.pool(), ne11*ne01);", fn)
             self.assertIn("dst[m + n*stride_col_dst] = src[n + m*n_cols];", src)
-            self.assertIn("&& ggml_is_contiguous(src0) && ggml_is_contiguous(src1) && ggml_is_contiguous(dst)\n            && ggml_cuda_should_use_mmvf(src1->type, cc, src1->ne, src1->nb, /*ne11 =*/ 1)) {\n        static bool bc_logged", fn)
+            self.assertIn("&& ggml_is_contiguous(src0) && ggml_is_contiguous(src1) && ggml_is_contiguous(dst)\n            && ggml_cuda_should_use_mmvf(src1->type, cc, warp_size, src1->ne, src1->nb, /*ne11 =*/ 1)) {\n        static bool bc_logged", fn)
             # default on, native SGEMM path kept
             self.assertIn("return s == nullptr || atoi(s) != 0;", src)
             self.assertIn("    ggml_cuda_mul_mat_cublas(ctx, src0, src1, dst);", fn)
