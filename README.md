@@ -70,14 +70,19 @@ releases shows exactly which solutions came or went.
 | `tools/bigcherry/source_audit.py` | Strict-mode upstream invariant audit (HI01) |
 | `tools/bigcherry/autotune_catalog.py` | Candidate catalog generator — single source of truth (HI03) |
 | `tools/bigcherry/autotune_schema.py` | Candidate manifest JSON schema (HI03) |
-| `sql/dispatch-db.sql` | SQLite schema for record/tune modes |
+| `sql/` | Current SQLite schema plus tested migration history for record/tune modes; runtime databases are not tracked |
 | `vendor/llama.cpp/` | The checkout we patch and build (not tracked) |
 | `artifacts/` | Audit JSON, manifests, exported caches (not tracked) |
 | `docs/standards/` | Project standards — normative |
 | `docs/planning/` | Work-item plan (HI01–HI16) |
 
 `vendor/llama.cpp` is a real working tree, not a scratch copy: builds run from
-it in place.
+it in place. See `sql/README.md` for dispatch-database schema ownership.
+
+Repository scratch is never source or evidence. Put one-off/generated outputs
+under ignored `artifacts/`, `work/`, or a host temporary directory; root
+`_scratch*`/`scratch` paths and runtime SQLite databases are intentionally
+untracked.
 
 ## Build profiles
 

@@ -58,8 +58,8 @@ measurement outputs belong under `artifacts/<campaign-id>/`; retain only a
 concise, broadly reusable decision or index in `docs/reference/experiments/`.
 Historical reviews, handovers, imported planning sources, and superseded
 snapshots belong under [`docs/archive/`](../archive/), outside this maintained
-reference corpus. The old `docs/reference/archive/` paths are compatibility
-redirects only where historical plan links still require them.
+reference corpus. Keep a single canonical archived copy and update inbound links;
+do not add compatibility redirect files under `docs/reference/`.
 
 ## Experiments
 

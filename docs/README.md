@@ -20,8 +20,14 @@ Use this ownership model when adding or moving documentation:
   evidence, and support files.
 - `docs/archive/` contains historical or superseded prose and review snapshots;
   it is never a live authority and is not part of the maintained reference
-  corpus.
+  corpus. Historical material has one canonical path here; do not add forwarding
+  copies under `docs/reference/`.
 - `tools/tests/fixtures/` contains permanent deterministic test inputs.
 
-When relocating a document, update its consumers in the same change and retain
-an explicit provenance pointer where historical references must remain valid.
+When relocating a document, update its consumers in the same change. Preserve
+historical provenance at the canonical `docs/archive/` path rather than keeping
+duplicate redirect files.
+
+Scratch, raw traces, generated corpora, and machine-local outputs are not
+documentation: keep them in ignored `artifacts/`, `work/`, or host-local storage.
+Deterministic inputs required by tests belong under `tools/tests/fixtures/`.

@@ -9,7 +9,7 @@
 This is the current 820-row control-plane registry for in-scope tooling. The
 registry had 385 rows at TR00 close-out and now includes twelve subsequently
 registered GP10 lab tools, four HI168 investigation tools, and the
-planning-capability-rebaseline-v3 migration pack and scripts, and (2026-10-02) every
+historical planning-capability-rebaseline-v3 migration rows (retired after completion), and (2026-10-02) every
 remaining tracked `tools/lab/` file, classified TRANSITIONAL under its topic README. It is
 the maintained disposition authority consumed by `tools/bigcherry/check.py`;
 it is not a raw filesystem snapshot. A row can intentionally name an ignored,
@@ -173,7 +173,7 @@ ownership.
 | `tools/lab/hi34-residency-gates/residency_gates.py` | **TRANSITIONAL** | RA12 plan-owned lab implementation retained behind the documented compatibility wrapper until that entry point is retired. |
 | `tools/lab/gp10-collective-harness/nway_star_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned early-iteration collective harness; diagnostic-only until GP07/GP08 qualification and disposition. |
 | `tools/lab/gp10-collective-harness/p2p_direct_allreduce.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic harness; diagnostic-only until GP07/GP08 qualification and disposition. |
-| `tools/lab/bump-b11126-regression/run_arms.py` | **TRANSITIONAL** | Bump b11126 follow-up: balanced 4-arm llama-bench harness separating upstream vs BigCherry throughput change; one-shot, archive once attributed. |
+| `tools/lab/bump-b11126-regression/run_arms.py` | **DELETE** | Retired 2026-10-08 during repository cleanup: b11126 throughput regression was attributed and recorded under docs/evidence/2026-09-24-bump-b11126-throughput/. |
 | `tools/lab/plan-qualification/summarize.py` | **TRANSITIONAL** | One-line-per-run summary of plan-qualification campaign results (checks, lane effects, contract verdicts). |
 | `tools/lab/plan-qualification/noise.py` | **TRANSITIONAL** | Per-round paired-lane view (outlier rounds, per-arm CV) for campaign noise triage. |
 | `tools/lab/plan-qualification/profile_run.sh` | **TRANSITIONAL** | PVPS10 kernel-coverage profile wrapper (queue `PROFILE` job type) over `bigcherry.patch.campaign.profile`. |
@@ -181,12 +181,12 @@ ownership.
 | `tools/lab/plan-qualification/queue.sh` | **TRANSITIONAL** | Sequential per-GPU-lane runner for plan-qualification campaign jobs (restartable; skips finished runs). |
 | `tools/lab/plan-qualification/run_campaign.sh` | **TRANSITIONAL** | RDNA/nasone plan implementation loop: one-GPU validation-campaign launcher with host paths from env and output under work/; graduate into a campaign CLI verb or archive when the loop ends. |
 | `tools/lab/plan-qualification/work-root.sh` | **TRANSITIONAL** | Resolves the campaign work root (env var, else environment.local.toml [env], else work/) for the plan-qualification scripts. |
-| `tools/lab/hw-launch/_hw_launch.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD13/RD26 hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **ARCHIVE** | PA36 one-shot Brutus SSH-backgrounding launcher for the RD04 hardware leg; campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **ARCHIVE** | PA36 one-shot ROCm clang-wrapper-prefix setup used by the RD hardware legs; campaigns complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **ARCHIVE** | PA36 RD04/1202 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **ARCHIVE** | PA36 RD13/1206 hardware-acceptance receipt script (gfx1030); campaign complete, retained as a historical invocation record only. |
-| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **ARCHIVE** | PA36 RD26/1210 hardware-acceptance receipt script (gfx1100); campaign complete, retained as a historical invocation record only. |
+| `tools/lab/hw-launch/_hw_launch.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_launch_rd04.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_make_rocm_wrap.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd04_gfx1100.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd13_gfx1030.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
+| `tools/lab/hw-launch/_hw_rd26_gfx1100.sh` | **DELETE** | Retired 2026-10-08 during repository cleanup: one-shot PA36 hardware-launch helper; campaigns complete and durable evidence lives in plan/patch evidence records. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/analyze_decode_trace.py` | **TRANSITIONAL** | GP10 plan-owned analysis helper for P2P diagnostics; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/asyncprobe.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
 | `tools/lab/gp10-collective-harness/p2p-diagnostics/dispatch_overhead.cpp` | **TRANSITIONAL** | GP10 plan-owned P2P diagnostic probe; not production tooling or evidence authority. |
@@ -473,48 +473,48 @@ ownership.
 
 | Path | Disposition | Owner and rationale |
 | --- | --- | --- |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **TRANSITIONAL** | Planning capability rebaseline v3: read-only frozen-plan inventory/reference generator; migration-local and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **TRANSITIONAL** | Migration-local draft manifest seeder; outputs explicitly unapproved review data and never mutates canonical planning state. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **TRANSITIONAL** | Migration-local lifecycle review hint generator; cues require human adjudication and never allocate IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **TRANSITIONAL** | Migration-local advisory GPT evidence importer; never approves dispositions, allocates IDs, or mutates plan files. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **TRANSITIONAL** | Migration-local independent-review reconciliation report; never selects dispositions or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **TRANSITIONAL** | Migration-local field-by-field reconciliation of independent semantic reviews; never selects a winner or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_semantic_carryforward.py` | **TRANSITIONAL** | Migration-local carryforward validator for the v3 semantic review pack; never selects a winner or allocates IDs. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **TRANSITIONAL** | Fail-closed snapshot writer for an approved manifest bundle before successor allocation. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **TRANSITIONAL** | Advisory seven-field semantic review importer; requires exact active-ID coverage and never approves rows. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_semantic_review.py` | **TRANSITIONAL** | Explicit semantic evidence gate; requires a scoped approval basis and exact 200-row active coverage before setting approval state. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/align_lifecycle_graph.py` | **TRANSITIONAL** | Aligns provisional successor/disposition/lineage manifests with terminal lifecycle classifications before approval. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/allocate_successor_ids.py` | **TRANSITIONAL** | Allocates deterministic, collision-checked capability namespace IDs after review validation and before ag-planning creation. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_graph.py` | **TRANSITIONAL** | Fail-closed approval gate for lifecycle, disposition, successor-spec, and lineage consistency. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/render_successor_specs.py` | **TRANSITIONAL** | Renders reviewed successor specifications from approved semantic evidence without mutating canonical plans. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/retarget_terminal_references.py` | **TRANSITIONAL** | Reclassifies references/dependencies that targeted successors removed by terminal lifecycle alignment. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed source/disposition/lineage/reference validator; migration-local and not production tooling. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **TRANSITIONAL** | Planning capability rebaseline v3: emits a non-mutating JSONL execution plan for ag-planning/ag-ledger; deliberately does not mutate canonical lifecycle state itself. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/refresh_pack_manifest.py` | **TRANSITIONAL** | Migration-local manifest maintenance helper; refreshes pack metadata only and is not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_reference_decisions.py` | **TRANSITIONAL** | Planning capability rebaseline v3: fail-closed, occurrence-based reference/dependency migration; dry-run by default and never performs global replacements. |
-| `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **TRANSITIONAL** | Migration-local execution prompt; retained with the v3 pack and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **TRANSITIONAL** | Migration-local procedure; retained with the v3 pack and not production tooling. |
-| `tools/lab/planning-capability-rebaseline-v3/MANIFEST_MODEL.md` | **TRANSITIONAL** | Migration-local manifest contract; retained with the v3 pack and not planning/evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/PACK_MANIFEST.json` | **TRANSITIONAL** | Migration pack metadata; retained with the v3 pack and not evidence authority. |
-| `tools/lab/planning-capability-rebaseline-v3/PLACEMENT.md` | **TRANSITIONAL** | Migration-local placement and disposition guidance. |
-| `tools/lab/planning-capability-rebaseline-v3/REVIEW_PROTOCOL.md` | **TRANSITIONAL** | Migration-local semantic review protocol; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/SOURCE_LOCK.json` | **TRANSITIONAL** | Immutable migration source lock; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/TOOL_DISPOSITION_SNIPPET.md` | **TRANSITIONAL** | Migration-local registry guidance; retained with the v3 pack. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/DEPENDENCY_REMAP.tsv` | **TRANSITIONAL** | Migration review template; not a production dependency registry. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/DISPOSITIONS.csv` | **TRANSITIONAL** | Migration review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/LINEAGE.csv` | **TRANSITIONAL** | Migration lineage review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/NAMESPACES.csv` | **TRANSITIONAL** | Migration namespace review template; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **TRANSITIONAL** | Migration reference review template; not canonical repository references. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **TRANSITIONAL** | Migration successor specification template; successor authority remains ag-planning. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **TRANSITIONAL** | Migration successor review template; successor authority remains ag-planning. |
-| `tools/lab/planning-capability-rebaseline-v3/templates/SEMANTIC_REVIEW.csv` | **TRANSITIONAL** | Migration semantic-review template; advisory review input and not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the v3 migration; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_REMAINING_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Dated GPT lifecycle adjudication evidence for the remaining active rows; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **TRANSITIONAL** | Explicit source-backed resolutions for GPT-ambiguous lifecycle rows; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv` | **TRANSITIONAL** | Source-backed resolutions for conflicts between GPT and independent lifecycle reviews; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna lifecycle review evidence for cross-checking GPT classifications; not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **TRANSITIONAL** | Independent Luna semantic review evidence for the 200 active frozen items; advisory migration evidence, not canonical plan state. |
-| `tools/lab/planning-capability-rebaseline-v3/review-evidence/SEMANTIC_APPROVAL_2026-09-09.json` | **TRANSITIONAL** | Explicit scoped approval basis for using Luna semantic evidence as primary after GPT evidence failed closed; not canonical plan state. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/generate_inventory.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/seed_review_manifests.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/analyze_lifecycle_cues.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_gpt_lifecycle_review.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_lifecycle_reviews.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/reconcile_semantic_reviews.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_semantic_carryforward.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/freeze_review_snapshot.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_semantic_review.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_semantic_review.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/align_lifecycle_graph.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/allocate_successor_ids.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/approve_graph.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/render_successor_specs.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/retarget_terminal_references.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/validate_manifests.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/render_operations.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/refresh_pack_manifest.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/scripts/apply_reference_decisions.py` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/AGENT_PROMPT.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/EXECUTION.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/MANIFEST_MODEL.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/PACK_MANIFEST.json` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/PLACEMENT.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/REVIEW_PROTOCOL.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/SOURCE_LOCK.json` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/TOOL_DISPOSITION_SNIPPET.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/DEPENDENCY_REMAP.tsv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/DISPOSITIONS.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/LINEAGE.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/NAMESPACES.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/REFERENCE_DECISIONS.tsv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSOR_SPEC.md` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SUCCESSORS.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/templates/SEMANTIC_REVIEW.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_LIFECYCLE_REVIEW_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/GPT_REMAINING_LIFECYCLE_REVIEW_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/MANUAL_LIFECYCLE_RESOLUTIONS_REMAINING_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_LIFECYCLE_REVIEW_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/LUNA_SEMANTIC_REVIEW_2026-09-09.csv` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
+| `tools/lab/planning-capability-rebaseline-v3/review-evidence/SEMANTIC_APPROVAL_2026-09-09.json` | **DELETE** | Retired 2026-10-08 after capability rebaseline v3 completed (commit f7a2edbd); durable source/review provenance moved to `docs/evidence/planning-capability-rebaseline-v3/`. |
 
 ## HI172 kernel-trace investigation tooling
 
@@ -531,9 +531,9 @@ ownership.
 
 | Path | Disposition | Owner and rationale |
 | --- | --- | --- |
-| `tools/lab/rd87-hipblaslt-oracle/analyze_results.py` | **TRANSITIONAL** | PRBE26/RD87: retained negative-finding analysis for captured decode GEMM shapes; not a production dispatch path. |
-| `tools/lab/rd87-hipblaslt-oracle/rd87_comparison.csv` | **TRANSITIONAL** | PRBE26/RD87: retained immutable comparison output and investigation provenance. |
-| `tools/lab/rd87-hipblaslt-oracle/rd87_shapes.sample.json` | **TRANSITIONAL** | PRBE26/RD87: retained sample input for the completed oracle analysis; not a canonical tuning catalog. |
+| `tools/lab/rd87-hipblaslt-oracle/analyze_results.py` | **DELETE** | Retired 2026-10-08 after RD87 closure; one-shot analysis/benchmark source remains in Git history. |
+| `tools/lab/rd87-hipblaslt-oracle/rd87_comparison.csv` | **DELETE** | Retired 2026-10-08 after RD87 closure; durable data moved to `docs/evidence/2026-09-09-rd87-hipblaslt-oracle/`. |
+| `tools/lab/rd87-hipblaslt-oracle/rd87_shapes.sample.json` | **DELETE** | Retired 2026-10-08 after RD87 closure; durable data moved to `docs/evidence/2026-09-09-rd87-hipblaslt-oracle/`. |
 
 ## HI168 retained investigation tools
 
@@ -543,27 +543,27 @@ ownership.
 | `tools/lab/gp11-replay-bench/analyse.py` | **TRANSITIONAL** | HI168: retained historical-log analysis with fail-closed activation checks; not evidence authority. |
 | `tools/lab/gp11-replay-bench/dispatch-counters.sh` | **TRANSITIONAL** | HI168: historical diagnostic capture pending migration to maintained profiling. |
 | `tools/lab/gp11-replay-bench/tune-per-card.sh` | **TRANSITIONAL** | HI168: retained investigation provenance; use tune-campaign for new tuning. |
-| `tools/lab/va26-rd08-parity/run.py` | **TRANSITIONAL** | VA26: diagnostic driver proving the new qualification_execution orchestrator + qualification_rd08 adapter reproduce RD08's existing real-hardware verdict; answered, retained as a worked example pending a maintained CLI entry point (deliberately not added yet, per VA26's own design review). |
-| `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **TRANSITIONAL** | RD87: extracts deduped real GEMM/MMVQ dispatch shapes + native timing from a tune-campaign measurements.jsonl; answered/negative-finding, retained as investigation provenance. |
-| `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **TRANSITIONAL** | RD87: drives `hipblaslt-bench` (heuristic vs all-solutions) over the extracted real shapes on Brutus; answered/negative-finding, retained as investigation provenance. |
-| `tools/lab/pa25/audit_receipt_20260919.json` | **TRANSITIONAL** | PA25: read-only focal-evidence/G4/G7 consistency audit receipt for the seven promoted/touched patches at the recorded BigCherry + llama.cpp revisions; diagnostic snapshot, not a maintained tool or evidence authority. |
-| `tools/lab/pa25/run_audit.py` | **TRANSITIONAL** | PA25: read-only audit driver resolving catalog/registry/campaign identities for the seven focal patches; never writes campaign records; not production tooling or evidence authority. |
-| `tools/lab/pa30/pa30-g1-ab-advisories.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B advisories (bigcherry-native vs bigcherry-serving-base); gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-run.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B run record; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-server-config.json` | **TRANSITIONAL** | PA30: G1 ab-benchmark `--server-config` input for the representative-performance A/B; gate input, not a maintained tool. |
-| `tools/lab/pa30/pa30-g1-ab-summary.json` | **TRANSITIONAL** | PA30: G1 representative-performance A/B summary (6 rotated pairs, clean shutdowns, dual-gfx1100 attestations verified); gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g4-tuning-smoke-receipt.json` | **TRANSITIONAL** | PA30: G4 tuning-smoke gate receipt; diagnostic, not a maintained tool. |
-| `tools/lab/pa30/pa30-g5-0830-reduce-telemetry-sample.jsonl` | **TRANSITIONAL** | PA30: G5 0830 reduce/telemetry measurement sample; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-g5-1100-corpus-measurements.jsonl` | **TRANSITIONAL** | PA30: G5 1100 corpus measurements; gate receipt, not a maintained tool. |
-| `tools/lab/pa30/pa30-hardware-receipt.json` | **TRANSITIONAL** | PA30: overall hardware gate receipt for the semantic-equivalence gates before deleting framework/native names; diagnostic, not a maintained tool. |
+| `tools/lab/va26-rd08-parity/run.py` | **DELETE** | Retired 2026-10-08 after VA26 closure; parity result is recorded in the completed VA26 plan and source remains in Git history. |
+| `tools/lab/rd87-hipblaslt-oracle/extract_shapes.py` | **DELETE** | Retired 2026-10-08 after RD87 closure; one-shot analysis/benchmark source remains in Git history. |
+| `tools/lab/rd87-hipblaslt-oracle/run_bench.sh` | **DELETE** | Retired 2026-10-08 after RD87 closure; one-shot analysis/benchmark source remains in Git history. |
+| `tools/lab/pa25/audit_receipt_20260919.json` | **DELETE** | Retired 2026-10-08 after PA25 closure; canonical receipt moved to `docs/evidence/2026-09-19-pa25-gate-audit/`. |
+| `tools/lab/pa25/run_audit.py` | **DELETE** | Retired 2026-10-08 after PA25 closure; one-shot audit source remains in Git history. |
+| `tools/lab/pa30/pa30-g1-ab-advisories.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g1-ab-run.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g1-ab-server-config.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g1-ab-summary.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g4-tuning-smoke-receipt.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g5-0830-reduce-telemetry-sample.jsonl` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-g5-1100-corpus-measurements.jsonl` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
+| `tools/lab/pa30/pa30-hardware-receipt.json` | **DELETE** | Retired 2026-10-08 after PA30 closure; durable receipt/evidence moved to `docs/evidence/2026-09-15-pa30-semantic-equivalence/`. |
 | `tools/lab/patch1000/run_pa35_step1.py` | **TRANSITIONAL** | PA35 step 1: one-off gfx1201 hardware-evidence driver for patch 1000 (control vs subject backend-ops Q2_K/Q6_K correctness + perf); per GPT `req_71c1aaa166f446a1`, deliberately not shared production code. |
 | `tools/lab/patch1000/patch1000_verification.py` | **TRANSITIONAL** | PA43: patch 1000 backend-ops/llama-bench verification helpers moved verbatim out of `bigcherry.patch.validation_campaign` (never dispatched by the production CLI); loaded by path from `run_pa35_step1.py` and `tools/tests/patch/test_patch1000_verification.py`. |
-| `tools/lab/rd04-correctness/run_real.py` | **TRANSITIONAL** | RD04/PA36: real-hardware driver for `run_rd04_contract_correctness()` across gfx1100/gfx1201/gfx1030 (no CLI flag yet); diagnostic, not a maintained tool. |
-| `tools/lab/rd12-correctness/run_real.py` | **TRANSITIONAL** | RD12/PA36: real-hardware driver for the 1205 RD12 patch-local producer through the generic dispatcher (replaces the deleted CLI driver); diagnostic, not a maintained tool. |
-| `tools/lab/rd13-backend-reference/run_real.py` | **TRANSITIONAL** | RD13/PA36: real-hardware driver for `run_rd13_backend_reference_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
-| `tools/lab/rd25-block08-review/block08.diff` | **TRANSITIONAL** | RD25: upstream rdna-boosts block 08 review artifact (commit `5efcd85f`); read-only review input, not a BigCherry patch or evidence authority. |
-| `tools/lab/rd26-bit-identity/run_real.py` | **TRANSITIONAL** | RD26/PA36: real-hardware driver for `run_rd26_decode_verify_bit_identity_check()` on gfx1100 (no CLI flag yet; a FAIL is real evidence of the documented 2-of-5 determinism-cluster gap); diagnostic, not a maintained tool. |
-| `tools/lab/rd30-correctness/run_real.py` | **TRANSITIONAL** | RD30/PA36: real-hardware driver for `run_rd30_correctness_check()` on gfx1100 (no CLI flag yet); diagnostic, not a maintained tool. |
+| `tools/lab/rd04-correctness/run_real.py` | **DELETE** | Retired 2026-10-08 after PA36 closed its 9/9 producer migration; canonical execution is patch-local/generic validation-producer infrastructure and the one-shot driver remains in Git history. |
+| `tools/lab/rd12-correctness/run_real.py` | **DELETE** | Retired 2026-10-08 after PA36 closed its 9/9 producer migration; canonical execution is patch-local/generic validation-producer infrastructure and the one-shot driver remains in Git history. |
+| `tools/lab/rd13-backend-reference/run_real.py` | **DELETE** | Retired 2026-10-08 after PA36 closed its 9/9 producer migration; canonical execution is patch-local/generic validation-producer infrastructure and the one-shot driver remains in Git history. |
+| `tools/lab/rd25-block08-review/block08.diff` | **DELETE** | Retired 2026-10-08 after RD25 was superseded; upstream block08 source remains identified by commit 5efcd85f and the copied diff remains in Git history. |
+| `tools/lab/rd26-bit-identity/run_real.py` | **DELETE** | Retired 2026-10-08 after PA36 closed its 9/9 producer migration; canonical execution is patch-local/generic validation-producer infrastructure and the one-shot driver remains in Git history. |
+| `tools/lab/rd30-correctness/run_real.py` | **DELETE** | Retired 2026-10-08 after PA36 closed its 9/9 producer migration; canonical execution is patch-local/generic validation-producer infrastructure and the one-shot driver remains in Git history. |
 
 Inventory count: 403 script/tool files (vendor, build/cache, and artifacts excluded).
 
@@ -752,7 +752,7 @@ Inventory count: 403 script/tool files (vendor, build/cache, and artifacts exclu
 | `tools/lab/plan-qualification/thermal-log.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/topk_backend_sampling_check.sh` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/plan-qualification/withdraw_discarded.py` | **TRANSITIONAL** | `plan-qualification` lab topic file (see `tools/lab/plan-qualification/README.md`); experiment-only, disposed per that README. |
-| `tools/lab/pnro20/repro_compose.py` | **TRANSITIONAL** | `pnro20` lab topic file (see `tools/lab/pnro20/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/pnro20/repro_compose.py` | **DELETE** | Retired 2026-10-08 after PNRO20 closure; result is recorded in the completed plan and source remains in Git history. |
 | `tools/lab/prbe20-rd26-bisect/bisect_ubatch.py` | **TRANSITIONAL** | `prbe20-rd26-bisect` lab topic file (see `tools/lab/prbe20-rd26-bisect/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/profiling/profile-27b-q8.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/profiling/queue-27b-profile.sh` | **TRANSITIONAL** | `profiling` lab topic file (see `tools/lab/profiling/README.md`); experiment-only, disposed per that README. |
