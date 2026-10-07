@@ -23,7 +23,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_LAUNCH_TEMPLATE = "template <int n_expert_used_template>\nstatic void launch_mm_ids_helper(\n"
 _N_KERNEL = r"""// bigcherry 1345 (QFP36): mm_ids_helper with n_warps warps per expert. Warp w walks the tokens
