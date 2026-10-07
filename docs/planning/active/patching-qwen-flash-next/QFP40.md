@@ -227,3 +227,8 @@ Finding: **do not promote 1295 as-is**. First measure whether 1334 already remov
 - 2026-10-07T00:39:56.573121+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and existing 1295/1308/1334; identified lazy-mode as upstream configuration, rollback copy as already validated, and 1334 as the production QSA baseline.
 - 2026-10-07T06:35:50.784320+00:00 (updated-by): Updated: section:notes
+
+## Ledger-events
+
+- chg_20261007_133405_flash-next-decode-at-long-cont_5826
+- 2026-10-07T13:34:09.463673+00:00 (updated-by): Updated: section:ledger-events

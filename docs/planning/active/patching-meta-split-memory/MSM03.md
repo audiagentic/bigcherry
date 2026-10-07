@@ -68,6 +68,7 @@ Depends on MSM01 for measurement; independent of MSM02 but the saving on the com
 
 
 
+
 - chg_20261006_144829_flash-next-uses-about-14-gb-l_2832
 - 2026-10-06T14:48:32.643443+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T14:48:46.318179+00:00 (updated-by): Updated: section:notes
@@ -76,3 +77,5 @@ Depends on MSM01 for measurement; independent of MSM02 but the saving on the com
 - 2026-10-06T21:50:32.670711+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261007_041129_opt-in-the-tensor-split-can-s_3694
 - 2026-10-07T04:11:45.401067+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261007_133409_the-low-vram-tensor-split-layo_8043
+- 2026-10-07T13:34:16.424953+00:00 (updated-by): Updated: section:ledger-events
