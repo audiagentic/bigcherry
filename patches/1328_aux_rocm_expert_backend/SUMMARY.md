@@ -34,7 +34,7 @@ ub2048: all arms OOM (3958.87 MiB on device 0), including L0
 
 At equal ubatch the offload costs about 5% prefill per two layers, but L2 frees enough VRAM for ub1024 and reaches 1158.8 t/s (+3.7% versus the ub512 L0 baseline). Every L2/L4/L6 arm then stopped at the first generation step while L0 decoded normally.
 
-The source-level defect was context scope: 1328 registered the ordinary auxiliary backend and enabled its Qwen4Exp layer semantics for every context sharing the target model, including `LLAMA_CONTEXT_TYPE_MTP`. Qwen4Exp's MTP context owns the MTP block alone, so trunk-layer auxiliary placement must not alter that scheduler topology. 1328 now registers/uses the auxiliary backend only for `LLAMA_CONTEXT_TYPE_DEFAULT`. `BIGCHERRY_PATCH_TRACE` also emits `phase=aux_merge layer=<n> tokens=<n> ctx_type=<n>` immediately before each marked target merge.
+The source-level defect was context scope: 1328 registered the ordinary auxiliary backend and enabled its Qwen4Exp layer semantics for every context sharing the target model, including `LLAMA_CONTEXT_TYPE_MTP`. Qwen4Exp's MTP context owns the MTP block alone, so trunk-layer auxiliary placement must not alter that scheduler topology. 1328 now registers/uses the auxiliary backend only for `LLAMA_CONTEXT_TYPE_DEFAULT`. `BIGCHERRY_PATCH_TRACE` emits `phase=aux_merge_build layer=<n> tokens=<n> ctx_type=<n>` when the merge is built and `phase=aux_merge_execute split=<n> node=<n> backend=<name>` immediately before the scheduler executes the Meta split containing that marked merge.
 
 Hardware decode rerun pending; state remains untested until the L2+ arm completes generation.
 
