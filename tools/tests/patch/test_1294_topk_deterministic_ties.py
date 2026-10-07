@@ -45,6 +45,14 @@ class Patch1294Mechanics(unittest.TestCase):
             self.assertIn(gather, out)
             # the tie kernel only rewrites ambiguous cutoffs, and runs after the gather in stream order
             self.assertIn("if (st.rank <= 0 || st.equal_count <= st.rank) {", out)
+            # ordered output: one pass writes the columns above the cut ascending in the first k - rank slots and the
+            # lowest-index cut-equal columns ascending in the last rank slots; default on, tie rule kept behind it
+            self.assertIn("static __global__ void top_k_radix_gather_ordered(", out)
+            self.assertIn("const int n_greater = k - st.rank;", out)
+            self.assertIn("if (greater && rg < n_greater) {\n            row_dst[rg] = col;", out)
+            self.assertIn("if (tie && rt < st.rank) {\n            row_dst[n_greater + rt] = col;", out)
+            self.assertLess(out.index("if (det_ties && top_k_bc_ordered()) {"), out.index("} else if (det_ties) {"))
+            self.assertIn('const char * e = getenv("BIGCHERRY_TOPK_ORDERED");', out)
             launch = out.index("top_k_radix_gather_ties<BLOCK_SIZE><<<nrows")
             self.assertLess(out.index("src, dst, states, ncols, k, blocks_per_row);"), launch)
             self.assertLess(out.index("const bool det_ties = top_k_bc_deterministic_ties();"), launch)
