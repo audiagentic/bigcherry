@@ -567,6 +567,10 @@ patches = ["1342_fusion_bisect"]
 # MSM03: production set + 1329 / 1331, to list what each device's compute arena holds (BIGCHERRY_ALLOC_TOP / _PEAK).
 patches = ["1329_alloc_top_trace", "1331_alloc_peak_live"]
 
+[experiment.f32-thin]
+# QFP34: production set + 1347 (2..8-row F32 matmuls through the vector kernel; BIGCHERRY_F32_THIN_MMVF=0 = SGEMM).
+patches = ["1347_f32_thin_transposed_mmvf"]
+
 [experiment.moe-cache-profile]
 # MET01: production set + 1337 + 1338 (Strata-style frequency profile pinned in the expert cache, large batches
 # through the cache; BIGCHERRY_MOE_CACHE_PROFILE / _PROFILE_OUT).
