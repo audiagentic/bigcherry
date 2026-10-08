@@ -278,4 +278,6 @@ Every patch or packaging change that can affect composed source must pass the `P
 3. configures and compiles the CPU-only `llama-server` target so patched/common server translation units receive a real C++ compile.
 
 This check is not hardware qualification and does not replace the HIP/ROCm compile/build gates; it exists to catch source/type failures before hardware time is consumed.
+## Patch promotion releases (PA45)
 
+A patch promotion on the current pin does not repin llama.cpp. Run `bigcherry patch-promote <id>... --evidence @file [--profile-only] [--release]`; its `feat(patch):` squash title drives a minor release and a `fix(patch):` title drives a patch release. Promotion evidence is copied under `releases/evidence/` and normally must name two distinct models; `--profile-only` is the explicit exception for profile-scoped work. The promotion PR must merge through normal checks/review before release-please can create the version PR.

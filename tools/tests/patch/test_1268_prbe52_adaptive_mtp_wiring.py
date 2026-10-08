@@ -200,11 +200,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
                 }
 
-                if (params.n_max <= (int) result.size()) {
-                    drafting[seq_id] = false;
-                    n_drafting--;
-                    continue;
-                }
+                    if (bc_front <= result.size() && dp.n_tail <= 0) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
 
                 if (chain_heads) {
                     chain_h[seq_id].push_back(0.0f);
@@ -230,6 +230,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
     }
+};
+
+// state of self-speculation (simple implementation, not ngram-map)
+struct common_speculative_impl_ngram_simple : public common_speculative_impl {
 };
 """
 
@@ -276,7 +280,8 @@ class Patch1268Mechanics(unittest.TestCase):
             self.assertIn("std::memcpy(data.data(), h.data(), data.size())", text)
             self.assertIn("std::memcpy(h.data(), data.data(), data.size())", text)
             self.assertIn("current_n_max(llama_seq_id seq_id) const override", text)
-            self.assertIn("event=depth_hist", text)
+            self.assertIn("event=depth_change", text)
+            self.assertEqual(text.count("bc_front_cap <= result.size()"), 1)
             self.assertIn("if (params.n_max <= (int) result.size()) {", text)
             self.assertIn("if (dp.result->size() < (size_t) params.n_min) {", text)
             self.assertIn("common_speculative_n_max(const common_speculative * spec, llama_seq_id seq_id)", text)
@@ -307,11 +312,9 @@ class Patch1268Mechanics(unittest.TestCase):
         td, root = self._tree()
         with td:
             path = root / "common/speculative.cpp"
-            target = "params.n_max <= (int) result.size()"
-            first = _SPEC.find(target)
-            second = _SPEC.find(target, first + len(target))
-            self.assertGreaterEqual(second, 0)
-            broken = _SPEC[:second] + _SPEC[second:].replace(target, "false", 1)
+            target = "bc_front <= result.size()"
+            self.assertEqual(_SPEC.count(target), 1)
+            broken = _SPEC.replace(target, "false", 1)
             path.write_text(broken, encoding="utf-8")
             results = apply_all(_module.PATCHES, root)
             self.assertFalse(all(r.ok for r in results))

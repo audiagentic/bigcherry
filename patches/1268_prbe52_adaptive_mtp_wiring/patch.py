@@ -69,24 +69,21 @@ _DRAFT_START_NEW = """            if (params.n_min_adaptive > 0 && dp.n_tail <= 
             }
 """
 
-_LIMIT_NEW = """                if (params.n_max <= (int) result.size()) {
-                    drafting[seq_id] = false;
-                    n_drafting--;
-                    continue;
-                }
-
-                // PRBE52: ordinary fresh fronts obey the deterministic per-sequence cap.
-                // 1321 live-tail calls carry an adaptive-sized forced front plus an explicit
-                // n_tail budget from the server, so they must be allowed to continue.
-                const int bc_adaptive_cap = dp.n_max > 0
-                    ? std::min(adaptive_state[seq_id].n_cur, dp.n_max)
-                    : adaptive_state[seq_id].n_cur;
-                if (params.n_min_adaptive > 0 && dp.n_tail <= 0 &&
-                        bc_adaptive_cap <= (int) result.size()) {
-                    drafting[seq_id] = false;
-                    n_drafting--;
-                    continue;
-                }
+_LIMIT_NEW = """                    // PRBE52, applied after 1321: the adaptive per-sequence cap limits a fresh front only.
+                    // A forced front is authoritative and is never truncated; live-tail calls stay bounded
+                    // by dp.n_tail. With adaptive depth off this is the 1321 stop unchanged.
+                    size_t bc_front_cap = bc_front;
+                    if (params.n_min_adaptive > 0 && dp.forced == nullptr) {
+                        const int bc_adaptive_cap = dp.n_max > 0
+                            ? std::min(adaptive_state[seq_id].n_cur, dp.n_max)
+                            : adaptive_state[seq_id].n_cur;
+                        bc_front_cap = std::min<size_t>(bc_front, (size_t) std::max(1, bc_adaptive_cap));
+                    }
+                    if (bc_front_cap <= result.size() && dp.n_tail <= 0) {
+                        drafting[seq_id] = false;
+                        n_drafting--;
+                        continue;
+                    }
 """
 
 _FINALIZE_NEW = """
@@ -112,7 +109,16 @@ _ACCEPT_NEW = """        const int32_t i_h = std::min<int32_t>(n_accepted, n_row
                         old_depth, new_depth, n_draft_actual, (int) n_accepted, (int) seq_id);
             }
         }
-    }
+"""
+
+# Inserted before the MTP class closes; kept separate from the accept() edit because production
+# diagnostics (1315) add lines between the hidden-row copy and the end of accept().
+_CLASS_TAIL_ANCHOR = (
+    r"    \}\n"
+    r"\};\n"
+    r"(?=(?:[^\n]*\n){1,3}?struct common_speculative_impl_ngram_simple )"
+)
+_CLASS_TAIL_NEW = """    }
 
     bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override {
         if (seq_id < 0 || seq_id >= (llama_seq_id) pending_h.size() || pending_h[seq_id].empty()) {
@@ -143,24 +149,6 @@ _ACCEPT_NEW = """        const int32_t i_h = std::min<int32_t>(n_accepted, n_row
             return this->n_max;
         }
         return std::min(this->n_max, adaptive_state[seq_id].n_cur);
-    }
-
-    ~common_speculative_impl_draft_mtp() override {
-        if (params.n_min_adaptive <= 0 || getenv(\"BIGCHERRY_PATCH_TRACE\") == nullptr) {
-            return;
-        }
-        for (int depth = 1; depth <= this->n_max; ++depth) {
-            uint64_t rounds = 0;
-            for (const auto & hist : adaptive_depth_hist) {
-                if (depth < (int) hist.size()) {
-                    rounds += hist[depth];
-                }
-            }
-            if (rounds > 0) {
-                SPC_WRN(\"BIGCHERRY_PATCH_HIT patch=1268_prbe52_adaptive_mtp_wiring path=mtp_adaptive_depth contract=PRBE52-ADAPTIVE-MTP-WIRING event=depth_hist depth=%d rounds=%llu\\n\",
-                        depth, (unsigned long long) rounds);
-            }
-        }
     }
 };
 """
@@ -210,17 +198,10 @@ _DRAFT_START_ANCHOR = (
     r"            if \(!params\.probabilistic\) \{\n"
     r"                dp\.result_q = nullptr;\n"
     r"            \}\n"
-    r"(?:[^\n]*\n){1,16}?"
+    r"(?:[^\n]*\n){1,48}?"
     r"            batch\.set_embd\(idx, \{ pending_h\[seq_id\]\.data\(\), 1, \(size_t\) n_embd \}\);)"
 )
-_LIMIT_ANCHOR = (
-    r"                if \(params.n_max <= \(int\) result.size\(\)\) \{\n"
-    r"                    drafting\[seq_id\] = false;\n"
-    r"                    n_drafting--;\n"
-    r"                    continue;\n"
-    r"                \}\n"
-    r"(?=\n                if \(chain_heads\) \{)"
-)
+_LIMIT_ANCHOR = '\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ if\\ \\(bc_front\\ <=\\ result\\.size\\(\\)\\ \\&\\&\\ dp\\.n_tail\\ <=\\ 0\\)\\ \\{\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ drafting\\[seq_id\\]\\ =\\ false;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ n_drafting\\-\\-;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ continue;\\\n\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\}\\\n'
 
 _FINALIZE_ANCHOR = (
     r"            if \(dp.result->size\(\) < \(size_t\) params.n_min\) \{\n"
@@ -239,8 +220,6 @@ _ACCEPT_ANCHOR = (
     r"        const int32_t i_h = std::min<int32_t>\(n_accepted, n_rows - 1\);\n"
     r"        const size_t row_bytes = \(size_t\) n_embd \* sizeof\(float\);\n"
     r"        std::memcpy\(pending_h\[seq_id\]\.data\(\), verify_h\[seq_id\]\.data\(\) \+ \(size_t\) i_h \* n_embd, row_bytes\);\n"
-    r"    \}\n"
-    r"\};\n"
 )
 
 
@@ -359,18 +338,20 @@ PATCHES = [
             Edit(id="prbe52-begin-reset", anchor=_BEGIN_ANCHOR, mode="insert_after", text=_BEGIN_NEW,
                  guard=r"adaptive_state\.at\(seq_id\)\.reset", rationale="Reset adaptation at the request/sequence begin boundary.", expect_matches=1, max_span_lines=4),
             Edit(id="prbe52-draft-reset", anchor=_DRAFT_START_ANCHOR, mode="insert_after", text=_DRAFT_START_NEW,
-                 guard=r"dp\.n_tail <= 0", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a pair shared with other draft implementations.", expect_matches=1, max_span_lines=3),
+                 guard=r"bigcherry_prbe52_logged", rationale="Identify the MTP drafting start by its pending-h embedding batch setup, not by a pair shared with other draft implementations.", expect_matches=1, max_span_lines=3),
             Edit(id="prbe52-depth-limit", anchor=_LIMIT_ANCHOR, mode="replace", text=_LIMIT_NEW,
-                 guard=r"bc_adaptive_cap <= \(int\) result\.size\(\)", rationale="Preserve the native n_max stop block for 1321, then apply the adaptive cap before chain-head continuation.", expect_matches=1, max_span_lines=6),
+                 guard=r"bc_front_cap <= result\.size\(\)", rationale="1321 replaced the native n_max stop with the forced-front / tail stop; fold the adaptive cap into that front length.", expect_matches=1, max_span_lines=6),
             Edit(id="prbe52-accept-update", anchor=_ACCEPT_ANCHOR, mode="replace", text=_ACCEPT_NEW,
                  guard=r"adaptive_state\[seq_id\]\.update", rationale="Feed the real accepted count back; anchor only on executable statements.", expect_matches=1, max_span_lines=6),
+            Edit(id="prbe52-class-tail", anchor=_CLASS_TAIL_ANCHOR, mode="replace", text=_CLASS_TAIL_NEW,
+                 guard=r"int32_t current_n_max\(llama_seq_id seq_id\) const override", rationale="State, budget and histogram members go before the MTP class closes; anchored on the class close directly before the ngram-simple struct.", expect_matches=1, max_span_lines=3),
         ),
     ),
     FilePatch(
         path="common/speculative.h",
         description="PRBE52 expose effective per-sequence speculative budget",
         edits=(Edit(id="prbe52-nmax-decl", anchor=_SPEC_H_NMAX_ANCHOR, mode="replace", text=_SPEC_H_NMAX_NEW,
-                    guard=r"common_speculative_n_max\(const common_speculative \* spec, llama_seq_id seq_id\)", rationale="Server look-ahead needs the controller's current per-round budget.", expect_matches=1, max_span_lines=1),),
+                    guard=r"common_speculative_n_max\(const common_speculative \* spec, llama_seq_id seq_id\)", rationale="Server look-ahead needs the controller's current per-round budget.", expect_matches=1, max_span_lines=2),),
     ),
     FilePatch(
         path="tools/server/server-context.cpp",
