@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: S
-priority: null
+priority: P3
 ---
 
 # VK-DRV-002 / RD79: Qualify AMD Vulkan graphics queue without adding a second scheduler
@@ -64,3 +64,7 @@ For promotion of any future implementation: CI95-low >=3% production E2E and <=1
 ## Historical provenance
 
 Created 2026-09-09 by capability-rebaseline-v3; re-reviewed 2026-09-24 against b11126. The original design proposed a new `BIGCHERRY_VK_MOE_GRAPHICS_QUEUE` flag, per-graph dual queues, a new buffer-sharing policy and a hypothetical 1263 patch. Those sketches are superseded by the 2026-10-08 code/evidence audit; preserved in Git history rather than maintained as contradictory active steps. No hardware/build/benchmark ran during this audit; static pinned-source assertions verified the queue/transfer coupling.
+
+## Change Log
+
+- 2026-10-08 (triage): Preserved concurrent main audit of upstream GGML_VK_ALLOW_GRAPHICS_QUEUE, transfer confound and driver-scoped qualification; no new Vulkan queue patch or device-lane evidence.

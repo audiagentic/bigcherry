@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: S
-priority: null
+priority: P1
 ---
 
 # CK-001: Use Composable Kernel profiler as an oracle for hot GEMM signatures
@@ -91,7 +91,15 @@ Successor key: patching-rdna-boost-experiments-rd88
 
 2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- added concrete GGML_CUDA_OP_TIMING output parser step (must capture real sample output first, not assume format); required ckProfiler --help to be run before finalizing CLI syntax; defined CK-vs-F32 correctness mechanism's actual achievable scope instead of an undefined byte-comparison.
 
+## 2026-10-08 b11474 composed-source experiment plan
+
+**Rank 1 / first slice: profile oracle, no runtime change.** On composed b11474, collect hot dense GEMM signatures using `GGML_CUDA_OP_TIMING=1` at `ggml_cuda_mul_mat_cublas_impl` and `launch_mul_mat_q`; capture exact (M,N,K,batch,type,quant,physical device,repeat count,total us) from the Flash-Next 8K/24K/98K profile and the 27B Q8_0 prefill profile. Proposed tooling gate `BIGCHERRY_CK_ORACLE=1` invokes offline `ckProfiler` only, never the model runtime; inspect its actual `--help`/output first. Compare CK GEMM/grouped-GEMM winners with native MMQ/hipBLAS using identical F32-reference/tolerance and resource metrics. Rank only signatures with >2% kernel share, generate decision JSON for PRBE28/29/31. **Expected direct end-to-end gain: 0%;** this step prevents implementing shadows/strides for cold shapes. Run capture using `tools/lab/flash-next/queue-env-ab.sh` (native profile arm), then separate CK offline profiling; no promotion based on CK microbench alone.
+
+Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
+
 ## Change Log
+
+- 2026-10-08 (triage): Experiment kept pending, priority P1; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
 
 - 2026-09-09T10:58:27.196577+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:15:38.618139+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
