@@ -10,7 +10,7 @@ Layer-split and single-device targets are unchanged (nothing is copied).
 
 import re as _re
 
-from bigcherry.patcher import Edit, FilePatch
+from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "core"
 STATE = "untested"
@@ -81,6 +81,19 @@ _COPY = r"""
             any = any || in_meta(t);
         }
         if (any) {
+            // Trace-only: verify the immutable borrowed tensor copies byte-for-byte. Destination readback
+            // synchronizes, so it is never paid unless the diagnostic is explicitly enabled.
+            const bool bc_input_trace = getenv("BIGCHERRY_DFLASH_INPUT_TRACE") != nullptr &&
+                                        atoi(getenv("BIGCHERRY_DFLASH_INPUT_TRACE")) != 0;
+            auto bc_input_hash = [](const void * data, size_t n) -> uint64_t {
+                const uint8_t * p = (const uint8_t *) data;
+                uint64_t h = 1469598103934665603ull;
+                for (size_t j = 0; j < n; ++j) {
+                    h = (h ^ p[j]) * 1099511628211ull;
+                }
+                return h;
+            };
+
             ggml_init_params ip = { 3*ggml_tensor_overhead(), nullptr, true };
             bc_other_ctx.reset(ggml_init(ip));
             for (int i = 0; i < 3; ++i) {
@@ -102,6 +115,15 @@ _COPY = r"""
                 tmp.resize(ggml_nbytes(src[i]));
                 ggml_backend_tensor_get(src[i], tmp.data(), 0, tmp.size());
                 ggml_backend_tensor_set(*dst[i], tmp.data(), 0, tmp.size());
+                if (bc_input_trace) {
+                    std::vector<uint8_t> verify(tmp.size());
+                    ggml_backend_tensor_get(*dst[i], verify.data(), 0, verify.size());
+                    LLAMA_LOG_INFO(
+                        "BIGCHERRY_DFLASH_INPUT_TRACE borrowed name=%s bytes=%zu src=%016llx dst=%016llx\n",
+                        src[i]->name, tmp.size(),
+                        (unsigned long long) bc_input_hash(tmp.data(), tmp.size()),
+                        (unsigned long long) bc_input_hash(verify.data(), verify.size()));
+                }
                 LLAMA_LOG_INFO("%s: BigCherry 1286: copied target %s (%.2f MiB) from the tensor-split buffer to %s\n",
                     __func__, src[i]->name, tmp.size()/1048576.0, ggml_backend_dev_name(model.devices[0].dev));
             }
@@ -161,4 +183,101 @@ _DFLASH = FilePatch(
     ),
 )
 
-PATCHES = [_CPARAMS, _CONTEXT_H, _CONTEXT_CPP, _DFLASH]
+_SPEC_MEMBER_A = "    std::vector<float> features_buf; // [n_chunk, n_embd_enc] gathered target features\n"
+_SPEC_MEMBER_N = _SPEC_MEMBER_A + "    uint32_t bc_input_trace_process_calls = 0; // BigCherry 1286 diagnostic\n"
+
+_SPEC_PROCESS_A = r"""        if (has_tokens == has_embeddings) {
+            return true;
+        }
+
+        const int32_t n_tokens = batch_in.size();
+"""
+_SPEC_PROCESS_N = r"""        if (has_tokens == has_embeddings) {
+            return true;
+        }
+
+        // BigCherry 1286 diagnostic: hash the first three target-feature handoffs.
+        const bool bc_input_trace = getenv("BIGCHERRY_DFLASH_INPUT_TRACE") != nullptr &&
+                                    atoi(getenv("BIGCHERRY_DFLASH_INPUT_TRACE")) != 0;
+        uint32_t bc_trace_call = 3;
+        if (bc_input_trace) {
+            bc_trace_call = bc_input_trace_process_calls++;
+        }
+        auto bc_input_hash = [](const void * data, size_t n) -> uint64_t {
+            const uint8_t * p = (const uint8_t *) data;
+            uint64_t h = 1469598103934665603ull;
+            for (size_t j = 0; j < n; ++j) {
+                h = (h ^ p[j]) * 1099511628211ull;
+            }
+            return h;
+        };
+
+        const int32_t n_tokens = batch_in.size();
+"""
+
+_SPEC_FEATURE_A = r"""                        std::memcpy(dst, src, (size_t) n_embd_tgt * sizeof(float));
+                    }
+                }
+
+                batch_inject.clear();
+"""
+_SPEC_FEATURE_N = r"""                        std::memcpy(dst, src, (size_t) n_embd_tgt * sizeof(float));
+                    }
+                }
+
+                if (bc_input_trace && bc_trace_call < 3) {
+                    LOG_WRN(
+                        "BIGCHERRY_DFLASH_INPUT_TRACE feature call=%u seq=%d offset=%d rows=%d width=%d hash=%016llx\n",
+                        bc_trace_call, (int) seq_id, (int) offset, (int) n_chunk, (int) n_embd_enc,
+                        (unsigned long long) bc_input_hash(
+                            features_buf.data(), features_buf.size() * sizeof(float)));
+                }
+
+                batch_inject.clear();
+"""
+
+_SPEC_TRACE = FilePatch(
+    path="common/speculative.cpp",
+    language="none",
+    description="Trace the first three DFlash/DSpark target-feature handoffs.",
+    edits=(
+        Edit(
+            id="dflash-input-trace-counter",
+            anchor=_re.escape(_SPEC_MEMBER_A),
+            text=_SPEC_MEMBER_N,
+            mode="replace",
+            guard=r"bc_input_trace_process_calls",
+            expect_matches=1,
+            rationale="DFlash/DSpark implementation state beside its gathered target-feature buffer.",
+        ),
+        Edit(
+            id="dflash-input-trace-process",
+            anchor=_re.escape(_SPEC_PROCESS_A),
+            text=_SPEC_PROCESS_N,
+            mode="replace",
+            guard=r"BigCherry 1286 diagnostic: hash the first three target-feature handoffs",
+            expect_matches=1,
+            rationale="After rejecting invalid mixed token/embedding batches, before target features are gathered.",
+        ),
+        Edit(
+            id="dflash-input-trace-feature",
+            anchor=_re.escape(_SPEC_FEATURE_A),
+            text=_SPEC_FEATURE_N,
+            mode="replace",
+            guard=r"BIGCHERRY_DFLASH_INPUT_TRACE feature call=",
+            expect_matches=1,
+            rationale="After the fused target feature slab is complete and before it is submitted to the draft.",
+        ),
+    ),
+)
+
+PATCHES = [_CPARAMS, _CONTEXT_H, _CONTEXT_CPP, _DFLASH, _SPEC_TRACE]
+
+ENV_DOCS = (
+    EnvDoc(
+        "BIGCHERRY_DFLASH_INPUT_TRACE",
+        "0|1",
+        "0",
+        "diagnostic: hash 1286 borrowed tensor copies and the first three DFlash/DSpark target-feature handoffs",
+    ),
+)
