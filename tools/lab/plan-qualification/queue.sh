@@ -52,8 +52,8 @@ done < "$jobs"
 parse_prefixes() {
     local line=$1
     set -f; set -- $line; set +f  # no pathname expansion of job-line words (regex args)
-    PARSED_MODEL=$BC_MODEL
-    PARSED_HIP=$BC_HIP_PATH
+    PARSED_MODEL=${BC_MODEL:-}
+    PARSED_HIP=${BC_HIP_PATH:-}
     PARSED_VIS=""
     PARSED_REQUIRES=""
     while :; do
@@ -136,12 +136,12 @@ build_line() {
     # The build compiles only the llama-server target; a row asking for another tool (e.g.
     # bin/llama-bench) builds that target in the same configured tree.
     if [ "$rc" -eq 0 ] && [ -n "$plan" ] && [ "$target" != bin/llama-server ]; then
-        mapfile -t tree < <(ls -d "$root"/work/builds/*/"$plan" 2>/dev/null)
+        mapfile -t tree < <(ls -d "$work"/builds/*/"$plan" 2>/dev/null)
         if [ "${#tree[@]}" -eq 1 ] && [ ! -f "${tree[0]}/$target" ]; then
             cmake --build "${tree[0]}" --target "$(basename "$target")" -j >> "$log" 2>&1 || rc=$?
         fi
     fi
-    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$root"/work/builds/*/"$plan"/"$target" 2>/dev/null)
+    [ -n "$plan" ] && mapfile -t matches < <(ls -d "$work"/builds/*/"$plan"/"$target" 2>/dev/null)
     [ "${#matches[@]}" -eq 1 ] && bin=${matches[0]}
     if [ "$rc" -eq 0 ] && [ -f "$bin" ]; then echo "BUILD_BINARY=$bin" >> "$log"; else [ "$rc" -eq 0 ] && rc=1; fi
     echo "BUILD_EXIT=$rc" >> "$log"
@@ -216,8 +216,13 @@ script_line() {
         esac
     done
     mkdir -p "$work/runs/$run"
-    BC_RUN_DIR="$work/runs/$run" bash "$here/locked-run.sh" bash "$script" "${args[@]}" > "$log" 2>&1 < /dev/null
-    rc=$?
+    if [ "${BC_QUEUE_STREAM:-0}" = 1 ]; then
+        BC_RUN_DIR="$work/runs/$run" bash "$here/locked-run.sh" bash "$script" "${args[@]}" 2>&1 < /dev/null | tee "$log"
+        rc=${PIPESTATUS[0]}
+    else
+        BC_RUN_DIR="$work/runs/$run" bash "$here/locked-run.sh" bash "$script" "${args[@]}" > "$log" 2>&1 < /dev/null
+        rc=$?
+    fi
     echo "SCRIPT_EXIT=$rc" >> "$log"
     echo "done  script $run $(date -Is) rc=$rc"
     return "$rc"
@@ -251,6 +256,27 @@ preflight_line() {
     return "$rc"
 }
 
+# Delegate scripts that schedule their own queue jobs. They must acquire GPU
+# locks in their nested queue; taking an outer SCRIPT lock would deadlock.
+queue_line() {
+    local run=$2 script=$3 log rc
+    shift 3
+    log="$work/runs/$run.log"
+    echo "start nested queue $run $(date -Is)"
+    # The nested queue owns its GPU locks. Tee only in slice lab's explicit
+    # streaming mode; preserve the executed command's exit code.
+    if [ "${BC_QUEUE_STREAM:-0}" = 1 ]; then
+        bash "$script" "$@" 2>&1 < /dev/null | tee "$log"
+        rc=${PIPESTATUS[0]}
+    else
+        bash "$script" "$@" > "$log" 2>&1 < /dev/null
+        rc=$?
+    fi
+    echo "QUEUE_EXIT=$rc" >> "$log"
+    echo "done  nested queue $run $(date -Is) rc=$rc log=$log"
+    return "$rc"
+}
+
 campaign_line() {
     local line=$1 run log rc
     parse_prefixes "$line"
@@ -268,6 +294,7 @@ campaign_line() {
     fi
     if [ "$1" = AB ]; then ab_line "$@"; return $?; fi
     if [ "$1" = SCRIPT ]; then script_line "$@"; return $?; fi
+    if [ "$1" = QUEUE ]; then queue_line "$@"; return $?; fi
     run=$5
     log="$work/runs/$run.log"
     if [ -f "$log" ] && grep -q '^CAMPAIGN_EXIT=' "$log"; then

@@ -9,13 +9,14 @@ work_root_resolve() {
         printf '%s\n' "$BIGCHERRY_WORK_ROOT"
         return 0
     fi
-    python3 - "$root" <<'PY'
+    PYTHONPATH="$root/tools" python3 - "$root" <<'PY'
 import sys, tomllib
 from pathlib import Path
-root = Path(sys.argv[1])
-local = root / "config" / "environment.local.toml"
-env = tomllib.loads(local.read_text())["env"] if local.is_file() else {}
-print(env.get("BIGCHERRY_WORK_ROOT") or root / "work")
+from bigcherry.core.paths import primary_root
+primary = primary_root()
+local = primary / "config" / "environment.local.toml"
+env = tomllib.loads(local.read_text(encoding="utf-8"))["env"] if local.is_file() else {}
+print(env.get("BIGCHERRY_WORK_ROOT") or primary / "work")
 PY
 }
 

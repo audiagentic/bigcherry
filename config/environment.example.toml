@@ -82,3 +82,17 @@ locator = "0000:02:00.0"
 BIGCHERRY_BRUTUS_TREE = "/srv/example/bigcherry/workspaces/main"
 # ROCM_PATH = "/opt/rocm"            # usually set by tools/env/rocm-env.sh
 # BIGCHERRY_ROCM_7_2_ROOT = "/opt/rocm-7.2"
+
+# PA47 slice lab uses the normal [host.*] schema above. When --host is omitted
+# it resolves `default-host`; the current Brutus local config therefore remains:
+#
+# default-host = "build-server"
+# [host.build-server]
+# hostname = "ssh-user@lab-host"
+# repo = "/srv/example/bigcherry/workspaces/main"
+# cache-root = "/srv/example/bigcherry-work"
+#
+# Those three keys are the fields slice lab itself requires. Other host fields
+# may remain in the same table for other commands. To invoke `--host brutus`
+# instead, define [host.brutus] with the same hostname/repo/cache-root keys.
+# Runs go to cache-root/runs and detached worktrees to cache-root/worktrees.
