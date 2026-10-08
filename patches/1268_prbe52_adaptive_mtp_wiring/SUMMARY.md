@@ -11,7 +11,7 @@ The server resolves an effective per-sequence speculative budget. 1322 therefore
 
 ## Determinism
 
-Controller reset is per request. The controller has no time source, allocation-layout input, or process-global mutable policy state. With depth-dependent target numerics, however, one changed accept decision changes the next depth and therefore the next verify shape; output divergence can feed back into a different depth history. That is backend/path sensitivity, not nondeterministic controller arithmetic.
+Controller reset is per request. The controller has no time source, allocation-layout input, or process-global mutable policy state. Source audit found a separate upstream MTP request-state leak: prompt checkpoints restore target/draft KV but MTP did not serialize `pending_h`, so a warm request could leave a stale hidden boundary for the next checkpoint replay. 1268 now serializes/restores that row through `get_state/set_state`. If repeats still diverge after this fix, depth-dependent backend numerics remain the next hypothesis.
 
 ## Failure mode and trace
 
