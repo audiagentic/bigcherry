@@ -4,3 +4,5 @@
 - `queue-27b-dflash.sh`: queues the probe on Brutus (R9700/vLLM untouched).
 
 Flash-Next has no llama.cpp-convertible DFlash draft (the only one, PixelML's NVFP4 DeepSpec drafter, is `Qwen3DSparkModel`, which has no converter and its authors report about +3.9% vs MTP).
+- `drafter-files.sh`: which drafter file is best for Qwen3.8-27B (current DFlash2 Q8_0 / Q4_K_M and DSpark Q8_0 vs the BF16 and the 2026-10-06 re-published GGUFs) against built-in MTP; reuses `probe()` from `probe-27b.sh`.
+- `fetch-drafters.sh`: downloads those alternative drafter files and checks their published sha256.
