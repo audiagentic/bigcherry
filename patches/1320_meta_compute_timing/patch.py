@@ -17,7 +17,7 @@ import re
 from bigcherry.patcher import Edit, EnvDoc, FilePatch
 
 GROUP = "rdna-boosts"
-STATE = "untested"
+STATE = "validated"
 
 _A_START = ("    // If the previous cgraph had a defined UID it can be used to skip rebuilding the subgraphs per simple backend.\n"
             "    const bool needs_rebuild = (cgraph->uid == 0) || (cgraph->uid != backend_ctx->uid);\n")
