@@ -55,4 +55,6 @@ Queue batch t-1263-gfx1100-s* exercises the single-GPU contract meanwhile.
 
 ## Change Log
 
+- 2026-10-08 (triage): Kept pending at P2. 1263_prbe41_ssm_conv_channels_major state=untested; Meta split path fails before activation at GGML_ASSERT(src_ss[0].nr[0] == 1) per item notes. Keep open solely for split-state/reshape propagation on 27B GDN; do not mark patch validated or in_progress without a branch.
+
 - 2026-09-29T23:14:03.823307+00:00 (created-by): Created by agent

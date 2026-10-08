@@ -58,6 +58,8 @@ Owner asked 2026-09-26 whether 1215 can be fixed. 1216 (join-fusion guard) was s
 
 ## Change Log
 
+- 2026-10-08 (triage): pending; 1215_rd394041_amd_stream_moe_overlap rejected; SUMMARY.md permits rework on upstream native concurrency. This is the sole remaining rework owner. No branch/patch currently in flight.
+
 - 2026-09-25T23:16:25.986252+00:00 (created-by): Created by agent
 
 ## Ledger-events

@@ -2,13 +2,13 @@
 id: PRBE20
 order: 0
 plan: patching-rdna-boost-experiments
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:54:49.394058+00:00'
 breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P2
 ---
 
 # Make decode and speculative-verify batches bit-identical (attention + mmvq + CPU cluster)
@@ -135,6 +135,9 @@ Interpretation: this is NOT simply "decode(1) vs everything-else" as RD26's desi
 This means at least two distinct mechanisms are likely in play: an early (token-0) divergence affecting ubatch=1 and =5 specifically but not 2-4, and a separate late-sequence divergence affecting all of 2/3/4 (and presumably 1/5 too, just already diverged earlier so not separately visible). RD26's current kernel-routing scope (attention tile config, MMVQ/MMVF batch-size normalization, sgemm gate) does not fully explain either pattern. Further work needed: (1) why does ubatch=5 specifically fall outside the group RD26 successfully normalizes for 2-4 -- worth checking if 5 as verify_width=n_draft+1 hits some OTHER code path unrelated to the already-audited kernels (e.g. rope, KV cache layout, or a flash-attention config keyed differently); (2) what causes the late (~byte 1987040) divergence even among the mutually-early-consistent 2/3/4 group -- this is a second, separate root cause RD26 has not addressed at all.
 
 Not yet done: source-level investigation of what specifically differs about ubatch=5's code path vs 2-4, and what happens deep in the sequence (near ctx_size=256) that causes the late divergence among 2/3/4. This is real, substantial follow-up work -- flagging as the next concrete step rather than guessing another fix.
+
+
+2026-10-08 triage correction: KEEP OPEN (P2). The earlier 1210 rejection was a b11474 composition/rebase disposition, not a hardware verdict. PR #43 restored/rebased 1210 for the current adaptive-MTP experiment and it remains untested. Preserve the recorded ubatch-width logit divergence as evidence; do not close PRBE20 until the restored path has a measured disposition.
 
 ## Change Log
 

@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P3
 ---
 
 # RD76 / FORK-HIP-001: retire obsolete rocWMMA FlashAttention restoration
@@ -38,7 +38,15 @@ No next RD76 implementation gate. A *new owner* may reopen only for a maintained
 
 11 static assertions against upstream b11474 passed (old flag/header/enum absent; native selector/config/dispatch and head-256/quant-KV tests present). No build, backend-op execution, prototype or hardware benchmark. Original plan created 2026-09-09, last independently changed 2026-09-24 (39b146c7). Historical proposals for new rocWMMA FA are superseded, not implemented. BCOP59 is the thin disposition ledger.
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 10, rocWMMA FA research candidate.** b11474 native HIP kernel selection lives in `ggml/src/ggml-cuda/fattn.cu::ggml_cuda_get_best_fattn_kernel`; native RDNA WMMA already exists. The cited fork `5aa2f049` supplies only CMake/rocWMMA header/build plumbing, **not** the FA kernel, so first pin a real rocWMMA kernel-source commit. If found, qualify one optional `fattn-rocwmma.cu` implementation with `GGML_HIP_FA_IMPL=native|rocwmma`, default native, and conditional `GGML_HIP_ROCWMMA` build. Exact matrix: gfx1201 R9700, F16 K/V, head 64/128 then 256, GQA 1/2/4/8, q_rows 1..16 and 512, KV 32K/64K/128K, gfx1100 control. Expected gain unknown (possibly zero): only advance if profiler says the native FA kernel is hot and rocWMMA saves >=1% E2E on a named shape without quality/graph regression. Upstream #29901 tiled lightning indexer is orthogonal to rocWMMA MMA lowering; `1202` is BF16 tile, not rocWMMA. `queue-env-ab.sh` one-build separated native/rocWMMA ABBA, correctness/PPL/VRAM/scratch/capture stability; don't infer a win from context length alone.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P3); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:57:36.613381+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:14:47.897740+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

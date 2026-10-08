@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # HIP-GRAPH-002: Force graph recapture when FA stream topology changes
@@ -101,6 +101,8 @@ Successor key: patching-rdna-boost-experiments-rd84
 2026-09-24 GPT review req_d55aed71224e43a8 applied: NOT-READY -- disproved 'no shape/topology awareness' premise (same finding as PRBE66); the proposed FA-only fingerprint duplicates and is weaker than the existing full node-property comparison in ggml_cuda_graph_update_required; narrowed to instrumenting and closing the uid-equality fast-path gap, converging with PRBE66 on one fix rather than two.
 
 ## Change Log
+
+- 2026-10-08 (triage): pending; Authoritative owner for the UID-fast-path vs node/source-properties repro shared with PRBE66. Do not add FA bypass or fingerprint before reproducing gfx1201 100K+ graph failure; 1302_cuda_graph_oom_evict (validated) addresses separate OOM lifetime.
 
 - 2026-09-09T10:58:14.009489+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:15:20.253208+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

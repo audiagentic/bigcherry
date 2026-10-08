@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P3
 ---
 
 # UP-KV-001: Dedicated F16 dequant path for Q5 KV
@@ -77,3 +77,7 @@ Successor key: patching-rdna-boost-experiments-rd64
 2026-09-24 review corrected the original premise: Q4_0/Q4_1 are already specialized at b11126; Q5_0/Q5_1 are the remaining legacy generic converter cases. The global type selector has non-FA callers, so the implementation is FA-specific rather than globally replacing Q5 conversion.
 
 2026-09-27: materialized as fresh `untested` package `1271_prbe54_q5_kv_dequant_f16` with contract `PRBE54-Q5-KV-DEQUANT-F16`; no hardware evidence is inherited. The positive lane is prefill because b11126's quantized decode path chooses the direct vector FA kernel and does not execute the F16 staging selector.
+
+## Change Log
+
+- 2026-10-08 (triage): Kept pending at P3. Patch 1271_prbe54_q5_kv_dequant_f16 remains untested and only targets Q5 quantized KV F16 staging; production Flash-Next uses F16 KV. No matching measured Q5_KV optimization lane, so no in_progress status or promotion claim.

@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P1
 ---
 
 # Evaluate Q6_K MMQ sub-scale fold/hoist
@@ -72,6 +72,8 @@ REAL RESULT 2026-09-12: correctness (PPL-equality, see PRBE02) PASS, sigma=1.35.
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE04's PRBE110 dependency to the RD07-only edits (rd07-hoist-base-scale, rd07-fold-subscale, rd07-sum-line in mmq-vec-dot.cuh, verified present and order-dependent in patches/1203.../patch.py) plus Q6_K dispatch marker/J_MAX/test edits; item remains pending/blocked on PRBE110, PEF01/HI71 gates still mandatory.
 
 ## Change Log
+
+- 2026-10-08 (triage): pending; 1267_rd07_q6k_mmq_scale_fold remains untested (patches/1267_rd07_q6k_mmq_scale_fold/patch.toml and SUMMARY.md). Historical 1203 is rejected. PRBE110 owns current-pin qualification; no closure evidence.
 
 - 2026-09-09T10:53:43.516065+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:22.973058+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

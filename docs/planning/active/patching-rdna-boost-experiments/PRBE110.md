@@ -7,7 +7,7 @@ created-at: '2026-09-23T09:19:09.142442+00:00'
 breadth: ''
 skill: advanced
 created-by: agent
-priority: P2
+priority: P1
 work: M
 ---
 
@@ -128,3 +128,7 @@ M. Code risk is low-to-medium because source logic is already reviewed, but spli
 - RD06 remains parked; neither new package broadens WMMA head coverage.
 - Fresh contracts are intentional even though logical RD05/RD07 contract names already exist: rejected-bundle evidence must not bind the extracted patch identities.
 - Source: https://github.com/stew675/llama.cpp/commit/1d525bd45f9e8f844856ecbc5dd8ae33c8d34eff
+
+## Change Log
+
+- 2026-10-08 (triage): pending; 1267_rd07_q6k_mmq_scale_fold patch.toml state=untested, SUMMARY.md requires new validation. Historical gfx1201 pp512 +2.4675% is not current-pin promotion; b11474 requalification remains; 1203 rejected.

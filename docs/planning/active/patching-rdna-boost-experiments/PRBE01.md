@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P2
 ---
 
 # Implement final native-BF16 flash-attention logical experiment
@@ -68,7 +68,15 @@ Migration: capability-rebaseline-v3-2026-09
 
 2026-09-24 GPT review req_215c89d0b13a4bb7 applied: verified 1202's 35 anchors are unique at b11126 but confirmed (grep) it has no activation marker although validation.toml requires one for its marker-probe check -- added a required BIGCHERRY_PATCH_TRACE-gated WARN marker at the real dispatch function `ggml_cuda_flash_attn_ext_tile` in fattn-tile.cu (not the nonexistent `..._tile_case_type`). Removed the stale test-backend-ops/old campaign validation language in favor of the actual package-local producer workflow (`--validation-producer 1202_rd04_bf16_flash_attn_tile/rd04`) already declared in validation.toml.
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 6, BF16 attention qualification.** `1202_rd04_bf16_flash_attn_tile` is **untested** (patch.toml), not production; dispatch seam `ggml/src/ggml-cuda/fattn-tile.cu::ggml_cuda_flash_attn_ext_tile` BF16 K/V tiles with F32 accumulation. The b11474 upstream #29901 tiled lightning **indexer** optimizes indexing, not the native BF16 precision path, so it is not evidence of equivalent BF16 arithmetic. Scope `K/V=BF16, head 64/128/256, GQA 1/4/8, q_rows=1..16 and 512-token prefill, ctx=8K/24K/98K`, gfx1100/gfx1201 with gfx1030 fallback. Gate with existing patch activation / `BIGCHERRY_PATCH_TRACE=1` and a new test-only `BIGCHERRY_BF16_FA_TILE=0|1` only if 1202 lacks a production-independent A/B switch (do not assume such a switch exists). Expected gain: uncertain, target >=1% BF16 decode with no prefill regression; FP16 KV production is a non-activating control, no benefit claim on it. Run FLASH_ATTN_EXT/backend reference, long-context PPL, graph capture, native-vs-1202 `tools/lab/flash-next/queue-env-ab.sh`; require marker subject only and matched BF16 numerics before adoption.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P2); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:53:31.014682+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:07.152011+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

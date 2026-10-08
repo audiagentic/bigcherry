@@ -79,7 +79,13 @@ Owner 2026-10-05: keep a cumulative promoted base. Rule: the comparison point fo
 
 Owner 2026-10-05: one build only - promote into [patch-set.validated-enhancements] (no separate flash-next patch-set). Env-gated (no-op unless set): 1297, 1303, 1307-1313, 1326, 1327. Ungated or default-sensitive, need a cross-model no-regression check: 1291 (AR CPU-root thresholds), 1292 (no gate), 1294 (verify default), 1302 (always on). Add to the promotion GPU session: one balanced ABBA on the dual-XTX 27B production baseline (validated-enhancements before vs after adding the Flash-Next set), decode + prefill, greedy identity.
 
+## PRBE qualification-policy pointer
+
+PRBE71-73 roll-up (PA45 is the active implementation owner): keep lightweight promotion grounded in mechanics, patch-lint, activated behavior, independent ABBA, identity and a native baseline. Coupled RD39-42 and RD50-53 ablations need separate source/compile-time qualification variants, not unverified env switches. Trait-bearing scopes (integrated/UMA/P2P/driver/GPU count) must fail closed on absent observations; RD22's actual scope migration remains a PA45 follow-up, not done. Hardware-blocked plans retain explicit blocker evidence and a review date; they cannot auto-promote or be counted as performance failures. No runtime changes are made here.
+
 ## Change Log
+
+- 2026-10-08 (triage): Reapplied PRBE71/72/73 policy pointer to the newer main QFP18 text.
 
 - 2026-10-04T07:54:10.353678+00:00 (created-by): Created by agent
 - 2026-10-04T07:55:43.580424+00:00 (updated-by): Updated: section:notes

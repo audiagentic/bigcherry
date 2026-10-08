@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # Evaluate SSM pre-scan chain fusion (conv + l2_norm pair + gate/beta)
@@ -77,7 +77,15 @@ Supersedes: RD24 (closed historical predecessor); RD14 and RD16 are closed/super
 
 2026-09-24 GPT review req_2b717df095b44703 applied: enumerated the required full 16-op/edge/output-node definition (was previously unenumerated); corrected the detection-anchor location to insert before the 2-node UNARY+MUL check (was contradictorily described); corrected the dispatch anchor to the verified real function ggml_cuda_try_fuse (ggml-cuda.cu:3432); resolved the ambiguous kernel-location choice to ssm-conv.cu (existing file, patcher is anchor-only).
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 8, 27B GDN-only; not Flash-Next prefill work.** Target 27B Qwen GDN decode (one token, `ne[1]==1`) `src/models/delta-net-base.cpp` 16-op pre-scan chain `SSM_CONV -> SILU -> Q/K VIEW+RMS_NORM -> V VIEW -> gate/beta`; detection `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_try_fuse` and kernel `ggml/src/ggml-cuda/ssm-conv.cu`. Existing native 2/3-node SSM_CONV+SILU(/ADD) fusion does **not** implement the full chain; validated `1253_nro04_gfx1100_bf16_chunked_gdn` targets a different BF16 chunked recurrence. Env `BIGCHERRY_SSM_PRESCAN_FUSE=0|1` default 0; strict graph edges/output ranges, no other consumers, dtype/layout/alias and recurrent-state parity. Expected launch reduction up to ~13 of 16 only on an actually activating 27B GDN graph, E2E gain speculative (<1-2% prior until trace). `queue-env-ab.sh`: 27B GDN model 8K/24K/98K decode, kernel census, F32 output/recurrent-state tolerance, graph replay, negative edges; Flash-Next non-activation control. Do not implement before trace demonstrates this exact topology.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P3); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:54:45.862958+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:53.591511+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

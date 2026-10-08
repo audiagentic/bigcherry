@@ -2,13 +2,13 @@
 id: PRBE35
 order: 0
 plan: patching-rdna-boost-experiments
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:55:53.286868+00:00'
 breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # AMD-STREAM-005: Protect concurrent-region join node from fusion
@@ -184,6 +184,8 @@ GPT's final review identified one remaining gap: the CONTROL lane also needed it
 2026-09-25: implemented as a patch-local producer (not a central runner -- PA36 moved all producers patch-local). 1216: WARN activation marker when the fusion horizon is capped; experiment-contract bound; validation.toml; producer: control=bigcherry+1215, subject=+1216, GRAPH_OPT=1, full-vocab backend_reference (tol 5e-4) via shared tools/bigcherry/experiment/full_vocab.py, server-log activation, 10-round tg128 controls. Old PPL-only rd43_correctness.py removed. GPT review req_997c7ff3ed5944bf: tolerance appropriate; noted limits -- marker proves the cap engaged, not that graph capture succeeded; evidence shows guard harmless, not reproduction of the abort. Hardware run pending a free 24GB GPU (model tierM-qwen35b-a3b-moe-mtp).
 
 ## Change Log
+
+- 2026-10-08 (triage): pending; 1216_rd43_concurrent_join_fusion_guard state=untested, now independent of rejected 1215 (patch.toml requires=[]). Keep narrowly for upstream join guard correctness and graph-capture evidence; do not inherit 1215 gains.
 
 - 2026-09-09T10:55:53.286868+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:13:05.382498+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

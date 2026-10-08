@@ -99,5 +99,7 @@ Transplanted from `agent-1272-ar-host-wire` before stale-branch cleanup. Branch-
 
 ## Change Log
 
+- 2026-10-08 (triage): Kept pending at P1. Decode shortlist rank #2 after PRBE113 Gate 0. IQ4_XS then IQ3_XXS MMVQ inner-loop metadata hoist, existing vector dispatch descriptor compile-time only, gfx1100/gfx1201; no new registry. Compare kernel fraction and resource use vs PRBE113 baseline; don't start without hot-loop evidence.
+
 - 2026-10-04T04:04:36+11:00 (agent): Original side-branch plan created.
 - 2026-10-05: Transplanted to `patch-refactor` as free sequence slot PRBE111; removed stale branch-history assumptions and aligned ownership with current IQ/HIP tuning plans.

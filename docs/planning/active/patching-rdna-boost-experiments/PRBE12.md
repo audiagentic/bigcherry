@@ -2,13 +2,13 @@
 id: PRBE12
 order: 0
 plan: patching-rdna-boost-experiments
-state: in_progress
+state: pending
 created-at: '2026-09-09T10:54:19.359011+00:00'
 breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # Evaluate MUL_MAT plus RESHAPE plus ADD fusion
@@ -81,6 +81,8 @@ Remaining real work: real activation-trace verification (has real markers alread
 2026-09-25 RESULT: RD13 (1206) gfx1100 PASS (4 sessions: +0.66/+0.53/+0.47/+0.65% tg128, every CI above 0, controls flat, full-vocab logprobs identical, activation proven). gfx1201 FAIL/not established (point estimates +0.2/-0.2/+0.3/+0.4%, control CIs up to +-4% -- sessions ran concurrently with the gfx1100 lane; later sessions run serially). Not re-running gfx1201 to chase the verdict (no optional stopping); a serial-lane re-measurement needs an explicit decision.
 
 ## Change Log
+
+- 2026-10-08 (triage): pending; 1206_rd13_mul_mat_add_view_fusion state=untested (patch.toml); gfx1100 recorded positive, gfx1201 qualification incomplete (item notes). No in-flight branch on main; remaining VIEW-negative fixture and controlled repeat. Reset stale in_progress.
 
 - 2026-09-09T10:54:19.359011+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:11:26.671901+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

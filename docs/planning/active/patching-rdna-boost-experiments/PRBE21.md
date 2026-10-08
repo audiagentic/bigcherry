@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # Fold SSM conv_input concat into qkv mmvq; rpb=2 for small-K MoE
@@ -75,7 +75,15 @@ Successor key: patching-rdna-boost-experiments-rd27
 
 2026-09-24 GPT review req_2b717df095b44703 applied: resolved sub-candidate 1's central design choice -- verified conv_input is explicitly GGML_OP_CONCAT at src/models/delta-net-base.cpp:472, and added the requirement to preserve its conv_state_last->conv_state_update CPY consumers, which the prior plan did not account for. Split sub-candidate 2 into its own separate package/candidate set with requires=["0600_mmvq_geometry"] (previously bundled and missing that dependency), with exact (type,ncols,K,nwarps,rpb=2) candidate rows to be enumerated at implementation time.
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 8b, 27B GDN-only; two independent experiments.** (a) Source `src/models/delta-net-base.cpp` `ggml_concat(ctx0, conv_states, qkv_mixed, 0)` feeding SSM_CONV and recurrent CPY updates; existing `ggml/src/ggml-cuda/ssm-conv.cu` candidate folds only eligible contiguous decode CONCAT without deleting the CPY/state consumer. Gate `BIGCHERRY_SSM_CONV_INPUT_FOLD=0|1`, default 0; expected one launch + intermediate buffer saved per activated GDN step, perhaps <1% decode. (b) rpb=2 for small-K MoE MMVQ is already expressible through validated `0600_mmvq_geometry` explicit nwarps/rpb template and `ggml/src/ggml-cuda/mmvq.cu::calc_rows_per_block`, not a new kernel; gate `BIGCHERRY_MMVQ_SMALLK_RPB2=0|1` via independently compiled candidate and shape selector. Do **not** bundle (a)/(b), or infer wins without actual 27B GDN/small-K MoE signatures. `queue-env-ab.sh`: width 1..8 decode, 8K/24K/98K, op parity/temp0 identity, CPY state parity, capture safety, kernel launch/occupancy and unaffected dense/Flash-Next control. Both remain low priority until PRBE113 profile.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P3); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:54:53.078402+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:06.531616+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P3
 ---
 
 # AMD-GEMM-003: K-pad F16 shadow to avoid aliasing
@@ -64,7 +64,15 @@ Successor key: patching-rdna-boost-experiments-rd37
 
 2026-09-24 GPT review req_2b717df095b44703 applied: corrected the self-dependency contradiction -- the prior plan both anchored PRBE30 as additive edits into PRBE29's own package AND declared `requires` on PRBE29, which is inconsistent. Now either folds into PRBE29's package with no requires, or becomes a genuinely separate package with requires=[PRBE29's id]; PRBE29 must expose a stable shadow-allocation helper with explicit stride metadata for this item to anchor against.
 
+## 2026-10-08 b11474 composed-source experiment plan
+
+**Rank 4, dependent on PRBE29's shadow allocation API.** Apply K/leading-dimension padding only to an actual selected F16 shadow, not to generic GGUF tensor metadata. Env `BIGCHERRY_DENSE_SHADOW_KPAD_BYTES=0|64|128`, default 0; target the `down_proj` or other PRBE70-identified cache-alias signature at `ggml_backend_cuda_buffer_context` shadow allocator and `ggml_cuda_mul_mat_cublas_impl` stride consumer. Incremental VRAM = sum `nrows * delta_leading_dimension_bytes`, *on top* of PRBE29's 2-byte/scalar shadow; initial <=64 MiB/device additional padding. Compare one padded/unpadded shadow in same model and quant first, byte/tolerance and PPL parity, rocprofv3 cache-conflict counters and kernel time. Full 8K/24K/98K `queue-env-ab.sh` only if the raw shadow itself passed and total VRAM stays below safe ceiling. Expected improvement unknown / likely sub-1% E2E; reject without causal cache evidence.
+
+Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
+
 ## Change Log
+
+- 2026-10-08 (triage): Experiment kept pending, priority P3; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
 
 - 2026-09-09T10:55:30.594236+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:43.525844+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

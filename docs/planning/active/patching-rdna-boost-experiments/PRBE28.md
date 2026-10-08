@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: M
-priority: null
+priority: P2
 ---
 
 # AMD-GEMM-001: 128-byte row padding for cache-set aliasing
@@ -66,7 +66,15 @@ Successor key: patching-rdna-boost-experiments-rd35
 
 2026-09-24 GPT review req_2b717df095b44703 applied: corrected the implementation site -- the exact ggml.c::ggml_new_tensor_impl anchor exists but editing it is invalid (no weight identity, breaks GGUF/mmap tight-packing assumptions for every tensor including activations). Moved the weight-specific stride edit to src/llama-model-loader.cpp::create_tensor and load_all_data, requiring a row-wise/2D upload that reads tightly-packed source bytes into padded destination stride and disables mmap for padded tensors; confirmed cuBLAS's existing nb01-as-leading-dimension usage needs no further change.
 
+## 2026-10-08 b11474 composed-source experiment plan
+
+**Rank 2 / second slice: bounded row-stride padding experiment.** Target dense `GGML_OP_MUL_MAT`/cuBLAS GEMM with row_bytes/cache-set aliases, beginning with 27B Q8_0 hot projection signatures identified by PRBE70. In composed b11474, re-confirm `src/llama-model-loader.cpp::create_tensor`, `llama_model_loader::load_all_data`, and `ggml/src/ggml-cuda/ggml-cuda.cu::ggml_cuda_mul_mat_cublas_impl`; never edit `ggml_new_tensor_impl`. Proposed `BIGCHERRY_DENSE_ROW_PAD_BYTES=0|64|128|256` default 0 and explicit per-tensor allowlist: upload tightly packed GGUF rows to separately allocated padded destinations, update `nb[1]`, disable mmap alias for padded tensors; preserve quant block size/alignment and every unfused read. Incremental VRAM = sum over opted-in tensors of `nrows * (padded_stride - packed_stride)`, plus alignment; record bytes/device before enabling. Production 92-97% VRAM utilization requires hard cap (initial <=256 MiB/device, never OOM/reallocation during graph capture). Hypothesis: measurable L2 conflict reduction and >1% *eligible dense prefill*, but likely null if bandwidth dominates. One-build ABBA with `tools/lab/flash-next/queue-env-ab.sh`: 8K/24K/98K, exact greedy/PPL parity, rocprofv3 L2 miss/conflict and GEMM us, matched decode and VRAM controls. Stop on >1% decode cost or unresolved layout mismatch.
+
+Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
+
 ## Change Log
+
+- 2026-10-08 (triage): Experiment kept pending, priority P2; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
 
 - 2026-09-09T10:55:23.381054+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:35.177419+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
