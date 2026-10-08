@@ -112,7 +112,8 @@ class LabCommandTests(unittest.TestCase):
         self.assertIn('PARSED_MODEL=${BC_MODEL:-}', code)
         self.assertIn('PARSED_HIP=${BC_HIP_PATH:-}', code)
         self.assertNotIn('"$root"/work/builds/', code)
-        self.assertIn('"$work"/builds/', code)
+        self.assertIn('"$builds"/', code)
+        self.assertIn('ProjectContext.resolve().work_root / "builds"', code)
         syntax = subprocess.run(
             ["bash", "-n", str(queue_path)], capture_output=True, text=True,
         )

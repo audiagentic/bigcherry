@@ -284,6 +284,8 @@ Execution order: seventh. Within QFP36, qualify the exact multi-warp helper befo
 
 2026-10-09 larger-ubatch results on the released build (Flash-Next, 245,760 ctx, f16 KV). Plain ub768: prefill +5.7/+5.0/+6.2% at 8K/24K/98K, decode -2/-2/+3.6%, ub896 does not fit (87.5 MiB short). 1330 (in-place QSA mask) alone at ub512: neutral, text identical. 1330+ub1024: prefill +11/+13/+13%, decode -3% at 8K, level at 24K, -18% at 98K (acceptance drops to ~317/577); not caused by deferred catch-up or look-ahead. 1332 chunking (BIGCHERRY_QSA_CHUNK=256)+ub1024: prefill only +2.3..4.7%. Probe fidelity at 8K against the CPU f32 reference (24 probes; production = 23/24 top-1, TV mean 0.0764): 1330+ub1024 23/24, TV 0.0804; chunk256+ub1024 24/24, TV 0.1103 (max 0.506); plain ub768 22/24, TV 0.0949 (max 0.409). 1330+ub1024 is the closest to production of the three; plain ub768 is not obviously safer than it. Open: the 98K decode loss with ub1024 is unexplained; no larger-batch setting is adopted until it is.
 
+2026-10-09 ub1024 + 1330 at 98K (b-1330d, same binary, ABBA): prefill 1364 / 1372 vs 1172 / 1212 t/s, decode 56.4 / 51.2 vs 69.2 / 69.5 t/s, acceptance 315/583 and 316/580 vs 344/500 and 343/502, greedy text differs. Probe comparison at 98K against production ub512 (no CPU reference at this depth): top-1 21/24, TV mean 0.1234, max 0.884; production against itself is 24/24, TV 0. The same comparison at 8K was 24/24, TV mean 0.0655. The target's own next-token distributions move about twice as far from production at 98K as at 8K, and three of 24 probes change their top token, so the decode loss is not only a draft effect. Conclusion: ubatch 1024 is not adopted for Flash-Next at long context. 1330 itself stays neutral and text-identical at ub512. Open question for whoever picks this up: which side is closer to the CPU reference at depth (a reduced-depth CPU reference at ~32K is affordable).
+
 ## Status 2026-10-08
 
 - Part (b), multi-warp routing helper: **done** by 1345_moe_ids_multiwarp (validated, production, default on; 8 warps per expert for >= 128 tokens; prefill +1.6-2.1% on Flash-Next, +2.0% on Gemma, text identical).
@@ -467,3 +469,4 @@ Combined QFP36 expectation on this topology if both gates pass: **+0.4% to +1.5%
 - 2026-10-07T07:36:17.133419+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-08T09:46:17.213927+00:00 (updated-by): Updated: section:notes
 - 2026-10-08T15:22:57.433370+00:00 (updated-by): Updated: section:notes
+- 2026-10-08T15:59:24.829040+00:00 (updated-by): Updated: section:notes
