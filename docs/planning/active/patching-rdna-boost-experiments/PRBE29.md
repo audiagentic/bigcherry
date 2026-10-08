@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # AMD-GEMM-002: Persistent F16 shadow of quantized dense weights
@@ -68,7 +68,15 @@ Successor key: patching-rdna-boost-experiments-rd36
 
 2026-09-24 GPT review req_2b717df095b44703 applied: corrected the shadow-creation hook -- ggml_backend_cuda_buffer_type_alloc_buffer has no tensor identity and runs pre-upload, so it cannot be the creation site. Moved shadow creation to after llama_model_loader::load_all_data (verified real call sites in llama-model.cpp:1871/llama-model-loader.cpp:1493), specified ownership in the existing ggml_backend_cuda_buffer_context struct (ggml-cuda.cu:726), specified the exact reusable conversion API ggml_get_to_fp16_cuda (convert.cuh:13/convert.cu:547, verified in use elsewhere), the exact lookup point relative to ggml_cuda_should_use_mmq (verified real calls at ggml-cuda.cu:1872/1899/1940), and added explicit dense-weight allowlist/expert-exclusion/cleanup requirements that were previously unspecified.
 
+## 2026-10-08 b11474 composed-source experiment plan
+
+**Rank 3, conditional on PRBE70 hot dense GEMM signatures and spare VRAM.** For 27B Q8_0 non-expert dense `MUL_MAT` weights, allocate a persistent F16 shadow **after** `llama_model_loader::load_all_data` completes, owned/freed by existing `ggml_backend_cuda_buffer_context`; reuse `ggml_get_to_fp16_cuda`, not a new dequant implementation. At `ggml_cuda_mul_mat` check a per-tensor opt-in shadow only before `ggml_cuda_should_use_mmq` for a measured M crossover; default-off `BIGCHERRY_DENSE_F16_SHADOW=off|allowlist`. VRAM cost approximately **2 bytes × dense weight scalar count plus alignment** (1 billion shadowed scalars ~1.86 GiB, before metadata; a whole 27B shadow is infeasible on 24 GiB cards). With production at 92-97% per-GPU VRAM, select <=256 MiB/device in initial trial or do not run; no tensor duplicated on multiple GPUs unless placement demands it. Hypothesized prefill gain only for repeated M>=512 where GEMM overtakes quantized MMQ; decode/small M uses native unchanged. A/B via `queue-env-ab.sh` with same process-separated baseline, 8K/24K/98K, exact shadow dequant parity, prefill/TG, load-time and per-device VRAM; no claimed gain without measurement.
+
+Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
+
 ## Change Log
+
+- 2026-10-08 (triage): Experiment kept pending, priority P3; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
 
 - 2026-09-09T10:55:27.064093+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:39.409528+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
