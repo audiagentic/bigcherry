@@ -20,6 +20,7 @@ from ..core import paths as core_paths
 from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
+from ..release.patch_promote import cmd_patch_promote
 from .build import cmd_build_new
 from .diagnostics import cmd_check, cmd_doctor, cmd_status
 from .experiment import (
@@ -413,6 +414,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
+
+    patch_promote_cmd = sub.add_parser(
+        "patch-promote",
+        help="PA45: promote qualified patches and open the slice pull request",
+    )
+    patch_promote_cmd.add_argument("patch_ids", nargs="+")
+    patch_promote_cmd.add_argument(
+        "--evidence",
+        required=True,
+        help="qualification evidence file, specified as @path",
+    )
+    patch_promote_cmd.add_argument(
+        "--default-on",
+        action="store_true",
+        help="flip one declared default-off runtime flag; requires two named models",
+    )
+    patch_promote_cmd.add_argument(
+        "--profile-only",
+        action="store_true",
+        help="allow profile-scoped promotion evidence without a second model line",
+    )
+    patch_promote_cmd.add_argument(
+        "--release",
+        action="store_true",
+        help="finish the release-please release when its PR exists; otherwise report pending",
+    )
+    patch_promote_cmd.set_defaults(func=cmd_patch_promote)
 
     patch_gates_cmd = sub.add_parser(
         "patch-gates",
