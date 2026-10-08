@@ -117,7 +117,7 @@ def _set_state(info: PatchInfo) -> list[Path]:
     toml_path = info.root / "patch.toml"
     py_path = info.root / "patch.py"
     summary_path = info.root / "SUMMARY.md"
-    for path in (toml_path, py_path, summary_path):
+    for path in (toml_path, summary_path):
         if not path.is_file():
             raise PatchPromoteError(f"{info.patch_id}: required file missing: {path.name}")
 
@@ -131,15 +131,17 @@ def _set_state(info: PatchInfo) -> list[Path]:
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     changed.append(toml_path)
 
-    text = py_path.read_text(encoding="utf-8")
-    text = _replace_once(
-        text,
-        r'(?m)^STATE\s*=\s*"[^"]+"\s*$',
-        'STATE = "validated"',
-        label=f"{info.patch_id}/patch.py STATE",
-    )
-    py_path.write_text(text, encoding="utf-8", newline="\n")
-    changed.append(py_path)
+    if py_path.is_file():
+        text = py_path.read_text(encoding="utf-8")
+        if re.search(r'(?m)^STATE\s*=\s*"[^"]+"\s*$', text):
+            text = _replace_once(
+                text,
+                r'(?m)^STATE\s*=\s*"[^"]+"\s*$',
+                'STATE = "validated"',
+                label=f"{info.patch_id}/patch.py STATE",
+            )
+            py_path.write_text(text, encoding="utf-8", newline="\n")
+            changed.append(py_path)
 
     text = summary_path.read_text(encoding="utf-8")
     text = _replace_once(
@@ -354,6 +356,16 @@ def _restore(snapshot: dict[Path, bytes | None]) -> None:
             path.write_bytes(content)
 
 
+def _discard_promotion_slice(root: Path, worktree: Path, branch: str) -> None:
+    # This worktree/branch was created by patch-promote and has not been
+    # pushed yet. Restore its HEAD, remove it without --force, then drop the
+    # ephemeral local ref. The primary checkout is never switched.
+    _git(worktree, "reset", "--hard", "HEAD", check=False)
+    _git(root, "worktree", "remove", str(worktree), check=False)
+    _git(root, "update-ref", "-d", f"refs/heads/{branch}", check=False)
+    _git(root, "worktree", "prune", check=False)
+
+
 def _branch_name(infos: tuple[PatchInfo, ...]) -> str:
     numeric = "-".join(info.patch_id.split("_", 1)[0] for info in infos)
     item = infos[0].plan_ids[0].lower() if len(infos) == 1 and infos[0].plan_ids else "pa45"
@@ -460,51 +472,35 @@ def promote(
 
     _preflight(root, infos)
     branch = _branch_name(infos)
-    local_branch = _run(
-        root, "git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", check=False
-    )
-    if local_branch.returncode == 0:
-        raise PatchPromoteError(f"local branch already exists: {branch}")
-    if _git(root, "ls-remote", "--heads", "origin", f"refs/heads/{branch}", check=False):
-        raise PatchPromoteError(f"remote branch already exists: {branch}")
+    from ..cli.slice import start_slice
 
-    watched = [root / "config" / "recipes.toml"]
-    for info in infos:
-        watched.extend(
-            [
-                info.root / "patch.toml",
-                info.root / "patch.py",
-                info.root / "SUMMARY.md",
-                info.root / "README.md",
-                root / "releases" / "evidence" / f"{info.patch_id}-promotion.md",
-            ]
-        )
-    snapshot = _snapshot(watched)
-    _git(root, "switch", "-q", "-c", branch, "origin/main")
+    try:
+        worktree = start_slice(branch, primary_root=root)
+    except RuntimeError as exc:
+        raise PatchPromoteError(str(exc)) from exc
+
+    work_infos = tuple(_load_patch(worktree, patch_id) for patch_id in patch_ids)
     try:
         changed: list[Path] = []
-        for info in infos:
+        for info in work_infos:
             changed.extend(_set_state(info))
             if default_on:
                 changed.extend(_promote_default_on(info, evidence))
             changed.append(_write_promotion_record(info, evidence))
-            changed.append(_write_release_evidence(root, info, evidence))
-        changed.append(_update_recipes(root, patch_ids))
-        _run_checks(root, infos)
+            changed.append(_write_release_evidence(worktree, info, evidence))
+        changed.append(_update_recipes(worktree, patch_ids))
+        _run_checks(worktree, work_infos)
     except Exception:
-        _restore(snapshot)
-        _git(root, "reset", "--hard", "-q", "origin/main", check=False)
-        _git(root, "switch", "-q", "main", check=False)
-        _git(root, "branch", "-D", branch, check=False)
+        _discard_promotion_slice(root, worktree, branch)
         raise
 
-    prefix, title = _title(infos)
+    prefix, title = _title(work_infos)
     relative = tuple(
-        sorted({str(path.resolve().relative_to(root)).replace("\\", "/") for path in changed})
+        sorted({str(path.resolve().relative_to(worktree)).replace("\\", "/") for path in changed})
     )
-    _git(root, "add", "--", *relative)
-    _git(root, "commit", "-m", title)
-    _git(root, "push", "-u", "origin", branch)
+    _git(worktree, "add", "--", *relative)
+    _git(worktree, "commit", "-m", title)
+    _git(worktree, "push", "-u", "origin", branch)
     pr_body = (
         "## What this slice does\n\n"
         f"Promotes {', '.join(patch_ids)} into `[patch-set.validated-enhancements]` "
@@ -519,7 +515,7 @@ def promote(
         "- hardware measurements were not rerun; the supplied evidence is recorded verbatim in the patch README.\n"
     )
     made = _run(
-        root,
+        worktree,
         "gh",
         "pr",
         "create",
@@ -539,7 +535,7 @@ def promote(
             + (made.stderr or made.stdout).strip()[-800:]
         )
     pr_url = made.stdout.strip()
-    payload = _ledger_payload(infos, relative, title)
+    payload = _ledger_payload(work_infos, relative, title)
     print("record_change_event " + json.dumps(payload, sort_keys=True))
 
     pending = False
