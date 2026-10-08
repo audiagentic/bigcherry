@@ -12,4 +12,4 @@ Adaptive MTP is compatible with 1322 look-ahead. The controller exposes its curr
 
 ## Safety and evidence
 
-A speculative-context initialization exception is fatal for server startup when 1268 is composed; it no longer silently serves without a drafter. With `BIGCHERRY_PATCH_TRACE=1`, shutdown emits `event=depth_hist depth=<d> rounds=<n>` markers. Controller state resets in MTP `begin()` for every request.
+A speculative-context initialization exception is fatal for server startup when 1268 is composed; it no longer silently serves without a drafter. With `BIGCHERRY_PATCH_TRACE=1`, shutdown emits `event=depth_hist depth=<d> rounds=<n>` markers. Controller state resets in MTP `begin()` for every request. 1268 also implements MTP speculative checkpoint state for `pending_h`: server prompt-checkpoint restore rewinds target/draft KV, and the hidden boundary is now restored with it before the mandatory replay token.
