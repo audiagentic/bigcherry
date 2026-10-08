@@ -5,11 +5,13 @@
 
 ## What it does
 
-With `BIGCHERRY_QSA_CHUNK=<tokens>` (e.g. 256), `build_qsa_sel` returns the remapped selection indices instead of
-the dense `[n_kv + n_sel, T]` mask, and `build_attn_qsa` builds the same mask (fill -inf, scatter zeros, out-of-place
-add of the causal rows) per chunk of query tokens and runs QSA flash attention per chunk, concatenating the outputs.
-The 1331 peak trace showed the ub1024 compute-buffer peak is the two QSA masks (484 + 480 MiB) next to the kq_mask
-input (480 MiB); chunking keeps one chunk's pair live (~240 MiB at 256 of 1024). Off by default. Conflicts with 1330.
+With `BIGCHERRY_QSA_CHUNK=<tokens>` (e.g. 256), batches with more than 8 tokens apply the causal predicate while
+the selection is still compact, return remapped I32 selection indices instead of the dense
+`[n_kv + n_sel, T]` mask, and build one final dense selection mask per query-token chunk before flash attention.
+There is no dense causal-mask add on this chunked path. Decode/MTP-sized batches stay on the original dense fallback.
+The 1331 peak trace identified the unchunked QSA masks as the ub1024 compute-buffer peak driver. Off by default.
+
+1330 is composable after 1332: it only optimizes the dense fallback that 1332 deliberately retains.
 
 ## Result (b11402, on top of 1334)
 
