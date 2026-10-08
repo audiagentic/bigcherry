@@ -53,31 +53,57 @@ Changes that cannot alter the build (plans, docs, lab scripts, tests) skip steps
 
 ## Working in parallel
 
-- An agent works on its own branch and never pushes to another agent's branch. Hand-over is by pull request or by
-  asking for the branch to be continued.
-- Two slices that edit the same patch are sequenced, not run in parallel; the second one branches after the first has
-  merged.
-- `git stash` is not used (shared trees). A local tree is on exactly one branch; a second line of work uses a second
-  worktree (`git worktree add`).
-- The lab tree on Brutus is a shared resource: one slice is checked out at a time, the lab queue's lock orders the
-  runs, and nobody pulls while a script is executing there.
-- Rebase a slice branch onto `main` before it merges if `main` has moved; do not merge `main` into the slice. History
-  on `main` stays linear.
+- Keep the **primary checkout on `main`**. It is updated only by a fast-forward,
+  never by `git switch`, `git checkout`, or a forced branch switch. No commits
+  are made directly to `main` or to a branch shared with another agent.
+- **One agent per worktree**. Run `bigcherry slice start <branch>` from the primary
+  or any linked checkout; it fetches `origin` and creates
+  `<primary>/worktrees/<branch>` from `origin/main`. Names follow the rules
+  above; existing local/remote branches and paths are rejected. All generated
+  `worktrees/` paths are gitignored.
+- Put edits and commits only in the agent's slice worktree; push its own branch
+  and open one PR. Two slices touching the same patch must be sequenced; the
+  second begins only after the first merges. Never push to someone else's branch.
+- No `git stash`, `git reset`, force switches, or destructive rebase on a shared
+  checkout. Preserve unfinished work in its owning slice worktree.
+- All slices use the primary checkout's single vendor llama.cpp and shared
+  work/build caches. `BC_PRIMARY_ROOT` explicitly overrides the primary root;
+  otherwise Git's common directory resolves it. Failure to resolve is an error,
+  not permission to create another vendor tree inside the slice.
+- A dedicated worktree does not imply exclusive access to the shared vendor
+  checkout or build cache; the existing tooling's locks still govern operations
+  that mutate them. The lab queue retains control of GPU allocation.
+
+## Lab tree
+
+- Set `[host.brutus]` `hostname`, `repo` (the lab primary checkout) and
+  `cache-root` in the untracked `config/environment.local.toml`. The lab
+  creates detached worktrees under `cache-root/worktrees/` and stores queued
+  logs under `cache-root/runs/`. Use `--dry-run` to inspect SSH commands.
+- The lab primary checkout **must stay on `main` and clean** before and after
+  every run. `bigcherry slice lab <branch> --host brutus -- <script> [args]`
+  fetches the branch without checking it out in the primary, runs from a
+  detached worktree via the plan-qualification queue, then removes it on exit.
+- Queue wrapper scripts that submit their own jobs must not hold an outer GPU
+  lock while awaiting an inner queue: the inner queue retains the original GPU
+  locks. Ordinary script rows continue to use the existing queue lock.
+- No lab session switches branches in the primary tree, force-removes a dirty
+  worktree, or pulls while another operation modifies shared source state.
+  If cleanup finds untracked edits, it fails visibly rather than discarding them.
 
 ## Branch clean-up
 
-A merged branch is deleted, always, so that the list of branches is the list of work in flight.
-
-- The repository setting "Automatically delete head branches" is on: merging a pull request deletes its branch.
-- The agent that merges also removes its local branch and prunes: `git switch main && git pull --ff-only && git
-  branch -d <branch> && git fetch --prune`. `-d` (not `-D`) refuses a branch that is not merged.
-- The lab tree is returned to `main` and its copy of the slice branch is deleted in the same step.
-- A branch that will not be merged is closed on purpose: close its pull request with the reason, then delete the
-  branch. Work worth keeping is a plan item, not a parked branch.
-- `bigcherry slice prune` (PA46) lists remote branches that are fully merged into `main` and deletes them, and lists
-  unmerged branches older than 14 days with their last author for a decision. It never deletes an unmerged branch.
-- Exceptions that are not slice branches and are left alone: `main` and release-please's own release branch
-  (`release-please--branches--main--components--bc`), which it reuses.
+- `bigcherry slice status`: one table showing worktree path, branch, PR
+  number/state, ahead/behind `origin/main` and dirty status.
+- `bigcherry slice finish <branch>`: requires a merged or closed PR via `gh`,
+  a clean worktree and a clean primary checkout on `main`. It fast-forwards
+  the primary `main` from `origin/main`, removes the clean worktree without
+  `--force`, and removes its local and remote branch. Open PRs are refused.
+- `bigcherry slice prune`: reports merged remote branches, stale unmerged
+  branches and orphaned/merged worktrees. Default is read-only. `--apply`
+  deletes eligible merged branches and removes clean orphaned worktrees, never
+  using `--force`; dirty worktrees are reported and left intact.
+- Merge order stays one PR per slice. `patch-refactor` was retired and deleted on 2026-10-08; stale lab-local branches are reviewed separately against current active work before deletion. The owner enables main protection and auto-delete-head-branches in GitHub.
 
 ## Protection on `main`
 
