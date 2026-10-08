@@ -42,7 +42,7 @@ keyed by their *resolved config*: the many architectures sharing a config table
 share one candidate carrying all their architecture bits. All 26 targets
 produce 3062 candidates against 2732 for two.
 
-The architecture enumeration lives in `tools/bigcherry/autotune_schema.py` and
+The architecture enumeration lives in `tools/bigcherry/tuning/schema.py` and
 is **append-only** — each entry's index is its bit position in the persisted
 `architecture_mask`. The C++ enum is generated from it into
 `hip-autotune-arch.h`, so the two languages cannot drift.
@@ -68,9 +68,9 @@ releases shows exactly which solutions came or went.
 | `patches/` | Anchored edits to upstream-owned files |
 | `tools/bigcherry/` | The `bigcherry` Python CLI |
 | `tools/lab/` | Temporary plan-owned investigation; no copied upstream source or raw run output |
-| `tools/bigcherry/source_audit.py` | Strict-mode upstream invariant audit (HI01) |
-| `tools/bigcherry/autotune_catalog.py` | Candidate catalog generator — single source of truth (HI03) |
-| `tools/bigcherry/autotune_schema.py` | Candidate manifest JSON schema (HI03) |
+| `tools/bigcherry/source/audit.py` | Strict-mode upstream invariant audit (HI01) |
+| `tools/bigcherry/tuning/catalog.py` | Candidate catalog generator — single source of truth (HI03) |
+| `tools/bigcherry/tuning/schema.py` | Candidate manifest JSON schema (HI03) |
 | `sql/` | Current SQLite schema plus tested migration history for record/tune modes; runtime databases are not tracked |
 | `vendor/llama.cpp/` | The checkout we patch and build (not tracked) |
 | `artifacts/` | Audit JSON, manifests, exported caches (not tracked) |
