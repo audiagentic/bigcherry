@@ -1,0 +1,79 @@
+name: Patch compile validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'overlay/**'
+      - 'src/**'
+      - 'config/recipes.toml'
+      - 'tools/bigcherry/build/source_compile_check.py'
+      - 'tools/tests/build/test_source_compile_check.py'
+      - '.github/workflows/patch-compile-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'overlay/**'
+      - 'src/**'
+      - 'config/recipes.toml'
+      - 'tools/bigcherry/build/source_compile_check.py'
+      - 'tools/tests/build/test_source_compile_check.py'
+      - '.github/workflows/patch-compile-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patch-compile-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regression tests
+        env:
+          PYTHONPATH: tools
+        run: python -m unittest tools.tests.build.test_source_compile_check -v
+
+      - name: Prepare pinned llama.cpp source
+        env:
+          PYTHONPATH: tools
+        run: python -m bigcherry pull --source bigcherry
+
+      - name: Compose production source
+        env:
+          PYTHONPATH: tools
+        run: python -m bigcherry apply --source bigcherry --force --allow-stale-validation-evidence
+
+      - name: Type-check CUDA helper contracts
+        env:
+          PYTHONPATH: tools
+        run: |
+          python -m bigcherry.build.source_compile_check \
+            --source-root vendor/llama.cpp \
+            --workdir work/source-compile-check \
+            --clangxx clang++
+
+      - name: Configure CPU-only server
+        run: |
+          cmake -S vendor/llama.cpp -B work/server-compile -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=OFF \
+            -DGGML_HIP=OFF \
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_CURL=OFF
+
+      - name: Compile server translation units
+        run: cmake --build work/server-compile --target llama-server -j2

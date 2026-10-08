@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # Establish flash-attention WMMA correctness barriers
@@ -71,7 +71,15 @@ REAL RESULT 2026-09-12: gfx1201 PPL-equality correctness check completed. BC-bas
 
 2026-09-24 GPT review req_7f4dea253b7247f0 applied: pinned PRBE02's PRBE110 dependency to the RD05-only edits (rd05-k00-sync, rd05-kbc-sync in fattn-mma-f16.cuh, verified present in patches/1203.../patch.py) plus an RD05-only activation marker at fattn.cu's BEST_FATTN_KERNEL_MMA_F16 case, excluding all rd06-*/rd0506 edits; item remains pending/blocked on PRBE110.
 
+## 2026-10-08 b11474 experiment scope
+
+**Rank 9, correctness/race barrier only.** The old `1203_rd050607_rdna4_wmma_fa_q6k_mmq` bundle is rejected; extracted `1266_rd05_wmma_fa_tileq_sync` is still `untested` in patch.toml, while PRBE110's four gfx1201 sessions found no performance advantage. A new experiment is justified **only** by a reproduced WMMA tile_Q race/corruption, not old rejected-bundle PPL. Target `ggml/src/ggml-cuda/fattn-mma-f16.cuh` rd05-k00-sync/rd05-kbc-sync on head 192/256/320/512/576, q_rows 1..8, F16 K/V, gfx1201 primary, gfx1100 control, graph-on/off. Env `BIGCHERRY_RD05_BARRIER=0|1` proposed default 0 for an isolated current-pin identity (do not mutate 1266 merely to add a flag in this docs slice); BIGCHERRY_PATCH_TRACE marker for real fusion hit. **Expected speed gain zero or negative**; goal is zero races and stable reference logits. Gate with repeated hostile shape tests and `queue-env-ab.sh` 8K/24K/98K decode/PP negative-control, explicit correctness-failure reproduction first. Native #29901 indexer is not this WMMA barrier; 1202 BF16 tile does not cover F16 WMMA synchronization.
+
+Recheck every historical b11126 anchor on the composed b11474 source before coding; no GPU run or patch implementation is claimed by this plans-only triage.
+
 ## Change Log
+
+- 2026-10-08 (triage): Kept experiment pending (P3); source/shape, coverage against #29901/1202/1253, env gate, expected effect and separated hardware test defined above.
 
 - 2026-09-09T10:53:35.078709+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:10:12.738042+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

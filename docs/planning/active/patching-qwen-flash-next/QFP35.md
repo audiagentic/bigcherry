@@ -21,42 +21,6 @@ Both residuals exist at b11402, but part of the fusion work is already covered b
 
 Treat indexing and the remaining fusion as independent qualification changes.
 
-## What we already have
-
-### b11402 hyper-connection graph
-
-- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_mix`
-  - computes `lo = silu(scale(w_down @ xn, 1/hc))`;
-  - computes `gate = w_up @ lo`;
-  - with fused HC enabled, calls `ggml_dsv4_hc_pre_gated()`.
-- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_combine`
-  - computes `w = 2 * sigmoid(scale(inject, 1/hc))`;
-  - with fused HC enabled, passes `w` to `ggml_dsv4_hc_post()`.
-- `ggml/src/ggml-cuda/dsv4-hc.cu::dsv4_hc_pre_f32`
-  - flat index `ir` spans `n_embd*n_tokens`;
-  - executes `i0 = ir % n_embd` and `it = ir / n_embd` using runtime 64-bit dimensions.
-- `ggml/src/ggml-cuda/dsv4-hc.cu::dsv4_hc_post_f32`
-  - flat index spans `n_embd*hc*n_tokens`;
-  - executes `i0 = ir % n_embd`, `idst = (ir/n_embd) % hc`, and `it = ir/(n_embd*hc)`.
-- `ggml/src/ggml-cuda/dsv4-hc.cu::ggml_cuda_op_dsv4_hc_pre/post`
-  - currently launch those flat kernels with a one-dimensional grid.
-- `ggml/src/ggml-backend-meta.cpp`
-  - handles DSV4 HC COMB/PRE/POST through `handle_generic(..., scalar_only=true)`; no HC-specific topology assumption exists.
-
-### BigCherry overlap
-
-- `patches/1311_hc_pre_q81` is validated and production-enabled.
-  - Its `dsv4_hc_pre_q81_f32` combines HC pre-mix with native Q8_1 production for the following MMVQ.
-  - It also flattens `n_embd_padded*n_tokens` and computes `it = ip/n_embd_padded`, `i0 = ip%n_embd_padded`.
-  - Because 1311 is the production pre path for eligible decode shapes, changing only upstream `dsv4_hc_pre_f32` would leave the important production pre case untouched.
-- `patches/1313_scale_act_fuse` is validated and production-enabled.
-  - It fuses F32 contiguous `SCALE -> UNARY(SILU|SIGMOID) [-> SCALE]`.
-  - It already targets both Qwen4Exp HC chains and preserves the 1310 Q8_1 publication path.
-  - Hardware validation reduced elementwise launches and produced a production ABBA win.
-- Upstream unary-mul fusion/BigCherry 1312 owns `UNARY -> MUL`; QFP35 must not duplicate it.
-
-Finding: the external scale/activation fusion is **mostly covered by 1313**. Do not create another scale-act package. The only graph-chain extension worth qualifying is `SCALE -> SIGMOID -> SCALE -> DSV4_HC_POST`. The 64-bit indexing issue is not covered and affects both upstream HC kernels and 1311's production pre variant.
-
 ## Steps
 
 1. Gate 0A: disassemble/profile `dsv4_hc_pre_f32`, `dsv4_hc_pre_q81_f32`, and `dsv4_hc_post_f32` on production decode/prefill to prove integer divide/remainder instructions and their time share.
@@ -272,7 +236,74 @@ Expected gain on our topology: medium. 1313 already captured much of the externa
 
 Execution order: sixth. Relative final priority is high among kernel items because both residual mechanisms are visible in the pin, but expected fusion upside is lower than the external report because 1313 already removes most scale/activation launches.
 
+
+
+## Status 2026-10-08
+
+- Part (a), hyper-connection kernels without 64-bit div/mod: **done** by 1344_dsv4_hc_grid_index (validated, production, default on; prefill +1.3-1.6% on Flash-Next, text identical).
+- Part (b), fusion audit: open, decode-side. Now also carries PRBE11 / 37 / 38 / 39 / 40 (GEMV epilogue, residual-add, K+V projection fusions); already covered pieces are 1307-1313 (Q8_1 chain, scale-act fuse) and native GLU. No code this round. Needs the decode kernel census before choosing a fusion.
+
+## What we already have
+
+### b11402 hyper-connection graph
+
+- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_mix`
+  - computes `lo = silu(scale(w_down @ xn, 1/hc))`;
+  - computes `gate = w_up @ lo`;
+  - with fused HC enabled, calls `ggml_dsv4_hc_pre_gated()`.
+- `src/models/qwen4exp.cpp::llama_model_qwen4exp::graph::build_hc_combine`
+  - computes `w = 2 * sigmoid(scale(inject, 1/hc))`;
+  - with fused HC enabled, passes `w` to `ggml_dsv4_hc_post()`.
+- `ggml/src/ggml-cuda/dsv4-hc.cu::dsv4_hc_pre_f32`
+  - flat index `ir` spans `n_embd*n_tokens`;
+  - executes `i0 = ir % n_embd` and `it = ir / n_embd` using runtime 64-bit dimensions.
+- `ggml/src/ggml-cuda/dsv4-hc.cu::dsv4_hc_post_f32`
+  - flat index spans `n_embd*hc*n_tokens`;
+  - executes `i0 = ir % n_embd`, `idst = (ir/n_embd) % hc`, and `it = ir/(n_embd*hc)`.
+- `ggml/src/ggml-cuda/dsv4-hc.cu::ggml_cuda_op_dsv4_hc_pre/post`
+  - currently launch those flat kernels with a one-dimensional grid.
+- `ggml/src/ggml-backend-meta.cpp`
+  - handles DSV4 HC COMB/PRE/POST through `handle_generic(..., scalar_only=true)`; no HC-specific topology assumption exists.
+
+### BigCherry overlap
+
+- `patches/1311_hc_pre_q81` is validated and production-enabled.
+  - Its `dsv4_hc_pre_q81_f32` combines HC pre-mix with native Q8_1 production for the following MMVQ.
+  - It also flattens `n_embd_padded*n_tokens` and computes `it = ip/n_embd_padded`, `i0 = ip%n_embd_padded`.
+  - Because 1311 is the production pre path for eligible decode shapes, changing only upstream `dsv4_hc_pre_f32` would leave the important production pre case untouched.
+- `patches/1313_scale_act_fuse` is validated and production-enabled.
+  - It fuses F32 contiguous `SCALE -> UNARY(SILU|SIGMOID) [-> SCALE]`.
+  - It already targets both Qwen4Exp HC chains and preserves the 1310 Q8_1 publication path.
+  - Hardware validation reduced elementwise launches and produced a production ABBA win.
+- Upstream unary-mul fusion/BigCherry 1312 owns `UNARY -> MUL`; QFP35 must not duplicate it.
+
+Finding: the external scale/activation fusion is **mostly covered by 1313**. Do not create another scale-act package. The only graph-chain extension worth qualifying is `SCALE -> SIGMOID -> SCALE -> DSV4_HC_POST`. The 64-bit indexing issue is not covered and affects both upstream HC kernels and 1311's production pre variant.
+
+## Consolidated decode-fusion follow-up (PRBE11, PRBE37-40)
+
+Keep this **separate** from QFP35's already-covered `1313_scale_act_fuse` and HC index work; use the existing decode profiling Gate 0 before writing new fusion code. This section is the single planning owner for canonical GLU gaps, literal unary-gated GEMV, residual view ADD and paired MMVQ/K+V.
+
+### Already implemented / measured
+
+- Native b11474 HIP `ggml_cuda_should_fuse_mul_mat` + `ggml_cuda_mm_fusion_args_host/_device` already embeds supported canonical `GGML_OP_GLU` SWIGLU/GEGLU-family cases into MMVQ/MMVF vector epilogues. Native `ggml_cuda_op_unary_mul` fuses literal pointwise unary+MUL as a separate path, but does **not** by itself eliminate the preceding GEMV output store.
+- Validated production `1307_q81_activation_cache_mmvq`, `1309_rms_norm_mul_q81`, `1310_act_q81`, `1311_hc_pre_q81`, `1312_mul_q81` eliminate quantified Q8_1 launch boundaries; `1313_scale_act_fuse` handles SCALE/SILU and SCALE/SIGMOID/SCALE. Do not implement these again.
+- `1206_rd13_mul_mat_add_view_fusion` is **untested** and already implements the RESHAPE/eligible zero-offset contiguous VIEW + residual `ADD` vector epilogue using `x_bias`. gfx1100 recorded favorable isolated decode tests; gfx1201 and adversarial layout/alias negative fixtures remain (PRBE12, PRBE39). Requalify the same patch, not another residual fusion.
+- `1205_rd12_paired_mmvq_dual_output` is **untested**, shared-activation dual-output kernel/matcher for K/V-like pairs (PRBE11/PRBE40). Its matcher must require exact activation identity, equal output `ne[0..3]` and `nb[0..3]`, disjoint output ranges and unchanged GLU precedence. gfx1100 positive evidence exists; gfx1201 incomplete, gfx1151 unavailable.
+- `1245_gp11_mmvq_fusion_ncols_gate` is **rejected** (patch.toml); widening 1245 to MTP verify widths cannot be treated as a validated fusion. Preserved as a negative control.
+
+### Remaining scoped work and ranking
+
+1. **Gate 0: profile first (PRBE113 linkage).** On the 27B Q8_0 and Flash-Next composed production traces, count per-token launch pairs/triples `MUL_MAT[/ID] -> UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL`, `MUL_MAT -> VIEW|RESHAPE -> ADD`, and paired GEMV from the same activation; report actual graph names, exact consumer identities, N/quant/strides, GPU time, total launch-gap ms/token. If zero trace-proven unfused cases, do not add a patch.
+2. **Literal gated GEMV (PRBE38) vs canonical GLU (PRBE37):** only implement an extra epilogue when the exact literal `UNARY -> MUL` sequence is still separate after `1312/1313` and native GLU fusion. Preserve canonical GLU precedence, type/shape/split guards, `GLU` family non-regression, wrong-wiring and multi-consumer fallbacks. No speculative generic GEMM/prefill claim.
+3. **Residual ADD (PRBE39):** complete 1206's negative `VIEW` offset/strided/alias and graph capture/replay checks; retake the incomplete gfx1201 E2E lane before promotion, without duplicating 1206.
+4. **Paired K/V MMVQ (PRBE11/PRBE40):** complete 1205 output-layout/overlap/adversarial controls, marker proving true K/V weight pair and full output identity; compare standalone 1205 against native current composition. Preserve its conflict with rejected 1207 as metadata, do not combine implicitly.
+5. One independently gated A/B per surviving candidate with `tools/lab/flash-next/queue-env-ab.sh`: 8K/24K/98K decode, verify widths, launch-count reductions, F32 reference/tolerance or bit identity as appropriate, VRAM and <=1% unaffected regression. Rank only by measured eliminated time; stop on no activation or no E2E improvement.
+
+`PRBE11/37/38/39/40` are closed as duplicated **planning** scope under this open QFP35 follow-up. `1205/1206` retain their actual untested states; closure does not promote them.
+
 ## Change Log
+
+- 2026-10-08 (triage): Consolidated PRBE11, PRBE37-40 decode fusion; separated validated 1307-1313 from untested 1205/1206 and rejected 1245.
 
 - 2026-10-07T00:39:37.142989+00:00 (created-by): Created by agent
 - 2026-10-07: grounded at b11402 and validated 1311/1313; identified flat 64-bit HC indexing plus the remaining scale/sigmoid/scale/HC_POST fusion boundary and assigned changes to existing owners.
@@ -281,7 +312,6 @@ Execution order: sixth. Relative final priority is high among kernel items becau
 
 - chg_20261007_051800_flash-next-prefill-is-about-1_8190
 - 2026-10-07T05:18:06.429391+00:00 (updated-by): Updated: section:ledger-events
-
 
 ## Code-level review (2026-10-07)
 
@@ -448,3 +478,4 @@ Validation:
 **GO AFTER GATE 0.** The exact residual chain exists twice per target layer and in the MTP block, and implementation is small when owned by 1313; however 1313 already removed the two scale/activation launches and 1344 already accelerated HC_POST, so only one small gate-materialization launch remains.
 
 Expected gain on the production three-card Flash-Next topology if Gate 0 passes: **+0.1% to +0.5% prefill**. Treat any larger result as requiring a fusion-census explanation rather than assuming the external report transfers.
+- 2026-10-08T09:46:12.268171+00:00 (updated-by): Updated: section:notes

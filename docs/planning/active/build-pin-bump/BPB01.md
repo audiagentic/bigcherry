@@ -51,6 +51,8 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 ## Notes
 
+- 1210 / 1255 / 1268 adaptive-MTP — restored/reconciled for b11474 and pending hardware A/B; not rejected. 1210 is `untested`, 1255 is `untested`, and 1268 remains `evaluated`; no promotion verdict is implied by composition repair.
+
 - 1322_mtp_ahead_overlap — applies at b11474 in experiment.deploy-v6-plus-ahead once required 1321 is present; no 1322 anchor changes needed.
 
 - 1321_mtp_ahead_primitives — re-based for b11474: forced-front/live-tail logic is unchanged; only the MTP n_min post-pass anchor moved with upstream nextn restructuring.
@@ -72,6 +74,7 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 
 
 
+
 - chg_20261007_155512_bigcherry-now-builds-on-llama_6400
 - 2026-10-07T15:55:15.944121+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261008_015302_faster-prompt-processing-6-10_5913
@@ -80,3 +83,5 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 - 2026-10-08T01:53:44.227179+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261008_015344_diagnostic-traces-available-in_3686
 - 2026-10-08T01:53:50.935436+00:00 (updated-by): Updated: section:ledger-events
+- chg_20261008_071201_several-experimental-patches-r_2753
+- 2026-10-08T07:12:08.708668+00:00 (updated-by): Updated: section:ledger-events

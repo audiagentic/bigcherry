@@ -76,6 +76,7 @@ class LintGateReport:
     results: tuple[ScopedGateResult, ...]
     problems: tuple[str, ...]
     grandfathered: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +246,33 @@ def evaluate_repository_lint_gates(
     """
     registry = patch_registry.load_registry(patches_dir)
 
+    # PA44-C: long anchors are carry-cost hotspots. Keep this advisory so a
+    # pin bump is not blocked by legacy packages, but require an explicit,
+    # machine-visible explanation for any edit that deliberately permits a
+    # match spanning more than six lines.
+    anchor_warnings: list[str] = []
+    for descriptor in registry.descriptors:
+        try:
+            file_patches = patch_registry.load_implementation(
+                descriptor, root=registry.root
+            )
+        except (OSError, TypeError, ValueError):
+            # Strict implementation loading is already owned by the existing
+            # catalog/package authorities. Do not duplicate their failure here.
+            continue
+        for file_patch in file_patches:
+            for edit in file_patch.edits:
+                if edit.max_span_lines <= 6:
+                    continue
+                rationale = (edit.rationale or "").strip()
+                if rationale.lower().startswith("long-anchor:"):
+                    continue
+                anchor_warnings.append(
+                    f"{descriptor.patch_id}:{file_patch.path}:{edit.id}: "
+                    f"max_span_lines={edit.max_span_lines} exceeds 6 without "
+                    "an explicit 'long-anchor:' rationale"
+                )
+
     def evaluate_summaries() -> tuple[
         tuple[ScopedGateResult, ...], tuple[str, ...], tuple[str, ...]
     ]:
@@ -326,7 +354,9 @@ def evaluate_repository_lint_gates(
             if scoped_result.result.status is GateStatus.BLOCKED:
                 problems.extend(scoped_result.result.detail)
 
-    return LintGateReport(tuple(results), tuple(problems), grandfathered)
+    return LintGateReport(
+        tuple(results), tuple(problems), grandfathered, tuple(anchor_warnings)
+    )
 
 
 def evaluate_rebase_gate(context: GateContext) -> GateResult:

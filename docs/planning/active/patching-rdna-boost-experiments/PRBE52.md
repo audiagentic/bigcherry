@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P2
 ---
 
 # UP-MTP-001: Adaptive MTP draft depth
@@ -121,6 +121,9 @@ Upstream reference verified 2026-10-04: https://github.com/ggml-org/llama.cpp/pu
 
 2026-10-06 final screen on Flash-Next production (build b-ixtile-b11402f, ABBA, A = fixed depth 3). Adaptive floor 3 / max 4: equal (8K 83.7-84.0 vs 83.9-84.9 t/s; 32K 63.5-64.4 vs 63.8-65.0). Floor 3 / max 8: 8K 58-60 vs 84-85 (-30%), 32K equal (controller stays near 3). Floor 3 / max 8 + p_min 0.7: 8K 41-44 (-50%), 32K 32-33 (-49%). Graph diagnostic: GGML_CUDA_DISABLE_GRAPHS=1 alone costs 4-5% (80.3-81.5 vs 84.3-84.6); with graphs off, p_min 0.75 + SPEC_N 5 still loses 38% (52.6-53.1 vs 84.7). So HIP graph re-capture is NOT the cause of the confidence-gate loss (hypothesis rejected): the gate raises acceptance (357/402 vs 349/485) but drafts far fewer tokens per step, and on this stack a step costs nearly the same whatever the draft length, so fewer tokens per step is a direct loss. VERDICT: adaptive depth (1268) and the confidence gate give no gain over fixed depth 3 on this model/topology; fixed depth 3 stays the production setting. 1268 stays `evaluated` (mechanics correct, neutral at floor 3 / max 4), not promoted, not rejected - re-screen only for a model whose acceptance varies strongly by content or where step cost scales with draft length. Open: one hipGraphExecDestroy crash seen earlier, not reproduced in these lanes.
 
+
+2026-10-08 triage correction: KEEP OPEN (P2). PR #30 closed unmerged; 1210/1255/1268 are restored in PR #43 and hardware qualification is still in progress. Round 2, with look-ahead off in both arms (fixed depth 4 vs adaptive floor 1): 8K fixed 80.6/80.8 vs adaptive 73.9/75.0 t/s; 24K 68.8/70.5 vs 66.4/68.3; 98K 56.5/57.2 vs 59.3/60.4. Generated text differs between arms and between adaptive repeats, so there is no disposition yet.
+
 ## Change Log
 
 - 2026-09-27T11:18:43.972819+00:00 (updated-by): Updated: section:notes
@@ -134,14 +137,13 @@ External mechanism provenance: `tsaipifong/whirl-llm` v0.1.3. Historical BigCher
 
 ### Blocking prerequisite
 
-Do not start WHIRL-policy implementation or hardware comparison from the current 1268 package. `dispositions/1268_prbe52_adaptive_mtp_wiring.json` currently marks it `known_broken / FAILED_NEEDS_RECONCILIATION`: upstream probabilistic-MTP changes broke its begin-reset, draft-reset and depth-limit anchors, and it is not in the current build recipe.
+As of the 2026-10-08 b11474 restore, 1210 / 1255 / 1268 are restored as the `adaptive-mtp` experiment and are pending a new hardware A/B at b11474; they are not rejected. The revision-scoped 1210/1268 `known_broken` dispositions from the pin bump are cleared after reconciliation.
 
 Execution order is mandatory:
-1. reconcile 1268 against the current source pin;
-2. restore apply/idempotence/composition tests with 1255 + explicit 1210;
-3. prove adaptive-off equals fixed-depth behavior;
-4. pass 1210 greedy identity and repeated same-process correctness;
-5. only then collect adaptive-policy calibration/performance data.
+1. build the b11474 `adaptive-mtp` composition and run adaptive depth on vs off at representative contexts;
+2. prove adaptive-off preserves the fixed-depth control text and measure the prerequisite cost;
+3. re-run 1210 greedy identity / repeated same-process correctness;
+4. only then use new evidence for any adaptive-policy promotion decision.
 
 Historical 1268 throughput records whose validation contract failed greedy correctness are motivation only and must not be used as promotion evidence.
 
@@ -189,8 +191,16 @@ Traceability:
 
 ## Ledger-events
 
+
 - chg_20261006_025048_adaptive-mtp-depth-wiring-appl_5444
 - 2026-10-06T02:50:52.507468+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T03:31:46.193215+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T05:25:37.876948+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T06:21:14.601507+00:00 (updated-by): Updated: section:notes
+
+
+- chg_20261008_071201_several-experimental-patches-r_2753
+## 2026-10-08 b11474 restore note
+
+1210 (untested), 1255 (untested), and 1268 (evaluated) are pending hardware A/B at b11474; none is rejected. Adaptive depth and MTP look-ahead are intentionally mutually exclusive: when `--spec-draft-n-min-adaptive > 0`, the per-sequence controller owns the fresh-front cap for each round; when `BIGCHERRY_MTP_AHEAD=1`, 1321/1322 own forced-front replay plus the static-`n_max` ahead tail/promotion. Enabling both fails closed during MTP construction rather than silently letting promoted static-depth fronts bypass the adaptive policy.
+- 2026-10-08T07:12:15.427051+00:00 (updated-by): Updated: section:ledger-events
