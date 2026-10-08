@@ -52,7 +52,7 @@ class ProjectContext:
         work_root: str | os.PathLike[str] | None = None,
         upstream_repo: str | os.PathLike[str] | None = None,
     ) -> "ProjectContext":
-        """Resolve explicit arguments, then environment, then project defaults."""
+        """Resolve slice-local source paths and primary-checkout shared state."""
         project = _absolute(
             project_root
             or os.environ.get("BIGCHERRY_PROJECT_ROOT")
@@ -68,15 +68,14 @@ class ProjectContext:
             or os.environ.get("BIGCHERRY_ARTIFACT_ROOT")
             or project / "artifacts"
         )
-        # Tool output never defaults into the user profile (LOCALAPPDATA,
-        # ~/.cache, ~): the gitignored project-local work/ is the default so
-        # every run's output stays inside the project folder. An explicit
-        # argument or BIGCHERRY_WORK_ROOT may still point elsewhere (e.g. a
-        # large scratch volume on a campaign host).
+        # Source/config/patches remain slice-local. Mutable build/cache state
+        # defaults to the primary checkout so linked worktrees share it.
+        # Failure to resolve the primary checkout is fatal; never fall back to
+        # a worktree-local cache and silently create a second source/build tree.
         work = _absolute(
             work_root
             or os.environ.get("BIGCHERRY_WORK_ROOT")
-            or project / "work"
+            or paths.primary_root() / "work"
         )
         upstream_was_explicit = upstream_repo is not None
         upstream = _absolute(

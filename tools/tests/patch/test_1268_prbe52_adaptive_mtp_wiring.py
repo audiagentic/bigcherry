@@ -222,10 +222,13 @@ class Patch1268Mechanics(unittest.TestCase):
             # draft shorter than n_min, so accept() -- the only thing that
             # grows n_cur back up -- would never run). The ctor must reject it.
             self.assertIn("this->params.n_min_adaptive < this->params.n_min", text)
-            self.assertEqual(text.count("effective_n_max"), 3)
+            self.assertIn("BIGCHERRY_MTP_AHEAD", text)
+            self.assertEqual(text.count("adaptive_state[seq_id].n_cur <= (int) result.size()"), 1)
             self.assertEqual(text.count("adaptive_state[seq_id].update"), 1)
+            self.assertIn("if (params.n_max <= (int) result.size()) {", text)
+            self.assertIn("if (dp.result->size() < (size_t) params.n_min) {", text)
             eagle3_text = text.split("struct common_speculative_impl_draft_mtp", 1)[0]
-            self.assertNotIn("effective_n_max", eagle3_text)
+            self.assertNotIn("n_min_adaptive", eagle3_text)
             self.assertNotIn("last_n_draft", eagle3_text)
             before = {p: (root / p).read_text() for p in ("common/common.h", "common/arg.cpp", "common/speculative.cpp")}
             second = apply_all(_module.PATCHES, root)

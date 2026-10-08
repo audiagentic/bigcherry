@@ -1,7 +1,7 @@
 schema = 1
 id = "1210_rd26_bitidentical_decode_verify_standalone"
 order = 1210
-state = "rejected"
+state = "untested"
 kind = "enhancement"
 origin = "external-fork"
 backend = "hip"
