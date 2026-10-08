@@ -80,3 +80,16 @@ patch-rebase-check --all reports every non-rejected patch clean or retired; patc
 - 2026-10-08T01:53:44.227179+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261008_015344_diagnostic-traces-available-in_3686
 - 2026-10-08T01:53:50.935436+00:00 (updated-by): Updated: section:ledger-events
+
+## Stale-disposition audit (2026-10-08)
+
+Reviewed the carry-over set 1210/1250/1268/1273/1275/1293 against b11474:
+
+- 1210_rd26_bitidentical_decode_verify_standalone: retain current b11474 `FAILED_NEEDS_RECONCILIATION` disposition.
+- 1250_nro01_allreduce_q8_wire: retain current b11474 `FAILED_NEEDS_RECONCILIATION` disposition.
+- 1268_prbe52_adaptive_mtp_wiring: retire as `rejected`; remove its b11474 disposition. Its obsolete `adaptive-mtp` experiment is already absent on current main. PA44 records the owner decision not to carry this mechanism forward.
+- 1273_iq_mmvq_rdna_tuning: clear stale c061df1 disposition. Commit 03ebb006 reconciled 1273 onto the current 0600 geometry + 1241 f32 activation shape after that waiver was created; no b11474 known-broken record is justified.
+- 1275_ar_small_latency: retain current b11474 `FAILED_NEEDS_RECONCILIATION` disposition.
+- 1293_sched_single_input_sync: no disposition. Commit 80e66879 re-based it for b11474 and the stale waiver was already cleared.
+
+Disposition policy remains revision+implementation bound. This audit makes one explicit lifecycle change: 1268 is retired as rejected; it does not promote any experimental patch or invalidate historical evidence.
