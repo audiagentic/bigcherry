@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: capability-rebaseline-v3
 work: L
-priority: null
+priority: P3
 ---
 
 # AMD-GEMM-004: Large-M F16 shadow to tuned hipBLASLt crossover
@@ -67,7 +67,15 @@ Successor key: patching-rdna-boost-experiments-rd38
 
 2026-09-24 GPT review req_2b717df095b44703 applied: same self-dependency correction as PRBE30 (separate package requiring PRBE29, not additive-into-PRBE29-while-requiring-it). Added the previously entirely-missing HIP build/link wiring: find_package(hipblaslt REQUIRED) and roc::hipblaslt in ggml/src/ggml-hip/CMakeLists.txt beside the existing hipblas/rocblas entries, plus a concrete handle/dispatch design gated on shadow existence and M threshold.
 
+## 2026-10-08 b11474 composed-source experiment plan
+
+**Rank 5, contingent on a safe PRBE29 shadow and PRBE70 profiling.** Candidate is large-M dense Q8_0 projection: compare native `launch_mul_mat_q` vs existing `ggml_cuda_mul_mat_cublas_impl` over shadow vs HIP `hipBLASLt` GEMM with M=64,128,192,256,384,512,768,1024,2048,4096. Recheck b11474 composed `ggml/src/ggml-hip/CMakeLists.txt` for hipBLASLt target availability before adding conditional linkage; do not assume prior b11126 absence persists. Default-off `BIGCHERRY_HIPBLASLT_SHADOW=0|1` and measured `BIGCHERRY_HIPBLASLT_MIN_M`; require actual shape match and weight shadow. Same F16 shadow VRAM cost **2 bytes × shadowed scalar count** plus Lt scratch/heuristic workspace, bounded per-GPU to fit 92-97%-full production, so full dense-model mirroring is not viable. Expected >=1% prefill only if matrix-size crossover and scratch fit; no prediction of decode gain. Validate numerical/PPL equivalence before timing. Use `tools/lab/flash-next/queue-env-ab.sh` (8K/24K/98K, M-tier controls, decode guard, peak VRAM/TTFT) and record a per-shape crossover instead of global threshold.
+
+Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
+
 ## Change Log
+
+- 2026-10-08 (triage): Experiment kept pending, priority P3; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
 
 - 2026-09-09T10:55:35.677451+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:12:47.175446+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes

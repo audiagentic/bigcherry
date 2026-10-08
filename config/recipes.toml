@@ -324,6 +324,9 @@ patches = ["1206_rd13_mul_mat_add_view_fusion"]
 [experiment.rd21-only]
 patches = ["1208_rd21_gfx1151_mmvq_nwarps_table"]
 
+[experiment.rd26a-only]
+patches = ["1210_rd26_bitidentical_decode_verify_standalone"]
+
 [experiment.rd43-only]
 patches = ["1216_rd43_concurrent_join_fusion_guard"]
 
@@ -503,6 +506,10 @@ patches = []
 # QFP21: promoted base + 1286 (DFlash/DSpark draft-local copies of tensor-split target tensors).
 patches = ["1286_draft_local_shared_tensors"]
 
+[experiment.deploy-v6-plus-1330]
+# QFP17 recheck: production set already contains 1332; add 1330's opt-in dense-fallback in-place mask.
+patches = ["1330_qsa_mask_inplace"]
+
 
 
 [experiment.fusion-bisect]
@@ -543,6 +550,11 @@ patches = []
 [experiment.ar-cpu-root-kpool-sync]
 # QFN01/RNX01: + one scheduler input sync per split (1293); A/B against ar-cpu-root-kpool.
 patches = ["1293_sched_single_input_sync"]
+
+[experiment.adaptive-mtp]
+# 1255 controller + 1268 runtime wiring (+1210 which 1268 requires); adaptive depth is
+# off unless --spec-draft-n-min-adaptive > 0, so one binary serves both A/B arms.
+patches = ["1210_rd26_bitidentical_decode_verify_standalone", "1255_nro06_adaptive_mtp_depth", "1268_prbe52_adaptive_mtp_wiring"]
 
 [experiment.allreduce-root3]
 # 1244 alone: n==3 internal AllReduce (XTX x2 + R9700). Multi-arch build gfx1100,gfx1201.
