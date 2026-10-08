@@ -114,6 +114,24 @@ def _implementation_patch_ids(
     return tuple(sorted(found))
 
 
+def _composition_patch_ids(
+    paths: Sequence[str], base: str | None = None, head: str | None = None
+) -> tuple[str, ...]:
+    """Patches whose composition inputs changed: patch.py (not a line-ending-only change) or patch.toml.
+
+    A change to a patch's tests, README or SUMMARY cannot change how any experiment composes, so it must not
+    trigger the experiment audit: a test-only pull request touching patches used by many experiments spent the
+    whole 30-minute job re-checking compositions that could not have moved.
+    """
+    found = set(_implementation_patch_ids(paths, base, head))
+    for path in paths:
+        if path.startswith("patches/") and path.endswith("/patch.toml"):
+            parts = path.split("/", 2)
+            if len(parts) >= 3 and parts[1] and not parts[1].startswith("_"):
+                found.add(parts[1])
+    return tuple(sorted(found))
+
+
 def _env() -> dict[str, str]:
     env = os.environ.copy()
     tools = str(_REPO / "tools")
@@ -552,7 +570,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw = _load_recipes()
             experiment_names = _experiment_names_for_audit(
                 raw,
-                patch_ids,
+                _composition_patch_ids(changed, base, head),
                 full_audit=full_audit,
             )
             print(
