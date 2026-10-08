@@ -114,6 +114,29 @@ _ACCEPT_NEW = """        const int32_t i_h = std::min<int32_t>(n_accepted, n_row
         }
     }
 
+    bool get_state(llama_seq_id seq_id, std::vector<uint8_t> & data) const override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) pending_h.size() || pending_h[seq_id].empty()) {
+            return false;
+        }
+
+        const auto & h = pending_h[seq_id];
+        data.resize(h.size() * sizeof(float));
+        std::memcpy(data.data(), h.data(), data.size());
+        return true;
+    }
+
+    void set_state(llama_seq_id seq_id, const std::vector<uint8_t> & data) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) pending_h.size()) {
+            return;
+        }
+
+        auto & h = pending_h[seq_id];
+        if (data.size() != h.size() * sizeof(float)) {
+            return;
+        }
+        std::memcpy(h.data(), data.data(), data.size());
+    }
+
     int32_t current_n_max(llama_seq_id seq_id) const override {
         if (params.n_min_adaptive <= 0 || seq_id < 0 || seq_id >= (llama_seq_id) adaptive_state.size() ||
                 adaptive_state[seq_id].n_cur <= 0) {
