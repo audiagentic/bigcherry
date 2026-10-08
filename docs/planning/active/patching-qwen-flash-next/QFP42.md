@@ -93,9 +93,18 @@ non-dependency becomes an implementation step.
 
 ## Notes
 
-
-
 2026-10-08: the retired QFP08 draft's other proposals are already covered - draft-during-verify overlap by 1322 (decode +4-6%), double-buffered hidden-state snapshot for prompt chunks by 1348 (prefill +5-10%), event-scoped NextN handoff by this item. Its promotion thresholds (>=5% or stop) are NOT carried over: owner policy is that small wins count.
+
+
+
+## Step 0, first data (Brutus 2026-10-08, PR #8 build 31a07866, Flash-Next 24K, 76 chunks of 512 tokens, target context)
+
+| | graph | set_inputs | graph_compute | CPU split compute | Meta split input / compute |
+|---|---|---|---|---|---|
+| deferred catch-up on | 17.6 ms | 21.2 ms | 56.5 ms | 12.4 ms | 11.9 / 32.2 ms |
+| deferred catch-up off | 17.4 ms | 4.3 ms | 48.3 ms | 4.3 ms | 11.8 / 32.1 ms |
+
+With deferral the target's own host-side submission is about 25 ms per chunk slower (set_inputs +17 ms, CPU split +8 ms). Off path totals from 1346: target_block 25234.6 ms, draft_catchup 2210.2 ms, host gap 359.6 ms per chunk over 77 chunks. Not yet known: whether the extra set_inputs time is real contention (catch-up k holding the 1326 async host-input sync, a shared staging buffer, or the CPU backend pool that also serves token_embd) or the previous chunk's GPU time surfacing as a wait in a different place. 1346 prints zeros on the deferred path (chunks=0) and must be fixed before the per-call-site numbers can be read for that path. Cross-model: on Qwen3.8-27B built-in MTP 1348 is worth +0.8-1% prefill only, so the remaining gap is specific to a draft on its own card.
 
 ## Problem
 
@@ -232,3 +241,4 @@ Decision gate: retain only profiled HIP-specific work that reduces blocked time 
 - 2026-10-08 (triage): Folded PRBE07, PRBE56, PRBE57 into source-scoped MTP/NextN and BridgeSpec qualification notes.
 
 - 2026-10-07T22:53:39.805664+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-10-08T08:45:47.085065+00:00 (updated-by): Updated: section:notes

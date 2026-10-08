@@ -62,6 +62,8 @@ class Patch1337Mechanics(unittest.TestCase):
                 self.assertIn("ggml_backend_sched_set_copy_callback(sched.get(), sched_copy_experts, this);", ctx)
                 self.assertIn("ggml_backend_sched_set_moe_cache(sched.get(), moe_cache->backend(),", ctx)
                 self.assertIn("create_sched(false);", ctx)
+                self.assertIn("BIGCHERRY_PATCH_HIT patch=1337_moe_expert_caching", (root / "src/llama-moe-cache.cpp").read_text(encoding="utf-8"))
+                self.assertIn("static constexpr int64_t max_batch = 32;", (root / "src/llama-moe-cache.cpp").read_text(encoding="utf-8"))
                 self.assertIn("class llama_moe_cache {", (root / "src/llama-moe-cache.h").read_text(encoding="utf-8"))
                 self.assertIn("llama-moe-cache.cpp", (root / "src/CMakeLists.txt").read_text(encoding="utf-8"))
 

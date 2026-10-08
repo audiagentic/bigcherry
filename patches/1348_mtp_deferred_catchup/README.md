@@ -72,3 +72,10 @@ Combined 1322+1348 hardware A/B is still pending on the integrated production co
 Not measured as a separate build: the off arm (`BIGCHERRY_MTP_DEFERRED_CATCHUP=0`) runs the unmodified upstream
 `common_speculative_process()` path on the same binary, so the A/B above is the comparison against native llama.cpp
 behaviour for this mechanism.
+
+## Cross-model check (2026-10-08)
+
+Qwen3.8-27B built-in MTP: prefill +0.8% at 32K (complete separation), about +1% at 10K, decode unchanged, text
+identical, PATCH_HIT present. Gemma 4 26B without a draft: neutral and identical. Flash-Next with a second request
+text: text identical, gain present but not cleanly separated in four runs per arm. Details:
+releases/evidence/bc-11474.1.0-cross-model.md.
