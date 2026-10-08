@@ -57,6 +57,8 @@ Gated on the profile-first item; do not start kernel work before the per-width d
 
 ## Change Log
 
+- 2026-10-08 (triage): Kept pending at P2. Decode shortlist rank #3 behind PRBE113 and PRBE111. 1301_prbe115_q8_f32_mtp_widths state=rejected (patch.toml) after acceptance/numerics drift; no verbatim widening. Profile exact Q8_0 width2..5 share first, then consider fresh single-dequant kernel only with controlled replayed draft stream and identical acceptance, >=2% E2E and kernel -20% gate.
+
 - 2026-09-29T23:14:07.176425+00:00 (created-by): Created by agent
 
 ## Ledger-events
