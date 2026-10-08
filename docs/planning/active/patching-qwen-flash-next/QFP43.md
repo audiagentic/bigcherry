@@ -339,3 +339,8 @@ accepted length, draft/verify time and output t/s.
 ## Change Log
 
 - 2026-10-08T15:51:00+11:00 (agent): Created from b11474 source audit and current drafter artifact review.
+
+## Ledger-events
+
+- chg_20261008_071201_several-experimental-patches-r_2753
+- 2026-10-08T07:12:22.172301+00:00 (updated-by): Updated: section:ledger-events
