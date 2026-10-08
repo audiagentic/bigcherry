@@ -10,9 +10,12 @@ Brutus, 2026-10-08, b11474, build `moe-cache-profile`, `queue-moe-cache.sh mig`,
 | P4096 (cache + profile) | 8.57, 8.60, 8.75 | 95.9 | 5.27 | 4a8ba04d28e8 / 4f222b4dfef1 |
 | C0b (no cache, repeat) | 23.75, 24.05, 24.01 | 89.6 | 18.75 | 5e3cfde77817 / 50154e2cebe4 |
 
-## Verdict
+## Disposition
 
-Reject `1337_moe_expert_caching` and `1338_moe_cache_profile` on this pin/topology. The 4096 MiB cache halves short decode (~24.0 -> ~11.0 t/s); profile mode is worse (~8.6 t/s). Prefill gains at most ~7%, generated text changes, and C0/C0b controls agree.
+This is retained as the observation that triggered the recheck, not a final rejection. The 4096 MiB point halves
+short decode (~24.0 -> ~11.0 t/s), profile mode is worse (~8.6 t/s), and greedy output changes, but the run sampled
+only NCMOE=41 / 4096 MiB and did not capture request-scoped cache hit/miss/upload traffic. Patches 1337/1338 are
+reopened as untested pending the fusion-off matrix in `queue-moe-cache.sh`.
 
 ## Verified / not verified
 
